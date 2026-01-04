@@ -4,4 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-gtk = { version = "0.10.3", package = "gtk4", features = ["v4_20"] }
+# GTK4 (0.9.x) to align with gtk4-layer-shell and avoid `links = "gtk-4"` conflicts
+gtk = { version = "0.9", package = "gtk4", features = ["v4_6"] }
+
+# Wayland overlay positioning (layer-shell) aligned with gtk4 0.9 line
+gtk4-layer-shell = "0.4"
+
+# libadwaita widgets (match gtk4 0.9 line)
+adw = { version = "0.7", package = "libadwaita", features = ["v1_5"] }
+
+# JSON IPC
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime + Unix socket IPC
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "io-util", "time"] }
+
+# Utilities
+anyhow = "1"
