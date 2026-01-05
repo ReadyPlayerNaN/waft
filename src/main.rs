@@ -30,15 +30,7 @@ use tokio::{
     sync::mpsc,
 };
 
-/// Meeting item for today's agenda
-#[derive(Debug, Clone)]
-struct MeetingItem {
-    time: String,
-    title: String,
-    has_google_meet: bool,
-    has_zoom: bool,
-    has_teams: bool,
-}
+
 
 /// IPC message format: accepts JSON objects or arrays; only a small command set.
 ///
@@ -451,35 +443,30 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
     columns.append(&right_col);
     root.append(&columns);
 
-    // Meeting agenda section
-    let agenda_group = adw::PreferencesGroup::builder()
-        .title("Today's Agenda")
-        .build();
-
-    // Mock meeting data
+    // Agenda section with hardcoded meeting data
     let meetings = vec![
-        MeetingItem {
+        ui::MeetingItem {
             time: "09:00".to_string(),
             title: "Design Review - Team Sync".to_string(),
             has_google_meet: true,
             has_zoom: false,
             has_teams: false,
         },
-        MeetingItem {
+        ui::MeetingItem {
             time: "11:30".to_string(),
             title: "Client Call - Project Update".to_string(),
             has_google_meet: false,
             has_zoom: true,
             has_teams: true,
         },
-        MeetingItem {
+        ui::MeetingItem {
             time: "14:00".to_string(),
             title: "Sprint Planning".to_string(),
             has_google_meet: false,
             has_zoom: true,
             has_teams: false,
         },
-        MeetingItem {
+        ui::MeetingItem {
             time: "16:15".to_string(),
             title: "1:1 with Manager".to_string(),
             has_google_meet: true,
@@ -487,53 +474,8 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
             has_teams: false,
         },
     ];
-
-    // Helper to add a meeting item
-    let add_meeting = |group: &adw::PreferencesGroup, meeting: &MeetingItem| {
-        let row = adw::ActionRow::builder()
-            .title(&meeting.title)
-            .subtitle(&meeting.time)
-            .build();
-        row.set_activatable(false);
-
-        // Create action buttons container
-        let actions_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(6)
-            .build();
-
-        // Add action buttons based on available meeting types
-        if meeting.has_google_meet {
-            let google_btn = gtk::Button::builder()
-                .label("Open Google Meet")
-                .css_classes(["pill", "meeting-action"])
-                .build();
-            actions_box.append(&google_btn);
-        }
-        if meeting.has_zoom {
-            let zoom_btn = gtk::Button::builder()
-                .label("Open Zoom Meeting")
-                .css_classes(["pill", "meeting-action"])
-                .build();
-            actions_box.append(&zoom_btn);
-        }
-        if meeting.has_teams {
-            let teams_btn = gtk::Button::builder()
-                .label("Open Teams Meeting")
-                .css_classes(["pill", "meeting-action"])
-                .build();
-            actions_box.append(&teams_btn);
-        }
-
-        row.add_suffix(&actions_box);
-        group.add(&row);
-    };
-
-    for meeting in &meetings {
-        add_meeting(&agenda_group, meeting);
-    }
-
-    left_col.append(&agenda_group);
+    let agenda_widget = ui::build_agenda_section(meetings);
+    left_col.append(&agenda_widget);
 
     // Notifications section with controls
     let notifications = vec![
