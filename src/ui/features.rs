@@ -14,19 +14,12 @@ Notes:
 - Styling is done via CSS classes (e.g. `qs-tile`, `qs-on`, ...). You can keep CSS in `main.rs`
   or move it into its own CSS provider; this module only assigns classes.
 - We avoid SCSS-only functions (like `shade(...)`) at runtime; rely on CSS classes and valid GTK CSS.
-
-Animation note:
-- The details panel "slide up" collapse animation requires the content to remain present while the
-  revealer collapses.
-- Canceling GLib timeouts via `SourceId::remove()` can panic if the source is already gone.
-- Instead of canceling timers, this module uses generation tokens per details row: a scheduled clear
-  will only run if its generation is still current when the timeout fires.
 */
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use adw::prelude::*;
-use gtk::{self, glib};
+use gtk;
 
 /// Declarative description of a feature tile.
 ///
@@ -149,16 +142,12 @@ impl FeaturesModel {
 
 /// Build a generic Features section:
 /// - Renders tiles in a 2-column grid, consuming `specs` in order.
-/// - After each tile row, inserts 0 or 1 full-width "details row" (Revealer) if any tile in that row
-///   has a menu. That details row can host menus for either tile in that row.
+/// - After each tile row, inserts 0 or 2 full-width "details rows" (Revealers) if tiles have menus.
 /// - Supports 0–2 tiles per row (last row may have 1 tile).
-/// - At most ONE details row is open at a time (single-open), regardless of which row it belongs to.
+/// - At most ONE details panel is open at a time (single-open), regardless of which row it belongs to.
 ///
-/// Important:
-/// - We map each `FeatureSpec.key` to its computed `details_y` when building the grid, and the
-///   chevron click handler uses that mapping.
-/// - For smooth collapse animation, we never clear the revealer's child while collapsing. We
-///   postpone clearing/remounting by a tick.
+/// This new implementation creates separate expanders for each tile position, eliminating
+/// the need for content swapping and delays.
 pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesModel) {
     let model = FeaturesModel::default();
 
@@ -179,85 +168,23 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
         .row_spacing(0)
         .build();
 
-    // Single-open across an arbitrary number of per-row detail revealers.
+    // Single-open across all detail panels.
     let open_key: Rc<RefCell<Option<&'static str>>> = Rc::new(RefCell::new(None));
-    let open_row: Rc<RefCell<Option<i32>>> = Rc::new(RefCell::new(None));
 
-    // Track all revealers/holders so we can close them all.
-    let all_detail_rows: Rc<RefCell<Vec<(i32, gtk::Revealer, gtk::Box)>>> =
-        Rc::new(RefCell::new(Vec::new()));
-
-    // Map each feature key -> computed details_y (grid row of the revealer).
-    let key_to_details_y: Rc<RefCell<HashMap<&'static str, i32>>> =
+    // Track all detail panels (one per tile position that has a menu).
+    let all_detail_panels: Rc<RefCell<HashMap<&'static str, (gtk::Revealer, gtk::Box)>>> =
         Rc::new(RefCell::new(HashMap::new()));
-
-    // Per-details-row "generation" counters for scheduled clears.
-    //
-    // Instead of canceling a pending timeout (which can panic depending on GLib state),
-    // we bump a generation counter. A scheduled clear will only execute if its generation
-    // still matches the latest generation for that row.
-    let clear_generations: Rc<RefCell<HashMap<i32, u64>>> = Rc::new(RefCell::new(HashMap::new()));
-
-    // Bump generation for a row (invalidates any pending clear for that row).
-    let bump_generation = {
-        let clear_generations = clear_generations.clone();
-        move |details_y: i32| -> u64 {
-            let mut gens = clear_generations.borrow_mut();
-            let next = gens.get(&details_y).copied().unwrap_or(0).saturating_add(1);
-            gens.insert(details_y, next);
-            next
-        }
-    };
-
-    // Schedule clearing for a given details row after the collapse animation.
-    // The clear runs only if the generation hasn't changed since scheduling.
-    let schedule_clear_for_row = {
-        let clear_generations = clear_generations.clone();
-        let all_detail_rows = all_detail_rows.clone();
-        let bump_generation = bump_generation.clone();
-        move |details_y: i32| {
-            let generation = bump_generation(details_y);
-
-            let all_detail_rows = all_detail_rows.clone();
-            let clear_generations = clear_generations.clone();
-
-            glib::timeout_add_local_once(Duration::from_millis(220), move || {
-                // If generation changed, this clear is stale.
-                let current = clear_generations
-                    .borrow()
-                    .get(&details_y)
-                    .copied()
-                    .unwrap_or(0);
-                if current != generation {
-                    return;
-                }
-
-                if let Some((_y, _revealer, holder)) = all_detail_rows
-                    .borrow()
-                    .iter()
-                    .find(|(y, _, _)| *y == details_y)
-                {
-                    while let Some(child) = holder.first_child() {
-                        holder.remove(&child);
-                    }
-                }
-            });
-        }
-    };
 
     // Close all panels + reset chevrons (animated collapse).
     let close_all = {
         let open_key = open_key.clone();
-        let open_row = open_row.clone();
-        let all_detail_rows = all_detail_rows.clone();
+        let all_detail_panels = all_detail_panels.clone();
         let model = model.clone();
-        let schedule_clear_for_row = schedule_clear_for_row.clone();
 
         move || {
-            // Start collapse animations for all rows (do not clear immediately).
-            for (details_y, revealer, _holder) in all_detail_rows.borrow().iter() {
+            // Start collapse animations for all panels.
+            for (_key, (revealer, _holder)) in all_detail_panels.borrow().iter() {
                 revealer.set_reveal_child(false);
-                schedule_clear_for_row(*details_y);
             }
 
             // Reset chevron for whichever tile is open.
@@ -266,92 +193,54 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
             }
 
             *open_key.borrow_mut() = None;
-            *open_row.borrow_mut() = None;
         }
     };
 
-    // Open a menu in the detail revealer belonging to a specific grid row `details_y`.
+    // Open a menu in its dedicated detail panel.
     //
     // Behavior:
     // - If the same panel is open -> collapse it (animated)
-    // - If another panel is open -> collapse all (animated) then mount+expand the new one
+    // - If another panel is open -> collapse all (animated) then expand new one
     let open_menu = {
         let open_key = open_key.clone();
-        let open_row = open_row.clone();
-        let all_detail_rows = all_detail_rows.clone();
+        let all_detail_panels = all_detail_panels.clone();
         let close_all = close_all.clone();
         let model = model.clone();
-        let schedule_clear_for_row = schedule_clear_for_row.clone();
-        let bump_generation = bump_generation.clone();
 
-        move |key: &'static str, menu: &gtk::Widget, details_y: i32| {
+        move |key: &'static str, menu: &gtk::Widget| {
             let already_open = open_key.borrow().as_deref() == Some(key)
-                && *open_row.borrow() == Some(details_y)
-                && all_detail_rows
+                && all_detail_panels
                     .borrow()
-                    .iter()
-                    .find(|(y, _, _)| *y == details_y)
-                    .map(|(_, r, _)| r.reveals_child())
+                    .get(key)
+                    .map(|(r, _)| r.reveals_child())
                     .unwrap_or(false);
 
             if already_open {
-                // Collapse just this row.
-                if let Some((_y, revealer, _holder)) = all_detail_rows
-                    .borrow()
-                    .iter()
-                    .find(|(y, _, _)| *y == details_y)
-                {
+                // Collapse just this panel.
+                if let Some((revealer, _holder)) = all_detail_panels.borrow().get(key) {
                     revealer.set_reveal_child(false);
                 }
 
                 model.set_chevron_open(key, false);
                 *open_key.borrow_mut() = None;
-                *open_row.borrow_mut() = None;
-
-                schedule_clear_for_row(details_y);
                 return;
             }
 
-            // Switching: collapse everything first (animated + per-row clears).
+            // Switching: collapse everything first (animated).
             close_all();
 
-            // Invalidate any pending clear for the row we're about to open.
-            let generation = bump_generation(details_y);
-
+            // Set new open state and expand immediately.
             *open_key.borrow_mut() = Some(key);
-            *open_row.borrow_mut() = Some(details_y);
+            model.set_chevron_open(key, true);
 
-            // For smooth animation when switching menus, delay content mounting
-            // until after the collapse animation completes.
-            let all_detail_rows_clone = all_detail_rows.clone();
-            let menu_clone = menu.clone();
-            let model_clone = model.clone();
-            let key_clone = key;
-            let clear_generations_clone = clear_generations.clone();
-
-            glib::timeout_add_local_once(Duration::from_millis(220), move || {
-                // Check if generation is still current (no other operations occurred)
-                let current = clear_generations_clone
-                    .borrow()
-                    .get(&details_y)
-                    .copied()
-                    .unwrap_or(0);
-                if current != generation {
-                    return;
+            if let Some((revealer, holder)) = all_detail_panels.borrow().get(key) {
+                // Clear any existing content and set new content
+                while let Some(child) = holder.first_child() {
+                    holder.remove(&child);
                 }
-
-                let mut rows = all_detail_rows_clone.borrow_mut();
-                if let Some((_y, revealer, holder)) =
-                    rows.iter_mut().find(|(y, _, _)| *y == details_y)
-                {
-                    while let Some(child) = holder.first_child() {
-                        holder.remove(&child);
-                    }
-                    holder.append(&menu_clone);
-                    revealer.set_reveal_child(true);
-                    model_clone.set_chevron_open(key_clone, true);
-                }
-            });
+                holder.append(menu);
+                revealer.set_reveal_child(true);
+            }
         }
     };
 
@@ -399,17 +288,48 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
             (content, status_label)
         };
 
+    // Shared tile container creation and registration
+    let create_tile_container = |spec: &FeatureSpec| -> gtk::Box {
+        let tile = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .css_classes(["qs-tile"])
+            .build();
+
+        if spec.active {
+            tile.add_css_class("qs-on");
+        }
+
+        // Register surface for model
+        model
+            .inner
+            .borrow_mut()
+            .surfaces
+            .push((spec.key, tile.clone().upcast()));
+
+        tile
+    };
+
+    // Shared toggle logic for active state
+    let create_toggle_handler =
+        |tile: &gtk::Box, key: &'static str, model: &FeaturesModel| -> Box<dyn Fn()> {
+            let tile = tile.clone();
+            let model = model.clone();
+            Box::new(move || {
+                let on = tile.has_css_class("qs-on");
+                if on {
+                    tile.remove_css_class("qs-on");
+                    model.set_active(key, false);
+                } else {
+                    tile.add_css_class("qs-on");
+                    model.set_active(key, true);
+                }
+            })
+        };
+
     // Content-less: tile + single button.
     let build_contentless_tile =
         |spec: &FeatureSpec, model: &FeaturesModel| -> (gtk::Widget, gtk::Widget) {
-            let tile = gtk::Box::builder()
-                .orientation(gtk::Orientation::Vertical)
-                .css_classes(["qs-tile"])
-                .build();
-
-            if spec.active {
-                tile.add_css_class("qs-on");
-            }
+            let tile = create_tile_container(spec);
 
             let btn = gtk::Button::builder()
                 .css_classes(["flat", "qs-btn-single"])
@@ -420,44 +340,17 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
             btn.set_child(Some(&content));
 
             // Toggle ON/OFF on click.
-            btn.connect_clicked({
-                let tile = tile.clone();
-                let key = spec.key;
-                let model = model.clone();
-                move |_| {
-                    let on = tile.has_css_class("qs-on");
-                    if on {
-                        tile.remove_css_class("qs-on");
-                        model.set_active(key, false);
-                    } else {
-                        tile.add_css_class("qs-on");
-                        model.set_active(key, true);
-                    }
-                }
-            });
+            let toggle_handler = create_toggle_handler(&tile, spec.key, model);
+            btn.connect_clicked(move |_| toggle_handler());
 
             tile.append(&btn);
-
-            // Register surface for model
-            model
-                .inner
-                .borrow_mut()
-                .surfaces
-                .push((spec.key, tile.clone().upcast()));
 
             (tile.upcast::<gtk::Widget>(), btn.upcast::<gtk::Widget>())
         };
 
     // Split: tile + left + right + divider, with menu open.
     let build_split_tile = |spec: &FeatureSpec, model: &FeaturesModel| -> gtk::Widget {
-        let tile = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .css_classes(["qs-tile"])
-            .build();
-
-        if spec.active {
-            tile.add_css_class("qs-on");
-        }
+        let tile = create_tile_container(spec);
 
         let row = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -530,12 +423,8 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
                 let key = spec.key;
                 let open_menu = open_menu.clone();
                 let menu_widget = menu.widget.clone();
-                let key_to_details_y = key_to_details_y.clone();
                 move |_| {
-                    let details_y = key_to_details_y.borrow().get(&key).copied();
-                    if let Some(details_y) = details_y {
-                        open_menu(key, &menu_widget, details_y);
-                    }
+                    open_menu(key, &menu_widget);
                 }
             });
         }
@@ -545,12 +434,7 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
         row.append(&right_btn);
         tile.append(&row);
 
-        // Register for model updates
-        model
-            .inner
-            .borrow_mut()
-            .surfaces
-            .push((spec.key, tile.clone().upcast()));
+        // Register remaining model components
         model
             .inner
             .borrow_mut()
@@ -576,32 +460,32 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
         };
         i += 2;
 
-        // Place left tile
-        let left_widget = if left.menu.is_some() {
-            build_split_tile(left, &model)
-        } else {
-            build_contentless_tile(left, &model).0
-        };
-        grid.attach(&left_widget, 0, y, 1, 1);
-
-        // Place right tile (or spacer)
-        if let Some(r) = right {
-            let right_widget = if r.menu.is_some() {
-                build_split_tile(r, &model)
+        // Helper to build and place tiles
+        let build_and_place_tile = |spec: &FeatureSpec, col: i32| {
+            let widget = if spec.menu.is_some() {
+                build_split_tile(spec, &model)
             } else {
-                build_contentless_tile(r, &model).0
+                build_contentless_tile(spec, &model).0
             };
-            grid.attach(&right_widget, 1, y, 1, 1);
+            grid.attach(&widget, col, y, 1, 1);
+        };
+
+        // Place tiles
+        build_and_place_tile(left, 0);
+        if let Some(r) = right {
+            build_and_place_tile(r, 1);
         } else {
             grid.attach(&gtk::Box::builder().build(), 1, y, 1, 1);
         }
 
-        // Determine whether we need a details row under this tile row.
-        let has_menu = left.menu.is_some() || right.map(|r| r.menu.is_some()).unwrap_or(false);
-        if has_menu {
-            let details_y = y + 1;
+        // Create detail panels for tiles that have menus.
+        // Each panel spans full width (2 columns) and pushes content below down.
+        let mut detail_rows_created = 0;
 
-            // Create and attach a details row for this tile row.
+        // Left tile detail panel
+        if let Some(menu) = left.menu.as_ref() {
+            let details_y = y + 1 + detail_rows_created;
+
             let revealer = gtk::Revealer::builder()
                 .reveal_child(false)
                 .transition_type(gtk::RevealerTransitionType::SlideDown)
@@ -613,28 +497,92 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
                 .build();
             revealer.set_child(Some(&holder));
 
+            // Span both columns (0, width=2) for full row width
             grid.attach(&revealer, 0, details_y, 2, 1);
-            all_detail_rows
+            all_detail_panels
                 .borrow_mut()
-                .push((details_y, revealer.clone(), holder.clone()));
+                .insert(left.key, (revealer.clone(), holder.clone()));
 
-            // Register key -> details_y for any feature in this tile row that has a menu.
-            for spec in [Some(left), right].into_iter().flatten() {
-                if spec.menu.is_some() {
-                    key_to_details_y.borrow_mut().insert(spec.key, details_y);
-                }
+            // Open initially if requested
+            if left.open {
+                open_menu(left.key, &menu.widget);
             }
 
-            // If a feature in this row wants to start open, honor it by opening its menu.
-            for spec in [Some(left), right].into_iter().flatten() {
-                if spec.open {
-                    if let Some(menu) = spec.menu.as_ref() {
-                        open_menu(spec.key, &menu.widget, details_y);
-                    }
-                }
-            }
+            detail_rows_created += 1;
+        }
 
-            y = details_y + 1;
+        // Right tile detail panel
+        if let Some(r) = right {
+            if let Some(menu) = r.menu.as_ref() {
+                let details_y = y + 1 + detail_rows_created;
+
+                let revealer = gtk::Revealer::builder()
+                    .reveal_child(false)
+                    .transition_type(gtk::RevealerTransitionType::SlideDown)
+                    .hexpand(true)
+                    .build();
+                let holder = gtk::Box::builder()
+                    .orientation(gtk::Orientation::Vertical)
+                    .css_classes(["qs-details"])
+                    .build();
+                revealer.set_child(Some(&holder));
+
+                // Span both columns (0, width=2) for full row width
+                grid.attach(&revealer, 0, details_y, 2, 1);
+                all_detail_panels
+                    .borrow_mut()
+                    .insert(r.key, (revealer.clone(), holder.clone()));
+
+                // Open initially if requested
+                if r.open {
+                    open_menu(r.key, &menu.widget);
+                }
+
+                detail_rows_created += 1;
+            }
+        }
+
+        // Update y position based on how many detail rows we created
+        if detail_rows_created > 0 {
+            y += 1 + detail_rows_created;
+        } else {
+            y += 1;
+        }
+
+        // Right tile detail panel
+        if let Some(r) = right {
+            if let Some(menu) = r.menu.as_ref() {
+                let details_y = y + 1 + detail_rows_created;
+
+                let revealer = gtk::Revealer::builder()
+                    .reveal_child(false)
+                    .transition_type(gtk::RevealerTransitionType::SlideDown)
+                    .hexpand(true)
+                    .build();
+                let holder = gtk::Box::builder()
+                    .orientation(gtk::Orientation::Vertical)
+                    .css_classes(["qs-details"])
+                    .build();
+                revealer.set_child(Some(&holder));
+
+                // Span both columns (0, width=2) for full row width
+                grid.attach(&revealer, 0, details_y, 2, 1);
+                all_detail_panels
+                    .borrow_mut()
+                    .insert(r.key, (revealer.clone(), holder.clone()));
+
+                // Open initially if requested
+                if r.open {
+                    open_menu(r.key, &menu.widget);
+                }
+
+                detail_rows_created += 1;
+            }
+        }
+
+        // Update y position based on how many detail rows we created
+        if detail_rows_created > 0 {
+            y += 1 + detail_rows_created;
         } else {
             y += 1;
         }
