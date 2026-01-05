@@ -21,6 +21,12 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use adw::prelude::*;
 use gtk;
 
+type OnToggleCallback = Rc<
+    dyn Fn(&'static str, bool) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>
+        + Send
+        + Sync,
+>;
+
 /// Declarative description of a feature tile.
 ///
 /// The `menu` is the optional "details panel" that opens when you click the chevron half.
@@ -38,6 +44,9 @@ pub struct FeatureSpec {
 
     /// Initial open state (if menu exists).
     pub open: bool,
+
+    /// Async callback called when the feature is toggled. Returns the new active state.
+    pub on_toggle: Option<OnToggleCallback>,
 }
 
 impl FeatureSpec {
@@ -55,6 +64,34 @@ impl FeatureSpec {
             active,
             menu: None,
             open: false,
+            on_toggle: None,
+        }
+    }
+
+    pub fn contentless_with_toggle<F>(
+        key: &'static str,
+        title: impl Into<String>,
+        icon: impl Into<String>,
+        active: bool,
+        on_toggle: F,
+    ) -> Self
+    where
+        F: Fn(&'static str, bool) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self {
+            key,
+            title: title.into(),
+            icon: icon.into(),
+            status_text: String::new(),
+            active,
+            menu: None,
+            open: false,
+            on_toggle: Some(Rc::new(move |key, current_active| {
+                on_toggle(key, current_active)
+            })),
         }
     }
 
@@ -75,6 +112,7 @@ impl FeatureSpec {
             active,
             menu: Some(menu),
             open,
+            on_toggle: None,
         }
     }
 }
@@ -309,22 +347,53 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
         tile
     };
 
-    // Shared toggle logic for active state
-    let create_toggle_handler =
-        |tile: &gtk::Box, key: &'static str, model: &FeaturesModel| -> Box<dyn Fn()> {
-            let tile = tile.clone();
-            let model = model.clone();
-            Box::new(move || {
-                let on = tile.has_css_class("qs-on");
-                if on {
-                    tile.remove_css_class("qs-on");
-                    model.set_active(key, false);
-                } else {
+    // Shared toggle logic for active state using async callback
+    let create_toggle_handler = |tile: gtk::Box,
+                                 key: &'static str,
+                                 model: FeaturesModel,
+                                 on_toggle: Option<OnToggleCallback>|
+     -> Box<dyn Fn()> {
+        let tile = tile.clone();
+        let model = model.clone();
+        Box::new(move || {
+            let current_active = tile.has_css_class("qs-on");
+
+            if let Some(ref callback) = on_toggle {
+                let key = key;
+                let tile = tile.clone();
+                let model = model.clone();
+                let callback = callback.clone();
+
+                // Call synchronous callback
+                let new_active = match callback(key, current_active) {
+                    Ok(active) => active,
+                    Err(e) => {
+                        eprintln!("Error in on_toggle callback for {}: {:?}", key, e);
+                        current_active // Keep current state on error
+                    }
+                };
+
+                // Update UI based on callback result
+                if new_active {
                     tile.add_css_class("qs-on");
                     model.set_active(key, true);
+                } else {
+                    tile.remove_css_class("qs-on");
+                    model.set_active(key, false);
                 }
-            })
-        };
+            } else {
+                // Fallback to simple toggle if no callback provided
+                let new_active = !current_active;
+                if new_active {
+                    tile.add_css_class("qs-on");
+                    model.set_active(key, true);
+                } else {
+                    tile.remove_css_class("qs-on");
+                    model.set_active(key, false);
+                }
+            }
+        })
+    };
 
     // Content-less: tile + single button.
     let build_contentless_tile =
@@ -339,8 +408,13 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
             let (content, _status_label) = build_left_content(&spec.icon, &spec.title, "");
             btn.set_child(Some(&content));
 
-            // Toggle ON/OFF on click.
-            let toggle_handler = create_toggle_handler(&tile, spec.key, model);
+            // Toggle ON/OFF on click using async callback.
+            let toggle_handler = create_toggle_handler(
+                tile.clone(),
+                spec.key,
+                model.clone(),
+                spec.on_toggle.clone(),
+            );
             btn.connect_clicked(move |_| toggle_handler());
 
             tile.append(&btn);
@@ -385,7 +459,7 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
         chevron.set_pixel_size(18);
         right_btn.set_child(Some(&chevron));
 
-        // Left toggles active (close-on-off).
+        // Left toggles active (close-on-off) using async callback.
         left_btn.connect_clicked({
             let tile = tile.clone();
             let key = spec.key;
@@ -394,25 +468,61 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
             let model = model.clone();
             let close_all = close_all.clone();
             let open_key = open_key.clone();
+            let on_toggle = spec.on_toggle.clone();
             move |_| {
-                let on = tile.has_css_class("qs-on");
-                if on {
-                    tile.remove_css_class("qs-on");
-                    // if this panel is open, close it (close-on-off)
-                    if open_key.borrow().as_deref() == Some(key) {
-                        close_all();
+                let current_active = tile.has_css_class("qs-on");
+
+                if let Some(ref callback) = on_toggle {
+                    let key = key;
+                    let tile = tile.clone();
+                    let model = model.clone();
+                    let close_all = close_all.clone();
+                    let open_key = open_key.clone();
+                    let status_label = status_label.clone();
+                    let status_on = status_on.clone();
+                    let callback = callback.clone();
+
+                    // Call synchronous callback
+                    let new_active = match callback(key, current_active) {
+                        Ok(active) => active,
+                        Err(e) => {
+                            eprintln!("Error in on_toggle callback for {}: {:?}", key, e);
+                            current_active // Keep current state on error
+                        }
+                    };
+
+                    // Update UI based on callback result
+                    if new_active {
+                        tile.add_css_class("qs-on");
+                        model.set_active(key, true);
+                        if !status_on.is_empty() {
+                            status_label.set_label(&status_on);
+                        }
+                    } else {
+                        tile.remove_css_class("qs-on");
+                        // if this panel is open, close it (close-on-off)
+                        if open_key.borrow().as_deref() == Some(key) {
+                            close_all();
+                        }
+                        model.set_active(key, false);
                     }
-                    // best-effort status update if you want "Off"
-                    if !status_on.is_empty() {
-                        status_label.set_label("Off");
-                    }
-                    model.set_active(key, false);
                 } else {
-                    tile.add_css_class("qs-on");
-                    if !status_on.is_empty() {
-                        status_label.set_label(&status_on);
+                    // Fallback to simple toggle if no callback provided
+                    let new_active = !current_active;
+                    if new_active {
+                        tile.add_css_class("qs-on");
+                        model.set_active(key, true);
+                        if !status_on.is_empty() {
+                            status_label.set_label(&status_on);
+                        }
+                    } else {
+                        tile.remove_css_class("qs-on");
+                        // if this panel is open, close it (close-on-off)
+                        if open_key.borrow().as_deref() == Some(key) {
+                            close_all();
+                        }
+                        model.set_active(key, false);
                     }
-                    model.set_active(key, true);
                 }
             }
         });

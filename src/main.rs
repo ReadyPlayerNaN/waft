@@ -16,6 +16,8 @@ use std::{
     time::Duration,
 };
 
+mod features;
+mod plugins;
 mod ui;
 
 use adw::prelude::*;
@@ -23,6 +25,7 @@ use anyhow::{Context, Result};
 use gtk::gdk;
 use gtk::glib;
 use gtk4_layer_shell::LayerShell;
+use plugins::registry::PluginRegistry;
 use serde::Deserialize;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -187,7 +190,7 @@ async fn run_ipc_server(listener: UnixListener, tx: mpsc::UnboundedSender<UiComm
 }
 
 /// Build the overlay window contents (dummy UI).
-fn build_ui(app: &adw::Application) -> gtk::Window {
+fn build_ui(app: &adw::Application, registry: &PluginRegistry) -> gtk::Window {
     // Use AdwApplicationWindow to get Adwaita styling.
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -284,19 +287,31 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
     /* ON applies to the entire tile (both halves). */
     .qs-tile.qs-on .qs-btn-left,
     .qs-tile.qs-on .qs-btn-single {
-        background: image(alpha(@accent_bg_color, 0.5));
-        color: @accent_fg_color;
+        background-color: @accent_bg_color;
+        color: var(--button_bg_color);
     }
     .qs-tile.qs-on .qs-btn-left:hover,
     .qs-tile.qs-on .qs-btn-single:hover {
-        background: @accent_bg_color;
+        background-color: color-mix(
+          in srgb,
+          @accent_bg_color 80%,
+          @window_fg_color
+        );
     }
     .qs-tile.qs-on .qs-btn-right {
-        background: image(alpha(@accent_bg_color, 0.25));
+        background-color: color-mix(
+          in srgb,
+          @accent_bg_color 90%,
+          @window_fg_color
+        );
      }
 
      .qs-tile.qs-on .qs-btn-right:hover {
-        background: image(alpha(@accent_bg_color, 0.75));
+        background-color: color-mix(
+          in srgb,
+          @accent_bg_color 75%,
+          @window_fg_color
+        );
      }
 
     .qs-tile.qs-on label,
@@ -325,15 +340,27 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
 
     button.qs-btn-left:hover,
     button.qs-btn-single:hover {
-      background: image(alpha(@card_bg_color, 1.5));
+        background-color: color-mix(
+          in srgb,
+          @card_bg_color 80%,
+          @window_fg_color
+        );
     }
 
     button.qs-btn-right {
-        background: image(alpha(@card_bg_color, 1.5));
+        background-color: color-mix(
+          in srgb,
+          @card_bg_color 90%,
+          @window_fg_color
+        );
         padding: 8px 0;
     }
     button.qs-btn-right:hover {
-        background: image(alpha(@card_bg_color, 2));
+        background-color: color-mix(
+          in srgb,
+          @card_bg_color 75%,
+          @window_fg_color
+        );
     }
 
     /* Inner buttons are flat and transparent by default; hover overlays provide feedback. */
@@ -752,17 +779,11 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
         box_
     };
 
-    let specs = vec![
+    let mut specs = vec![
         ui::FeatureSpec::contentless(
             "do_not_disturb",
             "Do not disturb",
             "notifications-disabled-symbolic",
-            false,
-        ),
-        ui::FeatureSpec::contentless(
-            "dark_mode",
-            "Dark mode",
-            "weather-clear-night-symbolic",
             false,
         ),
         ui::FeatureSpec::contentless("night_light", "Night light", "night-light-symbolic", false),
@@ -794,6 +815,14 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
             false,
         ),
     ];
+
+    // Query the plugin registry for feature toggles at UI build time so build_ui can
+    // access richer plugin-provided behaviour.
+    let toggles = registry.get_all_feature_toggles();
+
+    for toggle in toggles {
+        specs.push(toggle.el);
+    }
 
     let (features_section, features_model) = ui::build_features_section(specs);
 
@@ -906,8 +935,26 @@ async fn main() -> Result<()> {
     // Wrap it so we can borrow it mutably from the GTK thread.
     let rx = Rc::new(RefCell::new(rx));
 
+    // Create and initialize plugin registry before handing it to the UI. Initialization
+    // is async, so do it now; afterwards we wrap it in a synchronous Mutex for use on the
+    // GTK main thread.
+    let mut registry = PluginRegistry::new();
+
+    registry.register(features::darkman::DarkmanPlugin::new());
+
+    registry.initialize_all().await?;
+
+    // Wrap registry in Arc<Mutex<..>> so GTK activation closure can lock it synchronously.
+    let registry = std::sync::Arc::new(std::sync::Mutex::new(registry));
+    // Keep a Weak reference for the GTK closure so we don't create extra strong references.
+    let registry_weak = std::sync::Arc::downgrade(&registry);
+
     app.connect_activate(move |app| {
-        let window = build_ui(app);
+        // Upgrade the weak pointer to access the registry at activation time.
+        // We lock synchronously (std::sync::Mutex) because this is the GTK main thread.
+        let registry_arc = registry_weak.upgrade().expect("plugin registry missing");
+        let guard = registry_arc.lock().unwrap();
+        let window = build_ui(app, &*guard);
 
         // Process incoming IPC commands on GTK main context.
         // We bridge from tokio via a periodic poll (simple and robust).
@@ -937,6 +984,17 @@ async fn main() -> Result<()> {
 
     // Run GTK main loop (this blocks until exit).
     app.run();
+
+    // Run async cleanup for plugins: lock the Mutex, replace the contained registry with a
+    // fresh one (so we take ownership) and run async cleanup on the taken value. This avoids
+    // attempting to unwrap the Arc and is robust even if other weak/strong refs exist.
+    {
+        let mut guard = registry.lock().unwrap();
+        // Replace the registry inside the mutex with a new, empty registry so we can own the old one.
+        let mut reg_taken = std::mem::replace(&mut *guard, PluginRegistry::new());
+        drop(guard);
+        reg_taken.cleanup_all().await?;
+    }
 
     Ok(())
 }
