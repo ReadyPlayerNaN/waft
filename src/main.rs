@@ -30,6 +30,16 @@ use tokio::{
     sync::mpsc,
 };
 
+/// Meeting item for today's agenda
+#[derive(Debug, Clone)]
+struct MeetingItem {
+    time: String,
+    title: String,
+    has_google_meet: bool,
+    has_zoom: bool,
+    has_teams: bool,
+}
+
 /// IPC message format: accepts JSON objects or arrays; only a small command set.
 ///
 /// Example messages:
@@ -201,12 +211,33 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
     // - shrink notification action buttons reliably
     // - GNOME-shell-like quick settings tiles (custom layout; NOT Adw rows)
     let css = r#"
+    window {
+        border-radius: 8px;
+    }
+
     /* The class is applied to the button itself, so target it directly. */
     button.notif-action {
         font-size: 0.92em;
         padding: 3px 10px;
         min-height: 26px;
         min-width: 0px;
+    }
+
+    /* Meeting action buttons */
+    button.meeting-action {
+        font-size: 0.85em;
+        padding: 4px 8px;
+        min-height: 24px;
+        min-width: 0px;
+    }
+
+    /* Destructive action button (for Clear) */
+    button.destructive-action {
+        background: @destructive_bg_color;
+        color: @destructive_fg_color;
+    }
+    button.destructive-action:hover {
+        background: shade(@destructive_bg_color, 1.1);
     }
 
     /*
@@ -366,11 +397,11 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
     // and then a two-column split below it.
     let root = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
-        .spacing(12)
-        .margin_top(16)
-        .margin_bottom(16)
-        .margin_start(16)
-        .margin_end(16)
+        .spacing(24)
+        .margin_top(32)
+        .margin_bottom(32)
+        .margin_start(32)
+        .margin_end(32)
         .build();
 
     // Header: two-line date/time (dummy locale-formatted strings for now).
@@ -420,104 +451,113 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
     columns.append(&right_col);
     root.append(&columns);
 
-    // Notifications section (grouped by app name, with actions like GNOME).
-    let notif_group = adw::PreferencesGroup::builder()
-        .title("Notifications")
+    // Meeting agenda section
+    let agenda_group = adw::PreferencesGroup::builder()
+        .title("Today's Agenda")
         .build();
 
-    // Helper to add a notification "card".
-    let add_notif = |group: &adw::PreferencesGroup,
-                     app_name: &str,
-                     summary: &str,
-                     body: &str,
-                     actions: &[&str]| {
-        // We render a custom widget so actions can be placed *under* title/text:
-        //
-        // Title
-        // text
-        // button1 | button2
-        let row = adw::ActionRow::builder().build();
+    // Mock meeting data
+    let meetings = vec![
+        MeetingItem {
+            time: "09:00".to_string(),
+            title: "Design Review - Team Sync".to_string(),
+            has_google_meet: true,
+            has_zoom: false,
+            has_teams: false,
+        },
+        MeetingItem {
+            time: "11:30".to_string(),
+            title: "Client Call - Project Update".to_string(),
+            has_google_meet: false,
+            has_zoom: true,
+            has_teams: true,
+        },
+        MeetingItem {
+            time: "14:00".to_string(),
+            title: "Sprint Planning".to_string(),
+            has_google_meet: false,
+            has_zoom: true,
+            has_teams: false,
+        },
+        MeetingItem {
+            time: "16:15".to_string(),
+            title: "1:1 with Manager".to_string(),
+            has_google_meet: true,
+            has_zoom: false,
+            has_teams: false,
+        },
+    ];
+
+    // Helper to add a meeting item
+    let add_meeting = |group: &adw::PreferencesGroup, meeting: &MeetingItem| {
+        let row = adw::ActionRow::builder()
+            .title(&meeting.title)
+            .subtitle(&meeting.time)
+            .build();
         row.set_activatable(false);
 
-        // App name as prefix label.
-        let app_badge = gtk::Label::builder()
-            .label(app_name)
-            .css_classes(["caption", "dim-label"])
-            .xalign(0.0)
-            .build();
-        row.add_prefix(&app_badge);
-
-        // Add padding so text isn't flush against the row borders.
-        let content = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(8)
-            .hexpand(true)
-            .margin_top(12)
-            .margin_bottom(12)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
-
-        let title = gtk::Label::builder()
-            .label(summary)
-            .xalign(0.0)
-            .wrap(true)
-            .css_classes(["heading"])
-            .build();
-
-        let text = gtk::Label::builder()
-            .label(body)
-            .xalign(0.0)
-            .wrap(true)
-            .css_classes(["dim-label"])
-            .build();
-
+        // Create action buttons container
         let actions_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(6)
             .build();
 
-        for &a in actions {
-            let b = gtk::Button::builder()
-                .label(a)
-                .css_classes(["pill", "notif-action"])
+        // Add action buttons based on available meeting types
+        if meeting.has_google_meet {
+            let google_btn = gtk::Button::builder()
+                .label("Open Google Meet")
+                .css_classes(["pill", "meeting-action"])
                 .build();
-            actions_box.append(&b);
+            actions_box.append(&google_btn);
+        }
+        if meeting.has_zoom {
+            let zoom_btn = gtk::Button::builder()
+                .label("Open Zoom Meeting")
+                .css_classes(["pill", "meeting-action"])
+                .build();
+            actions_box.append(&zoom_btn);
+        }
+        if meeting.has_teams {
+            let teams_btn = gtk::Button::builder()
+                .label("Open Teams Meeting")
+                .css_classes(["pill", "meeting-action"])
+                .build();
+            actions_box.append(&teams_btn);
         }
 
-        content.append(&title);
-        content.append(&text);
-        content.append(&actions_box);
-
-        // Put the vertical content in the row itself.
-        row.set_child(Some(&content));
-
+        row.add_suffix(&actions_box);
         group.add(&row);
     };
 
-    add_notif(
-        &notif_group,
-        "Mail",
-        "New message from Alex",
-        "Subject: Shipping update",
-        &["Reply", "Archive"],
-    );
-    add_notif(
-        &notif_group,
-        "Calendar",
-        "Meeting starts in 10 minutes",
-        "Design review — Room 3B",
-        &["Snooze", "Open"],
-    );
-    add_notif(
-        &notif_group,
-        "Chat",
-        "Mina mentioned you",
-        "“Can you take a look at the PR?”",
-        &["Open", "Mark as read"],
-    );
+    for meeting in &meetings {
+        add_meeting(&agenda_group, meeting);
+    }
 
-    left_col.append(&notif_group);
+    left_col.append(&agenda_group);
+
+    // Notifications section with controls
+    let notifications = vec![
+        ui::Notification {
+            app_name: "Mail".to_string(),
+            summary: "New message from Alex".to_string(),
+            body: "Subject: Shipping update".to_string(),
+            actions: vec!["Reply".to_string(), "Archive".to_string()],
+        },
+        ui::Notification {
+            app_name: "Calendar".to_string(),
+            summary: "Meeting starts in 10 minutes".to_string(),
+            body: "Design review — Room 3B".to_string(),
+            actions: vec!["Snooze".to_string(), "Open".to_string()],
+        },
+        ui::Notification {
+            app_name: "Chat".to_string(),
+            summary: "Mina mentioned you".to_string(),
+            body: "Can you take a look at the PR?".to_string(),
+            actions: vec!["Open".to_string(), "Mark as read".to_string()],
+        },
+    ];
+    let notifications_widget = ui::build_notifications_section(notifications);
+    left_col.append(&notifications_widget);
 
     // Sliders section.
     let sliders_group = adw::PreferencesGroup::builder().title("Controls").build();
