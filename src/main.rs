@@ -30,8 +30,6 @@ use tokio::{
     sync::mpsc,
 };
 
-
-
 /// IPC message format: accepts JSON objects or arrays; only a small command set.
 ///
 /// Example messages:
@@ -215,21 +213,50 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
         min-width: 0px;
     }
 
+    /* Notification cards styling */
+    .notification-card {
+        background: alpha(@theme_bg_color, 0.7);
+        border: 1px solid alpha(@borders, 0.3);
+        border-radius: 8px;
+        margin-bottom: 8px;
+    }
+
+    .notification-scrollable {
+        min-height: 300px;
+    }
+
+    .notification-close {
+        min-width: 32px;
+        min-height: 32px;
+        padding: 0;
+        opacity: 0.7;
+    }
+
+    .notification-close:hover {
+        opacity: 1.0;
+        background: alpha(@destructive_bg_color, 0.1);
+    }
+
+    .notification-actions-container {
+        background: shade(@theme_bg_color, 0.95);
+        border-radius: 0 0 8px 8px;
+    }
+
+    .notification-separator {
+        background: alpha(@borders, 0.3);
+        margin: 0;
+    }
+
+    .notification-widget {
+        margin-bottom: 0;
+    }
+
     /* Meeting action buttons */
     button.meeting-action {
         font-size: 0.85em;
         padding: 4px 8px;
         min-height: 24px;
         min-width: 0px;
-    }
-
-    /* Destructive action button (for Clear) */
-    button.destructive-action {
-        background: @destructive_bg_color;
-        color: @destructive_fg_color;
-    }
-    button.destructive-action:hover {
-        background: shade(@destructive_bg_color, 1.1);
     }
 
     /*
@@ -422,13 +449,14 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
     // Two columns (notifications left, everything else right).
     let columns = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
-        .spacing(16)
+        .spacing(32)
         .build();
 
     let left_col = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .spacing(12)
         .hexpand(true)
+        .vexpand(true)
         .width_request(480)
         .build();
 
@@ -479,24 +507,57 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
 
     // Notifications section with controls
     let notifications = vec![
-        ui::Notification {
-            app_name: "Mail".to_string(),
-            summary: "New message from Alex".to_string(),
-            body: "Subject: Shipping update".to_string(),
-            actions: vec!["Reply".to_string(), "Archive".to_string()],
-        },
-        ui::Notification {
-            app_name: "Calendar".to_string(),
-            summary: "Meeting starts in 10 minutes".to_string(),
-            body: "Design review — Room 3B".to_string(),
-            actions: vec!["Snooze".to_string(), "Open".to_string()],
-        },
-        ui::Notification {
-            app_name: "Chat".to_string(),
-            summary: "Mina mentioned you".to_string(),
-            body: "Can you take a look at the PR?".to_string(),
-            actions: vec!["Open".to_string(), "Mark as read".to_string()],
-        },
+        ui::Notification::new(
+            "Mail".to_string(),
+            "New message from Alex".to_string(),
+            "Subject: Shipping update".to_string(),
+            vec!["Reply".to_string(), "Archive".to_string()],
+        )
+        .with_default_action(|| {
+            println!("Opened email from Alex");
+        }),
+        ui::Notification::new(
+            "Calendar".to_string(),
+            "Meeting starts in 10 minutes".to_string(),
+            "Design review — Room 3B".to_string(),
+            vec!["Snooze".to_string(), "Open".to_string()],
+        )
+        .with_default_action(|| {
+            println!("Opened calendar meeting");
+        }),
+        ui::Notification::new(
+            "Chat".to_string(),
+            "Mina mentioned you".to_string(),
+            "Can you take a look at the PR?".to_string(),
+            vec!["Open".to_string(), "Mark as read".to_string()],
+        )
+        .with_default_action(|| {
+            println!("Opened chat message");
+        }),
+        ui::Notification::new(
+            "System".to_string(),
+            "Update available".to_string(),
+            "A new system update is ready to install".to_string(),
+            vec!["Install".to_string(), "Later".to_string()],
+        ),
+        ui::Notification::new(
+            "Music".to_string(),
+            "Now playing".to_string(),
+            "Your favorite song is playing".to_string(),
+            vec![],
+        ),
+        ui::Notification::new(
+            "Music".to_string(),
+            "Now playing".to_string(),
+            "Your favorite song is playing".to_string(),
+            vec![],
+        ),
+        ui::Notification::new(
+            "Music".to_string(),
+            "Now playing".to_string(),
+            "Your favorite song is playing".to_string(),
+            vec![],
+        ),
     ];
     let notifications_widget = ui::build_notifications_section(notifications);
     left_col.append(&notifications_widget);
@@ -692,6 +753,12 @@ fn build_ui(app: &adw::Application) -> gtk::Window {
     };
 
     let specs = vec![
+        ui::FeatureSpec::contentless(
+            "do_not_disturb",
+            "Do not disturb",
+            "notifications-disabled-symbolic",
+            false,
+        ),
         ui::FeatureSpec::contentless(
             "dark_mode",
             "Dark mode",
