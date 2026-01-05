@@ -16,17 +16,20 @@ use std::{
     time::Duration,
 };
 
+mod dbus;
 mod features;
 mod plugins;
 mod ui;
 
 use adw::prelude::*;
 use anyhow::{Context, Result};
+use dbus::DbusHandle;
 use gtk::gdk;
 use gtk::glib;
 use gtk4_layer_shell::LayerShell;
 use plugins::registry::PluginRegistry;
 use serde::Deserialize;
+use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
@@ -190,7 +193,11 @@ async fn run_ipc_server(listener: UnixListener, tx: mpsc::UnboundedSender<UiComm
 }
 
 /// Build the overlay window contents (dummy UI).
-fn build_ui(app: &adw::Application, registry: &PluginRegistry) -> gtk::Window {
+fn build_ui(
+    app: &adw::Application,
+    registry: &PluginRegistry,
+    ui_event_rx: Rc<RefCell<mpsc::UnboundedReceiver<ui::UiEvent>>>,
+) -> gtk::Window {
     // Use AdwApplicationWindow to get Adwaita styling.
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -825,16 +832,31 @@ fn build_ui(app: &adw::Application, registry: &PluginRegistry) -> gtk::Window {
     }
 
     let (features_section, features_model) = ui::build_features_section(specs);
+    let features_model_for_timeout = features_model.clone();
 
     // Keep the network tile status in sync with the dummy connect/disconnect label updates.
     // (This is optional; you can remove it when wiring real services.)
     glib::timeout_add_local(Duration::from_millis(200), move || {
         let status = net_status_label.label().to_string();
-        features_model.set_status_text("net", &status);
+        features_model_for_timeout.set_status_text("net", &status);
         glib::ControlFlow::Continue
     });
 
     right_col.append(&features_section);
+
+    // Process incoming UI events (from plugins, etc.) on the GTK main context.
+    // This bridges plugin-emitted UiEvent values into FeaturesModel updates.
+    let features_model_for_events = features_model.clone();
+    let ui_event_rx_for_poll = ui_event_rx.clone();
+    glib::timeout_add_local(Duration::from_millis(50), move || {
+        let mut rx = ui_event_rx_for_poll.borrow_mut();
+        while let Ok(event) = rx.try_recv() {
+            // Call the UiEventSink::send method explicitly to avoid any trait
+            // method name clashes with other `send` methods in scope.
+            crate::ui::UiEventSink::send(&features_model_for_events, event);
+        }
+        glib::ControlFlow::Continue
+    });
 
     // Wrap in Clamp for nicer width (make both columns wider).
     let clamp = adw::Clamp::builder().maximum_size(1040).build();
@@ -920,8 +942,13 @@ async fn main() -> Result<()> {
         }
     };
 
+    let dbus = DbusHandle::connect().await?;
+
     // Channel from IPC task -> GTK main thread.
     let (tx, rx) = mpsc::unbounded_channel::<UiCommand>();
+
+    // Channel from plugins -> GTK main thread for generic UI events.
+    let (ui_event_tx, ui_event_rx) = mpsc::unbounded_channel::<ui::UiEvent>();
 
     // Spawn IPC server task.
     tokio::spawn(run_ipc_server(listener, tx));
@@ -934,13 +961,18 @@ async fn main() -> Result<()> {
     // `connect_activate` requires an `Fn` closure; we can't move the receiver into an `FnOnce`.
     // Wrap it so we can borrow it mutably from the GTK thread.
     let rx = Rc::new(RefCell::new(rx));
+    let ui_event_rx = Rc::new(RefCell::new(ui_event_rx));
 
     // Create and initialize plugin registry before handing it to the UI. Initialization
     // is async, so do it now; afterwards we wrap it in a synchronous Mutex for use on the
     // GTK main thread.
     let mut registry = PluginRegistry::new();
 
-    registry.register(features::darkman::DarkmanPlugin::new());
+    // Register plugins and inject a UI event sender into those that support it.
+    let _ = registry.register(
+        features::darkman::DarkmanPlugin::new(Arc::new(dbus))
+            .with_ui_event_sender(ui_event_tx.clone()),
+    );
 
     registry.initialize_all().await?;
 
@@ -954,11 +986,10 @@ async fn main() -> Result<()> {
         // We lock synchronously (std::sync::Mutex) because this is the GTK main thread.
         let registry_arc = registry_weak.upgrade().expect("plugin registry missing");
         let guard = registry_arc.lock().unwrap();
-        let window = build_ui(app, &*guard);
+        let window = build_ui(app, &*guard, ui_event_rx.clone());
 
         // Process incoming IPC commands on GTK main context.
         // We bridge from tokio via a periodic poll (simple and robust).
-        // This avoids sending GTK objects across threads.
         let window_for_poll = window.clone();
         let rx_for_poll = rx.clone();
 

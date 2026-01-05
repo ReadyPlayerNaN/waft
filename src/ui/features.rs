@@ -16,16 +16,17 @@ Notes:
 - We avoid SCSS-only functions (like `shade(...)`) at runtime; rely on CSS classes and valid GTK CSS.
 */
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, future::Future, pin::Pin, rc::Rc};
 
+use crate::ui::{UiEvent, UiEventSink};
 use adw::prelude::*;
 use gtk;
 
-type OnToggleCallback = Rc<
-    dyn Fn(&'static str, bool) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>
-        + Send
-        + Sync,
->;
+// Async, void toggle callback.
+// - Runs on the GTK main loop via `glib::MainContext::spawn_local`.
+// - Should emit `UiEvent`s to update UI state (active/status/menu) rather than returning values.
+type OnToggleCallback =
+    Rc<dyn Fn(&'static str, bool) -> Pin<Box<dyn Future<Output = ()> + 'static>> + Send + Sync>;
 
 /// Declarative description of a feature tile.
 ///
@@ -68,7 +69,7 @@ impl FeatureSpec {
         }
     }
 
-    pub fn contentless_with_toggle<F>(
+    pub fn contentless_with_toggle<F, Fut>(
         key: &'static str,
         title: impl Into<String>,
         icon: impl Into<String>,
@@ -76,10 +77,8 @@ impl FeatureSpec {
         on_toggle: F,
     ) -> Self
     where
-        F: Fn(&'static str, bool) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>
-            + Send
-            + Sync
-            + 'static,
+        F: Fn(&'static str, bool) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + 'static,
     {
         Self {
             key,
@@ -90,7 +89,7 @@ impl FeatureSpec {
             menu: None,
             open: false,
             on_toggle: Some(Rc::new(move |key, current_active| {
-                on_toggle(key, current_active)
+                Box::pin(on_toggle(key, current_active))
             })),
         }
     }
@@ -174,6 +173,22 @@ impl FeaturesModel {
             } else {
                 "pan-end-symbolic"
             }));
+        }
+    }
+}
+
+impl UiEventSink for FeaturesModel {
+    fn send(&self, event: UiEvent) {
+        match event {
+            UiEvent::FeatureActiveChanged { key, active } => {
+                self.set_active(Box::leak(key.into_boxed_str()), active);
+            }
+            UiEvent::FeatureStatusTextChanged { key, text } => {
+                self.set_status_text(Box::leak(key.into_boxed_str()), &text);
+            }
+            UiEvent::FeatureMenuOpenChanged { key, open } => {
+                self.set_chevron_open(Box::leak(key.into_boxed_str()), open);
+            }
         }
     }
 }
@@ -347,7 +362,10 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
         tile
     };
 
-    // Shared toggle logic for active state using async callback
+    // Shared toggle logic for active state using async callback (void result).
+    //
+    // The callback is responsible for emitting `UiEvent`s to update UI state.
+    // The UI does not optimistically toggle; it waits for model updates.
     let create_toggle_handler = |tile: gtk::Box,
                                  key: &'static str,
                                  model: FeaturesModel,
@@ -360,27 +378,14 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
 
             if let Some(ref callback) = on_toggle {
                 let key = key;
-                let tile = tile.clone();
-                let model = model.clone();
+                let _tile = tile.clone();
+                let _model = model.clone();
                 let callback = callback.clone();
 
-                // Call synchronous callback
-                let new_active = match callback(key, current_active) {
-                    Ok(active) => active,
-                    Err(e) => {
-                        eprintln!("Error in on_toggle callback for {}: {:?}", key, e);
-                        current_active // Keep current state on error
-                    }
-                };
-
-                // Update UI based on callback result
-                if new_active {
-                    tile.add_css_class("qs-on");
-                    model.set_active(key, true);
-                } else {
-                    tile.remove_css_class("qs-on");
-                    model.set_active(key, false);
-                }
+                // Spawn the async callback on the GTK main loop.
+                gtk::glib::MainContext::default().spawn_local(async move {
+                    callback(key, current_active).await;
+                });
             } else {
                 // Fallback to simple toggle if no callback provided
                 let new_active = !current_active;
@@ -474,38 +479,19 @@ pub fn build_features_section(specs: Vec<FeatureSpec>) -> (gtk::Box, FeaturesMod
 
                 if let Some(ref callback) = on_toggle {
                     let key = key;
-                    let tile = tile.clone();
-                    let model = model.clone();
-                    let close_all = close_all.clone();
-                    let open_key = open_key.clone();
-                    let status_label = status_label.clone();
-                    let status_on = status_on.clone();
+                    let _tile = tile.clone();
+                    let _model = model.clone();
+                    let _close_all = close_all.clone();
+                    let _open_key = open_key.clone();
+                    let _status_label = status_label.clone();
+                    let _status_on = status_on.clone();
                     let callback = callback.clone();
 
-                    // Call synchronous callback
-                    let new_active = match callback(key, current_active) {
-                        Ok(active) => active,
-                        Err(e) => {
-                            eprintln!("Error in on_toggle callback for {}: {:?}", key, e);
-                            current_active // Keep current state on error
-                        }
-                    };
-
-                    // Update UI based on callback result
-                    if new_active {
-                        tile.add_css_class("qs-on");
-                        model.set_active(key, true);
-                        if !status_on.is_empty() {
-                            status_label.set_label(&status_on);
-                        }
-                    } else {
-                        tile.remove_css_class("qs-on");
-                        // if this panel is open, close it (close-on-off)
-                        if open_key.borrow().as_deref() == Some(key) {
-                            close_all();
-                        }
-                        model.set_active(key, false);
-                    }
+                    // Spawn the async callback on the GTK main loop.
+                    // The callback is responsible for emitting `UiEvent`s that update model/UI.
+                    gtk::glib::MainContext::default().spawn_local(async move {
+                        callback(key, current_active).await;
+                    });
                 } else {
                     // Fallback to simple toggle if no callback provided
                     let new_active = !current_active;

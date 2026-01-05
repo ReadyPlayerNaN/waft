@@ -3,8 +3,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 /// Plugin interface that all plugins must implement
-#[async_trait]
-pub trait Plugin: Send + Sync {
+#[async_trait(?Send)]
+pub trait Plugin {
     /// Get the unique name of this plugin
     fn name(&self) -> &str;
 
