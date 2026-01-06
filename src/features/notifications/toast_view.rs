@@ -2,7 +2,7 @@ use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     rc::Rc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use gtk::prelude::*;
@@ -12,7 +12,8 @@ use crate::ui::overlay_animation::{self, FadeConfig};
 
 use super::{
     card::NotificationCard,
-    types::{Notification, NotificationUrgency, ToastPolicy},
+    toast_policy::ToastRenderItem,
+    types::{Notification, NotificationUrgency},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,15 +83,9 @@ pub struct ToastView {
     window: gtk::Window,
     container: gtk::Box,
 
-    // Policy (TTL)
-    policy: ToastPolicy,
-
-    // State (shared so timer/hover closures can safely capture)
+    // State (shared so hover closures can safely capture)
     /// Currently visible toasts in render order (most recent first).
     visible_ids: Rc<RefCell<Vec<u64>>>,
-
-    /// Per-notification dismissal state (only tracked for currently visible toasts).
-    dismiss_state: Rc<RefCell<HashMap<u64, DismissState>>>,
 
     /// Effective pause state (derived from overlay + hover).
     paused: Rc<RefCell<bool>>,
@@ -103,6 +98,11 @@ pub struct ToastView {
 
     /// Reference count of hover-enter events across all toast cards.
     hover_count: Rc<RefCell<u32>>,
+
+    /// Callback invoked when the pointer enters/leaves any toast card region.
+    ///
+    /// The plugin should use this to pause/resume pure toast-state timers (expiry only).
+    on_hover_pause_changed: Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>,
 
     /// Last toast id that was pushed into the toast stack due to a new incoming notification.
     ///
@@ -133,7 +133,7 @@ pub struct ToastView {
     hovered_row_id: Rc<RefCell<Option<u64>>>,
 
     /// Map of currently visible toast id -> card instance, so we can push timeout indicator
-    /// updates without re-building widgets every tick.
+    /// updates without re-building widgets every render.
     cards: Rc<RefCell<HashMap<u64, NotificationCard>>>,
 
     /// Whether the toast window is suppressed (e.g. main overlay is visible/active).
@@ -149,66 +149,6 @@ pub struct ToastView {
     /// We only want to animate on an actual transition from "not visible" -> "visible".
     /// Re-triggering the fade-in while already visible looks like flicker.
     fade_in_armed: Rc<RefCell<bool>>,
-
-    /// Single periodic timer used to check due dismissals (keeps logic simple).
-    tick_source: RefCell<Option<gtk::glib::SourceId>>,
-}
-
-#[derive(Clone, Debug)]
-struct DismissState {
-    /// The total TTL. `None` means "never auto-dismiss".
-    ttl: Option<Duration>,
-
-    /// When the toast was created (monotonic time).
-    created_at: Instant,
-
-    /// Total time spent paused (accumulated).
-    paused_total: Duration,
-
-    /// If paused, the time when the pause began.
-    paused_since: Option<Instant>,
-}
-
-impl DismissState {
-    fn new(ttl: Option<Duration>) -> Self {
-        Self {
-            ttl,
-            created_at: Instant::now(),
-            paused_total: Duration::from_millis(0),
-            paused_since: None,
-        }
-    }
-
-    fn pause(&mut self) {
-        if self.paused_since.is_none() {
-            self.paused_since = Some(Instant::now());
-        }
-    }
-
-    fn resume(&mut self) {
-        if let Some(since) = self.paused_since.take() {
-            self.paused_total += Instant::now().saturating_duration_since(since);
-        }
-    }
-
-    fn effective_elapsed(&self) -> Duration {
-        // If currently paused, do not advance elapsed beyond the pause start.
-        let now = Instant::now();
-        let base_elapsed = if let Some(since) = self.paused_since {
-            since.saturating_duration_since(self.created_at)
-        } else {
-            now.saturating_duration_since(self.created_at)
-        };
-
-        base_elapsed.saturating_sub(self.paused_total)
-    }
-
-    fn is_due(&self) -> bool {
-        match self.ttl {
-            None => false,
-            Some(ttl) => self.effective_elapsed() >= ttl,
-        }
-    }
 }
 
 impl ToastView {
@@ -281,22 +221,24 @@ impl ToastView {
         Self {
             window,
             container,
-            policy: ToastPolicy::default(),
 
             visible_ids: Rc::new(RefCell::new(Vec::new())),
-            dismiss_state: Rc::new(RefCell::new(HashMap::new())),
             paused: Rc::new(RefCell::new(false)),
             hover_paused: Rc::new(RefCell::new(false)),
             overlay_paused: Rc::new(RefCell::new(false)),
             hover_count: Rc::new(RefCell::new(0)),
+            on_hover_pause_changed: Rc::new(RefCell::new(None)),
+
             last_pushed_id: Rc::new(RefCell::new(None)),
+
             rows: Rc::new(RefCell::new(HashMap::new())),
             hover_pause_installed: Cell::new(false),
             hovered_row_id: Rc::new(RefCell::new(None)),
+
             cards: Rc::new(RefCell::new(HashMap::new())),
+
             suppressed: Rc::new(RefCell::new(false)),
             fade_in_armed: Rc::new(RefCell::new(true)),
-            tick_source: RefCell::new(None),
         }
     }
 
@@ -316,9 +258,29 @@ impl ToastView {
         *self.last_pushed_id.borrow_mut() = Some(id);
     }
 
+    /// Install a callback invoked when hover pause toggles on/off.
+    ///
+    /// The plugin should use this to pause/resume pure toast-state timers (expiry only).
+    pub fn set_on_hover_pause_changed(&self, cb: Rc<dyn Fn(bool)>) {
+        *self.on_hover_pause_changed.borrow_mut() = Some(cb);
+    }
+
+    /// Update timeout indicator progress for currently visible toast cards without re-rendering.
+    ///
+    /// This is intended to be called from a periodic tick in the plugin, while `render()` is only
+    /// called on structural changes (push/remove/reorder) to avoid churn that breaks hover states.
+    pub fn update_progress(&self, items_most_recent_first: &[ToastRenderItem<Notification>]) {
+        let cards = self.cards.borrow();
+        for item in items_most_recent_first {
+            if let Some(card) = cards.get(&item.id) {
+                card.set_timeout_progress(item.elapsed, item.ttl);
+            }
+        }
+    }
+
     pub fn render<FActivateFallback, FDismissExpired, FDismissUser>(
         &self,
-        toasts_most_recent_first: Vec<Notification>,
+        toasts_most_recent_first: Vec<ToastRenderItem<Notification>>,
         on_activate_fallback: FActivateFallback,
         on_dismiss_expired: FDismissExpired,
         on_dismiss_user: FDismissUser,
@@ -349,24 +311,13 @@ impl ToastView {
             self.install_hover_pause_with_pick();
         }
 
-        let desired: Vec<Notification> = toasts_most_recent_first
+        let desired: Vec<ToastRenderItem<Notification>> = toasts_most_recent_first
             .into_iter()
             .take(TOAST_MAX_VISIBLE)
             .collect();
 
         // Caller already provides most-recent-first.
-        let desired_ids: Vec<u64> = desired.iter().map(|n| n.id).collect();
-
-        // Add dismissal state for newly visible toasts (keep for currently visible).
-        {
-            let mut state = self.dismiss_state.borrow_mut();
-            for n in &desired {
-                if !state.contains_key(&n.id) {
-                    let ttl = n.toast_ttl(self.policy);
-                    state.insert(n.id, DismissState::new(ttl));
-                }
-            }
-        }
+        let desired_ids: Vec<u64> = desired.iter().map(|i| i.id).collect();
 
         // Track ids that are in the desired (visible) toast list.
         // Anything not in this set should be animated out (but kept in the UI during animation).
@@ -389,8 +340,9 @@ impl ToastView {
         let last_pushed_id = self.last_pushed_id.clone();
 
         // Create or reuse rows for desired ids; do not rebuild the container wholesale.
-        for n in &desired {
-            let id = n.id;
+        for item in &desired {
+            let id = item.id;
+            let n = &item.payload;
 
             // If the row already exists (possibly in "removing" state), reuse it and cancel removal.
             if let Some(existing) = self.rows.borrow().get(&id) {
@@ -519,11 +471,11 @@ impl ToastView {
             // very first frame. Force one post-layout update so the bar doesn't remain invisible
             // until the first interaction (e.g. hover) triggers a new allocation.
             let cards_for_init = self.cards.clone();
-            let dismiss_for_init = self.dismiss_state.clone();
+            let desired_for_init = desired.clone();
             gtk::glib::idle_add_local_once(move || {
-                for (id, card) in cards_for_init.borrow().iter() {
-                    if let Some(ds) = dismiss_for_init.borrow().get(id) {
-                        card.set_timeout_progress(ds.effective_elapsed(), ds.ttl);
+                for item in &desired_for_init {
+                    if let Some(card) = cards_for_init.borrow().get(&item.id) {
+                        card.set_timeout_progress(item.elapsed, item.ttl);
                     }
                 }
             });
@@ -583,7 +535,6 @@ impl ToastView {
                         self.container.clone(),
                         self.rows.clone(),
                         self.cards.clone(),
-                        self.dismiss_state.clone(),
                         id,
                     );
                 }
@@ -614,8 +565,8 @@ impl ToastView {
         // Ensure window visibility matches whether we have any toasts and whether it should be shown.
         self.sync_window_visibility();
 
-        // Ensure ticking is running (or stopped) based on whether there are any auto-dismissable toasts.
-        self.sync_tick_source(on_dismiss_expired);
+        // Timeout ticking/expiry is handled by pure state in the plugin layer. The view only renders.
+        let _ = on_dismiss_expired;
     }
 
     /// Hide toasts (e.g. when main window becomes visible/focused). Keeps stack and pauses timers.
@@ -713,80 +664,6 @@ impl ToastView {
         }
     }
 
-    fn sync_tick_source<FDismissExpired>(&self, on_dismiss_expired: FDismissExpired)
-    where
-        FDismissExpired: Fn(u64) + Clone + 'static,
-    {
-        // If there are no toasts that can expire, we can stop ticking.
-        let has_any_expirable = self
-            .dismiss_state
-            .borrow()
-            .values()
-            .any(|s| s.ttl.is_some());
-
-        if !has_any_expirable || self.visible_ids.borrow().is_empty() {
-            if let Some(id) = self.tick_source.borrow_mut().take() {
-                id.remove();
-            }
-            return;
-        }
-
-        if self.tick_source.borrow().is_some() {
-            return;
-        }
-
-        // Tick at a modest cadence; accuracy to ~100ms is plenty for toasts.
-        let on_dismiss_expired = on_dismiss_expired.clone();
-        let view = self.clone_for_timer();
-
-        let src = gtk::glib::timeout_add_local(Duration::from_millis(50), move || {
-            if *view.paused.borrow() {
-                return gtk::glib::ControlFlow::Continue;
-            }
-
-            // Push timeout indicator updates for currently visible toasts.
-            //
-            // The indicator shows "remaining fraction", shrinking left->right.
-            // This is transform-based inside `NotificationCard`, so it does not force relayout.
-            {
-                let ids = view.visible_ids.borrow().clone();
-                let state = view.dismiss_state.borrow();
-                let cards = view.cards.borrow();
-
-                for id in ids {
-                    let Some(ds) = state.get(&id) else {
-                        continue;
-                    };
-                    let Some(card) = cards.get(&id) else {
-                        continue;
-                    };
-
-                    let elapsed = ds.effective_elapsed();
-                    card.set_timeout_progress(elapsed, ds.ttl);
-                }
-            }
-
-            // Identify due ids in current visible set (most recent first, but order doesn't matter here).
-            let due: Vec<u64> = {
-                let state = view.dismiss_state.borrow();
-                view.visible_ids
-                    .borrow()
-                    .iter()
-                    .copied()
-                    .filter(|id| state.get(id).is_some_and(|s| s.is_due()))
-                    .collect()
-            };
-
-            for id in due {
-                (on_dismiss_expired)(id);
-            }
-
-            gtk::glib::ControlFlow::Continue
-        });
-
-        *self.tick_source.borrow_mut() = Some(src);
-    }
-
     fn install_hover_pause_with_pick(&self) {
         // Single motion controller on the container, with hit-testing to decide if we're
         // actually over a toast card, and mapping the pick result to a *specific* toast row id.
@@ -865,19 +742,18 @@ impl ToastView {
             }
         };
 
-        // Motion: continuously update based on hit-test (handles gaps correctly).
-        let update_for_motion = update_from_xy.clone();
-        controller.connect_motion(move |_, x, y| {
-            update_for_motion(x, y);
-        });
-
-        // Enter: update immediately.
-        let update_for_enter = update_from_xy.clone();
+        // Enter: engage immediately (otherwise you only pause after the first motion event).
+        let update_from_xy_enter = update_from_xy.clone();
         controller.connect_enter(move |_, x, y| {
-            update_for_enter(x, y);
+            update_from_xy_enter(x, y);
         });
 
-        // Leave: pointer left the toast window/container => resume and clear hovered row id.
+        // Motion: continuously update based on hit-test (handles gaps correctly).
+        controller.connect_motion(move |_, x, y| {
+            update_from_xy(x, y);
+        });
+
+        // Leave container => resume.
         let view_leave = self.clone_for_hover();
         let hovered_row_id_leave = self.hovered_row_id.clone();
         controller.connect_leave(move |_| {
@@ -895,16 +771,6 @@ impl ToastView {
             return;
         }
         *p = paused;
-
-        // Apply pause/resume to all dismiss states.
-        let mut st = self.dismiss_state.borrow_mut();
-        for (_id, s) in st.iter_mut() {
-            if paused {
-                s.pause();
-            } else {
-                s.resume();
-            }
-        }
     }
 
     fn recompute_paused(&self) {
@@ -931,22 +797,13 @@ impl ToastView {
         *s = suppressed;
     }
 
-    fn clone_for_timer(&self) -> ToastViewLite {
-        ToastViewLite {
-            visible_ids: self.visible_ids.clone(),
-            dismiss_state: self.dismiss_state.clone(),
-            paused: self.paused.clone(),
-            cards: self.cards.clone(),
-        }
-    }
-
     fn clone_for_hover(&self) -> ToastViewHoverLite {
         ToastViewHoverLite {
             hover_count: self.hover_count.clone(),
-            dismiss_state: self.dismiss_state.clone(),
             paused: self.paused.clone(),
             hover_paused: self.hover_paused.clone(),
             overlay_paused: self.overlay_paused.clone(),
+            on_hover_pause_changed: self.on_hover_pause_changed.clone(),
         }
     }
 }
@@ -955,21 +812,12 @@ impl ToastView {
 ///
 /// This avoids capturing the full `ToastView` (and its `gtk::Window`) in a periodic closure.
 #[derive(Clone)]
-struct ToastViewLite {
-    visible_ids: Rc<RefCell<Vec<u64>>>,
-    dismiss_state: Rc<RefCell<HashMap<u64, DismissState>>>,
-    paused: Rc<RefCell<bool>>,
-    cards: Rc<RefCell<HashMap<u64, NotificationCard>>>,
-}
-
-/// Lightweight handle for hover pause bookkeeping.
-#[derive(Clone)]
 struct ToastViewHoverLite {
     hover_count: Rc<RefCell<u32>>,
-    dismiss_state: Rc<RefCell<HashMap<u64, DismissState>>>,
     paused: Rc<RefCell<bool>>,
     hover_paused: Rc<RefCell<bool>>,
     overlay_paused: Rc<RefCell<bool>>,
+    on_hover_pause_changed: Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>,
 }
 
 impl ToastViewHoverLite {
@@ -983,15 +831,6 @@ impl ToastViewHoverLite {
             return;
         }
         *p = paused;
-
-        let mut st = self.dismiss_state.borrow_mut();
-        for (_id, s) in st.iter_mut() {
-            if paused {
-                s.pause();
-            } else {
-                s.resume();
-            }
-        }
     }
 
     fn set_hover_paused(&self, hover_paused: bool) {
@@ -1001,6 +840,12 @@ impl ToastViewHoverLite {
         }
         *hp = hover_paused;
         drop(hp);
+
+        // Inform the plugin so it can pause/resume pure toast-state expiry timers.
+        if let Some(cb) = self.on_hover_pause_changed.borrow().as_ref().cloned() {
+            (cb)(hover_paused);
+        }
+
         self.recompute_paused();
     }
 }
@@ -1077,7 +922,6 @@ impl ToastRow {
         container: gtk::Box,
         rows: Rc<RefCell<HashMap<u64, ToastRow>>>,
         cards: Rc<RefCell<HashMap<u64, NotificationCard>>>,
-        dismiss_state: Rc<RefCell<HashMap<u64, DismissState>>>,
         id: u64,
     ) {
         // Height-based exit animation (shrink to 0 height within 200ms), then remove widgets and state.
@@ -1093,7 +937,6 @@ impl ToastRow {
             }
             rows.borrow_mut().remove(&id);
             cards.borrow_mut().remove(&id);
-            dismiss_state.borrow_mut().remove(&id);
             gtk::glib::ControlFlow::Break
         });
     }

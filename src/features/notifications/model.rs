@@ -180,6 +180,8 @@ impl NotificationsModel {
         }
     }
 
+    // Method is used exclusively to verify logic in tests
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn open_group(&self) -> Option<&str> {
         self.open_group.as_deref()
     }

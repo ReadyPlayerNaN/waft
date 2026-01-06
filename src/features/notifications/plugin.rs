@@ -11,10 +11,17 @@ use crate::ui::UiEvent;
 use super::{
     controller::NotificationsController,
     gate,
-    toast_policy::{ToastPolicy as PureToastPolicy, ToastState, Urgency as ToastUrgency},
+    toast_policy::{
+        ToastPolicy as PureToastPolicy, ToastRenderItem, ToastState, Urgency as ToastUrgency,
+    },
     toast_view::ToastView,
     types::{DbusExpireTimeout, Notification, NotificationIcon, NotificationUrgency},
 };
+
+/// How often we tick toast expiry/progress.
+///
+/// Accuracy to ~50ms is plenty for a smooth progress bar without burning CPU.
+const TOAST_TICK_MS: u64 = 50;
 
 const PLUGIN_KEY: &str = "plugin::notifications";
 const TOAST_MAX_VISIBLE: usize = 5;
@@ -131,7 +138,7 @@ impl NotificationsPlugin {
     ///
     /// This is optional: if not configured, the tile may not visually update even if the
     /// underlying state changes.
-    pub fn with_ui_event_sender(mut self, tx: mpsc::UnboundedSender<UiEvent>) -> Self {
+    pub fn with_ui_event_sender(self, tx: mpsc::UnboundedSender<UiEvent>) -> Self {
         *self.ui_event_tx.borrow_mut() = Some(tx);
         self
     }
@@ -162,19 +169,29 @@ impl NotificationsPlugin {
         // When inhibited (DND), we still keep `toast_state` up-to-date so ordering/expiry logic
         // remains correct, but we don't show any toast popups.
         if inhibited {
-            toast.render(Vec::new(), || {}, |_| {}, |_| {});
+            toast.render(
+                Vec::<ToastRenderItem<Notification>>::new(),
+                || {},
+                |_| {},
+                |_| {},
+            );
             return;
         }
 
-        // Resolve visible toast ids to full `Notification` objects from the overlay model.
-        //
-        // NOTE: This requires `NotificationsController::get_by_id` to exist. If it does not yet,
-        // you must add a small, GTK-free getter on the controller/model side and update this call.
-        let ids = toast_state.borrow().visible_ids();
-        let mut toasts_now: Vec<Notification> = Vec::with_capacity(ids.len());
-        for id in ids {
-            if let Some(n) = ctl.get_by_id(id) {
-                toasts_now.push(n);
+        // Resolve visible toast ids to full `Notification` objects from the overlay model,
+        // and include progress metadata (elapsed/ttl) computed by pure toast state.
+        let now = std::time::Instant::now();
+        let items = toast_state.borrow().visible_items(now);
+
+        let mut toasts_now: Vec<ToastRenderItem<Notification>> = Vec::with_capacity(items.len());
+        for it in items {
+            if let Some(n) = ctl.get_by_id(it.id) {
+                toasts_now.push(ToastRenderItem {
+                    id: it.id,
+                    payload: n,
+                    ttl: it.ttl,
+                    elapsed: it.elapsed,
+                });
             }
         }
 
@@ -184,6 +201,106 @@ impl NotificationsPlugin {
             move |id| (on_dismiss_expired)(id),
             move |id| (on_dismiss_user)(id),
         );
+    }
+
+    fn install_toast_tick(
+        toast: Arc<ToastView>,
+        toast_state: Rc<RefCell<ToastState>>,
+        ctl: Arc<NotificationsController>,
+        outbound: Option<mpsc::UnboundedSender<crate::notifications_dbus::OutboundEvent>>,
+        on_dismiss_expired: Rc<dyn Fn(u64)>,
+        on_dismiss_user: Rc<dyn Fn(u64)>,
+        inhibited: Rc<std::cell::Cell<bool>>,
+    ) {
+        // Drive expiry + progress from pure toast state on the GTK main loop.
+        //
+        // IMPORTANT:
+        // Do NOT call `ToastView::render(...)` every tick. Frequent full re-renders churn GTK widget
+        // state and can break hover affordances (CSS :hover, button hover, etc).
+        //
+        // Instead:
+        // - expire due toasts via pure state,
+        // - update progress indicators incrementally,
+        // - and only re-render on structural changes (or occasional fallback refresh).
+        gtk::glib::timeout_add_local(std::time::Duration::from_millis(TOAST_TICK_MS), move || {
+            let now = std::time::Instant::now();
+            let inhibited_now = inhibited.get();
+
+            // Expire due toasts using pure state. This is toast-only removal; overlay history remains.
+            let cmds = toast_state.borrow_mut().expire_due(now);
+            let any_structural_change = !cmds.is_empty();
+
+            for cmd in cmds {
+                if let super::toast_policy::ToastCommand::ExpireToastOnly { id } = cmd {
+                    // Emit NotificationClosed(id, EXPIRED) so DBus clients learn it timed out.
+                    if let Some(tx) = outbound.as_ref() {
+                        let _ = tx.send(
+                            crate::notifications_dbus::OutboundEvent::NotificationClosed {
+                                id: id as u32,
+                                reason: crate::notifications_dbus::close_reasons::EXPIRED,
+                            },
+                        );
+                    }
+                }
+            }
+
+            // Build current render items (id + Notification + elapsed/ttl) from pure state.
+            let items = toast_state.borrow().visible_items(now);
+            let mut toasts_now: Vec<ToastRenderItem<Notification>> =
+                Vec::with_capacity(items.len());
+            for it in items {
+                if let Some(n) = ctl.get_by_id(it.id) {
+                    toasts_now.push(ToastRenderItem {
+                        id: it.id,
+                        payload: n,
+                        ttl: it.ttl,
+                        elapsed: it.elapsed,
+                    });
+                }
+            }
+
+            // Always update progress indicators so the bar remains smooth.
+            // This MUST NOT cause a full re-render/reconcile.
+            if !inhibited_now {
+                toast.update_progress(&toasts_now);
+            }
+
+            // Full render only on structural changes (e.g. expiry removed a toast).
+            if any_structural_change {
+                let on_exp = on_dismiss_expired.clone();
+                let on_user = on_dismiss_user.clone();
+
+                if inhibited_now {
+                    toast.render(
+                        Vec::<ToastRenderItem<Notification>>::new(),
+                        || {},
+                        {
+                            let on_exp = on_exp.clone();
+                            move |id| (on_exp)(id)
+                        },
+                        {
+                            let on_user = on_user.clone();
+                            move |id| (on_user)(id)
+                        },
+                    );
+                } else {
+                    toast.render(
+                        toasts_now,
+                        || {},
+                        {
+                            let on_exp = on_exp.clone();
+                            move |id| (on_exp)(id)
+                        },
+                        {
+                            let on_user = on_user.clone();
+                            move |id| (on_user)(id)
+                        },
+                    );
+                }
+            }
+
+            gtk::glib::ControlFlow::Continue
+        });
     }
 
     /// Ensure the GTK-backed controller and toast view exist.
@@ -243,18 +360,28 @@ impl NotificationsPlugin {
             return;
         };
 
+        let toast_state_for_hook = self.toast_state.clone();
+
         *self.main_window_hook_installed.borrow_mut() = true;
 
         // Hide/pause toasts whenever the main window becomes active (focus gained),
         // matching the overlay behavior (Esc and focus-out hide the main window).
         {
             let toast_for_active = toast.clone();
+            let toast_state_for_active = toast_state_for_hook.clone();
             main.connect_is_active_notify(move |w: &gtk::Window| {
                 if w.is_active() {
+                    // Overlay focused/active => hide toast window and pause pure toast timers.
+                    toast_state_for_active
+                        .borrow_mut()
+                        .pause_all(std::time::Instant::now());
                     toast_for_active.hide_with_pause();
                 } else {
                     // Overlay lost focus; if it is also not visible, resume showing toasts (and timers).
                     // `ToastView::show_if_any()` clears suppression and re-shows if there is content.
+                    toast_state_for_active
+                        .borrow_mut()
+                        .resume_all(std::time::Instant::now());
                     toast_for_active.show_if_any();
                 }
             });
@@ -263,6 +390,7 @@ impl NotificationsPlugin {
         // Also poll at a low cadence as a fallback for cases where compositor/GTK doesn't
         // reliably emit notifications (best-effort).
         let toast_for_poll = toast.clone();
+        let toast_state_for_poll = toast_state_for_hook.clone();
         gtk::glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
             // Match the main overlay's hide triggers:
             // - Esc causes `set_visible(false)`
@@ -272,9 +400,23 @@ impl NotificationsPlugin {
             // IMPORTANT:
             // We must keep the toast window "suppressed" while the overlay is visible,
             // otherwise `ToastView::render()` may re-show it and cause animation loops/blinking.
+            //
+            // IMPORTANT (hover pause):
+            // Hover pause is implemented via the toast view and pauses pure toast timers.
+            // This polling hook must NOT resume timers while hover pause is active, otherwise
+            // hovering a toast will only pause for a fraction of a second (until the next poll).
             if main.is_visible() {
+                // Overlay visible => hide toast window and pause pure toast timers.
+                toast_state_for_poll
+                    .borrow_mut()
+                    .pause_all(std::time::Instant::now());
                 toast_for_poll.hide_with_pause();
             } else {
+                // Overlay hidden => show toasts if any.
+                //
+                // NOTE: do NOT resume timers here; resume is controlled by:
+                // - hover pause callback (pointer leave), and
+                // - focus notify handler above (overlay losing focus).
                 toast_for_poll.show_if_any();
             }
             gtk::glib::ControlFlow::Continue
@@ -406,8 +548,42 @@ impl NotificationsPlugin {
             .cloned()
             .unwrap_or_else(|| Rc::new(|_id| {}));
 
+        // Install the pure-state-driven toast tick once the callbacks exist.
+        //
+        // This tick:
+        // - drives expiry via `ToastState::expire_due(now)`,
+        // - emits DBus NotificationClosed(EXPIRED) for expired toasts,
+        // - updates progress incrementally (no full re-render loop).
+        //
+        // NOTE: This is intentionally GTK-main-loop driven (no Send requirements).
         // DND state shared with the plugin (single source of truth via DBus Inhibited flag).
         let inhibited = self.inhibited.clone();
+
+        // Wire toast view hover pause -> pure toast state pause/resume.
+        //
+        // Policy per your decision: on hover, pause expiry timers only.
+        // We keep calling `update_progress` (it will be stable while paused anyway).
+        {
+            let toast_state_for_hover = toast_state.clone();
+            toast.set_on_hover_pause_changed(std::rc::Rc::new(move |hovered: bool| {
+                let now = std::time::Instant::now();
+                if hovered {
+                    toast_state_for_hover.borrow_mut().pause_all(now);
+                } else {
+                    toast_state_for_hover.borrow_mut().resume_all(now);
+                }
+            }));
+        }
+
+        NotificationsPlugin::install_toast_tick(
+            toast.clone(),
+            toast_state.clone(),
+            ctl.clone(),
+            outbound.clone(),
+            on_dismiss_expired.clone(),
+            on_dismiss_user.clone(),
+            inhibited.clone(),
+        );
 
         // Drain ingress on the GTK main context to avoid capturing non-Send GTK/controller state
         // inside a tokio task.

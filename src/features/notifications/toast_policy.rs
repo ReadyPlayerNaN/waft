@@ -15,6 +15,7 @@
 //! - On user dismissal (toast close button / overlay dismiss), call `dismiss_user(...)` / `dismiss_overlay(...)`.
 //! - Periodically (or via timer wheel) call `expire_due(now)` to get ids that should expire.
 //! - Keep overlay history/model separate: expiry MUST NOT remove from overlay history, only from toasts.
+//! - For rendering, call `visible_items(now)` to get per-id progress metadata (elapsed/ttl).
 //!
 //! Notes:
 //! - We intentionally store `ToastEntry` metadata separately from the notification model.
@@ -23,6 +24,26 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
+
+/// Render item for the toast view layer.
+///
+/// This intentionally lives in the toast policy module so the GTK view can be "dumb":
+/// it renders a list of items and emits events, while all timing/progress math lives in pure state.
+#[derive(Debug, Clone)]
+pub struct ToastRenderItem<T> {
+    pub id: NotificationId,
+    pub payload: T,
+    pub ttl: Option<Duration>,
+    pub elapsed: Duration,
+}
+
+/// Pure per-toast progress metadata (no GTK).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToastProgress {
+    pub id: NotificationId,
+    pub ttl: Option<Duration>,
+    pub elapsed: Duration,
+}
 
 /// Stable toast id type (matches `Notification.id` in the rest of the codebase).
 pub type NotificationId = u64;
@@ -67,7 +88,6 @@ impl Default for ToastPolicy {
 /// The plugin keeps full notification data in its model/history.
 #[derive(Debug, Clone)]
 pub struct ToastEntry {
-    pub id: NotificationId,
     pub urgency: Urgency,
     pub has_actions: bool,
 
@@ -82,9 +102,8 @@ pub struct ToastEntry {
 }
 
 impl ToastEntry {
-    pub fn new(id: NotificationId, urgency: Urgency, has_actions: bool, now: Instant) -> Self {
+    pub fn new(_id: NotificationId, urgency: Urgency, has_actions: bool, now: Instant) -> Self {
         Self {
-            id,
             urgency,
             has_actions,
             created_at: now,
@@ -185,27 +204,6 @@ impl ToastState {
         }
     }
 
-    pub fn policy(&self) -> ToastPolicy {
-        self.policy
-    }
-
-    pub fn set_policy(&mut self, policy: ToastPolicy) {
-        self.policy = policy;
-    }
-
-    pub fn set_max_visible(&mut self, max_visible: usize) {
-        self.max_visible = max_visible.max(1);
-    }
-
-    pub fn set_max_stack_len(&mut self, max_stack_len: usize) {
-        self.max_stack_len = max_stack_len.max(self.max_visible).max(1);
-        self.trim_stack();
-    }
-
-    pub fn is_paused(&self) -> bool {
-        self.paused
-    }
-
     /// Pause all timers.
     pub fn pause_all(&mut self, now: Instant) {
         if self.paused {
@@ -286,8 +284,29 @@ impl ToastState {
     }
 
     /// Compute which ids are currently visible, most-recent-first, capped to `max_visible`.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn visible_ids(&self) -> Vec<NotificationId> {
         self.stack.iter().copied().take(self.max_visible).collect()
+    }
+
+    /// Compute per-id progress metadata for currently visible toasts.
+    ///
+    /// This is intended for the GTK view layer to render timeout indicators without owning any
+    /// timer/pause/expiry logic.
+    pub fn visible_items(&self, now: Instant) -> Vec<ToastProgress> {
+        self.stack
+            .iter()
+            .copied()
+            .take(self.max_visible)
+            .filter_map(|id| {
+                let e = self.entries.get(&id)?;
+                Some(ToastProgress {
+                    id,
+                    ttl: e.ttl(self.policy),
+                    elapsed: e.effective_elapsed(now),
+                })
+            })
+            .collect()
     }
 
     /// Expire any due toasts (toast-only), returning commands for the caller.
