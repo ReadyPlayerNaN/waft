@@ -3,6 +3,7 @@ use std::{cell::RefCell, sync::Arc};
 use anyhow::Result;
 use async_trait::async_trait;
 use gtk::prelude::Cast;
+use tokio::sync::mpsc;
 
 use crate::plugins::{Plugin, Slot, Widget};
 
@@ -18,10 +19,9 @@ const PLUGIN_KEY: &str = "plugin::notifications";
 /// Responsibilities:
 /// - Own the notifications controller (model + view) so state persists across UI rebuilds.
 /// - Provide a left-column widget via the plugin `widgets()` API.
-/// - Expose an imperative `clear()` API that can be invoked from outside (via the registry handle).
+
 ///
 /// Notes:
-/// - Ingress is intentionally ignored for now; we seed hardcoded notifications.
 /// - IMPORTANT: `initialize()` must be GTK-free (it may run before GTK is initialized).
 ///   We lazily create GTK widgets in `widgets()` on first access.
 /// - This plugin intentionally returns the same widget instance each time `widgets()` is called.
@@ -33,27 +33,20 @@ pub struct NotificationsPlugin {
     /// This is created lazily in `widgets()` after GTK is initialized.
     controller: RefCell<Option<Arc<NotificationsController>>>,
 
-    /// Optional externally-invokable handle to `clear()`.
+    /// Optional ingress receiver for DBus-derived notification events.
     ///
-    /// This is cheap to clone and can be kept by callers that want to trigger `clear` without
-    /// reaching into the plugin registry.
+    /// IMPORTANT: this receiver must be drained on the GTK main context (or bridged into it)
+    /// and must never be processed from a tokio task that captures GTK/controller state.
+    ingress_rx: RefCell<Option<mpsc::UnboundedReceiver<crate::notifications_dbus::IngressEvent>>>,
+
+    /// Outbound sender for UI-originated events (actions/close) that the DBus server
+    /// translates into DBus signals.
+    outbound_tx: RefCell<Option<mpsc::UnboundedSender<crate::notifications_dbus::OutboundEvent>>>,
+
+    /// Whether we've already installed the UI->DBus close hook on the controller.
     ///
-    /// Available only after the controller is created.
-    clear_handle: RefCell<Option<NotificationsClearHandle>>,
-}
-
-/// Cloneable handle that can clear notifications without requiring access to the plugin trait object.
-///
-/// This is mainly useful if you want to wire "Clear notifications" to hotkeys / commands, etc.
-#[derive(Clone)]
-pub struct NotificationsClearHandle {
-    ctl: Arc<NotificationsController>,
-}
-
-impl NotificationsClearHandle {
-    pub fn clear(&self) {
-        self.ctl.clear();
-    }
+    /// This is done once after the controller is created (GTK must be initialized).
+    ui_close_hook_installed: RefCell<bool>,
 }
 
 impl NotificationsPlugin {
@@ -61,26 +54,25 @@ impl NotificationsPlugin {
         Self {
             initialized: false,
             controller: RefCell::new(None),
-            clear_handle: RefCell::new(None),
+
+            ingress_rx: RefCell::new(None),
+            outbound_tx: RefCell::new(None),
+            ui_close_hook_installed: RefCell::new(false),
         }
     }
 
-    /// Get a cloneable handle that can clear notifications.
+    /// Provide a DBus ingress receiver and outbound sender to connect this plugin to the
+    /// `org.freedesktop.Notifications` DBus server running at the app level.
     ///
-    /// This will return `None` until after the controller/widget is created (lazy in `widgets()`).
-    pub fn clear_handle(&self) -> Option<NotificationsClearHandle> {
-        self.clear_handle.borrow().clone()
-    }
-
-    /// Imperative clear method.
-    ///
-    /// This is intended for "outside invocation" via the registry handle:
-    /// `let guard = plugin_handle.lock().unwrap(); ...` (you'll need downcasting if you only
-    /// have `dyn Plugin`).
-    pub fn clear(&self) {
-        if let Some(ctl) = self.controller.borrow().as_ref() {
-            ctl.clear();
-        }
+    /// This should be called during app startup (before `initialize_all()` / GTK activation).
+    pub fn with_dbus_ingress(
+        self,
+        ingress_rx: mpsc::UnboundedReceiver<crate::notifications_dbus::IngressEvent>,
+        outbound_tx: mpsc::UnboundedSender<crate::notifications_dbus::OutboundEvent>,
+    ) -> Self {
+        *self.ingress_rx.borrow_mut() = Some(ingress_rx);
+        *self.outbound_tx.borrow_mut() = Some(outbound_tx);
+        self
     }
 
     fn controller(&self) -> Arc<NotificationsController> {
@@ -97,112 +89,182 @@ impl NotificationsPlugin {
             return;
         }
 
+        // Start with seeded notifications (useful even without DBus ingress).
         let initial = Self::seed_notifications();
         let ctl = Arc::new(NotificationsController::new(initial));
+
+        // If DBus ingress is configured, start consuming it now that GTK is initialized
+        // (controller/view exist).
+        //
+        // IMPORTANT: do not spawn tokio tasks that capture `NotificationsController` (non-Send).
+        // Ingress must be drained on the GTK main loop (or bridged into it without moving GTK types
+        // across threads).
+        self.start_ingress_consumer(ctl.clone());
+
+        // Hook UI-driven closes into DBus outbound events (NotificationClosed).
+        self.install_ui_close_hook(ctl.clone());
 
         // Render once so the widget is populated before being inserted.
         ctl.render_now();
 
-        *self.clear_handle.borrow_mut() = Some(NotificationsClearHandle { ctl: ctl.clone() });
         *self.controller.borrow_mut() = Some(ctl);
     }
 
     fn seed_notifications() -> Vec<Notification> {
-        // Keep this hardcoded for now per request (ignore ingress).
-        // Use stable-ish IDs so tests or future behavior isn't dependent on runtime randomness.
-        let now = std::time::SystemTime::now();
+        vec![]
+    }
 
-        vec![
-            Notification::new(
-                1,
-                "Mail".to_string(),
-                "New message from Alex".to_string(),
-                "Subject: Shipping update".to_string(),
-                now,
-                NotificationIcon::Themed("mail-unread-symbolic".to_string()),
-            )
-            .with_action("Reply", || {
-                println!("Reply to email from Alex");
-            })
-            .with_action("Archive", || {
-                println!("Archived email from Alex");
-            })
-            .with_default_action(|| {
-                println!("Opened email from Alex");
-            }),
-            Notification::new(
-                2,
-                "Calendar".to_string(),
-                "Meeting starts in 10 minutes".to_string(),
-                "Design review — Room 3B".to_string(),
-                now,
-                NotificationIcon::Themed("x-office-calendar-symbolic".to_string()),
-            )
-            .with_action("Snooze", || {
-                println!("Snoozed meeting reminder");
-            })
-            .with_action("Open", || {
-                println!("Opened meeting");
-            })
-            .with_default_action(|| {
-                println!("Opened calendar meeting");
-            }),
-            Notification::new(
-                3,
-                "Chat".to_string(),
-                "Mina mentioned you".to_string(),
-                "Can you take a look at the PR?".to_string(),
-                now,
-                NotificationIcon::Themed("mail-message-new-symbolic".to_string()),
-            )
-            .with_action("Open", || {
-                println!("Opened chat thread");
-            })
-            .with_action("Mark as read", || {
-                println!("Marked as read");
-            })
-            .with_default_action(|| {
-                println!("Opened chat message");
-            }),
-            Notification::new(
-                4,
-                "System".to_string(),
-                "Update available".to_string(),
-                "A new system update is ready to install".to_string(),
-                now,
-                NotificationIcon::Themed("software-update-available-symbolic".to_string()),
-            )
-            .with_action("Install", || {
-                println!("Install update");
-            })
-            .with_action("Later", || {
-                println!("Remind later");
-            }),
-            Notification::new(
-                5,
-                "Music".to_string(),
-                "Now playing".to_string(),
-                "Your favorite song is playing".to_string(),
-                now,
-                NotificationIcon::Themed("multimedia-player-symbolic".to_string()),
-            ),
-            Notification::new(
-                6,
-                "Music".to_string(),
-                "Now playing".to_string(),
-                "Your favorite song is playing".to_string(),
-                now,
-                NotificationIcon::Themed("multimedia-player-symbolic".to_string()),
-            ),
-            Notification::new(
-                7,
-                "Music".to_string(),
-                "Now playing".to_string(),
-                "Your favorite song is playing".to_string(),
-                now,
-                NotificationIcon::Themed("multimedia-player-symbolic".to_string()),
-            ),
-        ]
+    fn start_ingress_consumer(&self, ctl: Arc<NotificationsController>) {
+        // If no ingress is configured, do nothing (plugin still works with seeded notifications).
+        let Some(mut ingress_rx) = self.ingress_rx.borrow_mut().take() else {
+            return;
+        };
+
+        let outbound = self.outbound_tx.borrow().clone();
+
+        // Drain ingress on the GTK main context to avoid capturing non-Send GTK/controller state
+        // inside a tokio task.
+        //
+        // This is intentionally simple: we periodically try_recv() and apply updates.
+        gtk::glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+            while let Ok(ev) = ingress_rx.try_recv() {
+                match ev {
+                    crate::notifications_dbus::IngressEvent::Notify { id, request } => {
+                        // Replacement semantics (policy): create a new notification and delete old.
+                        if request.replaces_id != 0 {
+                            let removed = ctl.remove(request.replaces_id as u64);
+                            if removed {
+                                if let Some(tx) = outbound.as_ref() {
+                                    let _ = tx.send(
+                                        crate::notifications_dbus::OutboundEvent::NotificationClosed {
+                                            id: request.replaces_id,
+                                            reason: crate::notifications_dbus::close_reasons::CLOSED_BY_CALL,
+                                        },
+                                    );
+                                }
+                            }
+                        }
+
+                        // Build actions that emit DBus signals (ActionInvoked) and then close
+                        // the notification (policy: "close it after action button click").
+                        let mut n = Notification::new(
+                            id as u64,
+                            request.app_name,
+                            request.summary,
+                            request.body,
+                            std::time::SystemTime::now(),
+                            // Minimal icon policy for now: prefer themed name if present,
+                            // otherwise fall back to a default.
+                            if !request.app_icon.is_empty() {
+                                NotificationIcon::Themed(request.app_icon)
+                            } else {
+                                NotificationIcon::Themed("dialog-information-symbolic".to_string())
+                            },
+                        );
+
+                        for a in request.actions {
+                            let action_key = a.key.clone();
+                            let outbound = outbound.clone();
+                            let id = id;
+                            let ctl_for_action = ctl.clone();
+
+                            n = n.with_keyed_action(a.key, a.label, move || {
+                                if let Some(tx) = outbound.as_ref() {
+                                    let _ = tx.send(
+                                        crate::notifications_dbus::OutboundEvent::ActionInvoked {
+                                            id,
+                                            action_key: action_key.clone(),
+                                        },
+                                    );
+                                }
+
+                                // Close the notification after action click (UI-side removal).
+                                let removed = ctl_for_action.remove(id as u64);
+                                if removed {
+                                    if let Some(tx) = outbound.as_ref() {
+                                        let _ = tx.send(
+                                            crate::notifications_dbus::OutboundEvent::NotificationClosed {
+                                                id,
+                                                reason: crate::notifications_dbus::close_reasons::DISMISSED_BY_USER,
+                                            },
+                                        );
+                                    }
+                                }
+                            });
+                        }
+
+                        // Default action: treat as ActionInvoked(id, "default") then close.
+                        if let Some(tx) = outbound.as_ref() {
+                            let id = id;
+                            let tx = tx.clone();
+                            let ctl_for_action = ctl.clone();
+                            let outbound = outbound.clone();
+
+                            n = n.with_default_action(move || {
+                                let _ = tx.send(
+                                    crate::notifications_dbus::OutboundEvent::ActionInvoked {
+                                        id,
+                                        action_key: "default".to_string(),
+                                    },
+                                );
+
+                                let removed = ctl_for_action.remove(id as u64);
+                                if removed {
+                                    if let Some(tx) = outbound.as_ref() {
+                                        let _ = tx.send(
+                                            crate::notifications_dbus::OutboundEvent::NotificationClosed {
+                                                id,
+                                                reason: crate::notifications_dbus::close_reasons::DISMISSED_BY_USER,
+                                            },
+                                        );
+                                    }
+                                }
+                            });
+                        }
+
+                        ctl.add(n);
+                    }
+
+                    crate::notifications_dbus::IngressEvent::CloseNotification { id } => {
+                        let removed = ctl.remove(id as u64);
+                        if removed {
+                            if let Some(tx) = outbound.as_ref() {
+                                let _ = tx.send(
+                                    crate::notifications_dbus::OutboundEvent::NotificationClosed {
+                                        id,
+                                        reason: crate::notifications_dbus::close_reasons::CLOSED_BY_CALL,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            gtk::glib::ControlFlow::Continue
+        });
+    }
+
+    fn install_ui_close_hook(&self, ctl: Arc<NotificationsController>) {
+        // Ensure we only install once (controller persists; widgets() may be called multiple times).
+        if *self.ui_close_hook_installed.borrow() {
+            return;
+        }
+        *self.ui_close_hook_installed.borrow_mut() = true;
+
+        let outbound = self.outbound_tx.borrow().clone();
+
+        // When the user dismisses a notification via the UI close button, emit NotificationClosed.
+        ctl.set_on_notification_closed(move |id| {
+            if let Some(tx) = outbound.as_ref() {
+                let _ = tx.send(
+                    crate::notifications_dbus::OutboundEvent::NotificationClosed {
+                        id: id as u32,
+                        reason: crate::notifications_dbus::close_reasons::DISMISSED_BY_USER,
+                    },
+                );
+            }
+        });
     }
 }
 
@@ -226,7 +288,7 @@ impl Plugin for NotificationsPlugin {
     async fn cleanup(&mut self) -> Result<()> {
         // For now, just drop state. If we ever add background tasks, they'll be stopped here.
         *self.controller.borrow_mut() = None;
-        *self.clear_handle.borrow_mut() = None;
+
         self.initialized = false;
         Ok(())
     }

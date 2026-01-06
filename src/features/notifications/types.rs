@@ -15,14 +15,37 @@ pub enum NotificationIcon {
 /// A notification action (button).
 #[derive(Clone)]
 pub struct NotificationAction {
+    /// Stable action identifier (DBus `action_key` / id).
+    ///
+    /// For `org.freedesktop.Notifications`, this is the string that must be emitted
+    /// in the `ActionInvoked(id, action_key)` signal.
+    pub key: String,
+
+    /// Human-readable label shown in the UI.
     pub label: String,
+
     pub on_invoke: Rc<dyn Fn() + 'static>,
+}
+
+impl NotificationAction {
+    pub fn new<F: Fn() + 'static>(
+        key: impl Into<String>,
+        label: impl Into<String>,
+        on_invoke: F,
+    ) -> Self {
+        Self {
+            key: key.into(),
+            label: label.into(),
+            on_invoke: Rc::new(on_invoke),
+        }
+    }
 }
 
 impl std::fmt::Debug for NotificationAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Avoid printing closure details.
         f.debug_struct("NotificationAction")
+            .field("key", &self.key)
             .field("label", &self.label)
             .finish_non_exhaustive()
     }
@@ -86,15 +109,15 @@ impl Notification {
         self
     }
 
-    pub fn with_action<F: Fn() + 'static>(
+    /// Add an action with an explicit action key (DBus `action_key`) and a UI label.
+    pub fn with_keyed_action<F: Fn() + 'static>(
         mut self,
+        key: impl Into<String>,
         label: impl Into<String>,
         on_invoke: F,
     ) -> Self {
-        self.actions.push(NotificationAction {
-            label: label.into(),
-            on_invoke: Rc::new(on_invoke),
-        });
+        self.actions
+            .push(NotificationAction::new(key, label, on_invoke));
         self
     }
 }

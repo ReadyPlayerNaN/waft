@@ -1,0 +1,362 @@
+#![allow(dead_code)]
+
+//! DBus notifications server (`org.freedesktop.Notifications`) implemented with `zbus`.
+//!
+//! This module is the *server side* implementation of the freedesktop.org notifications spec.
+//! The app owns the well-known name `org.freedesktop.Notifications` on the session bus and
+//! exports `/org/freedesktop/Notifications` implementing `org.freedesktop.Notifications`.
+//!
+//! Design constraints (see `AGENTS.md`):
+//! - GTK must remain on the main thread.
+//! - This server runs on tokio and communicates with the notifications plugin/controller
+//!   via channels using `crate::notifications_dbus::{IngressEvent, OutboundEvent}`.
+//! - If `org.freedesktop.Notifications` is already owned, startup must fail (caller exits app).
+//!
+//! Implemented methods:
+//! - `GetCapabilities`
+//! - `GetServerInformation`
+//! - `Notify`
+//! - `CloseNotification`
+//!
+//! Implemented signals:
+//! - `ActionInvoked`
+//! - `NotificationClosed`
+//!
+//! This module intentionally keeps the UI layer DBus-agnostic by translating DBus calls into
+//! `IngressEvent`s and translating `OutboundEvent`s into DBus signals.
+
+use std::collections::HashMap;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU32, Ordering},
+};
+
+use anyhow::{Context, Result, anyhow};
+use tokio::sync::mpsc;
+use zbus::fdo;
+use zbus::names::{BusName, WellKnownName};
+use zbus::object_server::SignalEmitter;
+use zbus::{Connection, connection::Builder as ConnectionBuilder};
+use zvariant::{Array, OwnedValue, Value};
+
+use crate::notifications_dbus::{
+    ActionSpec, HintValue, IngressEvent, NotifyRequest, OutboundEvent, advertised_capabilities,
+    close_reasons,
+};
+
+const BUS_NAME: &str = "org.freedesktop.Notifications";
+const OBJECT_PATH: &str = "/org/freedesktop/Notifications";
+
+/// A DBus notifications server that owns `org.freedesktop.Notifications`.
+///
+/// Intended usage (from `main.rs` startup, before GTK runs):
+/// - create `(ingress_tx, ingress_rx)` and `(outbound_tx, outbound_rx)`
+/// - `NotificationsDbusServer::connect().await?`
+/// - `server.start(ingress_tx, outbound_rx).await?`
+/// - pass `ingress_rx` + `outbound_tx` into `NotificationsPlugin::with_dbus_ingress(...)`
+pub struct NotificationsDbusServer {
+    next_id: Arc<AtomicU32>,
+}
+
+impl NotificationsDbusServer {
+    /// Construct a server instance. This does not touch DBus yet.
+    pub async fn connect() -> Result<Self> {
+        Ok(Self {
+            next_id: Arc::new(AtomicU32::new(1)),
+        })
+    }
+
+    /// Start the DBus server.
+    ///
+    /// This will:
+    /// - connect to the session bus
+    /// - fail if `org.freedesktop.Notifications` is already owned
+    /// - request the name and export `/org/freedesktop/Notifications`
+    /// - spawn a background task translating `OutboundEvent` -> DBus signals
+    pub async fn start(
+        &self,
+        ingress_tx: mpsc::UnboundedSender<IngressEvent>,
+        outbound_rx: mpsc::UnboundedReceiver<OutboundEvent>,
+    ) -> Result<()> {
+        // Per policy: fail during startup if someone else already owns the name.
+        {
+            let probe = Connection::session()
+                .await
+                .context("Failed to connect to DBus session bus (probe)")?;
+            let dbus = fdo::DBusProxy::new(&probe)
+                .await
+                .context("Failed to create org.freedesktop.DBus proxy (probe)")?;
+
+            let name: BusName<'_> = BusName::try_from(BUS_NAME)
+                .map_err(|e| anyhow!(e))
+                .context("Invalid BusName for NameHasOwner")?;
+
+            if dbus
+                .name_has_owner(name)
+                .await
+                .context("DBus NameHasOwner(org.freedesktop.Notifications) failed")?
+            {
+                return Err(anyhow!(
+                    "DBus name `{}` is already owned; exiting per policy",
+                    BUS_NAME
+                ));
+            }
+        }
+
+        let service = NotificationsService::new(self.next_id.clone(), ingress_tx);
+
+        let name = WellKnownName::try_from(BUS_NAME)
+            .map_err(|e| anyhow!(e))
+            .context("Invalid well-known DBus name for notifications server")?;
+
+        // Build the server connection and export the object.
+        let conn = ConnectionBuilder::session()
+            .context("Failed to create DBus ConnectionBuilder")?
+            .name(name)
+            .context("Failed to request org.freedesktop.Notifications name")?
+            .serve_at(OBJECT_PATH, service.clone())
+            .context("Failed to serve notifications object at /org/freedesktop/Notifications")?
+            .build()
+            .await
+            .context("Failed to build DBus server connection")?;
+
+        // Spawn outbound signal loop.
+        tokio::spawn(outbound_signal_loop(conn.clone(), outbound_rx));
+
+        Ok(())
+    }
+}
+
+/// Internal DBus interface implementation.
+///
+/// This type is registered at `/org/freedesktop/Notifications`.
+#[derive(Clone)]
+struct NotificationsService {
+    inner: Arc<NotificationsServiceInner>,
+}
+
+struct NotificationsServiceInner {
+    next_id: Arc<AtomicU32>,
+    ingress_tx: mpsc::UnboundedSender<IngressEvent>,
+    _last_sender: Mutex<Option<String>>,
+}
+
+impl NotificationsService {
+    fn new(next_id: Arc<AtomicU32>, ingress_tx: mpsc::UnboundedSender<IngressEvent>) -> Self {
+        Self {
+            inner: Arc::new(NotificationsServiceInner {
+                next_id,
+                ingress_tx,
+                _last_sender: Mutex::new(None),
+            }),
+        }
+    }
+
+    fn allocate_id(&self) -> u32 {
+        // Ensure we never return 0.
+        let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
+        if id == 0 {
+            // Wrapped to 0; skip to 1.
+            self.inner.next_id.store(2, Ordering::Relaxed);
+            1
+        } else {
+            id
+        }
+    }
+
+    async fn emit_action_invoked(emitter: &SignalEmitter<'_>, id: u32, action_key: &str) {
+        // zbus v5: use `emit` on `SignalEmitter` and provide (interface, member, args).
+        let _ = emitter
+            .emit(
+                "org.freedesktop.Notifications",
+                "ActionInvoked",
+                &(id, action_key),
+            )
+            .await;
+    }
+
+    async fn emit_notification_closed(emitter: &SignalEmitter<'_>, id: u32, reason: u32) {
+        let _ = emitter
+            .emit(
+                "org.freedesktop.Notifications",
+                "NotificationClosed",
+                &(id, reason),
+            )
+            .await;
+    }
+}
+
+#[zbus::interface(name = "org.freedesktop.Notifications")]
+impl NotificationsService {
+    /// GetCapabilities() -> as
+    fn get_capabilities(&self) -> Vec<String> {
+        advertised_capabilities()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    /// GetServerInformation() -> (s, s, s, s)
+    ///
+    /// Returns: (name, vendor, version, spec_version)
+    fn get_server_information(&self) -> (String, String, String, String) {
+        (
+            "sacrebleui".to_string(),
+            "sacrebleui".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+            "1.2".to_string(),
+        )
+    }
+
+    /// Notify(s app_name, u replaces_id, s app_icon, s summary, s body, as actions, a{sv} hints, i expire_timeout) -> u
+    ///
+    /// Behavioral notes (per user decisions / AGENTS.md):
+    /// - Return DBus-generated IDs.
+    /// - `replaces_id`: receiver creates new notification and removes the old one.
+    async fn notify(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        app_name: String,
+        replaces_id: u32,
+        app_icon: String,
+        summary: String,
+        body: String,
+        actions: Vec<String>,
+        hints: HashMap<String, OwnedValue>,
+        expire_timeout: i32,
+    ) -> fdo::Result<u32> {
+        if let Some(sender) = header.sender().map(|s| s.to_string()) {
+            let mut guard = self.inner._last_sender.lock().unwrap();
+            *guard = Some(sender);
+        }
+
+        let id = self.allocate_id();
+
+        let request = NotifyRequest {
+            app_name,
+            replaces_id,
+            app_icon,
+            summary,
+            body,
+            actions: parse_actions(actions),
+            hints: decode_hints(hints),
+            expire_timeout_ms: expire_timeout,
+        };
+
+        let _ = self
+            .inner
+            .ingress_tx
+            .send(IngressEvent::Notify { id, request });
+
+        Ok(id)
+    }
+
+    /// CloseNotification(u id) -> ()
+    ///
+    /// The UI/plugin will remove and then emit NotificationClosed(reason=CLOSED_BY_CALL).
+    async fn close_notification(&self, id: u32) -> fdo::Result<()> {
+        let _ = self
+            .inner
+            .ingress_tx
+            .send(IngressEvent::CloseNotification { id });
+        Ok(())
+    }
+}
+
+async fn outbound_signal_loop(
+    conn: Connection,
+    mut outbound_rx: mpsc::UnboundedReceiver<OutboundEvent>,
+) {
+    let emitter = match SignalEmitter::new(&conn, OBJECT_PATH) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    while let Some(ev) = outbound_rx.recv().await {
+        match ev {
+            OutboundEvent::ActionInvoked { id, action_key } => {
+                NotificationsService::emit_action_invoked(&emitter, id, &action_key).await;
+            }
+            OutboundEvent::NotificationClosed { id, reason } => {
+                NotificationsService::emit_notification_closed(&emitter, id, reason).await;
+            }
+        }
+    }
+}
+
+fn parse_actions(actions_raw: Vec<String>) -> Vec<ActionSpec> {
+    // Spec: alternating action_key, label.
+    let mut out = Vec::new();
+    let mut it = actions_raw.into_iter();
+    loop {
+        let Some(key) = it.next() else { break };
+        let Some(label) = it.next() else { break };
+        out.push(ActionSpec { key, label });
+    }
+    out
+}
+
+fn decode_hints(hints: HashMap<String, OwnedValue>) -> HashMap<String, HintValue> {
+    // Best-effort decoding. Unknown/unsupported variants are ignored.
+    let mut out = HashMap::new();
+    for (k, v) in hints {
+        if let Some(h) = decode_hint_value(&v) {
+            out.insert(k, h);
+        }
+    }
+    out
+}
+
+fn decode_hint_value(v: &OwnedValue) -> Option<HintValue> {
+    // Conservative subset of types commonly used in notification hints:
+    // - bool, i32/u32, i64/u64, f64, string, bytes (ay).
+    //
+    // In zvariant v5, `OwnedValue::downcast_ref::<T>()` returns `Result<T, _>`.
+    let val: Value<'_> = match v.downcast_ref::<Value>() {
+        Ok(r) => r,
+        Err(_) => return None,
+    };
+
+    match val {
+        Value::Bool(b) => Some(HintValue::Bool(b)),
+        Value::I16(i) => Some(HintValue::I32(i as i32)),
+        Value::I32(i) => Some(HintValue::I32(i)),
+        Value::I64(i) => Some(HintValue::I64(i)),
+        Value::U16(u) => Some(HintValue::U32(u as u32)),
+        Value::U32(u) => Some(HintValue::U32(u)),
+        Value::U64(u) => Some(HintValue::U64(u)),
+        Value::F64(f) => Some(HintValue::F64(f)),
+        Value::Str(s) => Some(HintValue::String(s.to_string())),
+        Value::Signature(s) => Some(HintValue::String(s.to_string())),
+        Value::Array(a) => decode_bytes_array(a),
+        _ => None,
+    }
+}
+
+fn decode_bytes_array(a: Array<'_>) -> Option<HintValue> {
+    // Only accept `ay` (array of u8).
+    let mut bytes: Vec<u8> = Vec::new();
+    for item in a.iter() {
+        match item {
+            Value::U8(b) => bytes.push(*b),
+            _ => return None,
+        }
+    }
+    if bytes.is_empty() {
+        None
+    } else {
+        Some(HintValue::Bytes(bytes))
+    }
+}
+
+// Keep the close reason constants referenced somewhere so the module stays aligned with policy,
+// even if the server doesn't emit close signals for actions directly.
+#[allow(unused)]
+fn _close_reason_policy_guards() -> (u32, u32, u32, u32) {
+    (
+        close_reasons::EXPIRED,
+        close_reasons::DISMISSED_BY_USER,
+        close_reasons::CLOSED_BY_CALL,
+        close_reasons::UNDEFINED,
+    )
+}

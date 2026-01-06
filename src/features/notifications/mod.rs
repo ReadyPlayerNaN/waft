@@ -17,4 +17,3 @@ pub mod types;
 pub mod view;
 
 pub use plugin::NotificationsPlugin;
-pub use types::{Notification, NotificationAction, NotificationGroup, NotificationIcon};

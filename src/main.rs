@@ -21,6 +21,10 @@ mod features;
 mod plugins;
 mod ui;
 
+// DBus server-side ingress for `org.freedesktop.Notifications` (separate from `DbusHandle`).
+mod notifications_dbus;
+mod notifications_dbus_server;
+
 use features::notifications::NotificationsPlugin;
 
 use adw::prelude::*;
@@ -958,6 +962,27 @@ async fn main() -> Result<()> {
     // Spawn IPC server task.
     tokio::spawn(run_ipc_server(listener, tx));
 
+    // DBus notifications server wiring (only if notifications plugin is enabled).
+    //
+    // Policy:
+    // - We own `org.freedesktop.Notifications`.
+    // - If the name is already taken, we fail during startup (exit the entire app).
+    let (notif_ingress_tx, notif_ingress_rx) =
+        mpsc::unbounded_channel::<crate::notifications_dbus::IngressEvent>();
+    let (notif_outbound_tx, notif_outbound_rx) =
+        mpsc::unbounded_channel::<crate::notifications_dbus::OutboundEvent>();
+
+    let notifications_dbus_server =
+        crate::notifications_dbus_server::NotificationsDbusServer::connect()
+            .await
+            .context("Failed to connect DBus notifications server")?;
+
+    // Start the server now; if another daemon owns the name, this returns an error and we exit.
+    notifications_dbus_server
+        .start(notif_ingress_tx.clone(), notif_outbound_rx)
+        .await
+        .context("Failed to start DBus notifications server")?;
+
     // GTK/Adwaita app.
     let app = adw::Application::builder()
         .application_id("dev.sacrebleui.Overlay")
@@ -983,7 +1008,9 @@ async fn main() -> Result<()> {
         features::sunsetr::SunsetrPlugin::new().with_ui_event_sender(ui_event_tx.clone()),
     );
 
-    let _ = registry.register(NotificationsPlugin::new());
+    let _ = registry.register(
+        NotificationsPlugin::new().with_dbus_ingress(notif_ingress_rx, notif_outbound_tx.clone()),
+    );
 
     // Initialize all plugins BEFORE GTK activation.
     //

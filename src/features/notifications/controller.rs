@@ -16,6 +16,13 @@ pub struct NotificationsController {
     model: Rc<RefCell<NotificationsModel>>,
     view: Rc<NotificationsView>,
     render_now: Rc<dyn Fn()>,
+
+    /// Optional hook invoked when a notification is closed/dismissed from the UI.
+    ///
+    /// This exists to allow higher layers (e.g. a DBus notifications server integration) to
+    /// emit external side-effects (like `NotificationClosed`) without putting DBus concepts
+    /// into the view layer.
+    on_notification_closed: Rc<RefCell<Option<Rc<dyn Fn(u64)>>>>,
 }
 
 impl NotificationsController {
@@ -28,6 +35,9 @@ impl NotificationsController {
 
         let view = Rc::new(NotificationsView::new());
 
+        let on_notification_closed: Rc<RefCell<Option<Rc<dyn Fn(u64)>>>> =
+            Rc::new(RefCell::new(None));
+
         // Two-step wiring for render function:
         // - create a slot that can later store the final Rc<dyn Fn()>
         // - create render_impl which captures the slot and looks up render_now for callbacks
@@ -36,6 +46,7 @@ impl NotificationsController {
         let model_for_render = model.clone();
         let view_for_render = view.clone();
         let render_slot_for_render = render_slot.clone();
+        let on_notification_closed_for_render = on_notification_closed.clone();
 
         let render_impl: Rc<dyn Fn()> = Rc::new(move || {
             let snapshot = model_for_render.borrow().snapshot();
@@ -49,8 +60,15 @@ impl NotificationsController {
             let on_close_notification = {
                 let model = model_for_render.clone();
                 let render_now = render_now.clone();
+                let on_notification_closed = on_notification_closed_for_render.clone();
                 move |id: u64| {
-                    model.borrow_mut().remove(id);
+                    // UI-driven close (dismiss by user).
+                    let removed = model.borrow_mut().remove(id);
+                    if removed {
+                        if let Some(cb) = on_notification_closed.borrow().as_ref() {
+                            (cb)(id);
+                        }
+                    }
                     (render_now)();
                 }
             };
@@ -88,6 +106,7 @@ impl NotificationsController {
             model: model.clone(),
             view: view.clone(),
             render_now: render_impl.clone(),
+            on_notification_closed,
         };
 
         // Wire "Clear" button => model.clear() + rerender.
@@ -103,6 +122,13 @@ impl NotificationsController {
         controller
     }
 
+    /// Install/replace a hook that will be called when the user dismisses a notification in the UI.
+    ///
+    /// This hook is invoked *after* the notification is removed from the model.
+    pub fn set_on_notification_closed<F: Fn(u64) + 'static>(&self, f: F) {
+        *self.on_notification_closed.borrow_mut() = Some(Rc::new(f));
+    }
+
     /// Get the root widget to insert into the UI.
     pub fn widget(&self) -> gtk::Widget {
         self.view.widget()
@@ -110,12 +136,6 @@ impl NotificationsController {
 
     /// Force a render using the current model snapshot.
     pub fn render_now(&self) {
-        (self.render_now)();
-    }
-
-    /// Clear all notifications (imperative API, intended for "outside invocations").
-    pub fn clear(&self) {
-        self.model.borrow_mut().clear();
         (self.render_now)();
     }
 

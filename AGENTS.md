@@ -1,5 +1,9 @@
 # sacrebleui – Architecture Notes
 
+## Agent rule: clarification before implementation
+
+Before implementing any user-requested change, always ask for clarification first. Do not start coding until the user confirms the key behavioral decisions (especially around DBus ownership, threading/main-loop boundaries, and public API/data model changes).
+
 This document captures the current architectural direction, especially around plugins, UI, and state flow. It’s meant for future “agents” (human or otherwise) working on this codebase.
 
 ---
@@ -280,6 +284,98 @@ Recommended structure (current pattern):
 - `view.rs` – GTK rendering
 - `controller.rs` – wiring + imperative methods (`add/remove/clear`)
 - `plugin.rs` – plugin glue + seeding data (until ingress is implemented)
+
+#### DBus notifications (`org.freedesktop.Notifications`) capabilities
+
+DBus implementation note / direction:
+
+- Server-side implementation: use `zbus` (it provides a clearer, higher-level API for owning a well-known name, exporting an interface, and emitting signals).
+- Client-side implementation: currently uses `dbus` + `dbus-tokio` via `DbusHandle`.
+- Intent: migrate DBus *client* code to `zbus` as well in a future **big-bang** change (not incremental), to avoid maintaining two DBus stacks long-term. Until that migration happens, having `zbus` (server) + `dbus` (clients) is considered an acceptable transitional state.
+
+This app can optionally act as the notification server by owning the session-bus name `org.freedesktop.Notifications`.
+
+##### Manual smoke test (DBus notifications)
+
+Preconditions:
+
+- No other notification daemon can be running (GNOME Shell notifications, `dunst`, `mako`, etc.), because only one process can own `org.freedesktop.Notifications`.
+- Start `sacrebleui` normally. If the name is already owned, the app should fail during startup (by design).
+
+1) Verify sacrebleui owns `org.freedesktop.Notifications`
+
+In a separate terminal, run:
+
+- `busctl --user status org.freedesktop.Notifications`
+
+This should show an owner (a unique name like `:1.123`) and should not report “not found”.
+
+2) Send a notification via libnotify (`notify-send`)
+
+Send a simple notification:
+
+- `notify-send "sacrebleui smoke test" "Hello from notify-send"`
+
+You should see it appear in the notifications UI.
+
+3) Send a notification with markup (body-markup)
+
+- `notify-send "Markup test" "<b>bold</b> <i>italic</i> <span foreground='red'>red</span>"`
+
+The body should render with markup in the UI.
+
+4) Send a notification with an action, and verify DBus signals
+
+Start a DBus monitor for signals:
+
+- `dbus-monitor --session "type='signal',interface='org.freedesktop.Notifications'"`
+
+In another terminal, send a notification with an action:
+
+- `notify-send --action=default=Open "Action test" "Click the action button"`
+
+Now click the action button in the UI. `dbus-monitor` should show:
+
+- an `ActionInvoked` signal containing the notification id and the action key (e.g. `"default"`), and
+- a `NotificationClosed` signal after the action (per policy: close after action click).
+
+5) Verify CloseNotification from the client side
+
+This is easiest if you capture the id from `dbus-monitor` output (it will include the id in the signals).
+Once you have an id, call CloseNotification manually:
+
+- `gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.freedesktop.Notifications.CloseNotification <ID>`
+
+The notification should be removed from the UI and `dbus-monitor` should show `NotificationClosed` with reason “closed by call”.
+
+Notes:
+
+- Replacement semantics (`replaces_id`) are client-driven. If you test with a client that sets `replaces_id`, the app should remove the old notification and create a new one.
+- Persistence is not supported (in-memory only), so restarting the app clears notifications.
+
+Operational policy:
+
+- If `org.freedesktop.Notifications` is already owned by another process, the app should **fail during startup** (exit the entire app). No “replace owner” behavior is attempted.
+
+Capabilities we support / intend to advertise via `GetCapabilities` (must match actual UI behavior):
+
+- `actions` – supported (notification buttons).
+- `body` – supported (notification body text).
+- `body-markup` – supported (render markup in GTK).
+
+Capabilities that are intentionally unimplemented / not advertised (documented so we don’t over-promise to clients):
+
+- Persistence (`persistence`) – not supported (notifications are in-memory only).
+- Desktop-entry / icon resolution via desktop files – not supported (see “app icon lookup” limitation above).
+- Any additional capabilities not explicitly listed above should be treated as unsupported unless implemented and documented here.
+
+Behavioral notes (must remain consistent):
+
+- `Notify` returns DBus-generated notification IDs.
+- `replaces_id`: create a new notification and remove the old one.
+- Clicking an action in the UI emits `ActionInvoked` and then closes the notification (also emitting `NotificationClosed` with the appropriate reason).
+- Dismissing a notification in the UI emits `NotificationClosed` (reason = dismissed by user).
+- `CloseNotification` from clients is supported and results in removal + `NotificationClosed`.
 
 ### Feature toggles (still evolving)
 

@@ -27,7 +27,14 @@ anyhow = "1"
 # Async traits
 async-trait = "0.1"
 
-# DBus communication
+# DBus communication (client side)
 dbus = "0.9"
 dbus-tokio = "0.7.6"
 futures-channel = "0.3"
+
+# DBus communication (server side: org.freedesktop.Notifications)
+# Intentionally separate from the existing dbus/dbus-tokio client stack.
+#
+# NOTE: We use zbus v5+ for the newer attribute macros / interface helpers.
+zbus = "5"
+zvariant = "5"
