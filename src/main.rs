@@ -29,6 +29,8 @@ use gtk::glib;
 use gtk4_layer_shell::LayerShell;
 use plugins::registry::PluginRegistry;
 use serde::Deserialize;
+
+use crate::ui::overlay_animation::{self, FadeConfig};
 use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -212,8 +214,13 @@ fn build_ui(
     // - GNOME-shell-like quick settings tiles (custom layout; NOT Adw rows)
     let css = r#"
     window {
-        border-radius: 8px;
-        border: 1px solid alpha(@window_fg_color, 0.2);
+        background: transparent;
+    }
+
+    .window-content {
+      border-radius: 8px;
+      border: 1px solid alpha(@window_fg_color, 0.2);
+      background: @window_bg_color;
     }
 
     /* The class is applied to the button itself, so target it directly. */
@@ -446,6 +453,11 @@ fn build_ui(
     window.set_margin(gtk4_layer_shell::Edge::Top, 16);
     window.set_margin(gtk4_layer_shell::Edge::Left, 16);
     window.set_margin(gtk4_layer_shell::Edge::Right, 16);
+
+    let content = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .css_classes(["window-content"])
+        .build();
 
     // Content root: overall vertical stack with a header spanning both columns,
     // and then a two-column split below it.
@@ -861,7 +873,8 @@ fn build_ui(
     // Wrap in Clamp for nicer width (make both columns wider).
     let clamp = adw::Clamp::builder().maximum_size(1040).build();
     clamp.set_child(Some(&root));
-    window.set_content(Some(&clamp));
+    content.append(&clamp);
+    window.set_content(Some(&content));
 
     // Auto-hide behavior: Escape hides, focus-out hides.
     // Escape via EventControllerKey.
@@ -870,7 +883,15 @@ fn build_ui(
         let window = window.clone();
         move |_, keyval, _keycode, _state| {
             if keyval == gdk::Key::Escape {
-                window.set_visible(false);
+                let anim_cfg = FadeConfig::default();
+                let w = window.clone();
+                if let Some(child) = w.child() {
+                    overlay_animation::fade_out(&child, anim_cfg, move || {
+                        w.set_visible(false);
+                    });
+                } else {
+                    w.set_visible(false);
+                }
                 return glib::Propagation::Stop;
             }
             glib::Propagation::Proceed
@@ -883,7 +904,15 @@ fn build_ui(
         let window = window.clone();
         move |w| {
             if !w.is_active() {
-                window.set_visible(false);
+                let anim_cfg = FadeConfig::default();
+                let w2 = window.clone();
+                if let Some(child) = w2.child() {
+                    overlay_animation::fade_out(&child, anim_cfg, move || {
+                        w2.set_visible(false);
+                    });
+                } else {
+                    w2.set_visible(false);
+                }
             }
         }
     });
@@ -894,10 +923,23 @@ fn build_ui(
 fn show_overlay(window: &gtk::Window) {
     window.present();
     window.set_visible(true);
+
+    let anim_cfg = FadeConfig::default();
+    if let Some(child) = window.child() {
+        overlay_animation::fade_in_after_present(&child, anim_cfg);
+    }
 }
 
 fn hide_overlay(window: &gtk::Window) {
-    window.set_visible(false);
+    let anim_cfg = FadeConfig::default();
+    let w = window.clone();
+    if let Some(child) = w.child() {
+        overlay_animation::fade_out(&child, anim_cfg, move || {
+            w.set_visible(false);
+        });
+    } else {
+        w.set_visible(false);
+    }
 }
 
 fn toggle_overlay(window: &gtk::Window) {

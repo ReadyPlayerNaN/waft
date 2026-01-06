@@ -4,6 +4,7 @@
 
 pub mod agenda;
 pub mod features;
+pub mod overlay_animation;
 
 /// High-level UI events that can be emitted by plugins or internal logic
 /// and consumed by the UI layer (e.g., to update FeaturesModel).
