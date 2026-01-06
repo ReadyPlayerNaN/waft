@@ -228,6 +228,17 @@ impl ToastState {
         }
     }
 
+    /// Clear all toast entries and stack state.
+    ///
+    /// This is useful for "Do Not Disturb" semantics where you want to ensure that
+    /// any queued/pending toasts do not appear later when DND is turned off.
+    ///
+    /// Note: this is toast-state only; it does not affect the main notification history/model.
+    pub fn clear_all(&mut self) {
+        self.stack.clear();
+        self.entries.clear();
+    }
+
     /// Push a new notification id to the toast stack as "most recent".
     ///
     /// If the id already exists, it is moved to the front and its entry metadata is replaced.

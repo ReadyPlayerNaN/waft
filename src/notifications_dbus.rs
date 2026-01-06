@@ -123,6 +123,14 @@ pub enum IngressEvent {
 
     /// A client called `CloseNotification(id)`.
     CloseNotification { id: u32 },
+
+    /// Notification inhibition ("Do Not Disturb") state changed.
+    ///
+    /// KDE-compatible behavior: some implementations expose an `Inhibited` flag via
+    /// `org.freedesktop.Notifications`. We treat that as the single source of truth.
+    ///
+    /// This is intentionally per-session only (in-memory).
+    InhibitedChanged { inhibited: bool },
 }
 
 /// Outbound events from UI/controller -> DBus server.

@@ -12,6 +12,7 @@
 //! - `plugin.rs` – plugin glue + seeding data (until ingress is implemented)
 
 pub mod controller;
+pub mod gate;
 pub mod model;
 pub mod plugin;
 pub mod toast_policy;

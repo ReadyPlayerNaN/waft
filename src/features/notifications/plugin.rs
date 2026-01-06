@@ -6,9 +6,11 @@ use gtk::prelude::{Cast, GtkWindowExt, WidgetExt};
 use tokio::sync::mpsc;
 
 use crate::plugins::{Plugin, Slot, Widget};
+use crate::ui::UiEvent;
 
 use super::{
     controller::NotificationsController,
+    gate,
     toast_policy::{ToastPolicy as PureToastPolicy, ToastState, Urgency as ToastUrgency},
     toast_view::ToastView,
     types::{DbusExpireTimeout, Notification, NotificationIcon, NotificationUrgency},
@@ -30,6 +32,15 @@ const TOAST_MAX_VISIBLE: usize = 5;
 /// - This plugin intentionally returns the same widget instance each time `widgets()` is called.
 pub struct NotificationsPlugin {
     initialized: bool,
+
+    /// Optional UI event sender (provided by the app) so we can update the features tile state.
+    ui_event_tx: RefCell<Option<mpsc::UnboundedSender<UiEvent>>>,
+
+    /// Per-session "Do Not Disturb" / inhibition flag.
+    ///
+    /// Single source of truth: the DBus `org.freedesktop.Notifications` inhibition flag
+    /// (KDE-compatible `Inhibited`). This is intentionally not persisted across restarts.
+    inhibited: Rc<std::cell::Cell<bool>>,
 
     /// Owned controller that contains the GTK widget + model state.
     ///
@@ -82,6 +93,8 @@ impl NotificationsPlugin {
     pub fn new() -> Self {
         Self {
             initialized: false,
+            ui_event_tx: RefCell::new(None),
+            inhibited: Rc::new(std::cell::Cell::new(false)),
             controller: RefCell::new(None),
             toast_view: RefCell::new(None),
             main_window: RefCell::new(None),
@@ -114,6 +127,15 @@ impl NotificationsPlugin {
         self
     }
 
+    /// Provide a UI event sender so this plugin can update feature tile state (active/status).
+    ///
+    /// This is optional: if not configured, the tile may not visually update even if the
+    /// underlying state changes.
+    pub fn with_ui_event_sender(mut self, tx: mpsc::UnboundedSender<UiEvent>) -> Self {
+        *self.ui_event_tx.borrow_mut() = Some(tx);
+        self
+    }
+
     /// Provide the main overlay window handle so we can hide/pause toast popups while the main
     /// window is visible or focused.
     ///
@@ -135,7 +157,15 @@ impl NotificationsPlugin {
         ctl: &Arc<NotificationsController>,
         on_dismiss_expired: Rc<dyn Fn(u64)>,
         on_dismiss_user: Rc<dyn Fn(u64)>,
+        inhibited: bool,
     ) {
+        // When inhibited (DND), we still keep `toast_state` up-to-date so ordering/expiry logic
+        // remains correct, but we don't show any toast popups.
+        if inhibited {
+            toast.render(Vec::new(), || {}, |_| {}, |_| {});
+            return;
+        }
+
         // Resolve visible toast ids to full `Notification` objects from the overlay model.
         //
         // NOTE: This requires `NotificationsController::get_by_id` to exist. If it does not yet,
@@ -310,6 +340,7 @@ impl NotificationsPlugin {
                     &ctl_for_cb,
                     on_exp,
                     on_user,
+                    false,
                 );
             });
 
@@ -357,6 +388,7 @@ impl NotificationsPlugin {
                     &ctl_for_cb,
                     on_exp,
                     on_user,
+                    false,
                 );
             });
 
@@ -374,13 +406,52 @@ impl NotificationsPlugin {
             .cloned()
             .unwrap_or_else(|| Rc::new(|_id| {}));
 
+        // DND state shared with the plugin (single source of truth via DBus Inhibited flag).
+        let inhibited = self.inhibited.clone();
+
         // Drain ingress on the GTK main context to avoid capturing non-Send GTK/controller state
         // inside a tokio task.
         //
         // This is intentionally simple: we periodically try_recv() and apply updates.
+        let ui_event_tx = self.ui_event_tx.borrow().clone();
         gtk::glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
             while let Ok(ev) = ingress_rx.try_recv() {
                 match ev {
+                    crate::notifications_dbus::IngressEvent::InhibitedChanged {
+                        inhibited: new_inhibited,
+                    } => {
+                        inhibited.set(new_inhibited);
+
+                        // Update the feature tile state, if the app provided a UI event sender.
+                        if let Some(tx) = ui_event_tx.as_ref() {
+                            let _ = tx.send(UiEvent::FeatureActiveChanged {
+                                key: "do_not_disturb".to_string(),
+                                active: new_inhibited,
+                            });
+                        }
+
+                        // If we're entering DND, ensure that any currently-stacked toasts never
+                        // "show up later" when DND is turned off.
+                        //
+                        // This matches the policy:
+                        // - notifications received during DND should never toast
+                        // - and anything that was pending/stacked while enabling DND should be dropped
+                        if new_inhibited {
+                            toast_state.borrow_mut().clear_all();
+                        }
+
+                        // Re-render to immediately hide any visible toasts when entering DND,
+                        // or re-show currently-visible toasts when exiting DND.
+                        NotificationsPlugin::render_toasts_now(
+                            &toast,
+                            &toast_state,
+                            &ctl,
+                            on_dismiss_expired.clone(),
+                            on_dismiss_user.clone(),
+                            inhibited.get(),
+                        );
+                    }
+
                     crate::notifications_dbus::IngressEvent::Notify { id, request } => {
                         // Replacement semantics (policy): create a new notification and delete old.
                         if request.replaces_id != 0 {
@@ -469,6 +540,9 @@ impl NotificationsPlugin {
                             // IMPORTANT: this closure is `FnMut`; clone the `toast` handle so we don't move it.
                             let toast_for_action = toast.clone();
 
+                            // IMPORTANT: this closure is `FnMut`; clone the inhibition flag handle so we don't move it.
+                            let inhibited_for_action = inhibited.clone();
+
                             n = n.with_keyed_action(a.key, a.label, move || {
                                 if let Some(tx) = outbound.as_ref() {
                                     let _ = tx.send(
@@ -499,6 +573,7 @@ impl NotificationsPlugin {
                                     &ctl_for_action,
                                     on_dismiss_expired.clone(),
                                     on_dismiss_user.clone(),
+                                    inhibited_for_action.get(),
                                 );
                             });
                         }
@@ -519,6 +594,9 @@ impl NotificationsPlugin {
 
                             // IMPORTANT: this closure is `FnMut`; clone the `toast` handle so we don't move it.
                             let toast_for_action = toast.clone();
+
+                            // IMPORTANT: this closure is `FnMut`; clone the inhibition flag handle so we don't move it.
+                            let inhibited_for_action = inhibited.clone();
 
                             n = n.with_default_action(move || {
                                 let _ = tx.send(
@@ -548,42 +626,50 @@ impl NotificationsPlugin {
                                     &ctl_for_action,
                                     on_dismiss_expired.clone(),
                                     on_dismiss_user.clone(),
+                                    inhibited_for_action.get(),
                                 );
                             });
                         }
 
                         ctl.add(n.clone());
 
-                        // Push into toast policy state (most recent first).
+                        // Push into toast policy state (most recent first), subject to the toast gate.
                         //
-                        // NOTE: The pure toast policy tracks only metadata needed for expiry.
-                        // The full notification payload stays in the overlay model/history.
-                        let urgency = match n.urgency {
-                            NotificationUrgency::Critical => ToastUrgency::Critical,
-                            NotificationUrgency::Low => ToastUrgency::Low,
-                            NotificationUrgency::Normal => ToastUrgency::Normal,
-                        };
-                        let has_actions = !n.actions.is_empty();
-                        toast_state.borrow_mut().push(
-                            n.id,
-                            urgency,
-                            has_actions,
-                            std::time::Instant::now(),
-                        );
+                        // Policy:
+                        // - In DND (inhibited), ONLY critical notifications are allowed to toast.
+                        // - Non-critical notifications received during DND must never toast later.
+                        //
+                        // The full notification payload still goes into the overlay model/history.
+                        if gate::should_toast(inhibited.get(), n.urgency) {
+                            let urgency = match n.urgency {
+                                NotificationUrgency::Critical => ToastUrgency::Critical,
+                                NotificationUrgency::Low => ToastUrgency::Low,
+                                NotificationUrgency::Normal => ToastUrgency::Normal,
+                            };
+                            let has_actions = !n.actions.is_empty();
+                            toast_state.borrow_mut().push(
+                                n.id,
+                                urgency,
+                                has_actions,
+                                std::time::Instant::now(),
+                            );
 
-                        // Render toast popup from toast state.
-                        //
-                        // IMPORTANT: tell the toast view which id was just pushed so it can
-                        // distinguish a truly-new incoming toast (place at top immediately) from
-                        // a "fill-in" toast that becomes visible only because a slot was freed
-                        // during an exit animation (place at bottom).
-                        toast.note_pushed(id as u64);
+                            // Render toast popup from toast state.
+                            //
+                            // IMPORTANT: tell the toast view which id was just pushed so it can
+                            // distinguish a truly-new incoming toast (place at top immediately) from
+                            // a "fill-in" toast that becomes visible only because a slot was freed
+                            // during an exit animation (place at bottom).
+                            toast.note_pushed(id as u64);
+                        }
+
                         NotificationsPlugin::render_toasts_now(
                             &toast,
                             &toast_state,
                             &ctl,
                             on_dismiss_expired.clone(),
                             on_dismiss_user.clone(),
+                            inhibited.get(),
                         );
                     }
 
@@ -613,6 +699,7 @@ impl NotificationsPlugin {
                             &ctl,
                             on_dismiss_expired.clone(),
                             on_dismiss_user.clone(),
+                            inhibited.get(),
                         );
                     }
                 }
@@ -662,6 +749,7 @@ impl NotificationsPlugin {
                     &ctl_for_toast_render,
                     on_exp,
                     on_user,
+                    false,
                 );
             }
 
@@ -707,7 +795,69 @@ impl Plugin for NotificationsPlugin {
     }
 
     fn feature_toggles(&self) -> Vec<crate::plugins::FeatureToggle> {
-        vec![]
+        // Only expose DND toggle when we are acting as the notifications server (i.e., DBus ingress exists).
+        // if self.ingress_rx.borrow().is_none() || self.outbound_tx.borrow().is_none() {
+        //     return vec![];
+        // }
+
+        // Ensure controller/toast ingress wiring exists so the toggle can actually affect server-side behavior.
+        // This is GTK-safe (we're on the GTK thread during UI build) and keeps the plugin state-owning.
+        self.ensure_controller();
+
+        let inhibited = self.inhibited.clone();
+        let ui_event_tx = self.ui_event_tx.borrow().clone();
+
+        let spec = crate::ui::FeatureSpec::contentless_with_toggle(
+            "do_not_disturb",
+            "Do not disturb",
+            "notifications-disabled-symbolic",
+            inhibited.get(),
+            move |_key, current_active| {
+                let inhibited = inhibited.clone();
+                let ui_event_tx = ui_event_tx.clone();
+
+                async move {
+                    let new_active = !current_active;
+
+                    // Option A: call into our own exported DBus server so DBus remains the
+                    // single source of truth (KDE-compatible `Inhibited` flag).
+                    //
+                    // This is best-effort: if it fails, we still update local gating so the UI works.
+                    let mut dbus_ok = false;
+                    if let Ok(conn) = zbus::Connection::session().await {
+                        if let Ok(proxy) = zbus::Proxy::new(
+                            &conn,
+                            "org.freedesktop.Notifications",
+                            "/org/freedesktop/Notifications",
+                            "org.freedesktop.Notifications",
+                        )
+                        .await
+                        {
+                            let call_res: Result<(), _> =
+                                proxy.call("SetInhibited", &(new_active)).await;
+                            dbus_ok = call_res.is_ok();
+                        }
+                    }
+
+                    if !dbus_ok {
+                        inhibited.set(new_active);
+                    }
+
+                    // Update the tile active state via UI event bus.
+                    if let Some(tx) = ui_event_tx.as_ref() {
+                        let _ = tx.send(UiEvent::FeatureActiveChanged {
+                            key: "do_not_disturb".to_string(),
+                            active: new_active,
+                        });
+                    }
+                }
+            },
+        );
+
+        vec![crate::plugins::FeatureToggle {
+            el: spec,
+            weight: 5,
+        }]
     }
 
     fn widgets(&self) -> Vec<Widget> {

@@ -25,8 +25,11 @@ use gtk;
 // Async, void toggle callback.
 // - Runs on the GTK main loop via `glib::MainContext::spawn_local`.
 // - Should emit `UiEvent`s to update UI state (active/status/menu) rather than returning values.
+//
+// IMPORTANT: This must remain GTK-friendly. Do NOT require `Send + Sync` here,
+// because plugin callbacks may capture `Rc`, GTK widgets, or other main-thread-only state.
 type OnToggleCallback =
-    Rc<dyn Fn(&'static str, bool) -> Pin<Box<dyn Future<Output = ()> + 'static>> + Send + Sync>;
+    Rc<dyn Fn(&'static str, bool) -> Pin<Box<dyn Future<Output = ()> + 'static>> + 'static>;
 
 /// Declarative description of a feature tile.
 ///
@@ -77,7 +80,7 @@ impl FeatureSpec {
         on_toggle: F,
     ) -> Self
     where
-        F: Fn(&'static str, bool) -> Fut + Send + Sync + 'static,
+        F: Fn(&'static str, bool) -> Fut + 'static,
         Fut: Future<Output = ()> + 'static,
     {
         Self {

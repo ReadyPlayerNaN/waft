@@ -804,12 +804,6 @@ fn build_ui(
     };
 
     let mut specs = vec![
-        ui::FeatureSpec::contentless(
-            "do_not_disturb",
-            "Do not disturb",
-            "notifications-disabled-symbolic",
-            false,
-        ),
         ui::FeatureSpec::contentless("syncthing", "Syncthing", "folder-remote-symbolic", false),
         ui::FeatureSpec::contentful(
             "wifi",
@@ -1050,7 +1044,9 @@ async fn main() -> Result<()> {
     );
 
     let _ = registry.register(
-        NotificationsPlugin::new().with_dbus_ingress(notif_ingress_rx, notif_outbound_tx.clone()),
+        NotificationsPlugin::new()
+            .with_dbus_ingress(notif_ingress_rx, notif_outbound_tx.clone())
+            .with_ui_event_sender(ui_event_tx.clone()),
     );
 
     // Initialize all plugins BEFORE GTK activation.

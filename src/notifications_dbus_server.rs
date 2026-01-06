@@ -17,10 +17,13 @@
 //! - `GetServerInformation`
 //! - `Notify`
 //! - `CloseNotification`
+//! - `GetInhibited` (KDE-compatible, best-effort)
+//! - `SetInhibited` (KDE-compatible, best-effort)
 //!
 //! Implemented signals:
 //! - `ActionInvoked`
 //! - `NotificationClosed`
+//! - `InhibitedChanged` (best-effort; non-standard but useful for syncing UI)
 //!
 //! This module intentionally keeps the UI layer DBus-agnostic by translating DBus calls into
 //! `IngressEvent`s and translating `OutboundEvent`s into DBus signals.
@@ -28,7 +31,7 @@
 use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicU32, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -54,8 +57,13 @@ const OBJECT_PATH: &str = "/org/freedesktop/Notifications";
 /// - `NotificationsDbusServer::connect().await?`
 /// - `server.start(ingress_tx, outbound_rx).await?`
 /// - pass `ingress_rx` + `outbound_tx` into `NotificationsPlugin::with_dbus_ingress(...)`
+///
+/// KDE compatibility note:
+/// Some daemons (and KDE clients) use a non-standard inhibition flag. We expose it via
+/// `GetInhibited` / `SetInhibited` and an in-memory flag that is per-session only.
 pub struct NotificationsDbusServer {
     next_id: Arc<AtomicU32>,
+    inhibited: Arc<AtomicBool>,
 }
 
 impl NotificationsDbusServer {
@@ -63,6 +71,7 @@ impl NotificationsDbusServer {
     pub async fn connect() -> Result<Self> {
         Ok(Self {
             next_id: Arc::new(AtomicU32::new(1)),
+            inhibited: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -103,7 +112,8 @@ impl NotificationsDbusServer {
             }
         }
 
-        let service = NotificationsService::new(self.next_id.clone(), ingress_tx);
+        let service =
+            NotificationsService::new(self.next_id.clone(), self.inhibited.clone(), ingress_tx);
 
         let name = WellKnownName::try_from(BUS_NAME)
             .map_err(|e| anyhow!(e))
@@ -137,15 +147,21 @@ struct NotificationsService {
 
 struct NotificationsServiceInner {
     next_id: Arc<AtomicU32>,
+    inhibited: Arc<AtomicBool>,
     ingress_tx: mpsc::UnboundedSender<IngressEvent>,
     _last_sender: Mutex<Option<String>>,
 }
 
 impl NotificationsService {
-    fn new(next_id: Arc<AtomicU32>, ingress_tx: mpsc::UnboundedSender<IngressEvent>) -> Self {
+    fn new(
+        next_id: Arc<AtomicU32>,
+        inhibited: Arc<AtomicBool>,
+        ingress_tx: mpsc::UnboundedSender<IngressEvent>,
+    ) -> Self {
         Self {
             inner: Arc::new(NotificationsServiceInner {
                 next_id,
+                inhibited,
                 ingress_tx,
                 _last_sender: Mutex::new(None),
             }),
@@ -184,6 +200,16 @@ impl NotificationsService {
             )
             .await;
     }
+
+    async fn emit_inhibited_changed(emitter: &SignalEmitter<'_>, inhibited: bool) {
+        let _ = emitter
+            .emit(
+                "org.freedesktop.Notifications",
+                "InhibitedChanged",
+                &(inhibited),
+            )
+            .await;
+    }
 }
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
@@ -206,6 +232,35 @@ impl NotificationsService {
             env!("CARGO_PKG_VERSION").to_string(),
             "1.2".to_string(),
         )
+    }
+
+    /// KDE-compatible inhibition getter (non-standard).
+    ///
+    /// This is intentionally per-session only (in-memory).
+    fn get_inhibited(&self) -> bool {
+        self.inner.inhibited.load(Ordering::Relaxed)
+    }
+
+    /// KDE-compatible inhibition setter (non-standard).
+    ///
+    /// This is intentionally per-session only (in-memory).
+    async fn set_inhibited(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        inhibited: bool,
+    ) -> fdo::Result<()> {
+        self.inner.inhibited.store(inhibited, Ordering::Relaxed);
+
+        // Best-effort signal for any listeners (including our own UI, if it ever chooses to listen).
+        NotificationsService::emit_inhibited_changed(&emitter, inhibited).await;
+
+        // Also notify the in-process UI/plugin so it can apply server-side DND gating.
+        let _ = self
+            .inner
+            .ingress_tx
+            .send(IngressEvent::InhibitedChanged { inhibited });
+
+        Ok(())
     }
 
     /// Notify(s app_name, u replaces_id, s app_icon, s summary, s body, as actions, a{sv} hints, i expire_timeout) -> u
