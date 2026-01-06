@@ -514,28 +514,14 @@ fn build_ui(
         .margin_end(32)
         .build();
 
-    // Header: two-line date/time (dummy locale-formatted strings for now).
+    // Header: plugin widgets (Slot::Top).
+    //
+    // The clock is now provided by `features::clock::ClockPlugin`.
     let header = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .spacing(2)
         .build();
 
-    let date_label = gtk::Label::builder()
-        .label("Mon, 01 Jan 2026")
-        .xalign(0.0)
-        .css_classes(["title-3", "dim-label"])
-        .build();
-
-    let time_label = gtk::Label::builder()
-        .label("12:34")
-        .xalign(0.0)
-        .css_classes(["title-1"])
-        .build();
-
-    header.append(&date_label);
-    header.append(&time_label);
-
-    // Plugin widgets: Slot::Top -> header
     for widget in registry.get_widgets_for_slot(crate::plugins::bindings::Slot::Top) {
         header.append(&widget);
     }
@@ -1034,6 +1020,8 @@ async fn main() -> Result<()> {
     let mut registry = PluginRegistry::new();
 
     // Register plugins and inject a UI event sender into those that support it.
+    let _ = registry.register(features::clock::ClockPlugin::new());
+
     let _ = registry.register(
         features::darkman::DarkmanPlugin::new(Arc::new(dbus))
             .with_ui_event_sender(ui_event_tx.clone()),
