@@ -93,12 +93,18 @@ pub struct ActionSpec {
 pub struct NotifyRequest {
     pub app_name: String,
     pub replaces_id: u32,
-    pub app_icon: String,
     pub summary: String,
     pub body: String,
     pub actions: Vec<ActionSpec>,
     pub hints: HashMap<String, HintValue>,
     pub expire_timeout_ms: i32,
+
+    /// Best-effort icon data extracted from `app_icon` and hints such as `image-path`/`image-data`.
+    ///
+    /// - `Some` means the DBus server recognized an explicit icon supplied by the client.
+    /// - `None` means "no explicit icon"; the notifications plugin should attempt app-icon lookup
+    ///   based on app/desktop identifiers and then fall back to a default.
+    pub icon: Option<IconSpec>,
 }
 
 /// Event stream from DBus server -> notifications subsystem.
@@ -175,6 +181,7 @@ pub enum IconSpec {
     FilePath(PathBuf),
 
     /// Raw image bytes (e.g. from `image-data`). Interpretation is DBus-server-specific.
+    #[allow(dead_code)]
     Bytes(Vec<u8>),
 }
 

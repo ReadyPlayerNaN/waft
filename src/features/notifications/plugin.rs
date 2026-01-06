@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use gtk::gdk;
 use gtk::prelude::{Cast, GtkWindowExt, WidgetExt};
 use tokio::sync::mpsc;
 
@@ -423,6 +424,83 @@ impl NotificationsPlugin {
         });
     }
 
+    fn normalize_icon_name(input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        for ch in input.chars() {
+            if ch.is_ascii_whitespace() {
+                out.push('-');
+            } else if ch.is_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
+                out.push(ch.to_ascii_lowercase());
+            } else {
+                // drop punctuation and other symbols
+            }
+        }
+        if out.is_empty() {
+            input.to_ascii_lowercase()
+        } else {
+            out
+        }
+    }
+
+    fn resolve_notification_icon(
+        app_name: &str,
+        desktop_entry: Option<&str>,
+        icon_spec: Option<&crate::notifications_dbus::IconSpec>,
+    ) -> NotificationIcon {
+        use crate::notifications_dbus::IconSpec;
+
+        // 1. Explicit icon from IconSpec.
+        if let Some(spec) = icon_spec {
+            match spec {
+                IconSpec::FilePath(path) => {
+                    return NotificationIcon::FilePath(path.clone());
+                }
+                IconSpec::Themed(name) => {
+                    if !name.trim().is_empty() {
+                        return NotificationIcon::Themed(name.clone());
+                    }
+                }
+                IconSpec::Bytes(_) => {
+                    // Not yet supported in NotificationIcon; fall through to app-icon logic.
+                }
+            }
+        }
+
+        // 2. Try app icon lookup via theme, using desktop_entry or app_name as candidates.
+        let display = match gdk::Display::default() {
+            Some(d) => d,
+            None => {
+                return NotificationIcon::Themed("dialog-information-symbolic".to_string());
+            }
+        };
+
+        let theme = gtk::IconTheme::for_display(&display);
+        let mut candidates: Vec<String> = Vec::new();
+
+        if let Some(de) = desktop_entry {
+            let trimmed = de.trim();
+            if !trimmed.is_empty() {
+                // Typical desktop-entry: "org.gnome.Nautilus.desktop" -> "org.gnome.Nautilus".
+                let without_suffix = trimmed.strip_suffix(".desktop").unwrap_or(trimmed);
+                candidates.push(without_suffix.to_string());
+                candidates.push(NotificationsPlugin::normalize_icon_name(without_suffix));
+            }
+        }
+
+        if !app_name.trim().is_empty() {
+            candidates.push(NotificationsPlugin::normalize_icon_name(app_name));
+        }
+
+        for cand in candidates {
+            if theme.has_icon(&cand) {
+                return NotificationIcon::Themed(cand);
+            }
+        }
+
+        // 3. Final fallback.
+        NotificationIcon::Themed("dialog-information-symbolic".to_string())
+    }
+
     fn start_ingress_consumer(&self, ctl: Arc<NotificationsController>, toast: Arc<ToastView>) {
         // If no ingress is configured, do nothing (plugin still works with seeded notifications).
         let Some(mut ingress_rx) = self.ingress_rx.borrow_mut().take() else {
@@ -648,28 +726,36 @@ impl NotificationsPlugin {
                                 .remove_toast_only(request.replaces_id as u64);
                         }
 
+                        // Pull desktop-entry early so we can reuse it for icon resolution.
+                        let desktop_entry_hint = match request.hints.get("desktop-entry") {
+                            Some(crate::notifications_dbus::HintValue::String(de))
+                                if !de.trim().is_empty() =>
+                            {
+                                Some(de.clone())
+                            }
+                            _ => None,
+                        };
+
                         // Build actions that emit DBus signals (ActionInvoked) and then close
                         // the notification (policy: "close it after action button click").
                         let mut n = Notification::new(
                             id as u64,
-                            request.app_name,
-                            request.summary,
-                            request.body,
+                            request.app_name.clone(),
+                            request.summary.clone(),
+                            request.body.clone(),
                             std::time::SystemTime::now(),
-                            // Minimal icon policy for now: prefer themed name if present,
-                            // otherwise fall back to a default.
-                            if !request.app_icon.is_empty() {
-                                NotificationIcon::Themed(request.app_icon)
-                            } else {
-                                NotificationIcon::Themed("dialog-information-symbolic".to_string())
-                            },
+                            NotificationsPlugin::resolve_notification_icon(
+                                &request.app_name,
+                                desktop_entry_hint.as_deref(),
+                                request.icon.as_ref(),
+                            ),
                         )
                         // Respect DBus expire_timeout as a hint (with clamping) in toast TTL policy.
                         .with_expire_timeout(
                             DbusExpireTimeout::from_dbus_i32(request.expire_timeout_ms),
                         );
 
-                        // Pull urgency + desktop-entry from hints (best-effort).
+                        // Pull urgency from hints (best-effort).
                         //
                         // - urgency: spec uses u8 (0/1/2). Our HintValue set doesn't include U8,
                         //   so the DBus server should decode it as U32/I32 when possible.
@@ -692,12 +778,8 @@ impl NotificationsPlugin {
                             }
                         }
 
-                        if let Some(crate::notifications_dbus::HintValue::String(de)) =
-                            request.hints.get("desktop-entry")
-                        {
-                            if !de.trim().is_empty() {
-                                n = n.with_desktop_entry(de.clone());
-                            }
+                        if let Some(de) = desktop_entry_hint {
+                            n = n.with_desktop_entry(de);
                         }
 
                         for a in request.actions {

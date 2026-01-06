@@ -43,8 +43,8 @@ use zbus::{Connection, connection::Builder as ConnectionBuilder};
 use zvariant::{Array, OwnedValue, Value};
 
 use crate::notifications_dbus::{
-    ActionSpec, HintValue, IngressEvent, NotifyRequest, OutboundEvent, advertised_capabilities,
-    close_reasons,
+    ActionSpec, HintValue, IconSpec, IngressEvent, NotifyRequest, OutboundEvent,
+    advertised_capabilities, close_reasons,
 };
 
 const BUS_NAME: &str = "org.freedesktop.Notifications";
@@ -287,15 +287,22 @@ impl NotificationsService {
 
         let id = self.allocate_id();
 
+        // Decode hints once so we can both:
+        // - feed them into `NotifyRequest`, and
+        // - inspect them for icon-related data.
+        let decoded_hints = decode_hints(hints);
+
+        let icon = build_icon_spec(&app_icon, &decoded_hints);
+
         let request = NotifyRequest {
             app_name,
             replaces_id,
-            app_icon,
             summary,
             body,
             actions: parse_actions(actions),
-            hints: decode_hints(hints),
+            hints: decoded_hints,
             expire_timeout_ms: expire_timeout,
+            icon,
         };
 
         let _ = self
@@ -337,6 +344,39 @@ async fn outbound_signal_loop(
             }
         }
     }
+}
+
+fn build_icon_spec(app_icon: &str, hints: &HashMap<String, HintValue>) -> Option<IconSpec> {
+    // Priority:
+    // 1) `image-path` hint (string, treated as file path)
+    // 2) `image-data` hint (bytes)
+    // 3) `app_icon` argument (path-like => FilePath, otherwise Themed)
+    // 4) None (no explicit icon; UI/plugin will derive app icon / default later)
+
+    if let Some(HintValue::String(path)) = hints.get("image-path") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return Some(IconSpec::FilePath(trimmed.into()));
+        }
+    }
+
+    if let Some(HintValue::Bytes(bytes)) = hints.get("image-data") {
+        if !bytes.is_empty() {
+            return Some(IconSpec::Bytes(bytes.clone()));
+        }
+    }
+
+    let icon = app_icon.trim();
+    if !icon.is_empty() {
+        // Heuristic: treat as path if it contains a path separator or starts like a path.
+        if icon.contains('/') || icon.starts_with('.') || icon.starts_with('~') {
+            return Some(IconSpec::FilePath(icon.into()));
+        } else {
+            return Some(IconSpec::Themed(icon.to_string()));
+        }
+    }
+
+    None
 }
 
 fn parse_actions(actions_raw: Vec<String>) -> Vec<ActionSpec> {
