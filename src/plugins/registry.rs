@@ -9,7 +9,7 @@ Plugins can provide:
 
 Each plugin is responsible for connecting to outside services and providing data for the view layer.
 */
-use super::bindings::FeatureToggle;
+use super::bindings::{FeatureToggle, Slot, Widget};
 use super::plugin::Plugin;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -25,6 +25,30 @@ impl PluginRegistry {
     /// Create a new plugin registry
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Get all widget elements for a given slot, sorted by weight (heavier goes lower).
+    ///
+    /// This returns the widget `el` values so callers can directly `append()` them into
+    /// the target container (`header`, `left_col`, `right_col`).
+    pub fn get_widgets_for_slot(&self, slot: Slot) -> Vec<gtk::Box> {
+        let mut widgets: Vec<Widget> = Vec::new();
+
+        for plugin in self.plugins.values() {
+            if let Ok(guard) = plugin.lock() {
+                widgets.extend(guard.widgets());
+            }
+        }
+
+        widgets.retain(|w| {
+            matches!(
+                (&w.column, &slot),
+                (Slot::Left, Slot::Left) | (Slot::Right, Slot::Right) | (Slot::Top, Slot::Top)
+            )
+        });
+        widgets.sort_by_key(|w| w.weight);
+
+        widgets.into_iter().map(|w| w.el).collect()
     }
 
     /// Register a plugin and return a cloneable handle to it.
@@ -61,6 +85,7 @@ impl PluginRegistry {
             }
         }
 
+        println!("Plugin init complete");
         Ok(())
     }
 

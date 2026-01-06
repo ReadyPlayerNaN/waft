@@ -1,4 +1,4 @@
-use crate::plugins::{FeatureToggle, Plugin};
+use crate::plugins::{FeatureToggle, Plugin, Widget};
 use crate::ui::UiEvent;
 use crate::ui::features::FeatureSpec;
 use anyhow::{Context, Result};
@@ -498,5 +498,9 @@ impl Plugin for SunsetrPlugin {
 
     fn feature_toggles(&self) -> Vec<FeatureToggle> {
         vec![self.feature_toggle()]
+    }
+
+    fn widgets(&self) -> Vec<Widget> {
+        vec![]
     }
 }

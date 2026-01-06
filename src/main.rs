@@ -21,6 +21,8 @@ mod features;
 mod plugins;
 mod ui;
 
+use features::notifications::NotificationsPlugin;
+
 use adw::prelude::*;
 use anyhow::{Context, Result};
 use dbus::DbusHandle;
@@ -492,6 +494,11 @@ fn build_ui(
     header.append(&date_label);
     header.append(&time_label);
 
+    // Plugin widgets: Slot::Top -> header
+    for widget in registry.get_widgets_for_slot(crate::plugins::bindings::Slot::Top) {
+        header.append(&widget);
+    }
+
     root.append(&header);
 
     // Two columns (notifications left, everything else right).
@@ -553,100 +560,12 @@ fn build_ui(
     let agenda_widget = ui::build_agenda_section(meetings);
     left_col.append(&agenda_widget);
 
-    // Notifications section with controls
-    let notifications = vec![
-        ui::Notification::new(
-            1,
-            "Mail".to_string(),
-            "New message from Alex".to_string(),
-            "Subject: Shipping update".to_string(),
-            std::time::SystemTime::now(),
-            ui::NotificationIcon::Themed("mail-unread-symbolic".to_string()),
-        )
-        .with_action("Reply", || {
-            println!("Reply to email from Alex");
-        })
-        .with_action("Archive", || {
-            println!("Archived email from Alex");
-        })
-        .with_default_action(|| {
-            println!("Opened email from Alex");
-        }),
-        ui::Notification::new(
-            2,
-            "Calendar".to_string(),
-            "Meeting starts in 10 minutes".to_string(),
-            "Design review — Room 3B".to_string(),
-            std::time::SystemTime::now(),
-            ui::NotificationIcon::Themed("x-office-calendar-symbolic".to_string()),
-        )
-        .with_action("Snooze", || {
-            println!("Snoozed meeting reminder");
-        })
-        .with_action("Open", || {
-            println!("Opened meeting");
-        })
-        .with_default_action(|| {
-            println!("Opened calendar meeting");
-        }),
-        ui::Notification::new(
-            3,
-            "Chat".to_string(),
-            "Mina mentioned you".to_string(),
-            "Can you take a look at the PR?".to_string(),
-            std::time::SystemTime::now(),
-            ui::NotificationIcon::Themed("mail-message-new-symbolic".to_string()),
-        )
-        .with_action("Open", || {
-            println!("Opened chat thread");
-        })
-        .with_action("Mark as read", || {
-            println!("Marked as read");
-        })
-        .with_default_action(|| {
-            println!("Opened chat message");
-        }),
-        ui::Notification::new(
-            4,
-            "System".to_string(),
-            "Update available".to_string(),
-            "A new system update is ready to install".to_string(),
-            std::time::SystemTime::now(),
-            ui::NotificationIcon::Themed("software-update-available-symbolic".to_string()),
-        )
-        .with_action("Install", || {
-            println!("Install update");
-        })
-        .with_action("Later", || {
-            println!("Remind later");
-        }),
-        ui::Notification::new(
-            5,
-            "Music".to_string(),
-            "Now playing".to_string(),
-            "Your favorite song is playing".to_string(),
-            std::time::SystemTime::now(),
-            ui::NotificationIcon::Themed("multimedia-player-symbolic".to_string()),
-        ),
-        ui::Notification::new(
-            6,
-            "Music".to_string(),
-            "Now playing".to_string(),
-            "Your favorite song is playing".to_string(),
-            std::time::SystemTime::now(),
-            ui::NotificationIcon::Themed("multimedia-player-symbolic".to_string()),
-        ),
-        ui::Notification::new(
-            7,
-            "Music".to_string(),
-            "Now playing".to_string(),
-            "Your favorite song is playing".to_string(),
-            std::time::SystemTime::now(),
-            ui::NotificationIcon::Themed("multimedia-player-symbolic".to_string()),
-        ),
-    ];
-    let notifications_widget = ui::build_notifications_section(notifications);
-    left_col.append(&notifications_widget);
+    // Plugin widgets: Slot::Left -> left_col
+    for widget in registry.get_widgets_for_slot(crate::plugins::bindings::Slot::Left) {
+        left_col.append(&widget);
+    }
+
+    // Notifications section is now provided via the plugin system (Slot::Left).
 
     // Sliders section.
     let sliders_group = adw::PreferencesGroup::builder().title("Controls").build();
@@ -747,6 +666,11 @@ fn build_ui(
     sliders_group.add(&br_row);
 
     right_col.append(&sliders_group);
+
+    // Plugin widgets: Slot::Right -> right_col
+    for widget in registry.get_widgets_for_slot(crate::plugins::bindings::Slot::Right) {
+        right_col.append(&widget);
+    }
 
     // Features extracted into `ui::features` and driven by declarative specs (order-based layout).
     let wifi_details = {
@@ -1059,6 +983,15 @@ async fn main() -> Result<()> {
         features::sunsetr::SunsetrPlugin::new().with_ui_event_sender(ui_event_tx.clone()),
     );
 
+    let _ = registry.register(NotificationsPlugin::new());
+
+    // Initialize all plugins BEFORE GTK activation.
+    //
+    // Reason:
+    // - Some plugins do async work (DBus/timers/etc). Doing that from the GTK main context can
+    //   deadlock/starve the GTK loop and make the app appear "stuck".
+    // - Plugins that need GTK widgets must not construct them in `initialize()`; they should
+    //   construct widgets lazily in `widgets()` (after GTK is initialized).
     registry.initialize_all().await?;
 
     // Wrap registry in Arc<Mutex<..>> so GTK activation closure can lock it synchronously.
@@ -1097,6 +1030,8 @@ async fn main() -> Result<()> {
         // Important: don't present on start; hidden by default.
         // window is kept alive by the application.
     });
+
+    println!("App ready");
 
     // Run GTK main loop (this blocks until exit).
     app.run();

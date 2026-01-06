@@ -1,5 +1,5 @@
 use crate::dbus::DbusHandle;
-use crate::plugins::{FeatureToggle, Plugin};
+use crate::plugins::{FeatureToggle, Plugin, Widget};
 use crate::ui::UiEvent;
 use crate::ui::features::FeatureSpec;
 use anyhow::Result;
@@ -243,5 +243,9 @@ impl Plugin for DarkmanPlugin {
 
     fn feature_toggles(&self) -> Vec<FeatureToggle> {
         vec![self.feature_toggle()]
+    }
+
+    fn widgets(&self) -> Vec<Widget> {
+        vec![]
     }
 }

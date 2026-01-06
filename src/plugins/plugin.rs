@@ -1,4 +1,5 @@
 use super::bindings::FeatureToggle;
+use super::bindings::Widget;
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -19,4 +20,7 @@ pub trait Plugin {
 
     /// Get all feature toggles provided by this plugin
     fn feature_toggles(&self) -> Vec<FeatureToggle>;
+
+    /// Get all feature toggles provided by this plugin
+    fn widgets(&self) -> Vec<Widget>;
 }

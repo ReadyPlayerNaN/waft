@@ -29,12 +29,9 @@ pub enum UiEvent {
 pub trait UiEventSink {
     fn send(&self, event: UiEvent);
 }
-pub mod notifications;
+// Notifications have been moved under `src/features/notifications` and are now provided
+// via the plugin system (see `crate::features::notifications::NotificationsPlugin`).
 
 // Re-export commonly used builders/types if you want a flatter import surface.
 pub use agenda::{MeetingItem, build_agenda_section};
 pub use features::{FeatureSpec, build_features_section};
-pub use notifications::{
-    Notification, NotificationIcon, NotificationsModel, NotificationsView,
-    build_notifications_section,
-};

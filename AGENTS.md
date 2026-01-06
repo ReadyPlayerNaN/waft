@@ -6,6 +6,42 @@ This document captures the current architectural direction, especially around pl
 
 ## High‑level goals
 
+- Keep the app **GTK‑friendly**: GTK widgets live on the main thread; plugin APIs must not force `Send + Sync`.
+- Keep plugins **self‑contained** and **state-owning**: a plugin owns its long-lived state and UI/controller objects.
+- Prefer **explicit state flow**: external producers should communicate via clear APIs (today: direct calls; later: a bus).
+- Keep the UI layer mostly **composition + placement** (columns/slots), not business logic.
+
+---
+
+## Current plugin system (as implemented)
+
+The codebase currently has a practical plugin system that predates the “FeatureToggle-first” architecture direction.
+
+### `Plugin` trait
+
+- Location: `src/plugins/plugin.rs`
+- Not `Send` (`#[async_trait(?Send)]`), keeping it compatible with GTK and `Rc` closures.
+- Plugins can expose:
+  - `feature_toggles()` (declarative tiles; still evolving)
+  - `widgets()` (concrete GTK widgets for the overlay UI)
+
+### `Widget` and slots
+
+- Location: `src/plugins/bindings.rs`
+- Plugins return `Vec<Widget>`, where each `Widget` has:
+  - `el: gtk::Box`
+  - `weight: i32` (sorting; heavier goes lower)
+  - `column: Slot` (`Left`, `Right`, `Top`)
+
+The overlay UI collects widgets from the registry and appends them to the correct column based on `Slot`.
+
+### Registration
+
+- Registration is manual in `main.rs` via the plugin registry.
+- The registry stores plugins behind `Arc<Mutex<Box<dyn Plugin>>>`, allowing the UI to query widgets synchronously during build.
+
+---
+
 ## Notifications: app icon lookup (current limitation)
 
 When rendering notifications, we may want to display an "app icon" when no explicit notification icon is provided.
@@ -23,11 +59,6 @@ Non-goals (for now):
   - If we later need higher fidelity, we can introduce an optional desktop-file lookup layer (likely via `gio`) behind a small abstraction.
 
 This keeps the notifications UI GTK-friendly and lightweight, while leaving room for a more robust resolver later.
-
-- Plugins should be **self‑contained** providers of behavior and declarative UI.
-- The UI layer should deal only with **generic concepts** (feature tiles, sliders, menus), not plugin internals.
-- State flow should be **explicit and centralized**, minimizing hidden couplings and avoiding memory/leak patterns around callbacks or sinks.
-- The design must remain **GTK‑friendly**: all GTK widgets live on the main thread; plugins must not be forced to be `Send + Sync` unless there is a compelling need.
 
 ---
 
@@ -70,16 +101,18 @@ Because `FeatureToggle` owns its `FeatureSpec`:
 - Responsible for:
   - Naming itself.
   - Performing any initialization or cleanup work.
-  - Exposing a collection of `FeatureToggle`s describing its UI surface.
+  - Exposing UI surfaces:
+    - Today: **concrete widgets** via `widgets()` (placed into columns by `Slot`)
+    - Also supported: **feature toggles** via `feature_toggles()` (declarative tiles; still evolving)
 
 Current direction:
 
 - **`Plugin` is *not* required to be `Send + Sync`.**
-  - This is important to remain compatible with GTK and `Rc`‑based callbacks stored in `FeatureSpec`.
+  - This is important to remain compatible with GTK and `Rc`‑based callbacks stored in UI specs.
   - GTK widgets and `Rc` are not `Send`/`Sync`, so forcing plugins to be thread‑safe spills complexity everywhere.
 - `initialize` / `cleanup` are async, but they are intended to run on the main (GTK) executor, not on arbitrary worker threads.
 
-Long‑term, if a use‑case appears that truly needs multi‑threaded plugin management, we will revisit this and potentially split the trait into:
+Long‑term, if a use‑case appears that truly needs multi‑threaded plugin loading/unloading, we can revisit this and potentially split the trait into:
 - A main‑thread UI part, and
 - An internal worker part that *is* `Send + Sync` and communicates via channels.
 
@@ -117,9 +150,11 @@ When plugins change their domain state, they do not poke `FeatureSpec` instances
 
 ---
 
-## UI Event Bus
+## UI Event Bus (planned / partial)
 
 To prevent cross‑layer entanglement (plugins knowing too much about models, models knowing about plugin lifetimes) we introduce a **UI event bus**:
+
+Note: the codebase currently has `UiEvent` defined, and some plugins accept an optional sender, but the primary, working integration mechanism today is still the plugin registry + widget composition.
 
 ### `UiEvent` (conceptual)
 
@@ -167,25 +202,24 @@ This means:
 
 Each plugin can provide one or more kinds of UI surfaces:
 
-- **Feature toggles** (`FeatureToggle` with `FeatureSpec` describing a toggle tile).
-- **Other widgets** (sliders, buttons) represented as:
-  - Additional `FeatureSpec` variants, or
-  - Additional enums / specs parallel to `FeatureSpec` over time.
-- **Menus**:
-  - A `FeatureSpec` may be “contentful” (split tile) and open a details panel represented by a `MenuSpec` + child widgets.
-  - User interactions in the menu are wired back to the plugin via callbacks stored inside the spec.
+- **Concrete column widgets** via `Plugin::widgets()` returning `Vec<Widget>`:
+  - The UI places these into `Slot::Left` / `Slot::Right` / `Slot::Top`.
+  - Widgets are sorted by `weight` (heavier goes lower).
+  - Plugins should generally return **the same widget instance** across calls if the widget contains state and must persist across UI rebuilds.
+- **Feature toggles** via `Plugin::feature_toggles()` returning `Vec<FeatureToggle>`:
+  - This is the longer-term declarative direction for quick settings tiles.
+  - Not all existing UI is expressed this way yet.
 
 The plugin:
 
-- Describes *what* to render and *which callbacks* to call via `FeatureSpec`.
-- Handles actions in those callbacks (and may also emit `UiEvent`s if UI state must change).
+- Either returns fully-built widgets (today’s stable path), or
+- Describes declarative UI via specs (evolving path).
+- Owns domain and view/controller state so it can persist and be externally controlled.
 
 The UI:
 
-- Knows only how to:
-  - Render `FeatureSpec` (including menus).
-  - Call callbacks on user input.
-  - Update its model when the event bus asks for changes.
+- Composes widgets into slots/columns.
+- Renders feature specs where appropriate.
 
 ---
 
@@ -207,22 +241,21 @@ If a future need arises for multi‑threaded plugin loading/unloading:
 
 ## Design summary / Principles to follow
 
-1. **Declarative UI only in specs**
-   - Keep `FeatureSpec` / `MenuSpec` purely declarative + callbacks.
-   - Avoid embedding mutable, long‑lived plugin state inside them.
+1. **Prefer stable plugin boundaries**
+   - Plugins expose UI via `widgets()` (concrete widgets) and/or `feature_toggles()` (declarative tiles).
+   - Keep plugin surfaces simple, clone-free where possible, and GTK-friendly.
 
 2. **Plugin state is plugin‑local**
-   - Each plugin owns its own domain state.
-   - To reflect state in the UI, send `UiEvent`s; do not directly manipulate models.
+   - Each plugin owns its domain state and any UI/controller state it needs to persist across UI rebuilds.
+   - The UI should not hold the “true” state; it composes what plugins provide.
 
-3. **Central, generic models**
-   - `FeaturesModel` and similar are generic; they know nothing of plugin internals.
-   - They update purely from `UiEvent`s and are reconstructed from `FeatureSpec`s plus current model state.
+3. **Concrete widgets can still have explicit state flow**
+   - Even when returning widgets, avoid hidden couplings: expose explicit imperative APIs (handles) or events.
+   - When a bus is used, prefer plugin-agnostic `UiEvent` variants.
 
-4. **Single, central event bus**
-   - One event bus (conceptually) for UI changes.
-   - Plugins get senders; UI gets one receiver.
-   - This avoids reference cycles and makes plugin unloads safe.
+4. **Event bus is optional, not mandatory**
+   - Use `UiEvent` where it reduces coupling (especially for declarative feature tiles).
+   - For purely widget-based plugins, an imperative API/handle is acceptable.
 
 5. **Main‑thread UI, no forced `Send + Sync` on plugins**
    - Do not assume plugins are thread‑safe.
@@ -232,16 +265,30 @@ If a future need arises for multi‑threaded plugin loading/unloading:
 
 ## Implementation notes / Next steps
 
-- The codebase is being moved to:
-  - `FeatureToggle` owning `FeatureSpec` (no lifetimes).
+### Notifications pluginization (implemented)
+
+- Notifications UI has been moved under `src/features/notifications/` and is now provided by a plugin.
+- The notifications plugin:
+  - **owns** the notifications controller/model/view so it persists across UI rebuilds,
+  - returns the notifications UI as a left-column widget via `Plugin::widgets()`,
+  - exposes an imperative **clear** capability intended to be callable “from the outside”.
+
+Recommended structure (current pattern):
+
+- `types.rs` – domain types (`Notification`, `NotificationIcon`, actions, snapshot types)
+- `model.rs` – testable grouping/sorting model
+- `view.rs` – GTK rendering
+- `controller.rs` – wiring + imperative methods (`add/remove/clear`)
+- `plugin.rs` – plugin glue + seeding data (until ingress is implemented)
+
+### Feature toggles (still evolving)
+
+- The codebase is still moving toward:
+  - `FeatureToggle` owning `FeatureSpec` (no lifetimes),
   - `Plugin` without `Send + Sync` bounds.
-  - `DarkmanPlugin`:
-    - Building `FeatureSpec`s that describe its toggle UI.
-    - Handling actions in callbacks and background tasks.
-    - Emitting UI events to a central event bus rather than directly editing UI models.
 
 Future contributors should:
 
-- Preserve the separation between plugins, specs, models, and event bus.
-- Extend `UiEvent` instead of passing models directly into plugins.
+- Preserve the separation between plugins, specs, models, and any future event bus.
+- Prefer explicit, minimal coupling between plugins and UI composition.
 - Be careful when introducing any new `Send + Sync` bounds that might conflict with GTK or `Rc`‑based structures.
