@@ -793,7 +793,6 @@ fn build_ui(
             "notifications-disabled-symbolic",
             false,
         ),
-        ui::FeatureSpec::contentless("night_light", "Night light", "night-light-symbolic", false),
         ui::FeatureSpec::contentful(
             "wifi",
             "Wi‑Fi",
@@ -972,6 +971,10 @@ async fn main() -> Result<()> {
     let _ = registry.register(
         features::darkman::DarkmanPlugin::new(Arc::new(dbus))
             .with_ui_event_sender(ui_event_tx.clone()),
+    );
+
+    let _ = registry.register(
+        features::sunsetr::SunsetrPlugin::new().with_ui_event_sender(ui_event_tx.clone()),
     );
 
     registry.initialize_all().await?;
