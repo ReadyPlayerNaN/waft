@@ -6,6 +6,24 @@ This document captures the current architectural direction, especially around pl
 
 ## High‑level goals
 
+## Notifications: app icon lookup (current limitation)
+
+When rendering notifications, we may want to display an "app icon" when no explicit notification icon is provided.
+
+Current strategy (intentionally minimal dependencies):
+
+- Try to treat the notification app name / app id as a themed icon name using `gtk::IconTheme::has_icon`.
+- Apply normalization (e.g. lowercase, whitespace → `-`, strip punctuation) and try again.
+- Fall back to a default icon if no icon can be found.
+
+Non-goals (for now):
+
+- Do not add dependencies on `gio` / `GDesktopAppInfo` to resolve `.desktop` files and `Icon=` entries.
+  - This means human-readable app names like "Slack" may not reliably map to installed app icons.
+  - If we later need higher fidelity, we can introduce an optional desktop-file lookup layer (likely via `gio`) behind a small abstraction.
+
+This keeps the notifications UI GTK-friendly and lightweight, while leaving room for a more robust resolver later.
+
 - Plugins should be **self‑contained** providers of behavior and declarative UI.
 - The UI layer should deal only with **generic concepts** (feature tiles, sliders, menus), not plugin internals.
 - State flow should be **explicit and centralized**, minimizing hidden couplings and avoiding memory/leak patterns around callbacks or sinks.

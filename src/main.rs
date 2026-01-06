@@ -228,6 +228,7 @@ fn build_ui(
         font-size: 0.92em;
         padding: 3px 10px;
         min-height: 26px;
+        margin: 0;
         min-width: 0px;
     }
 
@@ -236,7 +237,6 @@ fn build_ui(
         background: alpha(@theme_bg_color, 0.7);
         border: 1px solid alpha(@borders, 0.3);
         border-radius: 8px;
-        margin-bottom: 8px;
     }
 
     .notification-scrollable {
@@ -247,7 +247,8 @@ fn build_ui(
         min-width: 32px;
         min-height: 32px;
         padding: 0;
-        opacity: 0.7;
+        margin-top: -8px;
+        margin-right: -8px;
     }
 
     .notification-close:hover {
@@ -555,55 +556,93 @@ fn build_ui(
     // Notifications section with controls
     let notifications = vec![
         ui::Notification::new(
+            1,
             "Mail".to_string(),
             "New message from Alex".to_string(),
             "Subject: Shipping update".to_string(),
-            vec!["Reply".to_string(), "Archive".to_string()],
+            std::time::SystemTime::now(),
+            ui::NotificationIcon::Themed("mail-unread-symbolic".to_string()),
         )
+        .with_action("Reply", || {
+            println!("Reply to email from Alex");
+        })
+        .with_action("Archive", || {
+            println!("Archived email from Alex");
+        })
         .with_default_action(|| {
             println!("Opened email from Alex");
         }),
         ui::Notification::new(
+            2,
             "Calendar".to_string(),
             "Meeting starts in 10 minutes".to_string(),
             "Design review — Room 3B".to_string(),
-            vec!["Snooze".to_string(), "Open".to_string()],
+            std::time::SystemTime::now(),
+            ui::NotificationIcon::Themed("x-office-calendar-symbolic".to_string()),
         )
+        .with_action("Snooze", || {
+            println!("Snoozed meeting reminder");
+        })
+        .with_action("Open", || {
+            println!("Opened meeting");
+        })
         .with_default_action(|| {
             println!("Opened calendar meeting");
         }),
         ui::Notification::new(
+            3,
             "Chat".to_string(),
             "Mina mentioned you".to_string(),
             "Can you take a look at the PR?".to_string(),
-            vec!["Open".to_string(), "Mark as read".to_string()],
+            std::time::SystemTime::now(),
+            ui::NotificationIcon::Themed("mail-message-new-symbolic".to_string()),
         )
+        .with_action("Open", || {
+            println!("Opened chat thread");
+        })
+        .with_action("Mark as read", || {
+            println!("Marked as read");
+        })
         .with_default_action(|| {
             println!("Opened chat message");
         }),
         ui::Notification::new(
+            4,
             "System".to_string(),
             "Update available".to_string(),
             "A new system update is ready to install".to_string(),
-            vec!["Install".to_string(), "Later".to_string()],
-        ),
+            std::time::SystemTime::now(),
+            ui::NotificationIcon::Themed("software-update-available-symbolic".to_string()),
+        )
+        .with_action("Install", || {
+            println!("Install update");
+        })
+        .with_action("Later", || {
+            println!("Remind later");
+        }),
         ui::Notification::new(
+            5,
             "Music".to_string(),
             "Now playing".to_string(),
             "Your favorite song is playing".to_string(),
-            vec![],
+            std::time::SystemTime::now(),
+            ui::NotificationIcon::Themed("multimedia-player-symbolic".to_string()),
         ),
         ui::Notification::new(
+            6,
             "Music".to_string(),
             "Now playing".to_string(),
             "Your favorite song is playing".to_string(),
-            vec![],
+            std::time::SystemTime::now(),
+            ui::NotificationIcon::Themed("multimedia-player-symbolic".to_string()),
         ),
         ui::Notification::new(
+            7,
             "Music".to_string(),
             "Now playing".to_string(),
             "Your favorite song is playing".to_string(),
-            vec![],
+            std::time::SystemTime::now(),
+            ui::NotificationIcon::Themed("multimedia-player-symbolic".to_string()),
         ),
     ];
     let notifications_widget = ui::build_notifications_section(notifications);
