@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc, time::SystemTime};
+use std::{path::PathBuf, rc::Rc, time::Duration, time::SystemTime};
 
 /// Notification icon representation.
 ///
@@ -10,6 +10,80 @@ pub enum NotificationIcon {
     Themed(String),
     /// A file path to an image (png/svg/etc). Will be loaded and scaled to fit.
     FilePath(PathBuf),
+}
+
+/// Notification urgency, aligned with `org.freedesktop.Notifications` (`urgency` hint).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotificationUrgency {
+    Low,
+    Normal,
+    Critical,
+}
+
+impl Default for NotificationUrgency {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
+/// DBus `expire_timeout` semantics for `org.freedesktop.Notifications.Notify`.
+///
+/// The spec provides an `expire_timeout` (milliseconds) argument. In practice:
+/// - `-1` means "server default" (client has no preference).
+/// - `0` is often used as "never expire" (persist) by clients, though servers may override.
+/// - `>0` is a client requested timeout in milliseconds.
+///
+/// We store it as an enum so toast policy can respect it (with clamping) without
+/// leaking magic numbers throughout the UI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DbusExpireTimeout {
+    /// Equivalent to DBus `expire_timeout = -1`.
+    Default,
+    /// Equivalent to DBus `expire_timeout = 0`.
+    Never,
+    /// Equivalent to DBus `expire_timeout > 0` (milliseconds).
+    Millis(u32),
+}
+
+impl DbusExpireTimeout {
+    /// Convert the DBus i32 `expire_timeout` argument into a typed representation.
+    pub fn from_dbus_i32(ms: i32) -> Self {
+        match ms {
+            -1 => Self::Default,
+            0 => Self::Never,
+            n if n > 0 => Self::Millis(n as u32),
+            // Non-standard negative values: treat as default.
+            _ => Self::Default,
+        }
+    }
+}
+
+/// Policy for toast auto-dismiss timing.
+///
+/// This defines both:
+/// - the server default behavior (when the client requested default), and
+/// - clamping bounds for client-provided timeouts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ToastPolicy {
+    /// Default timeout for notifications without actions (when DBus expire_timeout is Default).
+    pub default_ttl: Duration,
+    /// Timeout for notifications with one or more actions (when DBus expire_timeout is Default).
+    pub actions_ttl: Duration,
+    /// Minimum allowed client-requested TTL.
+    pub min_client_ttl: Duration,
+    /// Maximum allowed client-requested TTL.
+    pub max_client_ttl: Duration,
+}
+
+impl Default for ToastPolicy {
+    fn default() -> Self {
+        Self {
+            default_ttl: Duration::from_secs(8),
+            actions_ttl: Duration::from_secs(16),
+            min_client_ttl: Duration::from_secs(2),
+            max_client_ttl: Duration::from_secs(30),
+        }
+    }
 }
 
 /// A notification action (button).
@@ -66,6 +140,17 @@ pub struct Notification {
     pub icon: NotificationIcon,
     pub actions: Vec<NotificationAction>,
     pub on_default_action: Option<Rc<dyn Fn() + 'static>>,
+
+    /// DBus `urgency` hint (`critical` means "never auto-dismiss" for toast).
+    pub urgency: NotificationUrgency,
+
+    /// Optional `.desktop` id (DBus `desktop-entry` hint). Used for best-effort activation.
+    ///
+    /// Example: `"org.gnome.Nautilus.desktop"`.
+    pub desktop_entry: Option<String>,
+
+    /// DBus `expire_timeout` argument from `Notify`, preserved so toast policy can respect it.
+    pub expire_timeout: DbusExpireTimeout,
 }
 
 impl std::fmt::Debug for Notification {
@@ -101,6 +186,9 @@ impl Notification {
             icon,
             actions: vec![],
             on_default_action: None,
+            urgency: NotificationUrgency::default(),
+            desktop_entry: None,
+            expire_timeout: DbusExpireTimeout::Default,
         }
     }
 
@@ -120,6 +208,53 @@ impl Notification {
             .push(NotificationAction::new(key, label, on_invoke));
         self
     }
+
+    pub fn with_urgency(mut self, urgency: NotificationUrgency) -> Self {
+        self.urgency = urgency;
+        self
+    }
+
+    pub fn with_desktop_entry(mut self, desktop_entry: impl Into<String>) -> Self {
+        self.desktop_entry = Some(desktop_entry.into());
+        self
+    }
+
+    pub fn with_expire_timeout(mut self, expire_timeout: DbusExpireTimeout) -> Self {
+        self.expire_timeout = expire_timeout;
+        self
+    }
+
+    /// Returns the appropriate auto-dismiss TTL for toast rendering, respecting DBus
+    /// `expire_timeout` as a hint with clamping.
+    ///
+    /// Rules (requested "option 2"):
+    /// - `critical` => `None` (never auto-dismiss), regardless of DBus timeout.
+    /// - DBus `expire_timeout`:
+    ///   - `Default` (-1) => use server policy:
+    ///     - actions present => `policy.actions_ttl`
+    ///     - otherwise => `policy.default_ttl`
+    ///   - `Never` (0) => `None` (never auto-dismiss)
+    ///   - `Millis(n)` => clamp to `[policy.min_client_ttl, policy.max_client_ttl]`
+    pub fn toast_ttl(&self, policy: ToastPolicy) -> Option<Duration> {
+        if self.urgency == NotificationUrgency::Critical {
+            return None;
+        }
+
+        match self.expire_timeout {
+            DbusExpireTimeout::Default => {
+                if !self.actions.is_empty() {
+                    Some(policy.actions_ttl)
+                } else {
+                    Some(policy.default_ttl)
+                }
+            }
+            DbusExpireTimeout::Never => None,
+            DbusExpireTimeout::Millis(ms) => {
+                let requested = Duration::from_millis(ms as u64);
+                Some(requested.clamp(policy.min_client_ttl, policy.max_client_ttl))
+            }
+        }
+    }
 }
 
 /// A group of notifications (by normalized app key).
@@ -138,14 +273,6 @@ impl NotificationGroup {
     pub fn latest_ts(&self) -> Option<SystemTime> {
         self.latest().map(|n| n.created_at)
     }
-
-    pub fn len(&self) -> usize {
-        self.notifications.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.notifications.is_empty()
-    }
 }
 
 /// A snapshot suitable for rendering and testing.
@@ -154,4 +281,69 @@ pub struct NotificationsSnapshot {
     pub groups: Vec<NotificationGroup>, // sorted newest-first by group latest_ts
     pub open_group: Option<String>,     // app_key
     pub total_count: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_notification() -> Notification {
+        Notification::new(
+            1,
+            "App".to_string(),
+            "Summary".to_string(),
+            "Body".to_string(),
+            std::time::SystemTime::now(),
+            NotificationIcon::Themed("dialog-information-symbolic".to_string()),
+        )
+    }
+
+    #[test]
+    fn dbus_expire_timeout_default_uses_policy_default_or_actions() {
+        let policy = ToastPolicy::default();
+
+        let n = base_notification()
+            .with_expire_timeout(DbusExpireTimeout::Default)
+            .with_urgency(NotificationUrgency::Normal);
+
+        assert_eq!(n.toast_ttl(policy), Some(policy.default_ttl));
+
+        let n_actions = base_notification()
+            .with_expire_timeout(DbusExpireTimeout::Default)
+            .with_keyed_action("a", "A", || {});
+        assert_eq!(n_actions.toast_ttl(policy), Some(policy.actions_ttl));
+    }
+
+    #[test]
+    fn dbus_expire_timeout_never_disables_auto_dismiss() {
+        let policy = ToastPolicy::default();
+        let n = base_notification().with_expire_timeout(DbusExpireTimeout::Never);
+        assert_eq!(n.toast_ttl(policy), None);
+    }
+
+    #[test]
+    fn dbus_expire_timeout_millis_is_clamped() {
+        let policy = ToastPolicy::default();
+
+        // Below min => clamped up
+        let n_low = base_notification().with_expire_timeout(DbusExpireTimeout::Millis(1));
+        assert_eq!(n_low.toast_ttl(policy), Some(policy.min_client_ttl));
+
+        // Above max => clamped down
+        let n_high = base_notification().with_expire_timeout(DbusExpireTimeout::Millis(60_000));
+        assert_eq!(n_high.toast_ttl(policy), Some(policy.max_client_ttl));
+
+        // Inside range => unchanged
+        let n_mid = base_notification().with_expire_timeout(DbusExpireTimeout::Millis(5_000));
+        assert_eq!(n_mid.toast_ttl(policy), Some(Duration::from_millis(5_000)));
+    }
+
+    #[test]
+    fn critical_never_auto_dismisses_even_if_client_requests_timeout() {
+        let policy = ToastPolicy::default();
+        let n = base_notification()
+            .with_urgency(NotificationUrgency::Critical)
+            .with_expire_timeout(DbusExpireTimeout::Millis(1000));
+        assert_eq!(n.toast_ttl(policy), None);
+    }
 }

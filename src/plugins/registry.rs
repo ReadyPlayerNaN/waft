@@ -59,6 +59,30 @@ impl PluginRegistry {
         handle
     }
 
+    /// Try to run a type-specific hook on a plugin by downcasting the stored `dyn Plugin`.
+    ///
+    /// This is intentionally "best-effort": if the plugin isn't present or isn't of type `P`,
+    /// this returns `Ok(false)` without error.
+    pub fn with_plugin_typed<P: 'static, R>(
+        &self,
+        name: &str,
+        f: impl FnOnce(&P) -> R,
+    ) -> Result<Option<R>> {
+        let Some(handle) = self.plugins.get(name) else {
+            return Ok(None);
+        };
+
+        let guard = handle
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Plugin mutex poisoned: {}", name))?;
+
+        let Some(p) = guard.as_any().downcast_ref::<P>() else {
+            return Ok(None);
+        };
+
+        Ok(Some(f(p)))
+    }
+
     /// Get all feature toggles from all plugins
     pub fn get_all_feature_toggles(&self) -> Vec<FeatureToggle> {
         let mut toggles = Vec::new();

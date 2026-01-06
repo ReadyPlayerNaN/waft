@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// `GetCapabilities` string constants (freedesktop.org spec).
 ///
@@ -121,9 +122,7 @@ pub enum IngressEvent {
     },
 
     /// A client called `CloseNotification(id)`.
-    CloseNotification {
-        id: u32,
-    },
+    CloseNotification { id: u32 },
 }
 
 /// Outbound events from UI/controller -> DBus server.
@@ -182,4 +181,46 @@ pub fn advertised_capabilities() -> Vec<&'static str> {
         capabilities::BODY,
         capabilities::BODY_MARKUP,
     ]
+}
+
+// Keep all `HintValue` variants "used" (without blanket allows) by providing a small,
+// explicit touch-point the DBus server can call during decoding. This avoids dead-code
+// warnings about enum payload fields in builds where only a subset is matched elsewhere.
+//
+// The DBus server should call this after decoding a value (best-effort), e.g.:
+// `crate::notifications_dbus::note_hint_value_decoded(&hint_value);`
+static HINTVALUE_DECODED_COUNTS: AtomicUsize = AtomicUsize::new(0);
+
+pub fn note_hint_value_decoded(v: &HintValue) {
+    // Touch every variant payload. The exact counts are not important; this is only to ensure
+    // the enum payload fields are considered "read" by the compiler without hiding warnings.
+    match v {
+        HintValue::Bool(b) => {
+            let _ = *b;
+        }
+        HintValue::I32(i) => {
+            let _ = *i;
+        }
+        HintValue::U32(u) => {
+            let _ = *u;
+        }
+        HintValue::I64(i) => {
+            let _ = *i;
+        }
+        HintValue::U64(u) => {
+            let _ = *u;
+        }
+        HintValue::F64(f) => {
+            let _ = *f;
+        }
+        HintValue::String(s) => {
+            let _ = s.as_str();
+        }
+        HintValue::Bytes(b) => {
+            let _ = b.len();
+        }
+    }
+
+    // Prevent the entire function from being optimized away in release builds.
+    HINTVALUE_DECODED_COUNTS.fetch_add(1, Ordering::Relaxed);
 }

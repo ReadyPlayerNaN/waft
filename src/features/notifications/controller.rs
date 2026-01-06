@@ -153,4 +153,14 @@ impl NotificationsController {
         }
         removed
     }
+
+    /// Fetch a notification by id from the underlying model (GTK-free).
+    ///
+    /// This is intended for toast rendering, where we keep a toast-id stack and need to resolve
+    /// ids into full `Notification` payloads without rebuilding/group-expanding the overlay UI.
+    ///
+    /// Returns a cloned `Notification` if found.
+    pub fn get_by_id(&self, id: u64) -> Option<Notification> {
+        self.model.borrow().get_by_id(id)
+    }
 }

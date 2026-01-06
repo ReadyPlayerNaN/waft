@@ -394,6 +394,43 @@ fn build_ui(
         border-radius: 0px;
     }
 
+    /* Notifications: toast timeout indicator (thin 2px bar).
+       Implemented as a simple GTK box, not a ProgressBar, to avoid border-radius artifacts. */
+    .notification-timeout-bar {
+        min-height: 2px;
+        background: transparent;
+        margin: 0;
+        padding: 0;
+    }
+
+    .notification-timeout-fill {
+        min-height: 2px;
+        background: alpha(@accent_color, 0.45);
+        margin: 0;
+        padding: 0;
+    }
+
+    /* Toast row wrapper:
+       - Used to support per-row enter/exit height animations.
+       - Ensure it doesn't introduce extra padding or visuals. */
+    .toast-row {
+        background: transparent;
+        margin: 0;
+        padding: 0;
+    }
+
+    /* Toast hover feedback: make hovered toast fully opaque and slightly more "present".
+       (Only the hovered toast should get this class; timers are paused separately.) */
+    .toast-card {
+        opacity: 0.92;
+        transition: opacity 120ms linear;
+    }
+
+    .toast-card.toast-hover {
+        background: @window_bg_color;
+        opacity: 1.0;
+    }
+
     /* Content-less tile: single button fills tile; no chevron cap */
     button.qs-btn-single {
         border-radius: 12px;
@@ -773,6 +810,7 @@ fn build_ui(
             "notifications-disabled-symbolic",
             false,
         ),
+        ui::FeatureSpec::contentless("syncthing", "Syncthing", "folder-remote-symbolic", false),
         ui::FeatureSpec::contentful(
             "wifi",
             "Wi‑Fi",
@@ -804,7 +842,10 @@ fn build_ui(
 
     // Query the plugin registry for feature toggles at UI build time so build_ui can
     // access richer plugin-provided behaviour.
-    let toggles = registry.get_all_feature_toggles();
+    //
+    // Sort plugin toggles by weight before inserting into the features section.
+    let mut toggles = registry.get_all_feature_toggles();
+    toggles.sort_by_key(|t| t.weight);
 
     for toggle in toggles {
         specs.push(toggle.el);
@@ -1032,6 +1073,17 @@ async fn main() -> Result<()> {
         let registry_arc = registry_weak.upgrade().expect("plugin registry missing");
         let guard = registry_arc.lock().unwrap();
         let window = build_ui(app, &*guard, ui_event_rx.clone());
+
+        // Pass main overlay window handle into the notifications plugin so it can hide/pause toast popups.
+        //
+        // NOTE: This is best-effort typed access (downcast) via the registry helper.
+        // If the plugin isn't present (or type doesn't match), it's a no-op.
+        let _ = guard.with_plugin_typed::<crate::features::notifications::NotificationsPlugin, _>(
+            "plugin::notifications",
+            |p| {
+                p.set_main_window(&window);
+            },
+        );
 
         // Process incoming IPC commands on GTK main context.
         // We bridge from tokio via a periodic poll (simple and robust).

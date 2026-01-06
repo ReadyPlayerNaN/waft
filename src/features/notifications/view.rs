@@ -13,7 +13,6 @@ pub struct NotificationsView {
 
     title_label: gtk::Label,
     clear_btn: gtk::Button,
-    scrolled: gtk::ScrolledWindow,
     groups_list: gtk::Box,
 
     // Rendering settings
@@ -74,7 +73,6 @@ impl NotificationsView {
             root: root.upcast::<gtk::Widget>(),
             title_label,
             clear_btn,
-            scrolled,
             groups_list,
             icon_size: 32,
             // No preference was specified; pick a reasonable symbolic default.
@@ -279,18 +277,11 @@ impl NotificationsView {
             .build();
 
         let text = gtk::Label::builder()
+            .label(&notification.body)
             .xalign(0.0)
             .wrap(true)
             .css_classes(["dim-label"])
             .build();
-
-        // Render notification body as markup (libnotify `body-markup` capability).
-        //
-        // gtk4-rs `Label::set_markup` is infallible (returns `()`), so we can't detect
-        // invalid markup via `Result`. If you later observe malformed markup warnings,
-        // consider validating/sanitizing before calling `set_markup`.
-        text.set_use_markup(true);
-        text.set_markup(&notification.body);
 
         layout.append(&icon);
         layout.append(&content);
@@ -329,13 +320,8 @@ impl NotificationsView {
                     .label(&a.label)
                     .css_classes(["pill", "notif-action"])
                     .build();
-
-                // The action closure is responsible for emitting the DBus `ActionInvoked`
-                // signal (via the notifications controller/plugin), using the action's
-                // stable `key`. The view remains DBus-agnostic.
                 let on_invoke = a.on_invoke.clone();
                 b.connect_clicked(move |_| (on_invoke)());
-
                 actions_box.append(&b);
             }
 

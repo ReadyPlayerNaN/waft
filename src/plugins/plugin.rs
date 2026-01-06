@@ -6,6 +6,12 @@ use async_trait::async_trait;
 /// Plugin interface that all plugins must implement
 #[async_trait(?Send)]
 pub trait Plugin {
+    /// Enable downcasting of plugin trait objects.
+    ///
+    /// This allows the app/registry to call plugin-specific hooks without baking them into the
+    /// `Plugin` trait itself.
+    fn as_any(&self) -> &dyn std::any::Any;
+
     /// Get the unique name of this plugin
     fn name(&self) -> &str;
 

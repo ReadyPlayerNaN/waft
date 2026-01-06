@@ -13,6 +13,9 @@ gtk4-layer-shell = "0.4"
 # libadwaita widgets (match gtk4 0.9 line)
 adw = { version = "0.7", package = "libadwaita", features = ["v1_5"] }
 
+# GIO (for best-effort desktop app activation from notification toasts)
+gio = "0.20"
+
 # JSON IPC
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

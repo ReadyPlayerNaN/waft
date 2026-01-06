@@ -90,9 +90,9 @@ impl NotificationsModel {
                 notifications: vec![],
             });
 
-        // Keep the first-seen app name as the display name.
-        if group.display_app_name.is_empty() {
-            group.display_app_name = n.app_name.clone();
+        // Replace existing with same id, if present (policy: last write wins).
+        if let Some(pos) = group.notifications.iter().position(|x| x.id == n.id) {
+            group.notifications.remove(pos);
         }
 
         group.notifications.push(n);
@@ -101,7 +101,6 @@ impl NotificationsModel {
         group.notifications.sort_by(|a, b| {
             let c = systemtime_cmp_desc(&a.created_at, &b.created_at);
             if c == std::cmp::Ordering::Equal {
-                // Desc by id as tie-breaker (higher id considered newer).
                 b.id.cmp(&a.id)
             } else {
                 c
@@ -109,10 +108,23 @@ impl NotificationsModel {
         });
     }
 
+    /// Fetch a notification by id (cloned), searching all groups.
+    ///
+    /// This is used by the toast popup to resolve toast ids into full notification payloads
+    /// while keeping the overlay history as the single source of truth.
+    pub fn get_by_id(&self, id: u64) -> Option<Notification> {
+        for g in self.groups.values() {
+            if let Some(n) = g.notifications.iter().find(|n| n.id == id) {
+                return Some(n.clone());
+            }
+        }
+        None
+    }
+
     /// Remove a notification by id. Returns true if removed.
     pub fn remove(&mut self, id: u64) -> bool {
-        let mut empty_keys: Vec<String> = vec![];
         let mut removed = false;
+        let mut empty_keys: Vec<String> = vec![];
 
         for (k, g) in self.groups.iter_mut() {
             let before = g.notifications.len();
@@ -127,7 +139,7 @@ impl NotificationsModel {
 
         for k in empty_keys {
             self.groups.remove(&k);
-            if self.open_group.as_deref() == Some(k.as_str()) {
+            if self.open_group.as_deref() == Some(&k) {
                 self.open_group = None;
             }
         }
@@ -196,7 +208,7 @@ impl NotificationsModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::notifications::types::{NotificationIcon};
+    use crate::features::notifications::types::NotificationIcon;
 
     fn t(secs: u64) -> SystemTime {
         std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs)

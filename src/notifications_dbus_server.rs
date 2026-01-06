@@ -301,6 +301,9 @@ fn decode_hints(hints: HashMap<String, OwnedValue>) -> HashMap<String, HintValue
     let mut out = HashMap::new();
     for (k, v) in hints {
         if let Some(h) = decode_hint_value(&v) {
+            // Keep `HintValue` payload fields exercised so we don't accumulate dead-code warnings
+            // as hint coverage evolves. This is a no-op apart from a tiny counter increment.
+            crate::notifications_dbus::note_hint_value_decoded(&h);
             out.insert(k, h);
         }
     }

@@ -186,7 +186,6 @@ impl DarkmanPlugin {
 
     fn feature_toggle(&self) -> FeatureToggle {
         FeatureToggle {
-            id: FEATURE_KEY.to_string(),
             el: self.feature_toggle_el().clone(),
             weight: 10,
         }
@@ -208,6 +207,10 @@ impl DarkmanPlugin {
 
 #[async_trait(?Send)]
 impl Plugin for DarkmanPlugin {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn name(&self) -> &str {
         FEATURE_KEY
     }

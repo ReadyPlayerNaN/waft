@@ -22,7 +22,4 @@ pub struct FeatureToggle {
 
     /// Ordering weight for sorting feature toggles in the UI.
     pub weight: i32,
-
-    /// Stable identifier for the feature (e.g., `"plugin::darkman"`).
-    pub id: String,
 }

@@ -165,7 +165,6 @@ impl SunsetrPlugin {
 
     fn feature_toggle(&self) -> FeatureToggle {
         FeatureToggle {
-            id: FEATURE_KEY.to_string(),
             el: self.feature_toggle_el().clone(),
             weight: 11,
         }
@@ -459,6 +458,10 @@ fn hhmm_from_rfc3339(ts: &str) -> Option<String> {
 
 #[async_trait(?Send)]
 impl Plugin for SunsetrPlugin {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn name(&self) -> &str {
         FEATURE_KEY
     }
