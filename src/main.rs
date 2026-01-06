@@ -213,6 +213,7 @@ fn build_ui(
     let css = r#"
     window {
         border-radius: 8px;
+        border: 1px solid alpha(@window_fg_color, 0.2);
     }
 
     /* The class is applied to the button itself, so target it directly. */
