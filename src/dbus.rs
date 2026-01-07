@@ -11,6 +11,10 @@
 //! Threading model:
 //! - DBus IO is async and intended to run on background tasks (`tokio::spawn`).
 //! - Do not touch GTK from any of these callbacks; forward state changes to the UI via channels.
+//!
+//! Buses:
+//! - Most app integrations use the **session bus**.
+//! - Some system services (e.g. BlueZ) live on the **system bus**.
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -27,11 +31,35 @@ pub struct DbusHandle {
 }
 
 impl DbusHandle {
+    /// Access the underlying zbus connection.
+    ///
+    /// This is intended for advanced integrations that need to create typed proxies
+    /// (e.g. BlueZ ObjectManager) that aren't covered by the convenience helpers on
+    /// `DbusHandle`.
+    pub fn connection(&self) -> Arc<Connection> {
+        self.conn.clone()
+    }
+}
+
+impl DbusHandle {
     /// Connect to the session bus.
     pub async fn connect() -> Result<Self> {
         let conn = Connection::session()
             .await
             .context("Failed to connect to DBus session bus")?;
+
+        Ok(Self {
+            conn: Arc::new(conn),
+        })
+    }
+
+    /// Connect to the system bus.
+    ///
+    /// Use this for system services like BlueZ (`org.bluez`).
+    pub async fn connect_system() -> Result<Self> {
+        let conn = Connection::system()
+            .await
+            .context("Failed to connect to DBus system bus")?;
 
         Ok(Self {
             conn: Arc::new(conn),

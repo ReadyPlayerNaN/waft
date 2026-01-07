@@ -21,6 +21,17 @@ pub enum UiEvent {
 
     /// A feature's menu open/closed state changed.
     FeatureMenuOpenChanged { key: String, open: bool },
+
+    /// Request a repaint/refresh of already-rendered UI content.
+    ///
+    /// This is intentionally generic and does NOT imply any specific UI structure.
+    /// Typical use:
+    /// - A plugin receives external state changes (e.g. DBus signals),
+    /// - Updates its internal model/cache (source of truth remains external),
+    /// - Emits this event to ask the GTK/UI layer to repaint/update any relevant widgets.
+    ///
+    /// The UI layer decides what to repaint (may be a no-op if not visible).
+    RepaintRequested { scope: String },
 }
 
 /// Trait for things that can accept UI events.

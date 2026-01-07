@@ -204,6 +204,7 @@ async fn run_ipc_server(listener: UnixListener, tx: mpsc::UnboundedSender<UiComm
 fn build_ui(
     app: &adw::Application,
     registry: &PluginRegistry,
+    registry_weak: std::sync::Weak<std::sync::Mutex<PluginRegistry>>,
     ui_event_rx: Rc<RefCell<mpsc::UnboundedReceiver<ui::UiEvent>>>,
 ) -> gtk::Window {
     // Use AdwApplicationWindow to get Adwaita styling.
@@ -716,22 +717,6 @@ fn build_ui(
         box_
     };
 
-    let bt_details = {
-        let box_ = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(6)
-            .build();
-        for dev in ["Headphones Pro", "MX Master 3S", "Keyboard K2"] {
-            let row = adw::ActionRow::builder()
-                .title(dev)
-                .subtitle("Known device")
-                .build();
-            row.set_activatable(false);
-            box_.append(&row);
-        }
-        box_
-    };
-
     // Network details, including the "Connect/Disconnect" dummy flow that updates the tile status.
     let net_status_label = gtk::Label::builder().label("Disconnected").build();
     let net_details = {
@@ -801,15 +786,6 @@ fn build_ui(
             false,
         ),
         ui::FeatureSpec::contentful(
-            "bt",
-            "Bluetooth",
-            "bluetooth-active-symbolic",
-            "Off",
-            false,
-            ui::features::MenuSpec::new(&bt_details),
-            false,
-        ),
-        ui::FeatureSpec::contentful(
             "net",
             "Network",
             "network-wired-symbolic",
@@ -851,6 +827,24 @@ fn build_ui(
     glib::timeout_add_local(Duration::from_millis(50), move || {
         let mut rx = ui_event_rx_for_poll.borrow_mut();
         while let Ok(event) = rx.try_recv() {
+            // Handle repaint requests at the app composition layer (GTK thread).
+            //
+            // We can't capture `&PluginRegistry` here (borrowed), but we *can* use a Weak handle.
+            // This lets plugins request a submenu refresh (e.g. Bluetooth device status changes)
+            // without polling and without touching GTK from background tasks.
+            if let crate::ui::UiEvent::RepaintRequested { scope } = &event {
+                if scope == "bluetooth" {
+                    if let Some(registry_arc) = registry_weak.upgrade() {
+                        if let Ok(guard) = registry_arc.lock() {
+                            let _ = guard.with_plugin_typed::<
+                                crate::features::bluetooth::BluetoothPlugin,
+                                _,
+                            >("BluetoothPlugin", |bt| bt.request_menu_rerender());
+                        }
+                    }
+                }
+            }
+
             // Call the UiEventSink::send method explicitly to avoid any trait
             // method name clashes with other `send` methods in scope.
             crate::ui::UiEventSink::send(&features_model_for_events, event);
@@ -908,9 +902,16 @@ fn build_ui(
     window.upcast::<gtk::Window>()
 }
 
-fn show_overlay(window: &gtk::Window) {
+fn show_overlay(window: &gtk::Window, registry: &PluginRegistry) {
     window.present();
     window.set_visible(true);
+
+    // Notify Bluetooth plugin (best-effort) so it starts applying DBus-driven submenu repaints
+    // only while the overlay is visible, and forces a fresh repaint on open.
+    let _ = registry.with_plugin_typed::<crate::features::bluetooth::BluetoothPlugin, _>(
+        "BluetoothPlugin",
+        |bt| bt.on_overlay_shown(),
+    );
 
     let anim_cfg = FadeConfig::default();
     if let Some(child) = window.child() {
@@ -918,7 +919,13 @@ fn show_overlay(window: &gtk::Window) {
     }
 }
 
-fn hide_overlay(window: &gtk::Window) {
+fn hide_overlay(window: &gtk::Window, registry: &PluginRegistry) {
+    // Notify Bluetooth plugin (best-effort) so it stops scheduling GTK work while hidden.
+    let _ = registry.with_plugin_typed::<crate::features::bluetooth::BluetoothPlugin, _>(
+        "BluetoothPlugin",
+        |bt| bt.on_overlay_hidden(),
+    );
+
     let anim_cfg = FadeConfig::default();
     let w = window.clone();
     if let Some(child) = w.child() {
@@ -930,11 +937,11 @@ fn hide_overlay(window: &gtk::Window) {
     }
 }
 
-fn toggle_overlay(window: &gtk::Window) {
+fn toggle_overlay(window: &gtk::Window, registry: &PluginRegistry) {
     if window.is_visible() {
-        hide_overlay(window);
+        hide_overlay(window, registry);
     } else {
-        show_overlay(window);
+        show_overlay(window, registry);
     }
 }
 
@@ -973,6 +980,7 @@ async fn main() -> Result<()> {
     };
 
     let dbus = DbusHandle::connect().await?;
+    let dbus_system = DbusHandle::connect_system().await?;
 
     // Channel from IPC task -> GTK main thread.
     let (tx, rx) = mpsc::unbounded_channel::<UiCommand>();
@@ -1034,6 +1042,11 @@ async fn main() -> Result<()> {
     );
 
     let _ = registry.register(
+        features::bluetooth::BluetoothPlugin::new(Arc::new(dbus_system))
+            .with_ui_event_tx(ui_event_tx.clone()),
+    );
+
+    let _ = registry.register(
         NotificationsPlugin::new()
             .with_dbus_ingress(notif_ingress_rx, notif_outbound_tx.clone())
             .with_ui_event_sender(ui_event_tx.clone()),
@@ -1058,7 +1071,7 @@ async fn main() -> Result<()> {
         // We lock synchronously (std::sync::Mutex) because this is the GTK main thread.
         let registry_arc = registry_weak.upgrade().expect("plugin registry missing");
         let guard = registry_arc.lock().unwrap();
-        let window = build_ui(app, &*guard, ui_event_rx.clone());
+        let window = build_ui(app, &*guard, registry_weak.clone(), ui_event_rx.clone());
 
         // Pass main overlay window handle into the notifications plugin so it can hide/pause toast popups.
         //
@@ -1071,23 +1084,46 @@ async fn main() -> Result<()> {
             },
         );
 
+        drop(guard);
+
         // Process incoming IPC commands on GTK main context.
         // We bridge from tokio via a periodic poll (simple and robust).
         let window_for_poll = window.clone();
         let rx_for_poll = rx.clone();
 
+        let registry_weak_for_poll = registry_weak.clone();
         glib::timeout_add_local(Duration::from_millis(50), move || {
             // Drain all pending commands quickly.
             let mut rx = rx_for_poll.borrow_mut();
             while let Ok(cmd) = rx.try_recv() {
+                // IMPORTANT: do not capture a registry guard in this timeout closure.
+                // Acquire the registry lock only for the duration of handling a single command.
+                let Some(registry_arc) = registry_weak_for_poll.upgrade() else {
+                    continue;
+                };
+                let guard = match registry_arc.lock() {
+                    Ok(g) => g,
+                    Err(_) => continue,
+                };
+
                 match cmd {
-                    UiCommand::Show => show_overlay(&window_for_poll),
-                    UiCommand::Hide => hide_overlay(&window_for_poll),
-                    UiCommand::Toggle => toggle_overlay(&window_for_poll),
+                    UiCommand::Show => show_overlay(&window_for_poll, &*guard),
+                    UiCommand::Hide => hide_overlay(&window_for_poll, &*guard),
+                    UiCommand::Toggle => toggle_overlay(&window_for_poll, &*guard),
                     UiCommand::Ping => {
                         // no-op in UI
                     }
                 }
+
+                // After handling a command on the GTK thread, give BluetoothPlugin a chance to
+                // schedule (wake-on-demand) a drain+repaint if DBus invalidations are queued.
+                //
+                // This avoids polling: DBus tasks enqueue invalidations, and the GTK thread only
+                // schedules repaints when it is already active.
+                let _ = guard.with_plugin_typed::<crate::features::bluetooth::BluetoothPlugin, _>(
+                    "BluetoothPlugin",
+                    |bt| bt.request_menu_rerender(),
+                );
             }
             glib::ControlFlow::Continue
         });

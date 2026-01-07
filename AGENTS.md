@@ -227,19 +227,114 @@ The UI:
 
 ---
 
-## Threading model
 
-- GTK widgets and most UI logic live on the **main thread**.
-- Plugins currently:
-  - Run their async lifecycle (`initialize` / `cleanup`) on the main executor.
-  - Offload blocking IO using:
-    - `spawn_blocking` for heavy/DBus operations.
-    - Regular async tasks (`tokio::spawn`) that only use `Send` data.
-- The `Plugin` trait is **not constrained** to be `Send + Sync`, to keep this GTK‑compatible.
 
-If a future need arises for multi‑threaded plugin loading/unloading:
+---
 
-- We will introduce a dedicated worker abstraction and avoid forcing GTK objects or `Rc` data across threads.
+## Threading model + GTK initialization (must-follow)
+
+### GTK init boundary (this has caused crashes before)
+
+In this app, plugins are initialized **before** GTK is initialized.
+
+That means:
+
+- `Plugin::initialize()` **MUST NOT** create any GTK objects (`gtk::Box::builder()...build()`, `gtk::Label`, `gtk::Button`, etc).
+- Creating GTK widgets in `initialize()` can panic with:
+  - `GTK has not been initialized. Call gtk::init first.`
+
+**Allowed in `initialize()`**
+- DBus connections / subscriptions
+- async tasks (as long as they don’t touch GTK)
+- initializing pure Rust state (models, caches)
+- creating channels
+
+**Not allowed in `initialize()`**
+- any GTK widget construction
+- any code path that *implicitly* constructs GTK widgets (e.g. building a `MenuSpec` from a widget you construct there)
+
+**Where to construct GTK widgets instead**
+- Lazily, in `Plugin::widgets()` and/or `Plugin::feature_toggles()`, which run during UI build after GTK is initialized.
+- If you need long-lived widget instances, construct them on-demand the first time `widgets()`/`feature_toggles()` is called and store them in plugin-owned main-thread state.
+
+### Tokio / Send boundary
+
+- GTK widgets are **not** `Send` / `Sync`.
+- Anything moved into `tokio::spawn(...)` must be `Send`.
+- Therefore:
+  - Do **not** store GTK widgets inside state guarded by `tokio::sync::Mutex` if that state is moved into Tokio tasks.
+  - Split plugin state into:
+    - **Send-safe state** (domain/cache, DBus data) for background tasks, and
+    - **GTK main-thread state** (widgets, UI handles) accessed only from the GTK thread.
+
+### Updating UI from async tasks
+
+- Never mutate GTK widgets from a Tokio task.
+- Instead, send `UiEvent`s to the UI/event bus (preferred), or schedule a main-thread callback (glib main context) that mutates widgets.
+
+### UI rendering strategy for submenu-like plugin UIs (React-ish; MUST FOLLOW)
+
+When a plugin owns a long-lived, contentful submenu/details panel (e.g. a `MenuSpec` backed by a plugin-owned GTK widget), follow this rule:
+
+- Treat the external service (DBus/BlueZ/etc.) as the **source of truth**.
+- Keep a plugin-owned **model snapshot** of the external state (e.g. per-device connected status).
+- Keep a stable mapping of domain IDs → GTK widget handles:
+  - e.g. `HashMap<DeviceId, DeviceRowWidgets>` where `DeviceRowWidgets` contains the `gtk::Switch`, status label, etc.
+- On state changes, update **only the affected widgets** (set switch state, sensitive flag, status text), rather than rebuilding the entire submenu.
+
+Why:
+- Rebuilding large widget trees on every signal causes flicker and wasted work.
+- Triggering repaints from synchronous spec-generation paths (`feature_toggles()`/`widgets()`) can create feedback loops (render → events → render), leading to high CPU and an unresponsive overlay.
+- Incremental updates keep the overlay responsive and prevents “a plugin can hang the entire app”.
+
+Operational guidance:
+- Prefer stable ordering (do not reorder rows on connect/disconnect) to avoid churn; only add/remove rows when the device set changes.
+- If you need a transient UI state (connecting/disconnecting), represent it explicitly in the model and clear it only when the external source reports the final state.
+- Apply UI updates on the GTK thread only (via the UI event pump or a scheduled GTK callback), never from background tasks.
+
+### Wake-on-demand repaint queue for DBus-driven menus (no polling)
+
+For DBus-driven UIs, you often need “immediate” updates when signals arrive, without:
+
+- touching GTK from background tasks (not allowed), and
+- adding a periodic poll on the GTK thread (undesirable).
+
+Use a **wake-on-demand invalidate queue**:
+
+1) **Background/DBus task (Send-only):**
+- Decode DBus signals and update the plugin’s Send-safe model/cache.
+- Enqueue an “invalidate” token (e.g. adapter id / device id) into a Send-safe queue.
+  - Use `Arc<std::sync::Mutex<VecDeque<InvalidateKey>>>` or similar.
+- Do **not** call any GTK APIs here.
+
+2) **GTK thread drain + coalesce (scheduled once per burst):**
+- Keep an `AtomicBool scheduled` that is set to `true` only by the GTK thread when it actually schedules a drain.
+- When the GTK thread observes new invalidations and `scheduled` is `false`, schedule exactly one GTK callback (e.g. `invoke_local`) to:
+  - drain the queue,
+  - de-duplicate keys (e.g. `HashSet`),
+  - apply incremental widget updates only for affected rows/menus,
+  - set `scheduled` back to `false`.
+
+Rules:
+- Never schedule repaints from `feature_toggles()`/`widgets()` loops.
+- Never capture GTK widgets / `Rc` into background tasks.
+- Keep drain callbacks small and bounded (update properties, don’t rebuild the tree).
+
+### Overlay visibility gating (recommended for overlays)
+
+For overlay UIs, DBus signals may continue even while the overlay is hidden. To keep the app responsive and avoid doing unnecessary GTK work:
+
+- Only apply submenu/widget updates while the overlay is **visible**.
+- When the overlay transitions **hidden → visible**, force a drain+repaint so the user never sees stale state on open.
+- When the overlay becomes hidden, disable scheduling/draining repaints.
+
+Practical pattern:
+- Plugin exposes lightweight hooks like:
+  - `on_overlay_shown()` → set `visible=true`, drain+repaint immediately
+  - `on_overlay_hidden()` → set `visible=false`
+- The app calls these hooks from the same code paths that show/hide the overlay window.
+
+This keeps background DBus ingestion running (source of truth remains external), but makes GTK updates pay-for-play only when the UI is actually on screen.
 
 ---
 

@@ -192,6 +192,9 @@ impl UiEventSink for FeaturesModel {
             UiEvent::FeatureMenuOpenChanged { key, open } => {
                 self.set_chevron_open(Box::leak(key.into_boxed_str()), open);
             }
+            // Repaint requests are handled at the application/UI composition layer,
+            // not by the FeaturesModel (which only manages tile surfaces/labels/chevrons).
+            UiEvent::RepaintRequested { scope: _ } => {}
         }
     }
 }
