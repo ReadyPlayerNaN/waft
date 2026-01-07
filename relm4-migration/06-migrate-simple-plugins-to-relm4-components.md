@@ -7,7 +7,8 @@ Replace placeholder/stub plugin components (from steps 04–05) with **real Relm
 This step is intentionally scoped to **the simplest plugin UIs** (not Bluetooth menu, not Notifications/toast window). The purpose is to prove the end-to-end plugin-component contract:
 - plugin `init()` does non-UI setup only,
 - plugin `mount()` constructs widgets/components (after GTK init),
-- the central App router can route typed messages to plugins,
+- plugin message typing stays **inside the plugin** via a `PluginSpec` + `Input` enum (Option 1.5A),
+- the app wiring layer can acquire typed handles (`registry.get::<Spec>()`) and send typed inputs (`handle.send(&Input::...)`) to plugin components,
 - plugins can emit messages/events back to the app/router (if needed).
 
 ## Scope
@@ -60,12 +61,21 @@ For each selected plugin:
 - Keep component lifecycle stable (no rebuild loops).
 - If you need to reflect domain state, update the model via messages rather than mutating widgets from background tasks.
 
-### C) Wire typed message routing for these plugins
+### C) Wire typed message routing for these plugins (Option 1.5A)
 
-Ensure the central router can send messages to these migrated plugins in a typed way (per your choice in step 04, strongly recommended: enum-of-endpoints).
+Ensure the app wiring layer can send messages to these migrated plugins in a typed way **without** introducing a centralized enum-of-plugins/messages.
+
+Requirements for each migrated plugin:
+1. Define a plugin-owned input enum:
+   - `enum Input { ... }` (derive `Debug`, `Clone`, `PartialEq`, `Eq` where reasonable).
+2. Define a plugin-owned `PluginSpec` implementation:
+   - `struct Spec; impl PluginSpec for Spec { type Input = Input; fn id() -> PluginId { ... } ... }`
+   - Keep the `Input` and `Spec` in the plugin module (avoid “app knows plugin internals”).
+3. Ensure `mount()` returns an endpoint that accepts the plugin’s `Input`.
 
 Minimum for this step:
-- one “ping” / “refresh” / “set state” message path from app → plugin component (even if the plugin doesn’t strictly need it yet).
+- one “ping” / “refresh” / “set state” message path from app → plugin component, delivered via:
+  - `if let Some(handle) = registry.get::<plugin::Spec>() { handle.send(&plugin::Input::Ping)?; }`
 - one user-action path from plugin component → app router (e.g. “user toggled X”).
 
 This validates the direction without requiring DBus integrations yet.
@@ -79,8 +89,9 @@ For each migrated plugin, add at least one unit test that validates the plugin�
 
 Examples (adapt to plugin behavior):
 - toggling a boolean flips model state and produces the correct outgoing app message/effect,
-- receiving an incoming “set active” message updates model state correctly,
-- placement metadata remains stable (id/slot/weight).
+- receiving an incoming `Input::SetActive(bool)` (or equivalent) updates model state correctly,
+- placement metadata remains stable (id/slot/weight),
+- `PluginSpec` identity is stable (`Spec::id()` matches the plugin’s registered id).
 
 These tests should not initialize GTK and should not require a main loop.
 

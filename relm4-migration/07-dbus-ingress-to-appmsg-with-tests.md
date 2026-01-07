@@ -51,9 +51,14 @@ Create a module that represents DBus ingress in three explicit layers:
 - This layer must be heavily unit-tested.
 
 3) **Bridge Layer: Domain Event → `AppMsg`**
-- Defines the mapping from domain events to `AppMsg` (and/or `PluginMsg`).
-- Example: `NotificationReceived` → `AppMsg::ToPlugin { plugin: Notifications, msg: NotificationsMsg::Add(notification) }`
-- This mapping must be deterministic and unit-tested.
+- Defines the mapping from domain/DBus events to `AppMsg` (router-facing) and then to plugin inputs via **typed handles** (Option 1.5A).
+- Example (shape, not exact types):
+  - DBus ingress: `NotificationReceived` → `AppMsg::NotificationsIngress(...)`
+  - App wiring (post-reducer): `registry.get::<NotificationsSpec>() -> Option<PluginHandle<NotificationsSpec>>`
+  - If present: `handle.send(&NotificationsInput::Add(notification))`
+- This mapping must be deterministic and unit-tested:
+  - unit tests for DBus/domain → `AppMsg` translation,
+  - unit tests for the wiring behavior when the plugin is present vs absent (handle acquisition `Some`/`None`), without initializing GTK.
 
 **Measurable outcome:** DBus code depends on a small interface like:
 

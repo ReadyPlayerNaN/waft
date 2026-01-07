@@ -32,6 +32,18 @@ Implement a Relm4 component (the central App router component) that owns:
 - overlay visibility state (at least: shown/hidden),
 - the actual overlay window widget tree.
 
+#### NEW (follow-up from Option 1.5A): add a small “wiring layer” that uses typed handles
+
+In addition to the pure router reducer (step 03), introduce an **app wiring layer** (still non-UI logic where possible) that:
+
+- consumes `RouterEffect`s (e.g. `SetToastGating { enabled }`), and
+- uses typed plugin handles from the registry to notify the relevant plugins:
+
+  - `registry.get::<SomePluginSpec>() -> Option<PluginHandle<SomePluginSpec>>`
+  - `handle.send(&SomePluginInput::...)`
+
+Goal: keep `relm4_app::router` GTK-free and plugin-message-agnostic, while allowing the running app to fan out effects to plugin components in a type-safe way.
+
 #### Required widget tree (conceptual)
 
 Create an overlay layout with three placement areas:
@@ -80,6 +92,14 @@ How you detect this depends on your windowing approach:
 - if you have explicit “show overlay” actions, send messages there;
 - if you rely on window signals, wire them to Relm4 messages.
 
+#### NEW (follow-up from Option 1.5A): execute router effects via typed plugin handles
+
+After reducing `AppMsg` via the router reducer, implement effect execution such that:
+
+- For `RouterEffect::SetToastGating { enabled }`, the app wiring layer attempts to acquire the relevant plugin handle(s) and send typed inputs (if present).
+  - Missing/disabled plugin must be treated as a normal runtime state (no panic).
+- This wiring must not initialize GTK and should be unit-testable.
+
 Do **not** implement toast window behavior yet in this step; just ensure the plumbing exists and can be unit-tested (see tests section).
 
 ### E) Add fast automated tests (non-UI)
@@ -94,6 +114,12 @@ Add unit tests that do not require GTK initialization:
    - If you implemented routing via the reducer from step 03, add/extend tests:
      - sending `OverlayShown` yields the expected effect(s) (e.g. `SetToastGating { enabled: false }`).
      - sending `OverlayHidden` yields `SetToastGating { enabled: true }`.
+
+3. **NEW: Router-effect → plugin-handle wiring tests (pure, no GTK)**
+   - Add unit tests for the app wiring layer that executes `RouterEffect`s using typed handles (Option 1.5A):
+     - If a target plugin is present: `registry.get::<Spec>()` returns `Some(handle)` and `handle.send(&Spec::Input::...)` is invoked.
+     - If a target plugin is absent/disabled: `registry.get::<Spec>()` returns `None` and the wiring layer must **not panic**.
+   - Prefer testing with stub plugins/endpoints (no Relm4, no GTK).
 
 Avoid any tests that instantiate `gtk::Application`, `adw::ApplicationWindow`, or run a main loop.
 

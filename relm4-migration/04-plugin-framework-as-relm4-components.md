@@ -1,4 +1,4 @@
-# 04 — Redesign Plugin Framework: Plugins Provide Relm4 Components + Slot/Weight Metadata
+# 04 — Redesign Plugin Framework: Plugins Provide Relm4 Components + Slot/Weight Metadata (Typed Handles Routing)
 
 ## Goal
 
@@ -6,7 +6,7 @@ Replace the current “plugins return GTK widgets” framework with a **Relm4-fi
 
 - stable metadata (id, name, slot/column, weight/order),
 - one or more **Relm4 components** to mount in the overlay UI,
-- a typed message channel so the **central App router** can send events to plugin components.
+- a **typed handle** (Option 1.5A) so the **central App router** can send *plugin-specific typed input enums* to plugin components without centralizing plugin message enums in the app/router.
 
 Plugins remain **static after startup** (no unload/reload).
 
@@ -45,24 +45,37 @@ Introduce a new Relm4-oriented plugin trait (name it however fits your codebase,
 
 Define how the App router sends messages to plugin components.
 
-Two acceptable approaches (pick one and commit to it):
+#### Chosen approach: Option 1.5A — Typed plugin handles (no centralized plugin message enum)
 
-#### Option 1 (recommended): Typed per-plugin input senders collected behind an enum
-- Each plugin’s mounted component yields an input sender/controller type.
-- The plugin registry stores these as a `PluginOutputs` enum keyed by `PluginId`.
-- Routing becomes a `match` on plugin id/message variant, then calls `sender.input(...)`.
+We want:
+- plugin-specific input enums to live **inside plugins** (no centralized list of plugin “features/messages” in the app/router), and
+- more compile-time safety than a pure dynamic `Any`/downcast routing approach.
 
-Pros: compile-time safety; easy to test; refactor-friendly.  
-Cons: you update the enum as plugins change (fine with 5 static plugins).
+**Contract:**
+- Each plugin defines a *compile-time spec* type (e.g. `BluetoothSpec`) that declares:
+  - `type Input` (the plugin’s input enum)
+  - `fn id() -> PluginId`
+  - optional: `fn placement() -> PluginPlacement`, `fn name() -> &'static str` (if you want metadata in the spec)
+- The registry stores endpoints in a type-erased form internally (still necessary for config-driven plugin enablement).
+- The registry exposes a typed acquisition API:
+  - `registry.get::<BluetoothSpec>() -> Option<PluginHandle<BluetoothSpec>>`
 
-#### Option 2: Uniform trait object for “send message to plugin”
-- Define `trait PluginEndpoint { fn send(&self, msg: PluginMsg); }`
-- Store `Box<dyn PluginEndpoint>` per plugin.
+Once you have a `PluginHandle<P>`, sending is compile-time typed:
+- `handle.send(BluetoothInput::PowerOn)` (or `handle.send(&BluetoothInput::PowerOn)` depending on handle design)
 
-Pros: less boilerplate.  
-Cons: easier to get wrong; more runtime indirection; weaker typing.
+**Runtime boundary (intentional):**
+- plugin enablement/presence is runtime (configuration-based), so acquiring a handle is fallible (`Option`/`Result`).
+- after acquisition, message typing is compile-time enforced by `P::Input`.
 
-Given the “fast automated tests” requirement and small plugin count, **Option 1 is preferred**.
+**Why this is “Option 1.5”:**
+- avoids Option 1’s centralized enum-of-plugins/messages (logic duplication / leak),
+- avoids Option 2’s “everything is dynamic” feel at call sites,
+- keeps runtime checks localized primarily to handle acquisition / endpoint boundary.
+
+Tests should cover:
+- handle acquisition success/failure,
+- type mismatch handling at the boundary (if applicable),
+- plus the sorting/routing tests described below.
 
 ### D) Implement a new plugin registry that mounts components
 
@@ -73,7 +86,9 @@ Introduce a new registry that:
 3. After Relm4/adw initialization, calls `mount()` to instantiate all plugin components once.
 4. Exposes:
    - a sorted view of mounted plugin components by `Slot` then `weight`,
-   - a routing table for the App router to deliver `PluginMsg` to the correct plugin component(s).
+   - a typed routing surface for the App wiring layer to deliver plugin-specific typed input enums via handles:
+     - `registry.get::<SomePluginSpec>() -> Option<PluginHandle<SomePluginSpec>>`
+     - `handle.send(&SomePluginSpec::Input::...)`
 
 **Key behavior preserved:**
 - Sorting by weight per slot.
@@ -99,9 +114,14 @@ Add unit tests that validate:
 
 1. Sorting:
    - Given a set of plugin placements, the registry produces deterministic order by slot then weight.
-2. Routing table:
-   - Given a `PluginId` + `PluginMsg`, the registry returns the correct endpoint variant (or produces the expected error if missing).
-3. “No GTK in init” guard (lightweight):
+2. Typed handle routing (Option 1.5A):
+   - `registry.get::<SomePluginSpec>()` succeeds when the plugin is mounted/enabled.
+   - `registry.get::<MissingPluginSpec>()` returns `None` (or a structured error) when missing/disabled.
+   - Once acquired, `PluginHandle<Spec>::send(...)` is typed to `Spec::Input` (compile-time).  
+     (You can demonstrate this via API shape + a small runtime “happy path” test.)
+3. Optional boundary mismatch behavior:
+   - If you keep a runtime type check at handle acquisition or endpoint boundary, add a test that a mismatched endpoint/input type fails deterministically.
+4. “No GTK in init” guard (lightweight):
    - Enforce by convention + code review.
    - Optionally, add a test that `init()` can run without GTK init by using stub plugins that do no GTK work.
 
@@ -113,7 +133,9 @@ Avoid initializing GTK/adw in unit tests.
   - plugin metadata (id/slot/weight),
   - a plugin trait with `init()` and `mount()` split across the GTK init boundary,
   - a registry that mounts plugin components once and stores routing endpoints.
-- The central App router (from step 03) can route a `PluginMsg` to a plugin endpoint **through the registry API** (even if plugin components are still stubs).
+- The central App wiring layer (consuming the router from step 03) can route a plugin-specific typed input enum to a plugin endpoint **through the registry API** (even if plugin components are still stubs), via:
+  - `registry.get::<Spec>() -> Option<PluginHandle<Spec>>`
+  - `handle.send(&Spec::Input::...)`
 - Automated tests exist and pass for:
   - placement sorting logic,
   - routing/endpoint lookup logic.

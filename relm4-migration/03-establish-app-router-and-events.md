@@ -2,12 +2,27 @@
 +
 +## Goal
 +
-+Introduce the **central Relm4 “App router”** concept at the type/module level, focusing on **message/event types** and **pure reducers** (non-UI logic). This step lays the foundation for routing DBus and plugin events through a single place without yet migrating the existing UI.
++Introduce the **central Relm4 “App router”** concept at the type/module level, focusing on **message/event types** and **pure reducers** (non-UI logic). This step lays the foundation for routing DBus and UI events through a single place without yet migrating the existing UI.
 +
 +This step should be safe and fast:
 +- no plugin UI migration yet
 +- no window/overlay behavior changes yet (beyond compiling new modules)
 +- heavy focus on unit-testable logic and stable interfaces
++
++## Global design decision (propagated): Option 1.5A — typed plugin handles
++
++Plugin enablement/presence is **runtime** (configuration-driven), but plugin message types should remain **compile-time typed** and owned by each plugin.
++
++Therefore:
++- the router layer **does not define** a centralized `PluginMsg` enum (or an enum-of-enums),
++- and the router layer **does not model** generic “send message to plugin” events.
++
++Instead, plugin routing happens via the plugin registry/framework (step 04) using typed handles:
++- each plugin defines a `PluginSpec` with `type Input`,
++- the registry exposes `registry.get::<Spec>() -> Option<PluginHandle<Spec>>`,
++- once you have a handle, `handle.send(&Spec::Input)` is compile-time typed.
++
++The router’s job is to produce **high-level, GTK-free effects** (e.g. toast gating changes), and the app wiring layer decides which plugins to notify using typed handles.
 +
 +## Changes (what you will do)
 +
@@ -25,23 +40,17 @@
 +   - The top-level Relm4 message enum for the application.
 +   - Must include variants for:
 +     - overlay visibility changes (shown/hidden)
-+     - plugin-directed messages (namespaced by plugin id)
 +     - notifications DBus ingress (Notify/Close/ActionInvoked-related, at least as internal events)
 +     - “toast window” visibility gating events (derived from overlay shown/hidden)
++
++   - Must NOT include a generic “plugin-directed message” variant.
++     - Plugin-directed messages are owned by plugins and routed via typed handles (Option 1.5A) introduced in step 04.
 +
 +2. `PluginId`
 +   - A stable identifier type for plugins (string newtype or enum).
 +   - Must support consistent formatting and comparisons.
 +
-+3. `PluginMsg`
-+   - A plugin-scoped message type used by the router when sending messages to plugins.
-+   - Two viable patterns:
-+     - `PluginMsg` is an enum-of-enums (one variant per plugin), or
-+     - `PluginMsg` is opaque and routed with `(PluginId, Box<dyn Any>)` (NOT recommended: harder to test).
-+
-+Prefer the enum-of-enums approach for testability and refactoring safety.
-+
-+4. `UiEvent` compatibility (transitional)
++3. `UiEvent` compatibility (transitional)
 +   - If the project already has `UiEvent`, decide one of:
 +     - **Option 1:** Keep `UiEvent` and add a conversion `impl From<UiEvent> for AppMsg`
 +     - **Option 2:** Freeze `UiEvent` and start routing via `AppMsg` directly (leave `UiEvent` for old code only)
@@ -58,11 +67,12 @@
 +  - a list of “effects” describing what should happen next (still non-UI)
 +
 +Example effect types (choose what fits your codebase):
-+- `RouterEffect::SendToPlugin { plugin: PluginId, msg: PluginMsg }`
 +- `RouterEffect::SetToastGating { enabled: bool }`
 +- `RouterEffect::InvalidateToastLayout` (if you decide toast height should be recomputed)
 +
 +Key rule: **no GTK types** in the reducer or effect types.
++
++Note: do NOT add `RouterEffect::SendToPlugin` here. Plugin-directed routing is done via typed handles (Option 1.5A) in the app wiring layer, not in the pure router reducer.
 +
 +#### Required behavior encoded in reducer
 +
@@ -81,22 +91,24 @@
 +   - Send `AppMsg::OverlayShown` → assert effects include `SetToastGating { enabled: false }`
 +   - Send `AppMsg::OverlayHidden` → assert effects include `SetToastGating { enabled: true }`
 +
-+2. Basic plugin routing test:
-+   - Send an app-level message intended for a plugin (e.g. `AppMsg::ToPlugin { plugin, msg }`)
-+   - Assert a `SendToPlugin` effect is produced with the correct plugin id and message.
++2. (Removed) Basic plugin routing test:
++   - With Option 1.5A typed plugin handles, the router reducer does not route plugin-directed messages.
++   - Plugin routing is verified in step 04 via:
++     - `registry.get::<Spec>()` handle acquisition behavior, and
++     - `PluginHandle<Spec>::send(&Spec::Input)` typed dispatch.
 +
 +These tests should not initialize GTK and should not require a running main loop.
 +
 +## Definition of Done (measurable)
 +
-+- New module(s) exist defining `AppMsg`, `PluginId`, and plugin-directed message routing.
++- New module(s) exist defining `AppMsg` and `PluginId` (GTK-free).
 +- A pure reducer exists that:
 +  - updates routing state deterministically
 +  - produces non-UI effects
 +  - encodes overlay → toast gating rules
 +- Unit tests exist for:
 +  - overlay gating rule(s)
-+  - plugin routing rule(s)
++- Plugin routing is explicitly NOT part of this step’s reducer surface; it is covered by step 04’s typed-handle registry tests.
 +- The app remains buildable and all tests pass with:
 +  - default features
 +  - `relm4-skeleton` feature (from step 02), if present

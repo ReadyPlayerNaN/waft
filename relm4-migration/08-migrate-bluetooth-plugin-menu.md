@@ -76,8 +76,10 @@ Define a minimal event type that background tasks/DBus ingestion can emit, e.g.:
 - `BluetoothEvent::DeviceChanged { id: DeviceId, patch: DevicePatch }`
 
 Then choose one of:
-1. Map DBus → `AppMsg::ToPlugin { plugin: Bluetooth, msg: BluetoothMsg::… }`, or
-2. Map DBus → `AppMsg::BluetoothEvent(BluetoothEvent)` and let the router forward.
+1. Map DBus → `AppMsg::BluetoothIngress(BluetoothIngressEvent)` (router-facing, GTK-free), then in the app wiring layer deliver to the Bluetooth plugin via **typed handles** (Option 1.5A):
+   - `registry.get::<BluetoothSpec>() -> Option<PluginHandle<BluetoothSpec>>`
+   - if present: `handle.send(&BluetoothInput::...)`
+2. (Alternative) Map DBus → `AppMsg::BluetoothEvent(BluetoothEvent)` and handle it in the app wiring layer (post-reducer) using the same typed-handle delivery approach.
 
 Prefer (1) for clarity and type safety if your router already routes plugin messages.
 

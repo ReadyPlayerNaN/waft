@@ -26,28 +26,28 @@ A step is not “done” unless:
 | Step | Status | Link | Notes |
 |---:|:---:|:---|:---|
 | [00](./00-overview-and-goals.md) Overview & goals | [ ] |  |  |
-| [01](./01-inventory-current-architecture.md) Inventory current architecture | [ ] |  |  |
-| [02](./02-add-relm4-adw-skeleton.md) Add Relm4 + adw skeleton | [ ] |  |  |
-| [03](./03-establish-app-router-and-events.md) Establish app router + event types | [ ] |  |  |
-| [04](./04-plugin-framework-as-relm4-components.md) Plugin framework as Relm4 components | [ ] |  |  |
-| [05](./05-relm4-overlay-window-layout.md) Relm4 overlay layout + mount plugin components | [ ] |  |  |
+| [01](./01-inventory-current-architecture.md) Inventory current architecture | [x] |  | Added architecture inventory docs under `docs/relm4-migration/` + parity contract (no behavior changes). |
+| [02](./02-add-relm4-adw-skeleton.md) Add Relm4 + adw skeleton | [x] |  | Default feature now runs a minimal Relm4+adw skeleton (`relm4-skeleton`); legacy app remains available via `--no-default-features`. Added a fast non-UI unit test for a pure reducer (`CoreModel` + `reduce`). No DBus/plugin/notification semantics changes. |
+| [03](./03-establish-app-router-and-events.md) Establish app router + event types | [x] |  | Added GTK-free `relm4_app::events` + `relm4_app::router` with `AppMsg`/`PluginId` and a pure `reduce_router` producing `RouterEffect`s. Decision (updated): router no longer defines `PluginMsg` / `AppMsg::ToPlugin`; plugin message typing lives in plugins and routing is done via typed handles from the plugin registry (Option 1.5A). Legacy `UiEvent` remains unchanged. Notifications ingress is domain-ish, DBus-free types. Added unit tests for overlay→toast gating (plugin routing tests moved to step 04 registry tests). |
+| [04](./04-plugin-framework-as-relm4-components.md) Plugin framework as Relm4 components | [x] | https://github.com/just-paja/sacrebleui/commit/2f34d7c407bf8e5b6cd567f77082e7c1e952d215 | Decision: routing uses “Option 1.5A” typed handles (no centralized plugin endpoint/message enum). Each plugin owns its own typed `Input` enum + `PluginSpec`. The registry stores endpoints type-erased, but exposes `registry.get::<Spec>() -> Option<PluginHandle<Spec>>`; once acquired, `handle.send(&Spec::Input)` is compile-time typed. Router/types were updated accordingly: `PluginMsg` and `AppMsg::ToPlugin` were removed; plugin routing is performed by app wiring using typed handles. Framework enforces `init()` (GTK-free) vs `mount()` (post-GTK) boundary. Tests cover placement sorting and typed-handle acquisition + routing without initializing GTK. |
+| [05](./05-relm4-overlay-window-layout.md) Relm4 overlay layout + mount plugin components | [x] | TODO | Implemented Relm4 overlay host window layout with Top/Left/Right placement areas. Preserved ordering semantics (heavier weight goes lower). Wired window map/unmap to `AppMsg::{OverlayShown, OverlayHidden}` and executed `RouterEffect::SetToastGating` via typed plugin handle targeting Notifications (stub spec for now, real notifications Relm4 component will replace later). Added GTK-free unit tests for placement bucketing and for router-effect → typed-handle wiring (present + missing plugin cases). Feature flag renamed to `relm4-app` and kept as default. |
 | [06](./06-migrate-simple-plugins-to-relm4-components.md) Migrate simple plugins | [ ] |  |  |
-| [07](./07-dbus-ingress-to-appmsg-with-tests.md) DBus ingress → `AppMsg` + tests | [ ] |  |  |
+| [07](./07-dbus-ingress-to-appmsg-with-tests.md) DBus ingress → `AppMsg` + tests | [ ] |  | DBus integration tests are **required** in this step (temporary/isolated bus). |
 | [08](./08-migrate-bluetooth-plugin-menu.md) Migrate Bluetooth menu | [ ] |  |  |
 | [09](./09-notifications-domain-core-and-tests.md) Notifications domain core + tests | [ ] |  |  |
 | [10](./10-migrate-notifications-overlay-ui.md) Notifications overlay UI | [ ] |  |  |
 | [11](./11-migrate-notifications-toast-window.md) Notifications toast window | [ ] |  |  |
 | [12](./12-remove-legacy-gtk-paths-and-flip-default.md) Remove legacy GTK paths; flip default | [ ] |  |  |
-| [13](./13-cleanup-docs-and-remove-migration-scaffolding.md) Cleanup & remove scaffolding | [ ] |  |  |
+| [13](./13-cleanup-docs-and-remove-migration-scaffolding.md) Cleanup & remove migration scaffolding | [ ] |  |  |
 
 ---
 
 ## Current focus
 
-- **Active step:** `NN` (set this)
+- **Active step:** `05`
 - **Owner:** @you
-- **Branch/PR:** link here
-- **Current blockers:** list here
+- **Branch/PR:** TODO (add link to the PR/commit that landed step 05)
+- **Current blockers:** none
 
 ---
 

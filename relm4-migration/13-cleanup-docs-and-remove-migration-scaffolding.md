@@ -47,7 +47,11 @@ At the end of this step:
    - placeholder/stub plugin components (if any remain)
    - “compat layers” that convert old widget-based plugin APIs to new component APIs
    - feature flags or conditional compilation blocks that are no longer used
-   - transitional enums/variants in `AppMsg`/`PluginMsg` that were only for intermediate steps
+   - transitional scaffolding related to plugin routing:
+     - any leftover `PluginMsg`-style generic routing (if it ever existed temporarily)
+     - temporary typed-handle glue that is no longer needed once plugins are fully migrated:
+       - `PluginSpec` definitions that were only wrappers (if replaced by final plugin types)
+       - routing adapters that only existed to bridge legacy paths into `PluginHandle<Spec>`
 
 2. Remove debug-only UI and hooks introduced for migration, for example:
    - “inject fake DBus event” buttons

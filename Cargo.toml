@@ -3,6 +3,13 @@ name = "sacrebleui"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Default to the Relm4 app for development while we migrate incrementally.
+default = ["relm4-app"]
+
+# Build/run the Relm4 + libadwaita migration app entrypoint.
+relm4-app = ["dep:relm4"]
+
 [dependencies]
 # GTK4 (0.9.x) to align with gtk4-layer-shell and avoid `links = "gtk-4"` conflicts
 gtk = { version = "0.9", package = "gtk4", features = ["v4_6"] }
@@ -12,6 +19,12 @@ gtk4-layer-shell = "0.4"
 
 # libadwaita widgets (match gtk4 0.9 line)
 adw = { version = "0.7", package = "libadwaita", features = ["v1_5"] }
+
+# Relm4 (GUI framework) used during migration; kept optional behind a feature flag.
+#
+# Note: keep default features enabled so the proc-macros (`#[relm4::component]`, `view!`, etc.)
+# are available for the skeleton component.
+relm4 = { version = "0.9", optional = true, features = ["libadwaita"] }
 
 # GIO (for best-effort desktop app activation from notification toasts)
 gio = "0.20"

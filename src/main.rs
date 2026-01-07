@@ -25,6 +25,9 @@ mod ui;
 mod notifications_dbus;
 mod notifications_dbus_server;
 
+#[cfg(feature = "relm4-app")]
+mod relm4_app;
+
 use features::notifications::NotificationsPlugin;
 
 use adw::prelude::*;
@@ -945,6 +948,14 @@ fn toggle_overlay(window: &gtk::Window, registry: &PluginRegistry) {
     }
 }
 
+#[cfg(feature = "relm4-app")]
+fn main() {
+    // Important: keep the Relm4 path isolated from the legacy GTK overlay.
+    // DBus/plugin initialization will be introduced incrementally by migration steps.
+    relm4_app::run();
+}
+
+#[cfg(not(feature = "relm4-app"))]
 #[tokio::main]
 async fn main() -> Result<()> {
     // If a JSON message is provided as argv[1..], behave as a client and exit.
