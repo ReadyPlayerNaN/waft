@@ -1,5 +1,15 @@
 //! Relm4 + libadwaita overlay host (migration step 05).
 //!
+//! NOTE (post-step): this component now exposes explicit show/hide/toggle inputs so an
+//! external IPC server can request overlay visibility changes on the GTK thread.
+//!
+//! IPC behavior (requested):
+//! - `sacrebleui` (no args) starts the UI and attempts to become the IPC server.
+//!   If an instance is already running, it exits with a non-zero exit code.
+//! - `sacrebleui toggle|show|hide|stop` acts as an IPC client: sends the command to the
+//!   running instance and exits.
+//!   - `stop` requests the running instance to terminate.
+//!
 //! Goals for this step:
 //! - Build a real overlay window layout with Top / Left / Right placement areas.
 //! - Mount plugin components (stubs are fine) into the correct slot bucket,
@@ -9,22 +19,29 @@
 //!   - AppMsg::OverlayHidden
 //! - Add a small, testable “wiring layer” that executes RouterEffect using typed plugin handles.
 //!
-//! Additional behavior (post-step UX improvements):
-//! - Style the overlay surface (Adwaita window background + rounded corners).
-//! - Allow dismissing the overlay via Escape or “click outside”.
-//!
 //! Guardrails (per `AGENTS.md`):
 //! - Do not create GTK widgets before GTK is initialized. Relm4 constructs widgets during `run()`.
 //! - Keep reducer/router logic GTK-free and unit-testable.
+//! - Never touch GTK from background tasks/threads; schedule onto the GTK main context instead.
 //! - Do not poll / run main loops in tests.
+//!
+//! IPC → UI routing note:
+//! - Relm4 `Sender<T>` uses `emit(T)` / `send(T)` (there is no `input(...)` method).
 
 use relm4::adw;
 use relm4::gtk;
 
 // Extension traits required for `adw::ApplicationWindow::set_content(...)` and GTK window props.
-use gtk::prelude::FrameExt;
+use gtk::prelude::{FrameExt, GtkWindowExt, WidgetExt};
+
+// Needed for the IPC-enabled entrypoint:
+// - `connect_startup` comes from `gio::ApplicationExt` (re-exported by gtk prelude)
+// - `run()` comes from `gio::ApplicationExtManual` (also re-exported by gtk prelude)
+// - `add_window` comes from `GtkApplicationExt`
+use gtk::prelude::{ApplicationExt, ApplicationExtManual, GtkApplicationExt};
+
 use relm4::adw::prelude::AdwApplicationWindowExt;
-use relm4::gtk::prelude::{BoxExt, Cast, EventControllerExt, GtkWindowExt, WidgetExt};
+use relm4::gtk::prelude::{BoxExt, Cast};
 
 use gtk4_layer_shell::LayerShell;
 
@@ -36,6 +53,13 @@ use crate::relm4_app::plugin_framework::{
 };
 use crate::relm4_app::plugin_registry::RelmPluginRegistry;
 use crate::relm4_app::router::{RouterEffect, RouterState, reduce_router};
+
+// IPC (kept in a separate module/file; this component only consumes commands).
+use crate::ipc::net as ipc_net;
+use crate::ipc::{IpcCommand, command_from_args, ipc_socket_path};
+
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 /// Notifications plugin spec placeholder for toast gating wiring.
 ///
@@ -250,7 +274,8 @@ struct AppModel {
     registry: RelmPluginRegistry,
     router_state: RouterState,
 
-    // Layout containers (stored so we don't have to traverse widget trees during updates).
+    // Layout containers. IMPORTANT: these are the actual widgets mounted into the UI tree.
+    // We must not clone and re-parent GTK widgets (it triggers `gtk_box_append` assertions).
     top_box: gtk::Box,
     left_col: gtk::Box,
     right_col: gtk::Box,
@@ -270,7 +295,16 @@ enum AppInput {
     WindowMapped,
     WindowUnmapped,
 
-    // Internal: request hiding the overlay (Escape / click-outside).
+    // External/public-ish: allow an IPC layer (or future global hotkey handler) to control
+    // overlay visibility on the GTK thread via Relm4 message passing.
+    ShowOverlay,
+    HideOverlay,
+    ToggleOverlay,
+
+    // External/public-ish: request app termination (used by IPC `stop` command).
+    StopApp,
+
+    // Internal: request hiding the overlay (Escape / unfocus).
     RequestHide,
 }
 
@@ -346,9 +380,6 @@ impl SimpleComponent for AppModel {
             .relm4-overlay-surface {{
                 background: @window_bg_color;
                 border-radius: {}px;
-
-                /* IMPORTANT: clip children to the rounded corners. */
-                overflow: hidden;
             }}
             "#,
             OVERLAY_CORNER_RADIUS_PX
@@ -386,17 +417,9 @@ impl SimpleComponent for AppModel {
         let top_box = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         top_box.set_hexpand(true);
 
-        let content_row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
-        content_row.set_hexpand(true);
-        content_row.set_vexpand(true);
-
         let left_col = gtk::Box::new(gtk::Orientation::Vertical, 12);
         left_col.set_hexpand(true);
         left_col.set_vexpand(true);
-
-        let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        spacer.set_hexpand(true);
-        spacer.set_vexpand(true);
 
         let right_col = gtk::Box::new(gtk::Orientation::Vertical, 12);
         right_col.set_hexpand(true);
@@ -418,10 +441,6 @@ impl SimpleComponent for AppModel {
         top_box.append(&top_hdr);
         left_col.append(&left_hdr);
         right_col.append(&right_hdr);
-
-        content_row.append(&left_col);
-        content_row.append(&spacer);
-        content_row.append(&right_col);
 
         let model = AppModel {
             window: root.clone(),
@@ -453,22 +472,22 @@ impl SimpleComponent for AppModel {
         main_vbox.set_margin_start(16);
         main_vbox.set_margin_end(16);
 
-        // Reuse the containers stored in the model (cloned GTK refs).
-        main_vbox.append(&model.top_box);
-        main_vbox.append(&{
-            let content_row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
-            content_row.set_hexpand(true);
-            content_row.set_vexpand(true);
+        // IMPORTANT: append the actual widgets (and only once).
+        main_vbox.append(&top_box);
 
-            let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            spacer.set_hexpand(true);
-            spacer.set_vexpand(true);
+        let content_row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
+        content_row.set_hexpand(true);
+        content_row.set_vexpand(true);
 
-            content_row.append(&model.left_col);
-            content_row.append(&spacer);
-            content_row.append(&model.right_col);
-            content_row
-        });
+        let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        spacer.set_hexpand(true);
+        spacer.set_vexpand(true);
+
+        content_row.append(&left_col);
+        content_row.append(&spacer);
+        content_row.append(&right_col);
+
+        main_vbox.append(&content_row);
 
         // Cap height to available space: the scroller will take at most the window height,
         // which layer-shell constrains implicitly to the display minus margins.
@@ -481,28 +500,16 @@ impl SimpleComponent for AppModel {
         scroller.set_vexpand(true);
         scroller.set_child(Some(&main_vbox));
 
-        // Styled content wrapper (background + rounded corners).
-        //
-        // Rounded corners in light mode can be masked by the toplevel's opaque background.
-        // So we:
-        // - keep the toplevel background transparent via CSS, and
-        // - paint the panel background on the widget that is clipped.
-        //
-        // IMPORTANT: apply the `.relm4-overlay-surface` CSS class to the *clipping widget*
-        // so the rounded corners + background paint happen on the same node that clips.
-        let surface = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        surface.set_hexpand(true);
-        surface.set_vexpand(true);
-        surface.append(&scroller);
-
-        // Clipping root. `gtk::Frame` is a bin and supports `set_overflow(Hidden)`, which
-        // forces clipping for rounded corners.
+        // Clipping root. We rely on `gtk::Overflow::Hidden` (set in code) instead of the CSS
+        // `overflow` property (not supported by GTK CSS parser).
         let clip = gtk::Frame::new(None);
         clip.add_css_class("relm4-overlay-surface");
         clip.set_hexpand(true);
         clip.set_vexpand(true);
         clip.set_overflow(gtk::Overflow::Hidden);
-        clip.set_child(Some(&surface));
+
+        // Parent the scroller exactly once: as the child of the clipping frame.
+        clip.set_child(Some(&scroller));
 
         // Ensure the extension trait is in scope via relm4::adw prelude; `adw::ApplicationWindow` supports `set_content`.
         root.set_content(Some(&clip));
@@ -555,13 +562,6 @@ impl SimpleComponent for AppModel {
 
         // Trigger plugin widget mounting once (after view is constructed).
         sender.input(AppInput::MountPlugins);
-
-        // Store widget handles we need later in `model`? For this step we keep it simple:
-        // we reconstruct container lookup by walking from `root.content()` during mount.
-        // (Not ideal long-term; later steps should store widget refs.)
-        //
-        // Here, we just keep `mounted_widgets` stable in the model and also append to containers
-        // during the MountPlugins update step.
 
         let widgets = view_output!();
         ComponentParts { model, widgets }
@@ -622,6 +622,37 @@ impl SimpleComponent for AppModel {
                 let _ = sender;
             }
 
+            AppInput::ShowOverlay => {
+                // Show + focus (required by user). `present()` is the idiomatic way to raise/activate.
+                self.window.set_visible(true);
+                self.window.present();
+                let _ = sender;
+            }
+
+            AppInput::HideOverlay => {
+                self.window.set_visible(false);
+                let _ = sender;
+            }
+
+            AppInput::ToggleOverlay => {
+                if self.window.is_visible() {
+                    self.window.set_visible(false);
+                } else {
+                    self.window.set_visible(true);
+                    self.window.present();
+                }
+                let _ = sender;
+            }
+
+            AppInput::StopApp => {
+                // Terminate from the GTK thread.
+                //
+                // Use the global main application so this works regardless of how the app
+                // was started (and avoids touching GTK from the IPC thread).
+                relm4::main_application().quit();
+                let _ = sender;
+            }
+
             AppInput::RequestHide => {
                 // Hide the overlay and rely on the unmap signal to produce `OverlayHidden`
                 // (and therefore toast gating re-enable) via the existing plumbing.
@@ -638,8 +669,144 @@ impl SimpleComponent for AppModel {
 
 /// Run the Relm4 overlay host app (feature-gated entrypoint from `main.rs`).
 pub fn run() {
-    let app = RelmApp::new("dev.sacrebleui.relm4-app");
-    app.run::<AppModel>(());
+    // CLI/IPC policy (requested):
+    // - `sacrebleui` (no args): start UI + become server; if already running => exit non-zero
+    // - `sacrebleui toggle|show|hide`: IPC client command and exit
+    //
+    // IMPORTANT: Do not create any GTK widgets before a display exists.
+    // We therefore launch the Relm4 component during GTK application startup.
+    let args: Vec<String> = std::env::args().collect();
+    let socket = match ipc_socket_path() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
+
+    // Client mode: `toggle|show|hide` (or legacy JSON form) => send to running instance and exit.
+    if let Ok(Some(cmd)) = command_from_args(&args) {
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("failed to create tokio runtime: {e}");
+                std::process::exit(2);
+            }
+        };
+
+        let res: Result<String, ipc_net::IpcNetError> =
+            rt.block_on(async { ipc_net::send_command(&socket, cmd).await });
+
+        match res {
+            Ok(reply) => {
+                if !reply.is_empty() {
+                    println!("{reply}");
+                }
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        }
+    }
+
+    // Server mode: try to become server; if already running => exit non-zero (requested).
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("failed to create tokio runtime: {e}");
+            std::process::exit(2);
+        }
+    };
+
+    let listener = match rt.block_on(async { ipc_net::try_become_server(&socket).await }) {
+        Ok(l) => l,
+        Err(ipc_net::IpcNetError::AlreadyRunning) => {
+            eprintln!("already running");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
+
+    // Shared sender slot filled on GTK startup.
+    let sender_slot: Arc<Mutex<Option<relm4::Sender<AppInput>>>> = Arc::new(Mutex::new(None));
+
+    // Spawn IPC server thread (Tokio runtime) that forwards commands onto the GTK main context.
+    // It will only emit Relm4 inputs once the sender is available.
+    {
+        let sender_slot = sender_slot.clone();
+        thread::spawn(move || {
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    eprintln!("failed to create tokio runtime for ipc server: {e}");
+                    return;
+                }
+            };
+
+            let on_command = move |cmd: IpcCommand| {
+                let sender_opt = sender_slot.lock().ok().and_then(|g| g.clone());
+                let Some(sender) = sender_opt else {
+                    // UI not ready yet; ignore (best-effort).
+                    return;
+                };
+
+                // IMPORTANT:
+                // This IPC server runs on a non-GLib/GTK thread.
+                // We must schedule the UI work onto the GLib main context thread.
+                //
+                // `invoke()` is safe to call from other threads; it marshals the closure
+                // onto the owning main context.
+                gtk::glib::MainContext::default().invoke(move || match cmd {
+                    IpcCommand::Show => sender.emit(AppInput::ShowOverlay),
+                    IpcCommand::Hide => sender.emit(AppInput::HideOverlay),
+                    IpcCommand::Toggle => sender.emit(AppInput::ToggleOverlay),
+                    IpcCommand::Stop => sender.emit(AppInput::StopApp),
+                    IpcCommand::Ping => {}
+                });
+            };
+
+            let _ = rt.block_on(async { ipc_net::run_server(listener, on_command).await });
+        });
+    }
+
+    // We do not instantiate a `RelmApp<M>` here because we are manually wiring startup and
+    // running the global GTK application. Creating a `RelmApp` would require selecting an
+    // `M` (top-level message type) and is redundant for this entrypoint.
+
+    {
+        let sender_slot = sender_slot.clone();
+        let payload = std::cell::Cell::new(Some(()));
+        let app_ref = relm4::main_application();
+
+        app_ref.connect_startup(move |app: &gtk::Application| {
+            if let Some(payload) = payload.take() {
+                let connector = relm4::ComponentBuilder::<AppModel>::default().launch(payload);
+                let sender = connector.sender().clone();
+
+                // Store sender for IPC.
+                if let Ok(mut g) = sender_slot.lock() {
+                    *g = Some(sender);
+                }
+
+                // Add window to the application and start hidden (requested).
+                let window = connector.widget().clone();
+                app.add_window(&window);
+                window.set_visible(false);
+
+                // Keep the component runtime alive.
+                let mut controller = connector.detach();
+                controller.detach_runtime();
+            }
+        });
+    }
+
+    // Run the GTK application main loop.
+    relm4::main_application().run();
 }
 
 #[cfg(test)]

@@ -31,6 +31,8 @@ mod relm4_app;
 use features::notifications::NotificationsPlugin;
 
 use adw::prelude::*;
+mod ipc;
+
 use anyhow::{Context, Result};
 use dbus::DbusHandle;
 use gtk::gdk;
