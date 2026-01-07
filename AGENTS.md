@@ -290,8 +290,8 @@ Recommended structure (current pattern):
 DBus implementation note / direction:
 
 - Server-side implementation: use `zbus` (it provides a clearer, higher-level API for owning a well-known name, exporting an interface, and emitting signals).
-- Client-side implementation: currently uses `dbus` + `dbus-tokio` via `DbusHandle`.
-- Intent: migrate DBus *client* code to `zbus` as well in a future **big-bang** change (not incremental), to avoid maintaining two DBus stacks long-term. Until that migration happens, having `zbus` (server) + `dbus` (clients) is considered an acceptable transitional state.
+- Client-side implementation: use `zbus` as well (single DBus stack; no `dbus` / `dbus-tokio`).
+- Intent: keep DBus integrations **zbus-only** to avoid maintaining multiple DBus stacks long-term.
 
 This app can optionally act as the notification server by owning the session-bus name `org.freedesktop.Notifications`.
 
@@ -299,8 +299,10 @@ This app can optionally act as the notification server by owning the session-bus
 
 Preconditions:
 
-- No other notification daemon can be running (GNOME Shell notifications, `dunst`, `mako`, etc.), because only one process can own `org.freedesktop.Notifications`.
-- Start `sacrebleui` normally. If the name is already owned, the app should fail during startup (by design).
+- Another notification daemon may already be running (GNOME Shell notifications, `dunst`, `mako`, etc.).
+- Start `sacrebleui` normally. If the name is already owned, the app should attempt to **replace** the current owner during startup.
+  - If replacement succeeds, `sacrebleui` becomes the notification server.
+  - If replacement fails, startup should fail (and the app exits), rather than running without owning `org.freedesktop.Notifications`.
 
 1) Verify sacrebleui owns `org.freedesktop.Notifications`
 
@@ -355,7 +357,8 @@ Notes:
 
 Operational policy:
 
-- If `org.freedesktop.Notifications` is already owned by another process, the app should **fail during startup** (exit the entire app). No “replace owner” behavior is attempted.
+- If `org.freedesktop.Notifications` is already owned by another process, the app should attempt to **replace** the owner during startup.
+  - If it cannot acquire the name, the app should still **fail during startup** (exit the entire app).
 
 Capabilities we support / intend to advertise via `GetCapabilities` (must match actual UI behavior):
 

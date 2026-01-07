@@ -222,19 +222,3 @@ pub struct NotificationsSnapshot {
     pub open_group: Option<String>,     // app_key
     pub total_count: usize,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn base_notification() -> Notification {
-        Notification::new(
-            1,
-            "App".to_string(),
-            "Summary".to_string(),
-            "Body".to_string(),
-            std::time::SystemTime::now(),
-            NotificationIcon::Themed("dialog-information-symbolic".to_string()),
-        )
-    }
-}

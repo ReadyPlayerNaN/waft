@@ -986,8 +986,9 @@ async fn main() -> Result<()> {
     // DBus notifications server wiring (only if notifications plugin is enabled).
     //
     // Policy:
-    // - We own `org.freedesktop.Notifications`.
-    // - If the name is already taken, we fail during startup (exit the entire app).
+    // - We try to own `org.freedesktop.Notifications`.
+    // - If the name is already taken, we attempt to replace the current owner on startup.
+    //   (If replacement fails, startup still fails and we exit.)
     let (notif_ingress_tx, notif_ingress_rx) =
         mpsc::unbounded_channel::<crate::notifications_dbus::IngressEvent>();
     let (notif_outbound_tx, notif_outbound_rx) =
@@ -998,7 +999,8 @@ async fn main() -> Result<()> {
             .await
             .context("Failed to connect DBus notifications server")?;
 
-    // Start the server now; if another daemon owns the name, this returns an error and we exit.
+    // Start the server now; it will attempt to replace any existing owner of the name.
+    // If it cannot acquire the name, this returns an error and we exit.
     notifications_dbus_server
         .start(notif_ingress_tx.clone(), notif_outbound_rx)
         .await

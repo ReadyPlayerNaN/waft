@@ -1,204 +1,248 @@
+//! DBus client wrapper built on `zbus`.
+//!
+//! This module is the **client-side** DBus helper layer.
+//! The notifications DBus *server* lives in `crate::notifications_dbus_server` (also `zbus`).
+//!
+//! Goals:
+//! - Provide a small, cloneable handle for DBus client calls.
+//! - Provide property get/set via the standard `org.freedesktop.DBus.Properties` interface.
+//! - Provide signal listening using DBus match rules + a background receiver task.
+//!
+//! Threading model:
+//! - DBus IO is async and intended to run on background tasks (`tokio::spawn`).
+//! - Do not touch GTK from any of these callbacks; forward state changes to the UI via channels.
+
 use anyhow::{Context, Result};
-use dbus::arg::RefArg;
-use dbus::arg::Variant;
-use dbus::message::MatchRule;
-use dbus::nonblock::MsgMatch;
-use dbus::nonblock::Proxy;
-use dbus::nonblock::SyncConnection;
-use dbus_tokio::connection;
-use futures_channel::mpsc::UnboundedReceiver;
 use std::sync::Arc;
-use std::time::Duration;
-// use tokio::sync::mpsc;
 
-use tokio_stream::StreamExt;
+use tokio::sync::broadcast;
 
-/// Shared async DBus session-bus connection.
-///
-/// This wrapper is intentionally simple and generic:
-/// - It owns a single `SyncConnection` created via `dbus_tokio::connection::new_session_sync`.
-/// - It exposes a way to register a listener for DBus signals matching a `MatchRule`.
-/// - It exposes a way to unregister that listener again.
-///
-/// Domain-specific code (like the darkman plugin) is responsible for:
-/// - Defining the `MatchRule` (interface, path, member, etc.).
-/// - Decoding the raw `Message` values into domain events.
+use zbus::{Connection, Message};
+use zvariant::{OwnedValue, Value};
+
+/// Shared async DBus session-bus connection (zbus).
 #[derive(Clone)]
 pub struct DbusHandle {
-    conn: Arc<SyncConnection>,
+    conn: Arc<Connection>,
 }
 
 impl DbusHandle {
-    /// Initialize a shared DBus session-bus connection.
-    ///
-    /// This:
-    /// - Connects to the session bus.
-    /// - Spawns the background resource future that drives the connection.
-    /// - Wraps the non-blocking `SyncConnection` in an `Arc` for cheap cloning.
+    /// Connect to the session bus.
     pub async fn connect() -> Result<Self> {
-        let (resource, conn) =
-            connection::new_session_sync().context("Failed to establish async DBus session")?;
+        let conn = Connection::session()
+            .await
+            .context("Failed to connect to DBus session bus")?;
 
-        // Drive the DBus connection in the background. It will shut down
-        // automatically once all clones of `conn` are dropped.
-        tokio::spawn(async move {
-            let _ = resource.await;
-        });
-
-        Ok(Self { conn: conn })
+        Ok(Self {
+            conn: Arc::new(conn),
+        })
     }
 
-    /// Register a listener for DBus signals matching the given `MatchRule`.
+    /// Read a DBus property as a `String` (best-effort).
     ///
-    /// All matching messages are forwarded into the provided unbounded
-    /// channel. This method:
-    /// - Installs the match rule on the connection.
-    /// - Spawns a background task that pulls typed messages from the
-    ///   connection and forwards them to `tx`.
-    ///
-    /// The returned `DbusListener` can later be passed to
-    /// `unregister_listener` to remove the match rule.
-    // // pub async fn register_listener(
-    // //     &self,
-    // //     mut rule: MatchRule<'static>,
-    // //     tx: mpsc::UnboundedSender<Message>,
-    // // ) -> Result<DbusListener> {
-    // //     // Ensure we're only listening for signals.
-    // //     if rule.msg_type.is_none() {
-    // //         rule.msg_type = Some(dbus::message::MessageType::Signal);
-    // //     }
-
-    // //     let conn = self.conn.clone();
-
-    // //     // Install the match rule on the non-blocking connection and get a match handle.
-    // //     let msg_match = conn
-    // //         .add_match(rule.clone())
-    // //         .await
-    // //         .context("Failed to add DBus match rule")?;
-
-    // //     // Turn the match handle into a typed stream of raw `Message`s.
-    // //     let (msg_match, mut stream) = msg_match.stream();
-
-    // //     // Drive the stream in a background task and forward any messages
-    // //     // to the provided channel.
-    // //     tokio::spawn(async move {
-    // //         while let Some((msg, (_,))) = stream.next().await {
-    // //             if tx.send(msg).is_err() {
-    // //                 // Receiver dropped; stop forwarding.
-    // //                 break;
-    // //             }
-    // //         }
-
-    // //         // Drop the match handle so the rule is removed when the task ends.
-    // //         drop(msg_match);
-    // //     });
-
-    // //     Ok(DbusListener { conn, rule })
-    // }
-
-    /// Unregister a previously registered listener.
-    ///
-    /// This removes the match rule associated with the given listener from
-    /// the underlying connection. After this returns, no further messages
-    /// will be delivered to the channel associated with that listener.
-    // pub async fn unregister_listener(&self, listener: DbusListener) -> Result<()> {
-    //     // Remove the match rule from the connection. We ignore the result
-    //     // of the background task spawned in `register_listener` — it will
-    //     // simply see no more messages and exit.
-    //     listener
-    //         .conn
-    //         .remove_match(listener.rule)
-    //         .await
-    //         .context("Failed to remove DBus match rule")?;
-
-    //     Ok(())
-    // }
-
-    /// Expose the underlying connection for advanced use-cases.
-    // pub fn connection(&self) -> Arc<SyncConnection> {
-    //     self.conn.clone()
-    // }
-
-    pub fn proxy<'a>(&'a self, interface: &'a str, path: &'a str) -> Proxy<'a, &'a SyncConnection> {
-        Proxy::new(interface, path, Duration::from_secs(5), &self.conn)
-    }
-
+    /// Notes:
+    /// - This uses `org.freedesktop.DBus.Properties.Get`.
+    /// - `destination` here is the **service name** you’re talking to (e.g. `nl.whynothugo.darkman`).
+    /// - Returns `Ok(None)` if the property exists but is not a string.
     pub async fn get_property(
         &self,
-        interface: &str,
+        destination: &str,
         path: &str,
         property: &str,
     ) -> Result<Option<String>> {
-        let (value,): (Variant<Box<dyn RefArg>>,) = self
-            .proxy(interface, path)
-            .method_call(
-                "org.freedesktop.DBus.Properties",
-                "Get",
-                (interface, property),
-            )
+        let proxy = zbus::Proxy::new(
+            &*self.conn,
+            destination,
+            path,
+            "org.freedesktop.DBus.Properties",
+        )
+        .await
+        .context("Failed to create DBus Properties proxy")?;
+
+        // Get(interface_name, property_name) -> (v)
+        //
+        // IMPORTANT: the first argument is the *interface name* that owns the property,
+        // not the bus name. Many services use the same string for both; call sites should
+        // pass the correct interface name.
+        let (value,): (OwnedValue,) = proxy
+            .call("Get", &(destination, property))
             .await
             .context("Failed to get property via DBus")?;
 
-        Ok(value.0.as_str().map(|s| s.to_owned()))
+        // `Get` returns a DBus variant (as `OwnedValue`).
+        Ok(owned_value_to_string(value))
     }
 
+    /// Set a DBus property from a `&str` (best-effort).
+    ///
+    /// Notes:
+    /// - This uses `org.freedesktop.DBus.Properties.Set`.
+    /// - `destination` here is the **service name** you’re talking to.
     pub async fn set_property(
         &self,
-        interface: &str,
+        destination: &str,
         path: &str,
         property: &str,
         value: &str,
     ) -> Result<()> {
-        self.proxy(interface, path)
-            .method_call(
-                "org.freedesktop.DBus.Properties",
-                "Set",
-                (interface, property, Variant(Box::new(value))),
-            )
-            .await
-            .context("Failed to set Mode property via DBus")
+        let proxy = zbus::Proxy::new(
+            &*self.conn,
+            destination,
+            path,
+            "org.freedesktop.DBus.Properties",
+        )
+        .await
+        .context("Failed to create DBus Properties proxy")?;
+
+        // Set(interface_name, property_name, v) -> ()
+        //
+        // The third parameter is a DBus variant. We pass a `zvariant::Value` which will be
+        // marshalled as `v` by zbus.
+        let v = Value::from(value.to_string());
+
+        // Help type inference: `Set` returns `()`.
+        let call_res: std::result::Result<(), _> =
+            proxy.call("Set", &(destination, property, v)).await;
+
+        call_res.context("Failed to set property via DBus")?;
+
+        Ok(())
     }
 
-    pub async fn stream<'a, T>(
-        &'a self,
-        rule: MatchRule<'static>,
-    ) -> Result<(MsgMatch, UnboundedReceiver<(dbus::Message, T)>)>
-    where
-        T: dbus::arg::ReadAll + Send + 'static,
-    {
-        let msgmatch = self.conn.add_match(rule).await?;
-        let (m, stream) = msgmatch.stream::<T>();
-        Ok((m, stream))
-    }
+    /// Listen for DBus signals matching a match rule, forwarding each raw `Message`
+    /// into a `tokio::sync::broadcast` channel.
+    ///
+    /// This is intentionally low-level so feature modules can decode what they need.
+    ///
+    /// `match_rule` is a DBus match string like:
+    /// - `type='signal',interface='nl.whynothugo.darkman',member='ModeChanged'`
+    ///
+    /// Implementation note:
+    /// Prefer **bus-side filtering**:
+    /// - Install the match on the bus via `org.freedesktop.DBus.AddMatch` (typed `MatchRule`).
+    /// - Then consume incoming messages and forward only those that match (typically the bus will
+    ///   only deliver matches once `AddMatch` succeeds).
+    ///
+    /// Fallback:
+    /// - If we can't install the match rule (unexpected bus/proxy failure), we still listen to the
+    ///   connection message stream and do conservative local filtering on interface/member.
+    pub async fn listen_signals(&self, match_rule: &str) -> Result<broadcast::Receiver<Message>> {
+        let (tx, rx) = broadcast::channel::<Message>(64);
 
-    pub async fn listen_for_values<'a, T>(
-        &'a self,
-        rule: MatchRule<'static>,
-        mut on_value: impl FnMut(Option<T>) + Send + 'static,
-    ) -> Result<()>
-    where
-        T: dbus::arg::Arg + for<'z> dbus::arg::Get<'z> + Send + 'static,
-    {
-        let (msgmatch, mut rx) = self.stream::<(T,)>(rule).await?;
+        // Parse into a typed zbus match rule (this is what `AddMatch` expects).
+        let rule: zbus::MatchRule<'static> = zbus::MatchRule::try_from(match_rule)
+            .with_context(|| format!("Invalid DBus match rule: {match_rule}"))?
+            .to_owned();
+
+        // Best-effort bus-side match installation.
+        let bus_side_installed = match zbus::fdo::DBusProxy::new(&*self.conn).await {
+            Ok(dbus) => dbus.add_match_rule(rule.clone()).await.is_ok(),
+            Err(_) => false,
+        };
+
+        let conn = self.conn.clone();
+        let rule_str = match_rule.to_string();
+
         tokio::spawn(async move {
-            let _msgmatch = msgmatch;
-            while let Some((_msg, (value,))) = rx.next().await {
-                on_value(Some(value));
+            // NOTE: `MessageStream` yields `Result<Message, zbus::Error>`.
+            let mut stream = zbus::MessageStream::from(&*conn);
+
+            while let Some(next) = stream.next().await {
+                let msg = match next {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+
+                // If bus-side match installation worked, the bus should already be filtering.
+                // Still, keep a cheap local filter as a safety net.
+                if bus_side_installed {
+                    let _ = tx.send(msg);
+                    continue;
+                }
+
+                // Fallback local filter: only forward signals and match interface/member if present.
+                let msg_type = msg.header().primary().msg_type();
+                if msg_type as u8 != 4 {
+                    continue;
+                }
+
+                let h = msg.header();
+
+                let iface_req = rule_str.contains("interface='");
+                let member_req = rule_str.contains("member='");
+
+                let iface_ok = !iface_req
+                    || h.interface()
+                        .map(|i| rule_str.contains(&format!("interface='{}'", i)))
+                        .unwrap_or(false);
+
+                let member_ok = !member_req
+                    || h.member()
+                        .map(|m| rule_str.contains(&format!("member='{}'", m)))
+                        .unwrap_or(false);
+
+                if iface_ok && member_ok {
+                    let _ = tx.send(msg);
+                }
             }
         });
+
+        Ok(rx)
+    }
+
+    /// Convenience helper to listen for a *single* string argument carried by a signal,
+    /// calling `on_value(Some(String))` for each decoded value.
+    pub async fn listen_for_values(
+        &self,
+        interface: &str,
+        member: &str,
+        mut on_value: impl FnMut(Option<String>) + Send + 'static,
+    ) -> Result<()> {
+        let rule = format!(
+            "type='signal',interface='{}',member='{}'",
+            escape_match_value(interface),
+            escape_match_value(member)
+        );
+
+        let mut rx = self.listen_signals(&rule).await?;
+
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(msg) => on_value(decode_first_body_string(&msg)),
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+
         Ok(())
     }
 }
-// Extension trait to bring `.next()` into scope for the typed stream.
-// This mirrors what `tokio_stream::StreamExt` provides, but we keep the
-// dependency surface small and local to this module.
-// trait StreamExtLocal: futures_core::Stream {
-//     fn next(&mut self) -> futures_util::stream::Next<'_, Self>
-//     where
-//         Self: Unpin,
-//     {
-//         futures_util::stream::StreamExt::next(self)
-//     }
-// }
 
-// impl<T: futures_core::Stream> StreamExtLocal for T {}
+/// Best-effort conversion of `OwnedValue` to `String`.
+fn owned_value_to_string(v: OwnedValue) -> Option<String> {
+    let val: Value = v.into();
+    if let Value::Str(s) = val {
+        return Some(s.to_string());
+    }
+    None
+}
+
+/// Try to decode the first body field of a message into a string.
+fn decode_first_body_string(msg: &Message) -> Option<String> {
+    if let Ok((s,)) = msg.body().deserialize::<(String,)>() {
+        return Some(s);
+    }
+    if let Ok((v,)) = msg.body().deserialize::<(OwnedValue,)>() {
+        return owned_value_to_string(v);
+    }
+    None
+}
+
+/// Escape a string for inclusion in a DBus match rule value.
+fn escape_match_value(s: &str) -> String {
+    s.replace('\'', "\\'")
+}
+
+use futures_util::StreamExt;

@@ -4,13 +4,12 @@ use crate::ui::UiEvent;
 use crate::ui::features::FeatureSpec;
 use anyhow::Result;
 use async_trait::async_trait;
-use dbus::message::MatchRule;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc;
 
-const DARKMAN_INTERFACE: &str = "nl.whynothugo.darkman";
+const DARKMAN_DESTINATION: &str = "nl.whynothugo.darkman";
 const DARKMAN_PATH: &str = "/nl/whynothugo/darkman";
 const FEATURE_KEY: &str = "plugin::darkman";
 
@@ -98,7 +97,7 @@ impl DarkmanController {
 /// Dark mode plugin implementation
 pub struct DarkmanPlugin {
     mode: Arc<AtomicU8>,
-    /// Shared async DBus handle (dbus-tokio + SyncConnection)
+    /// Shared async DBus handle (zbus session connection wrapper)
     dbus: Arc<DbusHandle>,
     initialized: bool,
     /// Declarative UI description for this plugin's feature tile
@@ -138,10 +137,10 @@ impl DarkmanPlugin {
         }
     }
 
-    /// Check current darkman state via async DBus using a shared SyncConnection.
+    /// Check current darkman state via async DBus (zbus).
     async fn get_current_state(conn: &DbusHandle) -> Result<DarkmanMode> {
         let value = conn
-            .get_property(DARKMAN_INTERFACE, DARKMAN_PATH, "Mode")
+            .get_property(DARKMAN_DESTINATION, DARKMAN_PATH, "Mode")
             .await?;
 
         Ok(value
@@ -150,11 +149,11 @@ impl DarkmanPlugin {
             .unwrap_or(DarkmanMode::Light))
     }
 
-    /// Set darkman state via async DBus using a shared SyncConnection.
+    /// Set darkman state via async DBus (zbus).
     ///
     /// NOTE: The `conn` is passed as the first argument as requested.
     async fn set_state(conn: &DbusHandle, mode: DarkmanMode) -> Result<()> {
-        conn.set_property(DARKMAN_INTERFACE, DARKMAN_PATH, "Mode", mode.as_str())
+        conn.set_property(DARKMAN_DESTINATION, DARKMAN_PATH, "Mode", mode.as_str())
             .await
     }
 
@@ -199,8 +198,11 @@ impl DarkmanPlugin {
             }
         };
 
-        let rule = MatchRule::new_signal(DARKMAN_INTERFACE, "ModeChanged");
-        self.dbus.listen_for_values(rule, handle_value).await?;
+        // zbus-based subscription: match signals and decode first arg as string (best-effort).
+        self.dbus
+            .listen_for_values(DARKMAN_DESTINATION, "ModeChanged", handle_value)
+            .await?;
+
         Ok(())
     }
 }

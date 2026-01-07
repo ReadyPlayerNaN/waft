@@ -10,7 +10,7 @@
 //! - GTK must remain on the main thread.
 //! - This server runs on tokio and communicates with the notifications plugin/controller
 //!   via channels using `crate::notifications_dbus::{IngressEvent, OutboundEvent}`.
-//! - If `org.freedesktop.Notifications` is already owned, startup must fail (caller exits app).
+//! - If `org.freedesktop.Notifications` is already owned, startup should attempt to replace the owner.
 //!
 //! Implemented methods:
 //! - `GetCapabilities`
@@ -79,15 +79,19 @@ impl NotificationsDbusServer {
     ///
     /// This will:
     /// - connect to the session bus
-    /// - fail if `org.freedesktop.Notifications` is already owned
-    /// - request the name and export `/org/freedesktop/Notifications`
+    /// - request (and attempt to replace) `org.freedesktop.Notifications` if it is already owned
+    /// - export `/org/freedesktop/Notifications`
     /// - spawn a background task translating `OutboundEvent` -> DBus signals
     pub async fn start(
         &self,
         ingress_tx: mpsc::UnboundedSender<IngressEvent>,
         outbound_rx: mpsc::UnboundedReceiver<OutboundEvent>,
     ) -> Result<()> {
-        // Per policy: fail during startup if someone else already owns the name.
+        // Policy: try to replace any existing owner of `org.freedesktop.Notifications` on startup.
+        //
+        // We do a best-effort call to `ReleaseName` to encourage a cooperative daemon to step down.
+        // Even if that fails (most daemons won't release), we still attempt to request the name
+        // with replacement flags during connection setup below.
         {
             let probe = Connection::session()
                 .await
@@ -96,19 +100,23 @@ impl NotificationsDbusServer {
                 .await
                 .context("Failed to create org.freedesktop.DBus proxy (probe)")?;
 
-            let name: BusName<'_> = BusName::try_from(BUS_NAME)
+            let bus_name: BusName<'_> = BusName::try_from(BUS_NAME)
                 .map_err(|e| anyhow!(e))
                 .context("Invalid BusName for NameHasOwner")?;
 
             if dbus
-                .name_has_owner(name)
+                .name_has_owner(bus_name.clone())
                 .await
                 .context("DBus NameHasOwner(org.freedesktop.Notifications) failed")?
             {
-                return Err(anyhow!(
-                    "DBus name `{}` is already owned; exiting per policy",
-                    BUS_NAME
-                ));
+                // Ignore the result: other owners may refuse to release, and that's fine.
+                //
+                // NOTE: `ReleaseName` expects a well-known name type.
+                let well_known: WellKnownName<'_> = WellKnownName::try_from(BUS_NAME)
+                    .map_err(|e| anyhow!(e))
+                    .context("Invalid WellKnownName for ReleaseName")?;
+
+                let _ = dbus.release_name(well_known).await;
             }
         }
 
@@ -120,6 +128,13 @@ impl NotificationsDbusServer {
             .context("Invalid well-known DBus name for notifications server")?;
 
         // Build the server connection and export the object.
+        //
+        // Important: we want to replace any existing owner if possible.
+        // `zbus`' builder uses the well-known name request internally; we rely on its default
+        // behavior here after attempting a best-effort `ReleaseName` above.
+        //
+        // If replacement isn't possible (e.g. the bus/owner refuses), this will still fail and
+        // the caller will surface the error.
         let conn = ConnectionBuilder::session()
             .context("Failed to create DBus ConnectionBuilder")?
             .name(name)
