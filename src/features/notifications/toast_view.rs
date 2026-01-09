@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use gio::prelude::AppInfoExt;
 use gtk::prelude::*;
 use gtk4_layer_shell::LayerShell;
 

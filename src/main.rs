@@ -28,13 +28,10 @@ mod notifications_dbus_server;
 #[cfg(feature = "relm4-app")]
 mod relm4_app;
 
-use features::notifications::NotificationsPlugin;
-
 use adw::prelude::*;
 mod ipc;
 
 use anyhow::{Context, Result};
-use dbus::DbusHandle;
 use gtk::gdk;
 use gtk::glib;
 use gtk4_layer_shell::LayerShell;
@@ -42,7 +39,6 @@ use plugins::registry::PluginRegistry;
 use serde::Deserialize;
 
 use crate::ui::overlay_animation::{self, FadeConfig};
-use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
@@ -951,10 +947,12 @@ fn toggle_overlay(window: &gtk::Window, registry: &PluginRegistry) {
 }
 
 #[cfg(feature = "relm4-app")]
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
+    env_logger::init();
     // Important: keep the Relm4 path isolated from the legacy GTK overlay.
     // DBus/plugin initialization will be introduced incrementally by migration steps.
-    relm4_app::run();
+    relm4_app::run().await
 }
 
 #[cfg(not(feature = "relm4-app"))]
@@ -1048,10 +1046,6 @@ async fn main() -> Result<()> {
     let _ = registry.register(
         features::darkman::DarkmanPlugin::new(Arc::new(dbus))
             .with_ui_event_sender(ui_event_tx.clone()),
-    );
-
-    let _ = registry.register(
-        features::sunsetr::SunsetrPlugin::new().with_ui_event_sender(ui_event_tx.clone()),
     );
 
     let _ = registry.register(

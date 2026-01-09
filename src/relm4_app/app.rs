@@ -1,37 +1,9 @@
-//! Relm4 + libadwaita overlay host (migration step 05).
-//!
-//! NOTE (post-step): this component now exposes explicit show/hide/toggle inputs so an
-//! external IPC server can request overlay visibility changes on the GTK thread.
-//!
-//! IPC behavior (requested):
-//! - `sacrebleui` (no args) starts the UI and attempts to become the IPC server.
-//!   If an instance is already running, it exits with a non-zero exit code.
-//! - `sacrebleui toggle|show|hide|stop` acts as an IPC client: sends the command to the
-//!   running instance and exits.
-//!   - `stop` requests the running instance to terminate.
-//!
-//! Goals for this step:
-//! - Build a real overlay window layout with Top / Left / Right placement areas.
-//! - Mount plugin components (stubs are fine) into the correct slot bucket,
-//!   preserving ordering: heavier weight goes lower.
-//! - Wire overlay shown/hidden into the central router messages:
-//!   - AppMsg::OverlayShown
-//!   - AppMsg::OverlayHidden
-//! - Add a small, testable “wiring layer” that executes RouterEffect using typed plugin handles.
-//!
-//! Guardrails (per `AGENTS.md`):
-//! - Do not create GTK widgets before GTK is initialized. Relm4 constructs widgets during `run()`.
-//! - Keep reducer/router logic GTK-free and unit-testable.
-//! - Never touch GTK from background tasks/threads; schedule onto the GTK main context instead.
-//! - Do not poll / run main loops in tests.
-//!
-//! IPC → UI routing note:
-//! - Relm4 `Sender<T>` uses `emit(T)` / `send(T)` (there is no `input(...)` method).
-
+use glib::object::Cast;
 use relm4::adw;
 use relm4::gtk;
 
 // Extension traits required for `adw::ApplicationWindow::set_content(...)` and GTK window props.
+use anyhow::Result;
 use gtk::prelude::{FrameExt, GtkWindowExt, WidgetExt};
 
 // Needed for the IPC-enabled entrypoint:
@@ -41,22 +13,25 @@ use gtk::prelude::{FrameExt, GtkWindowExt, WidgetExt};
 use gtk::prelude::{ApplicationExt, ApplicationExtManual, GtkApplicationExt};
 
 use relm4::adw::prelude::AdwApplicationWindowExt;
-use relm4::gtk::prelude::{BoxExt, Cast};
+use relm4::gtk::prelude::BoxExt;
 
 use gtk4_layer_shell::LayerShell;
 
 use relm4::prelude::*;
 
-use crate::relm4_app::events::AppMsg;
-use crate::relm4_app::plugin_framework::{
-    PluginInitContext, PluginMountContext, PluginPlacement, PluginSpec, RelmPlugin, Slot,
-};
-use crate::relm4_app::plugin_registry::RelmPluginRegistry;
-use crate::relm4_app::router::{RouterEffect, RouterState, reduce_router};
+use super::plugin_registry::PluginRegistry;
 
 // IPC (kept in a separate module/file; this component only consumes commands).
+use crate::dbus::DbusHandle;
 use crate::ipc::net as ipc_net;
 use crate::ipc::{IpcCommand, command_from_args, ipc_socket_path};
+use crate::relm4_app::plugin::Slot;
+use crate::relm4_app::plugin::WidgetFeatureToggle;
+use crate::relm4_app::plugins::clock::ClockPlugin;
+use crate::relm4_app::plugins::darkman::DarkmanPlugin;
+use crate::relm4_app::plugins::sunsetr::SunsetrPlugin;
+use crate::relm4_app::ui::feature_grid::FeatureGrid;
+use crate::relm4_app::ui::feature_grid::FeatureGridInit;
 
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -72,229 +47,28 @@ use std::thread;
 /// The actual notifications Relm4 component/spec will be introduced in later steps.
 ///
 /// For now, this spec is satisfied by a local stub plugin registered by the overlay host.
-pub struct NotificationsSpec;
 
 const OVERLAY_WIDTH_PX: i32 = 920;
 const OVERLAY_TOP_OFFSET_PX: i32 = 16;
 const OVERLAY_BOTTOM_OFFSET_PX: i32 = 16;
 const OVERLAY_CORNER_RADIUS_PX: i32 = 8;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NotificationsInput {
-    SetToastGating { enabled: bool },
-}
-
-impl PluginSpec for NotificationsSpec {
-    type Input = NotificationsInput;
-
-    fn id() -> crate::relm4_app::events::PluginId {
-        "plugin.notifications".into()
-    }
-
-    fn name() -> &'static str {
-        "Notifications (stub)"
-    }
-
-    fn placement() -> PluginPlacement {
-        // Stub: place a visible box in the left column for now.
-        PluginPlacement::new(Slot::Left, 50)
-    }
-}
-
-/// Pure, testable wiring layer: interpret router effects and notify plugins via typed handles.
-///
-/// Important:
-/// - This must stay GTK-free so it can be unit-tested without initializing GTK.
-/// - Missing plugins are normal (config-driven / migration-in-progress): do not panic.
-pub fn execute_router_effects(registry: &RelmPluginRegistry, effects: &[RouterEffect]) {
-    for eff in effects {
-        match eff {
-            RouterEffect::SetToastGating { enabled } => {
-                if let Some(handle) = registry.get::<NotificationsSpec>() {
-                    // Typed send: compile-time checked against `NotificationsInput`.
-                    let _ = handle.send(&NotificationsInput::SetToastGating { enabled: *enabled });
-                }
-            }
-            RouterEffect::InvalidateToastLayout => {
-                // Not used yet in step 05; keep as a stable placeholder.
-            }
-        }
-    }
-}
-
-/// Small stub plugin that produces a visible widget and a typed input endpoint.
-/// This is used so you can immediately verify slot/weight placement and wiring.
-struct NotificationsStubPlugin {
-    last_gating_enabled: std::sync::Arc<std::sync::Mutex<Option<bool>>>,
-}
-
-impl NotificationsStubPlugin {
-    fn new() -> Self {
-        Self {
-            last_gating_enabled: std::sync::Arc::new(std::sync::Mutex::new(None)),
-        }
-    }
-}
-
-impl RelmPlugin for NotificationsStubPlugin {
-    fn id(&self) -> crate::relm4_app::events::PluginId {
-        NotificationsSpec::id()
-    }
-
-    fn name(&self) -> &'static str {
-        NotificationsSpec::name()
-    }
-
-    fn placement(&self) -> PluginPlacement {
-        NotificationsSpec::placement()
-    }
-
-    fn init(
-        &mut self,
-        _ctx: PluginInitContext,
-    ) -> Result<(), crate::relm4_app::plugin_framework::PluginInitError> {
-        // MUST remain GTK-free.
-        Ok(())
-    }
-
-    fn mount(
-        &mut self,
-        _ctx: PluginMountContext,
-    ) -> Result<
-        crate::relm4_app::plugin_framework::MountedPlugin,
-        crate::relm4_app::plugin_framework::PluginMountError,
-    > {
-        // NOTE: Step 04 registry mounting currently stores endpoints and metadata.
-        // Step 05 will mount actual components into the window by reading metadata and constructing widgets.
-        //
-        // We implement a typed endpoint that records the last toast gating value for manual sanity checks.
-        use crate::relm4_app::plugin_framework::{
-            MountedPlugin, MountedPluginMeta, PluginEndpoint, PluginRouteError,
-        };
-
-        struct CaptureEndpoint {
-            plugin: crate::relm4_app::events::PluginId,
-            shared: std::sync::Arc<std::sync::Mutex<Option<bool>>>,
-        }
-
-        impl PluginEndpoint for CaptureEndpoint {
-            fn plugin_id(&self) -> crate::relm4_app::events::PluginId {
-                self.plugin.clone()
-            }
-
-            fn input_type_id(&self) -> std::any::TypeId {
-                std::any::TypeId::of::<NotificationsInput>()
-            }
-
-            fn send_any(&self, msg: &dyn std::any::Any) -> Result<(), PluginRouteError> {
-                let m = msg.downcast_ref::<NotificationsInput>().ok_or(
-                    PluginRouteError::WrongMsgType {
-                        plugin: self.plugin.clone(),
-                        expected: std::any::type_name::<NotificationsInput>(),
-                        got: "unknown",
-                    },
-                )?;
-
-                match m {
-                    NotificationsInput::SetToastGating { enabled } => {
-                        *self.shared.lock().unwrap() = Some(*enabled);
-                    }
-                }
-
-                Ok(())
-            }
-        }
-
-        let id = self.id();
-        Ok(MountedPlugin {
-            meta: MountedPluginMeta {
-                id: id.clone(),
-                name: self.name(),
-                placement: self.placement(),
-            },
-            endpoint: Box::new(CaptureEndpoint {
-                plugin: id,
-                shared: self.last_gating_enabled.clone(),
-            }),
-        })
-    }
-}
-
-/// A lightweight “mounted widget” descriptor used by the overlay host.
-///
-/// In this step we mount stub widgets; later steps will mount real Relm4 components.
-#[derive(Debug, Clone)]
-struct MountedWidget {
-    plugin_id: String,
-    slot: Slot,
-    weight: i32,
-    widget: gtk::Widget,
-}
-
-impl MountedWidget {
-    fn new(plugin_id: String, slot: Slot, weight: i32, widget: gtk::Widget) -> Self {
-        Self {
-            plugin_id,
-            slot,
-            weight,
-            widget,
-        }
-    }
-}
-
-/// Build a visible stub widget for a plugin placement.
-///
-/// This is intentionally simple and self-identifying, so you can verify placement quickly.
-fn build_plugin_stub_widget(plugin_id: &str, slot: Slot, weight: i32) -> gtk::Widget {
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    root.set_margin_top(8);
-    root.set_margin_bottom(8);
-    root.set_margin_start(8);
-    root.set_margin_end(8);
-    root.add_css_class("card");
-
-    let title = gtk::Label::new(Some(&format!("Plugin: {}", plugin_id)));
-    title.set_xalign(0.0);
-    title.add_css_class("title-4");
-
-    let meta = gtk::Label::new(Some(&format!("slot={:?} weight={}", slot, weight)));
-    meta.set_xalign(0.0);
-    meta.add_css_class("dim-label");
-
-    root.append(&title);
-    root.append(&meta);
-
-    root.upcast::<gtk::Widget>()
-}
-
-#[derive(Debug)]
 struct AppModel {
     window: adw::ApplicationWindow,
-
-    registry: RelmPluginRegistry,
-    router_state: RouterState,
-
-    // Layout containers. IMPORTANT: these are the actual widgets mounted into the UI tree.
-    // We must not clone and re-parent GTK widgets (it triggers `gtk_box_append` assertions).
+    #[allow(dead_code)]
+    registry: Arc<PluginRegistry>,
+    #[allow(dead_code)]
     top_box: gtk::Box,
+    #[allow(dead_code)]
     left_col: gtk::Box,
+    #[allow(dead_code)]
     right_col: gtk::Box,
-
-    // Keep mounted widgets stable (mounted once).
-    mounted_widgets: Vec<MountedWidget>,
+    #[allow(dead_code)]
+    toggles: Vec<Arc<WidgetFeatureToggle>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AppInput {
-    Router(AppMsg),
-
-    // Internal: triggered once during init to mount plugin widgets.
-    MountPlugins,
-
-    // Internal: relay window visibility changes.
-    WindowMapped,
-    WindowUnmapped,
-
     // External/public-ish: allow an IPC layer (or future global hotkey handler) to control
     // overlay visibility on the GTK thread via Relm4 message passing.
     ShowOverlay,
@@ -308,9 +82,13 @@ enum AppInput {
     RequestHide,
 }
 
+struct AppContext {
+    registry: Arc<PluginRegistry>,
+}
+
 #[relm4::component]
 impl SimpleComponent for AppModel {
-    type Init = ();
+    type Init = AppContext;
     type Input = AppInput;
     type Output = ();
 
@@ -329,7 +107,7 @@ impl SimpleComponent for AppModel {
     }
 
     fn init(
-        _init: Self::Init,
+        init: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -380,7 +158,96 @@ impl SimpleComponent for AppModel {
             .relm4-overlay-surface {{
                 background: @window_bg_color;
                 border-radius: {}px;
+                padding: 24px;
             }}
+
+            .clock-btn {{
+                background: transparent;
+                border-radius: 12px;
+                margin: 0;
+                padding: 0;
+            }}
+
+            /* Feature toggles */
+            .feature-toggle {{
+                background: @card_bg_color;
+                border-radius: 28px;
+                min-height: 44px;
+                padding: 2px 20px 2px 12px;
+                margin: 0;
+            }}
+
+            .feature-toggle:hover {{
+              background-color: color-mix(
+                in srgb,
+                @card_bg_color 80%,
+                @window_fg_color
+              );
+            }}
+
+            .feature-toggle .title {{
+              font-weight: 600;
+            }}
+
+            .feature-toggle .details {{
+              font-size: 14px;
+              margin: 0;
+              padding: 0;
+            }}
+
+            /* ON applies to the entire tile (both halves). */
+            .feature-toggle.active {{
+                background-color: @accent_bg_color;
+                color: var(--button_bg_color);
+            }}
+
+            .feature-toggle.active:hover {{
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 80%,
+                  @window_fg_color
+                );
+            }}
+            .qs-tile.qs-on .qs-btn-right {{
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 90%,
+                  @window_fg_color
+                );
+            }}
+
+            .qs-tile.qs-on .qs-btn-right:hover {{
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 75%,
+                  @window_fg_color
+                );
+            }}
+
+            .qs-tile.qs-on .qs-btn-left:hover {{
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 75%,
+                  @window_fg_color
+                );
+            }}
+
+            .qs-tile.qs-on .qs-btn-left:hover {{
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 75%,
+                  @window_fg_color
+                );
+            }}
+
+            .qs-tile.qs-on .qs-btn-left:hover {{
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 75%,
+                  @window_fg_color
+                );
+            }}
+
             "#,
             OVERLAY_CORNER_RADIUS_PX
         );
@@ -394,66 +261,61 @@ impl SimpleComponent for AppModel {
             );
         }
 
-        // Build the registry (init: GTK-free; mount: GTK-safe).
-        //
-        // For step 05, we only register stub plugins.
-        let mut registry = RelmPluginRegistry::new();
-
-        // Stub notifications plugin so we have a target for toast gating wiring.
-        registry.register(Box::new(NotificationsStubPlugin::new()));
-
-        // init_all must remain GTK-free.
-        registry
-            .init_all(PluginInitContext::default())
-            .expect("plugin init_all() should succeed");
-
-        // mount_all happens after GTK is initialized (we are inside Relm4 init => safe).
-        registry
-            .mount_all(PluginMountContext::default())
-            .expect("plugin mount_all() should succeed");
-
         // Router initial state: overlay initially visible once the window is mapped;
         // but we keep this conservative (start hidden, update on map/unmap).
         let top_box = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         top_box.set_hexpand(true);
 
-        let left_col = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        left_col.set_hexpand(true);
-        left_col.set_vexpand(true);
+        let top_box_divider = gtk::Separator::new(gtk::Orientation::Horizontal);
+        top_box_divider.set_hexpand(true);
 
-        let right_col = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        right_col.set_hexpand(true);
-        right_col.set_vexpand(true);
+        let left_col = gtk::Box::builder()
+            .hexpand(true)
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(12)
+            .vexpand(true)
+            .width_request(480)
+            .build();
+
+        let right_col = gtk::Box::builder()
+            .hexpand(true)
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(12)
+            .vexpand(true)
+            .width_request(480)
+            .build();
 
         // Temporary headers to make the layout obvious in the smoke test.
-        let top_hdr = gtk::Label::new(Some("Top slot"));
-        top_hdr.set_xalign(0.0);
-        top_hdr.add_css_class("dim-label");
-
         let left_hdr = gtk::Label::new(Some("Left slot"));
         left_hdr.set_xalign(0.0);
         left_hdr.add_css_class("dim-label");
 
-        let right_hdr = gtk::Label::new(Some("Right slot"));
-        right_hdr.set_xalign(0.0);
-        right_hdr.add_css_class("dim-label");
-
-        top_box.append(&top_hdr);
         left_col.append(&left_hdr);
-        right_col.append(&right_hdr);
+
+        let header_widgets = init.registry.get_widgets_for_slot(Slot::Header);
+        for w in &header_widgets {
+            top_box.append(&w.el);
+        }
+
+        let toggles = init.registry.get_all_feature_toggles();
+        let grid = FeatureGrid::builder()
+            .launch(FeatureGridInit {
+                items: toggles.clone(),
+            })
+            .detach();
+        let gridget = grid.widget().clone().upcast::<gtk::Widget>();
+        right_col.append(&gridget);
+        // for toggle in &toggles {
+        //     right_col.append(&toggle.el);
+        // }
 
         let model = AppModel {
             window: root.clone(),
-
-            registry,
-            router_state: RouterState {
-                overlay_visible: false,
-                toast_gating_enabled: true,
-            },
+            registry: init.registry.clone(),
             top_box: top_box.clone(),
             left_col: left_col.clone(),
             right_col: right_col.clone(),
-            mounted_widgets: Vec::new(),
+            toggles: toggles,
         };
 
         // Build base widget tree (Top / Left / Right areas).
@@ -467,13 +329,11 @@ impl SimpleComponent for AppModel {
         //           - spacer
         //           - right_col (vertical)
         let main_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        main_vbox.set_margin_top(16);
-        main_vbox.set_margin_bottom(16);
-        main_vbox.set_margin_start(16);
-        main_vbox.set_margin_end(16);
+        main_vbox.set_margin_all(0);
 
         // IMPORTANT: append the actual widgets (and only once).
         main_vbox.append(&top_box);
+        main_vbox.append(&top_box_divider);
 
         let content_row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
         content_row.set_hexpand(true);
@@ -541,87 +401,12 @@ impl SimpleComponent for AppModel {
             });
         }
 
-        // Wire window visibility signals.
-        //
-        // We use map/unmap to detect compositor-level visibility transitions.
-        // These can be noisy on some platforms; for this step we only need to
-        // demonstrate message plumbing without panics.
-        // GTK4: use `connect_map` / `connect_unmap` (no `*_event` variants), and no `gtk::Inhibit`.
-        {
-            let sender = sender.clone();
-            root.connect_map(move |_w| {
-                sender.input(AppInput::WindowMapped);
-            });
-        }
-        {
-            let sender = sender.clone();
-            root.connect_unmap(move |_w| {
-                sender.input(AppInput::WindowUnmapped);
-            });
-        }
-
-        // Trigger plugin widget mounting once (after view is constructed).
-        sender.input(AppInput::MountPlugins);
-
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
-            AppInput::MountPlugins => {
-                if !self.mounted_widgets.is_empty() {
-                    // Ensure we mount exactly once.
-                    return;
-                }
-
-                // Compute the deterministic ordering and mount into GTK containers.
-                //
-                // NOTE: We intentionally mount stub widgets here rather than actual plugin Relm4 components.
-                // Step 06+ will migrate real plugins to Relm4 components and expose their widget roots.
-                let mounted = self.registry.mounted_sorted().to_vec();
-
-                for m in mounted {
-                    let id = m.id.to_string();
-                    let slot = m.placement.slot;
-                    let weight = m.placement.weight;
-
-                    let w = build_plugin_stub_widget(&id, slot, weight);
-                    self.mounted_widgets
-                        .push(MountedWidget::new(id, slot, weight, w));
-                }
-
-                // Append widgets into the correct container using stored widget refs.
-                for mw in &self.mounted_widgets {
-                    match mw.slot {
-                        Slot::Top => self.top_box.append(&mw.widget),
-                        Slot::Left => self.left_col.append(&mw.widget),
-                        Slot::Right => self.right_col.append(&mw.widget),
-                    }
-                }
-            }
-
-            AppInput::WindowMapped => {
-                let (state1, effects) =
-                    reduce_router(self.router_state.clone(), AppMsg::OverlayShown);
-                self.router_state = state1;
-                execute_router_effects(&self.registry, &effects);
-
-                // Optional: make this visible in logs for the smoke test without forcing UI.
-                // eprintln!("[relm4-app] OverlayShown => effects={effects:?}");
-                let _ = sender; // keep sender available for later steps
-            }
-
-            AppInput::WindowUnmapped => {
-                let (state1, effects) =
-                    reduce_router(self.router_state.clone(), AppMsg::OverlayHidden);
-                self.router_state = state1;
-                execute_router_effects(&self.registry, &effects);
-
-                // eprintln!("[relm4-app] OverlayHidden => effects={effects:?}");
-                let _ = sender;
-            }
-
             AppInput::ShowOverlay => {
                 // Show + focus (required by user). `present()` is the idiomatic way to raise/activate.
                 self.window.set_visible(true);
@@ -659,16 +444,12 @@ impl SimpleComponent for AppModel {
                 self.window.set_visible(false);
                 let _ = sender;
             }
-
-            AppInput::Router(_m) => {
-                // Reserved for future: real app routing surface.
-            }
         }
     }
 }
 
 /// Run the Relm4 overlay host app (feature-gated entrypoint from `main.rs`).
-pub fn run() {
+pub async fn run() -> Result<()> {
     // CLI/IPC policy (requested):
     // - `sacrebleui` (no args): start UI + become server; if already running => exit non-zero
     // - `sacrebleui toggle|show|hide`: IPC client command and exit
@@ -686,16 +467,7 @@ pub fn run() {
 
     // Client mode: `toggle|show|hide` (or legacy JSON form) => send to running instance and exit.
     if let Ok(Some(cmd)) = command_from_args(&args) {
-        let rt = match tokio::runtime::Runtime::new() {
-            Ok(rt) => rt,
-            Err(e) => {
-                eprintln!("failed to create tokio runtime: {e}");
-                std::process::exit(2);
-            }
-        };
-
-        let res: Result<String, ipc_net::IpcNetError> =
-            rt.block_on(async { ipc_net::send_command(&socket, cmd).await });
+        let res: Result<String, ipc_net::IpcNetError> = ipc_net::send_command(&socket, cmd).await;
 
         match res {
             Ok(reply) => {
@@ -711,16 +483,7 @@ pub fn run() {
         }
     }
 
-    // Server mode: try to become server; if already running => exit non-zero (requested).
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("failed to create tokio runtime: {e}");
-            std::process::exit(2);
-        }
-    };
-
-    let listener = match rt.block_on(async { ipc_net::try_become_server(&socket).await }) {
+    let listener = match ipc_net::try_become_server(&socket).await {
         Ok(l) => l,
         Err(ipc_net::IpcNetError::AlreadyRunning) => {
             eprintln!("already running");
@@ -774,18 +537,32 @@ pub fn run() {
         });
     }
 
-    // We do not instantiate a `RelmApp<M>` here because we are manually wiring startup and
-    // running the global GTK application. Creating a `RelmApp` would require selecting an
-    // `M` (top-level message type) and is redundant for this entrypoint.
+    let dbus = Arc::new(DbusHandle::connect().await?);
+    let mut registry = PluginRegistry::new();
 
-    {
-        let sender_slot = sender_slot.clone();
-        let payload = std::cell::Cell::new(Some(()));
-        let app_ref = relm4::main_application();
+    registry.register(ClockPlugin::new());
+    registry.register(DarkmanPlugin::new(dbus));
+    registry.register(SunsetrPlugin::new());
+    // init_all must remain GTK-free.
+    registry.initialize_all().await?;
 
-        app_ref.connect_startup(move |app: &gtk::Application| {
-            if let Some(payload) = payload.take() {
-                let connector = relm4::ComponentBuilder::<AppModel>::default().launch(payload);
+    let sender_slot = sender_slot.clone();
+    let payload = std::cell::Cell::new(Some(()));
+    let app_ref = relm4::main_application();
+
+    let registry_arc = Arc::new(registry);
+
+    app_ref.connect_startup(move |app: &gtk::Application| {
+        if let Some(_payload) = payload.take() {
+            let registry = registry_arc.clone();
+            let app = app.clone();
+            let sender_slot = sender_slot.clone();
+
+            glib::MainContext::default().spawn_local(async move {
+                let _ = registry.create_elements().await;
+                let connector = relm4::ComponentBuilder::<AppModel>::default().launch(AppContext {
+                    registry: registry.clone(),
+                });
                 let sender = connector.sender().clone();
 
                 // Store sender for IPC.
@@ -801,147 +578,11 @@ pub fn run() {
                 // Keep the component runtime alive.
                 let mut controller = connector.detach();
                 controller.detach_runtime();
-            }
-        });
-    }
+            });
+        }
+    });
 
     // Run the GTK application main loop.
     relm4::main_application().run();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::relm4_app::plugin_framework::{
-        MountedPlugin, MountedPluginMeta, PluginEndpoint, PluginInitError, PluginMountError,
-        PluginRouteError,
-    };
-    use std::any::TypeId;
-
-    /// Registry wiring test: when notifications plugin is present, SetToastGating sends typed input.
-    ///
-    /// This is a pure test (no GTK), exercising only the registry + endpoint type plumbing.
-    #[test]
-    fn wiring_sends_toast_gating_to_notifications_when_present() {
-        // IMPORTANT:
-        // The production wiring targets `NotificationsSpec` (and its `NotificationsInput`).
-        // Therefore the test plugin must use the *same* input type; otherwise
-        // `registry.get::<NotificationsSpec>()` will return `None` due to `TypeId` mismatch.
-        struct CaptureSpec;
-        impl PluginSpec for CaptureSpec {
-            type Input = NotificationsInput;
-            fn id() -> crate::relm4_app::events::PluginId {
-                NotificationsSpec::id()
-            }
-            fn name() -> &'static str {
-                "capture"
-            }
-            fn placement() -> PluginPlacement {
-                PluginPlacement::new(Slot::Left, 0)
-            }
-        }
-
-        struct CapturePlugin {
-            shared: std::sync::Arc<std::sync::Mutex<Vec<NotificationsInput>>>,
-        }
-
-        impl RelmPlugin for CapturePlugin {
-            fn id(&self) -> crate::relm4_app::events::PluginId {
-                NotificationsSpec::id()
-            }
-            fn name(&self) -> &'static str {
-                "capture"
-            }
-            fn placement(&self) -> PluginPlacement {
-                PluginPlacement::new(Slot::Left, 0)
-            }
-            fn init(&mut self, _ctx: PluginInitContext) -> Result<(), PluginInitError> {
-                Ok(())
-            }
-            fn mount(
-                &mut self,
-                _ctx: PluginMountContext,
-            ) -> Result<MountedPlugin, PluginMountError> {
-                struct Ep {
-                    plugin: crate::relm4_app::events::PluginId,
-                    shared: std::sync::Arc<std::sync::Mutex<Vec<NotificationsInput>>>,
-                }
-                impl PluginEndpoint for Ep {
-                    fn plugin_id(&self) -> crate::relm4_app::events::PluginId {
-                        self.plugin.clone()
-                    }
-                    fn input_type_id(&self) -> TypeId {
-                        TypeId::of::<NotificationsInput>()
-                    }
-                    fn send_any(&self, msg: &dyn std::any::Any) -> Result<(), PluginRouteError> {
-                        let m = msg.downcast_ref::<NotificationsInput>().ok_or(
-                            PluginRouteError::WrongMsgType {
-                                plugin: self.plugin.clone(),
-                                expected: std::any::type_name::<NotificationsInput>(),
-                                got: "unknown",
-                            },
-                        )?;
-
-                        self.shared.lock().unwrap().push(m.clone());
-                        Ok(())
-                    }
-                }
-
-                let id = self.id();
-                Ok(MountedPlugin {
-                    meta: MountedPluginMeta {
-                        id: id.clone(),
-                        name: self.name(),
-                        placement: self.placement(),
-                    },
-                    endpoint: Box::new(Ep {
-                        plugin: id,
-                        shared: self.shared.clone(),
-                    }),
-                })
-            }
-        }
-
-        // Build a registry with our capture plugin.
-        let shared = std::sync::Arc::new(std::sync::Mutex::new(Vec::<NotificationsInput>::new()));
-        let mut reg = RelmPluginRegistry::new();
-        reg.register(Box::new(CapturePlugin {
-            shared: shared.clone(),
-        }));
-
-        reg.init_all(PluginInitContext::default()).unwrap();
-        reg.mount_all(PluginMountContext::default()).unwrap();
-
-        // Execute effect: should send typed message.
-        execute_router_effects(&reg, &[RouterEffect::SetToastGating { enabled: false }]);
-
-        let got = shared.lock().unwrap().clone();
-        assert_eq!(
-            got,
-            vec![NotificationsInput::SetToastGating { enabled: false }]
-        );
-
-        // Also verify it doesn't panic on another call.
-        execute_router_effects(&reg, &[RouterEffect::SetToastGating { enabled: true }]);
-        let got = shared.lock().unwrap().clone();
-        assert_eq!(
-            got,
-            vec![
-                NotificationsInput::SetToastGating { enabled: false },
-                NotificationsInput::SetToastGating { enabled: true }
-            ]
-        );
-
-        // Ensure typed handle acquisition works.
-        let h = reg.get::<CaptureSpec>().expect("should have typed handle");
-        h.send(&NotificationsInput::SetToastGating { enabled: true })
-            .unwrap();
-    }
-
-    /// Wiring must not panic when the notifications plugin is absent/disabled.
-    #[test]
-    fn wiring_does_not_panic_when_notifications_plugin_missing() {
-        let reg = RelmPluginRegistry::new();
-        execute_router_effects(&reg, &[RouterEffect::SetToastGating { enabled: false }]);
-    }
+    Ok(())
 }

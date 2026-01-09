@@ -11,21 +11,22 @@ default = ["relm4-app"]
 relm4-app = ["dep:relm4"]
 
 [dependencies]
-# GTK4 (0.9.x) to align with gtk4-layer-shell and avoid `links = "gtk-4"` conflicts
-gtk = { version = "0.9", package = "gtk4", features = ["v4_6"] }
+flume = "0.12"
+# GTK4 (0.10.x) to align with libadwaita 0.8.x / Relm4 0.10.x and avoid `links = "gtk-4"` conflicts.
+gtk = { version = "0.10", package = "gtk4", features = ["v4_6"] }
+glib = "0.21"
 
-# Wayland overlay positioning (layer-shell) aligned with gtk4 0.9 line
-gtk4-layer-shell = "0.4"
+# Wayland overlay positioning (layer-shell) aligned with gtk4 0.10 line.
+gtk4-layer-shell = "0.7.1"
 
-# libadwaita widgets (match gtk4 0.9 line)
-adw = { version = "0.7", package = "libadwaita", features = ["v1_5"] }
+# libadwaita widgets (match gtk4 0.10 line).
+adw = { version = "0.8.1", package = "libadwaita", features = ["v1_5"] }
 
 # Relm4 (GUI framework) used during migration; kept optional behind a feature flag.
 #
 # Note: keep default features enabled so the proc-macros (`#[relm4::component]`, `view!`, etc.)
 # are available for the skeleton component.
-relm4 = { version = "0.9", optional = true, features = ["libadwaita"] }
-
+relm4 = { version = "0.10.1", optional = true, features = ["libadwaita"] }
 # GIO (for best-effort desktop app activation from notification toasts)
 gio = "0.20"
 
@@ -51,3 +52,5 @@ zvariant = "5"
 
 # Needed by the zbus-based DBus client wrapper for streaming signal handling (`StreamExt`).
 futures-util = "0.3"
+log = "0.4"
+env_logger = "0.11"

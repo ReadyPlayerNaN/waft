@@ -17,25 +17,10 @@
 // Keep `app` private so macro-generated widget types don't leak into public interfaces.
 mod app;
 
-// Step 03: new, GTK-free routing modules.
-pub mod events;
-pub mod router;
-
-// Step 04: Relm4-first plugin framework (GTK-safe init vs mount boundary).
-pub mod plugin_framework;
+pub mod channels;
+pub mod plugin;
 pub mod plugin_registry;
-
-// Step 05: overlay host (window layout + mounting plugins).
-pub mod overlay;
+pub mod plugins;
+pub mod ui;
 
 pub use app::run;
-
-#[cfg(test)]
-mod test_api {
-    // The old step-02 skeleton types (`CoreModel`, `reduce`) were removed in step 05 when the
-    // Relm4 app module became the overlay host. Keep test-only re-exports aligned with the
-    // current structure:
-    // - router/events remain GTK-free and are still used by unit tests
-    pub(super) use super::events::{AppMsg, PluginId};
-    pub(super) use super::router::{RouterEffect, RouterState, reduce_router};
-}
