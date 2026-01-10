@@ -1,4 +1,5 @@
 use glib::object::Cast;
+use log::debug;
 use relm4::adw;
 use relm4::gtk;
 
@@ -29,6 +30,7 @@ use crate::relm4_app::plugin::Slot;
 use crate::relm4_app::plugin::WidgetFeatureToggle;
 use crate::relm4_app::plugins::clock::ClockPlugin;
 use crate::relm4_app::plugins::darkman::DarkmanPlugin;
+use crate::relm4_app::plugins::notifications::NotificationsPlugin;
 use crate::relm4_app::plugins::sunsetr::SunsetrPlugin;
 use crate::relm4_app::ui::feature_grid::FeatureGrid;
 use crate::relm4_app::ui::feature_grid::FeatureGridInit;
@@ -285,17 +287,17 @@ impl SimpleComponent for AppModel {
             .width_request(480)
             .build();
 
-        // Temporary headers to make the layout obvious in the smoke test.
-        let left_hdr = gtk::Label::new(Some("Left slot"));
-        left_hdr.set_xalign(0.0);
-        left_hdr.add_css_class("dim-label");
-
-        left_col.append(&left_hdr);
-
         let header_widgets = init.registry.get_widgets_for_slot(Slot::Header);
         for w in &header_widgets {
             top_box.append(&w.el);
         }
+        debug!("Appended header widgets {:?}", header_widgets.len());
+
+        let info_widgets = init.registry.get_widgets_for_slot(Slot::Info);
+        for w in &info_widgets {
+            left_col.append(&w.el);
+        }
+        debug!("Appended info widgets {:?}", info_widgets.len());
 
         let toggles = init.registry.get_all_feature_toggles();
         let grid = FeatureGrid::builder()
@@ -305,9 +307,7 @@ impl SimpleComponent for AppModel {
             .detach();
         let gridget = grid.widget().clone().upcast::<gtk::Widget>();
         right_col.append(&gridget);
-        // for toggle in &toggles {
-        //     right_col.append(&toggle.el);
-        // }
+        debug!("Appended feature toggles widgets {:?}", info_widgets.len());
 
         let model = AppModel {
             window: root.clone(),
@@ -318,16 +318,6 @@ impl SimpleComponent for AppModel {
             toggles: toggles,
         };
 
-        // Build base widget tree (Top / Left / Right areas).
-        //
-        // Structure:
-        // - scroller (caps height to available display height via vexpand + layer-shell margins)
-        //   - main_vbox
-        //       - top_box (horizontal)
-        //       - content_row (horizontal)
-        //           - left_col (vertical)
-        //           - spacer
-        //           - right_col (vertical)
         let main_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
         main_vbox.set_margin_all(0);
 
@@ -402,6 +392,7 @@ impl SimpleComponent for AppModel {
         }
 
         let widgets = view_output!();
+        debug!("Initialized main component");
         ComponentParts { model, widgets }
     }
 
@@ -543,8 +534,9 @@ pub async fn run() -> Result<()> {
     registry.register(ClockPlugin::new());
     registry.register(DarkmanPlugin::new(dbus));
     registry.register(SunsetrPlugin::new());
-    // init_all must remain GTK-free.
-    registry.initialize_all().await?;
+    registry.register(NotificationsPlugin::new());
+    registry.init().await?;
+    debug!("Initialized plugins {:?}", registry.len());
 
     let sender_slot = sender_slot.clone();
     let payload = std::cell::Cell::new(Some(()));
@@ -553,12 +545,14 @@ pub async fn run() -> Result<()> {
     let registry_arc = Arc::new(registry);
 
     app_ref.connect_startup(move |app: &gtk::Application| {
+        debug!("Started gtk app");
         if let Some(_payload) = payload.take() {
             let registry = registry_arc.clone();
             let app = app.clone();
             let sender_slot = sender_slot.clone();
 
-            glib::MainContext::default().spawn_local(async move {
+            // Block the startup signal until async work completes
+            glib::MainContext::default().block_on(async move {
                 let _ = registry.create_elements().await;
                 let connector = relm4::ComponentBuilder::<AppModel>::default().launch(AppContext {
                     registry: registry.clone(),
@@ -574,6 +568,7 @@ pub async fn run() -> Result<()> {
                 let window = connector.widget().clone();
                 app.add_window(&window);
                 window.set_visible(false);
+                debug!("Created window");
 
                 // Keep the component runtime alive.
                 let mut controller = connector.detach();
@@ -582,7 +577,8 @@ pub async fn run() -> Result<()> {
         }
     });
 
-    // Run the GTK application main loop.
+    debug!("Running main loop");
     relm4::main_application().run();
+    debug!("Finished main loop");
     Ok(())
 }

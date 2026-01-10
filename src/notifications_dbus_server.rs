@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! DBus notifications server (`org.freedesktop.Notifications`) implemented with `zbus`.
 //!
 //! This module is the *server side* implementation of the freedesktop.org notifications spec.

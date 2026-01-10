@@ -86,7 +86,6 @@ impl SimpleComponent for FeatureToggle {
             }
             Self::Input::Status(status) => {
                 let sender = self.toggle.sender();
-                println!("Status received {:?}", status);
                 sender
                     .send(FeatureToggleInput::Active(status.active))
                     .unwrap();

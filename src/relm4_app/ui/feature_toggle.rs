@@ -111,7 +111,6 @@ impl SimpleComponent for FeatureToggleComponent {
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
-        println!("Update called, {:?}", msg);
         match msg {
             Input::Active(active) => self.active = active,
             Input::Busy(busy) => self.busy = busy,

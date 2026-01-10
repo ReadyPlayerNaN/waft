@@ -65,7 +65,7 @@ impl PluginRegistry {
     }
 
     /// Initialize all plugins
-    pub async fn initialize_all(&self) -> Result<()> {
+    pub async fn init(&self) -> Result<()> {
         for (name, plugin) in self.plugins.iter() {
             let mut guard = plugin
                 .lock()
@@ -110,5 +110,9 @@ impl PluginRegistry {
         }
 
         Ok(())
+    }
+
+    pub fn len(&self) -> usize {
+        self.plugins.len()
     }
 }

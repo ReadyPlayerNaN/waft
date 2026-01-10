@@ -71,8 +71,8 @@ impl Plugin for SunsetrPlugin {
         let ui_receiver = self.ui_channel.receiver.clone();
         self.toggle = Some(cx);
 
-        glib::idle_add_local(move || {
-            while let Ok(event) = rx.try_recv() {
+        tokio::spawn(async move {
+            while let Ok(event) = rx.recv_async().await {
                 debug!("[sunsetr/ipc] Received event: {:?}", event);
                 match event {
                     SunsetrIpcEvents::Status(status) => {
@@ -86,7 +86,6 @@ impl Plugin for SunsetrPlugin {
                     }
                 }
             }
-            glib::ControlFlow::Continue
         });
 
         let ipc_sender = self.ipc_channel.sender.clone();
