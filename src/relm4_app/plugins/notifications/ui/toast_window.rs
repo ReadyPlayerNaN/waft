@@ -135,6 +135,9 @@ impl SimpleComponent for ToastWindow {
             set_decorated: false,
             set_hide_on_close: true,
             set_modal: false,
+
+            set_default_width: 480,
+            set_resizable: false,
         }
     }
 
