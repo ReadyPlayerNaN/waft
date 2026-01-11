@@ -1,16 +1,17 @@
 use relm4::{ComponentParts, ComponentSender, SimpleComponent, gtk};
+use std::sync::Arc;
 
 use adw::prelude::*;
 
 use super::super::types::NotificationIcon;
 
 struct IconProps {
-    icon_name: Option<String>,
+    icon_name: Option<Arc<str>>,
     icon_texture: Option<gtk::gdk::Texture>,
 }
 
 pub struct Icon {
-    icon_name: Option<String>,
+    icon_name: Option<Arc<str>>,
     icon_texture: Option<gtk::gdk::Texture>,
 }
 
@@ -31,7 +32,7 @@ impl Icon {
                 icon_texture: None,
             },
             NotificationIcon::FilePath(path) => {
-                if let Ok(tex) = gtk::gdk::Texture::from_filename(path) {
+                if let Ok(tex) = gtk::gdk::Texture::from_filename(path.as_ref()) {
                     IconProps {
                         icon_name: None,
                         icon_texture: Some(tex),
@@ -43,6 +44,11 @@ impl Icon {
                     }
                 }
             }
+            NotificationIcon::Bytes(_b) => IconProps {
+                // TODO: Implement icon parsing from bytes
+                icon_name: Some("dialog-information-symbolic".into()),
+                icon_texture: None,
+            },
         }
     }
 }

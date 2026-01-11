@@ -1,7 +1,8 @@
 use gtk::prelude::*;
-use log::{info, warn};
+use log::info;
 use relm4::factory::FactoryHashMap;
 use relm4::{ComponentParts, ComponentSender, SimpleComponent, gtk};
+use std::sync::Arc;
 
 use super::types::NotificationDisplay;
 use super::ui::card_group::{
@@ -10,11 +11,11 @@ use super::ui::card_group::{
 };
 
 pub struct NotificationsWidget {
-    groups: FactoryHashMap<String, NotificationCardGroup>,
+    groups: FactoryHashMap<Arc<str>, NotificationCardGroup>,
 }
 
 pub struct NotificationsWidgetInit {
-    pub notifications: Option<Vec<NotificationDisplay>>,
+    pub notifications: Option<Vec<Arc<NotificationDisplay>>>,
 }
 
 fn transform_notification_group_outputs(
@@ -37,12 +38,12 @@ fn transform_notification_group_outputs(
 
 #[derive(Debug, Clone)]
 pub enum NotificationsWidgetInput {
-    Ingest(NotificationDisplay),
+    Ingest(Arc<NotificationDisplay>),
     CardActionClick(u64, String),
     CardClick(u64),
     CardClose(u64),
-    GroupCollapse(String),
-    GroupExpand(String),
+    GroupCollapse(Arc<str>),
+    GroupExpand(Arc<str>),
 }
 
 #[derive(Debug, Clone)]
@@ -50,7 +51,7 @@ pub enum NotificationsWidgetOutput {}
 
 impl NotificationsWidget {
     fn create_group<'a>(
-        groups: &'a mut FactoryHashMap<String, NotificationCardGroup>,
+        groups: &'a mut FactoryHashMap<Arc<str>, NotificationCardGroup>,
         ntf: &NotificationDisplay,
     ) -> Option<&'a NotificationCardGroup> {
         info!(
@@ -73,8 +74,8 @@ impl NotificationsWidget {
     }
 
     fn ensure_group_existence(
-        groups: &mut FactoryHashMap<String, NotificationCardGroup>,
-        ntf: &NotificationDisplay,
+        groups: &mut FactoryHashMap<Arc<str>, NotificationCardGroup>,
+        ntf: &Arc<NotificationDisplay>,
     ) {
         if !groups.get(&ntf.app_id()).is_some() {
             Self::create_group(groups, ntf);
@@ -82,8 +83,8 @@ impl NotificationsWidget {
     }
 
     fn integrate_notification(
-        groups: &mut FactoryHashMap<String, NotificationCardGroup>,
-        notification: NotificationDisplay,
+        groups: &mut FactoryHashMap<Arc<str>, NotificationCardGroup>,
+        notification: Arc<NotificationDisplay>,
     ) {
         Self::ensure_group_existence(groups, &notification);
         info!("Integrating notification: {:?}", notification);
@@ -94,15 +95,15 @@ impl NotificationsWidget {
     }
 
     fn integrate_notifications(
-        groups: &mut FactoryHashMap<String, NotificationCardGroup>,
-        notifications: Vec<NotificationDisplay>,
+        groups: &mut FactoryHashMap<Arc<str>, NotificationCardGroup>,
+        notifications: Vec<Arc<NotificationDisplay>>,
     ) {
         for notification in notifications {
             Self::integrate_notification(groups, notification);
         }
     }
 
-    fn ingest_notification(&mut self, notification: NotificationDisplay) {
+    fn ingest_notification(&mut self, notification: Arc<NotificationDisplay>) {
         Self::integrate_notification(&mut self.groups, notification);
     }
 }

@@ -1,27 +1,28 @@
 use adw::prelude::*;
-use log::{info, warn};
+use log::info;
 use relm4::factory::FactoryHashMap;
 use relm4::gtk;
 use relm4::prelude::*;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::super::types::NotificationDisplay;
-use super::card::{NotificationCard, NotificationCardOutput};
+use super::card::{NotificationCard, NotificationCardInit, NotificationCardOutput};
 
 pub struct NotificationCardGroup {
     expanded: bool,
-    id: String,
-    notifications: HashMap<u64, NotificationDisplay>,
+    id: Arc<str>,
+    notifications: HashMap<u64, Arc<NotificationDisplay>>,
     rest: FactoryHashMap<u64, NotificationCard>,
-    title: String,
+    title: Arc<str>,
     top: FactoryHashMap<u64, NotificationCard>,
 }
 
 pub struct NotificationCardGroupInit {
     pub expanded: bool,
-    pub id: String,
-    pub notifications: Option<Vec<NotificationDisplay>>,
-    pub title: String,
+    pub id: Arc<str>,
+    pub notifications: Option<Vec<Arc<NotificationDisplay>>>,
+    pub title: Arc<str>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,8 +32,9 @@ pub enum NotificationCardGroupInput {
     ExpandClick,
     CardClick(u64),
     CardClose(u64),
-    Ingest(NotificationDisplay),
+    Ingest(Arc<NotificationDisplay>),
     Remove(u64),
+    TimedOut(u64),
 }
 
 #[derive(Debug, Clone)]
@@ -40,8 +42,8 @@ pub enum NotificationCardGroupOutput {
     ActionClick(u64, String),
     CardClick(u64),
     CardClose(u64),
-    Collapse(String),
-    Expand(String),
+    Collapse(Arc<str>),
+    Expand(Arc<str>),
 }
 
 fn transform_notification_card_outputs(msg: NotificationCardOutput) -> NotificationCardGroupInput {
@@ -51,12 +53,13 @@ fn transform_notification_card_outputs(msg: NotificationCardOutput) -> Notificat
         }
         NotificationCardOutput::CardClick(id) => NotificationCardGroupInput::CardClick(id),
         NotificationCardOutput::Close(id) => NotificationCardGroupInput::CardClose(id),
+        NotificationCardOutput::TimedOut(id) => NotificationCardGroupInput::TimedOut(id),
     }
 }
 
 #[relm4::factory(pub)]
 impl FactoryComponent for NotificationCardGroup {
-    type Index = String;
+    type Index = Arc<str>;
     type Init = NotificationCardGroupInit;
     type Input = NotificationCardGroupInput;
     type Output = NotificationCardGroupOutput;
@@ -114,7 +117,8 @@ impl FactoryComponent for NotificationCardGroup {
 
     fn init_model(value: Self::Init, _index: &Self::Index, sender: FactorySender<Self>) -> Self {
         let ns = value.notifications.unwrap_or(vec![]);
-        let map: HashMap<u64, NotificationDisplay> = ns.into_iter().map(|n| (n.id, n)).collect();
+        let map: HashMap<u64, Arc<NotificationDisplay>> =
+            ns.into_iter().map(|n| (n.id, n)).collect();
         let top = FactoryHashMap::builder()
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_notification_card_outputs);
@@ -150,9 +154,15 @@ impl FactoryComponent for NotificationCardGroup {
         match msg {
             Self::Input::Ingest(notification) => {
                 info!("Ingesting notification: {:?}", notification);
-                self.notifications
-                    .insert(notification.id, notification.clone());
-                self.top.insert(notification.id, notification);
+                let id = notification.id;
+                self.notifications.insert(id, notification.clone());
+                self.top.insert(
+                    id,
+                    NotificationCardInit {
+                        countdown: false,
+                        notification,
+                    },
+                );
                 info!(
                     "NotificationCardGroup {} top factory now has {} items",
                     self.id,
@@ -165,7 +175,13 @@ impl FactoryComponent for NotificationCardGroup {
                         self.top.remove(&last_id);
                         match self.notifications.remove(&last_id) {
                             Some(n) => {
-                                self.rest.insert(last_id, n);
+                                self.rest.insert(
+                                    last_id,
+                                    NotificationCardInit {
+                                        countdown: false,
+                                        notification: n,
+                                    },
+                                );
                                 info!("Moved notification {} to rest factory", last_id);
                             }
                             None => (),
@@ -197,6 +213,7 @@ impl FactoryComponent for NotificationCardGroup {
             Self::Input::CardClose(notification_id) => {
                 sender.output(Self::Output::CardClose(notification_id));
             }
+            Self::Input::TimedOut(_notification_id) => { /* noop  */ }
         }
     }
 

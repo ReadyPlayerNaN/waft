@@ -1,4 +1,8 @@
-use std::{path::PathBuf, rc::Rc, time::SystemTime};
+use anyhow::Result;
+use gtk::gdk;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::{path::PathBuf, time::SystemTime};
 
 /// Notification icon representation.
 ///
@@ -6,10 +10,33 @@ use std::{path::PathBuf, rc::Rc, time::SystemTime};
 /// so `Notification.icon` is mandatory and always set.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NotificationIcon {
-    /// A themed icon name, e.g. `"dialog-information-symbolic"`.
-    Themed(String),
+    Bytes(Vec<u8>),
     /// A file path to an image (png/svg/etc). Will be loaded and scaled to fit.
-    FilePath(PathBuf),
+    FilePath(Arc<PathBuf>),
+    /// A themed icon name, e.g. `"dialog-information-symbolic"`.
+    Themed(Arc<str>),
+}
+
+impl NotificationIcon {
+    /// Check if the icon is available on the system.
+    pub fn is_available(&self) -> bool {
+        true
+        // match self {
+        //     NotificationIcon::Themed(name) => {
+        //         let display = match gdk::Display::default() {
+        //             Some(d) => d,
+        //             None => {
+        //                 return false;
+        //             }
+        //         };
+
+        //         let theme = gtk::IconTheme::for_display(&display);
+        //         theme.has_icon(&name.as_ref())
+        //     }
+        //     NotificationIcon::FilePath(path) => std::path::Path::new(path.as_ref()).exists(),
+        //     NotificationIcon::Bytes(b) => !b.is_empty(),
+        // }
+    }
 }
 
 /// Notification urgency, aligned with `org.freedesktop.Notifications` (`urgency` hint).
@@ -59,201 +86,199 @@ impl DbusExpireTimeout {
 }
 
 /// A notification action (button).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NotificationAction {
     /// Stable action identifier (DBus `action_key` / id).
     ///
     /// For `org.freedesktop.Notifications`, this is the string that must be emitted
     /// in the `ActionInvoked(id, action_key)` signal.
-    pub key: String,
+    pub key: Arc<str>,
 
     /// Human-readable label shown in the UI.
-    pub label: String,
+    pub label: Arc<str>,
 
-    pub on_invoke: Rc<dyn Fn() + 'static>,
-}
-
-impl NotificationAction {
-    pub fn new<F: Fn() + 'static>(
-        key: impl Into<String>,
-        label: impl Into<String>,
-        on_invoke: F,
-    ) -> Self {
-        Self {
-            key: key.into(),
-            label: label.into(),
-            on_invoke: Rc::new(on_invoke),
-        }
-    }
-}
-
-impl std::fmt::Debug for NotificationAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Avoid printing closure details.
-        f.debug_struct("NotificationAction")
-            .field("key", &self.key)
-            .field("label", &self.label)
-            .finish_non_exhaustive()
-    }
-}
-
-/// Represents a single notification with its data.
-///
-/// Notes:
-/// - `created_at` is required to support correct "latest" grouping and ordering.
-/// - `icon` is required and assumed to be already resolved by the builder.
-#[derive(Clone)]
-pub struct Notification {
-    pub id: u64,
-    pub app_name: String,
-    pub summary: String,
-    pub body: String,
-    pub created_at: SystemTime,
-    pub icon: NotificationIcon,
-    pub actions: Vec<NotificationAction>,
-    pub on_default_action: Option<Rc<dyn Fn() + 'static>>,
-
-    /// DBus `urgency` hint (`critical` means "never auto-dismiss" for toast).
-    pub urgency: NotificationUrgency,
-
-    /// Optional `.desktop` id (DBus `desktop-entry` hint). Used for best-effort activation.
-    ///
-    /// Example: `"org.gnome.Nautilus.desktop"`.
-    pub desktop_entry: Option<String>,
-
-    /// DBus `expire_timeout` argument from `Notify`, preserved so toast policy can respect it.
-    pub expire_timeout: DbusExpireTimeout,
-}
-
-impl std::fmt::Debug for Notification {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Avoid printing closure details.
-        f.debug_struct("Notification")
-            .field("id", &self.id)
-            .field("app_name", &self.app_name)
-            .field("summary", &self.summary)
-            .field("body", &self.body)
-            .field("created_at", &self.created_at)
-            .field("icon", &self.icon)
-            .field("actions", &self.actions)
-            .finish_non_exhaustive()
-    }
-}
-
-impl Notification {
-    pub fn new(
-        id: u64,
-        app_name: String,
-        summary: String,
-        body: String,
-        created_at: SystemTime,
-        icon: NotificationIcon,
-    ) -> Self {
-        Self {
-            id,
-            app_name,
-            summary,
-            body,
-            created_at,
-            icon,
-            actions: vec![],
-            on_default_action: None,
-            urgency: NotificationUrgency::default(),
-            desktop_entry: None,
-            expire_timeout: DbusExpireTimeout::Default,
-        }
-    }
-
-    pub fn with_default_action<F: Fn() + 'static>(mut self, action: F) -> Self {
-        self.on_default_action = Some(Rc::new(action));
-        self
-    }
-
-    /// Add an action with an explicit action key (DBus `action_key`) and a UI label.
-    pub fn with_keyed_action<F: Fn() + 'static>(
-        mut self,
-        key: impl Into<String>,
-        label: impl Into<String>,
-        on_invoke: F,
-    ) -> Self {
-        self.actions
-            .push(NotificationAction::new(key, label, on_invoke));
-        self
-    }
-
-    pub fn with_urgency(mut self, urgency: NotificationUrgency) -> Self {
-        self.urgency = urgency;
-        self
-    }
-
-    pub fn with_desktop_entry(mut self, desktop_entry: impl Into<String>) -> Self {
-        self.desktop_entry = Some(desktop_entry.into());
-        self
-    }
-
-    pub fn with_expire_timeout(mut self, expire_timeout: DbusExpireTimeout) -> Self {
-        self.expire_timeout = expire_timeout;
-        self
-    }
-}
-
-/// A group of notifications (by normalized app key).
-#[derive(Clone, Debug)]
-pub struct NotificationGroup {
-    pub app_key: String,
-    pub display_app_name: String,
-    pub notifications: Vec<Notification>, // sorted newest-first
-}
-
-impl NotificationGroup {
-    pub fn latest(&self) -> Option<&Notification> {
-        self.notifications.first()
-    }
-
-    pub fn latest_ts(&self) -> Option<SystemTime> {
-        self.latest().map(|n| n.created_at)
-    }
-}
-
-/// A snapshot suitable for rendering and testing.
-#[derive(Clone, Debug)]
-pub struct NotificationsSnapshot {
-    pub groups: Vec<NotificationGroup>, // sorted newest-first by group latest_ts
-    pub open_group: Option<String>,     // app_key
-    pub total_count: usize,
+    pub icon: Option<NotificationIcon>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AppIdent {
-    pub title: Option<String>,
+    pub title: Option<Arc<str>>,
     pub icon: Option<NotificationIcon>,
-    pub ident: String,
+    pub ident: Arc<str>,
 }
 
 #[derive(Debug, Clone)]
 pub struct NotificationDisplay {
+    pub actions: Vec<NotificationAction>,
     pub app: Option<AppIdent>,
-    pub description: String,
     pub created_at: SystemTime,
+    pub description: Arc<str>,
     pub icon: NotificationIcon,
     pub id: u64,
-    pub progress: f32,
-    pub title: String,
+    pub replaces_id: Option<u64>,
+    pub title: Arc<str>,
+    pub ttl: Option<u64>,
     pub urgency: NotificationUrgency,
 }
 
 impl NotificationDisplay {
-    pub fn app_id(&self) -> String {
+    pub fn app_id(&self) -> Arc<str> {
         match &self.app {
             Some(app) => app.ident.clone(),
             None => "unknown".into(),
         }
     }
 
-    pub fn app_label(&self) -> String {
+    pub fn app_label(&self) -> Arc<str> {
         match &self.app {
             Some(app) => app.title.clone().unwrap_or(app.ident.clone()),
             None => self.app_id(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum CallStatus {
+    Generic,
+    Ended,
+    Incoming,
+    Unanswered,
+    Unknown(Arc<str>),
+}
+
+#[derive(Debug, Clone)]
+pub enum DeviceStatus {
+    Generic,
+    Added,
+    Error,
+    Removed,
+    Unknown(Arc<str>),
+}
+
+#[derive(Debug, Clone)]
+pub enum EmailStatus {
+    Generic,
+    Arrived,
+    Bounced,
+    Unknown(Arc<str>),
+}
+
+#[derive(Debug, Clone)]
+pub enum ImStatus {
+    Generic,
+    Error,
+    Received,
+    Unknown(Arc<str>),
+}
+
+#[derive(Debug, Clone)]
+pub enum NetworkStatus {
+    Generic,
+    Connected,
+    Disconnected,
+    Error,
+    Unknown(Arc<str>),
+}
+
+#[derive(Debug, Clone)]
+pub enum PresenceStatus {
+    Generic,
+    Online,
+    Offline,
+    Unknown(Arc<str>),
+}
+
+#[derive(Debug, Clone)]
+pub enum TransferStatus {
+    Generic,
+    Complete,
+    Error,
+    Unknown(Arc<str>),
+}
+
+#[derive(Debug, Clone)]
+pub enum NotificationCategory {
+    Call(CallStatus),
+    Device(DeviceStatus),
+    Email(EmailStatus),
+    Im(ImStatus),
+    Network(NetworkStatus),
+    Presence(PresenceStatus),
+    Transfer(TransferStatus),
+    Unknown(Arc<str>),
+}
+
+impl FromStr for NotificationCategory {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some((category, status)) = s.split_once('.') {
+            match category {
+                "call" => match status {
+                    "ended" => Ok(NotificationCategory::Call(CallStatus::Ended)),
+                    "incoming" => Ok(NotificationCategory::Call(CallStatus::Incoming)),
+                    "unanswered" => Ok(NotificationCategory::Call(CallStatus::Unanswered)),
+                    _ => Ok(NotificationCategory::Call(CallStatus::Unknown(
+                        status.into(),
+                    ))),
+                },
+                "device" => match status {
+                    "added" => Ok(NotificationCategory::Device(DeviceStatus::Added)),
+                    "error" => Ok(NotificationCategory::Device(DeviceStatus::Error)),
+                    "removed" => Ok(NotificationCategory::Device(DeviceStatus::Removed)),
+                    _ => Ok(NotificationCategory::Device(DeviceStatus::Unknown(
+                        status.into(),
+                    ))),
+                },
+                "email" => match status {
+                    "arrived" => Ok(NotificationCategory::Email(EmailStatus::Arrived)),
+                    "bounced" => Ok(NotificationCategory::Email(EmailStatus::Bounced)),
+                    _ => Ok(NotificationCategory::Email(EmailStatus::Unknown(
+                        status.into(),
+                    ))),
+                },
+                "im" => match status {
+                    "error" => Ok(NotificationCategory::Im(ImStatus::Error)),
+                    "received" => Ok(NotificationCategory::Im(ImStatus::Received)),
+                    _ => Ok(NotificationCategory::Im(ImStatus::Unknown(status.into()))),
+                },
+                "network" => match status {
+                    "connected" => Ok(NotificationCategory::Network(NetworkStatus::Connected)),
+                    "disconnected" => {
+                        Ok(NotificationCategory::Network(NetworkStatus::Disconnected))
+                    }
+                    "error" => Ok(NotificationCategory::Network(NetworkStatus::Error)),
+                    _ => Ok(NotificationCategory::Network(NetworkStatus::Unknown(
+                        status.into(),
+                    ))),
+                },
+                "presence" => match status {
+                    "offline" => Ok(NotificationCategory::Presence(PresenceStatus::Offline)),
+                    "online" => Ok(NotificationCategory::Presence(PresenceStatus::Online)),
+                    _ => Ok(NotificationCategory::Presence(PresenceStatus::Unknown(
+                        status.into(),
+                    ))),
+                },
+                "transfer" => match status {
+                    "complete" => Ok(NotificationCategory::Transfer(TransferStatus::Complete)),
+                    "error" => Ok(NotificationCategory::Transfer(TransferStatus::Error)),
+                    _ => Ok(NotificationCategory::Transfer(TransferStatus::Unknown(
+                        status.into(),
+                    ))),
+                },
+                _ => Ok(NotificationCategory::Unknown(s.into())),
+            }
+        } else {
+            match s {
+                "call" => Ok(NotificationCategory::Call(CallStatus::Generic)),
+                "device" => Ok(NotificationCategory::Device(DeviceStatus::Generic)),
+                "email" => Ok(NotificationCategory::Email(EmailStatus::Generic)),
+                "im" => Ok(NotificationCategory::Im(ImStatus::Generic)),
+                "network" => Ok(NotificationCategory::Network(NetworkStatus::Generic)),
+                "presence" => Ok(NotificationCategory::Presence(PresenceStatus::Generic)),
+                "transfer" => Ok(NotificationCategory::Transfer(TransferStatus::Generic)),
+                _ => Ok(NotificationCategory::Unknown(s.into())),
+            }
         }
     }
 }

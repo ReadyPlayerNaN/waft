@@ -2,36 +2,31 @@ use adw::prelude::*;
 use relm4::factory::FactoryHashMap;
 use relm4::gtk;
 use relm4::prelude::*;
-use std::time::SystemTime;
+use std::sync::Arc;
 
-use super::super::types::{NotificationDisplay, NotificationUrgency};
+use super::super::types::NotificationDisplay;
 use super::card_action::{NotificationCardActionInit, NotificationCardActionOutput};
 
-use super::super::types::NotificationIcon;
 use super::card_action::NotificationCardAction;
+use super::countdown_bar::{CountdownBar, CountdownBarInit, CountdownBarInput, CountdownBarOutput};
 use super::icon::{Icon, IconInit, IconInput};
-use super::progress_bar::{ProgressBar, ProgressBarInit, ProgressBarInput};
 
 #[derive(Debug, Clone)]
 pub struct NotificationContentUpdate {
-    pub title: String,
-    pub description: String,
-    pub icon: NotificationIcon,
-    pub created_at: Option<SystemTime>,
+    pub notification: Arc<NotificationDisplay>,
 }
 
 pub struct NotificationCard {
-    id: u64,
     actions: FactoryHashMap<NotificationCardActionInit, NotificationCardAction>,
-    created_at: SystemTime, // @TODO: Display created at time
-    description: String,
+    countdown_bar: Option<Controller<CountdownBar>>,
     icon: Controller<Icon>,
-    progress_bar: Controller<ProgressBar>,
-    title: String,
-    urgency: NotificationUrgency,
+    notification: Arc<NotificationDisplay>,
 }
 
-pub type NotificationCardInit = NotificationDisplay;
+pub struct NotificationCardInit {
+    pub countdown: bool,
+    pub notification: Arc<NotificationDisplay>,
+}
 
 #[derive(Debug, Clone)]
 pub enum NotificationCardInput {
@@ -39,8 +34,11 @@ pub enum NotificationCardInput {
     CardClick,
     CloseClick,
     Content(NotificationContentUpdate),
-    Icon(NotificationIcon),
-    Progress(f32),
+    CountdownContinue,
+    CountdownElapsed,
+    CountdownPause,
+    CountdownStart,
+    CountdownStop,
 }
 
 #[derive(Debug, Clone)]
@@ -48,11 +46,18 @@ pub enum NotificationCardOutput {
     ActionClick(u64, String),
     CardClick(u64),
     Close(u64),
+    TimedOut(u64),
 }
 
 fn transform_action_outputs(msg: NotificationCardActionOutput) -> NotificationCardInput {
     match msg {
         NotificationCardActionOutput::Click(key) => NotificationCardInput::ActionClick(key),
+    }
+}
+
+fn transform_countdown_events(msg: CountdownBarOutput) -> NotificationCardInput {
+    match msg {
+        CountdownBarOutput::Elapsed => NotificationCardInput::CountdownElapsed,
     }
 }
 
@@ -94,7 +99,7 @@ impl FactoryComponent for NotificationCard {
               #[watch]
               set_css_classes: &["heading"],
               #[watch]
-              set_markup: &self.title,
+              set_markup: &self.notification.title,
               set_wrap: true,
               set_wrap_mode: gtk::pango::WrapMode::WordChar,
               set_xalign: 0.0,
@@ -103,7 +108,7 @@ impl FactoryComponent for NotificationCard {
             gtk::Label {
               set_css_classes: &["dim-label"],
               #[watch]
-              set_markup: &self.description,
+              set_markup: &self.notification.description,
               set_wrap: true,
               set_wrap_mode: gtk::pango::WrapMode::WordChar,
               set_xalign: 0.0,
@@ -123,7 +128,10 @@ impl FactoryComponent for NotificationCard {
           }
         },
 
-        append: self.progress_bar.widget(),
+        #[local_ref]
+        countdown -> gtk::Box {
+          set_hexpand: true,
+        },
 
         gtk::Box {
           set_orientation: gtk::Orientation::Vertical,
@@ -155,14 +163,18 @@ impl FactoryComponent for NotificationCard {
     }
 
     fn init_model(init: Self::Init, _index: &Self::Index, sender: FactorySender<Self>) -> Self {
-        let progress_bar = ProgressBar::builder()
-            .launch(ProgressBarInit {
-                progress: init.progress,
-                visible: true,
-            })
-            .detach();
+        let countdown_bar = match init.notification.ttl {
+            Some(ttl) => Some(
+                CountdownBar::builder()
+                    .launch(CountdownBarInit { ttl })
+                    .forward(sender.input_sender(), transform_countdown_events),
+            ),
+            _ => None,
+        };
         let icon = Icon::builder()
-            .launch(IconInit { icon: init.icon })
+            .launch(IconInit {
+                icon: init.notification.icon.clone(),
+            })
             .detach();
 
         let actions = FactoryHashMap::builder()
@@ -170,14 +182,10 @@ impl FactoryComponent for NotificationCard {
             .forward(sender.input_sender(), transform_action_outputs);
 
         Self {
-            id: init.id,
             actions: actions,
-            created_at: init.created_at,
-            description: init.description,
             icon,
-            progress_bar,
-            title: init.title,
-            urgency: init.urgency,
+            notification: init.notification,
+            countdown_bar,
         }
     }
 
@@ -189,34 +197,58 @@ impl FactoryComponent for NotificationCard {
         sender: FactorySender<Self>,
     ) -> Self::Widgets {
         let actions_box = self.actions.widget();
+        let countdown = match &self.countdown_bar {
+            Some(countdown) => countdown.widget(),
+            None => &gtk::Box::default(),
+        };
         let widgets = view_output!();
         widgets
     }
 
     fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
         match msg {
+            NotificationCardInput::ActionClick(action) => {
+                sender.output(Self::Output::ActionClick(self.notification.id, action));
+            }
             NotificationCardInput::CardClick => {
-                sender.output(Self::Output::CardClick(self.id.clone()));
+                sender.output(Self::Output::CardClick(self.notification.id));
             }
             NotificationCardInput::CloseClick => {
-                sender.output(Self::Output::Close(self.id));
+                sender.output(Self::Output::Close(self.notification.id));
             }
             NotificationCardInput::Content(content) => {
-                self.title = content.title;
-                self.description = content.description;
-                self.icon.sender().send(IconInput::Icon(content.icon));
-            }
-            NotificationCardInput::Progress(progress) => {
-                self.progress_bar
+                self.notification = content.notification;
+                self.icon
                     .sender()
-                    .send(ProgressBarInput::Progress(progress));
+                    .send(IconInput::Icon(self.notification.icon.clone()));
             }
-            NotificationCardInput::Icon(icon) => {
-                self.icon.sender().send(IconInput::Icon(icon));
+            NotificationCardInput::CountdownElapsed => {
+                sender.output(Self::Output::TimedOut(self.notification.id));
             }
-            NotificationCardInput::ActionClick(action) => {
-                sender.output(Self::Output::ActionClick(self.id, action));
-            }
-        }
+            NotificationCardInput::CountdownContinue => match &self.countdown_bar {
+                Some(countdown) => {
+                    countdown.sender().emit(CountdownBarInput::Continue);
+                }
+                None => {}
+            },
+            NotificationCardInput::CountdownPause => match &self.countdown_bar {
+                Some(countdown) => {
+                    countdown.sender().emit(CountdownBarInput::Pause);
+                }
+                None => {}
+            },
+            NotificationCardInput::CountdownStart => match &self.countdown_bar {
+                Some(countdown) => {
+                    countdown.sender().emit(CountdownBarInput::Start);
+                }
+                None => {}
+            },
+            NotificationCardInput::CountdownStop => match &self.countdown_bar {
+                Some(countdown) => {
+                    countdown.sender().emit(CountdownBarInput::Stop);
+                }
+                None => {}
+            },
+        };
     }
 }
