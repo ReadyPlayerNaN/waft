@@ -4,6 +4,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{path::PathBuf, time::SystemTime};
 
+use crate::relm4_app::channels::Channel;
+
 /// Notification icon representation.
 ///
 /// The builder is responsible for choosing the final icon (explicit/app/default),
@@ -18,24 +20,51 @@ pub enum NotificationIcon {
 }
 
 impl NotificationIcon {
-    /// Check if the icon is available on the system.
-    pub fn is_available(&self) -> bool {
-        true
-        // match self {
-        //     NotificationIcon::Themed(name) => {
-        //         let display = match gdk::Display::default() {
-        //             Some(d) => d,
-        //             None => {
-        //                 return false;
-        //             }
-        //         };
+    async fn is_themed_icon_available(name: Arc<str>) -> bool {
+        let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+        // Thread-safe hop onto the main (GTK) context
+        glib::MainContext::default().invoke(move || {
+            // Apply normalization as described in AGENTS.md
+            let normalized_name = name
+                .to_lowercase()
+                .replace(' ', "-")
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '-')
+                .collect::<String>();
 
-        //         let theme = gtk::IconTheme::for_display(&display);
-        //         theme.has_icon(&name.as_ref())
-        //     }
-        //     NotificationIcon::FilePath(path) => std::path::Path::new(path.as_ref()).exists(),
-        //     NotificationIcon::Bytes(b) => !b.is_empty(),
-        // }
+            let display_option = gdk::Display::default();
+            println!(
+                "DEBUG: gdk::Display::default() is {:?}",
+                display_option.is_some()
+            );
+
+            let exists = display_option
+                .map(|display| {
+                    let icon_theme = gtk::IconTheme::for_display(&display);
+                    let has = icon_theme.has_icon(&normalized_name);
+                    println!(
+                        "DEBUG: IconTheme has_icon(\"{}\") for display {:?} returned {}",
+                        normalized_name, display, has
+                    );
+                    has
+                })
+                .unwrap_or_else(|| {
+                    println!("DEBUG: No default display, has_icon check skipped.");
+                    false
+                });
+
+            let _ = tx.send(exists);
+        });
+        rx.await.unwrap_or(false)
+    }
+
+    /// Check if the icon is available on the system.
+    pub async fn is_available(&self) -> bool {
+        match self {
+            NotificationIcon::Themed(name) => Self::is_themed_icon_available(name.clone()).await,
+            NotificationIcon::FilePath(path) => std::path::Path::new(path.as_ref()).exists(),
+            NotificationIcon::Bytes(b) => !b.is_empty(),
+        }
     }
 }
 

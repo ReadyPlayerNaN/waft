@@ -21,16 +21,17 @@ fn normalize_icon_name(input: &str) -> String {
     }
 }
 
-pub fn resolve_notification_icon(
+pub async fn resolve_notification_icon(
     app_icon: &str,
     app_name: &str,
     desktop_entry: Option<Arc<str>>,
     hints: &Hints,
 ) -> NotificationIcon {
+    println!("resolve_notification_icon {:?}", app_icon);
     if let Some(bytes) = &hints.image_data {
         if !bytes.is_empty() {
             let i = NotificationIcon::Bytes(bytes.clone());
-            if i.is_available() {
+            if i.is_available().await {
                 return i;
             }
         }
@@ -40,7 +41,7 @@ pub fn resolve_notification_icon(
         let trimmed = path.trim();
         if !trimmed.is_empty() {
             let i = NotificationIcon::FilePath(Arc::new(trimmed.into()));
-            if i.is_available() {
+            if i.is_available().await {
                 return i;
             }
         }
@@ -51,12 +52,12 @@ pub fn resolve_notification_icon(
         // Heuristic: treat as path if it contains a path separator or starts like a path.
         if icon.contains('/') || icon.starts_with('.') || icon.starts_with('~') {
             let i = NotificationIcon::FilePath(Arc::new(icon.into()));
-            if i.is_available() {
+            if i.is_available().await {
                 return i;
             }
         } else {
             let i = NotificationIcon::Themed(icon.into());
-            if i.is_available() {
+            if i.is_available().await {
                 return i;
             }
         }
@@ -83,7 +84,8 @@ pub fn resolve_notification_icon(
     }
 
     for cand in candidates {
-        if cand.is_available() {
+        if cand.is_available().await {
+            println!("Using candidate {:?} ", cand);
             return cand;
         }
     }

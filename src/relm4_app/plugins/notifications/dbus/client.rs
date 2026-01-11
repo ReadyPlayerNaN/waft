@@ -13,13 +13,7 @@
 //! - The DBus server should run on a tokio task and communicate via channels.
 //! - Do not reuse `DbusHandle` here: it is a client wrapper.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use crate::relm4_app::plugins::notifications::types::NotificationDisplay;
-
-use super::super::types::NotificationIcon;
-use super::hints::HintValue;
 
 /// `GetCapabilities` string constants (freedesktop.org spec).
 ///
@@ -62,33 +56,6 @@ pub mod close_reasons {
 pub struct ActionSpec {
     pub key: String,
     pub label: String,
-}
-
-/// Payload of a `Notify` call.
-///
-/// This is the "ingress" message sent from the DBus server to the notifications plugin/controller.
-///
-/// Notes:
-/// - The DBus server is responsible for generating and returning a DBus notification id (`u32`).
-/// - `replaces_id` is included so the receiver can apply replacement semantics.
-/// - `hints` is decoded to best-effort supported types.
-/// - `actions` is already parsed into `(key, label)` pairs.
-#[derive(Clone, Debug)]
-pub struct NotifyRequest {
-    pub app_name: Arc<str>,
-    pub replaces_id: u32,
-    pub summary: Arc<str>,
-    pub body: Arc<str>,
-    pub actions: Vec<ActionSpec>,
-    pub hints: HashMap<String, HintValue>,
-    pub expire_timeout_ms: i32,
-
-    /// Best-effort icon data extracted from `app_icon` and hints such as `image-path`/`image-data`.
-    ///
-    /// - `Some` means the DBus server recognized an explicit icon supplied by the client.
-    /// - `None` means "no explicit icon"; the notifications plugin should attempt app-icon lookup
-    ///   based on app/desktop identifiers and then fall back to a default.
-    pub icon: Option<NotificationIcon>,
 }
 
 /// Event stream from DBus server -> notifications subsystem.

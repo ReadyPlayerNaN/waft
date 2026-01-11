@@ -10,6 +10,7 @@ struct IconProps {
     icon_texture: Option<gtk::gdk::Texture>,
 }
 
+#[derive(Debug)]
 pub struct Icon {
     icon_name: Option<Arc<str>>,
     icon_texture: Option<gtk::gdk::Texture>,
@@ -60,11 +61,12 @@ impl SimpleComponent for Icon {
     type Output = ();
 
     view! {
-      gtk::Image {
-        set_pixel_size: 32,
-        set_valign: gtk::Align::Start,
-        set_icon_name: model.icon_name.as_deref(),
-        set_paintable: model.icon_texture.as_ref(),
+      gtk::Box {
+        #[local_ref]
+        image -> gtk::Image {
+          set_pixel_size: 32,
+          set_valign: gtk::Align::Start,
+        }
       }
     }
 
@@ -78,6 +80,12 @@ impl SimpleComponent for Icon {
             icon_name: props.icon_name,
             icon_texture: props.icon_texture,
         };
+        let image = gtk::Image::new();
+        if model.icon_texture.is_some() {
+            image.set_paintable(model.icon_texture.as_ref());
+        } else {
+            image.set_icon_name(model.icon_name.as_deref());
+        }
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }

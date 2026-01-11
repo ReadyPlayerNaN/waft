@@ -309,7 +309,7 @@ impl NotificationsService {
         let hints =
             parse_hints(&decode_hints(hints)).map_err(|e| fdo::Error::Failed(e.to_string()))?;
         let desktop_entry = hints.desktop_entry.clone();
-        let icon = resolve_notification_icon(&app_icon, &app_name, desktop_entry, &hints);
+        let icon = resolve_notification_icon(&app_icon, &app_name, desktop_entry, &hints).await;
 
         let notification = NotificationDisplay {
             id: id as u64,

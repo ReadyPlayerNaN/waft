@@ -20,7 +20,7 @@ pub struct NotificationCard {
     actions: FactoryHashMap<NotificationCardActionInit, NotificationCardAction>,
     countdown_bar: Option<Controller<CountdownBar>>,
     icon: Controller<Icon>,
-    notification: Arc<NotificationDisplay>,
+    pub notification: Arc<NotificationDisplay>,
 }
 
 pub struct NotificationCardInit {
@@ -65,12 +65,13 @@ impl NotificationCard {}
 
 #[relm4::factory(pub)]
 impl FactoryComponent for NotificationCard {
+    
+    type Index = relm4::factory::DynamicIndex;
     type Init = NotificationCardInit;
     type Input = NotificationCardInput;
     type Output = NotificationCardOutput;
     type CommandOutput = ();
     type ParentWidget = gtk::Box;
-    type Index = u64;
 
     view! {
       gtk::Box {

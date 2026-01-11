@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use log::info;
-use relm4::factory::FactoryHashMap;
+use relm4::factory::FactoryVecDeque;
 use relm4::gtk;
 use relm4::prelude::*;
 use std::collections::HashMap;
@@ -13,9 +13,9 @@ pub struct NotificationCardGroup {
     expanded: bool,
     id: Arc<str>,
     notifications: HashMap<u64, Arc<NotificationDisplay>>,
-    rest: FactoryHashMap<u64, NotificationCard>,
+    rest: FactoryVecDeque<NotificationCard>,
     title: Arc<str>,
-    top: FactoryHashMap<u64, NotificationCard>,
+    top: FactoryVecDeque<NotificationCard>,
 }
 
 pub struct NotificationCardGroupInit {
@@ -67,49 +67,57 @@ impl FactoryComponent for NotificationCardGroup {
     type ParentWidget = gtk::Box;
 
     view! {
-      gtk::Box {
-        set_orientation: gtk::Orientation::Vertical,
-
-        gtk::Label {
-          #[watch]
-          set_label: &self.title,
-        },
-
-        #[local_ref]
-        top -> gtk::Box {
-          set_orientation: gtk::Orientation::Vertical,
-          set_spacing: 6,
-          set_margin_start: 12,
-          set_margin_end: 12,
-          set_margin_bottom: 8,
-          set_margin_top: 8,
-        },
+      gtk::Revealer {
+        #[watch]
+        set_reveal_child: self.top.len() + self.rest.len() > 0,
         gtk::Box {
           set_orientation: gtk::Orientation::Vertical,
-          set_spacing: 6,
-          set_margin_start: 12,
-          set_margin_end: 12,
-          set_margin_bottom: 8,
-          set_margin_top: 8,
+          set_spacing: 8,
 
-          gtk::Button {
-            set_label: "Expand",
-            connect_clicked => Self::Input::ExpandClick,
-          }
-        },
-        gtk::Revealer {
-          #[watch]
-          set_reveal_child: self.expanded,
-          set_transition_type: gtk::RevealerTransitionType::SlideDown,
+          gtk::Label {
+            #[watch]
+            set_label: &format!("{} ({})", self.title, self.top.len() + self.rest.len()),
+            set_xalign: 0.0,
+          },
 
           #[local_ref]
-          rest -> gtk::Box {
+          top -> gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
             set_spacing: 6,
-            set_margin_start: 12,
-            set_margin_end: 12,
-            set_margin_bottom: 8,
-            set_margin_top: 8,
+          },
+
+          gtk::Revealer {
+            #[watch]
+            set_reveal_child: self.rest.len() > 0,
+            set_transition_type: gtk::RevealerTransitionType::SlideDown,
+
+            gtk::Box {
+              set_orientation: gtk::Orientation::Vertical,
+              set_spacing: 6,
+
+              gtk::Button {
+                #[watch]
+                set_label: &format!("{} {} more", match self.expanded {
+                  true => "Hide",
+                  false => "Show",
+                }, self.rest.len()),
+                set_halign: gtk::Align::Start,
+                set_hexpand: false,
+                connect_clicked => Self::Input::ExpandClick,
+              },
+
+              gtk::Revealer {
+                #[watch]
+                set_reveal_child: self.expanded,
+                set_transition_type: gtk::RevealerTransitionType::SlideDown,
+
+                #[local_ref]
+                rest -> gtk::Box {
+                  set_orientation: gtk::Orientation::Vertical,
+                  set_spacing: 6,
+                }
+              }
+            }
           }
         }
       }
@@ -119,11 +127,11 @@ impl FactoryComponent for NotificationCardGroup {
         let ns = value.notifications.unwrap_or(vec![]);
         let map: HashMap<u64, Arc<NotificationDisplay>> =
             ns.into_iter().map(|n| (n.id, n)).collect();
-        let top = FactoryHashMap::builder()
+        let top = FactoryVecDeque::builder()
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_notification_card_outputs);
 
-        let rest = FactoryHashMap::builder()
+        let rest = FactoryVecDeque::builder()
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_notification_card_outputs);
 
@@ -156,43 +164,72 @@ impl FactoryComponent for NotificationCardGroup {
                 info!("Ingesting notification: {:?}", notification);
                 let id = notification.id;
                 self.notifications.insert(id, notification.clone());
-                self.top.insert(
-                    id,
-                    NotificationCardInit {
-                        countdown: false,
-                        notification,
-                    },
-                );
+
+                // Add to top (newest first)
+                self.top.guard().push_front(NotificationCardInit {
+                    countdown: false,
+                    notification: notification.clone(),
+                });
+
                 info!(
                     "NotificationCardGroup {} top factory now has {} items",
                     self.id,
                     self.top.len()
                 );
+
                 // Only move notifications to rest if we have more than 1 in top
                 if self.top.len() > 1 {
-                    if let Some((last_id, _last_notification)) = self.top.iter().last() {
-                        let last_id = *last_id;
-                        self.top.remove(&last_id);
-                        match self.notifications.remove(&last_id) {
-                            Some(n) => {
-                                self.rest.insert(
-                                    last_id,
-                                    NotificationCardInit {
-                                        countdown: false,
-                                        notification: n,
-                                    },
-                                );
-                                info!("Moved notification {} to rest factory", last_id);
-                            }
-                            None => (),
-                        };
+                    // Remove the last item (oldest in top)
+                    if let Some(card) = self.top.guard().pop_back() {
+                        let last_id = card.notification.id;
+                        // Move to rest (newest in rest)
+                        if let Some(n) = self.notifications.get(&last_id) {
+                            self.rest.guard().push_front(NotificationCardInit {
+                                countdown: false,
+                                notification: n.clone(),
+                            });
+                            info!("Moved notification {} to rest factory", last_id);
+                        }
                     }
                 }
             }
             Self::Input::Remove(notification_id) => {
                 self.notifications.remove(&notification_id);
-                self.top.remove(&notification_id);
-                self.rest.remove(&notification_id);
+
+                // Find and remove from top
+                let top_idx = self
+                    .top
+                    .guard()
+                    .iter()
+                    .position(|c| c.notification.id == notification_id);
+                if let Some(idx) = top_idx {
+                    self.top.guard().remove(idx);
+                }
+
+                // Find and remove from rest
+                let rest_idx = self
+                    .rest
+                    .guard()
+                    .iter()
+                    .position(|c| c.notification.id == notification_id);
+                if let Some(idx) = rest_idx {
+                    self.rest.guard().remove(idx);
+                }
+
+                // Promote from rest to top if top is empty
+                if self.top.len() == 0 {
+                    // Take the first item from rest (newest in rest)
+                    if let Some(card) = self.rest.guard().pop_front() {
+                        let id = card.notification.id;
+                        if let Some(n) = self.notifications.get(&id) {
+                            self.top.guard().push_back(NotificationCardInit {
+                                countdown: false,
+                                notification: n.clone(),
+                            });
+                            info!("Moved notification {} from rest to top", id);
+                        }
+                    }
+                }
             }
             Self::Input::ActionClick(notification_id, action) => {
                 sender.output(Self::Output::ActionClick(notification_id, action));

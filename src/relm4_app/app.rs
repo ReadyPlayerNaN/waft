@@ -174,9 +174,9 @@ impl SimpleComponent for AppModel {
             .feature-toggle {{
                 background: @card_bg_color;
                 border-radius: 28px;
-                min-height: 44px;
+                min-height: 48px;
                 padding: 2px 20px 2px 12px;
-                margin: 0;
+                margin: 8px 0;
             }}
 
             .feature-toggle:hover {{

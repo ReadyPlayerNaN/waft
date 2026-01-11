@@ -135,7 +135,7 @@ impl Plugin for DarkmanPlugin {
                 let widget = w.widget().clone().upcast::<gtk::Widget>();
                 vec![Arc::new(WidgetFeatureToggle {
                     el: widget,
-                    weight: 10,
+                    weight: 190,
                 })]
             }
             None => vec![],
