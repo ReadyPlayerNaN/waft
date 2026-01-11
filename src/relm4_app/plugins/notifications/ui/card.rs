@@ -1,6 +1,7 @@
 use adw::prelude::*;
 use relm4::factory::FactoryHashMap;
 use relm4::gtk;
+use relm4::gtk::prelude::{GestureSingleExt, WidgetExt};
 use relm4::prelude::*;
 use std::sync::Arc;
 
@@ -65,7 +66,6 @@ impl NotificationCard {}
 
 #[relm4::factory(pub)]
 impl FactoryComponent for NotificationCard {
-    
     type Index = relm4::factory::DynamicIndex;
     type Init = NotificationCardInit;
     type Input = NotificationCardInput;
@@ -202,6 +202,17 @@ impl FactoryComponent for NotificationCard {
             Some(countdown) => countdown.widget(),
             None => &gtk::Box::default(),
         };
+
+        // Right mouse button click anywhere on the card should close it,
+        // same as clicking the close button.
+        let input = sender.input_sender().clone();
+        let right_click = gtk::GestureClick::new();
+        right_click.set_button(3);
+        right_click.connect_pressed(move |_gesture, _n_press, _x, _y| {
+            input.emit(NotificationCardInput::CloseClick);
+        });
+        root.add_controller(right_click);
+
         let widgets = view_output!();
         widgets
     }
