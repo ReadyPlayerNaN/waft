@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use log::{error, info};
+use log::error;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -51,14 +51,8 @@ impl Plugin for ClockPlugin {
         let datetime = DateTime::now_local()?;
         let cx = self.create_widget(datetime);
         let cx_sender = cx.sender().clone();
-        let ui_receiver = self.channel.receiver.clone();
         self.widget = Some(cx);
 
-        tokio::spawn(async move {
-            while let Ok(event) = ui_receiver.recv_async().await {
-                info!("[clock] Received event: {:?}", event);
-            }
-        });
         tokio::spawn(async move {
             loop {
                 match DateTime::now_local() {
