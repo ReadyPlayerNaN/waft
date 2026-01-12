@@ -3,54 +3,22 @@ name = "sacrebleui"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-# Default to the Relm4 app for development while we migrate incrementally.
-default = ["relm4-app"]
-
-# Build/run the Relm4 + libadwaita migration app entrypoint.
-relm4-app = ["dep:relm4"]
-
 [dependencies]
+adw = { version = "0.8.1", package = "libadwaita", features = ["v1_5"] }
+anyhow = "1"
+async-trait = "0.1"
+env_logger = "0.11"
 flume = "0.12"
-# GTK4 (0.10.x) to align with libadwaita 0.8.x / Relm4 0.10.x and avoid `links = "gtk-4"` conflicts.
+futures-util = "0.3"
+gio = "0.20"
 gtk = { version = "0.10", package = "gtk4", features = ["v4_6"] }
 glib = "0.21"
-
-# Wayland overlay positioning (layer-shell) aligned with gtk4 0.10 line.
 gtk4-layer-shell = "0.7.1"
-
-# libadwaita widgets (match gtk4 0.10 line).
-adw = { version = "0.8.1", package = "libadwaita", features = ["v1_5"] }
-
-# Relm4 (GUI framework) used during migration; kept optional behind a feature flag.
-#
-# Note: keep default features enabled so the proc-macros (`#[relm4::component]`, `view!`, etc.)
-# are available for the skeleton component.
-relm4 = { version = "0.10.1", optional = true, features = ["libadwaita"] }
-# GIO (for best-effort desktop app activation from notification toasts)
-gio = "0.20"
-
-# JSON IPC
+log = "0.4"
+relm4 = { version = "0.10.1", features = ["libadwaita"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-# Async runtime + Unix socket IPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "io-util", "time", "process"] }
 tokio-stream = "0.1.18"
-
-# Utilities
-anyhow = "1"
-
-# Async traits
-async-trait = "0.1"
-
-# DBus communication (client + server)
-#
-# NOTE: We use zbus v5+ for the newer attribute macros / interface helpers.
 zbus = "5"
 zvariant = "5"
-
-# Needed by the zbus-based DBus client wrapper for streaming signal handling (`StreamExt`).
-futures-util = "0.3"
-log = "0.4"
-env_logger = "0.11"
