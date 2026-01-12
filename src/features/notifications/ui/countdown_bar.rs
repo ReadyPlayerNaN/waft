@@ -1,5 +1,7 @@
 use adw::prelude::*;
 use std::cell::Cell;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use relm4::tokio::spawn;
 use relm4::tokio::task::JoinHandle;
@@ -11,6 +13,7 @@ pub struct CountdownBar {
     elapsed: u64, // elapsed time in milliseconds
     progress: f32,
     last_progress: Cell<f32>,
+    running: Arc<AtomicBool>,
     timer: Option<JoinHandle<()>>,
 }
 
@@ -120,9 +123,10 @@ impl SimpleComponent for CountdownBar {
         let model = Self {
             elapsed: 0,
             last_progress: Cell::new(1.0),
+            running: Arc::new(AtomicBool::new(false)),
             progress: 1.0,
-            ttl: init.ttl,
             timer: None,
+            ttl: init.ttl,
         };
         let widgets = view_output!();
         ComponentParts { model, widgets }
@@ -131,28 +135,35 @@ impl SimpleComponent for CountdownBar {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             Self::Input::Continue => {
+                self.running.store(true, Ordering::Relaxed);
                 self.start_timer(sender);
             }
             Self::Input::Pause => {
+                self.running.store(false, Ordering::Relaxed);
                 self.stop_timer();
             }
             Self::Input::Start => {
+                self.running.store(true, Ordering::Relaxed);
                 self.elapsed = 0;
                 self.progress = 1.0;
                 self.start_timer(sender);
             }
             Self::Input::Stop => {
+                self.running.store(false, Ordering::Relaxed);
                 self.stop_timer();
                 self.elapsed = 0;
                 self.progress = 1.0;
             }
             Self::Input::Tick(time) => {
-                self.elapsed = (self.elapsed + time).clamp(0, self.ttl);
-                self.last_progress.set(self.progress);
-                self.progress = (self.elapsed as f32 / (1000.0 * self.ttl as f32)).clamp(0.0, 1.0);
-                if self.progress >= 1.0 {
-                    self.stop_timer();
-                    sender.output(Self::Output::Elapsed);
+                if self.running.load(Ordering::Relaxed) {
+                    self.elapsed = (self.elapsed + time).clamp(0, self.ttl);
+                    self.last_progress.set(self.progress);
+                    self.progress = (self.elapsed as f32 / (self.ttl as f32)).clamp(0.0, 1.0);
+                    if self.progress >= 1.0 {
+                        self.running.store(false, Ordering::Relaxed);
+                        self.stop_timer();
+                        sender.output(Self::Output::Elapsed);
+                    }
                 }
             }
         }
