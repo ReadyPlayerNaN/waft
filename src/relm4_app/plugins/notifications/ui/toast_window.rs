@@ -89,7 +89,7 @@ impl ToastWindow {
         // NOTE: for toasts we might want to change this later to avoid taking focus.
         window.init_layer_shell();
         window.set_layer(gtk4_layer_shell::Layer::Overlay);
-        window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
+        window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::None);
 
         // Reset all anchors to a known baseline.
         window.set_anchor(gtk4_layer_shell::Edge::Left, false);
