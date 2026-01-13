@@ -1,13 +1,9 @@
-use std::collections::HashSet;
-use std::sync::Arc;
-
 use gtk::prelude::{BoxExt, GtkWindowExt, WidgetExt};
 use gtk4_layer_shell::LayerShell;
 use relm4::gtk;
 use relm4::prelude::*;
 
-use super::super::types::NotificationDisplay;
-use super::toast_list::{ToastList, ToastListInit, ToastListInput, ToastListOutput};
+use super::toast_list::{ToastList, ToastListOutput};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HPos {
@@ -26,34 +22,16 @@ pub enum VPos {
 pub struct ToastWindow {
     /// Root window (stored so we don't rely on sender APIs to access the widget).
     window: gtk::Window,
-
-    /// Track ids we believe are currently present (source of truth is the plugin).
-    ///
-    /// We use this to decide whether the window should be visible.
-    ///
-    /// NOTE:
-    /// `ToastList` currently removes on `TimedOut` internally but does not emit an output for it.
-    /// In the "plugin is SoT" model, expiry should be decided by the plugin and propagated via
-    /// `ToastWindowInput::Remove`, so this remains correct.
-    present_ids: HashSet<u64>,
-
     toast_list: Controller<ToastList>,
 }
 
 pub struct ToastWindowInit {
     pub hpos: HPos,
     pub vpos: VPos,
-    pub notifications: Vec<Arc<NotificationDisplay>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum ToastWindowInput {
-    /// Ingest a new/updated notification (plugin-driven).
-    Ingest(Arc<NotificationDisplay>),
-
-    /// Remove a notification by id (plugin-driven).
-    Remove(u64),
-
     /// Internal wiring from the `ToastList` child.
     ToastList(ToastListOutput),
 }
@@ -62,11 +40,7 @@ pub enum ToastWindowInput {
 pub enum ToastWindowOutput {
     ActionClick(u64, String),
     CardClick(u64),
-    CardClose(u64),
     TimedOut(u64),
-
-    Collapse(Arc<str>),
-    Expand(Arc<str>),
 }
 
 fn transform_toast_list_output(msg: ToastListOutput) -> ToastWindowInput {
@@ -75,7 +49,7 @@ fn transform_toast_list_output(msg: ToastListOutput) -> ToastWindowInput {
 
 impl ToastWindow {
     fn set_visible_if_needed(&self) {
-        let should_be_visible = !self.present_ids.is_empty();
+        let should_be_visible = true;
         if self.window.is_visible() != should_be_visible {
             self.window.set_visible(should_be_visible);
         }
@@ -148,25 +122,10 @@ impl SimpleComponent for ToastWindow {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         Self::configure_layer_shell(&root, init.hpos, init.vpos);
-
-        // Associate this window with the main GTK application.
-        //
-        // IMPORTANT:
-        // The plugin/host is responsible for calling `add_window(...)` so it controls lifecycle.
         root.set_application(Some(&relm4::main_application()));
 
-        let mut present_ids: HashSet<u64> = HashSet::with_capacity(init.notifications.len());
-        for n in init.notifications.iter() {
-            present_ids.insert(n.id);
-        }
-
         let toast_list = ToastList::builder()
-            .launch(ToastListInit {
-                notifications: Some(init.notifications),
-                // Required by `ToastList` but not part of ToastWindow API.
-                id: Arc::from("toast-window"),
-                title: Arc::from("Toasts"),
-            })
+            .launch(())
             .forward(sender.input_sender(), transform_toast_list_output);
 
         // Window content.
@@ -177,7 +136,6 @@ impl SimpleComponent for ToastWindow {
 
         let model = Self {
             window: root.clone(),
-            present_ids,
             toast_list,
         };
 
@@ -190,25 +148,6 @@ impl SimpleComponent for ToastWindow {
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
-            ToastWindowInput::Ingest(notification) => {
-                // Plugin is the source of truth; we keep a light local index for visibility decisions.
-                self.present_ids.insert(notification.id);
-
-                self.toast_list
-                    .sender()
-                    .emit(ToastListInput::Ingest(notification));
-
-                self.set_visible_if_needed();
-            }
-
-            ToastWindowInput::Remove(id) => {
-                self.present_ids.remove(&id);
-
-                self.toast_list.sender().emit(ToastListInput::Remove(id));
-
-                self.set_visible_if_needed();
-            }
-
             ToastWindowInput::ToastList(out) => match out {
                 ToastListOutput::ActionClick(id, action) => {
                     let _ = sender.output(ToastWindowOutput::ActionClick(id, action));
@@ -216,21 +155,10 @@ impl SimpleComponent for ToastWindow {
                 ToastListOutput::CardClick(id) => {
                     let _ = sender.output(ToastWindowOutput::CardClick(id));
                 }
-                ToastListOutput::CardClose(id) => {
-                    // Plugin is the source of truth: do not mutate local presence state here.
-                    // The plugin will decide whether/when to emit `ToastWindowInput::Remove(id)`.
-                    let _ = sender.output(ToastWindowOutput::CardClose(id));
-                }
-                ToastListOutput::TimedOut(id) => {
+                ToastListOutput::CardTimedOut(id) => {
                     // Plugin is the source of truth: treat timeout as a signal/intent.
                     // The plugin will decide whether/when to emit `ToastWindowInput::Remove(id)`.
                     let _ = sender.output(ToastWindowOutput::TimedOut(id));
-                }
-                ToastListOutput::Collapse(group_id) => {
-                    let _ = sender.output(ToastWindowOutput::Collapse(group_id));
-                }
-                ToastListOutput::Expand(group_id) => {
-                    let _ = sender.output(ToastWindowOutput::Expand(group_id));
                 }
             },
         }

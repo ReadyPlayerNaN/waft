@@ -1352,6 +1352,7 @@ dependencies = [
  "glib 0.21.5",
  "gtk4",
  "gtk4-layer-shell",
+ "indexmap",
  "libadwaita",
  "log",
  "relm4",

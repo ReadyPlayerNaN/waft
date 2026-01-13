@@ -240,6 +240,9 @@ impl SimpleComponent for AppModel {
                 );
             }}
 
+            .notification-card-revealer {{
+            }}
+
             "#,
             OVERLAY_CORNER_RADIUS_PX
         );

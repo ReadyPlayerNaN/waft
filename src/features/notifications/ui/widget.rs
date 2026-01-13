@@ -1,19 +1,21 @@
-use log::info;
+use relm4::prelude::FactoryVecDeque;
 use std::sync::Arc;
 
 use gtk::prelude::*;
-use relm4::factory::FactoryHashMap;
 use relm4::{ComponentParts, ComponentSender, SimpleComponent, gtk};
 
-use super::super::types::NotificationDisplay;
-use super::card_group::{
-    NotificationCardGroup, NotificationCardGroupInit, NotificationCardGroupInput,
-    NotificationCardGroupOutput,
+use crate::features::notifications::ui::card_group::{
+    NotificationCardGroupInit, NotificationCardGroupInput,
 };
+
+use super::super::store::{REDUCER, State};
+use super::super::types::NotificationDisplay;
+use super::card_group::{NotificationCardGroup, NotificationCardGroupOutput};
 
 pub struct NotificationsWidget {
     expanded_group: Option<Arc<str>>,
-    groups: FactoryHashMap<Arc<str>, NotificationCardGroup>,
+    groups: FactoryVecDeque<NotificationCardGroup>,
+    groups_map: Vec<Arc<str>>,
 }
 
 pub struct NotificationsWidgetInit {
@@ -35,25 +37,18 @@ fn transform_notification_group_outputs(
             NotificationsWidgetInput::GroupExpand(group_id)
         }
         NotificationCardGroupOutput::CardClick(id) => NotificationsWidgetInput::CardClick(id),
-        NotificationCardGroupOutput::CardClose(id) => NotificationsWidgetInput::CardClose(id),
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum NotificationsWidgetInput {
-    /// Plugin-driven: ingest or update a notification (the plugin is the source of truth).
-    Ingest(Arc<NotificationDisplay>),
-
-    /// Plugin-driven: remove a notification from the rendered UI.
-    Remove(u64),
-
     /// UI-driven events bubbling up from leaf `NotificationCard`s.
     CardActionClick(u64, String),
     CardClick(u64),
-    CardClose(u64),
-
     GroupCollapse(Arc<str>),
     GroupExpand(Arc<str>),
+    Remove(u64),
+    StateChanged(State),
 }
 
 #[derive(Debug, Clone)]
@@ -64,55 +59,13 @@ pub enum NotificationsWidgetOutput {
 }
 
 impl NotificationsWidget {
-    fn create_group<'a>(
-        groups: &'a mut FactoryHashMap<Arc<str>, NotificationCardGroup>,
-        ntf: &NotificationDisplay,
-    ) -> Option<&'a NotificationCardGroup> {
-        groups.insert(
-            ntf.app_id(),
-            NotificationCardGroupInit {
-                expanded: false,
-                id: ntf.app_id().clone(),
-                notifications: None,
-                title: ntf.app_label().clone(),
-            },
-        );
-        let result = groups.get(&ntf.app_id());
-        info!("Group created successfully: {}", result.is_some());
-        result
-    }
-
-    fn ensure_group_existence(
-        groups: &mut FactoryHashMap<Arc<str>, NotificationCardGroup>,
-        ntf: &Arc<NotificationDisplay>,
-    ) {
-        if !groups.get(&ntf.app_id()).is_some() {
-            Self::create_group(groups, ntf);
+    fn get_index(target: &FactoryVecDeque<NotificationCardGroup>, id: &Arc<str>) -> Option<usize> {
+        for (i, el) in target.iter().enumerate() {
+            if &el.get_id() == id {
+                return Some(i);
+            }
         }
-    }
-
-    fn integrate_notification(
-        groups: &mut FactoryHashMap<Arc<str>, NotificationCardGroup>,
-        notification: Arc<NotificationDisplay>,
-    ) {
-        Self::ensure_group_existence(groups, &notification);
-        groups.send(
-            &notification.app_id(),
-            NotificationCardGroupInput::Ingest(notification),
-        )
-    }
-
-    fn integrate_notifications(
-        groups: &mut FactoryHashMap<Arc<str>, NotificationCardGroup>,
-        notifications: Vec<Arc<NotificationDisplay>>,
-    ) {
-        for notification in notifications {
-            Self::integrate_notification(groups, notification);
-        }
-    }
-
-    fn ingest_notification(&mut self, notification: Arc<NotificationDisplay>) {
-        Self::integrate_notification(&mut self.groups, notification);
+        None
     }
 }
 
@@ -148,24 +101,19 @@ impl SimpleComponent for NotificationsWidget {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let mut groups = FactoryHashMap::builder()
+        let groups: FactoryVecDeque<NotificationCardGroup> = FactoryVecDeque::builder()
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_notification_group_outputs);
 
-        match init.notifications {
-            Some(notifications) => {
-                info!("Initializing with {} notifications", notifications.len());
-                Self::integrate_notifications(&mut groups, notifications);
-            }
-            None => {
-                info!("Initializing with no notifications");
-            }
-        }
+        REDUCER.subscribe(sender.input_sender(), |s| {
+            Self::Input::StateChanged(s.get_state().clone())
+        });
 
         let groups_widget = groups.widget().clone();
         let model = Self {
             expanded_group: init.expanded_group,
             groups,
+            groups_map: vec![],
         };
         let widgets = view_output!();
         ComponentParts { model, widgets }
@@ -173,15 +121,40 @@ impl SimpleComponent for NotificationsWidget {
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
-            Self::Input::Ingest(notification) => {
-                self.ingest_notification(notification);
+            Self::Input::StateChanged(state) => {
+                let groups = state.get_groups();
+                for (group, lifecycle) in groups {
+                    let existing = self.groups_map.iter().position(|id| id == group.get_id());
+                    match existing {
+                        Some(_) => {}
+                        None => {
+                            let gt = state.get_group_top(&group.get_id());
+                            let gb = state.get_group_bottom(&group.get_id());
+                            self.groups.guard().push_back(NotificationCardGroupInit {
+                                expanded: false,
+                                id: group.get_id().clone(),
+                                title: group.get_title().clone(),
+                                hidden: lifecycle.is_hidden(),
+                                top: gt
+                                    .into_iter()
+                                    .map(|(notification, lifecycle)| {
+                                        (notification.clone(), lifecycle.clone())
+                                    })
+                                    .collect(),
+                                rest: gb
+                                    .into_iter()
+                                    .map(|(notification, lifecycle)| {
+                                        (notification.clone(), lifecycle.clone())
+                                    })
+                                    .collect(),
+                            });
+                            self.groups_map.push(group.get_id().clone());
+                        }
+                    }
+                }
             }
 
-            Self::Input::Remove(id) => {
-                // Plugin-driven reconciliation: remove from whichever group currently renders it.
-                self.groups
-                    .broadcast(NotificationCardGroupInput::Remove(id));
-            }
+            Self::Input::Remove(id) => {}
 
             Self::Input::CardActionClick(id, action) => {
                 // Bubble up to the plugin; do not mutate UI state here (plugin is SoT).
@@ -191,28 +164,29 @@ impl SimpleComponent for NotificationsWidget {
                 // Bubble up to the plugin; do not mutate UI state here (plugin is SoT).
                 let _ = sender.output(Self::Output::CardClick(id));
             }
-            Self::Input::CardClose(id) => {
-                // Bubble up to the plugin; the plugin decides whether/when to remove and will
-                // send `NotificationsWidgetInput::Remove(id)` back down.
-                let _ = sender.output(Self::Output::CardClose(id));
-            }
-
             Self::Input::GroupCollapse(group_id) => {
                 if self.expanded_group.as_ref() == Some(&group_id) {
-                    self.groups
-                        .send(&group_id, NotificationCardGroupInput::Expand(false));
+                    if let Some(index) = Self::get_index(&self.groups, &group_id) {
+                        self.groups
+                            .send(index, NotificationCardGroupInput::Expand(false));
+                    }
                     self.expanded_group = None;
                 }
             }
             Self::Input::GroupExpand(group_id) => {
                 if let Some(expanded_group) = &self.expanded_group {
                     if expanded_group != &group_id {
-                        self.groups
-                            .send(expanded_group, NotificationCardGroupInput::Expand(false));
+                        if let Some(index) = Self::get_index(&self.groups, expanded_group) {
+                            self.groups
+                                .send(index, NotificationCardGroupInput::Expand(false));
+                        }
                     }
                 }
-                self.groups
-                    .send(&group_id, NotificationCardGroupInput::Expand(true));
+                if let Some(index) = Self::get_index(&self.groups, &group_id) {
+                    println!("INDEX: {}", index);
+                    self.groups
+                        .send(index, NotificationCardGroupInput::Expand(true));
+                }
                 self.expanded_group = Some(group_id);
             }
         }

@@ -3,31 +3,41 @@ use std::sync::Arc;
 use adw::prelude::*;
 use relm4::factory::FactoryHashMap;
 use relm4::gtk;
-use relm4::gtk::prelude::{GestureSingleExt, WidgetExt};
+use relm4::gtk::prelude::{BoxExt, ButtonExt, GestureSingleExt, WidgetExt};
 use relm4::prelude::*;
 
-use super::super::types::NotificationDisplay;
+use crate::classnames;
+use crate::features::notifications::store::{ItemLifecycle, NotificationOp, REDUCER, State};
+use crate::features::notifications::types::NotificationIcon;
+
 use super::card_action::{NotificationCardActionInit, NotificationCardActionOutput};
 
 use super::card_action::NotificationCardAction;
 use super::countdown_bar::{CountdownBar, CountdownBarInit, CountdownBarInput, CountdownBarOutput};
-use super::icon::{Icon, IconInit, IconInput};
-
-#[derive(Debug, Clone)]
-pub struct NotificationContentUpdate {
-    pub notification: Arc<NotificationDisplay>,
-}
+use super::icon::{Icon, IconInit};
 
 pub struct NotificationCard {
     actions: FactoryHashMap<NotificationCardActionInit, NotificationCardAction>,
     countdown_bar: Option<Controller<CountdownBar>>,
+    group_id: Option<Arc<str>>,
     icon: Controller<Icon>,
-    pub notification: Arc<NotificationDisplay>,
+    id: u64,
+    lifecycle: Option<ItemLifecycle>,
+    title: Arc<str>,
+    description: Arc<str>,
+    hidden: bool,
+    toggle_epoch: u64,
+    ttl: Option<u64>,
 }
 
 pub struct NotificationCardInit {
-    pub countdown: bool,
-    pub notification: Arc<NotificationDisplay>,
+    pub description: Arc<str>,
+    pub group_id: Option<Arc<str>>,
+    pub hidden: bool,
+    pub id: u64,
+    pub lifecycle: Option<ItemLifecycle>,
+    pub title: Arc<str>,
+    pub ttl: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,19 +45,21 @@ pub enum NotificationCardInput {
     ActionClick(String),
     CardClick,
     CloseClick,
-    Content(NotificationContentUpdate),
     CountdownContinue,
     CountdownElapsed,
     CountdownPause,
     CountdownStart,
     CountdownStop,
+    StateChanged(State),
+    Toggled,
+    ToggledEpoch(u64),
 }
 
 #[derive(Debug, Clone)]
 pub enum NotificationCardOutput {
     ActionClick(u64, String),
     CardClick(u64),
-    Close(u64),
+    CardHidden(u64),
     TimedOut(u64),
 }
 
@@ -63,7 +75,19 @@ fn transform_countdown_events(msg: CountdownBarOutput) -> NotificationCardInput 
     }
 }
 
-impl NotificationCard {}
+impl NotificationCard {
+    pub fn get_id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn get_hidden(&self) -> bool {
+        self.hidden
+    }
+
+    pub fn get_phase(&self) -> &Option<ItemLifecycle> {
+        &self.lifecycle
+    }
+}
 
 #[relm4::factory(pub)]
 impl FactoryComponent for NotificationCard {
@@ -77,95 +101,116 @@ impl FactoryComponent for NotificationCard {
     view! {
       gtk::Box {
         set_orientation: gtk::Orientation::Vertical,
-        set_css_classes: &["card", "notification-card"],
 
-        gtk::Box {
-          set_orientation: gtk::Orientation::Horizontal,
-          set_hexpand: true,
-          set_spacing: 12,
-          set_margin_start: 16,
-          set_margin_end: 16,
-          set_margin_top: 16,
-          set_margin_bottom: 16,
+        gtk::Revealer {
+          #[watch]
+          set_reveal_child: !self.hidden,
+          set_transition_type: gtk::RevealerTransitionType::SlideDown,
+          set_transition_duration: 200,
+          set_css_classes: &classnames![
+            "notification-card-revealer" => true,
+            "hidden" => self.hidden,
+          ],
+          // connect_visible_notify => NotificationCardInput::Toggled,
+          // connect_hide => NotificationCardInput::Toggled,
 
-          append: self.icon.widget(),
-
+          #[name = "card_box"]
           gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
-            set_spacing: 8,
-            set_css_classes: &["notification-content"],
-            set_hexpand: true,
-            set_halign: gtk::Align::Fill,
+            set_css_classes: &["card", "notification-card"],
 
-            gtk::Label {
-              #[watch]
-              set_css_classes: &["heading"],
-              #[watch]
-              set_markup: &self.notification.title,
-              set_wrap: true,
-              set_wrap_mode: gtk::pango::WrapMode::WordChar,
-              set_xalign: 0.0,
-            },
-
-            gtk::Label {
-              set_css_classes: &["dim-label"],
-              #[watch]
-              set_markup: &self.notification.description,
-              set_wrap: true,
-              set_wrap_mode: gtk::pango::WrapMode::WordChar,
-              set_xalign: 0.0,
-            },
-          },
-
-          gtk::Box {
-            set_hexpand: true,
-          },
-
-          gtk::Button {
-            set_icon_name: "window-close-symbolic",
-            set_css_classes: &["flat", "circular", "notification-close"],
-            set_valign: gtk::Align::Start,
-            set_halign: gtk::Align::End,
-            connect_clicked => Self::Input::CloseClick,
-          }
-        },
-
-        #[local_ref]
-        countdown -> gtk::Box {
-          set_hexpand: true,
-        },
-
-        gtk::Box {
-          set_orientation: gtk::Orientation::Vertical,
-          set_css_classes: &["notification-actions-container"],
-          set_margin_top: 8,
-
-          gtk::Revealer {
-            #[watch]
-            set_reveal_child: self.actions.len() > 0,
-            set_transition_type: gtk::RevealerTransitionType::SlideDown,
-
-            gtk::Separator {
+            #[name = "header"]
+            gtk::Box {
               set_orientation: gtk::Orientation::Horizontal,
-              set_css_classes: &["notification-separator"],
+              set_hexpand: true,
+              set_spacing: 12,
+              set_margin_start: 16,
+              set_margin_end: 16,
+              set_margin_top: 16,
+              set_margin_bottom: 16,
+
+              append: self.icon.widget(),
+
+              gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 8,
+                set_css_classes: &["notification-content"],
+                set_hexpand: true,
+                set_halign: gtk::Align::Fill,
+
+                gtk::Label {
+                  #[watch]
+                  set_css_classes: &["heading"],
+                  #[watch]
+                  set_markup: &self.title,
+                  set_wrap: true,
+                  set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                  set_xalign: 0.0,
+                },
+
+                gtk::Label {
+                  set_css_classes: &["dim-label"],
+                  #[watch]
+                  set_markup: &self.description,
+                  set_wrap: true,
+                  set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                  set_xalign: 0.0,
+                },
+              },
+
+              gtk::Box {
+                set_hexpand: true,
+              },
+
+              #[name = "close_btn"]
+              gtk::Button {
+                set_icon_name: "window-close-symbolic",
+                set_css_classes: &["flat", "circular", "notification-close"],
+                set_valign: gtk::Align::Start,
+                set_halign: gtk::Align::End,
+                // connect_clicked => Self::Input::CloseClick,
+              }
             },
 
-            #[local_ref]
-            actions_box -> gtk::Box {
-              set_orientation: gtk::Orientation::Horizontal,
-              set_spacing: 6,
-              set_margin_start: 12,
-              set_margin_end: 12,
-              set_margin_bottom: 8,
+
+
+            gtk::Box {
+              set_orientation: gtk::Orientation::Vertical,
+              set_css_classes: &["notification-actions-container"],
               set_margin_top: 8,
+
+              gtk::Revealer {
+                #[watch]
+                set_reveal_child: self.actions.len() > 0,
+                set_transition_type: gtk::RevealerTransitionType::SlideDown,
+
+                gtk::Separator {
+                  set_orientation: gtk::Orientation::Horizontal,
+                  set_css_classes: &["notification-separator"],
+                },
+
+                #[local_ref]
+                actions_box -> gtk::Box {
+                  set_orientation: gtk::Orientation::Horizontal,
+                  set_spacing: 6,
+                  set_margin_start: 12,
+                  set_margin_end: 12,
+                  set_margin_bottom: 8,
+                  set_margin_top: 8,
+                }
+              }
             }
           }
-        }
+        },
+
+        gtk::Box{
+          set_height_request: 0,
+        },
       }
     }
 
     fn init_model(init: Self::Init, _index: &Self::Index, sender: FactorySender<Self>) -> Self {
-        let countdown_bar = match init.notification.ttl {
+        let countdown_bar = match init.ttl {
             Some(ttl) => Some(
                 CountdownBar::builder()
                     .launch(CountdownBarInit { ttl })
@@ -175,19 +220,30 @@ impl FactoryComponent for NotificationCard {
         };
         let icon = Icon::builder()
             .launch(IconInit {
-                icon: init.notification.icon.clone(),
+                // icon: init.notification.icon.clone(),
+                icon: NotificationIcon::Themed(Arc::from("xxx")),
             })
             .detach();
 
         let actions = FactoryHashMap::builder()
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_action_outputs);
+        REDUCER.subscribe(sender.input_sender(), |s| {
+            Self::Input::StateChanged(s.get_state().clone())
+        });
 
         Self {
             actions: actions,
-            icon,
-            notification: init.notification,
             countdown_bar,
+            description: init.description,
+            group_id: init.group_id,
+            hidden: init.hidden,
+            icon,
+            id: init.id,
+            lifecycle: init.lifecycle,
+            title: init.title,
+            toggle_epoch: 0,
+            ttl: init.ttl,
         }
     }
 
@@ -199,10 +255,6 @@ impl FactoryComponent for NotificationCard {
         sender: FactorySender<Self>,
     ) -> Self::Widgets {
         let actions_box = self.actions.widget();
-        let countdown = match &self.countdown_bar {
-            Some(countdown) => countdown.widget(),
-            None => &gtk::Box::default(),
-        };
 
         // Right mouse button click anywhere on the card should close it,
         // same as clicking the close button.
@@ -210,33 +262,119 @@ impl FactoryComponent for NotificationCard {
         let right_click = gtk::GestureClick::new();
         right_click.set_button(3);
         right_click.connect_pressed(move |_gesture, _n_press, _x, _y| {
-            input.emit(NotificationCardInput::CloseClick);
+            let _ = input.send(NotificationCardInput::CloseClick);
         });
         root.add_controller(right_click);
 
         let widgets = view_output!();
+
+        // Close button must not panic if the component runtime is already shut down.
+        let input = sender.input_sender().clone();
+        widgets.close_btn.connect_clicked(move |_| {
+            let _ = input.send(NotificationCardInput::CloseClick);
+        });
+
+        // Only insert the countdown widget when it exists (no placeholder widgets).
+        //
+        // Important: `header` is inside `card_box`, not a direct child of `root`.
+        if let Some(countdown) = &self.countdown_bar {
+            widgets
+                .card_box
+                .insert_child_after(countdown.widget(), Some(&widgets.header));
+        }
+
         widgets
     }
 
     fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
         match msg {
+            Self::Input::StateChanged(state) => {
+                if let Some(n) = state.get_notification(&self.id) {
+                    self.title = n.title.clone();
+                    self.description = n.description.clone();
+                    self.lifecycle = state
+                        .get_notification_lifecycle(&self.group_id, &self.id)
+                        .map(|l| l.clone());
+                    let prevhidden = self.hidden;
+                    self.hidden = self
+                        .lifecycle
+                        .as_ref()
+                        .map(|l| l.is_hidden())
+                        .unwrap_or(true);
+
+                    if prevhidden != self.hidden {
+                        // Coalesce scheduled timeouts without trying to cancel GLib sources.
+                        // Only the latest epoch is allowed to perform the lifecycle action.
+                        //
+                        // Important: bump the epoch on *any* visibility change so that an in-flight
+                        // hide timeout becomes stale if the card becomes visible again before it fires.
+                        self.toggle_epoch = self.toggle_epoch.wrapping_add(1);
+                        let epoch = self.toggle_epoch;
+
+                        // Only schedule the delayed lifecycle message when we're transitioning to hidden.
+                        if self.hidden {
+                            // Use the non-panicking sender; if the component is already shut down,
+                            // sending will just fail and we ignore it.
+                            let input = sender.input_sender().clone();
+                            glib::timeout_add_local_once(
+                                std::time::Duration::from_millis(250),
+                                move || {
+                                    let _ = input.send(Self::Input::ToggledEpoch(epoch));
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+            Self::Input::ToggledEpoch(epoch) => {
+                // Ignore stale timeouts.
+                if epoch != self.toggle_epoch {
+                    return;
+                }
+
+                if let Some(l) = self.lifecycle.as_ref() {
+                    match l {
+                        ItemLifecycle::Hiding => {
+                            sender.output(Self::Output::CardHidden(self.id));
+                        }
+                        ItemLifecycle::Dismissing => {
+                            REDUCER.emit(NotificationOp::NotificationDismissed(self.id));
+                        }
+                        ItemLifecycle::Retracting => {
+                            REDUCER.emit(NotificationOp::NotificationRetracted(self.id));
+                        }
+                        _ => {}
+                    };
+                }
+            }
+            Self::Input::Toggled => {
+                if let Some(l) = self.lifecycle.as_ref() {
+                    match l {
+                        ItemLifecycle::Hiding => {
+                            sender.output(Self::Output::CardHidden(self.id));
+                        }
+                        ItemLifecycle::Dismissing => {
+                            REDUCER.emit(NotificationOp::NotificationDismissed(self.id));
+                        }
+                        ItemLifecycle::Retracting => {
+                            REDUCER.emit(NotificationOp::NotificationRetracted(self.id));
+                        }
+                        _ => {}
+                    };
+                }
+            }
             NotificationCardInput::ActionClick(action) => {
-                sender.output(Self::Output::ActionClick(self.notification.id, action));
+                sender.output(Self::Output::ActionClick(self.id, action));
             }
             NotificationCardInput::CardClick => {
-                sender.output(Self::Output::CardClick(self.notification.id));
+                sender.output(Self::Output::CardClick(self.id));
             }
             NotificationCardInput::CloseClick => {
-                sender.output(Self::Output::Close(self.notification.id));
-            }
-            NotificationCardInput::Content(content) => {
-                self.notification = content.notification;
-                self.icon
-                    .sender()
-                    .send(IconInput::Icon(self.notification.icon.clone()));
+                // sender.output(Self::Output::Close(self.id));
+                REDUCER.emit(NotificationOp::NotificationDismiss(self.id));
             }
             NotificationCardInput::CountdownElapsed => {
-                sender.output(Self::Output::TimedOut(self.notification.id));
+                sender.output(Self::Output::TimedOut(self.id));
             }
             NotificationCardInput::CountdownContinue => match &self.countdown_bar {
                 Some(countdown) => {

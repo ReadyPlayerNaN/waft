@@ -10,27 +10,12 @@
 //!   via channels using `crate::notifications_dbus::{IngressEvent, OutboundEvent}`.
 //! - If `org.freedesktop.Notifications` is already owned, startup should attempt to replace the owner.
 //!
-//! Implemented methods:
-//! - `GetCapabilities`
-//! - `GetServerInformation`
-//! - `Notify`
-//! - `CloseNotification`
-//! - `GetInhibited` (KDE-compatible, best-effort)
-//! - `SetInhibited` (KDE-compatible, best-effort)
-//!
-//! Implemented signals:
-//! - `ActionInvoked`
-//! - `NotificationClosed`
-//! - `InhibitedChanged` (best-effort; non-standard but useful for syncing UI)
-//!
 //! This module intentionally keeps the UI layer DBus-agnostic by translating DBus calls into
 //! `IngressEvent`s and translating `OutboundEvent`s into DBus signals.
 
 use std::collections::HashMap;
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, AtomicU32, Ordering},
-};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use anyhow::{Context, Result, anyhow};
@@ -43,12 +28,9 @@ use zbus::object_server::SignalEmitter;
 use zbus::{Connection, connection::Builder as ConnectionBuilder};
 use zvariant::OwnedValue;
 
-use super::super::types::NotificationDisplay;
-use super::actions::parse_actions;
-use super::app::resolve_app_ident;
 use super::client::{IngressEvent, OutboundEvent, advertised_capabilities, close_reasons};
 use super::hints::{decode_hints, parse_hints};
-use super::icons::resolve_notification_icon;
+use super::ingress::IngressedNotification;
 
 const BUS_NAME: &str = "org.freedesktop.Notifications";
 const OBJECT_PATH: &str = "/org/freedesktop/Notifications";
@@ -60,13 +42,8 @@ const OBJECT_PATH: &str = "/org/freedesktop/Notifications";
 /// - `NotificationsDbusServer::connect().await?`
 /// - `server.start(ingress_tx, outbound_rx).await?`
 /// - pass `ingress_rx` + `outbound_tx` into `NotificationsPlugin::with_dbus_ingress(...)`
-///
-/// KDE compatibility note:
-/// Some daemons (and KDE clients) use a non-standard inhibition flag. We expose it via
-/// `GetInhibited` / `SetInhibited` and an in-memory flag that is per-session only.
 pub struct NotificationsDbusServer {
     next_id: Arc<AtomicU32>,
-    inhibited: Arc<AtomicBool>,
     connection: Option<Connection>,
 }
 
@@ -75,7 +52,6 @@ impl NotificationsDbusServer {
     pub async fn connect() -> Result<Self> {
         Ok(Self {
             next_id: Arc::new(AtomicU32::new(1)),
-            inhibited: Arc::new(AtomicBool::new(false)),
             connection: None,
         })
     }
@@ -94,8 +70,7 @@ impl NotificationsDbusServer {
     ) -> Result<()> {
         info!("Starting notifications service");
 
-        let service =
-            NotificationsService::new(self.next_id.clone(), self.inhibited.clone(), ingress_tx);
+        let service = NotificationsService::new(self.next_id.clone(), ingress_tx);
 
         let name = WellKnownName::try_from(BUS_NAME)
             .map_err(|e| anyhow!(e))
@@ -167,21 +142,15 @@ struct NotificationsService {
 
 struct NotificationsServiceInner {
     next_id: Arc<AtomicU32>,
-    inhibited: Arc<AtomicBool>,
     ingress_tx: Sender<IngressEvent>,
     _last_sender: Mutex<Option<String>>,
 }
 
 impl NotificationsService {
-    fn new(
-        next_id: Arc<AtomicU32>,
-        inhibited: Arc<AtomicBool>,
-        ingress_tx: Sender<IngressEvent>,
-    ) -> Self {
+    fn new(next_id: Arc<AtomicU32>, ingress_tx: Sender<IngressEvent>) -> Self {
         Self {
             inner: Arc::new(NotificationsServiceInner {
                 next_id,
-                inhibited,
                 ingress_tx,
                 _last_sender: Mutex::new(None),
             }),
@@ -220,16 +189,6 @@ impl NotificationsService {
             )
             .await;
     }
-
-    async fn emit_inhibited_changed(emitter: &SignalEmitter<'_>, inhibited: bool) {
-        let _ = emitter
-            .emit(
-                "org.freedesktop.Notifications",
-                "InhibitedChanged",
-                &(inhibited),
-            )
-            .await;
-    }
 }
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
@@ -254,35 +213,6 @@ impl NotificationsService {
         )
     }
 
-    /// KDE-compatible inhibition getter (non-standard).
-    ///
-    /// This is intentionally per-session only (in-memory).
-    fn get_inhibited(&self) -> bool {
-        self.inner.inhibited.load(Ordering::Relaxed)
-    }
-
-    /// KDE-compatible inhibition setter (non-standard).
-    ///
-    /// This is intentionally per-session only (in-memory).
-    async fn set_inhibited(
-        &self,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-        inhibited: bool,
-    ) -> fdo::Result<()> {
-        self.inner.inhibited.store(inhibited, Ordering::Relaxed);
-
-        // Best-effort signal for any listeners (including our own UI, if it ever chooses to listen).
-        NotificationsService::emit_inhibited_changed(&emitter, inhibited).await;
-
-        // Also notify the in-process UI/plugin so it can apply server-side DND gating.
-        let _ = self
-            .inner
-            .ingress_tx
-            .send(IngressEvent::InhibitedChanged { inhibited });
-
-        Ok(())
-    }
-
     /// Notify(s app_name, u replaces_id, s app_icon, s summary, s body, as actions, a{sv} hints, i expire_timeout) -> u
     ///
     /// Behavioral notes (per user decisions / AGENTS.md):
@@ -293,7 +223,7 @@ impl NotificationsService {
         #[zbus(header)] header: zbus::message::Header<'_>,
         app_name: &str,
         replaces_id: u32,
-        app_icon: &str,
+        icon: &str,
         summary: &str,
         body: &str,
         actions: Vec<String>,
@@ -308,21 +238,26 @@ impl NotificationsService {
         let id = self.allocate_id();
         let hints =
             parse_hints(&decode_hints(hints)).map_err(|e| fdo::Error::Failed(e.to_string()))?;
-        let desktop_entry = hints.desktop_entry.clone();
-        let icon = resolve_notification_icon(&app_icon, &app_name, desktop_entry, &hints).await;
 
-        let notification = NotificationDisplay {
-            id: id as u64,
-            app: resolve_app_ident(app_name, &hints),
+        let notification = IngressedNotification {
+            actions: actions.into_iter().map(|s| Arc::from(s)).collect(),
+            app_name: match app_name.is_empty() {
+                false => Some(Arc::from(app_name)),
+                _ => None,
+            },
             created_at: SystemTime::now(),
+            description: Arc::from(body),
+            hints: hints,
+            icon: match icon.is_empty() {
+                false => Some(Arc::from(icon)),
+                _ => None,
+            },
+            id: id as u64,
             replaces_id: match replaces_id {
                 0 => None,
                 _ => Some(replaces_id as u64),
             },
             title: Arc::from(summary),
-            description: Arc::from(body),
-            actions: parse_actions(actions, hints.action_icons),
-            icon,
             ttl: if expire_timeout == 0 {
                 None
             } else if expire_timeout < 0 {
@@ -330,7 +265,6 @@ impl NotificationsService {
             } else {
                 Some(expire_timeout as u64)
             },
-            urgency: hints.urgency,
         };
 
         let _ = self.inner.ingress_tx.send(IngressEvent::Notify {

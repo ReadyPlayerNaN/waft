@@ -9,6 +9,7 @@ use relm4::gtk::prelude::GtkApplicationExt;
 use relm4::prelude::*;
 
 use crate::channels::{Channel, connect_component};
+use crate::features::notifications::store::NotificationOp;
 use crate::plugin::WidgetFeatureToggle;
 use crate::plugin::{Plugin, PluginId, Slot, Widget};
 
@@ -17,17 +18,14 @@ use self::dbus::server::NotificationsDbusServer;
 use self::dnd_toggle::{
     DoNotDisturbToggle, DoNotDisturbToggleInit, DoNotDisturbToggleInput, DoNotDisturbToggleOutput,
 };
-use self::ui::toast_window::{
-    HPos, ToastWindow, ToastWindowInit, ToastWindowInput, ToastWindowOutput, VPos,
-};
-use self::ui::widget::{
-    NotificationsWidget, NotificationsWidgetInit, NotificationsWidgetInput,
-    NotificationsWidgetOutput,
-};
+use self::store::REDUCER;
+use self::ui::toast_window::{HPos, ToastWindow, ToastWindowInit, ToastWindowOutput, VPos};
+use self::ui::widget::{NotificationsWidget, NotificationsWidgetInit, NotificationsWidgetOutput};
 
 mod dbus;
 mod dnd_toggle;
 mod gate;
+mod store;
 mod types;
 mod ui;
 
@@ -76,11 +74,7 @@ impl NotificationsPlugin {
         // NOTE: Start empty; the plugin is the source of truth and will ingest/remove via inputs.
         // This also ensures the toast window begins hidden (per requirement "hidden when empty").
         connect_component(
-            ToastWindow::builder().launch(ToastWindowInit {
-                hpos,
-                vpos,
-                notifications: vec![],
-            }),
+            ToastWindow::builder().launch(ToastWindowInit { hpos, vpos }),
             &self.toast_channel,
         )
     }
@@ -128,7 +122,6 @@ impl Plugin for NotificationsPlugin {
     async fn create_elements(&mut self) -> Result<()> {
         // Create the main notifications widget (overlay column content).
         let widget = self.create_widget();
-        let widget_sender = widget.sender().clone();
         self.widget = Some(widget);
 
         // Create the toast window (separate layer-shell surface above all other windows).
@@ -137,7 +130,6 @@ impl Plugin for NotificationsPlugin {
         // NOTE: The toast window is focusable (keyboard mode on-demand) for now.
         // We may want to change that later to avoid focus-stealing.
         let toast = self.create_toast_window(HPos::Center, VPos::Top);
-        let toast_sender = toast.sender().clone();
         let toast_window = toast.widget().clone();
         relm4::main_application().add_window(&toast_window);
         self.toast = Some(toast);
@@ -145,54 +137,22 @@ impl Plugin for NotificationsPlugin {
         // DBus ingress -> plugin -> UI reconciliation
         let server_receiver = self.server_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
-        let widget_sender_for_dbus = widget_sender.clone();
-        let toast_sender_for_dbus = toast_sender.clone();
-        let dnd_state_for_dbus = self.dnd.clone();
         tokio::spawn(async move {
             while let Ok(event) = server_receiver.recv_async().await {
                 info!("[notifications] Received: {:?}", event);
                 match event {
                     IngressEvent::Notify { notification } => {
-                        let n = Arc::new(notification);
-                        widget_sender_for_dbus.emit(NotificationsWidgetInput::Ingest(n.clone()));
-                        toast_sender_for_dbus.emit(ToastWindowInput::Ingest(n));
+                        REDUCER.emit(NotificationOp::Ingress(notification));
                     }
 
                     IngressEvent::CloseNotification { id } => {
-                        let id_u64 = id as u64;
-
-                        // Remove from both UI surfaces.
-                        widget_sender_for_dbus.emit(NotificationsWidgetInput::Remove(id_u64));
-                        toast_sender_for_dbus.emit(ToastWindowInput::Remove(id_u64));
+                        REDUCER.emit(NotificationOp::NotificationRetract(id as u64));
 
                         // Then emit DBus NotificationClosed(reason=CLOSED_BY_CALL).
                         let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
                             id,
                             reason: close_reasons::CLOSED_BY_CALL,
                         });
-                    }
-
-                    IngressEvent::InhibitedChanged { inhibited } => {
-                        // Best-effort: reflect inhibited state in the DND toggle/state.
-                        // The DND toggle task below also updates this state on user interaction.
-                        // (If the toggle is not ready yet, state is still updated.)
-                        // NOTE: We do not emit any DBus outbound event here.
-                        // The DBus server is the source of this ingress.
-                        //
-                        // Keep atomic state in sync.
-                        // UI will reflect on next toggle update.
-                        //
-                        // IMPORTANT: do not touch GTK from this task; only send Relm4 inputs.
-                        // (The toggle input is sent from the GTK thread via Relm4 sender.)
-                        // This task runs on tokio.
-                        // We therefore only update the atomic here.
-                        // The toggle UI is managed elsewhere.
-                        // (If you want immediate UI reflection, route this through a GTK-thread hop.)
-                        //
-                        // For now: just store.
-                        // The plugin is the source of truth and will send UI updates when needed.
-                        // (We keep this minimal.)
-                        dnd_state_for_dbus.store(inhibited, Ordering::SeqCst);
                     }
                 }
             }
@@ -201,13 +161,12 @@ impl Plugin for NotificationsPlugin {
         // Toast window outputs -> plugin -> DBus outbound + plugin-driven reconciliation
         let toast_receiver = self.toast_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
-        let widget_sender_for_toast = widget_sender.clone();
-        let toast_sender_for_toast = toast_sender.clone();
         tokio::spawn(async move {
             while let Ok(event) = toast_receiver.recv_async().await {
                 debug!("[toast] Received: {:?}", event);
                 match event {
                     ToastWindowOutput::ActionClick(id, action_key) => {
+                        REDUCER.emit(NotificationOp::NotificationDismiss(id));
                         // Emit ActionInvoked first, then close and remove (per policy).
                         let _ = outbound_tx.send(OutboundEvent::ActionInvoked {
                             id: id as u32,
@@ -217,34 +176,27 @@ impl Plugin for NotificationsPlugin {
                             id: id as u32,
                             reason: close_reasons::DISMISSED_BY_USER,
                         });
-                        widget_sender_for_toast.emit(NotificationsWidgetInput::Remove(id));
-                        toast_sender_for_toast.emit(ToastWindowInput::Remove(id));
                     }
 
-                    ToastWindowOutput::CardClose(id) => {
-                        let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
-                            id: id as u32,
-                            reason: close_reasons::DISMISSED_BY_USER,
-                        });
-                        widget_sender_for_toast.emit(NotificationsWidgetInput::Remove(id));
-                        toast_sender_for_toast.emit(ToastWindowInput::Remove(id));
-                    }
-
+                    // ToastWindowOutput::CardClose(id) => {
+                    //     let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
+                    //         id: id as u32,
+                    //         reason: close_reasons::DISMISSED_BY_USER,
+                    //     });
+                    // }
                     ToastWindowOutput::TimedOut(id) => {
                         let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
                             id: id as u32,
                             reason: close_reasons::EXPIRED,
                         });
-                        widget_sender_for_toast.emit(NotificationsWidgetInput::Remove(id));
-                        toast_sender_for_toast.emit(ToastWindowInput::Remove(id));
+                        // REDUCER.emit(NotificationOp::NotificationDismiss(id));
+                        // widget_sender_for_toast.emit(NotificationsWidgetInput::Remove(id));
+                        // toast_sender_for_toast.emit(ToastWindowInput::Remove(id));
                     }
 
                     ToastWindowOutput::CardClick(_id) => {
                         // No-op for now (could map to "default action" later).
                     }
-
-                    ToastWindowOutput::Collapse(_group_id) => {}
-                    ToastWindowOutput::Expand(_group_id) => {}
                 }
             }
         });
@@ -252,8 +204,6 @@ impl Plugin for NotificationsPlugin {
         // NotificationsWidget outputs -> plugin -> DBus outbound + plugin-driven reconciliation
         let widget_receiver = self.widget_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
-        let widget_sender_for_widget = widget_sender.clone();
-        let toast_sender_for_widget = toast_sender.clone();
         tokio::spawn(async move {
             while let Ok(event) = widget_receiver.recv_async().await {
                 debug!("[notifications-widget] Received: {:?}", event);
@@ -267,8 +217,7 @@ impl Plugin for NotificationsPlugin {
                             id: id as u32,
                             reason: close_reasons::DISMISSED_BY_USER,
                         });
-                        widget_sender_for_widget.emit(NotificationsWidgetInput::Remove(id));
-                        toast_sender_for_widget.emit(ToastWindowInput::Remove(id));
+                        REDUCER.emit(NotificationOp::NotificationDismiss(id));
                     }
 
                     NotificationsWidgetOutput::CardClose(id) => {
@@ -276,8 +225,7 @@ impl Plugin for NotificationsPlugin {
                             id: id as u32,
                             reason: close_reasons::DISMISSED_BY_USER,
                         });
-                        widget_sender_for_widget.emit(NotificationsWidgetInput::Remove(id));
-                        toast_sender_for_widget.emit(ToastWindowInput::Remove(id));
+                        REDUCER.emit(NotificationOp::NotificationDismiss(id));
                     }
 
                     NotificationsWidgetOutput::CardClick(_id) => {

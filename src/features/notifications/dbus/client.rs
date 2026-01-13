@@ -1,19 +1,4 @@
-//! DBus notifications ingress types (org.freedesktop.Notifications).
-//!
-//! This module intentionally contains only:
-//! - event types sent from the DBus server into the notifications plugin/controller
-//! - capability constants (strings) for `GetCapabilities`
-//! - close reason constants (numeric) for `NotificationClosed`
-//!
-//! The actual DBus *server* implementation (owning `org.freedesktop.Notifications` and
-//! exporting `/org/freedesktop/Notifications`) should live in a separate module/type.
-//!
-//! Design constraints (per AGENTS.md):
-//! - GTK widgets must remain on the main thread.
-//! - The DBus server should run on a tokio task and communicate via channels.
-//! - Do not reuse `DbusHandle` here: it is a client wrapper.
-
-use super::super::types::NotificationDisplay;
+use super::ingress::IngressedNotification;
 
 /// `GetCapabilities` string constants (freedesktop.org spec).
 ///
@@ -68,22 +53,8 @@ pub struct ActionSpec {
 /// - wiring UI callbacks that send "outbound" events back to the DBus server
 #[derive(Clone, Debug)]
 pub enum IngressEvent {
-    /// A client called `Notify(...)`.
-    ///
-    /// The DBus server should allocate an id and include it here so the receiver can
-    /// store it as the notification's stable identifier.
-    Notify { notification: NotificationDisplay },
-
-    /// A client called `CloseNotification(id)`.
     CloseNotification { id: u32 },
-
-    /// Notification inhibition ("Do Not Disturb") state changed.
-    ///
-    /// KDE-compatible behavior: some implementations expose an `Inhibited` flag via
-    /// `org.freedesktop.Notifications`. We treat that as the single source of truth.
-    ///
-    /// This is intentionally per-session only (in-memory).
-    InhibitedChanged { inhibited: bool },
+    Notify { notification: IngressedNotification },
 }
 
 /// Outbound events from UI/controller -> DBus server.

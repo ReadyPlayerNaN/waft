@@ -19,9 +19,6 @@ pub enum HintValue {
     Bool(bool),
     I32(i32),
     U32(u32),
-    I64(i64),
-    U64(u64),
-    F64(f64),
     String(String),
     Bytes(Vec<u8>),
 }
@@ -56,11 +53,8 @@ fn decode_hint_value(v: &OwnedValue) -> Option<HintValue> {
         Value::Bool(b) => Some(HintValue::Bool(b)),
         Value::I16(i) => Some(HintValue::I32(i as i32)),
         Value::I32(i) => Some(HintValue::I32(i)),
-        Value::I64(i) => Some(HintValue::I64(i)),
         Value::U16(u) => Some(HintValue::U32(u as u32)),
         Value::U32(u) => Some(HintValue::U32(u)),
-        Value::U64(u) => Some(HintValue::U64(u)),
-        Value::F64(f) => Some(HintValue::F64(f)),
         Value::Str(s) => Some(HintValue::String(s.to_string())),
         Value::Signature(s) => Some(HintValue::String(s.to_string())),
         Value::Array(a) => decode_bytes_array(a),
@@ -79,6 +73,7 @@ pub fn decode_hints(hints: HashMap<String, OwnedValue>) -> HashMap<String, HintV
     out
 }
 
+#[derive(Debug, Clone)]
 pub struct Hints {
     pub action_icons: bool,
     pub category: Option<NotificationCategory>,

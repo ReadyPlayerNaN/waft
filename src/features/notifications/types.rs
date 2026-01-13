@@ -9,7 +9,7 @@ use gtk::gdk;
 ///
 /// The builder is responsible for choosing the final icon (explicit/app/default),
 /// so `Notification.icon` is mandatory and always set.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
 pub enum NotificationIcon {
     Bytes(Vec<u8>),
     /// A file path to an image (png/svg/etc). Will be loaded and scaled to fit.
@@ -19,42 +19,52 @@ pub enum NotificationIcon {
 }
 
 impl NotificationIcon {
+    pub fn from_str(str: &Arc<str>) -> Self {
+        let s: &str = str.trim();
+        if s.contains('/') || s.starts_with('.') || s.starts_with('~') {
+            Self::FilePath(Arc::new(PathBuf::from(s)))
+        } else {
+            Self::Themed(Arc::clone(str))
+        }
+    }
+
     async fn is_themed_icon_available(name: Arc<str>) -> bool {
-        let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
-        // Thread-safe hop onto the main (GTK) context
-        glib::MainContext::default().invoke(move || {
-            // Apply normalization as described in AGENTS.md
-            let normalized_name = name
-                .to_lowercase()
-                .replace(' ', "-")
-                .chars()
-                .filter(|c| c.is_alphanumeric() || *c == '-')
-                .collect::<String>();
+        true
+        // let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+        // // Thread-safe hop onto the main (GTK) context
+        // glib::MainContext::default().invoke(move || {
+        //     // Apply normalization as described in AGENTS.md
+        //     let normalized_name = name
+        //         .to_lowercase()
+        //         .replace(' ', "-")
+        //         .chars()
+        //         .filter(|c| c.is_alphanumeric() || *c == '-')
+        //         .collect::<String>();
 
-            let display_option = gdk::Display::default();
-            println!(
-                "DEBUG: gdk::Display::default() is {:?}",
-                display_option.is_some()
-            );
+        //     let display_option = gdk::Display::default();
+        //     println!(
+        //         "DEBUG: gdk::Display::default() is {:?}",
+        //         display_option.is_some()
+        //     );
 
-            let exists = display_option
-                .map(|display| {
-                    let icon_theme = gtk::IconTheme::for_display(&display);
-                    let has = icon_theme.has_icon(&normalized_name);
-                    println!(
-                        "DEBUG: IconTheme has_icon(\"{}\") for display {:?} returned {}",
-                        normalized_name, display, has
-                    );
-                    has
-                })
-                .unwrap_or_else(|| {
-                    println!("DEBUG: No default display, has_icon check skipped.");
-                    false
-                });
+        //     let exists = display_option
+        //         .map(|display| {
+        //             let icon_theme = gtk::IconTheme::for_display(&display);
+        //             let has = icon_theme.has_icon(&normalized_name);
+        //             println!(
+        //                 "DEBUG: IconTheme has_icon(\"{}\") for display {:?} returned {}",
+        //                 normalized_name, display, has
+        //             );
+        //             has
+        //         })
+        //         .unwrap_or_else(|| {
+        //             println!("DEBUG: No default display, has_icon check skipped.");
+        //             false
+        //         });
 
-            let _ = tx.send(exists);
-        });
-        rx.await.unwrap_or(false)
+        //     let _ = tx.send(exists);
+        // });
+        // rx.await.unwrap_or(false)
     }
 
     /// Check if the icon is available on the system.
@@ -68,11 +78,22 @@ impl NotificationIcon {
 }
 
 /// Notification urgency, aligned with `org.freedesktop.Notifications` (`urgency` hint).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]
 pub enum NotificationUrgency {
     Low,
     Normal,
     Critical,
+}
+
+impl Ord for NotificationUrgency {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (Self::Critical, Self::Critical) => std::cmp::Ordering::Equal,
+            (Self::Critical, _) => std::cmp::Ordering::Greater,
+            (_, Self::Critical) => std::cmp::Ordering::Less,
+            (_, _) => std::cmp::Ordering::Equal,
+        }
+    }
 }
 
 impl Default for NotificationUrgency {
@@ -116,22 +137,17 @@ impl DbusExpireTimeout {
 /// A notification action (button).
 #[derive(Clone, Debug)]
 pub struct NotificationAction {
-    /// Stable action identifier (DBus `action_key` / id).
-    ///
     /// For `org.freedesktop.Notifications`, this is the string that must be emitted
     /// in the `ActionInvoked(id, action_key)` signal.
     pub key: Arc<str>,
 
     /// Human-readable label shown in the UI.
     pub label: Arc<str>,
-
-    pub icon: Option<NotificationIcon>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AppIdent {
     pub title: Option<Arc<str>>,
-    pub icon: Option<NotificationIcon>,
     pub ident: Arc<str>,
 }
 
