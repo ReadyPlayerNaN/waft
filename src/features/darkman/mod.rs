@@ -95,7 +95,7 @@ impl Plugin for DarkmanPlugin {
         let dbus = self.dbus.clone();
         self.toggle = Some(cx);
 
-        tokio::spawn(async move {
+        relm4::tokio::spawn(async move {
             while let Ok(event) = ui_receiver.recv_async().await {
                 debug!("[darkman/ui] Received: {:?}", event);
                 let r = match event {
@@ -114,7 +114,7 @@ impl Plugin for DarkmanPlugin {
                 };
             }
         });
-        tokio::spawn(async move {
+        relm4::tokio::spawn(async move {
             while let Ok(event) = dbus_receiver.recv_async().await {
                 info!("[darkman/dbus] Received: {:?}", event);
                 match event {

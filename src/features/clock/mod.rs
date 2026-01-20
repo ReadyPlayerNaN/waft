@@ -53,7 +53,7 @@ impl Plugin for ClockPlugin {
         let cx_sender = cx.sender().clone();
         self.widget = Some(cx);
 
-        tokio::spawn(async move {
+        relm4::tokio::spawn(async move {
             loop {
                 match DateTime::now_local() {
                     Ok(datetime) => {
@@ -63,7 +63,7 @@ impl Plugin for ClockPlugin {
                         error!("[clock] Failed to get current datetime: {:?}", err);
                     }
                 };
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                relm4::tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });
         Ok(())

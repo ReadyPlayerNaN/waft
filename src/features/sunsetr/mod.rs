@@ -72,7 +72,7 @@ impl Plugin for SunsetrPlugin {
         let ui_receiver = self.ui_channel.receiver.clone();
         self.toggle = Some(cx);
 
-        tokio::spawn(async move {
+        relm4::tokio::spawn(async move {
             while let Ok(event) = rx.recv_async().await {
                 debug!("[sunsetr/ipc] Received event: {:?}", event);
                 match event {
@@ -90,7 +90,7 @@ impl Plugin for SunsetrPlugin {
         });
 
         let ipc_sender = self.ipc_channel.sender.clone();
-        tokio::spawn(async move {
+        relm4::tokio::spawn(async move {
             while let Ok(event) = ui_receiver.recv_async().await {
                 debug!("[sunsetr/ui] Received event: {:?}", event);
                 let _ = match event {

@@ -123,7 +123,7 @@ impl NotificationsDbusServer {
         info!("Successfully started notifications DBus server");
 
         // Spawn outbound signal loop.
-        tokio::spawn(outbound_signal_loop(conn.clone(), outbound_rx));
+        relm4::tokio::spawn(outbound_signal_loop(conn.clone(), outbound_rx));
 
         // Store the connection to keep it alive
         self.connection = Some(conn);

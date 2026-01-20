@@ -260,9 +260,9 @@ That means:
 ### Tokio / Send boundary
 
 - GTK widgets are **not** `Send` / `Sync`.
-- Anything moved into `tokio::spawn(...)` must be `Send`.
+- Anything moved into `relm4::tokio::spawn(...)` must be `Send`.
 - Therefore:
-  - Do **not** store GTK widgets inside state guarded by `tokio::sync::Mutex` if that state is moved into Tokio tasks.
+  - Do **not** store GTK widgets inside state guarded by `relm4::tokio::sync::Mutex` if that state is moved into Tokio tasks.
   - Split plugin state into:
     - **Send-safe state** (domain/cache, DBus data) for background tasks, and
     - **GTK main-thread state** (widgets, UI handles) accessed only from the GTK thread.

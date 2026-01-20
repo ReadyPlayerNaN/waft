@@ -136,7 +136,7 @@ impl Plugin for NotificationsPlugin {
         // DBus ingress -> plugin -> UI reconciliation
         let server_receiver = self.server_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
-        tokio::spawn(async move {
+        relm4::tokio::spawn(async move {
             while let Ok(event) = server_receiver.recv_async().await {
                 info!("[notifications] Received: {:?}", event);
                 match event {
@@ -160,7 +160,7 @@ impl Plugin for NotificationsPlugin {
         // Toast window outputs -> plugin -> DBus outbound + plugin-driven reconciliation
         let toast_receiver = self.toast_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
-        tokio::spawn(async move {
+        relm4::tokio::spawn(async move {
             while let Ok(event) = toast_receiver.recv_async().await {
                 debug!("[toast] Received: {:?}", event);
                 match event {
@@ -203,7 +203,7 @@ impl Plugin for NotificationsPlugin {
         // NotificationsWidget outputs -> plugin -> DBus outbound + plugin-driven reconciliation
         let widget_receiver = self.widget_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
-        tokio::spawn(async move {
+        relm4::tokio::spawn(async move {
             while let Ok(event) = widget_receiver.recv_async().await {
                 debug!("[notifications-widget] Received: {:?}", event);
                 match event {
@@ -244,7 +244,7 @@ impl Plugin for NotificationsPlugin {
         let dnd_toggle_sender = dnd_toggle.sender().clone();
         let dnd_state = self.dnd.clone();
         self.dnd_toggle = Some(dnd_toggle);
-        tokio::spawn(async move {
+        relm4::tokio::spawn(async move {
             while let Ok(event) = dnd_toggle_receiver.recv_async().await {
                 debug!("[dnd] Received: {:?}", event);
                 match event {

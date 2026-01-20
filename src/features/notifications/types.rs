@@ -30,7 +30,7 @@ impl NotificationIcon {
 
     async fn is_themed_icon_available(name: Arc<str>) -> bool {
         true
-        // let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+        // let (tx, rx) = relm4::tokio::sync::oneshot::channel::<bool>();
         // // Thread-safe hop onto the main (GTK) context
         // glib::MainContext::default().invoke(move || {
         //     // Apply normalization as described in AGENTS.md
