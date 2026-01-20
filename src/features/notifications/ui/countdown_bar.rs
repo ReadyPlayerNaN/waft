@@ -132,6 +132,10 @@ impl SimpleComponent for CountdownBar {
         ComponentParts { model, widgets }
     }
 
+    fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
+        self.stop_timer();
+    }
+
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             Self::Input::Continue => {
