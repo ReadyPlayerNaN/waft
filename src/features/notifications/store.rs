@@ -194,6 +194,7 @@ impl State {
 
 pub struct Reducer(State);
 
+#[derive(Debug, Clone)]
 pub enum NotificationOp {
     ArchiveCardHide(u64),
     ArchiveCardHidden(u64),
@@ -204,6 +205,7 @@ pub enum NotificationOp {
     NotificationRetracted(u64),
     ToastHide(u64),
     ToastHidden(u64),
+    Batch(Vec<NotificationOp>),
 }
 
 fn normalize_app_ident(app_ident: &str) -> Arc<str> {
@@ -465,21 +467,8 @@ impl Reducer {
     pub fn get_state(&self) -> &State {
         &self.0
     }
-}
 
-impl AsyncReducible for Reducer {
-    type Input = NotificationOp;
-
-    async fn init() -> Self {
-        Self(State {
-            archive: IndexMap::new(),
-            groups: HashMap::new(),
-            notifications: HashMap::new(),
-            toasts: IndexMap::new(),
-        })
-    }
-
-    async fn reduce(&mut self, input: Self::Input) -> bool {
+    async fn process_single_op(&mut self, input: NotificationOp) {
         match input {
             NotificationOp::Ingress(n) => {
                 let notification = Notification {
@@ -589,6 +578,38 @@ impl AsyncReducible for Reducer {
                         group.top.shift_remove(&notification.id.clone());
                     }
                 }
+            }
+            NotificationOp::Batch(_) => {
+                // This should never happen - batch should be handled at the top level
+                // But we include it for completeness
+            }
+        }
+    }
+}
+
+impl AsyncReducible for Reducer {
+    type Input = NotificationOp;
+
+    async fn init() -> Self {
+        Self(State {
+            archive: IndexMap::new(),
+            groups: HashMap::new(),
+            notifications: HashMap::new(),
+            toasts: IndexMap::new(),
+        })
+    }
+
+    async fn reduce(&mut self, input: Self::Input) -> bool {
+        match input {
+            NotificationOp::Batch(ops) => {
+                // Process all operations in the batch
+                for op in ops {
+                    self.process_single_op(op).await;
+                }
+            }
+            op => {
+                // Process single operation
+                self.process_single_op(op).await;
             }
         }
         true

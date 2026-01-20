@@ -18,11 +18,13 @@ use self::dbus::server::NotificationsDbusServer;
 use self::dnd_toggle::{
     DoNotDisturbToggle, DoNotDisturbToggleInit, DoNotDisturbToggleInput, DoNotDisturbToggleOutput,
 };
+use self::debounce::NotificationDebouncer;
 use self::store::REDUCER;
 use self::ui::toast_window::{HPos, ToastWindow, ToastWindowInit, ToastWindowOutput, VPos};
 use self::ui::widget::{NotificationsWidget, NotificationsWidgetInit, NotificationsWidgetOutput};
 
 mod dbus;
+mod debounce;
 mod dnd_toggle;
 mod gate;
 mod store;
@@ -41,6 +43,7 @@ pub struct NotificationsPlugin {
     toast: Option<Controller<ToastWindow>>,
     widget_channel: Channel<NotificationsWidgetOutput>,
     widget: Option<Controller<NotificationsWidget>>,
+    debouncer: Option<NotificationDebouncer>,
 }
 
 impl NotificationsPlugin {
@@ -57,6 +60,7 @@ impl NotificationsPlugin {
             toast: None,
             widget_channel: Channel::new(),
             widget: None,
+            debouncer: None,
         }
     }
 
@@ -118,7 +122,26 @@ impl Plugin for NotificationsPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self) -> Result<()> {
+async fn create_elements(&mut self) -> Result<()> {
+        // Initialize debouncer that forwards to REDUCER
+        let (debouncer_tx, mut debouncer_rx) = tokio::sync::mpsc::unbounded_channel();
+        
+        // Forward debouncer messages to REDUCER
+        relm4::tokio::spawn(async move {
+            while let Some(op) = debouncer_rx.recv().await {
+                REDUCER.emit(op);
+            }
+        });
+        
+        // Clone debouncer for use in spawns before storing it
+        let debouncer = NotificationDebouncer::new(debouncer_tx);
+        let db_server = debouncer.clone();
+        let db_toast = debouncer.clone();
+        let db_widget = debouncer.clone();
+        
+        // Store debouncer after cloning for spawns
+        self.debouncer = Some(debouncer);
+
         // Create the main notifications widget (overlay column content).
         let widget = self.create_widget();
         self.widget = Some(widget);
@@ -133,7 +156,7 @@ impl Plugin for NotificationsPlugin {
         relm4::main_application().add_window(&toast_window);
         self.toast = Some(toast);
 
-        // DBus ingress -> plugin -> UI reconciliation
+        // DBus ingress -> plugin -> debouncer -> UI reconciliation
         let server_receiver = self.server_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
         relm4::tokio::spawn(async move {
@@ -141,11 +164,11 @@ impl Plugin for NotificationsPlugin {
                 info!("[notifications] Received: {:?}", event);
                 match event {
                     IngressEvent::Notify { notification } => {
-                        REDUCER.emit(NotificationOp::Ingress(notification));
+                        let _ = db_server.send(NotificationOp::Ingress(notification));
                     }
 
                     IngressEvent::CloseNotification { id } => {
-                        REDUCER.emit(NotificationOp::NotificationRetract(id as u64));
+                        let _ = db_server.send(NotificationOp::NotificationRetract(id as u64));
 
                         // Then emit DBus NotificationClosed(reason=CLOSED_BY_CALL).
                         let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
@@ -165,7 +188,7 @@ impl Plugin for NotificationsPlugin {
                 debug!("[toast] Received: {:?}", event);
                 match event {
                     ToastWindowOutput::ActionClick(id, action_key) => {
-                        REDUCER.emit(NotificationOp::NotificationDismiss(id));
+                        let _ = db_toast.send(NotificationOp::NotificationDismiss(id));
                         // Emit ActionInvoked first, then close and remove (per policy).
                         let _ = outbound_tx.send(OutboundEvent::ActionInvoked {
                             id: id as u32,
@@ -216,7 +239,7 @@ impl Plugin for NotificationsPlugin {
                             id: id as u32,
                             reason: close_reasons::DISMISSED_BY_USER,
                         });
-                        REDUCER.emit(NotificationOp::NotificationDismiss(id));
+                        let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
                     }
 
                     NotificationsWidgetOutput::CardClose(id) => {
@@ -224,7 +247,7 @@ impl Plugin for NotificationsPlugin {
                             id: id as u32,
                             reason: close_reasons::DISMISSED_BY_USER,
                         });
-                        REDUCER.emit(NotificationOp::NotificationDismiss(id));
+                        let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
                     }
 
                     NotificationsWidgetOutput::CardClick(_id) => {
