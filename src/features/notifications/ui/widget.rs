@@ -9,7 +9,6 @@ use crate::features::notifications::ui::card_group::{
 };
 
 use super::super::store::{REDUCER, State};
-use super::super::types::NotificationDisplay;
 use super::card_group::{NotificationCardGroup, NotificationCardGroupOutput};
 
 pub struct NotificationsWidget {
@@ -20,7 +19,6 @@ pub struct NotificationsWidget {
 
 pub struct NotificationsWidgetInit {
     pub expanded_group: Option<Arc<str>>,
-    pub notifications: Option<Vec<Arc<NotificationDisplay>>>,
 }
 
 fn transform_notification_group_outputs(

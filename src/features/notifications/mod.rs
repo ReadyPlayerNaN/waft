@@ -64,7 +64,6 @@ impl NotificationsPlugin {
         connect_component(
             NotificationsWidget::builder().launch(NotificationsWidgetInit {
                 expanded_group: None,
-                notifications: None,
             }),
             &self.widget_channel,
         )
