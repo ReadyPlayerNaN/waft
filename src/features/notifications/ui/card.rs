@@ -53,7 +53,7 @@ pub enum NotificationCardInput {
     CountdownStart,
     CountdownStop,
     StateChanged(State),
-    Toggled,
+    VisibilityChange(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -302,7 +302,9 @@ impl FactoryComponent for NotificationCard {
                         .unwrap_or(true);
                 }
             }
-            Self::Input::Toggled => {}
+            Self::Input::VisibilityChange(visible) => {
+                self.hidden = !visible;
+            }
             NotificationCardInput::ActionClick(action) => {
                 send_or_log(&sender, Self::Output::ActionClick(self.id, action));
             }

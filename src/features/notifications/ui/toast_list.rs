@@ -5,7 +5,9 @@ use relm4::prelude::*;
 
 use super::super::store::{ItemLifecycle, Notification, REDUCER, State};
 
-use super::card::{NotificationCard, NotificationCardInit, NotificationCardOutput};
+use super::card::{
+    NotificationCard, NotificationCardInit, NotificationCardInput, NotificationCardOutput,
+};
 
 pub struct ToastList {
     list: FactoryVecDeque<NotificationCard>,
@@ -135,6 +137,12 @@ impl ToastList {
         None
     }
 
+    fn toggle_by_id(target: &mut FactoryVecDeque<NotificationCard>, id: u64, visible: bool) {
+        if let Some(index) = Self::get_index(target, id) {
+            target.send(index, NotificationCardInput::VisibilityChange(visible));
+        }
+    }
+
     fn ingest_notification(
         target: &mut FactoryVecDeque<NotificationCard>,
         notif: &Notification,
@@ -147,12 +155,13 @@ impl ToastList {
                 target.guard().push_front(NotificationCardInit {
                     description: notif.description.clone(),
                     group_id: None,
-                    hidden: phase.is_hidden(),
+                    hidden: true,
                     lifecycle: Some(phase.clone()),
                     id: notif.id.clone(),
                     ttl: notif.ttl,
                     title: notif.title.clone(),
                 });
+                Self::toggle_by_id(target, notif.id.clone(), !phase.is_hidden());
             }
         }
     }
