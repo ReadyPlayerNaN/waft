@@ -121,10 +121,10 @@ async fn ingress_creates_group_and_first_toast_visible_and_derives_toast_ttl() {
         Some(ItemLifecycle::Visible)
     ));
 
-    // Toast list contains it as Visible.
+    // Toast list contains it as Appearing (first toast starts with enter animation).
     assert!(matches!(
         toast_lifecycle(s, 1),
-        Some(ItemLifecycle::Visible)
+        Some(ItemLifecycle::Appearing)
     ));
 }
 
@@ -339,7 +339,7 @@ async fn unknown_ids_are_ignored_and_do_not_panic() {
 }
 
 #[tokio::test]
-async fn toast_cutting_keeps_the_hottest_three_and_may_drop_newer_but_less_urgent_toasts() {
+async fn toast_cutting_keeps_the_hottest_five_and_may_drop_newer_but_less_urgent_toasts() {
     // `cut_notif_ids()` operates on a list that is already sorted by "hotness"
     // (`Notification::cmp`: urgency first, then created_at).
     //
@@ -348,8 +348,8 @@ async fn toast_cutting_keeps_the_hottest_three_and_may_drop_newer_but_less_urgen
     // a new Normal notification can be postponed (i.e. not shown as a toast).
     let mut r = new_reducer().await;
 
-    // Fill all 3 toast slots with Critical notifications.
-    for (id, secs) in [(1u64, 1u64), (2, 2), (3, 3)] {
+    // Fill all 5 toast slots with Critical notifications.
+    for (id, secs) in [(1u64, 1u64), (2, 2), (3, 3), (4, 4), (5, 5)] {
         apply(
             &mut r,
             NotificationOp::Ingress(ingress(
@@ -365,17 +365,26 @@ async fn toast_cutting_keeps_the_hottest_three_and_may_drop_newer_but_less_urgen
 
     {
         let s = r.get_state();
+        // First toast starts as Appearing, subsequent ones also start as Appearing
         assert!(matches!(
             toast_lifecycle(s, 1),
-            Some(ItemLifecycle::Visible)
+            Some(ItemLifecycle::Appearing)
         ));
         assert!(matches!(
             toast_lifecycle(s, 2),
-            Some(ItemLifecycle::Visible)
+            Some(ItemLifecycle::Appearing)
         ));
         assert!(matches!(
             toast_lifecycle(s, 3),
-            Some(ItemLifecycle::Visible)
+            Some(ItemLifecycle::Appearing)
+        ));
+        assert!(matches!(
+            toast_lifecycle(s, 4),
+            Some(ItemLifecycle::Appearing)
+        ));
+        assert!(matches!(
+            toast_lifecycle(s, 5),
+            Some(ItemLifecycle::Appearing)
         ));
     }
 
@@ -384,7 +393,7 @@ async fn toast_cutting_keeps_the_hottest_three_and_may_drop_newer_but_less_urgen
     apply(
         &mut r,
         NotificationOp::Ingress(ingress(
-            4,
+            6,
             Some("ToastApp"),
             t(10),
             NotificationUrgency::Normal,
@@ -396,32 +405,43 @@ async fn toast_cutting_keeps_the_hottest_three_and_may_drop_newer_but_less_urgen
     let s = r.get_state();
 
     // The notification exists in the store...
-    assert!(s.get_notification(&4).is_some());
+    assert!(s.get_notification(&6).is_some());
 
-    // ...but does not appear in toasts because all toast slots are occupied by hotter (Critical) items.
-    assert!(toast_lifecycle(s, 4).is_none());
+    // ...it is in toasts as Pending, waiting for a slot to open up.
+    assert!(matches!(
+        toast_lifecycle(s, 6),
+        Some(ItemLifecycle::Pending)
+    ));
 
-    // The existing critical toasts remain visible.
+    // The existing critical toasts remain in Appearing state.
     assert!(matches!(
         toast_lifecycle(s, 1),
-        Some(ItemLifecycle::Visible)
+        Some(ItemLifecycle::Appearing)
     ));
     assert!(matches!(
         toast_lifecycle(s, 2),
-        Some(ItemLifecycle::Visible)
+        Some(ItemLifecycle::Appearing)
     ));
     assert!(matches!(
         toast_lifecycle(s, 3),
-        Some(ItemLifecycle::Visible)
+        Some(ItemLifecycle::Appearing)
+    ));
+    assert!(matches!(
+        toast_lifecycle(s, 4),
+        Some(ItemLifecycle::Appearing)
+    ));
+    assert!(matches!(
+        toast_lifecycle(s, 5),
+        Some(ItemLifecycle::Appearing)
     ));
 }
 
 #[tokio::test]
-async fn toast_cutting_allows_new_critical_toast_to_displace_existing_normal_visible_when_full() {
+async fn toast_cutting_allows_new_critical_toast_to_displace_existing_normal_appearing_when_full() {
     let mut r = new_reducer().await;
 
-    // Fill all 3 toast slots with Normal notifications.
-    for (id, secs) in [(1u64, 1u64), (2, 2), (3, 3)] {
+    // Fill all 5 toast slots with Normal notifications.
+    for (id, secs) in [(1u64, 1u64), (2, 2), (3, 3), (4, 4), (5, 5)] {
         apply(
             &mut r,
             NotificationOp::Ingress(ingress(
@@ -439,15 +459,23 @@ async fn toast_cutting_allows_new_critical_toast_to_displace_existing_normal_vis
         let s = r.get_state();
         assert!(matches!(
             toast_lifecycle(s, 1),
-            Some(ItemLifecycle::Visible)
+            Some(ItemLifecycle::Appearing)
         ));
         assert!(matches!(
             toast_lifecycle(s, 2),
-            Some(ItemLifecycle::Visible)
+            Some(ItemLifecycle::Appearing)
         ));
         assert!(matches!(
             toast_lifecycle(s, 3),
-            Some(ItemLifecycle::Visible)
+            Some(ItemLifecycle::Appearing)
+        ));
+        assert!(matches!(
+            toast_lifecycle(s, 4),
+            Some(ItemLifecycle::Appearing)
+        ));
+        assert!(matches!(
+            toast_lifecycle(s, 5),
+            Some(ItemLifecycle::Appearing)
         ));
     }
 
@@ -456,9 +484,9 @@ async fn toast_cutting_allows_new_critical_toast_to_displace_existing_normal_vis
     apply(
         &mut r,
         NotificationOp::Ingress(ingress(
-            4,
+            6,
             Some("ToastApp"),
-            t(4),
+            t(6),
             NotificationUrgency::Critical,
             None,
         )),
@@ -466,24 +494,89 @@ async fn toast_cutting_allows_new_critical_toast_to_displace_existing_normal_vis
     .await;
 
     let s = r.get_state();
-    assert!(s.get_notification(&4).is_some());
+    assert!(s.get_notification(&6).is_some());
 
-    // Critical should be promoted to Visible.
+    // Critical should be promoted to Appearing.
     assert!(matches!(
-        toast_lifecycle(s, 4),
-        Some(ItemLifecycle::Visible)
+        toast_lifecycle(s, 6),
+        Some(ItemLifecycle::Appearing)
     ));
 
-    // The two hottest Normal notifications should remain Visible (created_at 2 and 3).
+    // The four hottest Normal notifications should remain Appearing (created_at 2, 3, 4, 5).
     assert!(matches!(
         toast_lifecycle(s, 2),
-        Some(ItemLifecycle::Visible)
+        Some(ItemLifecycle::Appearing)
     ));
     assert!(matches!(
         toast_lifecycle(s, 3),
-        Some(ItemLifecycle::Visible)
+        Some(ItemLifecycle::Appearing)
+    ));
+    assert!(matches!(
+        toast_lifecycle(s, 4),
+        Some(ItemLifecycle::Appearing)
+    ));
+    assert!(matches!(
+        toast_lifecycle(s, 5),
+        Some(ItemLifecycle::Appearing)
     ));
 
     // The coldest Normal (created_at 1) should be pushed above the limit and start hiding.
     assert!(matches!(toast_lifecycle(s, 1), Some(ItemLifecycle::Hiding)));
+}
+
+#[tokio::test]
+async fn pending_toast_is_promoted_when_slot_opens_via_dismiss() {
+    let mut r = new_reducer().await;
+
+    // Fill all 5 toast slots with Critical notifications.
+    for (id, secs) in [(1u64, 1u64), (2, 2), (3, 3), (4, 4), (5, 5)] {
+        apply(
+            &mut r,
+            NotificationOp::Ingress(ingress(
+                id,
+                Some("ToastApp"),
+                t(secs),
+                NotificationUrgency::Critical,
+                None,
+            )),
+        )
+        .await;
+    }
+
+    // Add a Normal notification that will be pending (less hot than Critical).
+    apply(
+        &mut r,
+        NotificationOp::Ingress(ingress(
+            6,
+            Some("ToastApp"),
+            t(10),
+            NotificationUrgency::Normal,
+            None,
+        )),
+    )
+    .await;
+
+    // Verify notification 6 is pending.
+    {
+        let s = r.get_state();
+        assert!(matches!(
+            toast_lifecycle(s, 6),
+            Some(ItemLifecycle::Pending)
+        ));
+    }
+
+    // Dismiss the hottest Critical notification (id=5).
+    apply(&mut r, NotificationOp::NotificationDismiss(5)).await;
+    apply(&mut r, NotificationOp::NotificationDismissed(5)).await;
+
+    // Now notification 6 should be promoted to Appearing.
+    let s = r.get_state();
+    assert!(
+        toast_lifecycle(s, 5).is_none(),
+        "dismissed notification should be removed"
+    );
+    assert!(
+        matches!(toast_lifecycle(s, 6), Some(ItemLifecycle::Appearing)),
+        "pending notification should be promoted to Appearing when a slot opens"
+    );
 }

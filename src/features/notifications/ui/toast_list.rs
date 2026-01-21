@@ -88,6 +88,15 @@ impl SimpleComponent for ToastList {
                 let _ = sender.output(Self::Output::CardClick(notification_id));
             }
             Self::Input::StateChanged(state) => {
+                println!(
+                    "ToastList received state change {:?}",
+                    state
+                        .get_toasts()
+                        .clone()
+                        .into_iter()
+                        .map(|(t, s)| (t.id, s))
+                        .collect::<Vec<_>>()
+                );
                 let toasts = state
                     .get_toasts()
                     .into_iter()
@@ -100,14 +109,14 @@ impl SimpleComponent for ToastList {
                     .collect();
 
                 Self::clear_unknown(&mut self.list, &toasts);
-                log::info!(
-                    "ToastList received state change {:?}",
-                    toasts
-                        .clone()
-                        .into_iter()
-                        .map(|(t, s)| (t.id, s))
-                        .collect::<Vec<_>>()
-                );
+                // log::info!(
+                //     "ToastList received state change {:?}",
+                //     toasts
+                //         .clone()
+                //         .into_iter()
+                //         .map(|(t, s)| (t.id, s))
+                //         .collect::<Vec<_>>()
+                // );
                 for (n, l) in toasts {
                     Self::ingest_notification(&mut self.list, &n, &l);
                 }
@@ -134,7 +143,8 @@ impl ToastList {
         match Self::get_index(target, notif.id) {
             Some(_index) => {}
             None => {
-                target.guard().push_back(NotificationCardInit {
+                // Use push_front so promoted toasts appear at the top
+                target.guard().push_front(NotificationCardInit {
                     description: notif.description.clone(),
                     group_id: None,
                     hidden: phase.is_hidden(),

@@ -67,6 +67,7 @@ impl PartialOrd for Notification {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ItemLifecycle {
+    Appearing,
     Hiding,
     Hidden,
     Pending,
@@ -113,10 +114,13 @@ impl Group {
 
 #[derive(Debug, Clone)]
 pub struct State {
+    pub appearing_timestamps: IndexMap<u64, SystemTime>,
     pub archive: IndexMap<Arc<str>, ItemLifecycle>,
+    pub dismissing_timestamps: IndexMap<u64, SystemTime>,
     pub groups: HashMap<Arc<str>, Group>,
     pub hiding_timestamps: IndexMap<u64, SystemTime>,
     pub notifications: HashMap<u64, Notification>,
+    pub retracting_timestamps: IndexMap<u64, SystemTime>,
     pub toasts: IndexMap<u64, ItemLifecycle>,
 }
 
@@ -361,12 +365,17 @@ fn sort_notif_list(
     );
 }
 
-fn cut_notif_ids(top: &mut IndexMap<u64, ItemLifecycle>, limit: usize) {
+fn cut_notif_ids(
+    top: &mut IndexMap<u64, ItemLifecycle>,
+    appearing_timestamps: &mut IndexMap<u64, SystemTime>,
+    hiding_timestamps: &mut IndexMap<u64, SystemTime>,
+    limit: usize,
+) {
     // For the moment, maximum one visible (hottest items are at the bottom of the IndexMap).
     //
     // Slot rules:
-    // - Only `Visible` counts as a filled slot.
-    // - Pick the hottest candidates regardless of current lifecycle (Visible/Pending/Hidden/Hiding).
+    // - Only `Visible` or `Appearing` counts as a filled slot.
+    // - Pick the hottest candidates regardless of current lifecycle (Visible/Appearing/Pending/Hidden/Hiding).
     //   This allows newly-added hotter notifications to take a slot even if older ones are currently `Visible`.
     // - `Dismissed` cards never come back; they are removed from `top`.
     // - `Dismissing` / `Retracting` are transitional: they do not count toward the limit and are not promoted/removed here.
@@ -417,9 +426,11 @@ fn cut_notif_ids(top: &mut IndexMap<u64, ItemLifecycle>, limit: usize) {
         }
 
         if selected.contains(id) {
-            // Anything that ends up "within limit" becomes Visible (resets any ongoing hide animation).
-            if !matches!(lifecycle, ItemLifecycle::Visible) {
-                *lifecycle = ItemLifecycle::Visible;
+            // Anything that ends up "within limit" starts as Appearing (with animation).
+            // Already Visible or Appearing items stay as they are.
+            if !matches!(lifecycle, ItemLifecycle::Visible | ItemLifecycle::Appearing) {
+                *lifecycle = ItemLifecycle::Appearing;
+                appearing_timestamps.insert(*id, SystemTime::now());
             }
             continue;
         }
@@ -427,14 +438,15 @@ fn cut_notif_ids(top: &mut IndexMap<u64, ItemLifecycle>, limit: usize) {
         // Above the limit.
         match lifecycle {
             ItemLifecycle::Hiding => {
-                // no change
+                // no change - let hiding animation complete
             }
             ItemLifecycle::Hidden | ItemLifecycle::Pending => {
-                // no change, remove it from `top`
-                to_remove.push(*id);
+                // Keep hidden/pending items so they can be promoted when a slot opens
             }
-            ItemLifecycle::Visible => {
+            ItemLifecycle::Visible | ItemLifecycle::Appearing => {
                 *lifecycle = ItemLifecycle::Hiding;
+                appearing_timestamps.shift_remove(id);
+                hiding_timestamps.insert(*id, SystemTime::now());
             }
             ItemLifecycle::Dismissing | ItemLifecycle::Retracting => {
                 // handled above; keep here for exhaustiveness in case the control-flow changes
@@ -461,7 +473,10 @@ fn reconcile_group_state_on_ingress(
     if let Some(group) = state.groups.get_mut(&group_id) {
         group.top.insert(notif_id.clone(), ItemLifecycle::Visible);
         sort_notif_list(&state.notifications, &mut group.top);
-        cut_notif_ids(&mut group.top, 1);
+        // Groups don't use appearing/hiding timestamps (no animation)
+        let mut stub_appearing = IndexMap::new();
+        let mut stub_hiding = IndexMap::new();
+        cut_notif_ids(&mut group.top, &mut stub_appearing, &mut stub_hiding, 1);
     } else {
         // @TODO: Sort groups after insertion
         state.groups.insert(
@@ -482,15 +497,24 @@ fn reconcile_group_state_on_ingress(
 
 fn reconcile_toast_state_on_ingress(state: &mut State, notif_id: u64) {
     if state.toasts.len() == 0 {
+        // First toast starts with Appearing animation
         state
             .toasts
-            .insert(notif_id.clone(), ItemLifecycle::Visible);
+            .insert(notif_id.clone(), ItemLifecycle::Appearing);
+        state
+            .appearing_timestamps
+            .insert(notif_id, SystemTime::now());
     } else {
         state
             .toasts
             .insert(notif_id.clone(), ItemLifecycle::Pending);
         sort_notif_list(&state.notifications, &mut state.toasts);
-        cut_notif_ids(&mut state.toasts, 3);
+        cut_notif_ids(
+            &mut state.toasts,
+            &mut state.appearing_timestamps,
+            &mut state.hiding_timestamps,
+            5,
+        );
     }
 }
 
@@ -499,29 +523,123 @@ impl Reducer {
         &self.0
     }
 
-    fn process_tick(&mut self) -> bool {
-        let toasts = &mut self.0.toasts;
-        let ids_to_update: Vec<_> = toasts
+    fn process_tick(&mut self) -> Vec<NotificationOp> {
+        let now = SystemTime::now();
+        let animation_duration = Duration::from_millis(250);
+
+        // Collect Hiding → Hidden transitions
+        let hiding_to_hidden: Vec<_> = self
+            .0
+            .toasts
             .iter()
-            .filter_map(|(toast_id, lifecycle)| {
-                if lifecycle == &ItemLifecycle::Hiding {
-                    Some(toast_id.clone())
-                } else {
-                    None
-                }
+            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Hiding))
+            .filter_map(|(toast_id, _)| {
+                self.0.hiding_timestamps.get(toast_id).and_then(|ts| {
+                    if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
+                        Some(*toast_id)
+                    } else {
+                        None
+                    }
+                })
             })
             .collect();
 
-        let todo = ids_to_update.len();
-        for toast_id in ids_to_update {
-            toasts.insert(toast_id, ItemLifecycle::Hidden);
+        // Collect Appearing → Visible transitions
+        let appearing_to_visible: Vec<_> = self
+            .0
+            .toasts
+            .iter()
+            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Appearing))
+            .filter_map(|(toast_id, _)| {
+                self.0.appearing_timestamps.get(toast_id).and_then(|ts| {
+                    if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
+                        Some(*toast_id)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+
+        // Collect Dismissing → Dismissed transitions
+        let dismissing_to_dismissed: Vec<_> = self
+            .0
+            .toasts
+            .iter()
+            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Dismissing))
+            .filter_map(|(toast_id, _)| {
+                self.0.dismissing_timestamps.get(toast_id).and_then(|ts| {
+                    if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
+                        Some(*toast_id)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+
+        // Collect Retracting → Retracted transitions
+        let retracting_to_retracted: Vec<_> = self
+            .0
+            .toasts
+            .iter()
+            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Retracting))
+            .filter_map(|(toast_id, _)| {
+                self.0.retracting_timestamps.get(toast_id).and_then(|ts| {
+                    if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
+                        Some(*toast_id)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+
+        // Apply simple state transitions
+        for toast_id in hiding_to_hidden {
+            self.0.toasts.insert(toast_id, ItemLifecycle::Hidden);
+            self.0.hiding_timestamps.shift_remove(&toast_id);
         }
-        todo > 0
+
+        for toast_id in appearing_to_visible {
+            self.0.toasts.insert(toast_id, ItemLifecycle::Visible);
+            self.0.appearing_timestamps.shift_remove(&toast_id);
+        }
+
+        // Reconcile toasts after hiding transitions
+        sort_notif_list(&self.0.notifications, &mut self.0.toasts);
+        cut_notif_ids(
+            &mut self.0.toasts,
+            &mut self.0.appearing_timestamps,
+            &mut self.0.hiding_timestamps,
+            5,
+        );
+
+        // Return operations that need full processing
+        let mut follow_up_ops = Vec::new();
+        for toast_id in dismissing_to_dismissed {
+            self.0.dismissing_timestamps.shift_remove(&toast_id);
+            follow_up_ops.push(NotificationOp::NotificationDismissed(toast_id));
+        }
+        for toast_id in retracting_to_retracted {
+            self.0.retracting_timestamps.shift_remove(&toast_id);
+            follow_up_ops.push(NotificationOp::NotificationRetracted(toast_id));
+        }
+
+        follow_up_ops
     }
 
     async fn process_single_op(&mut self, input: NotificationOp) -> bool {
         match input {
-            NotificationOp::Tick => self.process_tick(),
+            NotificationOp::Tick => {
+                let follow_up_ops = self.process_tick();
+                let mut changed = false;
+                // Process follow-up operations without recursion using Box::pin
+                for op in follow_up_ops {
+                    changed |= Box::pin(self.process_single_op(op)).await;
+                }
+                changed
+            }
             NotificationOp::Ingress(n) => {
                 let notification = Notification {
                     actions: derive_actions(&n),
@@ -553,6 +671,7 @@ impl Reducer {
                             .insert(notification.id.clone(), ItemLifecycle::Dismissing);
                     }
                     self.0.toasts.insert(id, ItemLifecycle::Dismissing);
+                    self.0.dismissing_timestamps.insert(id, SystemTime::now());
                 }
                 true
             }
@@ -565,6 +684,7 @@ impl Reducer {
                             .insert(notification.id.clone(), ItemLifecycle::Retracting);
                     }
                     self.0.toasts.insert(id, ItemLifecycle::Retracting);
+                    self.0.retracting_timestamps.insert(id, SystemTime::now());
                 }
                 true
             }
@@ -575,8 +695,19 @@ impl Reducer {
                     group.top.shift_remove(&id);
                 }
                 self.0.toasts.shift_remove(&id);
+                self.0.appearing_timestamps.shift_remove(&id);
+                self.0.dismissing_timestamps.shift_remove(&id);
                 self.0.hiding_timestamps.shift_remove(&id);
                 let _ = self.0.notifications.remove(&id);
+
+                // Promote pending toasts to fill the empty slot
+                sort_notif_list(&self.0.notifications, &mut self.0.toasts);
+                cut_notif_ids(
+                    &mut self.0.toasts,
+                    &mut self.0.appearing_timestamps,
+                    &mut self.0.hiding_timestamps,
+                    5,
+                );
 
                 if let Some(group_id) = group_id {
                     let group_has_any = self
@@ -598,8 +729,19 @@ impl Reducer {
                     group.top.shift_remove(&id);
                 }
                 self.0.toasts.shift_remove(&id);
+                self.0.appearing_timestamps.shift_remove(&id);
                 self.0.hiding_timestamps.shift_remove(&id);
+                self.0.retracting_timestamps.shift_remove(&id);
                 let _ = self.0.notifications.remove(&id);
+
+                // Promote pending toasts to fill the empty slot
+                sort_notif_list(&self.0.notifications, &mut self.0.toasts);
+                cut_notif_ids(
+                    &mut self.0.toasts,
+                    &mut self.0.appearing_timestamps,
+                    &mut self.0.hiding_timestamps,
+                    5,
+                );
 
                 if let Some(group_id) = group_id {
                     let group_has_any = self
@@ -623,6 +765,15 @@ impl Reducer {
                 println!("HIDE TOAST {:?}", id);
                 self.0.toasts.insert(id, ItemLifecycle::Hidden);
                 self.0.hiding_timestamps.shift_remove(&id);
+
+                // Promote pending toasts to fill the empty slot
+                sort_notif_list(&self.0.notifications, &mut self.0.toasts);
+                cut_notif_ids(
+                    &mut self.0.toasts,
+                    &mut self.0.appearing_timestamps,
+                    &mut self.0.hiding_timestamps,
+                    5,
+                );
                 true
             }
             NotificationOp::Batch(_ops) => {
@@ -639,10 +790,13 @@ impl AsyncReducible for Reducer {
 
     async fn init() -> Self {
         Self(State {
+            appearing_timestamps: IndexMap::new(),
             archive: IndexMap::new(),
+            dismissing_timestamps: IndexMap::new(),
             groups: HashMap::new(),
             hiding_timestamps: IndexMap::new(),
             notifications: HashMap::new(),
+            retracting_timestamps: IndexMap::new(),
             toasts: IndexMap::new(),
         })
     }
