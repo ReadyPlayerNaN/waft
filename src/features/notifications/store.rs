@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use indexmap::{IndexMap, indexmap};
 use relm4::{AsyncReducer, AsyncReducible};
@@ -65,7 +65,7 @@ impl PartialOrd for Notification {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ItemLifecycle {
     Hiding,
     Hidden,
@@ -113,10 +113,11 @@ impl Group {
 
 #[derive(Debug, Clone)]
 pub struct State {
-    archive: IndexMap<Arc<str>, ItemLifecycle>,
-    groups: HashMap<Arc<str>, Group>,
-    notifications: HashMap<u64, Notification>,
-    toasts: IndexMap<u64, ItemLifecycle>,
+    pub archive: IndexMap<Arc<str>, ItemLifecycle>,
+    pub groups: HashMap<Arc<str>, Group>,
+    pub hiding_timestamps: IndexMap<u64, SystemTime>,
+    pub notifications: HashMap<u64, Notification>,
+    pub toasts: IndexMap<u64, ItemLifecycle>,
 }
 
 impl State {
@@ -190,19 +191,49 @@ impl State {
             vec![]
         }
     }
+
+    pub fn get_hiding_toasts(&self) -> Vec<(u64, SystemTime)> {
+        self.toasts
+            .iter()
+            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Hiding))
+            .filter_map(|(id, _)| {
+                self.hiding_timestamps
+                    .get(id)
+                    .map(|timestamp| (*id, *timestamp))
+            })
+            .collect()
+    }
+
+    fn process_tick(&mut self) -> Vec<NotificationOp> {
+        let now = SystemTime::now();
+        self.toasts
+            .iter()
+            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Hiding))
+            .filter_map(|(id, _)| {
+                self.hiding_timestamps.get(id).and_then(|hiding_since| {
+                    if now.duration_since(*hiding_since).unwrap_or_default()
+                        >= Duration::from_millis(250)
+                    {
+                        Some(NotificationOp::ToastHidden(*id))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect()
+    }
 }
 
 pub struct Reducer(State);
 
 #[derive(Debug, Clone)]
 pub enum NotificationOp {
-    ArchiveCardHide(u64),
-    ArchiveCardHidden(u64),
     Ingress(IngressedNotification),
     NotificationDismiss(u64),
     NotificationDismissed(u64),
     NotificationRetract(u64),
     NotificationRetracted(u64),
+    Tick,
     ToastHide(u64),
     ToastHidden(u64),
     Batch(Vec<NotificationOp>),
@@ -468,8 +499,29 @@ impl Reducer {
         &self.0
     }
 
-    async fn process_single_op(&mut self, input: NotificationOp) {
+    fn process_tick(&mut self) -> bool {
+        let toasts = &mut self.0.toasts;
+        let ids_to_update: Vec<_> = toasts
+            .iter()
+            .filter_map(|(toast_id, lifecycle)| {
+                if lifecycle == &ItemLifecycle::Hiding {
+                    Some(toast_id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let todo = ids_to_update.len();
+        for toast_id in ids_to_update {
+            toasts.insert(toast_id, ItemLifecycle::Hidden);
+        }
+        todo > 0
+    }
+
+    async fn process_single_op(&mut self, input: NotificationOp) -> bool {
         match input {
+            NotificationOp::Tick => self.process_tick(),
             NotificationOp::Ingress(n) => {
                 let notification = Notification {
                     actions: derive_actions(&n),
@@ -490,6 +542,7 @@ impl Reducer {
                 self.0.notifications.insert(notif_id, notification);
                 reconcile_group_state_on_ingress(&mut self.0, notif_id, group_id, app_title);
                 reconcile_toast_state_on_ingress(&mut self.0, notif_id);
+                true
             }
             NotificationOp::NotificationDismiss(id) => {
                 if let Some(notification) = self.0.notifications.get(&id) {
@@ -501,6 +554,7 @@ impl Reducer {
                     }
                     self.0.toasts.insert(id, ItemLifecycle::Dismissing);
                 }
+                true
             }
             NotificationOp::NotificationRetract(id) => {
                 if let Some(notification) = self.0.notifications.get(&id) {
@@ -512,6 +566,7 @@ impl Reducer {
                     }
                     self.0.toasts.insert(id, ItemLifecycle::Retracting);
                 }
+                true
             }
             NotificationOp::NotificationDismissed(id) => {
                 let group_id = self.0.notifications.get(&id).map(|n| n.app_ident());
@@ -520,6 +575,7 @@ impl Reducer {
                     group.top.shift_remove(&id);
                 }
                 self.0.toasts.shift_remove(&id);
+                self.0.hiding_timestamps.shift_remove(&id);
                 let _ = self.0.notifications.remove(&id);
 
                 if let Some(group_id) = group_id {
@@ -533,6 +589,7 @@ impl Reducer {
                         self.0.archive.insert(group_id, ItemLifecycle::Dismissing);
                     }
                 }
+                true
             }
             NotificationOp::NotificationRetracted(id) => {
                 let group_id = self.0.notifications.get(&id).map(|n| n.app_ident());
@@ -541,6 +598,7 @@ impl Reducer {
                     group.top.shift_remove(&id);
                 }
                 self.0.toasts.shift_remove(&id);
+                self.0.hiding_timestamps.shift_remove(&id);
                 let _ = self.0.notifications.remove(&id);
 
                 if let Some(group_id) = group_id {
@@ -554,34 +612,22 @@ impl Reducer {
                         self.0.archive.insert(group_id, ItemLifecycle::Dismissing);
                     }
                 }
+                true
             }
             NotificationOp::ToastHide(id) => {
                 self.0.toasts.insert(id, ItemLifecycle::Hiding);
-                // @TODO reconcile toasts state
+                self.0.hiding_timestamps.insert(id, SystemTime::now());
+                true
             }
             NotificationOp::ToastHidden(id) => {
-                self.0.toasts.shift_remove(&id);
+                println!("HIDE TOAST {:?}", id);
+                self.0.toasts.insert(id, ItemLifecycle::Hidden);
+                self.0.hiding_timestamps.shift_remove(&id);
+                true
             }
-            NotificationOp::ArchiveCardHide(id) => {
-                if let Some(notification) = self.0.notifications.get(&id) {
-                    let group_id = notification.app_ident();
-                    if let Some(group) = self.0.groups.get_mut(&group_id) {
-                        group.top.insert(id, ItemLifecycle::Hiding);
-                        // @TODO reconcile toasts state
-                    }
-                }
-            }
-            NotificationOp::ArchiveCardHidden(id) => {
-                if let Some(notification) = self.0.notifications.get(&id) {
-                    let group_id = notification.app_ident();
-                    if let Some(group) = self.0.groups.get_mut(&group_id) {
-                        group.top.shift_remove(&notification.id.clone());
-                    }
-                }
-            }
-            NotificationOp::Batch(_) => {
-                // This should never happen - batch should be handled at the top level
-                // But we include it for completeness
+            NotificationOp::Batch(ops) => {
+                // Unsupported
+                false
             }
         }
     }
@@ -594,6 +640,7 @@ impl AsyncReducible for Reducer {
         Self(State {
             archive: IndexMap::new(),
             groups: HashMap::new(),
+            hiding_timestamps: IndexMap::new(),
             notifications: HashMap::new(),
             toasts: IndexMap::new(),
         })
@@ -606,13 +653,13 @@ impl AsyncReducible for Reducer {
                 for op in ops {
                     self.process_single_op(op).await;
                 }
+                true
             }
             op => {
                 // Process single operation
-                self.process_single_op(op).await;
+                self.process_single_op(op).await
             }
         }
-        true
     }
 }
 

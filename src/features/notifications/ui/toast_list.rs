@@ -6,7 +6,7 @@ use relm4::prelude::*;
 use crate::features::notifications::store::ItemLifecycle;
 use crate::features::notifications::store::Notification;
 use crate::features::notifications::store::NotificationOp;
-use crate::features::notifications::store::{REDUCER, State};
+use crate::features::notifications::store::{State, REDUCER};
 
 use super::card::{NotificationCard, NotificationCardInit, NotificationCardOutput};
 
@@ -18,7 +18,6 @@ pub struct ToastList {
 pub enum ToastListInput {
     ActionClick(u64, String),
     CardClick(u64),
-    CardHidden(u64),
     CardTimedOut(u64),
     StateChanged(State),
 }
@@ -34,7 +33,6 @@ fn transform_notification_card_outputs(msg: NotificationCardOutput) -> ToastList
     match msg {
         NotificationCardOutput::ActionClick(id, action) => ToastListInput::ActionClick(id, action),
         NotificationCardOutput::CardClick(id) => ToastListInput::CardClick(id),
-        NotificationCardOutput::CardHidden(id) => ToastListInput::CardHidden(id),
         NotificationCardOutput::TimedOut(id) => ToastListInput::CardTimedOut(id),
     }
 }
@@ -54,7 +52,7 @@ impl SimpleComponent for ToastList {
             #[local_ref]
             notifications_container -> gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 6,
+                set_spacing: 0,
             },
 
             gtk::Box{},
@@ -91,9 +89,6 @@ impl SimpleComponent for ToastList {
             Self::Input::CardClick(notification_id) => {
                 let _ = sender.output(Self::Output::CardClick(notification_id));
             }
-            Self::Input::CardHidden(notification_id) => {
-                REDUCER.emit(NotificationOp::ToastHidden(notification_id));
-            }
             Self::Input::StateChanged(state) => {
                 let toasts = state
                     .get_toasts()
@@ -107,6 +102,14 @@ impl SimpleComponent for ToastList {
                     .collect();
 
                 Self::clear_unknown(&mut self.list, &toasts);
+                log::info!(
+                    "ToastList received state change {:?}",
+                    toasts
+                        .clone()
+                        .into_iter()
+                        .map(|(t, s)| (t.id, s))
+                        .collect::<Vec<_>>()
+                );
                 for (n, l) in toasts {
                     Self::ingest_notification(&mut self.list, &n, &l);
                 }

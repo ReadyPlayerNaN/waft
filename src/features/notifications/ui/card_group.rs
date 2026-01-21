@@ -8,8 +8,8 @@ use relm4::prelude::*;
 use crate::features::notifications::store::ItemLifecycle;
 use crate::features::notifications::store::Notification;
 use crate::features::notifications::store::NotificationOp;
-use crate::features::notifications::store::REDUCER;
 use crate::features::notifications::store::State;
+use crate::features::notifications::store::REDUCER;
 
 use super::card::{NotificationCard, NotificationCardInit, NotificationCardOutput};
 
@@ -36,7 +36,6 @@ pub enum NotificationCardGroupInput {
     Expand(bool),
     ExpandClick,
     CardClick(u64),
-    CardHidden(u64),
     TimedOut(u64),
     StateChanged(State),
 }
@@ -55,7 +54,6 @@ fn transform_notification_card_outputs(msg: NotificationCardOutput) -> Notificat
             NotificationCardGroupInput::ActionClick(id, action)
         }
         NotificationCardOutput::CardClick(id) => NotificationCardGroupInput::CardClick(id),
-        NotificationCardOutput::CardHidden(id) => NotificationCardGroupInput::CardHidden(id),
         NotificationCardOutput::TimedOut(id) => NotificationCardGroupInput::TimedOut(id),
     }
 }
@@ -257,10 +255,6 @@ impl FactoryComponent for NotificationCardGroup {
             }
             Self::Input::CardClick(notification_id) => {
                 sender.output(Self::Output::CardClick(notification_id));
-            }
-
-            Self::Input::CardHidden(notification_id) => {
-                REDUCER.emit(NotificationOp::ArchiveCardHidden(notification_id));
             }
             Self::Input::TimedOut(_notification_id) => { /* noop  */ }
             Self::Input::StateChanged(state) => {

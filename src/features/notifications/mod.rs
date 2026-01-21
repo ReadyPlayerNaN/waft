@@ -1,12 +1,15 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use log::{debug, info};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use glib::object::Cast;
+use indexmap::indexmap;
+use log::{debug, info};
 use relm4::gtk::prelude::GtkApplicationExt;
 use relm4::prelude::*;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use crate::channels::{Channel, connect_component};
 use crate::features::notifications::store::NotificationOp;
@@ -15,10 +18,10 @@ use crate::plugin::{Plugin, PluginId, Slot, Widget};
 
 use self::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
 use self::dbus::server::NotificationsDbusServer;
+use self::debounce::NotificationDebouncer;
 use self::dnd_toggle::{
     DoNotDisturbToggle, DoNotDisturbToggleInit, DoNotDisturbToggleInput, DoNotDisturbToggleOutput,
 };
-use self::debounce::NotificationDebouncer;
 use self::store::REDUCER;
 use self::ui::toast_window::{HPos, ToastWindow, ToastWindowInit, ToastWindowOutput, VPos};
 use self::ui::widget::{NotificationsWidget, NotificationsWidgetInit, NotificationsWidgetOutput};
@@ -39,6 +42,9 @@ pub struct NotificationsPlugin {
     dnd_toggle_channel: Channel<DoNotDisturbToggleOutput>,
     initialized: bool,
     server_channel: Channel<IngressEvent>,
+    state_cache: Arc<RwLock<store::State>>,
+    tick_source: Arc<std::sync::Mutex<Option<glib::SourceId>>>,
+    tick_channel: tokio::sync::mpsc::UnboundedSender<()>,
     toast_channel: Channel<ToastWindowOutput>,
     toast: Option<Controller<ToastWindow>>,
     widget_channel: Channel<NotificationsWidgetOutput>,
@@ -48,6 +54,7 @@ pub struct NotificationsPlugin {
 
 impl NotificationsPlugin {
     pub fn new() -> Self {
+        let (tick_tx, _) = tokio::sync::mpsc::unbounded_channel();
         Self {
             client_channel: Channel::new(),
             dbus_server: None,
@@ -56,6 +63,15 @@ impl NotificationsPlugin {
             dnd_toggle_channel: Channel::new(),
             initialized: false,
             server_channel: Channel::new(),
+            state_cache: Arc::new(RwLock::new(store::State {
+                archive: indexmap![],
+                groups: HashMap::new(),
+                hiding_timestamps: indexmap![],
+                notifications: HashMap::new(),
+                toasts: indexmap![],
+            })),
+            tick_source: Arc::new(std::sync::Mutex::new(None)),
+            tick_channel: tick_tx,
             toast_channel: Channel::new(),
             toast: None,
             widget_channel: Channel::new(),
@@ -74,8 +90,6 @@ impl NotificationsPlugin {
     }
 
     fn create_toast_window(&self, hpos: HPos, vpos: VPos) -> Controller<ToastWindow> {
-        // NOTE: Start empty; the plugin is the source of truth and will ingest/remove via inputs.
-        // This also ensures the toast window begins hidden (per requirement "hidden when empty").
         connect_component(
             ToastWindow::builder().launch(ToastWindowInit { hpos, vpos }),
             &self.toast_channel,
@@ -91,6 +105,28 @@ impl NotificationsPlugin {
             &self.dnd_toggle_channel,
         )
     }
+
+    fn schedule_tick(&self) {
+        let tick_source = self.tick_source.clone();
+        let tick_source_for_closure = self.tick_source.clone();
+        *tick_source.lock().unwrap() = Some(glib::timeout_add_local_once(
+            Duration::from_millis(200),
+            move || {
+                println!("Tick");
+                REDUCER.emit(NotificationOp::Tick);
+
+                // Schedule the next tick
+                *tick_source_for_closure.lock().unwrap() = Some(glib::timeout_add_local(
+                    Duration::from_millis(200),
+                    move || {
+                        println!("Tick");
+                        REDUCER.emit(NotificationOp::Tick);
+                        glib::ControlFlow::Continue
+                    },
+                ));
+            },
+        ));
+    }
 }
 
 #[async_trait(?Send)]
@@ -105,8 +141,6 @@ impl Plugin for NotificationsPlugin {
             .context("Failed to connect DBus notifications server")?;
 
         info!("Starting notifications dbus server");
-        // Start the server now; it will attempt to replace any existing owner of the name.
-        // If it cannot acquire the name, this returns an error and we exit.
         dbus_server
             .start(
                 self.server_channel.sender.clone(),
@@ -115,53 +149,48 @@ impl Plugin for NotificationsPlugin {
             .await
             .context("Failed to start DBus notifications server")?;
 
-        // Store the dbus_server to prevent it from being dropped
         self.dbus_server = Some(dbus_server);
 
         self.initialized = true;
         Ok(())
     }
 
-async fn create_elements(&mut self) -> Result<()> {
-        // Initialize debouncer that forwards to REDUCER
+    async fn create_elements(&mut self) -> Result<()> {
+        let state_cache = self.state_cache.clone();
+        let (state_tx, mut state_rx) = relm4::channel();
+        REDUCER.subscribe(&state_tx, move |s| {
+            *state_cache.write().unwrap() = s.get_state().clone();
+        });
+
+        relm4::tokio::spawn(async move { while state_rx.recv().await.is_some() {} });
+
         let (debouncer_tx, mut debouncer_rx) = tokio::sync::mpsc::unbounded_channel();
-        
-        // Forward debouncer messages to REDUCER
+
         relm4::tokio::spawn(async move {
             while let Some(op) = debouncer_rx.recv().await {
                 REDUCER.emit(op);
             }
         });
-        
-        // Clone debouncer for use in spawns before storing it
+
         let debouncer = NotificationDebouncer::new(debouncer_tx);
         let db_server = debouncer.clone();
         let db_toast = debouncer.clone();
         let db_widget = debouncer.clone();
-        
-        // Store debouncer after cloning for spawns
+
         self.debouncer = Some(debouncer);
 
-        // Create the main notifications widget (overlay column content).
         let widget = self.create_widget();
         self.widget = Some(widget);
 
-        // Create the toast window (separate layer-shell surface above all other windows).
-        //
-        // Position defaults: top-right (no margins; compositor edge aligned).
-        // NOTE: The toast window is focusable (keyboard mode on-demand) for now.
-        // We may want to change that later to avoid focus-stealing.
         let toast = self.create_toast_window(HPos::Center, VPos::Top);
         let toast_window = toast.widget().clone();
         relm4::main_application().add_window(&toast_window);
         self.toast = Some(toast);
 
-        // DBus ingress -> plugin -> debouncer -> UI reconciliation
         let server_receiver = self.server_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
         relm4::tokio::spawn(async move {
             while let Ok(event) = server_receiver.recv_async().await {
-                info!("[notifications] Received: {:?}", event);
                 match event {
                     IngressEvent::Notify { notification } => {
                         let _ = db_server.send(NotificationOp::Ingress(notification));
@@ -170,7 +199,6 @@ async fn create_elements(&mut self) -> Result<()> {
                     IngressEvent::CloseNotification { id } => {
                         let _ = db_server.send(NotificationOp::NotificationRetract(id as u64));
 
-                        // Then emit DBus NotificationClosed(reason=CLOSED_BY_CALL).
                         let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
                             id,
                             reason: close_reasons::CLOSED_BY_CALL,
@@ -180,7 +208,6 @@ async fn create_elements(&mut self) -> Result<()> {
             }
         });
 
-        // Toast window outputs -> plugin -> DBus outbound + plugin-driven reconciliation
         let toast_receiver = self.toast_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
         relm4::tokio::spawn(async move {
@@ -189,7 +216,6 @@ async fn create_elements(&mut self) -> Result<()> {
                 match event {
                     ToastWindowOutput::ActionClick(id, action_key) => {
                         let _ = db_toast.send(NotificationOp::NotificationDismiss(id));
-                        // Emit ActionInvoked first, then close and remove (per policy).
                         let _ = outbound_tx.send(OutboundEvent::ActionInvoked {
                             id: id as u32,
                             action_key: action_key.clone(),
@@ -200,30 +226,18 @@ async fn create_elements(&mut self) -> Result<()> {
                         });
                     }
 
-                    // ToastWindowOutput::CardClose(id) => {
-                    //     let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
-                    //         id: id as u32,
-                    //         reason: close_reasons::DISMISSED_BY_USER,
-                    //     });
-                    // }
                     ToastWindowOutput::TimedOut(id) => {
                         let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
                             id: id as u32,
                             reason: close_reasons::EXPIRED,
                         });
-                        // REDUCER.emit(NotificationOp::NotificationDismiss(id));
-                        // widget_sender_for_toast.emit(NotificationsWidgetInput::Remove(id));
-                        // toast_sender_for_toast.emit(ToastWindowInput::Remove(id));
                     }
 
-                    ToastWindowOutput::CardClick(_id) => {
-                        // No-op for now (could map to "default action" later).
-                    }
+                    ToastWindowOutput::CardClick(_id) => {}
                 }
             }
         });
 
-        // NotificationsWidget outputs -> plugin -> DBus outbound + plugin-driven reconciliation
         let widget_receiver = self.widget_channel.receiver.clone();
         let outbound_tx = self.client_channel.sender.clone();
         relm4::tokio::spawn(async move {
@@ -250,14 +264,11 @@ async fn create_elements(&mut self) -> Result<()> {
                         let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
                     }
 
-                    NotificationsWidgetOutput::CardClick(_id) => {
-                        // No-op for now (could map to "default action" later).
-                    }
+                    NotificationsWidgetOutput::CardClick(_id) => {}
                 }
             }
         });
 
-        // DND toggle wiring (unchanged behavior).
         let active = self.dnd.load(Ordering::SeqCst);
         let dnd_toggle = self.create_dnd_toggle(DoNotDisturbToggleInit {
             active,
@@ -282,6 +293,8 @@ async fn create_elements(&mut self) -> Result<()> {
                 };
             }
         });
+
+        self.schedule_tick();
 
         Ok(())
     }

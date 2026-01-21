@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use adw::prelude::*;
+use log::info;
 use relm4::factory::FactoryHashMap;
 use relm4::gtk;
 use relm4::gtk::prelude::{BoxExt, ButtonExt, GestureSingleExt, WidgetExt};
 use relm4::prelude::*;
 
 use crate::classnames;
-use crate::features::notifications::store::{ItemLifecycle, NotificationOp, REDUCER, State};
+use crate::features::notifications::store::{ItemLifecycle, NotificationOp, State, REDUCER};
 use crate::features::notifications::types::NotificationIcon;
 
 use super::card_action::{NotificationCardActionInit, NotificationCardActionOutput};
@@ -26,7 +27,6 @@ pub struct NotificationCard {
     title: Arc<str>,
     description: Arc<str>,
     hidden: bool,
-    toggle_epoch: u64,
     ttl: Option<u64>,
 }
 
@@ -52,14 +52,12 @@ pub enum NotificationCardInput {
     CountdownStop,
     StateChanged(State),
     Toggled,
-    ToggledEpoch(u64),
 }
 
 #[derive(Debug, Clone)]
 pub enum NotificationCardOutput {
     ActionClick(u64, String),
     CardClick(u64),
-    CardHidden(u64),
     TimedOut(u64),
 }
 
@@ -242,7 +240,6 @@ impl FactoryComponent for NotificationCard {
             id: init.id,
             lifecycle: init.lifecycle,
             title: init.title,
-            toggle_epoch: 0,
             ttl: init.ttl,
         }
     }
@@ -295,74 +292,14 @@ impl FactoryComponent for NotificationCard {
                     self.lifecycle = state
                         .get_notification_lifecycle(&self.group_id, &self.id)
                         .map(|l| l.clone());
-                    let prevhidden = self.hidden;
                     self.hidden = self
                         .lifecycle
                         .as_ref()
                         .map(|l| l.is_hidden())
                         .unwrap_or(true);
-
-                    if prevhidden != self.hidden {
-                        // Coalesce scheduled timeouts without trying to cancel GLib sources.
-                        // Only the latest epoch is allowed to perform the lifecycle action.
-                        //
-                        // Important: bump the epoch on *any* visibility change so that an in-flight
-                        // hide timeout becomes stale if the card becomes visible again before it fires.
-                        self.toggle_epoch = self.toggle_epoch.wrapping_add(1);
-                        let epoch = self.toggle_epoch;
-
-                        // Only schedule the delayed lifecycle message when we're transitioning to hidden.
-                        if self.hidden {
-                            // Use the non-panicking sender; if the component is already shut down,
-                            // sending will just fail and we ignore it.
-                            let input = sender.input_sender().clone();
-                            glib::timeout_add_local_once(
-                                std::time::Duration::from_millis(250),
-                                move || {
-                                    let _ = input.send(Self::Input::ToggledEpoch(epoch));
-                                },
-                            );
-                        }
-                    }
                 }
             }
-            Self::Input::ToggledEpoch(epoch) => {
-                // Ignore stale timeouts.
-                if epoch != self.toggle_epoch {
-                    return;
-                }
-
-                if let Some(l) = self.lifecycle.as_ref() {
-                    match l {
-                        ItemLifecycle::Hiding => {
-                            sender.output(Self::Output::CardHidden(self.id));
-                        }
-                        ItemLifecycle::Dismissing => {
-                            REDUCER.emit(NotificationOp::NotificationDismissed(self.id));
-                        }
-                        ItemLifecycle::Retracting => {
-                            REDUCER.emit(NotificationOp::NotificationRetracted(self.id));
-                        }
-                        _ => {}
-                    };
-                }
-            }
-            Self::Input::Toggled => {
-                if let Some(l) = self.lifecycle.as_ref() {
-                    match l {
-                        ItemLifecycle::Hiding => {
-                            sender.output(Self::Output::CardHidden(self.id));
-                        }
-                        ItemLifecycle::Dismissing => {
-                            REDUCER.emit(NotificationOp::NotificationDismissed(self.id));
-                        }
-                        ItemLifecycle::Retracting => {
-                            REDUCER.emit(NotificationOp::NotificationRetracted(self.id));
-                        }
-                        _ => {}
-                    };
-                }
-            }
+            Self::Input::Toggled => {}
             NotificationCardInput::ActionClick(action) => {
                 sender.output(Self::Output::ActionClick(self.id, action));
             }
@@ -402,4 +339,6 @@ impl FactoryComponent for NotificationCard {
             },
         };
     }
+
+    fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {}
 }

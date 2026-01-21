@@ -332,8 +332,6 @@ async fn unknown_ids_are_ignored_and_do_not_panic() {
     apply(&mut r, NotificationOp::NotificationRetracted(999)).await;
     apply(&mut r, NotificationOp::ToastHide(999)).await;
     apply(&mut r, NotificationOp::ToastHidden(999)).await;
-    apply(&mut r, NotificationOp::ArchiveCardHide(999)).await;
-    apply(&mut r, NotificationOp::ArchiveCardHidden(999)).await;
 
     let s = r.get_state();
     assert!(s.get_groups().is_empty());
