@@ -661,7 +661,6 @@ impl AsyncReducible for Reducer {
                 self.process_single_op(op).await
             }
         };
-        println!("Reduced operation {:?}", res);
         res
     }
 }

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use adw::prelude::*;
-use gtk::glib;
 use relm4::factory::FactoryHashMap;
 use relm4::gtk;
 use relm4::gtk::prelude::{BoxExt, ButtonExt, GestureSingleExt, WidgetExt};
@@ -230,24 +229,9 @@ impl FactoryComponent for NotificationCard {
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_action_outputs);
 
-        // Bridge between tokio (REDUCER) and GTK main thread
-        // Use a flume channel + glib timeout to poll for messages
-        let (bridge_tx, bridge_rx) = flume::unbounded::<State>();
-        let component_sender = sender.input_sender().clone();
-
-        // Poll the bridge channel from the GTK main loop
-        glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
-            while let Ok(state) = bridge_rx.try_recv() {
-                let _ = component_sender.send(Self::Input::StateChanged(state));
-            }
-            glib::ControlFlow::Continue
+        REDUCER.subscribe(sender.input_sender(), |s| {
+            Self::Input::StateChanged(s.get_state().clone())
         });
-
-        // Wrap the flume sender in relm4::Sender for REDUCER.subscribe
-        let bridge_sender = relm4::Sender::from(bridge_tx);
-
-        // Subscribe to REDUCER - bridge_sender can be called from any thread
-        REDUCER.subscribe(&bridge_sender, |s| s.get_state().clone());
 
         Self {
             actions: actions,

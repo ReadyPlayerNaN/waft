@@ -3,7 +3,6 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use log::debug;
-use tokio::sync::mpsc;
 use tokio::time::{Sleep, sleep};
 
 use super::store::NotificationOp;
@@ -15,16 +14,16 @@ use super::store::NotificationOp;
 #[derive(Clone)]
 pub struct NotificationDebouncer {
     /// Sender for ingress operations that need debouncing
-    ingress_tx: mpsc::UnboundedSender<NotificationOp>,
+    ingress_tx: flume::Sender<NotificationOp>,
     /// Sender for immediate operations (non-ingress)
-    immediate_tx: mpsc::UnboundedSender<NotificationOp>,
+    immediate_tx: flume::Sender<NotificationOp>,
 }
 
 impl NotificationDebouncer {
     /// Create a new debouncer with the given REDUCER sender.
-    pub fn new(reducer_tx: mpsc::UnboundedSender<NotificationOp>) -> Self {
-        let (ingress_tx, ingress_rx) = mpsc::unbounded_channel();
-        let (immediate_tx, immediate_rx) = mpsc::unbounded_channel();
+    pub fn new(reducer_tx: flume::Sender<NotificationOp>) -> Self {
+        let (ingress_tx, ingress_rx) = flume::unbounded();
+        let (immediate_tx, immediate_rx) = flume::unbounded();
 
         // Spawn debouncer task
         relm4::tokio::spawn(debounce_task(ingress_rx, immediate_rx, reducer_tx.clone()));
@@ -36,7 +35,7 @@ impl NotificationDebouncer {
     }
 
     /// Send a notification operation for debouncing/immediate processing.
-    pub fn send(&self, op: NotificationOp) -> Result<(), mpsc::error::SendError<NotificationOp>> {
+    pub fn send(&self, op: NotificationOp) -> Result<(), flume::SendError<NotificationOp>> {
         match op {
             // Only debounce ingress operations
             NotificationOp::Ingress(_) => {
@@ -53,9 +52,9 @@ impl NotificationDebouncer {
 
 /// Debounce task that batches ingress operations and forwards all operations to REDUCER.
 async fn debounce_task(
-    mut ingress_rx: mpsc::UnboundedReceiver<NotificationOp>,
-    mut immediate_rx: mpsc::UnboundedReceiver<NotificationOp>,
-    reducer_tx: mpsc::UnboundedSender<NotificationOp>,
+    ingress_rx: flume::Receiver<NotificationOp>,
+    immediate_rx: flume::Receiver<NotificationOp>,
+    reducer_tx: flume::Sender<NotificationOp>,
 ) {
     let debounce_timeout = Duration::from_millis(66);
     let mut pending_ingress: HashMap<u64, NotificationOp> = HashMap::new();
@@ -64,7 +63,7 @@ async fn debounce_task(
     loop {
         tokio::select! {
             // Handle ingress operations (debounced)
-            Some(ingress_op) = ingress_rx.recv() => {
+            Ok(ingress_op) = ingress_rx.recv_async() => {
                 if let NotificationOp::Ingress(notification) = ingress_op {
                     // Keep only the latest ingress operation per notification ID
                     pending_ingress.insert(notification.id, NotificationOp::Ingress(notification));
@@ -77,7 +76,7 @@ async fn debounce_task(
             }
 
             // Handle immediate operations (forwarded right away)
-            Some(immediate_op) = immediate_rx.recv() => {
+            Ok(immediate_op) = immediate_rx.recv_async() => {
                 // If we have pending ingress operations, flush them first
                 if !pending_ingress.is_empty() {
                     flush_ingress(&mut pending_ingress, &reducer_tx).await;
@@ -106,7 +105,7 @@ async fn debounce_task(
 /// Flush pending ingress operations to the REDUCER.
 async fn flush_ingress(
     pending_ingress: &mut HashMap<u64, NotificationOp>,
-    reducer_tx: &mpsc::UnboundedSender<NotificationOp>,
+    reducer_tx: &flume::Sender<NotificationOp>,
 ) {
     if pending_ingress.is_empty() {
         return;

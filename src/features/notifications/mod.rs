@@ -146,12 +146,10 @@ impl Plugin for NotificationsPlugin {
     }
 
     async fn create_elements(&mut self) -> Result<()> {
-        // let (state_tx, mut state_rx) = relm4::channel();
-        // relm4::tokio::spawn(async move { while state_rx.recv().await.is_some() {} });
-        let (debouncer_tx, mut debouncer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (debouncer_tx, debouncer_rx) = flume::unbounded();
 
         relm4::tokio::spawn(async move {
-            while let Some(op) = debouncer_rx.recv().await {
+            while let Ok(op) = debouncer_rx.recv_async().await {
                 REDUCER.emit(op);
             }
         });
