@@ -8,6 +8,8 @@ use relm4::tokio::task::JoinHandle;
 use relm4::tokio::time::{Duration, interval};
 use relm4::{ComponentParts, ComponentSender, SimpleComponent, gtk};
 
+use crate::ui::events::send_or_log;
+
 pub struct CountdownBar {
     ttl: u64,
     elapsed: u64, // elapsed time in milliseconds
@@ -166,7 +168,7 @@ impl SimpleComponent for CountdownBar {
                     if self.progress >= 1.0 {
                         self.running.store(false, Ordering::Relaxed);
                         self.stop_timer();
-                        sender.output(Self::Output::Elapsed);
+                        send_or_log(&sender, Self::Output::Elapsed);
                     }
                 }
             }

@@ -1,12 +1,10 @@
 use adw::prelude::*;
+use gtk::glib;
 use relm4::factory::FactoryVecDeque;
 use relm4::gtk;
 use relm4::prelude::*;
 
-use crate::features::notifications::store::ItemLifecycle;
-use crate::features::notifications::store::Notification;
-use crate::features::notifications::store::NotificationOp;
-use crate::features::notifications::store::{State, REDUCER};
+use super::super::store::{ItemLifecycle, Notification, REDUCER, State};
 
 use super::card::{NotificationCard, NotificationCardInit, NotificationCardOutput};
 
@@ -69,12 +67,28 @@ impl SimpleComponent for ToastList {
             .forward(sender.input_sender(), transform_notification_card_outputs);
 
         let model = Self { list };
-        REDUCER.subscribe(sender.input_sender(), |s| {
-            Self::Input::StateChanged(s.get_state().clone())
+
+        // Bridge between tokio (REDUCER) and GTK main thread
+        // Use a flume channel + glib timeout to poll for messages
+        let (bridge_tx, bridge_rx) = flume::unbounded::<State>();
+        let component_sender = sender.input_sender().clone();
+
+        // Poll the bridge channel from the GTK main loop
+        glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+            while let Ok(state) = bridge_rx.try_recv() {
+                let _ = component_sender.send(Self::Input::StateChanged(state));
+            }
+            glib::ControlFlow::Continue
         });
+
+        // Wrap the flume sender in relm4::Sender for REDUCER.subscribe
+        let bridge_sender = relm4::Sender::from(bridge_tx);
+
+        // Subscribe to REDUCER - bridge_sender can be called from any thread
+        REDUCER.subscribe(&bridge_sender, |s| s.get_state().clone());
+
         let notifications_container = model.list.widget();
         let widgets = view_output!();
-
         ComponentParts { model, widgets }
     }
 

@@ -2,6 +2,8 @@ use adw::prelude::*;
 use relm4::gtk;
 use relm4::prelude::*;
 
+use crate::ui::events::send_or_log;
+
 pub struct NotificationCardAction {
     title: String,
     key: String,
@@ -59,7 +61,7 @@ impl FactoryComponent for NotificationCardAction {
                 self.title = title;
             }
             Self::Input::Click => {
-                sender.output(Self::Output::Click(self.key.clone()));
+                send_or_log(&sender, Self::Output::Click(self.key.clone()));
             }
         }
     }

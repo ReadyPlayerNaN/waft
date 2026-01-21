@@ -5,17 +5,15 @@ use relm4::factory::FactoryVecDeque;
 use relm4::gtk;
 use relm4::prelude::*;
 
-use crate::features::notifications::store::ItemLifecycle;
-use crate::features::notifications::store::Notification;
-use crate::features::notifications::store::NotificationOp;
-use crate::features::notifications::store::State;
-use crate::features::notifications::store::REDUCER;
+use crate::ui::events::send_or_log;
 
+use super::super::store::{ItemLifecycle, Notification, REDUCER, State};
 use super::card::{NotificationCard, NotificationCardInit, NotificationCardOutput};
 
 pub struct NotificationCardGroup {
     expanded: bool,
     id: Arc<str>,
+    pub lifecycle: ItemLifecycle,
     rest: FactoryVecDeque<NotificationCard>,
     title: Arc<str>,
     top: FactoryVecDeque<NotificationCard>,
@@ -23,7 +21,7 @@ pub struct NotificationCardGroup {
 
 pub struct NotificationCardGroupInit {
     pub expanded: bool,
-    pub hidden: bool,
+    pub lifecycle: ItemLifecycle,
     pub id: Arc<str>,
     pub title: Arc<str>,
     pub top: Vec<(Notification, ItemLifecycle)>,
@@ -219,6 +217,7 @@ impl FactoryComponent for NotificationCardGroup {
         Self {
             id: value.id,
             expanded: value.expanded,
+            lifecycle: value.lifecycle.clone(),
             title: value.title,
             top: top,
             rest: rest,
@@ -241,20 +240,20 @@ impl FactoryComponent for NotificationCardGroup {
     fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
         match msg {
             Self::Input::ActionClick(notification_id, action) => {
-                sender.output(Self::Output::ActionClick(notification_id, action));
+                send_or_log(&sender, Self::Output::ActionClick(notification_id, action));
             }
             Self::Input::Expand(state) => {
                 self.expanded = state;
             }
             Self::Input::ExpandClick => {
                 if self.expanded {
-                    sender.output(Self::Output::Collapse(self.id.clone()));
+                    send_or_log(&sender, Self::Output::Collapse(self.id.clone()));
                 } else {
-                    sender.output(Self::Output::Expand(self.id.clone()));
+                    send_or_log(&sender, Self::Output::Expand(self.id.clone()));
                 }
             }
             Self::Input::CardClick(notification_id) => {
-                sender.output(Self::Output::CardClick(notification_id));
+                send_or_log(&sender, Self::Output::CardClick(notification_id));
             }
             Self::Input::TimedOut(_notification_id) => { /* noop  */ }
             Self::Input::StateChanged(state) => {
@@ -269,7 +268,7 @@ impl FactoryComponent for NotificationCardGroup {
                     Self::ingest_notification(&mut self.rest, n, l);
                 }
                 if self.rest.is_empty() {
-                    sender.output(Self::Output::Collapse(self.id.clone()));
+                    send_or_log(&sender, Self::Output::Collapse(self.id.clone()));
                 }
             }
         }

@@ -42,7 +42,6 @@ pub struct NotificationsPlugin {
     dnd_toggle_channel: Channel<DoNotDisturbToggleOutput>,
     initialized: bool,
     server_channel: Channel<IngressEvent>,
-    state_cache: Arc<RwLock<store::State>>,
     tick_source: Arc<std::sync::Mutex<Option<glib::SourceId>>>,
     tick_channel: tokio::sync::mpsc::UnboundedSender<()>,
     toast_channel: Channel<ToastWindowOutput>,
@@ -63,13 +62,6 @@ impl NotificationsPlugin {
             dnd_toggle_channel: Channel::new(),
             initialized: false,
             server_channel: Channel::new(),
-            state_cache: Arc::new(RwLock::new(store::State {
-                archive: indexmap![],
-                groups: HashMap::new(),
-                hiding_timestamps: indexmap![],
-                notifications: HashMap::new(),
-                toasts: indexmap![],
-            })),
             tick_source: Arc::new(std::sync::Mutex::new(None)),
             tick_channel: tick_tx,
             toast_channel: Channel::new(),
@@ -112,14 +104,12 @@ impl NotificationsPlugin {
         *tick_source.lock().unwrap() = Some(glib::timeout_add_local_once(
             Duration::from_millis(200),
             move || {
-                println!("Tick");
                 REDUCER.emit(NotificationOp::Tick);
 
                 // Schedule the next tick
                 *tick_source_for_closure.lock().unwrap() = Some(glib::timeout_add_local(
                     Duration::from_millis(200),
                     move || {
-                        println!("Tick");
                         REDUCER.emit(NotificationOp::Tick);
                         glib::ControlFlow::Continue
                     },
@@ -156,14 +146,8 @@ impl Plugin for NotificationsPlugin {
     }
 
     async fn create_elements(&mut self) -> Result<()> {
-        let state_cache = self.state_cache.clone();
-        let (state_tx, mut state_rx) = relm4::channel();
-        REDUCER.subscribe(&state_tx, move |s| {
-            *state_cache.write().unwrap() = s.get_state().clone();
-        });
-
-        relm4::tokio::spawn(async move { while state_rx.recv().await.is_some() {} });
-
+        // let (state_tx, mut state_rx) = relm4::channel();
+        // relm4::tokio::spawn(async move { while state_rx.recv().await.is_some() {} });
         let (debouncer_tx, mut debouncer_rx) = tokio::sync::mpsc::unbounded_channel();
 
         relm4::tokio::spawn(async move {

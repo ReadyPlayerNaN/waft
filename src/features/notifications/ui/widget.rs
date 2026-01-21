@@ -1,15 +1,18 @@
 use relm4::prelude::FactoryVecDeque;
 use std::sync::Arc;
 
+use gtk::glib;
 use gtk::prelude::*;
 use relm4::{ComponentParts, ComponentSender, SimpleComponent, gtk};
 
-use crate::features::notifications::ui::card_group::{
-    NotificationCardGroupInit, NotificationCardGroupInput,
-};
+use crate::ui::events::send_or_log;
 
 use super::super::store::{REDUCER, State};
-use super::card_group::{NotificationCardGroup, NotificationCardGroupOutput};
+
+use super::card_group::{
+    NotificationCardGroup, NotificationCardGroupInit, NotificationCardGroupInput,
+    NotificationCardGroupOutput,
+};
 
 pub struct NotificationsWidget {
     expanded_group: Option<Arc<str>>,
@@ -103,9 +106,24 @@ impl SimpleComponent for NotificationsWidget {
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_notification_group_outputs);
 
-        REDUCER.subscribe(sender.input_sender(), |s| {
-            Self::Input::StateChanged(s.get_state().clone())
+        // Bridge between tokio (REDUCER) and GTK main thread
+        // Use a flume channel + glib timeout to poll for messages
+        let (bridge_tx, bridge_rx) = flume::unbounded::<State>();
+        let component_sender = sender.input_sender().clone();
+
+        // Poll the bridge channel from the GTK main loop
+        glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+            while let Ok(state) = bridge_rx.try_recv() {
+                let _ = component_sender.send(Self::Input::StateChanged(state));
+            }
+            glib::ControlFlow::Continue
         });
+
+        // Wrap the flume sender in relm4::Sender for REDUCER.subscribe
+        let bridge_sender = relm4::Sender::from(bridge_tx);
+
+        // Subscribe to REDUCER - bridge_sender can be called from any thread
+        REDUCER.subscribe(&bridge_sender, |s| s.get_state().clone());
 
         let groups_widget = groups.widget().clone();
         let model = Self {
@@ -132,7 +150,7 @@ impl SimpleComponent for NotificationsWidget {
                                 expanded: false,
                                 id: group.get_id().clone(),
                                 title: group.get_title().clone(),
-                                hidden: lifecycle.is_hidden(),
+                                lifecycle: lifecycle.clone(),
                                 top: gt
                                     .into_iter()
                                     .map(|(notification, lifecycle)| {
@@ -155,12 +173,11 @@ impl SimpleComponent for NotificationsWidget {
             Self::Input::Remove(id) => {}
 
             Self::Input::CardActionClick(id, action) => {
-                // Bubble up to the plugin; do not mutate UI state here (plugin is SoT).
-                let _ = sender.output(Self::Output::ActionClick(id, action));
+                send_or_log(&sender, Self::Output::ActionClick(id, action));
             }
             Self::Input::CardClick(id) => {
                 // Bubble up to the plugin; do not mutate UI state here (plugin is SoT).
-                let _ = sender.output(Self::Output::CardClick(id));
+                send_or_log(&sender, Self::Output::CardClick(id));
             }
             Self::Input::GroupCollapse(group_id) => {
                 if self.expanded_group.as_ref() == Some(&group_id) {

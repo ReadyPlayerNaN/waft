@@ -1,19 +1,22 @@
 use std::sync::Arc;
 
 use adw::prelude::*;
-use log::info;
+use gtk::glib;
 use relm4::factory::FactoryHashMap;
 use relm4::gtk;
 use relm4::gtk::prelude::{BoxExt, ButtonExt, GestureSingleExt, WidgetExt};
 use relm4::prelude::*;
 
 use crate::classnames;
-use crate::features::notifications::store::{ItemLifecycle, NotificationOp, State, REDUCER};
-use crate::features::notifications::types::NotificationIcon;
+use crate::features::notifications::ui::icon::IconInput;
+use crate::ui::events::send_or_log;
 
-use super::card_action::{NotificationCardActionInit, NotificationCardActionOutput};
+use super::super::store::{ItemLifecycle, NotificationOp, REDUCER, State};
+use super::super::types::NotificationIcon;
 
-use super::card_action::NotificationCardAction;
+use super::card_action::{
+    NotificationCardAction, NotificationCardActionInit, NotificationCardActionOutput,
+};
 use super::countdown_bar::{CountdownBar, CountdownBarInit, CountdownBarInput, CountdownBarOutput};
 use super::icon::{Icon, IconInit};
 
@@ -226,9 +229,25 @@ impl FactoryComponent for NotificationCard {
         let actions = FactoryHashMap::builder()
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_action_outputs);
-        REDUCER.subscribe(sender.input_sender(), |s| {
-            Self::Input::StateChanged(s.get_state().clone())
+
+        // Bridge between tokio (REDUCER) and GTK main thread
+        // Use a flume channel + glib timeout to poll for messages
+        let (bridge_tx, bridge_rx) = flume::unbounded::<State>();
+        let component_sender = sender.input_sender().clone();
+
+        // Poll the bridge channel from the GTK main loop
+        glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+            while let Ok(state) = bridge_rx.try_recv() {
+                let _ = component_sender.send(Self::Input::StateChanged(state));
+            }
+            glib::ControlFlow::Continue
         });
+
+        // Wrap the flume sender in relm4::Sender for REDUCER.subscribe
+        let bridge_sender = relm4::Sender::from(bridge_tx);
+
+        // Subscribe to REDUCER - bridge_sender can be called from any thread
+        REDUCER.subscribe(&bridge_sender, |s| s.get_state().clone());
 
         Self {
             actions: actions,
@@ -301,17 +320,17 @@ impl FactoryComponent for NotificationCard {
             }
             Self::Input::Toggled => {}
             NotificationCardInput::ActionClick(action) => {
-                sender.output(Self::Output::ActionClick(self.id, action));
+                send_or_log(&sender, Self::Output::ActionClick(self.id, action));
             }
             NotificationCardInput::CardClick => {
-                sender.output(Self::Output::CardClick(self.id));
+                send_or_log(&sender, Self::Output::CardClick(self.id));
             }
             NotificationCardInput::CloseClick => {
                 // sender.output(Self::Output::Close(self.id));
                 REDUCER.emit(NotificationOp::NotificationDismiss(self.id));
             }
             NotificationCardInput::CountdownElapsed => {
-                sender.output(Self::Output::TimedOut(self.id));
+                send_or_log(&sender, Self::Output::TimedOut(self.id));
             }
             NotificationCardInput::CountdownContinue => match &self.countdown_bar {
                 Some(countdown) => {

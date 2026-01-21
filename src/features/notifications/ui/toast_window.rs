@@ -7,21 +7,29 @@ use super::toast_list::{ToastList, ToastListOutput};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HPos {
+    #[allow(dead_code)]
     Left,
+    #[allow(dead_code)]
     Center,
+    #[allow(dead_code)]
     Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VPos {
+    #[allow(dead_code)]
     Top,
+    #[allow(dead_code)]
     Center,
+    #[allow(dead_code)]
     Bottom,
 }
 
 pub struct ToastWindow {
     /// Root window (stored so we don't rely on sender APIs to access the widget).
     window: gtk::Window,
+    /// Toast list controller - must be stored to keep the component alive.
+    #[allow(dead_code)]
     toast_list: Controller<ToastList>,
 }
 
@@ -106,11 +114,10 @@ impl SimpleComponent for ToastWindow {
 
     view! {
         root = gtk::Window {
-            set_title: Some("sacrebleui toast window"),
+            set_title: None,
             set_decorated: false,
             set_hide_on_close: true,
             set_modal: false,
-
             set_default_width: 480,
             set_resizable: false,
         }

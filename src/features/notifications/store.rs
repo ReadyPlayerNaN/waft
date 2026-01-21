@@ -625,8 +625,9 @@ impl Reducer {
                 self.0.hiding_timestamps.shift_remove(&id);
                 true
             }
-            NotificationOp::Batch(ops) => {
+            NotificationOp::Batch(_ops) => {
                 // Unsupported
+                println!("Unsupported batch operation");
                 false
             }
         }
@@ -647,7 +648,7 @@ impl AsyncReducible for Reducer {
     }
 
     async fn reduce(&mut self, input: Self::Input) -> bool {
-        match input {
+        let res = match input {
             NotificationOp::Batch(ops) => {
                 // Process all operations in the batch
                 for op in ops {
@@ -659,7 +660,9 @@ impl AsyncReducible for Reducer {
                 // Process single operation
                 self.process_single_op(op).await
             }
-        }
+        };
+        println!("Reduced operation {:?}", res);
+        res
     }
 }
 
