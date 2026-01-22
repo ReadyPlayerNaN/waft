@@ -1,7 +1,8 @@
-use relm4::prelude::FactoryVecDeque;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use gtk::prelude::*;
+use relm4::prelude::FactoryVecDeque;
 use relm4::{ComponentParts, ComponentSender, SimpleComponent, gtk};
 
 use crate::ui::events::send_or_log;
@@ -16,7 +17,7 @@ use super::card_group::{
 pub struct NotificationsWidget {
     expanded_group: Option<Arc<str>>,
     groups: FactoryVecDeque<NotificationCardGroup>,
-    groups_map: Vec<Arc<str>>,
+    groups_index: HashMap<Arc<str>, usize>,
 }
 
 pub struct NotificationsWidgetInit {
@@ -59,32 +60,10 @@ pub enum NotificationsWidgetOutput {
 }
 
 impl NotificationsWidget {
-    fn get_index(target: &FactoryVecDeque<NotificationCardGroup>, id: &Arc<str>) -> Option<usize> {
-        for (i, el) in target.iter().enumerate() {
-            if &el.get_id() == id {
-                return Some(i);
-            }
-        }
-        None
-    }
-
-    fn clear_unknown_groups(
-        groups: &mut FactoryVecDeque<NotificationCardGroup>,
-        groups_map: &mut Vec<Arc<str>>,
-        known: &Vec<(&Group, &ItemLifecycle)>,
-    ) {
-        let known_ids: Vec<&Arc<str>> = known.iter().map(|(g, _)| g.get_id()).collect();
-        let to_remove: Vec<Arc<str>> = groups_map
-            .iter()
-            .filter(|id| !known_ids.contains(id))
-            .cloned()
-            .collect();
-
-        for id in to_remove {
-            if let Some(pos) = groups_map.iter().position(|x| x == &id) {
-                groups_map.remove(pos);
-                groups.guard().remove(pos);
-            }
+    fn rebuild_index(&mut self) {
+        self.groups_index.clear();
+        for (i, el) in self.groups.iter().enumerate() {
+            self.groups_index.insert(el.get_id(), i);
         }
     }
 }
@@ -133,7 +112,7 @@ impl SimpleComponent for NotificationsWidget {
         let model = Self {
             expanded_group: init.expanded_group,
             groups,
-            groups_map: vec![],
+            groups_index: HashMap::new(),
         };
         let widgets = view_output!();
         ComponentParts { model, widgets }
@@ -143,55 +122,83 @@ impl SimpleComponent for NotificationsWidget {
         match msg {
             Self::Input::StateChanged(state) => {
                 let groups = state.get_groups();
+                let known_ids: Vec<Arc<str>> =
+                    groups.iter().map(|(g, _)| g.get_id().clone()).collect();
 
-                // Remove groups that no longer exist in state
-                Self::clear_unknown_groups(&mut self.groups, &mut self.groups_map, &groups);
+                // Find groups to remove
+                let to_remove: Vec<Arc<str>> = self
+                    .groups_index
+                    .keys()
+                    .filter(|id| !known_ids.contains(id))
+                    .cloned()
+                    .collect();
 
-                for (group, lifecycle) in &groups {
-                    let gt = state.get_group_top(&group.get_id());
-                    let gb = state.get_group_bottom(&group.get_id());
+                // Find groups to add
+                let to_add: Vec<(&Group, &ItemLifecycle)> = groups
+                    .iter()
+                    .filter(|(g, _)| !self.groups_index.contains_key(g.get_id()))
+                    .map(|(g, l)| (*g, *l))
+                    .collect();
 
-                    let existing = self.groups_map.iter().position(|id| id == group.get_id());
-                    match existing {
-                        Some(_) => {
-                            // Send update to existing group
-                            if let Some(index) = Self::get_index(&self.groups, group.get_id()) {
-                                self.groups.send(
-                                    index,
-                                    NotificationCardGroupInput::UpdateGroup {
-                                        top: gt
-                                            .into_iter()
-                                            .map(|(n, l)| (n.clone(), l.clone()))
-                                            .collect(),
-                                        rest: gb
-                                            .into_iter()
-                                            .map(|(n, l)| (n.clone(), l.clone()))
-                                            .collect(),
-                                    },
-                                );
-                            }
-                        }
-                        None => {
-                            self.groups.guard().push_back(NotificationCardGroupInit {
-                                expanded: false,
-                                id: group.get_id().clone(),
-                                title: group.get_title().clone(),
-                                lifecycle: (*lifecycle).clone(),
+                // Single guard scope for all mutations
+                {
+                    let mut guard = self.groups.guard();
+
+                    // Remove groups (reverse order)
+                    let mut remove_indices: Vec<(Arc<str>, usize)> = to_remove
+                        .iter()
+                        .filter_map(|id| self.groups_index.get(id).map(|idx| (id.clone(), *idx)))
+                        .collect();
+                    remove_indices.sort_by(|a, b| b.1.cmp(&a.1));
+
+                    for (_id, index) in &remove_indices {
+                        guard.remove(*index);
+                    }
+
+                    // Add new groups
+                    for (group, lifecycle) in &to_add {
+                        let gt = state.get_group_top(&group.get_id());
+                        let gb = state.get_group_bottom(&group.get_id());
+
+                        guard.push_back(NotificationCardGroupInit {
+                            expanded: false,
+                            id: group.get_id().clone(),
+                            title: group.get_title().clone(),
+                            lifecycle: (*lifecycle).clone(),
+                            top: gt
+                                .into_iter()
+                                .map(|(n, l)| (n.clone(), l.clone()))
+                                .collect(),
+                            rest: gb
+                                .into_iter()
+                                .map(|(n, l)| (n.clone(), l.clone()))
+                                .collect(),
+                        });
+                    }
+                }
+
+                // Rebuild index after mutations
+                self.rebuild_index();
+
+                // Send updates to existing groups
+                for (group, _lifecycle) in &groups {
+                    if let Some(&index) = self.groups_index.get(group.get_id()) {
+                        let gt = state.get_group_top(&group.get_id());
+                        let gb = state.get_group_bottom(&group.get_id());
+
+                        self.groups.send(
+                            index,
+                            NotificationCardGroupInput::UpdateGroup {
                                 top: gt
                                     .into_iter()
-                                    .map(|(notification, lifecycle)| {
-                                        (notification.clone(), lifecycle.clone())
-                                    })
+                                    .map(|(n, l)| (n.clone(), l.clone()))
                                     .collect(),
                                 rest: gb
                                     .into_iter()
-                                    .map(|(notification, lifecycle)| {
-                                        (notification.clone(), lifecycle.clone())
-                                    })
+                                    .map(|(n, l)| (n.clone(), l.clone()))
                                     .collect(),
-                            });
-                            self.groups_map.push(group.get_id().clone());
-                        }
+                            },
+                        );
                     }
                 }
             }
@@ -207,7 +214,7 @@ impl SimpleComponent for NotificationsWidget {
             }
             Self::Input::GroupCollapse(group_id) => {
                 if self.expanded_group.as_ref() == Some(&group_id) {
-                    if let Some(index) = Self::get_index(&self.groups, &group_id) {
+                    if let Some(&index) = self.groups_index.get(&group_id) {
                         self.groups
                             .send(index, NotificationCardGroupInput::Expand(false));
                     }
@@ -217,14 +224,13 @@ impl SimpleComponent for NotificationsWidget {
             Self::Input::GroupExpand(group_id) => {
                 if let Some(expanded_group) = &self.expanded_group {
                     if expanded_group != &group_id {
-                        if let Some(index) = Self::get_index(&self.groups, expanded_group) {
+                        if let Some(&index) = self.groups_index.get(expanded_group) {
                             self.groups
                                 .send(index, NotificationCardGroupInput::Expand(false));
                         }
                     }
                 }
-                if let Some(index) = Self::get_index(&self.groups, &group_id) {
-                    println!("INDEX: {}", index);
+                if let Some(&index) = self.groups_index.get(&group_id) {
                     self.groups
                         .send(index, NotificationCardGroupInput::Expand(true));
                 }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use adw::prelude::*;
 use relm4::factory::FactoryVecDeque;
 use relm4::gtk;
@@ -11,6 +13,7 @@ use super::card::{
 
 pub struct ToastList {
     list: FactoryVecDeque<NotificationCard>,
+    index_map: HashMap<u64, usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +70,10 @@ impl SimpleComponent for ToastList {
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_notification_card_outputs);
 
-        let model = Self { list };
+        let model = Self {
+            list,
+            index_map: HashMap::new(),
+        };
 
         REDUCER.subscribe(sender.input_sender(), |s| {
             Self::Input::StateChanged(s.get_state().clone())
@@ -90,34 +96,79 @@ impl SimpleComponent for ToastList {
                 let _ = sender.output(Self::Output::CardClick(notification_id));
             }
             Self::Input::StateChanged(state) => {
-                println!(
-                    "ToastList received state change {:?}",
-                    state
-                        .get_toasts()
-                        .clone()
-                        .into_iter()
-                        .map(|(t, s)| (t.id, s))
-                        .collect::<Vec<_>>()
-                );
                 let toasts: Vec<(Notification, ItemLifecycle)> = state
                     .get_toasts()
                     .into_iter()
-                    .filter(|(_, l)| match l {
-                        ItemLifecycle::Dismissed
-                        | ItemLifecycle::Hidden
-                        | ItemLifecycle::Retracted => false,
-                        _ => true,
-                    })
+                    .filter(|(_, l)| !matches!(
+                        l,
+                        ItemLifecycle::Dismissed | ItemLifecycle::Hidden | ItemLifecycle::Retracted
+                    ))
                     .map(|(n, l)| (n.clone(), l.clone()))
                     .collect();
 
-                let toasts_refs: Vec<(&Notification, &ItemLifecycle)> =
-                    toasts.iter().map(|(n, l)| (n, l)).collect();
+                // Collect IDs of toasts that should exist
+                let known_ids: Vec<u64> = toasts.iter().map(|(n, _)| n.id).collect();
 
-                Self::clear_unknown(&mut self.list, &toasts_refs);
+                // Find toasts to remove (exist in UI but not in state)
+                let to_remove: Vec<u64> = self
+                    .index_map
+                    .keys()
+                    .filter(|id| !known_ids.contains(id))
+                    .copied()
+                    .collect();
+
+                // Find toasts to add (exist in state but not in UI)
+                let to_add: Vec<&(Notification, ItemLifecycle)> = toasts
+                    .iter()
+                    .filter(|(n, _)| !self.index_map.contains_key(&n.id))
+                    .collect();
+
+                // Single guard scope for all mutations
+                {
+                    let mut guard = self.list.guard();
+
+                    // Remove items not in state (reverse order to maintain indices)
+                    let mut remove_indices: Vec<(u64, usize)> = to_remove
+                        .iter()
+                        .filter_map(|id| self.index_map.get(id).map(|idx| (*id, *idx)))
+                        .collect();
+                    remove_indices.sort_by(|a, b| b.1.cmp(&a.1)); // Sort descending by index
+
+                    for (_id, index) in &remove_indices {
+                        guard.remove(*index);
+                    }
+
+                    // Add new items
+                    for (notif, phase) in &to_add {
+                        guard.push_front(NotificationCardInit {
+                            description: notif.description.clone(),
+                            group_id: None,
+                            hidden: true,
+                            lifecycle: Some(phase.clone()),
+                            id: notif.id,
+                            ttl: notif.ttl,
+                            title: notif.title.clone(),
+                        });
+                    }
+                }
+
+                // Rebuild index after all mutations
+                self.rebuild_index();
+
+                // Send updates and visibility changes (no guard needed for send)
                 for (n, l) in &toasts {
-                    Self::ingest_notification(&mut self.list, n, l);
-                    Self::send_update_to_card(&mut self.list, n, l);
+                    if let Some(&index) = self.index_map.get(&n.id) {
+                        self.list.send(
+                            index,
+                            NotificationCardInput::UpdateData {
+                                title: n.title.clone(),
+                                description: n.description.clone(),
+                                lifecycle: Some(l.clone()),
+                            },
+                        );
+                        self.list
+                            .send(index, NotificationCardInput::VisibilityChange(!l.is_hidden()));
+                    }
                 }
             }
         }
@@ -125,90 +176,12 @@ impl SimpleComponent for ToastList {
 }
 
 impl ToastList {
-    fn get_index(target: &FactoryVecDeque<NotificationCard>, id: u64) -> Option<usize> {
-        for (i, el) in target.iter().enumerate() {
-            if el.get_id() == id {
-                return Some(i);
-            }
-        }
-        None
-    }
-
-    fn toggle_by_id(target: &mut FactoryVecDeque<NotificationCard>, id: u64, visible: bool) {
-        if let Some(index) = Self::get_index(target, id) {
-            target.send(index, NotificationCardInput::VisibilityChange(visible));
-        }
-    }
-
-    fn ingest_notification(
-        target: &mut FactoryVecDeque<NotificationCard>,
-        notif: &Notification,
-        phase: &ItemLifecycle,
-    ) {
-        match Self::get_index(target, notif.id) {
-            Some(_index) => {}
-            None => {
-                // Use push_front so promoted toasts appear at the top
-                target.guard().push_front(NotificationCardInit {
-                    description: notif.description.clone(),
-                    group_id: None,
-                    hidden: true,
-                    lifecycle: Some(phase.clone()),
-                    id: notif.id.clone(),
-                    ttl: notif.ttl,
-                    title: notif.title.clone(),
-                });
-                Self::toggle_by_id(target, notif.id.clone(), !phase.is_hidden());
-            }
-        }
-    }
-
-    fn get_unknown_ids(
-        target: &mut FactoryVecDeque<NotificationCard>,
-        known_ids: Vec<u64>,
-    ) -> Vec<u64> {
-        let mut unknown = vec![];
-        for el in target.iter() {
-            let id = el.get_id();
-            if !known_ids.contains(&id) {
-                unknown.push(id);
-            }
-        }
-        return unknown;
-    }
-
-    fn remove_by_id(target: &mut FactoryVecDeque<NotificationCard>, id: u64) {
-        let index = Self::get_index(target, id);
-        if let Some(index) = index {
-            target.guard().remove(index);
-        }
-    }
-
-    fn clear_unknown(
-        target: &mut FactoryVecDeque<NotificationCard>,
-        items: &Vec<(&Notification, &ItemLifecycle)>,
-    ) {
-        let known_ids = items.iter().map(|(n, _)| n.id).collect::<Vec<u64>>();
-        let unknown_ids = Self::get_unknown_ids(target, known_ids);
-        for id in unknown_ids.into_iter() {
-            Self::remove_by_id(target, id);
-        }
-    }
-
-    fn send_update_to_card(
-        target: &mut FactoryVecDeque<NotificationCard>,
-        notif: &Notification,
-        lifecycle: &ItemLifecycle,
-    ) {
-        if let Some(index) = Self::get_index(target, notif.id) {
-            target.send(
-                index,
-                NotificationCardInput::UpdateData {
-                    title: notif.title.clone(),
-                    description: notif.description.clone(),
-                    lifecycle: Some(lifecycle.clone()),
-                },
-            );
+    /// Rebuild the index map from the current factory contents.
+    /// Call this after any batch of mutations to the factory.
+    fn rebuild_index(&mut self) {
+        self.index_map.clear();
+        for (i, el) in self.list.iter().enumerate() {
+            self.index_map.insert(el.get_id(), i);
         }
     }
 }

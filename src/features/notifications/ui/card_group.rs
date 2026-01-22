@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use adw::prelude::*;
@@ -15,8 +16,10 @@ pub struct NotificationCardGroup {
     id: Arc<str>,
     pub lifecycle: ItemLifecycle,
     rest: FactoryVecDeque<NotificationCard>,
+    rest_index: HashMap<u64, usize>,
     title: Arc<str>,
     top: FactoryVecDeque<NotificationCard>,
+    top_index: HashMap<u64, usize>,
 }
 
 pub struct NotificationCardGroupInit {
@@ -64,82 +67,82 @@ impl NotificationCardGroup {
         self.id.clone()
     }
 
-    fn get_index(target: &FactoryVecDeque<NotificationCard>, id: u64) -> Option<usize> {
+    fn rebuild_index(
+        target: &FactoryVecDeque<NotificationCard>,
+        index_map: &mut HashMap<u64, usize>,
+    ) {
+        index_map.clear();
         for (i, el) in target.iter().enumerate() {
-            if el.get_id() == id {
-                return Some(i);
-            }
+            index_map.insert(el.get_id(), i);
         }
-        None
     }
 
-    fn ingest_notification(
+    /// Process updates for a single list (top or rest) with batched guard operations
+    fn process_list_update(
         target: &mut FactoryVecDeque<NotificationCard>,
-        notif: &Notification,
-        phase: &ItemLifecycle,
+        index_map: &mut HashMap<u64, usize>,
+        items: &[(Notification, ItemLifecycle)],
+        group_id: &Arc<str>,
     ) {
-        match Self::get_index(target, notif.id) {
-            Some(_index) => {}
-            None => {
-                target.guard().push_back(NotificationCardInit {
+        let known_ids: Vec<u64> = items.iter().map(|(n, _)| n.id).collect();
+
+        // Find items to remove
+        let to_remove: Vec<u64> = index_map
+            .keys()
+            .filter(|id| !known_ids.contains(id))
+            .copied()
+            .collect();
+
+        // Find items to add
+        let to_add: Vec<&(Notification, ItemLifecycle)> = items
+            .iter()
+            .filter(|(n, _)| !index_map.contains_key(&n.id))
+            .collect();
+
+        // Single guard scope for all mutations
+        {
+            let mut guard = target.guard();
+
+            // Remove items (reverse order to maintain indices)
+            let mut remove_indices: Vec<(u64, usize)> = to_remove
+                .iter()
+                .filter_map(|id| index_map.get(id).map(|idx| (*id, *idx)))
+                .collect();
+            remove_indices.sort_by(|a, b| b.1.cmp(&a.1));
+
+            for (_id, index) in &remove_indices {
+                guard.remove(*index);
+            }
+
+            // Add new items
+            for (notif, phase) in &to_add {
+                guard.push_back(NotificationCardInit {
                     description: notif.description.clone(),
-                    group_id: Some(notif.app_ident()),
+                    group_id: Some(group_id.clone()),
                     hidden: phase.is_hidden(),
                     lifecycle: Some(phase.clone()),
-                    id: notif.id.clone(),
+                    id: notif.id,
                     ttl: notif.ttl,
                     title: notif.title.clone(),
                 });
             }
         }
-    }
 
-    fn get_unknown_ids(
-        target: &mut FactoryVecDeque<NotificationCard>,
-        known_ids: Vec<u64>,
-    ) -> Vec<u64> {
-        let mut unknown = vec![];
-        for el in target.iter() {
-            let id = el.get_id();
-            if !known_ids.contains(&id) {
-                unknown.push(id);
+        // Rebuild index after mutations
+        Self::rebuild_index(target, index_map);
+
+        // Send updates to existing cards
+        for (n, l) in items {
+            if let Some(&index) = index_map.get(&n.id) {
+                target.send(
+                    index,
+                    NotificationCardInput::UpdateData {
+                        title: n.title.clone(),
+                        description: n.description.clone(),
+                        lifecycle: Some(l.clone()),
+                    },
+                );
             }
-        }
-        return unknown;
-    }
-
-    fn remove_by_id(target: &mut FactoryVecDeque<NotificationCard>, id: u64) {
-        let index = Self::get_index(target, id);
-        if let Some(index) = index {
-            target.guard().remove(index);
-        }
-    }
-
-    fn clear_unknown(
-        target: &mut FactoryVecDeque<NotificationCard>,
-        items: &Vec<(&Notification, &ItemLifecycle)>,
-    ) {
-        let known_ids = items.iter().map(|(n, _)| n.id).collect::<Vec<u64>>();
-        let unknown_ids = Self::get_unknown_ids(target, known_ids);
-        for id in unknown_ids.into_iter() {
-            Self::remove_by_id(target, id);
-        }
-    }
-
-    fn send_update_to_card(
-        target: &mut FactoryVecDeque<NotificationCard>,
-        notif: &Notification,
-        lifecycle: &ItemLifecycle,
-    ) {
-        if let Some(index) = Self::get_index(target, notif.id) {
-            target.send(
-                index,
-                NotificationCardInput::UpdateData {
-                    title: notif.title.clone(),
-                    description: notif.description.clone(),
-                    lifecycle: Some(lifecycle.clone()),
-                },
-            );
         }
     }
 }
@@ -224,19 +227,51 @@ impl FactoryComponent for NotificationCardGroup {
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_notification_card_outputs);
 
-        for (group, phase) in value.top.into_iter() {
-            Self::ingest_notification(&mut top, &group, &phase);
+        let mut top_index = HashMap::new();
+        let mut rest_index = HashMap::new();
+
+        // Initial population with batched guard
+        {
+            let mut guard = top.guard();
+            for (i, (notif, phase)) in value.top.iter().enumerate() {
+                guard.push_back(NotificationCardInit {
+                    description: notif.description.clone(),
+                    group_id: Some(value.id.clone()),
+                    hidden: phase.is_hidden(),
+                    lifecycle: Some(phase.clone()),
+                    id: notif.id,
+                    ttl: notif.ttl,
+                    title: notif.title.clone(),
+                });
+                top_index.insert(notif.id, i);
+            }
         }
-        for (group, phase) in value.rest.into_iter() {
-            Self::ingest_notification(&mut rest, &group, &phase);
+
+        {
+            let mut guard = rest.guard();
+            for (i, (notif, phase)) in value.rest.iter().enumerate() {
+                guard.push_back(NotificationCardInit {
+                    description: notif.description.clone(),
+                    group_id: Some(value.id.clone()),
+                    hidden: phase.is_hidden(),
+                    lifecycle: Some(phase.clone()),
+                    id: notif.id,
+                    ttl: notif.ttl,
+                    title: notif.title.clone(),
+                });
+                rest_index.insert(notif.id, i);
+            }
         }
+
         Self {
             id: value.id,
             expanded: value.expanded,
             lifecycle: value.lifecycle.clone(),
             title: value.title,
-            top: top,
-            rest: rest,
+            top,
+            top_index,
+            rest,
+            rest_index,
         }
     }
 
@@ -273,22 +308,8 @@ impl FactoryComponent for NotificationCardGroup {
             }
             Self::Input::TimedOut(_notification_id) => { /* noop  */ }
             Self::Input::UpdateGroup { top, rest } => {
-                let top_refs: Vec<(&Notification, &ItemLifecycle)> =
-                    top.iter().map(|(n, l)| (n, l)).collect();
-                let rest_refs: Vec<(&Notification, &ItemLifecycle)> =
-                    rest.iter().map(|(n, l)| (n, l)).collect();
-
-                Self::clear_unknown(&mut self.top, &top_refs);
-                for (n, l) in &top {
-                    Self::ingest_notification(&mut self.top, n, l);
-                    Self::send_update_to_card(&mut self.top, n, l);
-                }
-
-                Self::clear_unknown(&mut self.rest, &rest_refs);
-                for (n, l) in &rest {
-                    Self::ingest_notification(&mut self.rest, n, l);
-                    Self::send_update_to_card(&mut self.rest, n, l);
-                }
+                Self::process_list_update(&mut self.top, &mut self.top_index, &top, &self.id);
+                Self::process_list_update(&mut self.rest, &mut self.rest_index, &rest, &self.id);
 
                 if self.rest.is_empty() {
                     send_or_log(&sender, Self::Output::Collapse(self.id.clone()));

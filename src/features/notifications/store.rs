@@ -496,31 +496,92 @@ fn reconcile_group_state_on_ingress(
 }
 
 fn reconcile_toast_state_on_ingress(state: &mut State, notif_id: u64) {
-    if state.toasts.len() == 0 {
+    reconcile_toast_state_on_ingress_impl(state, notif_id, true);
+}
+
+fn reconcile_toast_state_on_ingress_no_sort(state: &mut State, notif_id: u64) {
+    reconcile_toast_state_on_ingress_impl(state, notif_id, false);
+}
+
+fn reconcile_toast_state_on_ingress_impl(state: &mut State, notif_id: u64, do_sort: bool) {
+    if state.toasts.is_empty() {
         // First toast starts with Appearing animation
         state
             .toasts
-            .insert(notif_id.clone(), ItemLifecycle::Appearing);
+            .insert(notif_id, ItemLifecycle::Appearing);
         state
             .appearing_timestamps
             .insert(notif_id, SystemTime::now());
     } else {
         state
             .toasts
-            .insert(notif_id.clone(), ItemLifecycle::Pending);
-        sort_notif_list(&state.notifications, &mut state.toasts);
-        cut_notif_ids(
-            &mut state.toasts,
-            &mut state.appearing_timestamps,
-            &mut state.hiding_timestamps,
-            5,
-        );
+            .insert(notif_id, ItemLifecycle::Pending);
+        if do_sort {
+            sort_notif_list(&state.notifications, &mut state.toasts);
+            cut_notif_ids(
+                &mut state.toasts,
+                &mut state.appearing_timestamps,
+                &mut state.hiding_timestamps,
+                5,
+            );
+        }
     }
 }
 
 impl Reducer {
     pub fn get_state(&self) -> &State {
         &self.0
+    }
+
+    /// Consolidate toast list after batch operations.
+    /// Performs sort and cut operations once instead of per-operation.
+    fn reconcile_toasts(&mut self) {
+        sort_notif_list(&self.0.notifications, &mut self.0.toasts);
+        cut_notif_ids(
+            &mut self.0.toasts,
+            &mut self.0.appearing_timestamps,
+            &mut self.0.hiding_timestamps,
+            5,
+        );
+    }
+
+    /// Process a batch of ingress operations without intermediate sort/cut.
+    /// More efficient than processing each ingress individually.
+    fn process_ingress_batch(&mut self, ops: Vec<NotificationOp>) -> bool {
+        let mut changed = false;
+
+        for op in ops {
+            if let NotificationOp::Ingress(n) = op {
+                let notification = Notification {
+                    actions: derive_actions(&n),
+                    app: derive_app_ident(&n),
+                    created_at: n.created_at,
+                    description: n.description.clone(),
+                    icon_hints: derive_icon_hints(&n),
+                    id: n.id,
+                    replaces_id: n.replaces_id,
+                    title: n.title.clone(),
+                    ttl: n.ttl,
+                    toast_ttl: derive_toast_ttl(&n),
+                    urgency: n.hints.urgency,
+                };
+                let notif_id = notification.id;
+                let group_id = notification.app_ident();
+                let app_title = notification.app_title();
+                self.0.notifications.insert(notif_id, notification);
+                reconcile_group_state_on_ingress(&mut self.0, notif_id, group_id, app_title);
+                // Use no-sort variant for batch processing
+                reconcile_toast_state_on_ingress_no_sort(&mut self.0, notif_id);
+                changed = true;
+            }
+        }
+
+        // Single reconciliation at the end
+        if changed {
+            self.reconcile_toasts();
+        }
+
+        changed
     }
 
     fn process_tick(&mut self) -> Vec<NotificationOp> {
@@ -762,7 +823,6 @@ impl Reducer {
                 true
             }
             NotificationOp::ToastHidden(id) => {
-                println!("HIDE TOAST {:?}", id);
                 self.0.toasts.insert(id, ItemLifecycle::Hidden);
                 self.0.hiding_timestamps.shift_remove(&id);
 
@@ -776,10 +836,15 @@ impl Reducer {
                 );
                 true
             }
-            NotificationOp::Batch(_ops) => {
-                // Unsupported
-                println!("Unsupported batch operation");
-                false
+            NotificationOp::Batch(ops) => {
+                // Use optimized batch processing for ingress operations
+                let all_ingress = ops.iter().all(|op| matches!(op, NotificationOp::Ingress(_)));
+                if all_ingress {
+                    self.process_ingress_batch(ops)
+                } else {
+                    // Mixed batch - should not happen, but handle gracefully
+                    false
+                }
             }
         }
     }
@@ -802,20 +867,27 @@ impl AsyncReducible for Reducer {
     }
 
     async fn reduce(&mut self, input: Self::Input) -> bool {
-        let res = match input {
+        match input {
             NotificationOp::Batch(ops) => {
-                // Process all operations in the batch
-                for op in ops {
-                    self.process_single_op(op).await;
+                // Check if all ops are Ingress - use optimized batch processing
+                let all_ingress = ops.iter().all(|op| matches!(op, NotificationOp::Ingress(_)));
+                if all_ingress {
+                    // Use optimized batch processing with single sort/cut at end
+                    self.process_ingress_batch(ops)
+                } else {
+                    // Mixed batch - process individually
+                    let mut changed = false;
+                    for op in ops {
+                        changed |= self.process_single_op(op).await;
+                    }
+                    changed
                 }
-                true
             }
             op => {
                 // Process single operation
                 self.process_single_op(op).await
             }
-        };
-        res
+        }
     }
 }
 
