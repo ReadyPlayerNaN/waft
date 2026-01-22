@@ -99,7 +99,7 @@ impl SimpleComponent for ToastList {
                         .map(|(t, s)| (t.id, s))
                         .collect::<Vec<_>>()
                 );
-                let toasts = state
+                let toasts: Vec<(Notification, ItemLifecycle)> = state
                     .get_toasts()
                     .into_iter()
                     .filter(|(_, l)| match l {
@@ -108,19 +108,16 @@ impl SimpleComponent for ToastList {
                         | ItemLifecycle::Retracted => false,
                         _ => true,
                     })
+                    .map(|(n, l)| (n.clone(), l.clone()))
                     .collect();
 
-                Self::clear_unknown(&mut self.list, &toasts);
-                // log::info!(
-                //     "ToastList received state change {:?}",
-                //     toasts
-                //         .clone()
-                //         .into_iter()
-                //         .map(|(t, s)| (t.id, s))
-                //         .collect::<Vec<_>>()
-                // );
-                for (n, l) in toasts {
-                    Self::ingest_notification(&mut self.list, &n, &l);
+                let toasts_refs: Vec<(&Notification, &ItemLifecycle)> =
+                    toasts.iter().map(|(n, l)| (n, l)).collect();
+
+                Self::clear_unknown(&mut self.list, &toasts_refs);
+                for (n, l) in &toasts {
+                    Self::ingest_notification(&mut self.list, n, l);
+                    Self::send_update_to_card(&mut self.list, n, l);
                 }
             }
         }
@@ -195,6 +192,23 @@ impl ToastList {
         let unknown_ids = Self::get_unknown_ids(target, known_ids);
         for id in unknown_ids.into_iter() {
             Self::remove_by_id(target, id);
+        }
+    }
+
+    fn send_update_to_card(
+        target: &mut FactoryVecDeque<NotificationCard>,
+        notif: &Notification,
+        lifecycle: &ItemLifecycle,
+    ) {
+        if let Some(index) = Self::get_index(target, notif.id) {
+            target.send(
+                index,
+                NotificationCardInput::UpdateData {
+                    title: notif.title.clone(),
+                    description: notif.description.clone(),
+                    lifecycle: Some(lifecycle.clone()),
+                },
+            );
         }
     }
 }

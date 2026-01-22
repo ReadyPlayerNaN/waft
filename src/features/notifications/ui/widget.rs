@@ -6,7 +6,7 @@ use relm4::{ComponentParts, ComponentSender, SimpleComponent, gtk};
 
 use crate::ui::events::send_or_log;
 
-use super::super::store::{REDUCER, State};
+use super::super::store::{Group, ItemLifecycle, REDUCER, State};
 
 use super::card_group::{
     NotificationCardGroup, NotificationCardGroupInit, NotificationCardGroupInput,
@@ -67,6 +67,26 @@ impl NotificationsWidget {
         }
         None
     }
+
+    fn clear_unknown_groups(
+        groups: &mut FactoryVecDeque<NotificationCardGroup>,
+        groups_map: &mut Vec<Arc<str>>,
+        known: &Vec<(&Group, &ItemLifecycle)>,
+    ) {
+        let known_ids: Vec<&Arc<str>> = known.iter().map(|(g, _)| g.get_id()).collect();
+        let to_remove: Vec<Arc<str>> = groups_map
+            .iter()
+            .filter(|id| !known_ids.contains(id))
+            .cloned()
+            .collect();
+
+        for id in to_remove {
+            if let Some(pos) = groups_map.iter().position(|x| x == &id) {
+                groups_map.remove(pos);
+                groups.guard().remove(pos);
+            }
+        }
+    }
 }
 
 #[relm4::component(pub)]
@@ -123,18 +143,40 @@ impl SimpleComponent for NotificationsWidget {
         match msg {
             Self::Input::StateChanged(state) => {
                 let groups = state.get_groups();
-                for (group, lifecycle) in groups {
+
+                // Remove groups that no longer exist in state
+                Self::clear_unknown_groups(&mut self.groups, &mut self.groups_map, &groups);
+
+                for (group, lifecycle) in &groups {
+                    let gt = state.get_group_top(&group.get_id());
+                    let gb = state.get_group_bottom(&group.get_id());
+
                     let existing = self.groups_map.iter().position(|id| id == group.get_id());
                     match existing {
-                        Some(_) => {}
+                        Some(_) => {
+                            // Send update to existing group
+                            if let Some(index) = Self::get_index(&self.groups, group.get_id()) {
+                                self.groups.send(
+                                    index,
+                                    NotificationCardGroupInput::UpdateGroup {
+                                        top: gt
+                                            .into_iter()
+                                            .map(|(n, l)| (n.clone(), l.clone()))
+                                            .collect(),
+                                        rest: gb
+                                            .into_iter()
+                                            .map(|(n, l)| (n.clone(), l.clone()))
+                                            .collect(),
+                                    },
+                                );
+                            }
+                        }
                         None => {
-                            let gt = state.get_group_top(&group.get_id());
-                            let gb = state.get_group_bottom(&group.get_id());
                             self.groups.guard().push_back(NotificationCardGroupInit {
                                 expanded: false,
                                 id: group.get_id().clone(),
                                 title: group.get_title().clone(),
-                                lifecycle: lifecycle.clone(),
+                                lifecycle: (*lifecycle).clone(),
                                 top: gt
                                     .into_iter()
                                     .map(|(notification, lifecycle)| {

@@ -10,7 +10,7 @@ use crate::classnames;
 use crate::features::notifications::ui::icon::IconInput;
 use crate::ui::events::send_or_log;
 
-use super::super::store::{ItemLifecycle, NotificationOp, REDUCER, State};
+use super::super::store::{ItemLifecycle, NotificationOp, REDUCER};
 use super::super::types::NotificationIcon;
 
 use super::card_action::{
@@ -52,7 +52,11 @@ pub enum NotificationCardInput {
     CountdownPause,
     CountdownStart,
     CountdownStop,
-    StateChanged(State),
+    UpdateData {
+        title: Arc<str>,
+        description: Arc<str>,
+        lifecycle: Option<ItemLifecycle>,
+    },
     VisibilityChange(bool),
 }
 
@@ -229,10 +233,6 @@ impl FactoryComponent for NotificationCard {
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_action_outputs);
 
-        REDUCER.subscribe(sender.input_sender(), |s| {
-            Self::Input::StateChanged(s.get_state().clone())
-        });
-
         Self {
             actions: actions,
             countdown_bar,
@@ -288,19 +288,15 @@ impl FactoryComponent for NotificationCard {
 
     fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
         match msg {
-            Self::Input::StateChanged(state) => {
-                if let Some(n) = state.get_notification(&self.id) {
-                    self.title = n.title.clone();
-                    self.description = n.description.clone();
-                    self.lifecycle = state
-                        .get_notification_lifecycle(&self.group_id, &self.id)
-                        .map(|l| l.clone());
-                    self.hidden = self
-                        .lifecycle
-                        .as_ref()
-                        .map(|l| l.is_hidden())
-                        .unwrap_or(true);
-                }
+            Self::Input::UpdateData {
+                title,
+                description,
+                lifecycle,
+            } => {
+                self.title = title;
+                self.description = description;
+                self.lifecycle = lifecycle.clone();
+                self.hidden = lifecycle.as_ref().map(|l| l.is_hidden()).unwrap_or(true);
             }
             Self::Input::VisibilityChange(visible) => {
                 self.hidden = !visible;

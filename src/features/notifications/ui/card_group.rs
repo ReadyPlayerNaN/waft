@@ -7,8 +7,8 @@ use relm4::prelude::*;
 
 use crate::ui::events::send_or_log;
 
-use super::super::store::{ItemLifecycle, Notification, REDUCER, State};
-use super::card::{NotificationCard, NotificationCardInit, NotificationCardOutput};
+use super::super::store::{ItemLifecycle, Notification};
+use super::card::{NotificationCard, NotificationCardInit, NotificationCardInput, NotificationCardOutput};
 
 pub struct NotificationCardGroup {
     expanded: bool,
@@ -35,7 +35,10 @@ pub enum NotificationCardGroupInput {
     ExpandClick,
     CardClick(u64),
     TimedOut(u64),
-    StateChanged(State),
+    UpdateGroup {
+        top: Vec<(Notification, ItemLifecycle)>,
+        rest: Vec<(Notification, ItemLifecycle)>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +125,23 @@ impl NotificationCardGroup {
             Self::remove_by_id(target, id);
         }
     }
+
+    fn send_update_to_card(
+        target: &mut FactoryVecDeque<NotificationCard>,
+        notif: &Notification,
+        lifecycle: &ItemLifecycle,
+    ) {
+        if let Some(index) = Self::get_index(target, notif.id) {
+            target.send(
+                index,
+                NotificationCardInput::UpdateData {
+                    title: notif.title.clone(),
+                    description: notif.description.clone(),
+                    lifecycle: Some(lifecycle.clone()),
+                },
+            );
+        }
+    }
 }
 
 #[relm4::factory(pub)]
@@ -204,10 +224,6 @@ impl FactoryComponent for NotificationCardGroup {
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), transform_notification_card_outputs);
 
-        REDUCER.subscribe(sender.input_sender(), |s| {
-            Self::Input::StateChanged(s.get_state().clone())
-        });
-
         for (group, phase) in value.top.into_iter() {
             Self::ingest_notification(&mut top, &group, &phase);
         }
@@ -256,17 +272,24 @@ impl FactoryComponent for NotificationCardGroup {
                 send_or_log(&sender, Self::Output::CardClick(notification_id));
             }
             Self::Input::TimedOut(_notification_id) => { /* noop  */ }
-            Self::Input::StateChanged(state) => {
-                let gt = state.get_group_top(&self.id);
-                Self::clear_unknown(&mut self.top, &gt);
-                for (n, l) in gt {
+            Self::Input::UpdateGroup { top, rest } => {
+                let top_refs: Vec<(&Notification, &ItemLifecycle)> =
+                    top.iter().map(|(n, l)| (n, l)).collect();
+                let rest_refs: Vec<(&Notification, &ItemLifecycle)> =
+                    rest.iter().map(|(n, l)| (n, l)).collect();
+
+                Self::clear_unknown(&mut self.top, &top_refs);
+                for (n, l) in &top {
                     Self::ingest_notification(&mut self.top, n, l);
+                    Self::send_update_to_card(&mut self.top, n, l);
                 }
-                let gb = state.get_group_bottom(&self.id);
-                Self::clear_unknown(&mut self.rest, &gb);
-                for (n, l) in gb {
+
+                Self::clear_unknown(&mut self.rest, &rest_refs);
+                for (n, l) in &rest {
                     Self::ingest_notification(&mut self.rest, n, l);
+                    Self::send_update_to_card(&mut self.rest, n, l);
                 }
+
                 if self.rest.is_empty() {
                     send_or_log(&sender, Self::Output::Collapse(self.id.clone()));
                 }
