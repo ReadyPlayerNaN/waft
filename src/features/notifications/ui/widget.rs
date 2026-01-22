@@ -7,7 +7,7 @@ use relm4::{ComponentParts, ComponentSender, SimpleComponent, gtk};
 
 use crate::ui::events::send_or_log;
 
-use super::super::store::{Group, ItemLifecycle, REDUCER, State};
+use super::super::store::{ItemLifecycle, Notification, REDUCER};
 
 use super::card_group::{
     NotificationCardGroup, NotificationCardGroupInit, NotificationCardGroupInput,
@@ -41,6 +41,16 @@ fn transform_notification_group_outputs(
     }
 }
 
+/// Lightweight group data for state updates - avoids cloning full State
+#[derive(Debug, Clone)]
+pub struct GroupStateData {
+    pub id: Arc<str>,
+    pub title: Arc<str>,
+    pub lifecycle: ItemLifecycle,
+    pub top: Vec<(Notification, ItemLifecycle)>,
+    pub rest: Vec<(Notification, ItemLifecycle)>,
+}
+
 #[derive(Debug, Clone)]
 pub enum NotificationsWidgetInput {
     /// UI-driven events bubbling up from leaf `NotificationCard`s.
@@ -49,7 +59,8 @@ pub enum NotificationsWidgetInput {
     GroupCollapse(Arc<str>),
     GroupExpand(Arc<str>),
     Remove(u64),
-    StateChanged(State),
+    /// Lightweight state update - only contains group-relevant data
+    GroupsChanged(Vec<GroupStateData>),
 }
 
 #[derive(Debug, Clone)]
@@ -105,7 +116,24 @@ impl SimpleComponent for NotificationsWidget {
             .forward(sender.input_sender(), transform_notification_group_outputs);
 
         REDUCER.subscribe(sender.input_sender(), |s| {
-            Self::Input::StateChanged(s.get_state().clone())
+            // Extract only group-relevant data - avoid cloning full State
+            let state = s.get_state();
+            let groups: Vec<GroupStateData> = state
+                .get_groups()
+                .into_iter()
+                .map(|(group, lifecycle)| {
+                    let gt = state.get_group_top(&group.get_id());
+                    let gb = state.get_group_bottom(&group.get_id());
+                    GroupStateData {
+                        id: group.get_id().clone(),
+                        title: group.get_title().clone(),
+                        lifecycle: lifecycle.clone(),
+                        top: gt.into_iter().map(|(n, l)| (n.clone(), l.clone())).collect(),
+                        rest: gb.into_iter().map(|(n, l)| (n.clone(), l.clone())).collect(),
+                    }
+                })
+                .collect();
+            Self::Input::GroupsChanged(groups)
         });
 
         let groups_widget = groups.widget().clone();
@@ -120,10 +148,8 @@ impl SimpleComponent for NotificationsWidget {
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
-            Self::Input::StateChanged(state) => {
-                let groups = state.get_groups();
-                let known_ids: Vec<Arc<str>> =
-                    groups.iter().map(|(g, _)| g.get_id().clone()).collect();
+            Self::Input::GroupsChanged(groups) => {
+                let known_ids: Vec<Arc<str>> = groups.iter().map(|g| g.id.clone()).collect();
 
                 // Find groups to remove
                 let to_remove: Vec<Arc<str>> = self
@@ -134,10 +160,9 @@ impl SimpleComponent for NotificationsWidget {
                     .collect();
 
                 // Find groups to add
-                let to_add: Vec<(&Group, &ItemLifecycle)> = groups
+                let to_add: Vec<&GroupStateData> = groups
                     .iter()
-                    .filter(|(g, _)| !self.groups_index.contains_key(g.get_id()))
-                    .map(|(g, l)| (*g, *l))
+                    .filter(|g| !self.groups_index.contains_key(&g.id))
                     .collect();
 
                 // Single guard scope for all mutations
@@ -156,23 +181,14 @@ impl SimpleComponent for NotificationsWidget {
                     }
 
                     // Add new groups
-                    for (group, lifecycle) in &to_add {
-                        let gt = state.get_group_top(&group.get_id());
-                        let gb = state.get_group_bottom(&group.get_id());
-
+                    for group in &to_add {
                         guard.push_back(NotificationCardGroupInit {
                             expanded: false,
-                            id: group.get_id().clone(),
-                            title: group.get_title().clone(),
-                            lifecycle: (*lifecycle).clone(),
-                            top: gt
-                                .into_iter()
-                                .map(|(n, l)| (n.clone(), l.clone()))
-                                .collect(),
-                            rest: gb
-                                .into_iter()
-                                .map(|(n, l)| (n.clone(), l.clone()))
-                                .collect(),
+                            id: group.id.clone(),
+                            title: group.title.clone(),
+                            lifecycle: group.lifecycle.clone(),
+                            top: group.top.clone(),
+                            rest: group.rest.clone(),
                         });
                     }
                 }
@@ -181,22 +197,13 @@ impl SimpleComponent for NotificationsWidget {
                 self.rebuild_index();
 
                 // Send updates to existing groups
-                for (group, _lifecycle) in &groups {
-                    if let Some(&index) = self.groups_index.get(group.get_id()) {
-                        let gt = state.get_group_top(&group.get_id());
-                        let gb = state.get_group_bottom(&group.get_id());
-
+                for group in &groups {
+                    if let Some(&index) = self.groups_index.get(&group.id) {
                         self.groups.send(
                             index,
                             NotificationCardGroupInput::UpdateGroup {
-                                top: gt
-                                    .into_iter()
-                                    .map(|(n, l)| (n.clone(), l.clone()))
-                                    .collect(),
-                                rest: gb
-                                    .into_iter()
-                                    .map(|(n, l)| (n.clone(), l.clone()))
-                                    .collect(),
+                                top: group.top.clone(),
+                                rest: group.rest.clone(),
                             },
                         );
                     }
