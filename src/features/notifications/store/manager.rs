@@ -462,10 +462,9 @@ pub fn derive_icon_hints(notification: &IngressedNotification) -> Vec<Notificati
     if let Some(bytes) = &notification.hints.image_data {
         out.push(NotificationIcon::Bytes(bytes.clone()));
     }
+    // image-path hint can be a file path OR an icon name per freedesktop spec
     if let Some(path) = &notification.hints.image_path {
-        out.push(NotificationIcon::FilePath(Arc::new(PathBuf::from(
-            path.as_ref(),
-        ))));
+        out.push(NotificationIcon::from_str(path));
     }
     if let Some(specific) = &notification.icon {
         out.push(NotificationIcon::from_str(specific));

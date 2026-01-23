@@ -1,66 +1,104 @@
 //! Pure GTK4 Icon widget.
 //!
 //! Displays notification icons from themed names, file paths, or raw bytes.
-
-use std::sync::Arc;
+//! Tries each icon hint in order until one succeeds, falling back to a default.
 
 use gtk::prelude::*;
 
 use crate::features::notifications::types::NotificationIcon;
 
+const DEFAULT_ICON: &str = "dialog-information-symbolic";
+
 /// Pure GTK4 icon widget - displays themed icons or textures.
 pub struct IconWidget {
-    pub root: gtk::Box,
     image: gtk::Image,
 }
 
 impl IconWidget {
-    /// Create a new icon widget with the given notification icon.
-    pub fn new(icon: NotificationIcon) -> Self {
-        let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-
+    /// Create a new icon widget, trying each icon hint until one succeeds.
+    pub fn new(icon_hints: Vec<NotificationIcon>) -> Self {
         let image = gtk::Image::builder()
             .pixel_size(32)
             .valign(gtk::Align::Start)
             .build();
 
-        Self::apply_icon(&image, icon);
+        Self::apply_first_valid_icon(&image, &icon_hints);
 
-        root.append(&image);
-
-        Self { root, image }
+        Self { image }
     }
 
-    /// Update the icon being displayed.
-    pub fn set_icon(&self, icon: NotificationIcon) {
-        Self::apply_icon(&self.image, icon);
+    /// Try each icon hint in order until one succeeds, falling back to default.
+    fn apply_first_valid_icon(image: &gtk::Image, icon_hints: &[NotificationIcon]) {
+        for hint in icon_hints {
+            if Self::try_apply_icon(image, hint) {
+                return;
+            }
+        }
+
+        // All hints failed, use default
+        image.set_icon_name(Some(DEFAULT_ICON));
+        image.set_paintable(gtk::gdk::Paintable::NONE);
     }
 
-    fn apply_icon(image: &gtk::Image, icon: NotificationIcon) {
+    /// Try to apply an icon hint. Returns true if successful.
+    fn try_apply_icon(image: &gtk::Image, icon: &NotificationIcon) -> bool {
         match icon {
             NotificationIcon::Themed(name) => {
-                image.set_icon_name(Some(&name));
-                image.set_paintable(gtk::gdk::Paintable::NONE);
+                if let Some(resolved) = Self::try_resolve_themed_icon(name) {
+                    image.set_paintable(gtk::gdk::Paintable::NONE);
+                    image.set_icon_name(Some(&resolved));
+                    return true;
+                }
+                false
             }
             NotificationIcon::FilePath(path) => {
                 if let Ok(tex) = gtk::gdk::Texture::from_filename(path.as_ref()) {
-                    image.set_paintable(Some(&tex));
                     image.set_icon_name(None);
-                } else {
-                    image.set_icon_name(Some("dialog-information-symbolic"));
-                    image.set_paintable(gtk::gdk::Paintable::NONE);
+                    image.set_paintable(Some(&tex));
+                    return true;
                 }
+                false
             }
             NotificationIcon::Bytes(_b) => {
                 // TODO: Implement icon parsing from bytes
-                image.set_icon_name(Some("dialog-information-symbolic"));
-                image.set_paintable(gtk::gdk::Paintable::NONE);
+                false
             }
         }
     }
 
-    /// Get a reference to the root widget.
-    pub fn widget(&self) -> &gtk::Box {
-        &self.root
+    /// Try to resolve a themed icon name. Returns Some(name) if icon exists, None otherwise.
+    fn try_resolve_themed_icon(name: &str) -> Option<String> {
+        let display = gtk::gdk::Display::default()?;
+        let icon_theme = gtk::IconTheme::for_display(&display);
+
+        // Try the original name first
+        if icon_theme.has_icon(name) {
+            return Some(name.to_string());
+        }
+
+        // Try with -symbolic suffix
+        let symbolic = format!("{}-symbolic", name);
+        if icon_theme.has_icon(&symbolic) {
+            return Some(symbolic);
+        }
+
+        // Try lowercase
+        let lowercase = name.to_lowercase();
+        if icon_theme.has_icon(&lowercase) {
+            return Some(lowercase);
+        }
+
+        // Try lowercase with -symbolic
+        let lowercase_symbolic = format!("{}-symbolic", lowercase);
+        if icon_theme.has_icon(&lowercase_symbolic) {
+            return Some(lowercase_symbolic);
+        }
+
+        None
+    }
+
+    /// Get a reference to the image widget.
+    pub fn widget(&self) -> &gtk::Image {
+        &self.image
     }
 }

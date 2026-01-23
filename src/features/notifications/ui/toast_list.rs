@@ -6,15 +6,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use gtk::prelude::*;
 
 use crate::features::notifications::store::{ItemLifecycle, STORE};
+use crate::features::notifications::types::NotificationIcon;
 use super::toast_widget::ToastWidget;
-
-/// Delay before removing widgets to let GTK finish any internal processing
-const REMOVAL_DELAY: Duration = Duration::from_millis(300);
 
 /// Output events from the toast list.
 #[derive(Debug, Clone)]
@@ -32,6 +29,7 @@ pub struct ToastStateData {
     pub lifecycle: ItemLifecycle,
     pub title: Arc<str>,
     pub description: Arc<str>,
+    pub icon_hints: Vec<NotificationIcon>,
     #[allow(dead_code)]
     pub ttl: Option<u64>,
 }
@@ -41,7 +39,6 @@ pub struct ToastListWidget {
     pub root: gtk::Box,
     container: gtk::Box,
     widgets: Rc<RefCell<HashMap<u64, ToastWidget>>>,
-    pending_removal: Rc<RefCell<HashMap<u64, Instant>>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>>,
 }
 
@@ -60,13 +57,10 @@ impl ToastListWidget {
 
         root.append(&container);
 
-        // Spacer at bottom
-        let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        root.append(&spacer);
+        // Start hidden - will be shown when toasts are added
+        container.set_visible(false);
 
         let widgets: Rc<RefCell<HashMap<u64, ToastWidget>>> = Rc::new(RefCell::new(HashMap::new()));
-        let pending_removal: Rc<RefCell<HashMap<u64, Instant>>> =
-            Rc::new(RefCell::new(HashMap::new()));
         let on_output: Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>> =
             Rc::new(RefCell::new(None));
 
@@ -74,7 +68,6 @@ impl ToastListWidget {
             root,
             container,
             widgets,
-            pending_removal,
             on_output,
         };
 
@@ -99,7 +92,6 @@ impl ToastListWidget {
 
     fn setup_subscription(&self) {
         let widgets = self.widgets.clone();
-        let pending_removal = self.pending_removal.clone();
         let container = self.container.clone();
         let on_output = self.on_output.clone();
 
@@ -120,6 +112,7 @@ impl ToastListWidget {
                     lifecycle: l.clone(),
                     title: n.title.clone(),
                     description: n.description.clone(),
+                    icon_hints: n.icon_hints.clone(),
                     ttl: n.ttl,
                 })
                 .collect();
@@ -127,7 +120,6 @@ impl ToastListWidget {
             Self::handle_toasts_changed(
                 &toasts,
                 &widgets,
-                &pending_removal,
                 &container,
                 &on_output,
             );
@@ -137,63 +129,46 @@ impl ToastListWidget {
     fn handle_toasts_changed(
         toasts: &Vec<ToastStateData>,
         widgets: &Rc<RefCell<HashMap<u64, ToastWidget>>>,
-        pending_removal: &Rc<RefCell<HashMap<u64, Instant>>>,
         container: &gtk::Box,
         on_output: &Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>>,
     ) {
         log::debug!("[toast_list] ToastsChanged received count={}", toasts.len());
-        let now = Instant::now();
 
         // Collect IDs of toasts that should exist
         let known_ids: Vec<u64> = toasts.iter().map(|t| t.id).collect();
 
-        // Mark widgets for removal (exist in UI but not in state)
-        {
-            let widgets_ref = widgets.borrow();
-            let mut pending_ref = pending_removal.borrow_mut();
-            for id in widgets_ref.keys() {
-                if !known_ids.contains(id) {
-                    pending_ref.entry(*id).or_insert(now);
-                }
-            }
-        }
-
-        // Cancel pending removal if widget reappears in state
-        {
-            let mut pending_ref = pending_removal.borrow_mut();
-            for id in &known_ids {
-                pending_ref.remove(id);
-            }
-        }
-
-        // Remove widgets that have been pending long enough
-        let ready_for_removal: Vec<u64> = {
-            let pending_ref = pending_removal.borrow();
-            pending_ref
-                .iter()
-                .filter(|(_, marked_at)| now.duration_since(**marked_at) > REMOVAL_DELAY)
-                .map(|(id, _)| *id)
-                .collect()
-        };
-
+        // Clean up orphaned widgets (those that have removed themselves from the container)
         {
             let mut widgets_ref = widgets.borrow_mut();
-            let mut pending_ref = pending_removal.borrow_mut();
-            for id in &ready_for_removal {
-                if let Some(widget) = widgets_ref.remove(id) {
-                    log::debug!("[toast_list] removing widget id={}", id);
-                    widget.prepare_removal();
-                    container.remove(&widget.root);
-                }
-                pending_ref.remove(id);
+            let orphaned: Vec<u64> = widgets_ref
+                .iter()
+                .filter(|(_, w)| w.root.parent().is_none())
+                .map(|(id, _)| *id)
+                .collect();
+
+            for id in orphaned {
+                widgets_ref.remove(&id);
+                log::debug!("[toast_list] cleaned up orphaned widget id={}", id);
             }
         }
 
-        log::debug!(
-            "[toast_list] removed {} widgets, {} pending",
-            ready_for_removal.len(),
-            pending_removal.borrow().len()
-        );
+        // Hide widgets that are no longer in state (they will self-remove when animation completes)
+        {
+            let widgets_ref = widgets.borrow();
+            for (id, widget) in widgets_ref.iter() {
+                if !known_ids.contains(id) && !widget.is_hidden() {
+                    log::debug!("[toast_list] hiding widget id={}", id);
+                    widget.hide();
+                }
+            }
+        }
+
+        // Update container visibility based on whether we have any visible widgets
+        {
+            let widgets_ref = widgets.borrow();
+            let has_visible = widgets_ref.values().any(|w| w.root.parent().is_some());
+            container.set_visible(has_visible || !toasts.is_empty());
+        }
 
         // Add new widgets
         {
@@ -207,6 +182,7 @@ impl ToastListWidget {
                         toast.id,
                         &toast.title,
                         &toast.description,
+                        toast.icon_hints.clone(),
                         move |close_id| {
                             if let Some(ref callback) = *on_output_clone.borrow() {
                                 callback(ToastListOutput::CardClose(close_id));
@@ -214,7 +190,8 @@ impl ToastListWidget {
                         },
                     );
 
-                    // Add to container (prepend for newest on top)
+                    // Show container and add widget (prepend for newest on top)
+                    container.set_visible(true);
                     container.prepend(&widget.root);
 
                     // Animate in

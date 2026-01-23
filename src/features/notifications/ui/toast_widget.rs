@@ -7,6 +7,9 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
+use super::icon::IconWidget;
+use crate::features::notifications::types::NotificationIcon;
+
 /// Pure GTK4 toast widget - no Relm4 factory abstractions.
 /// Manages its own revealer for animations and provides direct control over lifecycle.
 pub struct ToastWidget {
@@ -15,11 +18,18 @@ pub struct ToastWidget {
     revealer: gtk::Revealer,
     title_label: gtk::Label,
     description_label: gtk::Label,
+    icon_widget: IconWidget,
     hidden: Rc<RefCell<bool>>,
 }
 
 impl ToastWidget {
-    pub fn new<F>(id: u64, title: &str, description: &str, on_close: F) -> Self
+    pub fn new<F>(
+        id: u64,
+        title: &str,
+        description: &str,
+        icon_hints: Vec<NotificationIcon>,
+        on_close: F,
+    ) -> Self
     where
         F: Fn(u64) + 'static,
     {
@@ -37,7 +47,8 @@ impl ToastWidget {
         // Card box
         let card_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
-            .css_classes(["card", "notification-card"])
+            .css_classes(["toast", "card", "notification-card"])
+            .margin_top(8)
             .build();
 
         // Header
@@ -83,6 +94,9 @@ impl ToastWidget {
         content_box.append(&title_label);
         content_box.append(&description_label);
 
+        // Icon widget
+        let icon_widget = IconWidget::new(icon_hints);
+
         // Spacer
         let spacer = gtk::Box::builder().hexpand(true).build();
 
@@ -94,6 +108,8 @@ impl ToastWidget {
             .halign(gtk::Align::End)
             .build();
 
+        // Append icon, then content
+        header.append(icon_widget.widget());
         header.append(&content_box);
         header.append(&spacer);
         header.append(&close_btn);
@@ -104,6 +120,19 @@ impl ToastWidget {
 
         // Track hidden state for double-click guard
         let hidden = Rc::new(RefCell::new(true));
+
+        // When revealer finishes collapsing, remove widget from parent container
+        let root_clone = root.clone();
+        revealer.connect_child_revealed_notify(move |rev| {
+            if !rev.is_child_revealed() {
+                // Remove from parent - this is the authoritative cleanup
+                if let Some(parent) = root_clone.parent() {
+                    if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+                        parent_box.remove(&root_clone);
+                    }
+                }
+            }
+        });
 
         // Close button click handler
         let hidden_clone = hidden.clone();
@@ -140,6 +169,7 @@ impl ToastWidget {
             revealer,
             title_label,
             description_label,
+            icon_widget,
             hidden,
         }
     }
@@ -147,6 +177,7 @@ impl ToastWidget {
     /// Show the toast with animation
     pub fn show(&self) {
         *self.hidden.borrow_mut() = false;
+        self.root.set_visible(true); // Ensure root is visible before revealing
         self.revealer.set_reveal_child(true);
     }
 
@@ -159,13 +190,6 @@ impl ToastWidget {
     /// Check if currently hidden
     pub fn is_hidden(&self) -> bool {
         *self.hidden.borrow()
-    }
-
-    /// Prepare widget for removal - disable animations to prevent GTK state issues
-    pub fn prepare_removal(&self) {
-        self.revealer.set_transition_duration(0);
-        self.revealer.set_transition_type(gtk::RevealerTransitionType::None);
-        self.revealer.set_reveal_child(false);
     }
 
     /// Update the toast content
