@@ -8,7 +8,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 
 use super::icon::IconWidget;
-use crate::features::notifications::types::NotificationIcon;
+use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 
 /// Pure GTK4 toast widget - no Relm4 factory abstractions.
 /// Manages its own revealer for animations and provides direct control over lifecycle.
@@ -23,15 +23,18 @@ pub struct ToastWidget {
 }
 
 impl ToastWidget {
-    pub fn new<F>(
+    pub fn new<F, A>(
         id: u64,
         title: &str,
         description: &str,
         icon_hints: Vec<NotificationIcon>,
+        actions: Vec<NotificationAction>,
         on_close: F,
+        on_action: A,
     ) -> Self
     where
         F: Fn(u64) + 'static,
+        A: Fn(u64, String) + 'static,
     {
         // Root container
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -115,6 +118,45 @@ impl ToastWidget {
         header.append(&close_btn);
 
         card_box.append(&header);
+
+        // Action buttons (if any)
+        let on_action = Rc::new(on_action);
+        if !actions.is_empty() {
+            let actions_box = gtk::Box::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .spacing(8)
+                .margin_start(16)
+                .margin_end(16)
+                .margin_bottom(12)
+                .halign(gtk::Align::End)
+                .build();
+
+            for action in actions {
+                // Skip the "default" action (clicking the notification itself)
+                if action.key.as_ref() == "default" {
+                    continue;
+                }
+
+                let action_btn = gtk::Button::builder()
+                    .label(action.label.as_ref())
+                    .css_classes(["notification-action"])
+                    .build();
+
+                let action_key = action.key.to_string();
+                let on_action_clone = on_action.clone();
+                action_btn.connect_clicked(move |_| {
+                    on_action_clone(id, action_key.clone());
+                });
+
+                actions_box.append(&action_btn);
+            }
+
+            // Only append if we have visible buttons (non-default actions)
+            if actions_box.first_child().is_some() {
+                card_box.append(&actions_box);
+            }
+        }
+
         revealer.set_child(Some(&card_box));
         root.append(&revealer);
 
@@ -151,6 +193,7 @@ impl ToastWidget {
         // Right-click anywhere on card to close
         let hidden_clone = hidden.clone();
         let revealer_clone = revealer.clone();
+        let on_close_clone2 = on_close.clone();
         let right_click = gtk::GestureClick::new();
         right_click.set_button(3); // Right mouse button
         right_click.connect_pressed(move |_gesture, _n_press, _x, _y| {
@@ -159,9 +202,41 @@ impl ToastWidget {
             }
             *hidden_clone.borrow_mut() = true;
             revealer_clone.set_reveal_child(false); // Start hide animation immediately
-            on_close(id);
+            on_close_clone2(id);
         });
         root.add_controller(right_click);
+
+        // Left-click anywhere on card to trigger default action and close
+        let hidden_clone = hidden.clone();
+        let revealer_clone = revealer.clone();
+        let on_action_clone = on_action.clone();
+        let left_click = gtk::GestureClick::new();
+        left_click.set_button(1); // Left mouse button
+        left_click.connect_pressed(move |gesture, _n_press, x, y| {
+            if *hidden_clone.borrow() {
+                return;
+            }
+
+            // Check if click is on an interactive element (button) - if so, let the button handle it
+            if let Some(widget) = gesture.widget() {
+                if let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT) {
+                    // Walk up the widget tree to check if click was on a Button
+                    let mut current: Option<gtk::Widget> = Some(picked);
+                    while let Some(ref w) = current {
+                        if w.downcast_ref::<gtk::Button>().is_some() {
+                            return; // Click was on a button, don't trigger default action
+                        }
+                        current = w.parent();
+                    }
+                }
+            }
+
+            *hidden_clone.borrow_mut() = true;
+            on_action_clone(id, "default".to_string());
+            revealer_clone.set_reveal_child(false); // Start hide animation
+            on_close(id);
+        });
+        root.add_controller(left_click);
 
         Self {
             id,

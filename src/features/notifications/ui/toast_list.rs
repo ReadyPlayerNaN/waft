@@ -10,7 +10,7 @@ use std::sync::Arc;
 use gtk::prelude::*;
 
 use crate::features::notifications::store::{ItemLifecycle, STORE};
-use crate::features::notifications::types::NotificationIcon;
+use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 use super::toast_widget::ToastWidget;
 
 /// Output events from the toast list.
@@ -30,6 +30,7 @@ pub struct ToastStateData {
     pub title: Arc<str>,
     pub description: Arc<str>,
     pub icon_hints: Vec<NotificationIcon>,
+    pub actions: Vec<NotificationAction>,
     #[allow(dead_code)]
     pub ttl: Option<u64>,
 }
@@ -113,6 +114,7 @@ impl ToastListWidget {
                     title: n.title.clone(),
                     description: n.description.clone(),
                     icon_hints: n.icon_hints.clone(),
+                    actions: n.actions.clone(),
                     ttl: n.ttl,
                 })
                 .collect();
@@ -177,15 +179,22 @@ impl ToastListWidget {
                 if !widgets_ref.contains_key(&toast.id) {
                     let id = toast.id;
                     let on_output_clone = on_output.clone();
+                    let on_output_action = on_output.clone();
 
                     let widget = ToastWidget::new(
                         toast.id,
                         &toast.title,
                         &toast.description,
                         toast.icon_hints.clone(),
+                        toast.actions.clone(),
                         move |close_id| {
                             if let Some(ref callback) = *on_output_clone.borrow() {
                                 callback(ToastListOutput::CardClose(close_id));
+                            }
+                        },
+                        move |action_id, action_key| {
+                            if let Some(ref callback) = *on_output_action.borrow() {
+                                callback(ToastListOutput::ActionClick(action_id, action_key));
                             }
                         },
                     );
