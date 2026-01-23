@@ -20,7 +20,7 @@ pub mod features {
             pub mod ingress;
         }
 
-        #[path = "store.rs"]
+        #[path = "store/mod.rs"]
         pub mod store;
     }
 }

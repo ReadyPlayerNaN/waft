@@ -1,101 +1,68 @@
+//! Notifications plugin - DBus notification handling and display.
+
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use glib::object::Cast;
-use indexmap::indexmap;
 use log::{debug, info};
-use relm4::gtk::prelude::GtkApplicationExt;
-use relm4::prelude::*;
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::channels::{Channel, connect_component};
+use gtk::prelude::*;
+
 use crate::features::notifications::store::NotificationOp;
 use crate::plugin::WidgetFeatureToggle;
-use crate::plugin::{Plugin, PluginId, Slot, Widget};
+use crate::plugin::{Plugin, PluginId};
+use self::store::STORE;
+use crate::features::notifications::ui::toast_window::{HPos, ToastWindowOutput, ToastWindowWidget, VPos};
 
 use self::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
 use self::dbus::server::NotificationsDbusServer;
 use self::debounce::NotificationDebouncer;
-use self::dnd_toggle::{
-    DoNotDisturbToggle, DoNotDisturbToggleInit, DoNotDisturbToggleInput, DoNotDisturbToggleOutput,
-};
-use self::store::REDUCER;
-use self::ui::toast_window::{HPos, ToastWindow, ToastWindowInit, ToastWindowOutput, VPos};
-use self::ui::widget::{NotificationsWidget, NotificationsWidgetInit, NotificationsWidgetOutput};
+use self::dnd_toggle::{DoNotDisturbToggleInit, DoNotDisturbToggleOutput, DoNotDisturbToggleWidget};
 
-mod dbus;
+pub mod dbus;
 mod debounce;
 mod dnd_toggle;
-mod gate;
-mod store;
-mod types;
-mod ui;
+pub mod store;
+pub mod types;
+pub mod ui;
 
 pub struct NotificationsPlugin {
-    client_channel: Channel<OutboundEvent>,
+    client_channel: flume::Sender<OutboundEvent>,
+    client_receiver: flume::Receiver<OutboundEvent>,
     dbus_server: Option<NotificationsDbusServer>,
     dnd: Arc<AtomicBool>,
-    dnd_toggle: Option<Controller<DoNotDisturbToggle>>,
-    dnd_toggle_channel: Channel<DoNotDisturbToggleOutput>,
-    initialized: bool,
-    server_channel: Channel<IngressEvent>,
+    dnd_toggle: Rc<RefCell<Option<DoNotDisturbToggleWidget>>>,
+    server_channel: flume::Sender<IngressEvent>,
+    server_receiver: flume::Receiver<IngressEvent>,
     tick_source: Arc<std::sync::Mutex<Option<glib::SourceId>>>,
-    tick_channel: tokio::sync::mpsc::UnboundedSender<()>,
-    toast_channel: Channel<ToastWindowOutput>,
-    toast: Option<Controller<ToastWindow>>,
-    widget_channel: Channel<NotificationsWidgetOutput>,
-    widget: Option<Controller<NotificationsWidget>>,
+    toast: Option<ToastWindowWidget>,
     debouncer: Option<NotificationDebouncer>,
 }
 
 impl NotificationsPlugin {
     pub fn new() -> Self {
-        let (tick_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (client_tx, client_rx) = flume::unbounded();
+        let (server_tx, server_rx) = flume::unbounded();
+
         Self {
-            client_channel: Channel::new(),
+            client_channel: client_tx,
+            client_receiver: client_rx,
             dbus_server: None,
             dnd: Arc::new(AtomicBool::new(false)),
-            dnd_toggle: None,
-            dnd_toggle_channel: Channel::new(),
-            initialized: false,
-            server_channel: Channel::new(),
+            dnd_toggle: Rc::new(RefCell::new(None)),
+            server_channel: server_tx,
+            server_receiver: server_rx,
             tick_source: Arc::new(std::sync::Mutex::new(None)),
-            tick_channel: tick_tx,
-            toast_channel: Channel::new(),
             toast: None,
-            widget_channel: Channel::new(),
-            widget: None,
             debouncer: None,
         }
     }
 
-    fn create_widget(&self) -> Controller<NotificationsWidget> {
-        connect_component(
-            NotificationsWidget::builder().launch(NotificationsWidgetInit {
-                expanded_group: None,
-            }),
-            &self.widget_channel,
-        )
-    }
-
-    fn create_toast_window(&self, hpos: HPos, vpos: VPos) -> Controller<ToastWindow> {
-        connect_component(
-            ToastWindow::builder().launch(ToastWindowInit { hpos, vpos }),
-            &self.toast_channel,
-        )
-    }
-
-    fn create_dnd_toggle(
-        &mut self,
-        init: DoNotDisturbToggleInit,
-    ) -> Controller<DoNotDisturbToggle> {
-        connect_component(
-            DoNotDisturbToggle::builder().launch(init),
-            &self.dnd_toggle_channel,
-        )
+    fn create_toast_window(&self, hpos: HPos, vpos: VPos) -> ToastWindowWidget {
+        ToastWindowWidget::new(hpos, vpos)
     }
 
     fn schedule_tick(&self) {
@@ -104,13 +71,13 @@ impl NotificationsPlugin {
         *tick_source.lock().unwrap() = Some(glib::timeout_add_local_once(
             Duration::from_millis(200),
             move || {
-                REDUCER.emit(NotificationOp::Tick);
+                STORE.emit(NotificationOp::Tick);
 
                 // Schedule the next tick
                 *tick_source_for_closure.lock().unwrap() = Some(glib::timeout_add_local(
                     Duration::from_millis(200),
                     move || {
-                        REDUCER.emit(NotificationOp::Tick);
+                        STORE.emit(NotificationOp::Tick);
                         glib::ControlFlow::Continue
                     },
                 ));
@@ -133,45 +100,80 @@ impl Plugin for NotificationsPlugin {
         info!("Starting notifications dbus server");
         dbus_server
             .start(
-                self.server_channel.sender.clone(),
-                self.client_channel.receiver.clone(),
+                self.server_channel.clone(),
+                self.client_receiver.clone(),
             )
             .await
             .context("Failed to start DBus notifications server")?;
 
         self.dbus_server = Some(dbus_server);
 
-        self.initialized = true;
         Ok(())
     }
 
     async fn create_elements(&mut self) -> Result<()> {
         let (debouncer_tx, debouncer_rx) = flume::unbounded();
 
-        relm4::tokio::spawn(async move {
+        glib::spawn_future_local(async move {
             while let Ok(op) = debouncer_rx.recv_async().await {
-                REDUCER.emit(op);
+                STORE.emit(op);
             }
         });
 
         let debouncer = NotificationDebouncer::new(debouncer_tx);
         let db_server = debouncer.clone();
         let db_toast = debouncer.clone();
-        let db_widget = debouncer.clone();
 
         self.debouncer = Some(debouncer);
 
-        let widget = self.create_widget();
-        self.widget = Some(widget);
-
+        // Create pure GTK4 toast window
         let toast = self.create_toast_window(HPos::Center, VPos::Top);
-        let toast_window = toast.widget().clone();
-        relm4::main_application().add_window(&toast_window);
+
+        // Add window to application
+        let app = gtk::Application::default();
+        app.add_window(&toast.window);
+
+        // Connect output handler for toast events
+        let outbound_tx_toast = self.client_channel.clone();
+        toast.connect_output(move |event| {
+            debug!("[toast] Received: {:?}", event);
+            match event {
+                ToastWindowOutput::ActionClick(id, action_key) => {
+                    let _ = db_toast.send(NotificationOp::NotificationDismiss(id));
+                    let _ = outbound_tx_toast.send(OutboundEvent::ActionInvoked {
+                        id: id as u32,
+                        action_key: action_key.clone(),
+                    });
+                    let _ = outbound_tx_toast.send(OutboundEvent::NotificationClosed {
+                        id: id as u32,
+                        reason: close_reasons::DISMISSED_BY_USER,
+                    });
+                }
+
+                ToastWindowOutput::CardClose(id) => {
+                    let _ = outbound_tx_toast.send(OutboundEvent::NotificationClosed {
+                        id: id as u32,
+                        reason: close_reasons::DISMISSED_BY_USER,
+                    });
+                    let _ = db_toast.send(NotificationOp::NotificationDismiss(id));
+                }
+
+                ToastWindowOutput::TimedOut(id) => {
+                    let _ = outbound_tx_toast.send(OutboundEvent::NotificationClosed {
+                        id: id as u32,
+                        reason: close_reasons::EXPIRED,
+                    });
+                }
+
+                ToastWindowOutput::CardClick(_id) => {}
+            }
+        });
+
         self.toast = Some(toast);
 
-        let server_receiver = self.server_channel.receiver.clone();
-        let outbound_tx = self.client_channel.sender.clone();
-        relm4::tokio::spawn(async move {
+        let server_receiver = self.server_receiver.clone();
+        let outbound_tx = self.client_channel.clone();
+        glib::spawn_future_local(async move {
             while let Ok(event) = server_receiver.recv_async().await {
                 match event {
                     IngressEvent::Notify { notification } => {
@@ -190,110 +192,43 @@ impl Plugin for NotificationsPlugin {
             }
         });
 
-        let toast_receiver = self.toast_channel.receiver.clone();
-        let outbound_tx = self.client_channel.sender.clone();
-        relm4::tokio::spawn(async move {
-            while let Ok(event) = toast_receiver.recv_async().await {
-                debug!("[toast] Received: {:?}", event);
-                match event {
-                    ToastWindowOutput::ActionClick(id, action_key) => {
-                        let _ = db_toast.send(NotificationOp::NotificationDismiss(id));
-                        let _ = outbound_tx.send(OutboundEvent::ActionInvoked {
-                            id: id as u32,
-                            action_key: action_key.clone(),
-                        });
-                        let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
-                            id: id as u32,
-                            reason: close_reasons::DISMISSED_BY_USER,
-                        });
-                    }
-
-                    ToastWindowOutput::TimedOut(id) => {
-                        let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
-                            id: id as u32,
-                            reason: close_reasons::EXPIRED,
-                        });
-                    }
-
-                    ToastWindowOutput::CardClick(_id) => {}
-                }
-            }
-        });
-
-        let widget_receiver = self.widget_channel.receiver.clone();
-        let outbound_tx = self.client_channel.sender.clone();
-        relm4::tokio::spawn(async move {
-            while let Ok(event) = widget_receiver.recv_async().await {
-                debug!("[notifications-widget] Received: {:?}", event);
-                match event {
-                    NotificationsWidgetOutput::ActionClick(id, action_key) => {
-                        let _ = outbound_tx.send(OutboundEvent::ActionInvoked {
-                            id: id as u32,
-                            action_key: action_key.clone(),
-                        });
-                        let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
-                            id: id as u32,
-                            reason: close_reasons::DISMISSED_BY_USER,
-                        });
-                        let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
-                    }
-
-                    NotificationsWidgetOutput::CardClose(id) => {
-                        let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
-                            id: id as u32,
-                            reason: close_reasons::DISMISSED_BY_USER,
-                        });
-                        let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
-                    }
-
-                    NotificationsWidgetOutput::CardClick(_id) => {}
-                }
-            }
-        });
-
+        // Create DnD toggle
         let active = self.dnd.load(Ordering::SeqCst);
-        let dnd_toggle = self.create_dnd_toggle(DoNotDisturbToggleInit {
+        let dnd_toggle = DoNotDisturbToggleWidget::new(DoNotDisturbToggleInit {
             active,
             busy: false,
         });
-        let dnd_toggle_receiver = self.dnd_toggle_channel.receiver.clone();
-        let dnd_toggle_sender = dnd_toggle.sender().clone();
+
+        // Connect output handler
         let dnd_state = self.dnd.clone();
-        self.dnd_toggle = Some(dnd_toggle);
-        relm4::tokio::spawn(async move {
-            while let Ok(event) = dnd_toggle_receiver.recv_async().await {
-                debug!("[dnd] Received: {:?}", event);
-                match event {
-                    DoNotDisturbToggleOutput::Activate => {
-                        dnd_toggle_sender.emit(DoNotDisturbToggleInput::Active(true));
-                        dnd_state.store(true, Ordering::SeqCst);
+        let dnd_toggle_ref = self.dnd_toggle.clone();
+        dnd_toggle.connect_output(move |event| {
+            debug!("[dnd] Received: {:?}", event);
+            match event {
+                DoNotDisturbToggleOutput::Activate => {
+                    dnd_state.store(true, Ordering::SeqCst);
+                    if let Some(ref toggle) = *dnd_toggle_ref.borrow() {
+                        toggle.set_active(true);
                     }
-                    DoNotDisturbToggleOutput::Deactivate => {
-                        dnd_toggle_sender.emit(DoNotDisturbToggleInput::Active(false));
-                        dnd_state.store(false, Ordering::SeqCst);
+                }
+                DoNotDisturbToggleOutput::Deactivate => {
+                    dnd_state.store(false, Ordering::SeqCst);
+                    if let Some(ref toggle) = *dnd_toggle_ref.borrow() {
+                        toggle.set_active(false);
                     }
-                };
+                }
             }
         });
+
+        *self.dnd_toggle.borrow_mut() = Some(dnd_toggle);
 
         self.schedule_tick();
 
         Ok(())
     }
 
-    fn get_widgets(&self) -> Vec<Arc<Widget>> {
-        match self.widget {
-            Some(ref widget) => vec![Arc::new(Widget {
-                el: widget.widget().clone().upcast::<gtk::Widget>(),
-                slot: Slot::Info,
-                weight: 100,
-            })],
-            _ => vec![],
-        }
-    }
-
     fn get_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
-        match self.dnd_toggle {
+        match *self.dnd_toggle.borrow() {
             Some(ref dnd_toggle) => vec![Arc::new(WidgetFeatureToggle {
                 el: dnd_toggle.widget().clone().upcast::<gtk::Widget>(),
                 weight: 60,

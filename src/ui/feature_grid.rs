@@ -1,55 +1,43 @@
+//! Pure GTK4 Feature Grid widget.
+//!
+//! A grid layout for feature toggle widgets.
+
 use std::sync::Arc;
 
 use gtk::prelude::*;
-use relm4::prelude::*;
-use relm4::{ComponentParts, ComponentSender, SimpleComponent};
 
 use crate::plugin::WidgetFeatureToggle;
 
-#[derive(Debug, Clone)]
-pub struct FeatureGridInit {
-    pub items: Vec<Arc<WidgetFeatureToggle>>,
+/// Pure GTK4 feature grid widget.
+pub struct FeatureGridWidget {
+    pub root: gtk::Box,
 }
 
-pub struct FeatureGrid {
-    items: Vec<gtk::Widget>,
-}
+impl FeatureGridWidget {
+    /// Create a new feature grid with the given toggles.
+    pub fn new(items: Vec<Arc<WidgetFeatureToggle>>) -> Self {
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
-#[relm4::component(pub)]
-impl SimpleComponent for FeatureGrid {
-    type Init = FeatureGridInit;
-    type Input = ();
-    type Output = ();
+        let grid = gtk::Grid::builder()
+            .column_spacing(12)
+            .row_spacing(0)
+            .css_classes(["feature-grid"])
+            .build();
 
-    view! {
-      gtk::Box {
-        #[local_ref]
-        grid -> gtk::Grid {
-          set_column_spacing: 12,
-          set_row_spacing: 0,
-          set_css_classes: &["feature-grid"],
-        }
-      }
-    }
-
-    fn init(
-        init: FeatureGridInit,
-        root: Self::Root,
-        _sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
-        let items = init.items.into_iter().map(|item| item.el.clone()).collect();
         let cols = 2;
-
-        let model = Self { items };
-        let grid = gtk::Grid::new();
-        let widgets = view_output!();
-
-        for (i, widget) in model.items.iter().enumerate() {
+        for (i, item) in items.iter().enumerate() {
             let col = (i as i32) % cols;
             let row = (i as i32) / cols;
-            grid.attach(widget, col, row, 1, 1);
+            grid.attach(&item.el, col, row, 1, 1);
         }
 
-        ComponentParts { model, widgets }
+        root.append(&grid);
+
+        Self { root }
+    }
+
+    /// Get a reference to the root widget.
+    pub fn widget(&self) -> &gtk::Box {
+        &self.root
     }
 }

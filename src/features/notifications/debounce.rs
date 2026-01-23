@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -7,15 +7,19 @@ use tokio::time::{Sleep, sleep};
 
 use super::store::NotificationOp;
 
-/// Debounces ingress operations to prevent flooding the REDUCER.
+/// Debounces ingress and dismiss operations to prevent flooding the REDUCER.
 ///
-/// Only ingress operations (new notifications) are debounced.
-/// All other operations are forwarded immediately.
+/// - Ingress operations are batched with a longer timeout (333ms)
+/// - Dismiss operations are batched with a shorter timeout (50ms) since
+///   optimistic UI provides instant feedback
+/// - All other operations are forwarded immediately
 #[derive(Clone)]
 pub struct NotificationDebouncer {
     /// Sender for ingress operations that need debouncing
     ingress_tx: flume::Sender<NotificationOp>,
-    /// Sender for immediate operations (non-ingress)
+    /// Sender for dismiss operations that need debouncing
+    dismiss_tx: flume::Sender<NotificationOp>,
+    /// Sender for immediate operations
     immediate_tx: flume::Sender<NotificationOp>,
 }
 
@@ -23,23 +27,34 @@ impl NotificationDebouncer {
     /// Create a new debouncer with the given REDUCER sender.
     pub fn new(reducer_tx: flume::Sender<NotificationOp>) -> Self {
         let (ingress_tx, ingress_rx) = flume::unbounded();
+        let (dismiss_tx, dismiss_rx) = flume::unbounded();
         let (immediate_tx, immediate_rx) = flume::unbounded();
 
         // Spawn debouncer task
-        relm4::tokio::spawn(debounce_task(ingress_rx, immediate_rx, reducer_tx.clone()));
+        tokio::spawn(debounce_task(
+            ingress_rx,
+            dismiss_rx,
+            immediate_rx,
+            reducer_tx.clone(),
+        ));
 
         Self {
             ingress_tx,
+            dismiss_tx,
             immediate_tx,
         }
     }
 
     /// Send a notification operation for debouncing/immediate processing.
     pub fn send(&self, op: NotificationOp) -> Result<(), flume::SendError<NotificationOp>> {
-        match op {
-            // Only debounce ingress operations
+        match &op {
+            // Debounce ingress operations (longer timeout)
             NotificationOp::Ingress(_) => {
                 self.ingress_tx.send(op)?;
+            }
+            // Debounce dismiss operations (shorter timeout, optimistic UI)
+            NotificationOp::NotificationDismiss(_) => {
+                self.dismiss_tx.send(op)?;
             }
             // All other operations are immediate
             _ => {
@@ -50,53 +65,83 @@ impl NotificationDebouncer {
     }
 }
 
-/// Debounce task that batches ingress operations and forwards all operations to REDUCER.
+/// Debounce task that batches ingress and dismiss operations.
 async fn debounce_task(
     ingress_rx: flume::Receiver<NotificationOp>,
+    dismiss_rx: flume::Receiver<NotificationOp>,
     immediate_rx: flume::Receiver<NotificationOp>,
     reducer_tx: flume::Sender<NotificationOp>,
 ) {
-    let debounce_timeout = Duration::from_millis(66);
+    let ingress_timeout = Duration::from_millis(333);
+    let dismiss_timeout = Duration::from_millis(50);
+
     let mut pending_ingress: HashMap<u64, NotificationOp> = HashMap::new();
-    let mut debounce_timer: Option<Pin<Box<Sleep>>> = None;
+    let mut pending_dismiss: HashSet<u64> = HashSet::new();
+
+    let mut ingress_timer: Option<Pin<Box<Sleep>>> = None;
+    let mut dismiss_timer: Option<Pin<Box<Sleep>>> = None;
 
     loop {
         tokio::select! {
-            // Handle ingress operations (debounced)
+            // Handle ingress operations (debounced with longer timeout)
             Ok(ingress_op) = ingress_rx.recv_async() => {
                 if let NotificationOp::Ingress(notification) = ingress_op {
-                    // Keep only the latest ingress operation per notification ID
                     pending_ingress.insert(notification.id, NotificationOp::Ingress(notification));
 
-                    // Start new debounce timer if not already running
-                    if debounce_timer.is_none() {
-                        debounce_timer = Some(Box::pin(sleep(debounce_timeout)));
+                    if ingress_timer.is_none() {
+                        ingress_timer = Some(Box::pin(sleep(ingress_timeout)));
+                    }
+                }
+            }
+
+            // Handle dismiss operations (debounced with shorter timeout)
+            Ok(dismiss_op) = dismiss_rx.recv_async() => {
+                if let NotificationOp::NotificationDismiss(id) = dismiss_op {
+                    log::debug!("[debouncer] dismiss received id={}", id);
+                    pending_dismiss.insert(id);
+
+                    if dismiss_timer.is_none() {
+                        dismiss_timer = Some(Box::pin(sleep(dismiss_timeout)));
                     }
                 }
             }
 
             // Handle immediate operations (forwarded right away)
             Ok(immediate_op) = immediate_rx.recv_async() => {
-                // If we have pending ingress operations, flush them first
+                // Flush pending operations first to maintain ordering
                 if !pending_ingress.is_empty() {
                     flush_ingress(&mut pending_ingress, &reducer_tx).await;
-                    debounce_timer = None;
+                    ingress_timer = None;
+                }
+                if !pending_dismiss.is_empty() {
+                    flush_dismiss(&mut pending_dismiss, &reducer_tx).await;
+                    dismiss_timer = None;
                 }
 
-                // Forward the immediate operation
                 debug!("[debouncer] Immediate operation: {:?}", immediate_op);
                 let _ = reducer_tx.send(immediate_op);
             }
 
-            // Debounce timer expired - flush pending ingress operations
+            // Ingress timer expired
             _ = async {
-                match debounce_timer.as_mut() {
+                match ingress_timer.as_mut() {
                     Some(timer) => timer.await,
                     None => std::future::pending().await,
                 }
-            }, if debounce_timer.is_some() => {
+            }, if ingress_timer.is_some() => {
                 flush_ingress(&mut pending_ingress, &reducer_tx).await;
-                debounce_timer = None;
+                ingress_timer = None;
+            }
+
+            // Dismiss timer expired
+            _ = async {
+                match dismiss_timer.as_mut() {
+                    Some(timer) => timer.await,
+                    None => std::future::pending().await,
+                }
+            }, if dismiss_timer.is_some() => {
+                flush_dismiss(&mut pending_dismiss, &reducer_tx).await;
+                dismiss_timer = None;
             }
         }
     }
@@ -111,10 +156,31 @@ async fn flush_ingress(
         return;
     }
 
-    let batch: Vec<NotificationOp> = pending_ingress.values().map(|op| op.clone()).collect();
+    let batch: Vec<NotificationOp> = pending_ingress.values().cloned().collect();
 
     debug!("[debouncer] Flushing {} ingress operations", batch.len());
 
     let _ = reducer_tx.send(NotificationOp::Batch(batch));
     pending_ingress.clear();
+}
+
+/// Flush pending dismiss operations to the REDUCER.
+async fn flush_dismiss(
+    pending_dismiss: &mut HashSet<u64>,
+    reducer_tx: &flume::Sender<NotificationOp>,
+) {
+    if pending_dismiss.is_empty() {
+        return;
+    }
+
+    let batch: Vec<NotificationOp> = pending_dismiss
+        .iter()
+        .map(|id| NotificationOp::NotificationDismiss(*id))
+        .collect();
+
+    debug!("[debouncer] Flushing {} dismiss operations", batch.len());
+
+    let result = reducer_tx.send(NotificationOp::Batch(batch));
+    debug!("[debouncer] Flush dismiss result: {:?}", result.is_ok());
+    pending_dismiss.clear();
 }

@@ -1,39 +1,28 @@
+//! Clock plugin - displays current date and time.
+
 use anyhow::Result;
 use async_trait::async_trait;
 use log::error;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
 use gtk::glib::DateTime;
-use gtk::prelude::Cast;
-use relm4::prelude::*;
-use relm4::{Component, ComponentController};
+use gtk::prelude::*;
 
-use crate::channels::{Channel, connect_component};
 use crate::plugin::{Plugin, PluginId, Slot, Widget};
-
-mod widget;
-
-use self::widget::{ClockInit, ClockInput, ClockOutput, ClockWidget};
+use crate::ui::clock::ClockWidget;
 
 pub struct ClockPlugin {
-    channel: Channel<ClockOutput>,
-    widget: Option<Controller<ClockWidget>>,
+    widget: Rc<RefCell<Option<ClockWidget>>>,
 }
 
 impl ClockPlugin {
     pub fn new() -> Self {
         Self {
-            channel: Channel::new(),
-            widget: None,
+            widget: Rc::new(RefCell::new(None)),
         }
-    }
-
-    fn create_widget(&self, datetime: DateTime) -> Controller<ClockWidget> {
-        connect_component(
-            ClockWidget::builder().launch(ClockInit { datetime: datetime }),
-            &self.channel,
-        )
     }
 }
 
@@ -49,33 +38,36 @@ impl Plugin for ClockPlugin {
 
     async fn create_elements(&mut self) -> Result<()> {
         let datetime = DateTime::now_local()?;
-        let cx = self.create_widget(datetime);
-        let cx_sender = cx.sender().clone();
-        self.widget = Some(cx);
+        let clock = ClockWidget::new(&datetime);
 
-        relm4::tokio::spawn(async move {
-            loop {
-                match DateTime::now_local() {
-                    Ok(datetime) => {
-                        cx_sender.emit(ClockInput::Tick(datetime));
+        // Store the clock widget
+        *self.widget.borrow_mut() = Some(clock);
+
+        // Schedule tick updates
+        let widget_ref = self.widget.clone();
+        glib::timeout_add_local(Duration::from_secs(1), move || {
+            match DateTime::now_local() {
+                Ok(datetime) => {
+                    if let Some(ref clock) = *widget_ref.borrow() {
+                        clock.tick(&datetime);
                     }
-                    Err(err) => {
-                        error!("[clock] Failed to get current datetime: {:?}", err);
-                    }
-                };
-                relm4::tokio::time::sleep(Duration::from_secs(1)).await;
-            }
+                }
+                Err(err) => {
+                    error!("[clock] Failed to get current datetime: {:?}", err);
+                }
+            };
+            glib::ControlFlow::Continue
         });
+
         Ok(())
     }
 
     fn get_widgets(&self) -> Vec<Arc<Widget>> {
-        match &self.widget {
-            Some(w) => {
-                let widget = w.widget().clone().upcast::<gtk::Widget>();
+        match *self.widget.borrow() {
+            Some(ref clock) => {
                 vec![Arc::new(Widget {
                     slot: Slot::Header,
-                    el: widget,
+                    el: clock.root.clone().upcast::<gtk::Widget>(),
                     weight: 10,
                 })]
             }

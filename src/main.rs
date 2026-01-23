@@ -1,6 +1,5 @@
 use anyhow::Result;
 mod app;
-mod channels;
 mod dbus;
 mod features;
 mod ipc;

@@ -1,102 +1,66 @@
+//! Pure GTK4 Icon widget.
+//!
+//! Displays notification icons from themed names, file paths, or raw bytes.
+
 use std::sync::Arc;
 
-use adw::prelude::*;
-use relm4::{ComponentParts, ComponentSender, SimpleComponent, gtk};
+use gtk::prelude::*;
 
-use super::super::types::NotificationIcon;
+use crate::features::notifications::types::NotificationIcon;
 
-struct IconProps {
-    icon_name: Option<Arc<str>>,
-    icon_texture: Option<gtk::gdk::Texture>,
+/// Pure GTK4 icon widget - displays themed icons or textures.
+pub struct IconWidget {
+    pub root: gtk::Box,
+    image: gtk::Image,
 }
 
-#[derive(Debug)]
-pub struct Icon {
-    icon_name: Option<Arc<str>>,
-    icon_texture: Option<gtk::gdk::Texture>,
-}
+impl IconWidget {
+    /// Create a new icon widget with the given notification icon.
+    pub fn new(icon: NotificationIcon) -> Self {
+        let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
 
-pub struct IconInit {
-    pub icon: NotificationIcon,
-}
+        let image = gtk::Image::builder()
+            .pixel_size(32)
+            .valign(gtk::Align::Start)
+            .build();
 
-#[derive(Debug, Clone)]
-pub enum IconInput {
-    Icon(NotificationIcon),
-}
+        Self::apply_icon(&image, icon);
 
-impl Icon {
-    fn parse_icon(icon: NotificationIcon) -> IconProps {
+        root.append(&image);
+
+        Self { root, image }
+    }
+
+    /// Update the icon being displayed.
+    pub fn set_icon(&self, icon: NotificationIcon) {
+        Self::apply_icon(&self.image, icon);
+    }
+
+    fn apply_icon(image: &gtk::Image, icon: NotificationIcon) {
         match icon {
-            NotificationIcon::Themed(name) => IconProps {
-                icon_name: Some(name),
-                icon_texture: None,
-            },
+            NotificationIcon::Themed(name) => {
+                image.set_icon_name(Some(&name));
+                image.set_paintable(gtk::gdk::Paintable::NONE);
+            }
             NotificationIcon::FilePath(path) => {
                 if let Ok(tex) = gtk::gdk::Texture::from_filename(path.as_ref()) {
-                    IconProps {
-                        icon_name: None,
-                        icon_texture: Some(tex),
-                    }
+                    image.set_paintable(Some(&tex));
+                    image.set_icon_name(None);
                 } else {
-                    IconProps {
-                        icon_name: Some("dialog-information-symbolic".into()),
-                        icon_texture: None,
-                    }
+                    image.set_icon_name(Some("dialog-information-symbolic"));
+                    image.set_paintable(gtk::gdk::Paintable::NONE);
                 }
             }
-            NotificationIcon::Bytes(_b) => IconProps {
+            NotificationIcon::Bytes(_b) => {
                 // TODO: Implement icon parsing from bytes
-                icon_name: Some("dialog-information-symbolic".into()),
-                icon_texture: None,
-            },
-        }
-    }
-}
-
-#[relm4::component(pub)]
-impl SimpleComponent for Icon {
-    type Init = IconInit;
-    type Input = IconInput;
-    type Output = ();
-
-    view! {
-      gtk::Box {
-        #[local_ref]
-        image -> gtk::Image {
-          set_pixel_size: 32,
-          set_valign: gtk::Align::Start,
-        }
-      }
-    }
-
-    fn init(
-        init: Self::Init,
-        root: Self::Root,
-        _sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
-        let props = Self::parse_icon(init.icon);
-        let model = Icon {
-            icon_name: props.icon_name,
-            icon_texture: props.icon_texture,
-        };
-        let image = gtk::Image::new();
-        if model.icon_texture.is_some() {
-            image.set_paintable(model.icon_texture.as_ref());
-        } else {
-            image.set_icon_name(model.icon_name.as_deref());
-        }
-        let widgets = view_output!();
-        ComponentParts { model, widgets }
-    }
-
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
-        match msg {
-            Self::Input::Icon(icon) => {
-                let props = Self::parse_icon(icon);
-                self.icon_name = props.icon_name;
-                self.icon_texture = props.icon_texture;
+                image.set_icon_name(Some("dialog-information-symbolic"));
+                image.set_paintable(gtk::gdk::Paintable::NONE);
             }
         }
+    }
+
+    /// Get a reference to the root widget.
+    pub fn widget(&self) -> &gtk::Box {
+        &self.root
     }
 }

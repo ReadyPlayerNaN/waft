@@ -1,7 +1,6 @@
 use anyhow::Result;
 use flume::Sender;
-use relm4::gtk;
-use relm4::tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncBufReadExt;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -53,32 +52,11 @@ pub async fn spawn_stop(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
     Ok(())
 }
 
-// TODO: When the sunsetr process is dead, we need to downgrade to polling until the IPC is reestablished.
-// pub async fn spawn_polling(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
-//     loop {
-//         gtk::glib::timeout_future(Duration::from_secs(5)).await;
-
-//         match ipc_status().await {
-//             Ok(status) => sender.send(SunsetrIpcEvents::Status(status))?,
-//             Err(e) => {
-//                 let s = e.to_string();
-//                 if is_no_process_error(&s) {
-//                     sender.send(SunsetrIpcEvents::Status(Status::inactive()))?;
-//                 } else {
-//                     sender.send(SunsetrIpcEvents::Error(format!(
-//                         "sunsetr status poll failed: {e}"
-//                     )))?;
-//                 }
-//             }
-//         };
-//     }
-// }
-
 pub fn spawn_following(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
-    gtk::glib::MainContext::default().spawn_local(async move {
+    glib::MainContext::default().spawn_local(async move {
         // Best-effort live event stream via `sunsetr S --json --follow`.
         // We keep this robust: parse only valid JSON lines, ignore known non-json errors.
-        let mut child = match relm4::tokio::process::Command::new("sunsetr")
+        let mut child = match tokio::process::Command::new("sunsetr")
             .args(["S", "--json", "--follow"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -101,7 +79,7 @@ pub fn spawn_following(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
             None => return,
         };
 
-        let mut lines = relm4::tokio::io::BufReader::new(stdout).lines();
+        let mut lines = tokio::io::BufReader::new(stdout).lines();
 
         while let Ok(Some(line)) = lines.next_line().await {
             let line = line.trim();
@@ -185,7 +163,7 @@ async fn ipc_status_raw() -> anyhow::Result<Option<SunsetrJsonEvent>> {
 }
 
 async fn run_sunsetr(args: &[&str]) -> anyhow::Result<(i32, String, String)> {
-    let out = relm4::tokio::process::Command::new("sunsetr")
+    let out = tokio::process::Command::new("sunsetr")
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -234,7 +212,7 @@ async fn refresh_after_start() -> anyhow::Result<Status> {
             }
         }
 
-        relm4::tokio::time::sleep(backoff_duration(attempt)).await;
+        tokio::time::sleep(backoff_duration(attempt)).await;
     }
 
     if let Some(e) = last_err {
