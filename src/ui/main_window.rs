@@ -162,6 +162,19 @@ impl MainWindowWidget {
                 padding: 0;
             }}
 
+            .clock-btn.clickable {{
+                padding: 8px;
+                margin: -8px;
+            }}
+
+            .clock-btn.clickable:hover {{
+                background-color: alpha(@window_fg_color, 0.1);
+            }}
+
+            .clock-btn.clickable:active {{
+                background-color: alpha(@window_fg_color, 0.2);
+            }}
+
             .feature-toggle {{
                 background: @card_bg_color;
                 border-radius: 28px;

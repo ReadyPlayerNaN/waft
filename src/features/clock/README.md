@@ -13,11 +13,14 @@ plugin::clock
 ```toml
 [[plugins]]
 id = "plugin::clock"
+on_click = "gnome-calendar"  # optional
 ```
 
 ### Options
 
-This plugin currently has no configuration options.
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `on_click` | string | `""` | Shell command to run when the clock is clicked. When empty, the clock is not clickable or focusable. |
 
 ## Features
 

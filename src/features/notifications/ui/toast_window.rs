@@ -8,20 +8,26 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use gtk4_layer_shell::LayerShell;
 
-use crate::features::notifications::store::NotificationStore;
 use super::toast_list::{ToastListOutput, ToastListWidget};
+use crate::features::notifications::store::NotificationStore;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HPos {
+    #[allow(dead_code)]
     Left,
+    #[allow(dead_code)]
     Center,
+    #[allow(dead_code)]
     Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VPos {
+    #[allow(dead_code)]
     Top,
+    #[allow(dead_code)]
     Center,
+    #[allow(dead_code)]
     Bottom,
 }
 

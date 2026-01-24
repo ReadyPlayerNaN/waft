@@ -36,6 +36,8 @@ Plugins implement the `Plugin` trait (`#[async_trait(?Send)]`):
 - Registration is manual in `app.rs` via `PluginRegistry`
 - Registry stores plugins behind `Arc<Mutex<Box<dyn Plugin>>>`
 
+**Documentation requirement:** When adding or modifying plugin configuration options, always update the plugin's README.md file (`src/features/<plugin>/README.md`) to document the new/changed options.
+
 ### State Management
 
 - **Notifications store:** `AsyncReducible` reducer pattern in `src/features/notifications/store.rs`
