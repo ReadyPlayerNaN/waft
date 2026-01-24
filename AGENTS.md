@@ -71,6 +71,15 @@ For DBus-driven UIs:
 - Use wake-on-demand invalidate queues for DBus signal bursts
 - Gate updates to when overlay is visible
 
+### Layer-Shell Window Dynamic Resizing
+
+Layer-shell windows don't auto-resize when content changes. To trigger resize:
+1. Call `window.set_default_size(width, -1)` when content changes (height `-1` = recalculate from content)
+2. For animated content (revealers), trigger resize after animation completes via `revealer.connect_child_revealed_notify()`
+3. Use `idle_add_local_once` to defer resize until after GTK event processing
+
+To constrain max height, use `ScrolledWindow.set_max_content_height()` - CSS `max-height` on inner widgets won't constrain window size.
+
 ---
 
 ## DBus Notifications

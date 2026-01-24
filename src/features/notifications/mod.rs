@@ -6,7 +6,6 @@ use log::{debug, info};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use gtk::prelude::*;
@@ -16,6 +15,8 @@ use crate::plugin::WidgetFeatureToggle;
 use crate::plugin::{Plugin, PluginId};
 use self::store::STORE;
 use crate::features::notifications::ui::toast_window::{HPos, ToastWindowOutput, ToastWindowWidget, VPos};
+use crate::features::notifications::ui::notifications_widget::{NotificationsWidget, NotificationsWidgetOutput};
+use crate::plugin::{Slot, Widget};
 
 use self::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
 use self::dbus::server::NotificationsDbusServer;
@@ -33,8 +34,8 @@ pub struct NotificationsPlugin {
     client_channel: flume::Sender<OutboundEvent>,
     client_receiver: flume::Receiver<OutboundEvent>,
     dbus_server: Option<NotificationsDbusServer>,
-    dnd: Arc<AtomicBool>,
     dnd_toggle: Rc<RefCell<Option<DoNotDisturbToggleWidget>>>,
+    notifications_widget: Rc<RefCell<Option<NotificationsWidget>>>,
     server_channel: flume::Sender<IngressEvent>,
     server_receiver: flume::Receiver<IngressEvent>,
     tick_source: Arc<std::sync::Mutex<Option<glib::SourceId>>>,
@@ -51,8 +52,8 @@ impl NotificationsPlugin {
             client_channel: client_tx,
             client_receiver: client_rx,
             dbus_server: None,
-            dnd: Arc::new(AtomicBool::new(false)),
             dnd_toggle: Rc::new(RefCell::new(None)),
+            notifications_widget: Rc::new(RefCell::new(None)),
             server_channel: server_tx,
             server_receiver: server_rx,
             tick_source: Arc::new(std::sync::Mutex::new(None)),
@@ -193,26 +194,24 @@ impl Plugin for NotificationsPlugin {
         });
 
         // Create DnD toggle
-        let active = self.dnd.load(Ordering::SeqCst);
         let dnd_toggle = DoNotDisturbToggleWidget::new(DoNotDisturbToggleInit {
-            active,
+            active: false,
             busy: false,
         });
 
         // Connect output handler
-        let dnd_state = self.dnd.clone();
         let dnd_toggle_ref = self.dnd_toggle.clone();
         dnd_toggle.connect_output(move |event| {
             debug!("[dnd] Received: {:?}", event);
             match event {
                 DoNotDisturbToggleOutput::Activate => {
-                    dnd_state.store(true, Ordering::SeqCst);
+                    STORE.emit(NotificationOp::SetDnd(true));
                     if let Some(ref toggle) = *dnd_toggle_ref.borrow() {
                         toggle.set_active(true);
                     }
                 }
                 DoNotDisturbToggleOutput::Deactivate => {
-                    dnd_state.store(false, Ordering::SeqCst);
+                    STORE.emit(NotificationOp::SetDnd(false));
                     if let Some(ref toggle) = *dnd_toggle_ref.borrow() {
                         toggle.set_active(false);
                     }
@@ -221,6 +220,38 @@ impl Plugin for NotificationsPlugin {
         });
 
         *self.dnd_toggle.borrow_mut() = Some(dnd_toggle);
+
+        // Create NotificationsWidget for the overlay Info slot
+        let notifications_widget = NotificationsWidget::new();
+
+        // Connect output handler for widget events
+        let db_widget = self.debouncer.as_ref().unwrap().clone();
+        let outbound_tx_widget = self.client_channel.clone();
+        notifications_widget.connect_output(move |event| {
+            debug!("[notifications_widget] Received: {:?}", event);
+            match event {
+                NotificationsWidgetOutput::ActionClick(id, action_key) => {
+                    let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
+                    let _ = outbound_tx_widget.send(OutboundEvent::ActionInvoked {
+                        id: id as u32,
+                        action_key: action_key.clone(),
+                    });
+                    let _ = outbound_tx_widget.send(OutboundEvent::NotificationClosed {
+                        id: id as u32,
+                        reason: close_reasons::DISMISSED_BY_USER,
+                    });
+                }
+                NotificationsWidgetOutput::Dismiss(id) => {
+                    let _ = outbound_tx_widget.send(OutboundEvent::NotificationClosed {
+                        id: id as u32,
+                        reason: close_reasons::DISMISSED_BY_USER,
+                    });
+                    let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
+                }
+            }
+        });
+
+        *self.notifications_widget.borrow_mut() = Some(notifications_widget);
 
         self.schedule_tick();
 
@@ -232,6 +263,17 @@ impl Plugin for NotificationsPlugin {
             Some(ref dnd_toggle) => vec![Arc::new(WidgetFeatureToggle {
                 el: dnd_toggle.widget().clone().upcast::<gtk::Widget>(),
                 weight: 60,
+            })],
+            None => vec![],
+        }
+    }
+
+    fn get_widgets(&self) -> Vec<Arc<Widget>> {
+        match *self.notifications_widget.borrow() {
+            Some(ref notifications_widget) => vec![Arc::new(Widget {
+                slot: Slot::Info,
+                weight: 10,
+                el: notifications_widget.widget().clone().upcast::<gtk::Widget>(),
             })],
             None => vec![],
         }

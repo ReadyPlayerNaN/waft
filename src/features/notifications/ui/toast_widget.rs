@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
-use super::icon::IconWidget;
+use super::notification_layout::{NotificationLayoutConfig, NotificationLayoutParts};
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 
 /// Pure GTK4 toast widget - no Relm4 factory abstractions.
@@ -16,25 +16,27 @@ pub struct ToastWidget {
     pub id: u64,
     pub root: gtk::Box,
     revealer: gtk::Revealer,
-    title_label: gtk::Label,
-    description_label: gtk::Label,
-    icon_widget: IconWidget,
+    layout: NotificationLayoutParts,
     hidden: Rc<RefCell<bool>>,
+    remove_on_hide: Rc<RefCell<bool>>,
 }
 
 impl ToastWidget {
-    pub fn new<F, A>(
+    pub fn new<F, A, H>(
         id: u64,
         title: &str,
         description: &str,
         icon_hints: Vec<NotificationIcon>,
         actions: Vec<NotificationAction>,
+        toast_ttl: Option<u64>,
         on_close: F,
         on_action: A,
+        on_hover_change: H,
     ) -> Self
     where
         F: Fn(u64) + 'static,
         A: Fn(u64, String) + 'static,
+        H: Fn(bool) + Clone + 'static,
     {
         // Root container
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -47,126 +49,42 @@ impl ToastWidget {
             .build();
         revealer.add_css_class("notification-card-revealer");
 
-        // Card box
-        let card_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .css_classes(["toast", "card", "notification-card"])
-            .margin_top(8)
-            .build();
-
-        // Header
-        let header = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .hexpand(true)
-            .spacing(12)
-            .margin_start(16)
-            .margin_end(16)
-            .margin_top(16)
-            .margin_bottom(16)
-            .build();
-
-        // Content box (title + description)
-        let content_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(8)
-            .css_classes(["notification-content"])
-            .hexpand(true)
-            .halign(gtk::Align::Fill)
-            .build();
-
-        // Title label
-        let title_label = gtk::Label::builder()
-            .css_classes(["heading"])
-            .wrap(true)
-            .wrap_mode(gtk::pango::WrapMode::WordChar)
-            .xalign(0.0)
-            .use_markup(true)
-            .build();
-        title_label.set_markup(title);
-
-        // Description label
-        let description_label = gtk::Label::builder()
-            .css_classes(["dim-label"])
-            .wrap(true)
-            .wrap_mode(gtk::pango::WrapMode::WordChar)
-            .xalign(0.0)
-            .use_markup(true)
-            .build();
-        description_label.set_markup(description);
-
-        content_box.append(&title_label);
-        content_box.append(&description_label);
-
-        // Icon widget
-        let icon_widget = IconWidget::new(icon_hints);
-
-        // Spacer
-        let spacer = gtk::Box::builder().hexpand(true).build();
-
-        // Close button
-        let close_btn = gtk::Button::builder()
-            .icon_name("window-close-symbolic")
-            .css_classes(["flat", "circular", "notification-close"])
-            .valign(gtk::Align::Start)
-            .halign(gtk::Align::End)
-            .build();
-
-        // Append icon, then content
-        header.append(icon_widget.widget());
-        header.append(&content_box);
-        header.append(&spacer);
-        header.append(&close_btn);
-
-        card_box.append(&header);
-
-        // Action buttons (if any)
+        // Build shared layout
         let on_action = Rc::new(on_action);
-        if !actions.is_empty() {
-            let actions_box = gtk::Box::builder()
-                .orientation(gtk::Orientation::Horizontal)
-                .spacing(8)
-                .margin_start(16)
-                .margin_end(16)
-                .margin_bottom(12)
-                .halign(gtk::Align::End)
-                .build();
+        let on_action_for_layout = on_action.clone();
+        let layout = NotificationLayoutParts::build(
+            NotificationLayoutConfig {
+                id,
+                title: title.to_string(),
+                description: description.to_string(),
+                icon_hints,
+                actions,
+                css_classes: vec!["toast", "card", "notification-card"],
+                show_close_button: true,
+                toast_ttl,
+            },
+            move |action_id, action_key| {
+                on_action_for_layout(action_id, action_key);
+            },
+        );
 
-            for action in actions {
-                // Skip the "default" action (clicking the notification itself)
-                if action.key.as_ref() == "default" {
-                    continue;
-                }
-
-                let action_btn = gtk::Button::builder()
-                    .label(action.label.as_ref())
-                    .css_classes(["notification-action"])
-                    .build();
-
-                let action_key = action.key.to_string();
-                let on_action_clone = on_action.clone();
-                action_btn.connect_clicked(move |_| {
-                    on_action_clone(id, action_key.clone());
-                });
-
-                actions_box.append(&action_btn);
-            }
-
-            // Only append if we have visible buttons (non-default actions)
-            if actions_box.first_child().is_some() {
-                card_box.append(&actions_box);
-            }
-        }
-
-        revealer.set_child(Some(&card_box));
+        revealer.set_child(Some(&layout.card_box));
         root.append(&revealer);
 
         // Track hidden state for double-click guard
         let hidden = Rc::new(RefCell::new(true));
 
-        // When revealer finishes collapsing, remove widget from parent container
+        // Track whether this widget should be removed when hidden
+        // (vs staying in place for potential re-show)
+        let remove_on_hide = Rc::new(RefCell::new(false));
+        let remove_on_hide_clone = remove_on_hide.clone();
+
+        // When revealer finishes collapsing, optionally remove widget from parent container
+        // Only remove if explicitly marked for removal (TTL expired, dismissed)
+        // Hidden widgets (slot limited) should stay in place for re-show
         let root_clone = root.clone();
         revealer.connect_child_revealed_notify(move |rev| {
-            if !rev.is_child_revealed() {
+            if !rev.is_child_revealed() && *remove_on_hide_clone.borrow() {
                 // Remove from parent - this is the authoritative cleanup
                 if let Some(parent) = root_clone.parent() {
                     if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
@@ -177,11 +95,11 @@ impl ToastWidget {
         });
 
         // Close button click handler
+        let on_close = Rc::new(on_close);
         let hidden_clone = hidden.clone();
         let revealer_clone = revealer.clone();
-        let on_close = Rc::new(on_close);
         let on_close_clone = on_close.clone();
-        close_btn.connect_clicked(move |_| {
+        layout.close_btn.connect_clicked(move |_| {
             if *hidden_clone.borrow() {
                 return; // Already hidden, ignore
             }
@@ -238,27 +156,64 @@ impl ToastWidget {
         });
         root.add_controller(left_click);
 
+        // Hover detection for pausing countdown
+        let motion = gtk::EventControllerMotion::new();
+        let on_enter = on_hover_change.clone();
+        let on_leave = on_hover_change;
+        motion.connect_enter(move |_, _, _| on_enter(true));
+        motion.connect_leave(move |_| on_leave(false));
+        root.add_controller(motion);
+
         Self {
             id,
             root,
             revealer,
-            title_label,
-            description_label,
-            icon_widget,
+            layout,
             hidden,
+            remove_on_hide,
         }
     }
 
     /// Show the toast with animation
     pub fn show(&self) {
         *self.hidden.borrow_mut() = false;
+        *self.remove_on_hide.borrow_mut() = false; // Reset removal flag when showing
         self.root.set_visible(true); // Ensure root is visible before revealing
         self.revealer.set_reveal_child(true);
+        self.start_countdown();
     }
 
-    /// Hide the toast with animation
+    /// Start the countdown bar timer
+    pub fn start_countdown(&self) {
+        if let Some(ref bar) = self.layout.countdown_bar {
+            bar.start();
+        }
+    }
+
+    /// Pause the countdown bar timer
+    pub fn pause_countdown(&self) {
+        if let Some(ref bar) = self.layout.countdown_bar {
+            bar.pause();
+        }
+    }
+
+    /// Resume the countdown bar timer
+    pub fn resume_countdown(&self) {
+        if let Some(ref bar) = self.layout.countdown_bar {
+            bar.resume();
+        }
+    }
+
+    /// Hide the toast with animation (stays in container for potential re-show)
     pub fn hide(&self) {
         *self.hidden.borrow_mut() = true;
+        self.revealer.set_reveal_child(false);
+    }
+
+    /// Hide and remove from container (for dismissed/expired toasts that won't return)
+    pub fn hide_and_remove(&self) {
+        *self.hidden.borrow_mut() = true;
+        *self.remove_on_hide.borrow_mut() = true;
         self.revealer.set_reveal_child(false);
     }
 
@@ -269,7 +224,6 @@ impl ToastWidget {
 
     /// Update the toast content
     pub fn update(&self, title: &str, description: &str) {
-        self.title_label.set_markup(title);
-        self.description_label.set_markup(description);
+        self.layout.update(title, description);
     }
 }

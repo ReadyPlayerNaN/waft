@@ -1,8 +1,6 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use super::super::types::NotificationAction;
-
 use super::hints::Hints;
 
 #[derive(Debug, Clone)]

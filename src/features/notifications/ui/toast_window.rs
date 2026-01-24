@@ -49,6 +49,7 @@ impl ToastWindowWidget {
             .decorated(false)
             .modal(false)
             .default_width(480)
+            .hexpand(false)
             .resizable(false)
             .build();
 

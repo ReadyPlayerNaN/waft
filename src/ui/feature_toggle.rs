@@ -39,9 +39,7 @@ pub struct FeatureToggleWidget {
 impl FeatureToggleWidget {
     /// Create a new feature toggle widget.
     pub fn new(props: FeatureToggleProps) -> Self {
-        let root = gtk::Button::builder()
-            .hexpand(true)
-            .build();
+        let root = gtk::Button::builder().hexpand(true).build();
 
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -144,15 +142,18 @@ impl FeatureToggleWidget {
     /// Update the details text.
     pub fn set_details(&self, details: Option<String>) {
         self.details_revealer.set_reveal_child(details.is_some());
-        self.details_label.set_label(details.as_deref().unwrap_or(""));
+        self.details_label
+            .set_label(details.as_deref().unwrap_or(""));
     }
 
     /// Update the icon.
+    #[allow(dead_code)]
     pub fn set_icon(&self, icon: &str) {
         self.icon_image.set_icon_name(Some(icon));
     }
 
     /// Update the title.
+    #[allow(dead_code)]
     pub fn set_title(&self, title: &str) {
         self.title_label.set_label(title);
     }

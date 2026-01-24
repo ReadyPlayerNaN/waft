@@ -18,6 +18,7 @@ pub struct Notification {
     pub icon_hints: Vec<NotificationIcon>,
     pub id: u64,
     pub replaces_id: Option<u64>,
+    pub resident: bool,
     pub title: Arc<str>,
     pub ttl: Option<u64>,
     pub toast_ttl: Option<u64>,
@@ -136,9 +137,12 @@ pub enum NotificationOp {
     NotificationDismissed(u64),
     NotificationRetract(u64),
     NotificationRetracted(u64),
+    SetDnd(bool),
     Tick,
     ToastHide(u64),
     ToastHidden(u64),
+    ToastHoverEnter,
+    ToastHoverLeave,
     Batch(Vec<NotificationOp>),
 }
 
@@ -148,11 +152,18 @@ pub struct State {
     pub appearing_timestamps: IndexMap<u64, SystemTime>,
     pub archive: IndexMap<Arc<str>, ItemLifecycle>,
     pub dismissing_timestamps: IndexMap<u64, SystemTime>,
+    pub dnd: bool,
     pub groups: HashMap<Arc<str>, Group>,
     pub hiding_timestamps: IndexMap<u64, SystemTime>,
+    /// Whether toast timers are paused due to hover
+    pub hover_paused: bool,
     pub notifications: HashMap<u64, Notification>,
+    pub panel_notifications: IndexMap<u64, ItemLifecycle>,
     pub retracting_timestamps: IndexMap<u64, SystemTime>,
     pub toasts: IndexMap<u64, ItemLifecycle>,
+    /// Toasts that are hiding due to TTL expiration (should be removed from queue after animation)
+    pub ttl_expired_toasts: std::collections::HashSet<u64>,
+    pub visible_since_timestamps: IndexMap<u64, SystemTime>,
 }
 
 impl State {
@@ -162,11 +173,16 @@ impl State {
             appearing_timestamps: IndexMap::new(),
             archive: IndexMap::new(),
             dismissing_timestamps: IndexMap::new(),
+            dnd: false,
             groups: HashMap::new(),
             hiding_timestamps: IndexMap::new(),
+            hover_paused: false,
             notifications: HashMap::new(),
+            panel_notifications: IndexMap::new(),
             retracting_timestamps: IndexMap::new(),
             toasts: IndexMap::new(),
+            ttl_expired_toasts: std::collections::HashSet::new(),
+            visible_since_timestamps: IndexMap::new(),
         }
     }
 
@@ -179,6 +195,36 @@ impl State {
             .iter()
             .filter_map(|(k, l)| self.notifications.get(k).map(|n| (n, l)))
             .collect()
+    }
+
+    /// Get panel notifications with their lifecycle state.
+    pub fn get_panel_notifications(&self) -> Vec<(&Notification, &ItemLifecycle)> {
+        self.panel_notifications
+            .iter()
+            .filter_map(|(k, l)| self.notifications.get(k).map(|n| (n, l)))
+            .collect()
+    }
+
+    /// Get notifications grouped by app identifier.
+    pub fn get_grouped_notifications(&self) -> HashMap<Arc<str>, Vec<(&Notification, &ItemLifecycle)>> {
+        let mut grouped: HashMap<Arc<str>, Vec<(&Notification, &ItemLifecycle)>> = HashMap::new();
+
+        for (id, lifecycle) in &self.panel_notifications {
+            if let Some(notification) = self.notifications.get(id) {
+                let app_ident = notification.app_ident();
+                grouped
+                    .entry(app_ident)
+                    .or_default()
+                    .push((notification, lifecycle));
+            }
+        }
+
+        // Sort notifications within each group by creation time (newest first)
+        for notifications in grouped.values_mut() {
+            notifications.sort_by(|a, b| b.0.created_at.cmp(&a.0.created_at));
+        }
+
+        grouped
     }
 }
 

@@ -75,18 +75,26 @@ pub fn decode_hints(hints: HashMap<String, OwnedValue>) -> HashMap<String, HintV
 
 #[derive(Debug, Clone)]
 pub struct Hints {
+    #[allow(dead_code)]
     pub action_icons: bool,
+    #[allow(dead_code)]
     pub category: Option<NotificationCategory>,
     pub desktop_entry: Option<Arc<str>>,
     pub image_data: Option<Vec<u8>>,
     pub image_path: Option<Arc<str>>,
     pub resident: bool,
+    #[allow(dead_code)]
     pub sound_file: Option<Arc<str>>,
+    #[allow(dead_code)]
     pub sound_name: Option<Arc<str>>,
+    #[allow(dead_code)]
     pub suppress_sound: bool,
+    #[allow(dead_code)]
     pub transient: bool,
     pub urgency: NotificationUrgency,
+    #[allow(dead_code)]
     pub x: i32,
+    #[allow(dead_code)]
     pub y: i32,
 }
 

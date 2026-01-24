@@ -16,6 +16,32 @@ use crate::plugin_registry::PluginRegistry;
 use crate::ui::feature_grid::FeatureGridWidget;
 
 const OVERLAY_WIDTH_PX: i32 = 920;
+
+// Thread-local callback for triggering window resize from anywhere in the app
+thread_local! {
+    static WINDOW_RESIZE_CALLBACK: RefCell<Option<Rc<dyn Fn()>>> = RefCell::new(None);
+}
+
+/// Set the callback that will be invoked when window resize is needed.
+pub fn set_window_resize_callback<F: Fn() + 'static>(callback: F) {
+    WINDOW_RESIZE_CALLBACK.with(|cb| {
+        *cb.borrow_mut() = Some(Rc::new(callback));
+    });
+}
+
+/// Trigger window resize. Call this when content changes to recalculate layer-shell window size.
+/// Uses idle_add to defer the resize until after the current event processing completes.
+pub fn trigger_window_resize() {
+    WINDOW_RESIZE_CALLBACK.with(|cb| {
+        if let Some(ref callback) = *cb.borrow() {
+            let callback = callback.clone();
+            gtk::glib::idle_add_local_once(move || {
+                debug!("[main_window] Triggering window resize");
+                callback();
+            });
+        }
+    });
+}
 const OVERLAY_TOP_OFFSET_PX: i32 = 16;
 const OVERLAY_BOTTOM_OFFSET_PX: i32 = 16;
 const OVERLAY_CORNER_RADIUS_PX: i32 = 8;
@@ -76,6 +102,14 @@ impl MainWindowWidget {
             }
         });
 
+        // Set up resize callback for layer-shell window resizing
+        let window_clone = window.clone();
+        set_window_resize_callback(move || {
+            // For layer-shell windows, setting default height to -1 triggers
+            // GTK to recalculate size based on content.
+            window_clone.set_default_size(OVERLAY_WIDTH_PX, -1);
+        });
+
         debug!("Created main window");
 
         Self { window, on_stop }
@@ -87,40 +121,6 @@ impl MainWindowWidget {
         F: Fn() + 'static,
     {
         *self.on_stop.borrow_mut() = Some(Box::new(callback));
-    }
-
-    /// Handle input messages.
-    pub fn handle_input(&self, input: MainWindowInput) {
-        match input {
-            MainWindowInput::ShowOverlay => {
-                self.window.set_visible(true);
-                self.window.present();
-            }
-            MainWindowInput::HideOverlay => {
-                self.window.set_visible(false);
-            }
-            MainWindowInput::ToggleOverlay => {
-                if self.window.is_visible() {
-                    self.window.set_visible(false);
-                } else {
-                    self.window.set_visible(true);
-                    self.window.present();
-                }
-            }
-            MainWindowInput::StopApp => {
-                if let Some(ref callback) = *self.on_stop.borrow() {
-                    callback();
-                }
-            }
-            MainWindowInput::RequestHide => {
-                self.window.set_visible(false);
-            }
-        }
-    }
-
-    /// Get a reference to the window.
-    pub fn widget(&self) -> &adw::ApplicationWindow {
-        &self.window
     }
 
     fn configure_layer_shell(window: &adw::ApplicationWindow) {
@@ -201,7 +201,31 @@ impl MainWindowWidget {
                 );
             }}
 
-            .notification-card-revealer {{
+            .toast {{
+              background-color: @window_bg_color;
+            }}
+
+            .toast:hover {{
+              background-color: color-mix(
+                in srgb,
+                @accent_bg_color 20%,
+                @window_bg_color
+              );
+            }}
+
+            .notification-progress {{
+                min-height: 2px;
+                margin: 0 16px;
+            }}
+
+            .notification-progress trough {{
+                background: transparent;
+                min-height: 2px;
+            }}
+
+            .notification-progress progress {{
+                background: alpha(@window_fg_color, 0.2);
+                min-height: 2px;
             }}
 
             "#,
@@ -230,7 +254,6 @@ impl MainWindowWidget {
             .hexpand(true)
             .orientation(gtk::Orientation::Vertical)
             .spacing(12)
-            .vexpand(true)
             .width_request(480)
             .build();
 
@@ -238,7 +261,6 @@ impl MainWindowWidget {
             .hexpand(true)
             .orientation(gtk::Orientation::Vertical)
             .spacing(12)
-            .vexpand(true)
             .width_request(480)
             .build();
 
@@ -273,11 +295,9 @@ impl MainWindowWidget {
 
         let content_row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
         content_row.set_hexpand(true);
-        content_row.set_vexpand(true);
 
         let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
         spacer.set_hexpand(true);
-        spacer.set_vexpand(true);
 
         content_row.append(&left_col);
         content_row.append(&spacer);
@@ -285,19 +305,35 @@ impl MainWindowWidget {
 
         main_vbox.append(&content_row);
 
+        // Calculate max height based on monitor size
+        let max_height = if let Some(display) = gtk::gdk::Display::default() {
+            if let Some(monitor) = display.monitors().item(0) {
+                if let Some(monitor) = monitor.downcast_ref::<gtk::gdk::Monitor>() {
+                    let geometry = monitor.geometry();
+                    // Max height = screen height - top margin - bottom margin - some padding
+                    geometry.height() - OVERLAY_TOP_OFFSET_PX - OVERLAY_BOTTOM_OFFSET_PX - 48
+                } else {
+                    800 // fallback
+                }
+            } else {
+                800 // fallback
+            }
+        } else {
+            800 // fallback
+        };
+
         let scroller = gtk::ScrolledWindow::new();
         scroller.set_hscrollbar_policy(gtk::PolicyType::Never);
         scroller.set_vscrollbar_policy(gtk::PolicyType::Automatic);
         scroller.set_propagate_natural_height(true);
         scroller.set_propagate_natural_width(true);
+        scroller.set_max_content_height(max_height);
         scroller.set_hexpand(true);
-        scroller.set_vexpand(true);
         scroller.set_child(Some(&main_vbox));
 
         let clip = gtk::Frame::new(None);
         clip.add_css_class("relm4-overlay-surface");
         clip.set_hexpand(true);
-        clip.set_vexpand(true);
         clip.set_overflow(gtk::Overflow::Hidden);
         clip.set_child(Some(&scroller));
 

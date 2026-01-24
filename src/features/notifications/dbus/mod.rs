@@ -1,6 +1,4 @@
-mod app;
 pub mod client;
-mod hints;
-mod icons;
+pub mod hints;
 pub mod ingress;
 pub mod server;

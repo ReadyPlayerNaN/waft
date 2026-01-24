@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
-use crate::features::notifications::store::{ItemLifecycle, STORE};
+use crate::features::notifications::store::{ItemLifecycle, NotificationOp, STORE};
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 use super::toast_widget::ToastWidget;
 
@@ -31,8 +31,7 @@ pub struct ToastStateData {
     pub description: Arc<str>,
     pub icon_hints: Vec<NotificationIcon>,
     pub actions: Vec<NotificationAction>,
-    #[allow(dead_code)]
-    pub ttl: Option<u64>,
+    pub toast_ttl: Option<u64>,
 }
 
 /// Pure GTK4 toast list widget.
@@ -41,6 +40,7 @@ pub struct ToastListWidget {
     container: gtk::Box,
     widgets: Rc<RefCell<HashMap<u64, ToastWidget>>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>>,
+    hover_count: Rc<RefCell<u32>>,
 }
 
 impl ToastListWidget {
@@ -64,12 +64,14 @@ impl ToastListWidget {
         let widgets: Rc<RefCell<HashMap<u64, ToastWidget>>> = Rc::new(RefCell::new(HashMap::new()));
         let on_output: Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>> =
             Rc::new(RefCell::new(None));
+        let hover_count: Rc<RefCell<u32>> = Rc::new(RefCell::new(0));
 
         let widget = Self {
             root,
             container,
             widgets,
             on_output,
+            hover_count,
         };
 
         // Subscribe to STORE for state changes
@@ -95,10 +97,22 @@ impl ToastListWidget {
         let widgets = self.widgets.clone();
         let container = self.container.clone();
         let on_output = self.on_output.clone();
+        let hover_count = self.hover_count.clone();
 
         // Subscribe to STORE - the callback runs on the main thread via glib::spawn_future_local
         STORE.subscribe(move || {
             let state = STORE.get_state();
+
+            // Get all toast IDs (including hidden ones) to know which toasts still exist
+            let all_toast_ids: std::collections::HashSet<u64> = state
+                .toasts
+                .keys()
+                .copied()
+                .collect();
+
+            // Get hover_paused state to check if new toasts should start paused
+            let hover_paused = state.hover_paused;
+
             let toasts: Vec<ToastStateData> = state
                 .get_toasts()
                 .into_iter()
@@ -115,29 +129,35 @@ impl ToastListWidget {
                     description: n.description.clone(),
                     icon_hints: n.icon_hints.clone(),
                     actions: n.actions.clone(),
-                    ttl: n.ttl,
+                    toast_ttl: n.toast_ttl,
                 })
                 .collect();
 
             Self::handle_toasts_changed(
                 &toasts,
+                &all_toast_ids,
                 &widgets,
                 &container,
                 &on_output,
+                &hover_count,
+                hover_paused,
             );
         });
     }
 
     fn handle_toasts_changed(
         toasts: &Vec<ToastStateData>,
+        all_toast_ids: &std::collections::HashSet<u64>,
         widgets: &Rc<RefCell<HashMap<u64, ToastWidget>>>,
         container: &gtk::Box,
         on_output: &Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>>,
+        hover_count: &Rc<RefCell<u32>>,
+        hover_paused: bool,
     ) {
         log::debug!("[toast_list] ToastsChanged received count={}", toasts.len());
 
-        // Collect IDs of toasts that should exist
-        let known_ids: Vec<u64> = toasts.iter().map(|t| t.id).collect();
+        // Collect IDs of toasts that should be visible
+        let visible_ids: std::collections::HashSet<u64> = toasts.iter().map(|t| t.id).collect();
 
         // Clean up orphaned widgets (those that have removed themselves from the container)
         {
@@ -154,13 +174,20 @@ impl ToastListWidget {
             }
         }
 
-        // Hide widgets that are no longer in state (they will self-remove when animation completes)
+        // Handle widgets that are not currently visible
         {
             let widgets_ref = widgets.borrow();
             for (id, widget) in widgets_ref.iter() {
-                if !known_ids.contains(id) && !widget.is_hidden() {
-                    log::debug!("[toast_list] hiding widget id={}", id);
-                    widget.hide();
+                if !visible_ids.contains(id) && !widget.is_hidden() {
+                    if all_toast_ids.contains(id) {
+                        // Toast still exists but is hidden (slot limited) - hide but keep in container
+                        log::debug!("[toast_list] hiding widget id={} (slot limited)", id);
+                        widget.hide();
+                    } else {
+                        // Toast is gone from state (dismissed/expired) - hide and remove
+                        log::debug!("[toast_list] hiding and removing widget id={}", id);
+                        widget.hide_and_remove();
+                    }
                 }
             }
         }
@@ -180,6 +207,8 @@ impl ToastListWidget {
                     let id = toast.id;
                     let on_output_clone = on_output.clone();
                     let on_output_action = on_output.clone();
+                    let hover_count_clone = hover_count.clone();
+                    let widgets_for_hover = widgets.clone();
 
                     let widget = ToastWidget::new(
                         toast.id,
@@ -187,6 +216,7 @@ impl ToastListWidget {
                         &toast.description,
                         toast.icon_hints.clone(),
                         toast.actions.clone(),
+                        toast.toast_ttl,
                         move |close_id| {
                             if let Some(ref callback) = *on_output_clone.borrow() {
                                 callback(ToastListOutput::CardClose(close_id));
@@ -197,6 +227,9 @@ impl ToastListWidget {
                                 callback(ToastListOutput::ActionClick(action_id, action_key));
                             }
                         },
+                        move |is_enter| {
+                            Self::handle_hover_change(is_enter, &hover_count_clone, &widgets_for_hover);
+                        },
                     );
 
                     // Show container and add widget (prepend for newest on top)
@@ -205,6 +238,11 @@ impl ToastListWidget {
 
                     // Animate in
                     widget.show();
+
+                    // If currently hovering, pause the new widget's countdown
+                    if hover_paused {
+                        widget.pause_countdown();
+                    }
 
                     widgets_ref.insert(toast.id, widget);
                     log::debug!("[toast_list] added widget id={}", id);
@@ -231,6 +269,36 @@ impl ToastListWidget {
             "[toast_list] ToastsChanged done, {} widgets total",
             widgets.borrow().len()
         );
+    }
+
+    /// Handle hover state changes with reference counting.
+    /// When the first toast is hovered, pause all countdowns and emit ToastHoverEnter.
+    /// When the last toast is un-hovered, resume all countdowns and emit ToastHoverLeave.
+    fn handle_hover_change(
+        is_enter: bool,
+        hover_count: &Rc<RefCell<u32>>,
+        widgets: &Rc<RefCell<HashMap<u64, ToastWidget>>>,
+    ) {
+        let mut count = hover_count.borrow_mut();
+        if is_enter {
+            *count += 1;
+            if *count == 1 {
+                // First hover - pause all countdowns
+                STORE.emit(NotificationOp::ToastHoverEnter);
+                for w in widgets.borrow().values() {
+                    w.pause_countdown();
+                }
+            }
+        } else {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                // Last hover left - resume all countdowns
+                STORE.emit(NotificationOp::ToastHoverLeave);
+                for w in widgets.borrow().values() {
+                    w.resume_countdown();
+                }
+            }
+        }
     }
 }
 

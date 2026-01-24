@@ -18,13 +18,12 @@ pub enum CountdownBarOutput {
 
 /// Pure GTK4 countdown bar widget.
 pub struct CountdownBarWidget {
-    pub root: gtk::Box,
-    fixer: gtk::Fixed,
-    fill: gtk::Box,
+    pub root: gtk::ProgressBar,
     ttl: u64,
     elapsed: Rc<Cell<u64>>,
-    progress: Rc<Cell<f32>>,
     running: Arc<AtomicBool>,
+    /// Tracks if the timer completed naturally (so we don't try to remove an already-removed source)
+    timer_completed: Rc<Cell<bool>>,
     timer_source: Rc<RefCell<Option<glib::SourceId>>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(CountdownBarOutput)>>>>,
 }
@@ -32,39 +31,19 @@ pub struct CountdownBarWidget {
 impl CountdownBarWidget {
     /// Create a new countdown bar with the given TTL in milliseconds.
     pub fn new(ttl: u64) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
+        let root = gtk::ProgressBar::builder()
             .css_classes(["notification-progress"])
             .hexpand(true)
             .vexpand(false)
-            .height_request(2)
+            .fraction(1.0) // Start full
             .build();
-
-        let fixer = gtk::Fixed::builder()
-            .hexpand(true)
-            .vexpand(false)
-            .css_classes(["notification-progress-fix"])
-            .build();
-
-        let fill = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .hexpand(false)
-            .vexpand(false)
-            .height_request(2)
-            .css_classes(["notification-progress-fill"])
-            .build();
-
-        fixer.put(&fill, 0.0, 0.0);
-        root.append(&fixer);
 
         Self {
             root,
-            fixer,
-            fill,
             ttl,
             elapsed: Rc::new(Cell::new(0)),
-            progress: Rc::new(Cell::new(1.0)),
             running: Arc::new(AtomicBool::new(false)),
+            timer_completed: Rc::new(Cell::new(false)),
             timer_source: Rc::new(RefCell::new(None)),
             on_output: Rc::new(RefCell::new(None)),
         }
@@ -82,7 +61,7 @@ impl CountdownBarWidget {
     pub fn start(&self) {
         self.running.store(true, Ordering::Relaxed);
         self.elapsed.set(0);
-        self.progress.set(1.0);
+        self.root.set_fraction(1.0);
         self.start_timer();
     }
 
@@ -91,8 +70,7 @@ impl CountdownBarWidget {
         self.running.store(false, Ordering::Relaxed);
         self.stop_timer();
         self.elapsed.set(0);
-        self.progress.set(1.0);
-        self.update_fill_width();
+        self.root.set_fraction(1.0);
     }
 
     /// Pause the countdown.
@@ -108,45 +86,39 @@ impl CountdownBarWidget {
     }
 
     /// Get a reference to the root widget.
-    pub fn widget(&self) -> &gtk::Box {
+    pub fn widget(&self) -> &gtk::ProgressBar {
         &self.root
     }
 
     fn start_timer(&self) {
         self.stop_timer();
+        self.timer_completed.set(false);
 
         let tick_ms: u64 = 60;
         let running = self.running.clone();
         let elapsed = self.elapsed.clone();
-        let progress = self.progress.clone();
+        let timer_completed = self.timer_completed.clone();
         let ttl = self.ttl;
         let on_output = self.on_output.clone();
-        let fill = self.fill.clone();
-        let fixer = self.fixer.clone();
         let root = self.root.clone();
 
         let source_id = glib::timeout_add_local(Duration::from_millis(tick_ms), move || {
             if !running.load(Ordering::Relaxed) {
+                // Timer was paused/stopped externally, mark as completed so stop_timer won't try to remove
+                timer_completed.set(true);
                 return glib::ControlFlow::Break;
             }
 
             let new_elapsed = (elapsed.get() + tick_ms).clamp(0, ttl);
             elapsed.set(new_elapsed);
 
-            let new_progress = (new_elapsed as f32 / ttl as f32).clamp(0.0, 1.0);
-            progress.set(new_progress);
+            // Calculate remaining fraction (1.0 -> 0.0)
+            let remaining = 1.0 - (new_elapsed as f64 / ttl as f64);
+            root.set_fraction(remaining.clamp(0.0, 1.0));
 
-            // Update fill width
-            let bar_w = root.allocated_width().max(0);
-            if bar_w > 0 {
-                let remaining = 1.0 - new_progress;
-                let target_w = ((bar_w as f32) * remaining).round().max(0.0) as i32;
-                fixer.move_(&fill, 0.0, 0.0);
-                fill.set_size_request(target_w, 2);
-            }
-
-            if new_progress >= 1.0 {
+            if new_elapsed >= ttl {
                 running.store(false, Ordering::Relaxed);
+                timer_completed.set(true);
                 if let Some(ref callback) = *on_output.borrow() {
                     callback(CountdownBarOutput::Elapsed);
                 }
@@ -161,17 +133,10 @@ impl CountdownBarWidget {
 
     fn stop_timer(&self) {
         if let Some(source_id) = self.timer_source.borrow_mut().take() {
-            source_id.remove();
-        }
-    }
-
-    fn update_fill_width(&self) {
-        let bar_w = self.root.allocated_width().max(0);
-        if bar_w > 0 {
-            let remaining = 1.0 - self.progress.get();
-            let target_w = ((bar_w as f32) * remaining).round().max(0.0) as i32;
-            self.fixer.move_(&self.fill, 0.0, 0.0);
-            self.fill.set_size_request(target_w, 2);
+            // Only remove if the timer hasn't already completed (which auto-removes the source)
+            if !self.timer_completed.get() {
+                source_id.remove();
+            }
         }
     }
 }

@@ -36,13 +36,6 @@ pub mod close_reasons {
     pub const UNDEFINED: u32 = 4;
 }
 
-/// Parsed notification action pair: (action_key, label).
-#[derive(Clone, Debug)]
-pub struct ActionSpec {
-    pub key: String,
-    pub label: String,
-}
-
 /// Event stream from DBus server -> notifications subsystem.
 ///
 /// The DBus server owns the bus name and object; it should translate method calls
