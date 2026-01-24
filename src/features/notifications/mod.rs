@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use log::{debug, info};
+use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -30,9 +31,31 @@ pub mod store;
 pub mod types;
 pub mod ui;
 
+fn default_toast_limit() -> u32 {
+    3
+}
+
+/// Configuration for the notifications plugin.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct NotificationsConfig {
+    #[serde(default = "default_toast_limit")]
+    pub toast_limit: u32,
+    #[serde(default)]
+    pub disable_toasts: bool,
+}
+
+impl NotificationsConfig {
+    /// Get toast limit as usize, ensuring minimum of 1.
+    pub fn toast_limit(&self) -> usize {
+        self.toast_limit.max(1) as usize
+    }
+}
+
 pub struct NotificationsPlugin {
     client_channel: flume::Sender<OutboundEvent>,
     client_receiver: flume::Receiver<OutboundEvent>,
+    config: NotificationsConfig,
     dbus_server: Option<NotificationsDbusServer>,
     dnd_toggle: Rc<RefCell<Option<DoNotDisturbToggleWidget>>>,
     notifications_widget: Rc<RefCell<Option<NotificationsWidget>>>,
@@ -51,6 +74,7 @@ impl NotificationsPlugin {
         Self {
             client_channel: client_tx,
             client_receiver: client_rx,
+            config: NotificationsConfig::default(),
             dbus_server: None,
             dnd_toggle: Rc::new(RefCell::new(None)),
             notifications_widget: Rc::new(RefCell::new(None)),
@@ -93,6 +117,12 @@ impl Plugin for NotificationsPlugin {
         PluginId::from_static("plugin::notifications")
     }
 
+    fn configure(&mut self, settings: &toml::Table) -> Result<()> {
+        self.config = settings.clone().try_into()?;
+        debug!("Configured notifications plugin: {:?}", self.config);
+        Ok(())
+    }
+
     async fn init(&mut self) -> Result<()> {
         let mut dbus_server = NotificationsDbusServer::connect()
             .await
@@ -113,6 +143,12 @@ impl Plugin for NotificationsPlugin {
     }
 
     async fn create_elements(&mut self) -> Result<()> {
+        // Configure the store with plugin settings
+        STORE.emit(NotificationOp::Configure {
+            toast_limit: self.config.toast_limit(),
+            disable_toasts: self.config.disable_toasts,
+        });
+
         let (debouncer_tx, debouncer_rx) = flume::unbounded();
 
         glib::spawn_future_local(async move {

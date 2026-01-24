@@ -82,6 +82,12 @@ pub trait Plugin {
     /// Stable plugin id (used for routing).
     fn id(&self) -> PluginId;
 
+    /// Configure the plugin with settings from config file.
+    /// Default implementation does nothing.
+    fn configure(&mut self, _settings: &toml::Table) -> Result<()> {
+        Ok(())
+    }
+
     async fn init(&mut self) -> Result<()> {
         Ok(())
     }

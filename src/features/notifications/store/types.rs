@@ -132,6 +132,8 @@ impl Group {
 /// Operations that can be dispatched to the notification store.
 #[derive(Debug, Clone)]
 pub enum NotificationOp {
+    Batch(Vec<NotificationOp>),
+    Configure { toast_limit: usize, disable_toasts: bool },
     Ingress(IngressedNotification),
     NotificationDismiss(u64),
     NotificationDismissed(u64),
@@ -143,7 +145,6 @@ pub enum NotificationOp {
     ToastHidden(u64),
     ToastHoverEnter,
     ToastHoverLeave,
-    Batch(Vec<NotificationOp>),
 }
 
 /// The notification state container.
@@ -152,6 +153,8 @@ pub struct State {
     pub appearing_timestamps: IndexMap<u64, SystemTime>,
     pub archive: IndexMap<Arc<str>, ItemLifecycle>,
     pub dismissing_timestamps: IndexMap<u64, SystemTime>,
+    /// Whether toasts are disabled entirely
+    pub disable_toasts: bool,
     pub dnd: bool,
     pub groups: HashMap<Arc<str>, Group>,
     pub hiding_timestamps: IndexMap<u64, SystemTime>,
@@ -159,8 +162,14 @@ pub struct State {
     pub hover_paused: bool,
     pub notifications: HashMap<u64, Notification>,
     pub panel_notifications: IndexMap<u64, ItemLifecycle>,
+    /// Timestamp when each panel notification became visible (for TTL tracking)
+    pub panel_visible_since_timestamps: IndexMap<u64, SystemTime>,
     pub retracting_timestamps: IndexMap<u64, SystemTime>,
+    /// Maximum number of toasts to display at once
+    pub toast_limit: usize,
     pub toasts: IndexMap<u64, ItemLifecycle>,
+    /// Panel notifications that have expired their TTL (should be removed after animation)
+    pub ttl_expired_panel_notifications: std::collections::HashSet<u64>,
     /// Toasts that are hiding due to TTL expiration (should be removed from queue after animation)
     pub ttl_expired_toasts: std::collections::HashSet<u64>,
     pub visible_since_timestamps: IndexMap<u64, SystemTime>,
@@ -173,14 +182,18 @@ impl State {
             appearing_timestamps: IndexMap::new(),
             archive: IndexMap::new(),
             dismissing_timestamps: IndexMap::new(),
+            disable_toasts: false,
             dnd: false,
             groups: HashMap::new(),
             hiding_timestamps: IndexMap::new(),
             hover_paused: false,
             notifications: HashMap::new(),
             panel_notifications: IndexMap::new(),
+            panel_visible_since_timestamps: IndexMap::new(),
             retracting_timestamps: IndexMap::new(),
+            toast_limit: 3,
             toasts: IndexMap::new(),
+            ttl_expired_panel_notifications: std::collections::HashSet::new(),
             ttl_expired_toasts: std::collections::HashSet::new(),
             visible_since_timestamps: IndexMap::new(),
         }

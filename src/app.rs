@@ -10,6 +10,7 @@ use std::thread;
 use adw::prelude::*;
 use gtk::prelude::ApplicationExtManual;
 
+use crate::config::Config;
 use crate::dbus::DbusHandle;
 use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
@@ -17,6 +18,7 @@ use crate::features::notifications::NotificationsPlugin;
 use crate::features::sunsetr::SunsetrPlugin;
 use crate::ipc::net as ipc_net;
 use crate::ipc::{command_from_args, ipc_socket_path, IpcCommand};
+use crate::plugin::Plugin;
 use crate::plugin_registry::PluginRegistry;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
 
@@ -99,14 +101,60 @@ pub async fn run() -> Result<()> {
     // Store the IPC receiver for use in the app
     let ipc_rx = Arc::new(Mutex::new(Some(ipc_rx)));
 
+    // Load configuration
+    let config = Config::load();
+
     // Initialize DBus and plugin registry
     let dbus = Arc::new(DbusHandle::connect().await?);
     let mut registry = PluginRegistry::new();
 
-    registry.register(ClockPlugin::new());
-    registry.register(DarkmanPlugin::new(dbus));
-    registry.register(SunsetrPlugin::new());
-    registry.register(NotificationsPlugin::new());
+    // Only load plugins that are explicitly enabled in config
+    if config.is_plugin_enabled("plugin::clock") {
+        let mut plugin = ClockPlugin::new();
+        if let Some(settings) = config.get_plugin_settings("plugin::clock") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
+    if config.is_plugin_enabled("plugin::darkman") {
+        let mut plugin = DarkmanPlugin::new(dbus.clone());
+        if let Some(settings) = config.get_plugin_settings("plugin::darkman") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
+    if config.is_plugin_enabled("plugin::sunsetr") {
+        let mut plugin = SunsetrPlugin::new();
+        if let Some(settings) = config.get_plugin_settings("plugin::sunsetr") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
+    if config.is_plugin_enabled("plugin::notifications") {
+        let mut plugin = NotificationsPlugin::new();
+        if let Some(settings) = config.get_plugin_settings("plugin::notifications") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
+    // Refuse to start without any plugins
+    if registry.is_empty() {
+        eprintln!("error: no plugins enabled");
+        eprintln!();
+        eprintln!("Configure plugins in ~/.config/sacrebleui/config.toml");
+        eprintln!("Example:");
+        eprintln!();
+        eprintln!("  [[plugins]]");
+        eprintln!("  id = \"plugin::notifications\"");
+        eprintln!();
+        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications");
+        std::process::exit(1);
+    }
+
     registry.init().await?;
     debug!("Initialized plugins {:?}", registry.len());
 

@@ -82,13 +82,23 @@ impl NotificationStore {
 
     fn process_op(&self, state: &mut State, op: NotificationOp) -> bool {
         match op {
-            NotificationOp::Tick => {
-                let (follow_ups, tick_changed) = self.process_tick(state);
-                let mut changed = tick_changed || !follow_ups.is_empty();
-                for follow_up in follow_ups {
-                    changed |= self.process_op(state, follow_up);
+            NotificationOp::Batch(ops) => {
+                let all_ingress = ops.iter().all(|op| matches!(op, NotificationOp::Ingress(_)));
+                if all_ingress {
+                    self.process_ingress_batch(state, ops)
+                } else {
+                    let mut changed = false;
+                    for op in ops {
+                        changed |= self.process_op(state, op);
+                    }
+                    changed
                 }
-                changed
+            }
+            NotificationOp::Configure { toast_limit, disable_toasts } => {
+                state.toast_limit = toast_limit;
+                state.disable_toasts = disable_toasts;
+                log::debug!("[store] Configured: toast_limit={}, disable_toasts={}", toast_limit, disable_toasts);
+                true
             }
             NotificationOp::Ingress(n) => {
                 self.process_ingress(state, n);
@@ -110,6 +120,18 @@ impl NotificationStore {
                 self.process_retracted(state, id);
                 true
             }
+            NotificationOp::SetDnd(inhibited) => {
+                state.dnd = inhibited;
+                true
+            }
+            NotificationOp::Tick => {
+                let (follow_ups, tick_changed) = self.process_tick(state);
+                let mut changed = tick_changed || !follow_ups.is_empty();
+                for follow_up in follow_ups {
+                    changed |= self.process_op(state, follow_up);
+                }
+                changed
+            }
             NotificationOp::ToastHide(id) => {
                 state.toasts.insert(id, ItemLifecycle::Hiding);
                 state.hiding_timestamps.insert(id, SystemTime::now());
@@ -121,10 +143,6 @@ impl NotificationStore {
                 self.reconcile_toasts(state);
                 true
             }
-            NotificationOp::SetDnd(inhibited) => {
-                state.dnd = inhibited;
-                true
-            }
             NotificationOp::ToastHoverEnter => {
                 state.hover_paused = true;
                 true
@@ -132,18 +150,6 @@ impl NotificationStore {
             NotificationOp::ToastHoverLeave => {
                 state.hover_paused = false;
                 true
-            }
-            NotificationOp::Batch(ops) => {
-                let all_ingress = ops.iter().all(|op| matches!(op, NotificationOp::Ingress(_)));
-                if all_ingress {
-                    self.process_ingress_batch(state, ops)
-                } else {
-                    let mut changed = false;
-                    for op in ops {
-                        changed |= self.process_op(state, op);
-                    }
-                    changed
-                }
             }
         }
     }
@@ -289,6 +295,45 @@ impl NotificationStore {
             state_changed = true;
         }
 
+        // Check for TTL expiration on panel notifications
+        let timed_out_panel_notifications: Vec<u64> = state
+            .panel_notifications
+            .iter()
+            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Visible))
+            .filter_map(|(notif_id, _)| {
+                let notification = state.notifications.get(notif_id)?;
+
+                // Skip resident notifications
+                if notification.resident {
+                    return None;
+                }
+
+                // Use the notification's TTL (not toast_ttl)
+                // ttl is None for "use server default" which we treat as no expiration
+                let ttl_ms = notification.ttl?;
+
+                // Check if visible long enough to timeout
+                let visible_since = state.panel_visible_since_timestamps.get(notif_id)?;
+                let elapsed = now.duration_since(*visible_since).unwrap_or_default();
+
+                if elapsed >= Duration::from_millis(ttl_ms) {
+                    Some(*notif_id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Transition timed-out panel notifications to Dismissing
+        for notif_id in &timed_out_panel_notifications {
+            state.panel_notifications.insert(*notif_id, ItemLifecycle::Dismissing);
+            state.panel_visible_since_timestamps.shift_remove(notif_id);
+            state.dismissing_timestamps.insert(*notif_id, now);
+            state.ttl_expired_panel_notifications.insert(*notif_id);
+            state_changed = true;
+            log::debug!("[store] Panel notification {} TTL expired", notif_id);
+        }
+
         self.reconcile_toasts(state);
 
         let mut follow_up_ops = Vec::new();
@@ -305,6 +350,14 @@ impl NotificationStore {
     }
 
     fn process_ingress(&self, state: &mut State, n: IngressedNotification) {
+        // Handle replaces_id: remove the old notification if it exists
+        if let Some(old_id) = n.replaces_id {
+            if old_id != 0 && state.notifications.contains_key(&old_id) {
+                log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
+                remove_replaced_notification(state, old_id);
+            }
+        }
+
         let notification = create_notification(&n);
         let notif_id = notification.id;
         let group_id = notification.app_ident();
@@ -314,6 +367,7 @@ impl NotificationStore {
         self.reconcile_toast_on_ingress(state, notif_id, true);
         // Add to panel notifications (unlimited)
         state.panel_notifications.insert(notif_id, ItemLifecycle::Visible);
+        state.panel_visible_since_timestamps.insert(notif_id, SystemTime::now());
         log::debug!(
             "[store] Added notification {} to panel_notifications, total: {}",
             notif_id,
@@ -326,6 +380,14 @@ impl NotificationStore {
 
         for op in ops {
             if let NotificationOp::Ingress(n) = op {
+                // Handle replaces_id: remove the old notification if it exists
+                if let Some(old_id) = n.replaces_id {
+                    if old_id != 0 && state.notifications.contains_key(&old_id) {
+                        log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
+                        remove_replaced_notification(state, old_id);
+                    }
+                }
+
                 let notification = create_notification(&n);
                 let notif_id = notification.id;
                 let group_id = notification.app_ident();
@@ -335,6 +397,7 @@ impl NotificationStore {
                 self.reconcile_toast_on_ingress(state, notif_id, false);
                 // Add to panel notifications (unlimited)
                 state.panel_notifications.insert(notif_id, ItemLifecycle::Visible);
+                state.panel_visible_since_timestamps.insert(notif_id, SystemTime::now());
                 changed = true;
             }
         }
@@ -370,7 +433,9 @@ impl NotificationStore {
         state.dismissing_timestamps.shift_remove(&id);
         state.hiding_timestamps.shift_remove(&id);
         state.visible_since_timestamps.shift_remove(&id);
+        state.panel_visible_since_timestamps.shift_remove(&id);
         state.ttl_expired_toasts.remove(&id);
+        state.ttl_expired_panel_notifications.remove(&id);
         let _ = state.notifications.remove(&id);
 
         self.reconcile_toasts(state);
@@ -411,7 +476,9 @@ impl NotificationStore {
         state.hiding_timestamps.shift_remove(&id);
         state.retracting_timestamps.shift_remove(&id);
         state.visible_since_timestamps.shift_remove(&id);
+        state.panel_visible_since_timestamps.shift_remove(&id);
         state.ttl_expired_toasts.remove(&id);
+        state.ttl_expired_panel_notifications.remove(&id);
         let _ = state.notifications.remove(&id);
 
         self.reconcile_toasts(state);
@@ -434,7 +501,7 @@ impl NotificationStore {
             &mut state.toasts,
             &mut state.appearing_timestamps,
             &mut state.hiding_timestamps,
-            5,
+            state.toast_limit,
         );
     }
 
@@ -461,6 +528,11 @@ impl NotificationStore {
     }
 
     fn reconcile_toast_on_ingress(&self, state: &mut State, notif_id: u64, do_sort: bool) {
+        // Skip toasts entirely if disabled
+        if state.disable_toasts {
+            return;
+        }
+
         let notification = state.notifications.get(&notif_id);
         let should_toast = notification.map_or(false, |n| {
             should_toast(state.dnd, n.urgency, n.resident)
@@ -483,6 +555,24 @@ impl NotificationStore {
 }
 
 // Helper functions
+
+/// Remove all traces of a notification that is being replaced.
+fn remove_replaced_notification(state: &mut State, old_id: u64) {
+    state.notifications.remove(&old_id);
+    state.panel_notifications.shift_remove(&old_id);
+    state.panel_visible_since_timestamps.shift_remove(&old_id);
+    state.toasts.shift_remove(&old_id);
+    state.appearing_timestamps.shift_remove(&old_id);
+    state.dismissing_timestamps.shift_remove(&old_id);
+    state.hiding_timestamps.shift_remove(&old_id);
+    state.retracting_timestamps.shift_remove(&old_id);
+    state.visible_since_timestamps.shift_remove(&old_id);
+    state.ttl_expired_toasts.remove(&old_id);
+    state.ttl_expired_panel_notifications.remove(&old_id);
+    for group in state.groups.values_mut() {
+        group.get_top_mut().shift_remove(&old_id);
+    }
+}
 
 /// Determines whether a notification should be shown as a toast.
 ///
@@ -956,6 +1046,7 @@ mod tests {
 
         {
             let mut state = store.state.write().unwrap();
+            state.toast_limit = 5;
 
             // Push notifications 1-5
             for id in 1..=5 {
@@ -993,6 +1084,7 @@ mod tests {
 
         {
             let mut state = store.state.write().unwrap();
+            state.toast_limit = 5;
 
             // Push notifications 1-10
             for id in 1..=10 {
@@ -1071,6 +1163,7 @@ mod tests {
 
         {
             let mut state = store.state.write().unwrap();
+            state.toast_limit = 5;
 
             // Push notifications 1-10
             for id in 1..=10 {
@@ -1137,6 +1230,7 @@ mod tests {
 
         {
             let mut state = store.state.write().unwrap();
+            state.toast_limit = 5;
 
             // Push notifications 1-10
             for id in 1..=10 {
