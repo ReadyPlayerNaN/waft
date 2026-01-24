@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
-use crate::features::notifications::store::{ItemLifecycle, NotificationOp, STORE};
+use crate::features::notifications::store::{ItemLifecycle, NotificationOp, NotificationStore};
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 use super::toast_widget::ToastWidget;
 
@@ -41,11 +41,12 @@ pub struct ToastListWidget {
     widgets: Rc<RefCell<HashMap<u64, ToastWidget>>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>>,
     hover_count: Rc<RefCell<u32>>,
+    store: Rc<NotificationStore>,
 }
 
 impl ToastListWidget {
-    /// Create a new toast list widget.
-    pub fn new() -> Self {
+    /// Create a new toast list widget with the given store.
+    pub fn new(store: Rc<NotificationStore>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(8)
@@ -72,9 +73,10 @@ impl ToastListWidget {
             widgets,
             on_output,
             hover_count,
+            store,
         };
 
-        // Subscribe to STORE for state changes
+        // Subscribe to store for state changes
         widget.setup_subscription();
 
         widget
@@ -98,10 +100,12 @@ impl ToastListWidget {
         let container = self.container.clone();
         let on_output = self.on_output.clone();
         let hover_count = self.hover_count.clone();
+        let store = self.store.clone();
+        let store_for_hover = self.store.clone();
 
-        // Subscribe to STORE - the callback runs on the main thread via glib::spawn_future_local
-        STORE.subscribe(move || {
-            let state = STORE.get_state();
+        // Subscribe to store - the callback runs on the main thread via glib::spawn_future_local
+        self.store.subscribe(move || {
+            let state = store.get_state();
 
             // Get all toast IDs (including hidden ones) to know which toasts still exist
             let all_toast_ids: std::collections::HashSet<u64> = state
@@ -141,6 +145,7 @@ impl ToastListWidget {
                 &on_output,
                 &hover_count,
                 hover_paused,
+                &store_for_hover,
             );
         });
     }
@@ -153,6 +158,7 @@ impl ToastListWidget {
         on_output: &Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>>,
         hover_count: &Rc<RefCell<u32>>,
         hover_paused: bool,
+        store: &Rc<NotificationStore>,
     ) {
         log::debug!("[toast_list] ToastsChanged received count={}", toasts.len());
 
@@ -209,6 +215,7 @@ impl ToastListWidget {
                     let on_output_action = on_output.clone();
                     let hover_count_clone = hover_count.clone();
                     let widgets_for_hover = widgets.clone();
+                    let store_for_hover = store.clone();
 
                     let widget = ToastWidget::new(
                         toast.id,
@@ -228,7 +235,7 @@ impl ToastListWidget {
                             }
                         },
                         move |is_enter| {
-                            Self::handle_hover_change(is_enter, &hover_count_clone, &widgets_for_hover);
+                            Self::handle_hover_change(is_enter, &hover_count_clone, &widgets_for_hover, &store_for_hover);
                         },
                     );
 
@@ -278,13 +285,14 @@ impl ToastListWidget {
         is_enter: bool,
         hover_count: &Rc<RefCell<u32>>,
         widgets: &Rc<RefCell<HashMap<u64, ToastWidget>>>,
+        store: &Rc<NotificationStore>,
     ) {
         let mut count = hover_count.borrow_mut();
         if is_enter {
             *count += 1;
             if *count == 1 {
                 // First hover - pause all countdowns
-                STORE.emit(NotificationOp::ToastHoverEnter);
+                store.emit(NotificationOp::ToastHoverEnter);
                 for w in widgets.borrow().values() {
                     w.pause_countdown();
                 }
@@ -293,17 +301,11 @@ impl ToastListWidget {
             *count = count.saturating_sub(1);
             if *count == 0 {
                 // Last hover left - resume all countdowns
-                STORE.emit(NotificationOp::ToastHoverLeave);
+                store.emit(NotificationOp::ToastHoverLeave);
                 for w in widgets.borrow().values() {
                     w.resume_countdown();
                 }
             }
         }
-    }
-}
-
-impl Default for ToastListWidget {
-    fn default() -> Self {
-        Self::new()
     }
 }

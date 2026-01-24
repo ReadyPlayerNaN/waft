@@ -15,13 +15,15 @@ use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, Feature
 
 use self::dbus::DARKMAN_DESTINATION;
 use self::dbus::{get_state, set_state};
+use self::store::{create_darkman_store, DarkmanOp, DarkmanStore};
 use self::values::DarkmanMode;
 
 mod dbus;
+pub mod store;
 mod values;
 
 pub struct DarkmanPlugin {
-    mode: DarkmanMode,
+    store: Rc<DarkmanStore>,
     dbus: Arc<DbusHandle>,
     toggle: Rc<RefCell<Option<FeatureToggleWidget>>>,
     mode_channel: (flume::Sender<DarkmanMode>, flume::Receiver<DarkmanMode>),
@@ -30,8 +32,8 @@ pub struct DarkmanPlugin {
 impl DarkmanPlugin {
     pub fn new(dbus: Arc<DbusHandle>) -> Self {
         Self {
+            store: Rc::new(create_darkman_store()),
             dbus,
-            mode: DarkmanMode::Light,
             toggle: Rc::new(RefCell::new(None)),
             mode_channel: flume::unbounded(),
         }
@@ -60,33 +62,37 @@ impl Plugin for DarkmanPlugin {
     }
 
     async fn init(&mut self) -> Result<()> {
-        self.mode = get_state(&self.dbus).await?;
+        let initial_mode = get_state(&self.dbus).await?;
+        self.store.emit(DarkmanOp::SetMode(initial_mode));
         self.start_monitoring().await?;
         Ok(())
     }
 
     async fn create_elements(&mut self) -> Result<()> {
+        let initial_active = {
+            let state = self.store.get_state();
+            DarkmanMode::is_active(state.mode)
+        };
+
         let toggle = FeatureToggleWidget::new(FeatureToggleProps {
             title: "Dark Mode".into(),
             icon: "weather-clear-night-symbolic".into(),
             details: None,
-            active: DarkmanMode::is_active(self.mode),
+            active: initial_active,
             busy: false,
         });
 
         // Connect output handler
         let dbus = self.dbus.clone();
-        let toggle_ref = self.toggle.clone();
+        let store = self.store.clone();
         toggle.connect_output(move |event| {
             debug!("[darkman/ui] Received: {:?}", event);
             let dbus = dbus.clone();
-            let toggle_ref = toggle_ref.clone();
+            let store = store.clone();
 
             glib::spawn_future_local(async move {
                 // Set busy state
-                if let Some(ref toggle) = *toggle_ref.borrow() {
-                    toggle.set_busy(true);
-                }
+                store.emit(DarkmanOp::SetBusy(true));
 
                 let result = match event {
                     FeatureToggleOutput::Activate => {
@@ -100,25 +106,31 @@ impl Plugin for DarkmanPlugin {
                 if let Err(err) = result {
                     error!("Failed to set darkman state: {}", err);
                     // Reset busy state on error
-                    if let Some(ref toggle) = *toggle_ref.borrow() {
-                        toggle.set_busy(false);
-                    }
+                    store.emit(DarkmanOp::SetBusy(false));
                 }
             });
         });
 
         *self.toggle.borrow_mut() = Some(toggle);
 
-        // Handle mode changes from DBus monitoring
+        // Subscribe to store for state changes
         let toggle_ref = self.toggle.clone();
+        let store = self.store.clone();
+        self.store.subscribe(move || {
+            let state = store.get_state();
+            if let Some(ref toggle) = *toggle_ref.borrow() {
+                toggle.set_active(DarkmanMode::is_active(state.mode));
+                toggle.set_busy(state.busy);
+            }
+        });
+
+        // Handle mode changes from DBus monitoring
+        let store_for_mode = self.store.clone();
         let mode_rx = self.mode_channel.1.clone();
         glib::spawn_future_local(async move {
             while let Ok(mode) = mode_rx.recv_async().await {
-                let active = DarkmanMode::is_active(mode);
-                if let Some(ref toggle) = *toggle_ref.borrow() {
-                    toggle.set_active(active);
-                    toggle.set_busy(false);
-                }
+                store_for_mode.emit(DarkmanOp::SetMode(mode));
+                store_for_mode.emit(DarkmanOp::SetBusy(false));
             }
         });
 

@@ -14,22 +14,22 @@ use crate::plugin::{Plugin, PluginId, WidgetFeatureToggle};
 use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 mod ipc;
+pub mod store;
 mod values;
 
 use self::ipc::SunsetrIpcEvents;
 use self::ipc::{spawn_following, spawn_start, spawn_stop};
+use self::store::{create_sunsetr_store, SunsetrOp, SunsetrStore};
 
 pub struct SunsetrPlugin {
-    active: bool,
-    next_transition: Option<String>,
+    store: Rc<SunsetrStore>,
     toggle: Rc<RefCell<Option<FeatureToggleWidget>>>,
 }
 
 impl SunsetrPlugin {
     pub fn new() -> Self {
         Self {
-            active: false,
-            next_transition: None,
+            store: Rc::new(create_sunsetr_store()),
             toggle: Rc::new(RefCell::new(None)),
         }
     }
@@ -46,11 +46,16 @@ impl Plugin for SunsetrPlugin {
     }
 
     async fn create_elements(&mut self) -> Result<()> {
+        let initial_state = {
+            let state = self.store.get_state();
+            (state.active, state.next_transition.clone())
+        };
+
         let toggle = FeatureToggleWidget::new(FeatureToggleProps {
             title: "Night light".into(),
             icon: "night-light-symbolic".into(),
-            details: self.next_transition.clone(),
-            active: self.active,
+            details: initial_state.1.clone(),
+            active: initial_state.0,
             busy: false,
         });
 
@@ -73,26 +78,38 @@ impl Plugin for SunsetrPlugin {
 
         *self.toggle.borrow_mut() = Some(toggle);
 
-        // Handle IPC events
+        // Subscribe to store for state changes
         let toggle_ref = self.toggle.clone();
+        let store = self.store.clone();
+        self.store.subscribe(move || {
+            let state = store.get_state();
+            if let Some(ref toggle) = *toggle_ref.borrow() {
+                toggle.set_active(state.active);
+                toggle.set_details(
+                    state.next_transition.as_ref().map(|text| format!("Until: {}", text)),
+                );
+                toggle.set_busy(state.busy);
+            }
+        });
+
+        // Handle IPC events
+        let store_for_ipc = self.store.clone();
         glib::spawn_future_local(async move {
             while let Ok(event) = ipc_rx.recv_async().await {
                 debug!("[sunsetr/ipc] Received event: {:?}", event);
-                if let Some(ref toggle) = *toggle_ref.borrow() {
-                    match event {
-                        SunsetrIpcEvents::Status(status) => {
-                            toggle.set_active(status.active);
-                            toggle.set_details(
-                                status.next_transition_text.map(|text| format!("Until: {}", text)),
-                            );
-                            toggle.set_busy(false);
-                        }
-                        SunsetrIpcEvents::Busy(busy) => {
-                            toggle.set_busy(busy);
-                        }
-                        SunsetrIpcEvents::Error(_error) => {
-                            // Errors are logged by the IPC module
-                        }
+                match event {
+                    SunsetrIpcEvents::Status(status) => {
+                        store_for_ipc.emit(SunsetrOp::SetStatus {
+                            active: status.active,
+                            next_transition: status.next_transition_text,
+                        });
+                        store_for_ipc.emit(SunsetrOp::SetBusy(false));
+                    }
+                    SunsetrIpcEvents::Busy(busy) => {
+                        store_for_ipc.emit(SunsetrOp::SetBusy(busy));
+                    }
+                    SunsetrIpcEvents::Error(_error) => {
+                        // Errors are logged by the IPC module
                     }
                 }
             }

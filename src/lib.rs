@@ -5,6 +5,8 @@
 //! full application/plugin surface (GTK init, DBus server/client wiring, etc.),
 //! we only expose the notifications *store* and the minimal types it depends on.
 
+pub mod store;
+
 pub mod features {
     pub mod notifications {
         // NOTE: `#[path = ...]` inside inline modules is resolved relative to the

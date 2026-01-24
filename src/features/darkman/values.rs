@@ -1,7 +1,8 @@
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DarkmanMode {
     Dark = 1,
+    #[default]
     Light = 2,
 }
 

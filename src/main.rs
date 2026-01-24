@@ -6,6 +6,7 @@ mod features;
 mod ipc;
 mod plugin;
 mod plugin_registry;
+pub mod store;
 mod ui;
 
 #[tokio::main]

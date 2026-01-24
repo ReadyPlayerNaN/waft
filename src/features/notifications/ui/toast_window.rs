@@ -8,6 +8,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use gtk4_layer_shell::LayerShell;
 
+use crate::features::notifications::store::NotificationStore;
 use super::toast_list::{ToastListOutput, ToastListWidget};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,8 +43,8 @@ pub struct ToastWindowWidget {
 }
 
 impl ToastWindowWidget {
-    /// Create a new toast window at the given position.
-    pub fn new(hpos: HPos, vpos: VPos) -> Self {
+    /// Create a new toast window at the given position with the given store.
+    pub fn new(store: Rc<NotificationStore>, hpos: HPos, vpos: VPos) -> Self {
         let window = gtk::Window::builder()
             .title("")
             .decorated(false)
@@ -59,7 +60,7 @@ impl ToastWindowWidget {
         let on_output: Rc<RefCell<Option<Box<dyn Fn(ToastWindowOutput)>>>> =
             Rc::new(RefCell::new(None));
 
-        let toast_list = ToastListWidget::new();
+        let toast_list = ToastListWidget::new(store);
 
         // Forward toast list events
         let on_output_ref = on_output.clone();

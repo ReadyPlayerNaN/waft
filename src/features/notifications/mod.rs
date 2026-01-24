@@ -11,10 +11,9 @@ use std::time::Duration;
 
 use gtk::prelude::*;
 
-use crate::features::notifications::store::NotificationOp;
+use crate::features::notifications::store::{create_notification_store, NotificationOp, NotificationStore};
 use crate::plugin::WidgetFeatureToggle;
 use crate::plugin::{Plugin, PluginId};
-use self::store::STORE;
 use crate::features::notifications::ui::toast_window::{HPos, ToastWindowOutput, ToastWindowWidget, VPos};
 use crate::features::notifications::ui::notifications_widget::{NotificationsWidget, NotificationsWidgetOutput};
 use crate::plugin::{Slot, Widget};
@@ -53,6 +52,7 @@ impl NotificationsConfig {
 }
 
 pub struct NotificationsPlugin {
+    store: Rc<NotificationStore>,
     client_channel: flume::Sender<OutboundEvent>,
     client_receiver: flume::Receiver<OutboundEvent>,
     config: NotificationsConfig,
@@ -70,8 +70,10 @@ impl NotificationsPlugin {
     pub fn new() -> Self {
         let (client_tx, client_rx) = flume::unbounded();
         let (server_tx, server_rx) = flume::unbounded();
+        let store = Rc::new(create_notification_store());
 
         Self {
+            store,
             client_channel: client_tx,
             client_receiver: client_rx,
             config: NotificationsConfig::default(),
@@ -86,23 +88,26 @@ impl NotificationsPlugin {
         }
     }
 
-    fn create_toast_window(&self, hpos: HPos, vpos: VPos) -> ToastWindowWidget {
-        ToastWindowWidget::new(hpos, vpos)
+    fn create_toast_window(&self) -> ToastWindowWidget {
+        ToastWindowWidget::new(self.store.clone(), HPos::Center, VPos::Top)
     }
 
     fn schedule_tick(&self) {
         let tick_source = self.tick_source.clone();
         let tick_source_for_closure = self.tick_source.clone();
+        let store = self.store.clone();
+        let store_for_interval = self.store.clone();
+
         *tick_source.lock().unwrap() = Some(glib::timeout_add_local_once(
             Duration::from_millis(200),
             move || {
-                STORE.emit(NotificationOp::Tick);
+                store.emit(NotificationOp::Tick);
 
                 // Schedule the next tick
                 *tick_source_for_closure.lock().unwrap() = Some(glib::timeout_add_local(
                     Duration::from_millis(200),
                     move || {
-                        STORE.emit(NotificationOp::Tick);
+                        store_for_interval.emit(NotificationOp::Tick);
                         glib::ControlFlow::Continue
                     },
                 ));
@@ -144,16 +149,18 @@ impl Plugin for NotificationsPlugin {
 
     async fn create_elements(&mut self) -> Result<()> {
         // Configure the store with plugin settings
-        STORE.emit(NotificationOp::Configure {
+        self.store.emit(NotificationOp::Configure {
             toast_limit: self.config.toast_limit(),
             disable_toasts: self.config.disable_toasts,
         });
 
         let (debouncer_tx, debouncer_rx) = flume::unbounded();
 
+        // Forward debouncer output to store
+        let store_for_debounce = self.store.clone();
         glib::spawn_future_local(async move {
             while let Ok(op) = debouncer_rx.recv_async().await {
-                STORE.emit(op);
+                store_for_debounce.emit(op);
             }
         });
 
@@ -163,8 +170,8 @@ impl Plugin for NotificationsPlugin {
 
         self.debouncer = Some(debouncer);
 
-        // Create pure GTK4 toast window
-        let toast = self.create_toast_window(HPos::Center, VPos::Top);
+        // Create pure GTK4 toast window with store reference
+        let toast = self.create_toast_window();
 
         // Add window to application
         let app = gtk::Application::default();
@@ -237,17 +244,18 @@ impl Plugin for NotificationsPlugin {
 
         // Connect output handler
         let dnd_toggle_ref = self.dnd_toggle.clone();
+        let store_for_dnd = self.store.clone();
         dnd_toggle.connect_output(move |event| {
             debug!("[dnd] Received: {:?}", event);
             match event {
                 DoNotDisturbToggleOutput::Activate => {
-                    STORE.emit(NotificationOp::SetDnd(true));
+                    store_for_dnd.emit(NotificationOp::SetDnd(true));
                     if let Some(ref toggle) = *dnd_toggle_ref.borrow() {
                         toggle.set_active(true);
                     }
                 }
                 DoNotDisturbToggleOutput::Deactivate => {
-                    STORE.emit(NotificationOp::SetDnd(false));
+                    store_for_dnd.emit(NotificationOp::SetDnd(false));
                     if let Some(ref toggle) = *dnd_toggle_ref.borrow() {
                         toggle.set_active(false);
                     }
@@ -258,7 +266,7 @@ impl Plugin for NotificationsPlugin {
         *self.dnd_toggle.borrow_mut() = Some(dnd_toggle);
 
         // Create NotificationsWidget for the overlay Info slot
-        let notifications_widget = NotificationsWidget::new();
+        let notifications_widget = NotificationsWidget::new(self.store.clone());
 
         // Connect output handler for widget events
         let db_widget = self.debouncer.as_ref().unwrap().clone();

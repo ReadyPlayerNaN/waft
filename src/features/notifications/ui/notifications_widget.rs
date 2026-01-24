@@ -10,7 +10,7 @@ use std::sync::Arc;
 use gtk::prelude::*;
 
 use super::notification_group::{NotificationData, NotificationGroup, NotificationGroupOutput};
-use crate::features::notifications::store::{ItemLifecycle, STORE};
+use crate::features::notifications::store::{ItemLifecycle, NotificationStore};
 
 /// Output events from the notifications widget.
 #[derive(Debug, Clone)]
@@ -26,10 +26,11 @@ pub struct NotificationsWidget {
     empty_placeholder: gtk::Box,
     groups: Rc<RefCell<HashMap<Arc<str>, NotificationGroup>>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationsWidgetOutput)>>>>,
+    store: Rc<NotificationStore>,
 }
 
 impl NotificationsWidget {
-    pub fn new() -> Self {
+    pub fn new(store: Rc<NotificationStore>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
@@ -114,9 +115,10 @@ impl NotificationsWidget {
             empty_placeholder,
             groups,
             on_output,
+            store,
         };
 
-        // Subscribe to STORE
+        // Subscribe to store
         widget.setup_subscription();
 
         widget
@@ -140,9 +142,10 @@ impl NotificationsWidget {
         let groups_container = self.groups_container.clone();
         let empty_placeholder = self.empty_placeholder.clone();
         let on_output = self.on_output.clone();
+        let store = self.store.clone();
 
-        STORE.subscribe(move || {
-            let state = STORE.get_state();
+        self.store.subscribe(move || {
+            let state = store.get_state();
             let panel_count = state.panel_notifications.len();
             let grouped = state.get_grouped_notifications();
 
@@ -257,11 +260,5 @@ impl NotificationsWidget {
             "[notifications_widget] State update complete, {} groups visible",
             groups.borrow().len()
         );
-    }
-}
-
-impl Default for NotificationsWidget {
-    fn default() -> Self {
-        Self::new()
     }
 }

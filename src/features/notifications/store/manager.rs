@@ -1,340 +1,204 @@
 //! Notification store manager.
 //!
 //! Channel-based state management using:
-//! - `async-channel` for cross-thread message passing
-//! - `once_cell` for lazy static initialization
-//! - `RwLock` for thread-safe state access
+//! - Generic `PluginStore` for state management
+//! - Standalone functions for operation processing
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use indexmap::IndexMap;
-use once_cell::sync::Lazy;
 
 use super::super::dbus::ingress::IngressedNotification;
 use super::super::types::{AppIdent, NotificationAction, NotificationIcon, NotificationUrgency};
 use super::types::{Group, ItemLifecycle, Notification, NotificationOp, State};
+use crate::store::{PluginStore, StoreOp, StoreState};
 
-/// Global notification store instance.
-pub static STORE: Lazy<NotificationStore> = Lazy::new(NotificationStore::new);
+// Trait implementations for generic store
 
-// Thread-local storage for subscriber callbacks (must be on main thread)
-thread_local! {
-    static SUBSCRIBERS: RefCell<Vec<Rc<dyn Fn()>>> = RefCell::new(Vec::new());
+impl StoreOp for NotificationOp {}
+
+impl StoreState for State {
+    // Configuration is handled via NotificationOp::Configure
+    type Config = ();
+
+    fn configure(&mut self, _: &()) {}
 }
 
-/// The notification store - manages state and notifies subscribers of changes.
-pub struct NotificationStore {
-    state: RwLock<State>,
+/// Type alias for the notification store.
+pub type NotificationStore = PluginStore<NotificationOp, State>;
+
+/// Create a new notification store instance.
+pub fn create_notification_store() -> NotificationStore {
+    PluginStore::new(process_op)
 }
 
-impl NotificationStore {
-    fn new() -> Self {
-        NotificationStore {
-            state: RwLock::new(State::new()),
-        }
-    }
-
-    /// Get read access to the current state.
-    pub fn get_state(&self) -> std::sync::RwLockReadGuard<'_, State> {
-        self.state.read().unwrap()
-    }
-
-    /// Dispatch an operation to modify state.
-    pub fn dispatch(&self, op: NotificationOp) {
-        let changed = {
-            let mut state = self.state.write().unwrap();
-            self.process_op(&mut state, op)
-        };
-
-        if changed {
-            self.notify_subscribers();
-        }
-    }
-
-    /// Emit an operation (alias for dispatch).
-    pub fn emit(&self, op: NotificationOp) {
-        self.dispatch(op);
-    }
-
-    /// Subscribe to state changes with a callback.
-    /// The callback will be called on every state change.
-    pub fn subscribe<F>(&'static self, callback: F)
-    where
-        F: Fn() + 'static,
-    {
-        SUBSCRIBERS.with(|subs| {
-            subs.borrow_mut().push(Rc::new(callback));
-        });
-    }
-
-    /// Notify all subscribers of a state change.
-    fn notify_subscribers(&self) {
-        SUBSCRIBERS.with(|subs| {
-            for callback in subs.borrow().iter() {
-                callback();
-            }
-        });
-    }
-
-    fn process_op(&self, state: &mut State, op: NotificationOp) -> bool {
-        match op {
-            NotificationOp::Batch(ops) => {
-                let all_ingress = ops.iter().all(|op| matches!(op, NotificationOp::Ingress(_)));
-                if all_ingress {
-                    self.process_ingress_batch(state, ops)
-                } else {
-                    let mut changed = false;
-                    for op in ops {
-                        changed |= self.process_op(state, op);
-                    }
-                    changed
-                }
-            }
-            NotificationOp::Configure { toast_limit, disable_toasts } => {
-                state.toast_limit = toast_limit;
-                state.disable_toasts = disable_toasts;
-                log::debug!("[store] Configured: toast_limit={}, disable_toasts={}", toast_limit, disable_toasts);
-                true
-            }
-            NotificationOp::Ingress(n) => {
-                self.process_ingress(state, n);
-                true
-            }
-            NotificationOp::NotificationDismiss(id) => {
-                self.process_dismiss(state, id);
-                true
-            }
-            NotificationOp::NotificationDismissed(id) => {
-                self.process_dismissed(state, id);
-                true
-            }
-            NotificationOp::NotificationRetract(id) => {
-                self.process_retract(state, id);
-                true
-            }
-            NotificationOp::NotificationRetracted(id) => {
-                self.process_retracted(state, id);
-                true
-            }
-            NotificationOp::SetDnd(inhibited) => {
-                state.dnd = inhibited;
-                true
-            }
-            NotificationOp::Tick => {
-                let (follow_ups, tick_changed) = self.process_tick(state);
-                let mut changed = tick_changed || !follow_ups.is_empty();
-                for follow_up in follow_ups {
-                    changed |= self.process_op(state, follow_up);
+/// Process a notification operation, returning whether state changed.
+fn process_op(state: &mut State, op: NotificationOp) -> bool {
+    match op {
+        NotificationOp::Batch(ops) => {
+            let all_ingress = ops.iter().all(|op| matches!(op, NotificationOp::Ingress(_)));
+            if all_ingress {
+                process_ingress_batch(state, ops)
+            } else {
+                let mut changed = false;
+                for op in ops {
+                    changed |= process_op(state, op);
                 }
                 changed
             }
-            NotificationOp::ToastHide(id) => {
-                state.toasts.insert(id, ItemLifecycle::Hiding);
-                state.hiding_timestamps.insert(id, SystemTime::now());
-                true
+        }
+        NotificationOp::Configure { toast_limit, disable_toasts } => {
+            state.toast_limit = toast_limit;
+            state.disable_toasts = disable_toasts;
+            log::debug!("[store] Configured: toast_limit={}, disable_toasts={}", toast_limit, disable_toasts);
+            true
+        }
+        NotificationOp::Ingress(n) => {
+            process_ingress(state, n);
+            true
+        }
+        NotificationOp::NotificationDismiss(id) => {
+            process_dismiss(state, id);
+            true
+        }
+        NotificationOp::NotificationDismissed(id) => {
+            process_dismissed(state, id);
+            true
+        }
+        NotificationOp::NotificationRetract(id) => {
+            process_retract(state, id);
+            true
+        }
+        NotificationOp::NotificationRetracted(id) => {
+            process_retracted(state, id);
+            true
+        }
+        NotificationOp::SetDnd(inhibited) => {
+            state.dnd = inhibited;
+            true
+        }
+        NotificationOp::Tick => {
+            let (follow_ups, tick_changed) = process_tick(state);
+            let mut changed = tick_changed || !follow_ups.is_empty();
+            for follow_up in follow_ups {
+                changed |= process_op(state, follow_up);
             }
-            NotificationOp::ToastHidden(id) => {
-                state.toasts.insert(id, ItemLifecycle::Hidden);
-                state.hiding_timestamps.shift_remove(&id);
-                self.reconcile_toasts(state);
-                true
-            }
-            NotificationOp::ToastHoverEnter => {
-                state.hover_paused = true;
-                true
-            }
-            NotificationOp::ToastHoverLeave => {
-                state.hover_paused = false;
-                true
-            }
+            changed
+        }
+        NotificationOp::ToastHide(id) => {
+            state.toasts.insert(id, ItemLifecycle::Hiding);
+            state.hiding_timestamps.insert(id, SystemTime::now());
+            true
+        }
+        NotificationOp::ToastHidden(id) => {
+            state.toasts.insert(id, ItemLifecycle::Hidden);
+            state.hiding_timestamps.shift_remove(&id);
+            reconcile_toasts(state);
+            true
+        }
+        NotificationOp::ToastHoverEnter => {
+            state.hover_paused = true;
+            true
+        }
+        NotificationOp::ToastHoverLeave => {
+            state.hover_paused = false;
+            true
         }
     }
+}
 
-    fn process_tick(&self, state: &mut State) -> (Vec<NotificationOp>, bool) {
-        let now = SystemTime::now();
-        let animation_duration = Duration::from_millis(250);
-        let mut state_changed = false;
+fn process_tick(state: &mut State) -> (Vec<NotificationOp>, bool) {
+    let now = SystemTime::now();
+    let animation_duration = Duration::from_millis(250);
+    let mut state_changed = false;
 
-        let hiding_to_hidden: Vec<_> = state
-            .toasts
-            .iter()
-            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Hiding))
-            .filter_map(|(toast_id, _)| {
-                state.hiding_timestamps.get(toast_id).and_then(|ts| {
-                    if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
-                        Some(*toast_id)
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
-
-        let appearing_to_visible: Vec<_> = state
-            .toasts
-            .iter()
-            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Appearing))
-            .filter_map(|(toast_id, _)| {
-                state.appearing_timestamps.get(toast_id).and_then(|ts| {
-                    if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
-                        Some(*toast_id)
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
-
-        let dismissing_to_dismissed: Vec<_> = state
-            .toasts
-            .iter()
-            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Dismissing))
-            .filter_map(|(toast_id, _)| {
-                state.dismissing_timestamps.get(toast_id).and_then(|ts| {
-                    if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
-                        Some(*toast_id)
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
-
-        let retracting_to_retracted: Vec<_> = state
-            .toasts
-            .iter()
-            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Retracting))
-            .filter_map(|(toast_id, _)| {
-                state.retracting_timestamps.get(toast_id).and_then(|ts| {
-                    if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
-                        Some(*toast_id)
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
-
-        if !hiding_to_hidden.is_empty() {
-            state_changed = true;
-        }
-        for toast_id in hiding_to_hidden {
-            state.hiding_timestamps.shift_remove(&toast_id);
-            state.visible_since_timestamps.shift_remove(&toast_id);
-
-            // TTL-expired toasts are removed from queue entirely (freeing slot for others)
-            // Non-TTL toasts (hidden due to slot limit) stay in queue as Hidden
-            if state.ttl_expired_toasts.remove(&toast_id) {
-                state.toasts.shift_remove(&toast_id);
-            } else {
-                state.toasts.insert(toast_id, ItemLifecycle::Hidden);
-            }
-        }
-
-        for toast_id in appearing_to_visible {
-            state.toasts.insert(toast_id, ItemLifecycle::Visible);
-            state.appearing_timestamps.shift_remove(&toast_id);
-            state.visible_since_timestamps.insert(toast_id, now);
-        }
-
-        // Skip TTL expiration when hover paused
-        if state.hover_paused {
-            self.reconcile_toasts(state);
-
-            let mut follow_up_ops = Vec::new();
-            for toast_id in dismissing_to_dismissed {
-                state.dismissing_timestamps.shift_remove(&toast_id);
-                follow_up_ops.push(NotificationOp::NotificationDismissed(toast_id));
-            }
-            for toast_id in retracting_to_retracted {
-                state.retracting_timestamps.shift_remove(&toast_id);
-                follow_up_ops.push(NotificationOp::NotificationRetracted(toast_id));
-            }
-
-            return (follow_up_ops, state_changed);
-        }
-
-        // Check for TTL expiration on visible toasts
-        let timed_out_toasts: Vec<u64> = state
-            .toasts
-            .iter()
-            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Visible))
-            .filter_map(|(toast_id, _)| {
-                let notification = state.notifications.get(toast_id)?;
-
-                // Skip resident notifications
-                if notification.resident {
-                    return None;
-                }
-
-                // Skip notifications without TTL (Critical urgency)
-                let ttl_ms = notification.toast_ttl?;
-
-                // Check if visible long enough to timeout
-                let visible_since = state.visible_since_timestamps.get(toast_id)?;
-                let elapsed = now.duration_since(*visible_since).unwrap_or_default();
-
-                if elapsed >= Duration::from_millis(ttl_ms) {
+    let hiding_to_hidden: Vec<_> = state
+        .toasts
+        .iter()
+        .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Hiding))
+        .filter_map(|(toast_id, _)| {
+            state.hiding_timestamps.get(toast_id).and_then(|ts| {
+                if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
                     Some(*toast_id)
                 } else {
                     None
                 }
             })
-            .collect();
+        })
+        .collect();
 
-        // Transition timed-out toasts to Hiding and mark them for removal
-        for toast_id in &timed_out_toasts {
-            state.toasts.insert(*toast_id, ItemLifecycle::Hiding);
-            state.visible_since_timestamps.shift_remove(toast_id);
-            state.hiding_timestamps.insert(*toast_id, now);
-            state.ttl_expired_toasts.insert(*toast_id);
-            state_changed = true;
-        }
-
-        // Check for TTL expiration on panel notifications
-        let timed_out_panel_notifications: Vec<u64> = state
-            .panel_notifications
-            .iter()
-            .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Visible))
-            .filter_map(|(notif_id, _)| {
-                let notification = state.notifications.get(notif_id)?;
-
-                // Skip resident notifications
-                if notification.resident {
-                    return None;
-                }
-
-                // Use the notification's TTL (not toast_ttl)
-                // ttl is None for "use server default" which we treat as no expiration
-                let ttl_ms = notification.ttl?;
-
-                // Check if visible long enough to timeout
-                let visible_since = state.panel_visible_since_timestamps.get(notif_id)?;
-                let elapsed = now.duration_since(*visible_since).unwrap_or_default();
-
-                if elapsed >= Duration::from_millis(ttl_ms) {
-                    Some(*notif_id)
+    let appearing_to_visible: Vec<_> = state
+        .toasts
+        .iter()
+        .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Appearing))
+        .filter_map(|(toast_id, _)| {
+            state.appearing_timestamps.get(toast_id).and_then(|ts| {
+                if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
+                    Some(*toast_id)
                 } else {
                     None
                 }
             })
-            .collect();
+        })
+        .collect();
 
-        // Transition timed-out panel notifications to Dismissing
-        for notif_id in &timed_out_panel_notifications {
-            state.panel_notifications.insert(*notif_id, ItemLifecycle::Dismissing);
-            state.panel_visible_since_timestamps.shift_remove(notif_id);
-            state.dismissing_timestamps.insert(*notif_id, now);
-            state.ttl_expired_panel_notifications.insert(*notif_id);
-            state_changed = true;
-            log::debug!("[store] Panel notification {} TTL expired", notif_id);
+    let dismissing_to_dismissed: Vec<_> = state
+        .toasts
+        .iter()
+        .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Dismissing))
+        .filter_map(|(toast_id, _)| {
+            state.dismissing_timestamps.get(toast_id).and_then(|ts| {
+                if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
+                    Some(*toast_id)
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+
+    let retracting_to_retracted: Vec<_> = state
+        .toasts
+        .iter()
+        .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Retracting))
+        .filter_map(|(toast_id, _)| {
+            state.retracting_timestamps.get(toast_id).and_then(|ts| {
+                if now.duration_since(*ts).unwrap_or_default() >= animation_duration {
+                    Some(*toast_id)
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+
+    if !hiding_to_hidden.is_empty() {
+        state_changed = true;
+    }
+    for toast_id in hiding_to_hidden {
+        state.hiding_timestamps.shift_remove(&toast_id);
+        state.visible_since_timestamps.shift_remove(&toast_id);
+
+        // TTL-expired toasts are removed from queue entirely (freeing slot for others)
+        // Non-TTL toasts (hidden due to slot limit) stay in queue as Hidden
+        if state.ttl_expired_toasts.remove(&toast_id) {
+            state.toasts.shift_remove(&toast_id);
+        } else {
+            state.toasts.insert(toast_id, ItemLifecycle::Hidden);
         }
+    }
 
-        self.reconcile_toasts(state);
+    for toast_id in appearing_to_visible {
+        state.toasts.insert(toast_id, ItemLifecycle::Visible);
+        state.appearing_timestamps.shift_remove(&toast_id);
+        state.visible_since_timestamps.insert(toast_id, now);
+    }
+
+    // Skip TTL expiration when hover paused
+    if state.hover_paused {
+        reconcile_toasts(state);
 
         let mut follow_up_ops = Vec::new();
         for toast_id in dismissing_to_dismissed {
@@ -346,210 +210,299 @@ impl NotificationStore {
             follow_up_ops.push(NotificationOp::NotificationRetracted(toast_id));
         }
 
-        (follow_up_ops, state_changed)
+        return (follow_up_ops, state_changed);
     }
 
-    fn process_ingress(&self, state: &mut State, n: IngressedNotification) {
-        // Handle replaces_id: remove the old notification if it exists
-        if let Some(old_id) = n.replaces_id {
-            if old_id != 0 && state.notifications.contains_key(&old_id) {
-                log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
-                remove_replaced_notification(state, old_id);
+    // Check for TTL expiration on visible toasts
+    let timed_out_toasts: Vec<u64> = state
+        .toasts
+        .iter()
+        .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Visible))
+        .filter_map(|(toast_id, _)| {
+            let notification = state.notifications.get(toast_id)?;
+
+            // Skip resident notifications
+            if notification.resident {
+                return None;
             }
-        }
 
-        let notification = create_notification(&n);
-        let notif_id = notification.id;
-        let group_id = notification.app_ident();
-        let app_title = notification.app_title();
-        state.notifications.insert(notif_id, notification);
-        self.reconcile_group_on_ingress(state, notif_id, group_id, app_title);
-        self.reconcile_toast_on_ingress(state, notif_id, true);
-        // Add to panel notifications (unlimited)
-        state.panel_notifications.insert(notif_id, ItemLifecycle::Visible);
-        state.panel_visible_since_timestamps.insert(notif_id, SystemTime::now());
-        log::debug!(
-            "[store] Added notification {} to panel_notifications, total: {}",
-            notif_id,
-            state.panel_notifications.len()
-        );
+            // Skip notifications without TTL (Critical urgency)
+            let ttl_ms = notification.toast_ttl?;
+
+            // Check if visible long enough to timeout
+            let visible_since = state.visible_since_timestamps.get(toast_id)?;
+            let elapsed = now.duration_since(*visible_since).unwrap_or_default();
+
+            if elapsed >= Duration::from_millis(ttl_ms) {
+                Some(*toast_id)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Transition timed-out toasts to Hiding and mark them for removal
+    for toast_id in &timed_out_toasts {
+        state.toasts.insert(*toast_id, ItemLifecycle::Hiding);
+        state.visible_since_timestamps.shift_remove(toast_id);
+        state.hiding_timestamps.insert(*toast_id, now);
+        state.ttl_expired_toasts.insert(*toast_id);
+        state_changed = true;
     }
 
-    fn process_ingress_batch(&self, state: &mut State, ops: Vec<NotificationOp>) -> bool {
-        let mut changed = false;
+    // Check for TTL expiration on panel notifications
+    let timed_out_panel_notifications: Vec<u64> = state
+        .panel_notifications
+        .iter()
+        .filter(|(_, lifecycle)| matches!(lifecycle, ItemLifecycle::Visible))
+        .filter_map(|(notif_id, _)| {
+            let notification = state.notifications.get(notif_id)?;
 
-        for op in ops {
-            if let NotificationOp::Ingress(n) = op {
-                // Handle replaces_id: remove the old notification if it exists
-                if let Some(old_id) = n.replaces_id {
-                    if old_id != 0 && state.notifications.contains_key(&old_id) {
-                        log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
-                        remove_replaced_notification(state, old_id);
-                    }
+            // Skip resident notifications
+            if notification.resident {
+                return None;
+            }
+
+            // Use the notification's TTL (not toast_ttl)
+            // ttl is None for "use server default" which we treat as no expiration
+            let ttl_ms = notification.ttl?;
+
+            // Check if visible long enough to timeout
+            let visible_since = state.panel_visible_since_timestamps.get(notif_id)?;
+            let elapsed = now.duration_since(*visible_since).unwrap_or_default();
+
+            if elapsed >= Duration::from_millis(ttl_ms) {
+                Some(*notif_id)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Transition timed-out panel notifications to Dismissing
+    for notif_id in &timed_out_panel_notifications {
+        state.panel_notifications.insert(*notif_id, ItemLifecycle::Dismissing);
+        state.panel_visible_since_timestamps.shift_remove(notif_id);
+        state.dismissing_timestamps.insert(*notif_id, now);
+        state.ttl_expired_panel_notifications.insert(*notif_id);
+        state_changed = true;
+        log::debug!("[store] Panel notification {} TTL expired", notif_id);
+    }
+
+    reconcile_toasts(state);
+
+    let mut follow_up_ops = Vec::new();
+    for toast_id in dismissing_to_dismissed {
+        state.dismissing_timestamps.shift_remove(&toast_id);
+        follow_up_ops.push(NotificationOp::NotificationDismissed(toast_id));
+    }
+    for toast_id in retracting_to_retracted {
+        state.retracting_timestamps.shift_remove(&toast_id);
+        follow_up_ops.push(NotificationOp::NotificationRetracted(toast_id));
+    }
+
+    (follow_up_ops, state_changed)
+}
+
+fn process_ingress(state: &mut State, n: IngressedNotification) {
+    // Handle replaces_id: remove the old notification if it exists
+    if let Some(old_id) = n.replaces_id {
+        if old_id != 0 && state.notifications.contains_key(&old_id) {
+            log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
+            remove_replaced_notification(state, old_id);
+        }
+    }
+
+    let notification = create_notification(&n);
+    let notif_id = notification.id;
+    let group_id = notification.app_ident();
+    let app_title = notification.app_title();
+    state.notifications.insert(notif_id, notification);
+    reconcile_group_on_ingress(state, notif_id, group_id, app_title);
+    reconcile_toast_on_ingress(state, notif_id, true);
+    // Add to panel notifications (unlimited)
+    state.panel_notifications.insert(notif_id, ItemLifecycle::Visible);
+    state.panel_visible_since_timestamps.insert(notif_id, SystemTime::now());
+    log::debug!(
+        "[store] Added notification {} to panel_notifications, total: {}",
+        notif_id,
+        state.panel_notifications.len()
+    );
+}
+
+fn process_ingress_batch(state: &mut State, ops: Vec<NotificationOp>) -> bool {
+    let mut changed = false;
+
+    for op in ops {
+        if let NotificationOp::Ingress(n) = op {
+            // Handle replaces_id: remove the old notification if it exists
+            if let Some(old_id) = n.replaces_id {
+                if old_id != 0 && state.notifications.contains_key(&old_id) {
+                    log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
+                    remove_replaced_notification(state, old_id);
                 }
-
-                let notification = create_notification(&n);
-                let notif_id = notification.id;
-                let group_id = notification.app_ident();
-                let app_title = notification.app_title();
-                state.notifications.insert(notif_id, notification);
-                self.reconcile_group_on_ingress(state, notif_id, group_id, app_title);
-                self.reconcile_toast_on_ingress(state, notif_id, false);
-                // Add to panel notifications (unlimited)
-                state.panel_notifications.insert(notif_id, ItemLifecycle::Visible);
-                state.panel_visible_since_timestamps.insert(notif_id, SystemTime::now());
-                changed = true;
             }
-        }
 
-        if changed {
-            self.reconcile_toasts(state);
-        }
-
-        changed
-    }
-
-    fn process_dismiss(&self, state: &mut State, id: u64) {
-        if let Some(notification) = state.notifications.get(&id) {
+            let notification = create_notification(&n);
+            let notif_id = notification.id;
             let group_id = notification.app_ident();
-            if let Some(group) = state.groups.get_mut(group_id.as_ref()) {
-                group.get_top_mut().insert(notification.id, ItemLifecycle::Dismissing);
-            }
-            state.toasts.insert(id, ItemLifecycle::Dismissing);
-            state.panel_notifications.insert(id, ItemLifecycle::Dismissing);
-            state.dismissing_timestamps.insert(id, SystemTime::now());
+            let app_title = notification.app_title();
+            state.notifications.insert(notif_id, notification);
+            reconcile_group_on_ingress(state, notif_id, group_id, app_title);
+            reconcile_toast_on_ingress(state, notif_id, false);
+            // Add to panel notifications (unlimited)
+            state.panel_notifications.insert(notif_id, ItemLifecycle::Visible);
+            state.panel_visible_since_timestamps.insert(notif_id, SystemTime::now());
+            changed = true;
         }
     }
 
-    fn process_dismissed(&self, state: &mut State, id: u64) {
-        let group_id = state.notifications.get(&id).map(|n| n.app_ident());
-
-        for group in state.groups.values_mut() {
-            group.get_top_mut().shift_remove(&id);
-        }
-        state.toasts.shift_remove(&id);
-        state.panel_notifications.shift_remove(&id);
-        state.appearing_timestamps.shift_remove(&id);
-        state.dismissing_timestamps.shift_remove(&id);
-        state.hiding_timestamps.shift_remove(&id);
-        state.visible_since_timestamps.shift_remove(&id);
-        state.panel_visible_since_timestamps.shift_remove(&id);
-        state.ttl_expired_toasts.remove(&id);
-        state.ttl_expired_panel_notifications.remove(&id);
-        let _ = state.notifications.remove(&id);
-
-        self.reconcile_toasts(state);
-
-        if let Some(group_id) = group_id {
-            let group_has_any = state
-                .notifications
-                .values()
-                .any(|n| n.app_ident() == group_id);
-
-            if !group_has_any {
-                state.archive.insert(group_id, ItemLifecycle::Dismissing);
-            }
-        }
+    if changed {
+        reconcile_toasts(state);
     }
 
-    fn process_retract(&self, state: &mut State, id: u64) {
-        if let Some(notification) = state.notifications.get(&id) {
-            let group_id = notification.app_ident();
-            if let Some(group) = state.groups.get_mut(group_id.as_ref()) {
-                group.get_top_mut().insert(notification.id, ItemLifecycle::Retracting);
-            }
-            state.toasts.insert(id, ItemLifecycle::Retracting);
-            state.panel_notifications.insert(id, ItemLifecycle::Retracting);
-            state.retracting_timestamps.insert(id, SystemTime::now());
+    changed
+}
+
+fn process_dismiss(state: &mut State, id: u64) {
+    if let Some(notification) = state.notifications.get(&id) {
+        let group_id = notification.app_ident();
+        if let Some(group) = state.groups.get_mut(group_id.as_ref()) {
+            group.get_top_mut().insert(notification.id, ItemLifecycle::Dismissing);
+        }
+        state.toasts.insert(id, ItemLifecycle::Dismissing);
+        state.panel_notifications.insert(id, ItemLifecycle::Dismissing);
+        state.dismissing_timestamps.insert(id, SystemTime::now());
+    }
+}
+
+fn process_dismissed(state: &mut State, id: u64) {
+    let group_id = state.notifications.get(&id).map(|n| n.app_ident());
+
+    for group in state.groups.values_mut() {
+        group.get_top_mut().shift_remove(&id);
+    }
+    state.toasts.shift_remove(&id);
+    state.panel_notifications.shift_remove(&id);
+    state.appearing_timestamps.shift_remove(&id);
+    state.dismissing_timestamps.shift_remove(&id);
+    state.hiding_timestamps.shift_remove(&id);
+    state.visible_since_timestamps.shift_remove(&id);
+    state.panel_visible_since_timestamps.shift_remove(&id);
+    state.ttl_expired_toasts.remove(&id);
+    state.ttl_expired_panel_notifications.remove(&id);
+    let _ = state.notifications.remove(&id);
+
+    reconcile_toasts(state);
+
+    if let Some(group_id) = group_id {
+        let group_has_any = state
+            .notifications
+            .values()
+            .any(|n| n.app_ident() == group_id);
+
+        if !group_has_any {
+            state.archive.insert(group_id, ItemLifecycle::Dismissing);
         }
     }
+}
 
-    fn process_retracted(&self, state: &mut State, id: u64) {
-        let group_id = state.notifications.get(&id).map(|n| n.app_ident());
-
-        for group in state.groups.values_mut() {
-            group.get_top_mut().shift_remove(&id);
+fn process_retract(state: &mut State, id: u64) {
+    if let Some(notification) = state.notifications.get(&id) {
+        let group_id = notification.app_ident();
+        if let Some(group) = state.groups.get_mut(group_id.as_ref()) {
+            group.get_top_mut().insert(notification.id, ItemLifecycle::Retracting);
         }
-        state.toasts.shift_remove(&id);
-        state.panel_notifications.shift_remove(&id);
-        state.appearing_timestamps.shift_remove(&id);
-        state.hiding_timestamps.shift_remove(&id);
-        state.retracting_timestamps.shift_remove(&id);
-        state.visible_since_timestamps.shift_remove(&id);
-        state.panel_visible_since_timestamps.shift_remove(&id);
-        state.ttl_expired_toasts.remove(&id);
-        state.ttl_expired_panel_notifications.remove(&id);
-        let _ = state.notifications.remove(&id);
+        state.toasts.insert(id, ItemLifecycle::Retracting);
+        state.panel_notifications.insert(id, ItemLifecycle::Retracting);
+        state.retracting_timestamps.insert(id, SystemTime::now());
+    }
+}
 
-        self.reconcile_toasts(state);
+fn process_retracted(state: &mut State, id: u64) {
+    let group_id = state.notifications.get(&id).map(|n| n.app_ident());
 
-        if let Some(group_id) = group_id {
-            let group_has_any = state
-                .notifications
-                .values()
-                .any(|n| n.app_ident() == group_id);
+    for group in state.groups.values_mut() {
+        group.get_top_mut().shift_remove(&id);
+    }
+    state.toasts.shift_remove(&id);
+    state.panel_notifications.shift_remove(&id);
+    state.appearing_timestamps.shift_remove(&id);
+    state.hiding_timestamps.shift_remove(&id);
+    state.retracting_timestamps.shift_remove(&id);
+    state.visible_since_timestamps.shift_remove(&id);
+    state.panel_visible_since_timestamps.shift_remove(&id);
+    state.ttl_expired_toasts.remove(&id);
+    state.ttl_expired_panel_notifications.remove(&id);
+    let _ = state.notifications.remove(&id);
 
-            if !group_has_any {
-                state.archive.insert(group_id, ItemLifecycle::Dismissing);
-            }
+    reconcile_toasts(state);
+
+    if let Some(group_id) = group_id {
+        let group_has_any = state
+            .notifications
+            .values()
+            .any(|n| n.app_ident() == group_id);
+
+        if !group_has_any {
+            state.archive.insert(group_id, ItemLifecycle::Dismissing);
         }
     }
+}
 
-    fn reconcile_toasts(&self, state: &mut State) {
-        sort_notif_list(&state.notifications, &mut state.toasts);
-        cut_notif_ids(
-            &mut state.toasts,
-            &mut state.appearing_timestamps,
-            &mut state.hiding_timestamps,
-            state.toast_limit,
+fn reconcile_toasts(state: &mut State) {
+    sort_notif_list(&state.notifications, &mut state.toasts);
+    cut_notif_ids(
+        &mut state.toasts,
+        &mut state.appearing_timestamps,
+        &mut state.hiding_timestamps,
+        state.toast_limit,
+    );
+}
+
+fn reconcile_group_on_ingress(
+    state: &mut State,
+    notif_id: u64,
+    group_id: Arc<str>,
+    app_title: Arc<str>,
+) {
+    if let Some(group) = state.groups.get_mut(&group_id) {
+        group.get_top_mut().insert(notif_id, ItemLifecycle::Visible);
+        sort_notif_list(&state.notifications, group.get_top_mut());
+        let mut stub_appearing = IndexMap::new();
+        let mut stub_hiding = IndexMap::new();
+        cut_notif_ids(group.get_top_mut(), &mut stub_appearing, &mut stub_hiding, 1);
+    } else {
+        state.groups.insert(
+            group_id.clone(),
+            Group::new(group_id.clone(), app_title, notif_id),
         );
     }
+    state.archive.insert(group_id, ItemLifecycle::Visible);
+}
 
-    fn reconcile_group_on_ingress(
-        &self,
-        state: &mut State,
-        notif_id: u64,
-        group_id: Arc<str>,
-        app_title: Arc<str>,
-    ) {
-        if let Some(group) = state.groups.get_mut(&group_id) {
-            group.get_top_mut().insert(notif_id, ItemLifecycle::Visible);
-            sort_notif_list(&state.notifications, group.get_top_mut());
-            let mut stub_appearing = IndexMap::new();
-            let mut stub_hiding = IndexMap::new();
-            cut_notif_ids(group.get_top_mut(), &mut stub_appearing, &mut stub_hiding, 1);
-        } else {
-            state.groups.insert(
-                group_id.clone(),
-                Group::new(group_id.clone(), app_title, notif_id),
-            );
-        }
-        state.archive.insert(group_id, ItemLifecycle::Visible);
+fn reconcile_toast_on_ingress(state: &mut State, notif_id: u64, do_sort: bool) {
+    // Skip toasts entirely if disabled
+    if state.disable_toasts {
+        return;
     }
 
-    fn reconcile_toast_on_ingress(&self, state: &mut State, notif_id: u64, do_sort: bool) {
-        // Skip toasts entirely if disabled
-        if state.disable_toasts {
-            return;
-        }
+    let notification = state.notifications.get(&notif_id);
+    let should_toast = notification.map_or(false, |n| {
+        should_toast(state.dnd, n.urgency, n.resident)
+    });
 
-        let notification = state.notifications.get(&notif_id);
-        let should_toast = notification.map_or(false, |n| {
-            should_toast(state.dnd, n.urgency, n.resident)
-        });
+    if !should_toast {
+        return;
+    }
 
-        if !should_toast {
-            return;
-        }
-
-        if state.toasts.is_empty() {
-            state.toasts.insert(notif_id, ItemLifecycle::Appearing);
-            state.appearing_timestamps.insert(notif_id, SystemTime::now());
-        } else {
-            state.toasts.insert(notif_id, ItemLifecycle::Pending);
-            if do_sort {
-                self.reconcile_toasts(state);
-            }
+    if state.toasts.is_empty() {
+        state.toasts.insert(notif_id, ItemLifecycle::Appearing);
+        state.appearing_timestamps.insert(notif_id, SystemTime::now());
+    } else {
+        state.toasts.insert(notif_id, ItemLifecycle::Pending);
+        if do_sort {
+            reconcile_toasts(state);
         }
     }
 }
@@ -844,93 +797,75 @@ mod tests {
 
     #[test]
     fn test_ingress_adds_notification_to_store() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        {
-            let mut state = store.state.write().unwrap();
-            store.process_ingress(&mut state, notif);
-        }
+        store.emit(NotificationOp::Ingress(notif));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
     }
 
     #[test]
     fn test_ingress_adds_notification_to_panel() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        {
-            let mut state = store.state.write().unwrap();
-            store.process_ingress(&mut state, notif);
-        }
+        store.emit(NotificationOp::Ingress(notif));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         assert!(state.panel_notifications.contains_key(&1));
     }
 
     #[test]
     fn test_ingress_adds_notification_to_toasts() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        {
-            let mut state = store.state.write().unwrap();
-            store.process_ingress(&mut state, notif);
-        }
+        store.emit(NotificationOp::Ingress(notif));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         assert!(state.toasts.contains_key(&1));
     }
 
     #[test]
     fn test_dismiss_removes_from_toasts() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        {
-            let mut state = store.state.write().unwrap();
-            store.process_ingress(&mut state, notif);
-            store.process_dismiss(&mut state, 1);
-            store.process_dismissed(&mut state, 1);
-        }
+        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::NotificationDismiss(1));
+        store.emit(NotificationOp::NotificationDismissed(1));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         assert!(!state.toasts.contains_key(&1));
     }
 
     #[test]
     fn test_dismiss_removes_from_panel() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        {
-            let mut state = store.state.write().unwrap();
-            store.process_ingress(&mut state, notif);
-            store.process_dismiss(&mut state, 1);
-            store.process_dismissed(&mut state, 1);
-        }
+        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::NotificationDismiss(1));
+        store.emit(NotificationOp::NotificationDismissed(1));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         assert!(!state.panel_notifications.contains_key(&1));
     }
 
     #[test]
     fn test_batch_ingress_adds_multiple_notifications() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let ops = vec![
             NotificationOp::Ingress(make_notification(1, NotificationUrgency::Normal, false)),
             NotificationOp::Ingress(make_notification(2, NotificationUrgency::Normal, false)),
             NotificationOp::Ingress(make_notification(3, NotificationUrgency::Normal, false)),
         ];
 
-        {
-            let mut state = store.state.write().unwrap();
-            store.process_ingress_batch(&mut state, ops);
-        }
+        store.emit(NotificationOp::Batch(ops));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
         assert!(state.notifications.contains_key(&2));
         assert!(state.notifications.contains_key(&3));
@@ -941,16 +876,13 @@ mod tests {
 
     #[test]
     fn test_dnd_blocks_normal_notification_toast() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        {
-            let mut state = store.state.write().unwrap();
-            state.dnd = true;
-            store.process_ingress(&mut state, notif);
-        }
+        store.emit(NotificationOp::SetDnd(true));
+        store.emit(NotificationOp::Ingress(notif));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         // Notification should be stored
         assert!(state.notifications.contains_key(&1));
         // But NOT in toasts due to DND
@@ -959,32 +891,26 @@ mod tests {
 
     #[test]
     fn test_dnd_blocks_low_notification_toast() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Low, false);
 
-        {
-            let mut state = store.state.write().unwrap();
-            state.dnd = true;
-            store.process_ingress(&mut state, notif);
-        }
+        store.emit(NotificationOp::SetDnd(true));
+        store.emit(NotificationOp::Ingress(notif));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
         assert!(!state.toasts.contains_key(&1));
     }
 
     #[test]
     fn test_dnd_allows_critical_notification_toast() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Critical, false);
 
-        {
-            let mut state = store.state.write().unwrap();
-            state.dnd = true;
-            store.process_ingress(&mut state, notif);
-        }
+        store.emit(NotificationOp::SetDnd(true));
+        store.emit(NotificationOp::Ingress(notif));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
         // Critical notifications SHOULD show as toasts even during DND
         assert!(state.toasts.contains_key(&1));
@@ -992,16 +918,13 @@ mod tests {
 
     #[test]
     fn test_dnd_allows_resident_notification_toast() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, true);
 
-        {
-            let mut state = store.state.write().unwrap();
-            state.dnd = true;
-            store.process_ingress(&mut state, notif);
-        }
+        store.emit(NotificationOp::SetDnd(true));
+        store.emit(NotificationOp::Ingress(notif));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
         // Resident notifications SHOULD show as toasts even during DND
         assert!(state.toasts.contains_key(&1));
@@ -1009,30 +932,37 @@ mod tests {
 
     #[test]
     fn test_dnd_always_adds_to_panel() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        {
-            let mut state = store.state.write().unwrap();
-            state.dnd = true;
-            store.process_ingress(&mut state, notif);
-        }
+        store.emit(NotificationOp::SetDnd(true));
+        store.emit(NotificationOp::Ingress(notif));
 
-        let state = store.state.read().unwrap();
+        let state = store.get_state();
         // Panel should ALWAYS receive notifications regardless of DND
         assert!(state.panel_notifications.contains_key(&1));
     }
 
     #[test]
     fn test_set_dnd_operation_updates_state() {
-        let store = NotificationStore::new();
+        let store = create_notification_store();
 
         {
-            let mut state = store.state.write().unwrap();
+            let state = store.get_state();
             assert!(!state.dnd);
-            store.process_op(&mut state, NotificationOp::SetDnd(true));
+        }
+
+        store.emit(NotificationOp::SetDnd(true));
+
+        {
+            let state = store.get_state();
             assert!(state.dnd);
-            store.process_op(&mut state, NotificationOp::SetDnd(false));
+        }
+
+        store.emit(NotificationOp::SetDnd(false));
+
+        {
+            let state = store.get_state();
             assert!(!state.dnd);
         }
     }
@@ -1042,72 +972,77 @@ mod tests {
     #[test]
     fn test_toast_slot_limit_hides_older_toasts() {
         // Push 10 notifications, only 5 should be visible, rest hidden
-        let store = NotificationStore::new();
+        let store = create_notification_store();
+
+        store.emit(NotificationOp::Configure { toast_limit: 5, disable_toasts: false });
+
+        // Push notifications 1-5
+        for id in 1..=5 {
+            store.emit(NotificationOp::Ingress(make_notification(id, NotificationUrgency::Normal, false)));
+        }
 
         {
-            let mut state = store.state.write().unwrap();
-            state.toast_limit = 5;
-
-            // Push notifications 1-5
-            for id in 1..=5 {
-                store.process_ingress(&mut state, make_notification(id, NotificationUrgency::Normal, false));
-            }
-
+            let state = store.get_state();
             // All 5 should be in toasts
             assert_eq!(state.toasts.len(), 5);
-
-            // Push notifications 6-10 (these should push out 1-5)
-            for id in 6..=10 {
-                store.process_ingress(&mut state, make_notification(id, NotificationUrgency::Normal, false));
-            }
-
-            // Should have 10 toasts total (5 visible + 5 hidden)
-            assert_eq!(state.toasts.len(), 10);
-
-            // Count visible vs hidden
-            let visible_count = state.toasts.values()
-                .filter(|l| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
-                .count();
-            let hidden_count = state.toasts.values()
-                .filter(|l| matches!(l, ItemLifecycle::Hidden | ItemLifecycle::Hiding | ItemLifecycle::Pending))
-                .count();
-
-            assert_eq!(visible_count, 5, "Should have 5 visible toasts");
-            assert_eq!(hidden_count, 5, "Should have 5 hidden toasts");
         }
+
+        // Push notifications 6-10 (these should push out 1-5)
+        for id in 6..=10 {
+            store.emit(NotificationOp::Ingress(make_notification(id, NotificationUrgency::Normal, false)));
+        }
+
+        let state = store.get_state();
+        // Should have 10 toasts total (5 visible + 5 hidden)
+        assert_eq!(state.toasts.len(), 10);
+
+        // Count visible vs hidden
+        let visible_count = state.toasts.values()
+            .filter(|l| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
+            .count();
+        let hidden_count = state.toasts.values()
+            .filter(|l| matches!(l, ItemLifecycle::Hidden | ItemLifecycle::Hiding | ItemLifecycle::Pending))
+            .count();
+
+        assert_eq!(visible_count, 5, "Should have 5 visible toasts");
+        assert_eq!(hidden_count, 5, "Should have 5 hidden toasts");
     }
 
     #[test]
     fn test_dismiss_promotes_hidden_toast_to_visible() {
         // Push 10 notifications, dismiss one visible, hidden should be promoted
-        let store = NotificationStore::new();
+        let store = create_notification_store();
 
+        store.emit(NotificationOp::Configure { toast_limit: 5, disable_toasts: false });
+
+        // Push notifications 1-10
+        for id in 1..=10 {
+            store.emit(NotificationOp::Ingress(make_notification(id, NotificationUrgency::Normal, false)));
+        }
+
+        // Verify initial state: 10 toasts
         {
-            let mut state = store.state.write().unwrap();
-            state.toast_limit = 5;
-
-            // Push notifications 1-10
-            for id in 1..=10 {
-                store.process_ingress(&mut state, make_notification(id, NotificationUrgency::Normal, false));
-            }
-
-            // Verify initial state: 10 toasts
+            let state = store.get_state();
             assert_eq!(state.toasts.len(), 10);
+        }
 
-            // Simulate time passing and tick to complete Hiding → Hidden transitions
-            // Set hiding timestamps to the past so they complete
-            let past = SystemTime::now() - Duration::from_millis(500);
-            let hiding_ids: Vec<u64> = state.toasts.iter()
-                .filter(|(_, l)| matches!(l, ItemLifecycle::Hiding))
-                .map(|(id, _)| *id)
-                .collect();
-            for id in hiding_ids {
-                state.hiding_timestamps.insert(id, past);
-            }
-            // Run tick to process Hiding → Hidden
-            store.process_tick(&mut state);
+        // Simulate time passing and tick to complete Hiding → Hidden transitions
+        // We need to manually set hiding timestamps to the past
+        {
+            let mut state = store.get_state();
+            // Note: We can't modify state through get_state() since it's a read guard
+            // The tests need to work differently now - we emit Tick operations
+        }
 
-            // Debug: print all toast states before dismiss
+        // Emit multiple ticks to let animations complete
+        for _ in 0..10 {
+            store.emit(NotificationOp::Tick);
+            std::thread::sleep(Duration::from_millis(30));
+        }
+
+        // Debug: print all toast states before dismiss
+        {
+            let state = store.get_state();
             eprintln!("Before dismiss:");
             for (id, lifecycle) in state.toasts.iter() {
                 eprintln!("  Toast {}: {:?}", id, lifecycle);
@@ -1121,35 +1056,42 @@ mod tests {
                 .filter(|l| matches!(l, ItemLifecycle::Hidden))
                 .count();
             eprintln!("Visible: {}, Hidden: {}", visible_before, hidden_before);
+        }
 
-            // Find a visible toast to dismiss (should be one of the newer ones: 6-10)
-            let visible_toast_id = state.toasts.iter()
+        // Find a visible toast to dismiss (should be one of the newer ones: 6-10)
+        let visible_toast_id = {
+            let state = store.get_state();
+            state.toasts.iter()
                 .find(|(_, l)| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
                 .map(|(id, _)| *id)
-                .expect("Should have a visible toast");
+                .expect("Should have a visible toast")
+        };
 
-            eprintln!("Dismissing toast {}", visible_toast_id);
+        eprintln!("Dismissing toast {}", visible_toast_id);
 
-            // Dismiss the visible toast
-            store.process_dismiss(&mut state, visible_toast_id);
-            store.process_dismissed(&mut state, visible_toast_id);
+        // Dismiss the visible toast
+        store.emit(NotificationOp::NotificationDismiss(visible_toast_id));
+        store.emit(NotificationOp::NotificationDismissed(visible_toast_id));
 
-            // Debug: print all toast states after dismiss
+        // Debug: print all toast states after dismiss
+        {
+            let state = store.get_state();
             eprintln!("After dismiss:");
             for (id, lifecycle) in state.toasts.iter() {
                 eprintln!("  Toast {}: {:?}", id, lifecycle);
             }
-
-            // Should now have 9 toasts
-            assert_eq!(state.toasts.len(), 9, "Should have 9 toasts after dismiss");
-
-            // Should still have 5 visible (a hidden one was promoted)
-            let visible_count = state.toasts.values()
-                .filter(|l| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
-                .count();
-
-            assert_eq!(visible_count, 5, "Should still have 5 visible toasts after promotion");
         }
+
+        let state = store.get_state();
+        // Should now have 9 toasts
+        assert_eq!(state.toasts.len(), 9, "Should have 9 toasts after dismiss");
+
+        // Should still have 5 visible (a hidden one was promoted)
+        let visible_count = state.toasts.values()
+            .filter(|l| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
+            .count();
+
+        assert_eq!(visible_count, 5, "Should still have 5 visible toasts after promotion");
     }
 
     #[test]
@@ -1159,122 +1101,115 @@ mod tests {
         // This is critical for correct UI ordering: the UI reverses the state order,
         // so a promoted toast at position 5 (before 7,8,9,10) will appear at the
         // bottom of the display (after 10,9,8,7 from top).
-        let store = NotificationStore::new();
+        let store = create_notification_store();
 
+        store.emit(NotificationOp::Configure { toast_limit: 5, disable_toasts: false });
+
+        // Push notifications 1-10
+        for id in 1..=10 {
+            store.emit(NotificationOp::Ingress(make_notification(id, NotificationUrgency::Normal, false)));
+        }
+
+        // Emit multiple ticks to let animations complete
+        for _ in 0..10 {
+            store.emit(NotificationOp::Tick);
+            std::thread::sleep(Duration::from_millis(30));
+        }
+
+        // Verify initial state order: [1,2,3,4,5,6,7,8,9,10]
+        // with 1-5 Hidden and 6-10 Visible/Appearing
         {
-            let mut state = store.state.write().unwrap();
-            state.toast_limit = 5;
-
-            // Push notifications 1-10
-            for id in 1..=10 {
-                store.process_ingress(&mut state, make_notification(id, NotificationUrgency::Normal, false));
-            }
-
-            // Simulate time passing for Hiding → Hidden transitions
-            let past = SystemTime::now() - Duration::from_millis(500);
-            let hiding_ids: Vec<u64> = state.toasts.iter()
-                .filter(|(_, l)| matches!(l, ItemLifecycle::Hiding))
-                .map(|(id, _)| *id)
-                .collect();
-            for id in hiding_ids {
-                state.hiding_timestamps.insert(id, past);
-            }
-            store.process_tick(&mut state);
-
-            // Verify initial state order: [1,2,3,4,5,6,7,8,9,10]
-            // with 1-5 Hidden and 6-10 Visible/Appearing
+            let state = store.get_state();
             let initial_order: Vec<u64> = state.toasts.keys().copied().collect();
             assert_eq!(initial_order, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-
-            // Dismiss toast 6 (the oldest visible toast)
-            store.process_dismiss(&mut state, 6);
-            store.process_dismissed(&mut state, 6);
-
-            // After dismissal:
-            // - Toast 6 should be removed
-            // - Toast 5 should be promoted (Appearing) but stay at its original position
-            // - Order should be: [1,2,3,4,5,7,8,9,10]
-            let order_after_dismiss: Vec<u64> = state.toasts.keys().copied().collect();
-            assert_eq!(
-                order_after_dismiss,
-                vec![1, 2, 3, 4, 5, 7, 8, 9, 10],
-                "Promoted toast 5 should maintain its original position before 7,8,9,10"
-            );
-
-            // Verify toast 5 is now visible (Appearing)
-            assert!(
-                matches!(state.toasts.get(&5), Some(ItemLifecycle::Appearing)),
-                "Toast 5 should be promoted to Appearing"
-            );
-
-            // Verify the visible toasts order (filtered, in state order)
-            let visible_order: Vec<u64> = state.toasts.iter()
-                .filter(|(_, l)| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
-                .map(|(id, _)| *id)
-                .collect();
-            assert_eq!(
-                visible_order,
-                vec![5, 7, 8, 9, 10],
-                "Visible toasts should be in order [5,7,8,9,10] for correct UI display"
-            );
-
-            // When UI reverses this for display (newest first), it becomes [10,9,8,7,5]
-            // which is the correct order: newest at top, promoted toast at bottom
         }
+
+        // Dismiss toast 6 (the oldest visible toast)
+        store.emit(NotificationOp::NotificationDismiss(6));
+        store.emit(NotificationOp::NotificationDismissed(6));
+
+        let state = store.get_state();
+
+        // After dismissal:
+        // - Toast 6 should be removed
+        // - Toast 5 should be promoted (Appearing) but stay at its original position
+        // - Order should be: [1,2,3,4,5,7,8,9,10]
+        let order_after_dismiss: Vec<u64> = state.toasts.keys().copied().collect();
+        assert_eq!(
+            order_after_dismiss,
+            vec![1, 2, 3, 4, 5, 7, 8, 9, 10],
+            "Promoted toast 5 should maintain its original position before 7,8,9,10"
+        );
+
+        // Verify toast 5 is now visible (Appearing)
+        assert!(
+            matches!(state.toasts.get(&5), Some(ItemLifecycle::Appearing)),
+            "Toast 5 should be promoted to Appearing"
+        );
+
+        // Verify the visible toasts order (filtered, in state order)
+        let visible_order: Vec<u64> = state.toasts.iter()
+            .filter(|(_, l)| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
+            .map(|(id, _)| *id)
+            .collect();
+        assert_eq!(
+            visible_order,
+            vec![5, 7, 8, 9, 10],
+            "Visible toasts should be in order [5,7,8,9,10] for correct UI display"
+        );
+
+        // When UI reverses this for display (newest first), it becomes [10,9,8,7,5]
+        // which is the correct order: newest at top, promoted toast at bottom
     }
 
     #[test]
     fn test_multiple_promotions_maintain_order() {
         // Test that multiple consecutive promotions maintain correct order
-        let store = NotificationStore::new();
+        let store = create_notification_store();
 
+        store.emit(NotificationOp::Configure { toast_limit: 5, disable_toasts: false });
+
+        // Push notifications 1-10
+        for id in 1..=10 {
+            store.emit(NotificationOp::Ingress(make_notification(id, NotificationUrgency::Normal, false)));
+        }
+
+        // Emit multiple ticks to let animations complete
+        for _ in 0..10 {
+            store.emit(NotificationOp::Tick);
+            std::thread::sleep(Duration::from_millis(30));
+        }
+
+        // Dismiss toast 6, promoting toast 5
+        store.emit(NotificationOp::NotificationDismiss(6));
+        store.emit(NotificationOp::NotificationDismissed(6));
+
+        // Verify order: [1,2,3,4,5,7,8,9,10] with visible [5,7,8,9,10]
         {
-            let mut state = store.state.write().unwrap();
-            state.toast_limit = 5;
-
-            // Push notifications 1-10
-            for id in 1..=10 {
-                store.process_ingress(&mut state, make_notification(id, NotificationUrgency::Normal, false));
-            }
-
-            // Simulate time for Hidden transitions
-            let past = SystemTime::now() - Duration::from_millis(500);
-            let hiding_ids: Vec<u64> = state.toasts.iter()
-                .filter(|(_, l)| matches!(l, ItemLifecycle::Hiding))
-                .map(|(id, _)| *id)
-                .collect();
-            for id in hiding_ids {
-                state.hiding_timestamps.insert(id, past);
-            }
-            store.process_tick(&mut state);
-
-            // Dismiss toast 6, promoting toast 5
-            store.process_dismiss(&mut state, 6);
-            store.process_dismissed(&mut state, 6);
-
-            // Verify order: [1,2,3,4,5,7,8,9,10] with visible [5,7,8,9,10]
+            let state = store.get_state();
             let visible_order: Vec<u64> = state.toasts.iter()
                 .filter(|(_, l)| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
                 .map(|(id, _)| *id)
                 .collect();
             assert_eq!(visible_order, vec![5, 7, 8, 9, 10]);
-
-            // Dismiss toast 7, promoting toast 4
-            store.process_dismiss(&mut state, 7);
-            store.process_dismissed(&mut state, 7);
-
-            // Verify order: [1,2,3,4,5,8,9,10] with visible [4,5,8,9,10]
-            let visible_order: Vec<u64> = state.toasts.iter()
-                .filter(|(_, l)| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
-                .map(|(id, _)| *id)
-                .collect();
-            assert_eq!(
-                visible_order,
-                vec![4, 5, 8, 9, 10],
-                "After second promotion, visible order should be [4,5,8,9,10]"
-            );
-
-            // UI would display as [10,9,8,5,4] - newest first, promoted toasts at bottom in their original order
         }
+
+        // Dismiss toast 7, promoting toast 4
+        store.emit(NotificationOp::NotificationDismiss(7));
+        store.emit(NotificationOp::NotificationDismissed(7));
+
+        // Verify order: [1,2,3,4,5,8,9,10] with visible [4,5,8,9,10]
+        let state = store.get_state();
+        let visible_order: Vec<u64> = state.toasts.iter()
+            .filter(|(_, l)| matches!(l, ItemLifecycle::Visible | ItemLifecycle::Appearing))
+            .map(|(id, _)| *id)
+            .collect();
+        assert_eq!(
+            visible_order,
+            vec![4, 5, 8, 9, 10],
+            "After second promotion, visible order should be [4,5,8,9,10]"
+        );
+
+        // UI would display as [10,9,8,5,4] - newest first, promoted toasts at bottom in their original order
     }
 }
