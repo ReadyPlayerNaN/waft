@@ -5,3 +5,4 @@ pub mod feature_grid;
 pub mod feature_toggle;
 pub mod main_window;
 pub mod style;
+pub mod weather;

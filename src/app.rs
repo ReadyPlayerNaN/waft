@@ -16,6 +16,7 @@ use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
 use crate::features::notifications::NotificationsPlugin;
 use crate::features::sunsetr::SunsetrPlugin;
+use crate::features::weather::WeatherPlugin;
 use crate::ipc::net as ipc_net;
 use crate::ipc::{command_from_args, ipc_socket_path, IpcCommand};
 use crate::plugin::Plugin;
@@ -141,6 +142,14 @@ pub async fn run() -> Result<()> {
         registry.register(plugin);
     }
 
+    if config.is_plugin_enabled("plugin::weather") {
+        let mut plugin = WeatherPlugin::new();
+        if let Some(settings) = config.get_plugin_settings("plugin::weather") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
     // Refuse to start without any plugins
     if registry.is_empty() {
         eprintln!("error: no plugins enabled");
@@ -151,7 +160,7 @@ pub async fn run() -> Result<()> {
         eprintln!("  [[plugins]]");
         eprintln!("  id = \"plugin::notifications\"");
         eprintln!();
-        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications");
+        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather");
         std::process::exit(1);
     }
 
