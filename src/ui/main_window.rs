@@ -203,6 +203,7 @@ impl MainWindowWidget {
 
             .toast {{
               background-color: @window_bg_color;
+              margin-top: 8px;
             }}
 
             .toast:hover {{

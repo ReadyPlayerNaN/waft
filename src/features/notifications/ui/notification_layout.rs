@@ -46,7 +46,6 @@ impl NotificationLayoutParts {
         // Card box
         let card_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
-            .margin_top(8)
             .build();
 
         for class in &config.css_classes {

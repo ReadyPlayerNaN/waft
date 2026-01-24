@@ -36,8 +36,10 @@ impl IconWidget {
         }
 
         // All hints failed, use default
-        image.set_icon_name(Some(DEFAULT_ICON));
+        // Note: set_paintable must be called BEFORE set_icon_name because
+        // GTK4 Image displays based on the last property set
         image.set_paintable(gtk::gdk::Paintable::NONE);
+        image.set_icon_name(Some(DEFAULT_ICON));
     }
 
     /// Try to apply an icon hint. Returns true if successful.
