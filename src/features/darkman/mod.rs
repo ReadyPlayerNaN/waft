@@ -143,6 +143,8 @@ impl Plugin for DarkmanPlugin {
                 vec![Arc::new(WidgetFeatureToggle {
                     el: toggle.root.clone().upcast::<gtk::Widget>(),
                     weight: 190,
+                    menu: None,
+                    on_expand_toggled: None,
                 })]
             }
             None => vec![],

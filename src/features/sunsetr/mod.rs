@@ -127,6 +127,8 @@ impl Plugin for SunsetrPlugin {
                 vec![Arc::new(WidgetFeatureToggle {
                     el: toggle.root.clone().upcast::<gtk::Widget>(),
                     weight: 200,
+                    menu: None,
+                    on_expand_toggled: None,
                 })]
             }
             None => vec![],

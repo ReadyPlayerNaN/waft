@@ -221,6 +221,7 @@ impl State {
     /// Get notifications grouped by app identifier.
     pub fn get_grouped_notifications(&self) -> HashMap<Arc<str>, Vec<(&Notification, &ItemLifecycle)>> {
         let mut grouped: HashMap<Arc<str>, Vec<(&Notification, &ItemLifecycle)>> = HashMap::new();
+        let mut missing_count = 0;
 
         for (id, lifecycle) in &self.panel_notifications {
             if let Some(notification) = self.notifications.get(id) {
@@ -229,7 +230,21 @@ impl State {
                     .entry(app_ident)
                     .or_default()
                     .push((notification, lifecycle));
+            } else {
+                log::warn!(
+                    "[get_grouped_notifications] Notification {} in panel_notifications not found in notifications HashMap",
+                    id
+                );
+                missing_count += 1;
             }
+        }
+
+        if missing_count > 0 {
+            log::warn!(
+                "[get_grouped_notifications] {} notifications missing from HashMap out of {} panel_notifications",
+                missing_count,
+                self.panel_notifications.len()
+            );
         }
 
         // Sort notifications within each group by creation time (newest first)

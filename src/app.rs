@@ -12,6 +12,7 @@ use gtk::prelude::ApplicationExtManual;
 
 use crate::config::Config;
 use crate::dbus::DbusHandle;
+use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
 use crate::features::notifications::NotificationsPlugin;
@@ -150,6 +151,15 @@ pub async fn run() -> Result<()> {
         registry.register(plugin);
     }
 
+    if config.is_plugin_enabled("plugin::bluetooth") {
+        let system_dbus = Arc::new(DbusHandle::connect_system().await?);
+        let mut plugin = BluetoothPlugin::new(system_dbus);
+        if let Some(settings) = config.get_plugin_settings("plugin::bluetooth") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
     // Refuse to start without any plugins
     if registry.is_empty() {
         eprintln!("error: no plugins enabled");
@@ -160,7 +170,7 @@ pub async fn run() -> Result<()> {
         eprintln!("  [[plugins]]");
         eprintln!("  id = \"plugin::notifications\"");
         eprintln!();
-        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather");
+        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth");
         std::process::exit(1);
     }
 

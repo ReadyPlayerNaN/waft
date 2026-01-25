@@ -147,13 +147,27 @@ impl NotificationsWidget {
         self.store.subscribe(move || {
             let state = store.get_state();
             let panel_count = state.panel_notifications.len();
+            let notifications_count = state.notifications.len();
             let grouped = state.get_grouped_notifications();
 
-            log::debug!(
-                "[notifications_widget] Store update: {} panel notifications, {} groups",
+            log::trace!(
+                "[notifications_widget] Store update: {} panel_notifications, {} in notifications HashMap, {} groups",
                 panel_count,
+                notifications_count,
                 grouped.len()
             );
+
+            // Log panel_notification IDs for debugging
+            if panel_count > 0 {
+                let panel_ids: Vec<_> = state.panel_notifications.keys().collect();
+                log::trace!("[notifications_widget] Panel notification IDs: {:?}", panel_ids);
+            }
+
+            // Log notifications HashMap IDs for debugging
+            if notifications_count > 0 {
+                let notif_ids: Vec<_> = state.notifications.keys().collect();
+                log::trace!("[notifications_widget] Notifications HashMap IDs: {:?}", notif_ids);
+            }
 
             Self::handle_state_changed(
                 &grouped,

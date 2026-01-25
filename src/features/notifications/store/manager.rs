@@ -265,7 +265,11 @@ fn process_tick(state: &mut State) -> (Vec<NotificationOp>, bool) {
 
             // Use the notification's TTL (not toast_ttl)
             // ttl is None for "use server default" which we treat as no expiration
+            // ttl is 0 for "never expire" (from DBus expire_timeout=-1)
             let ttl_ms = notification.ttl?;
+            if ttl_ms == 0 {
+                return None; // Never expire
+            }
 
             // Check if visible long enough to timeout
             let visible_since = state.panel_visible_since_timestamps.get(notif_id)?;
@@ -318,15 +322,21 @@ fn process_ingress(state: &mut State, n: IngressedNotification) {
     let group_id = notification.app_ident();
     let app_title = notification.app_title();
     state.notifications.insert(notif_id, notification);
+    log::trace!(
+        "[store/ingress] Inserted notification {} into notifications HashMap, total: {}",
+        notif_id,
+        state.notifications.len()
+    );
     reconcile_group_on_ingress(state, notif_id, group_id, app_title);
     reconcile_toast_on_ingress(state, notif_id, true);
     // Add to panel notifications (unlimited)
     state.panel_notifications.insert(notif_id, ItemLifecycle::Visible);
     state.panel_visible_since_timestamps.insert(notif_id, SystemTime::now());
-    log::debug!(
-        "[store] Added notification {} to panel_notifications, total: {}",
+    log::trace!(
+        "[store/ingress] Added notification {} to panel_notifications, total panel: {}, total in HashMap: {}",
         notif_id,
-        state.panel_notifications.len()
+        state.panel_notifications.len(),
+        state.notifications.len()
     );
 }
 
@@ -348,11 +358,22 @@ fn process_ingress_batch(state: &mut State, ops: Vec<NotificationOp>) -> bool {
             let group_id = notification.app_ident();
             let app_title = notification.app_title();
             state.notifications.insert(notif_id, notification);
+            log::trace!(
+                "[store/batch_ingress] Inserted notification {} into notifications HashMap, total: {}",
+                notif_id,
+                state.notifications.len()
+            );
             reconcile_group_on_ingress(state, notif_id, group_id, app_title);
             reconcile_toast_on_ingress(state, notif_id, false);
             // Add to panel notifications (unlimited)
             state.panel_notifications.insert(notif_id, ItemLifecycle::Visible);
             state.panel_visible_since_timestamps.insert(notif_id, SystemTime::now());
+            log::trace!(
+                "[store/batch_ingress] Added notification {} to panel_notifications, total panel: {}, total in HashMap: {}",
+                notif_id,
+                state.panel_notifications.len(),
+                state.notifications.len()
+            );
             changed = true;
         }
     }

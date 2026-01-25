@@ -307,6 +307,8 @@ impl Plugin for NotificationsPlugin {
             Some(ref dnd_toggle) => vec![Arc::new(WidgetFeatureToggle {
                 el: dnd_toggle.widget().clone().upcast::<gtk::Widget>(),
                 weight: 60,
+                menu: None,
+                on_expand_toggled: None,
             })],
             None => vec![],
         }

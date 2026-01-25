@@ -164,7 +164,6 @@ impl MainWindowWidget {
 
             .clock-btn.clickable {{
                 padding: 8px;
-                margin: -8px;
             }}
 
             .clock-btn.clickable:hover {{
@@ -186,8 +185,8 @@ impl MainWindowWidget {
             .feature-toggle:hover {{
               background-color: color-mix(
                 in srgb,
-                @card_bg_color 80%,
-                @window_fg_color
+                @accent_bg_color 20%,
+                @card_bg_color
               );
             }}
 
@@ -202,16 +201,123 @@ impl MainWindowWidget {
             }}
 
             .feature-toggle.active {{
-                background-color: @accent_bg_color;
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 33%,
+                  @card_bg_color
+                );
                 color: var(--button_bg_color);
             }}
 
             .feature-toggle.active:hover {{
                 background-color: color-mix(
                   in srgb,
-                  @accent_bg_color 80%,
-                  @window_fg_color
+                  @accent_bg_color 66%,
+                  @card_bg_color
                 );
+            }}
+
+            /* Expandable feature toggle - two connected buttons */
+            .feature-toggle-expandable {{
+                margin: 8px 0;
+            }}
+
+            .feature-toggle-expandable .toggle-main,
+            .feature-toggle-expandable .toggle-expand {{
+                background: @card_bg_color;
+                min-height: 48px;
+                border-radius: 0;
+            }}
+
+            .feature-toggle-expandable .toggle-main {{
+                border-radius: 28px 0 0 28px;
+                padding: 2px 12px 2px 12px;
+            }}
+
+            .feature-toggle-expandable .toggle-expand {{
+                border-radius: 0 28px 28px 0;
+                padding: 2px 16px 2px 8px;
+                min-width: 32px;
+                border-left: 1px solid alpha(@window_fg_color, 0.1);
+            }}
+
+            .feature-toggle-expandable .toggle-main:hover,
+            .feature-toggle-expandable .toggle-expand:hover {{
+                background-color: color-mix(in srgb, @card_bg_color 80%, @window_fg_color);
+            }}
+
+            .feature-toggle-expandable.active .toggle-main,
+            .feature-toggle-expandable.active .toggle-expand {{
+                background-color: @accent_bg_color;
+                color: var(--button_bg_color);
+            }}
+
+            .feature-toggle-expandable.active .toggle-main {{
+              background-color: color-mix(
+                in srgb,
+                @accent_bg_color 15%,
+                @card_bg_color
+              );
+            }}
+
+            .feature-toggle-expandable.active .toggle-expand {{
+                border-left-color: color-mix(in srgb, @accent_bg_color 50%, @card_bg_color);
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 20%,
+                  @card_bg_color
+                );
+            }}
+
+            .feature-toggle-expandable.active .toggle-main:hover {{
+              background-color: color-mix(
+                in srgb,
+                @accent_bg_color 66%,
+                @card_bg_color
+              );
+            }}
+
+            .feature-toggle-expandable.active .toggle-expand:hover {{
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 50%,
+                  @card_bg_color
+                );
+            }}
+
+            .feature-toggle-expandable .toggle-main .title {{
+                font-weight: 600;
+            }}
+
+            /* Arrow rotation when expanded */
+            .feature-toggle-expandable.expanded .toggle-expand image {{
+                -gtk-icon-transform: rotate(180deg);
+            }}
+
+            /* Menu row styling */
+            .feature-grid-menu-row {{
+                background: @card_bg_color;
+                border-radius: 0 0 16px 16px;
+                padding: 0;
+                margin: 0 0 8px 0;
+            }}
+
+            /* Device menu styling */
+            .device-menu {{
+                padding: 0 0;
+            }}
+
+            .device-row {{
+                padding: 8px 12px;
+                border-radius: 8px;
+            }}
+
+            .device-row:hover {{
+                background-color: alpha(@window_fg_color, 0.05);
+            }}
+
+            .device-switch {{
+                margin: 0;
             }}
 
             .toast {{
@@ -258,7 +364,10 @@ impl MainWindowWidget {
     }
 
     fn build_content(window: &adw::ApplicationWindow, registry: &Arc<PluginRegistry>) {
-        let top_box = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let top_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(16)
+            .build();
         top_box.set_hexpand(true);
 
         let top_box_divider = gtk::Separator::new(gtk::Orientation::Horizontal);
@@ -348,7 +457,7 @@ impl MainWindowWidget {
         let clip = gtk::Frame::new(None);
         clip.add_css_class("relm4-overlay-surface");
         clip.set_hexpand(true);
-        clip.set_overflow(gtk::Overflow::Hidden);
+        clip.set_overflow(gtk::Overflow::Visible);
         clip.set_child(Some(&scroller));
 
         window.set_content(Some(&clip));

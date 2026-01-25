@@ -1,7 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[allow(dead_code)]
@@ -17,10 +19,19 @@ pub struct Widget {
     pub el: gtk::Widget,
 }
 
-#[derive(Debug, Clone)]
+/// Callback type for expand toggle events.
+/// The callback receives the new expanded state (true = expanded).
+pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
+
+/// A feature toggle widget with optional expandable menu.
 pub struct WidgetFeatureToggle {
     pub weight: i32,
     pub el: gtk::Widget,
+    /// Optional menu widget (for expandable toggles).
+    pub menu: Option<gtk::Widget>,
+    /// Callback when expand state changes. Grid connects to this.
+    /// Callback receives new expanded state (true = expanded).
+    pub on_expand_toggled: Option<ExpandCallback>,
 }
 
 /// Stable identifier for a plugin.
