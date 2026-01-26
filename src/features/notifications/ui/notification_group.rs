@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
-use super::icon::IconWidget;
 use super::notification_card::{NotificationCard, NotificationCardOutput};
+use crate::ui::icon::IconWidget;
 use crate::features::notifications::store::ItemLifecycle;
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 use crate::ui::main_window::trigger_window_resize;

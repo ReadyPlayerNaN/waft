@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use super::values::{TemperatureUnit, WeatherCondition, WeatherData};
+use crate::runtime::spawn_on_tokio;
 
 const API_BASE: &str = "https://api.open-meteo.com/v1/forecast";
 
@@ -20,6 +21,10 @@ struct ApiResponse {
 }
 
 /// Fetch current weather data from Open-Meteo API.
+///
+/// The HTTP request runs on the tokio runtime via [`spawn_on_tokio`] so that
+/// this function can be safely awaited from a glib async context without
+/// causing busy-polling.
 pub async fn fetch_weather(lat: f64, lon: f64, units: TemperatureUnit) -> Result<WeatherData> {
     let url = format!(
         "{}?latitude={}&longitude={}&current=temperature_2m,weather_code,is_day&temperature_unit={}",
@@ -29,20 +34,23 @@ pub async fn fetch_weather(lat: f64, lon: f64, units: TemperatureUnit) -> Result
         units.api_value()
     );
 
-    let response = reqwest::get(&url)
-        .await
-        .context("Failed to fetch weather data")?;
+    spawn_on_tokio(async move {
+        let response = reqwest::get(&url)
+            .await
+            .context("Failed to fetch weather data")?;
 
-    let api_response: ApiResponse = response
-        .json()
-        .await
-        .context("Failed to parse weather response")?;
+        let api_response: ApiResponse = response
+            .json()
+            .await
+            .context("Failed to parse weather response")?;
 
-    let current = api_response.current;
+        let current = api_response.current;
 
-    Ok(WeatherData {
-        temperature: current.temperature_2m,
-        condition: WeatherCondition::from_wmo_code(current.weather_code),
-        is_day: current.is_day != 0,
+        Ok(WeatherData {
+            temperature: current.temperature_2m,
+            condition: WeatherCondition::from_wmo_code(current.weather_code),
+            is_day: current.is_day != 0,
+        })
     })
+    .await
 }

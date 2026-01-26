@@ -6,6 +6,7 @@ mod features;
 mod ipc;
 mod plugin;
 mod plugin_registry;
+mod runtime;
 pub mod store;
 mod ui;
 

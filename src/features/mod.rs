@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod bluetooth;
 pub mod clock;
 pub mod darkman;

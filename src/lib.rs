@@ -7,6 +7,11 @@
 
 pub mod store;
 
+pub mod ui {
+    #[path = "icon.rs"]
+    pub mod icon;
+}
+
 pub mod features {
     pub mod notifications {
         // NOTE: `#[path = ...]` inside inline modules is resolved relative to the

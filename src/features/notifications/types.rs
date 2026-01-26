@@ -1,31 +1,8 @@
-use anyhow::Result;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{path::PathBuf, time::SystemTime};
+use std::time::SystemTime;
 
-/// Notification icon representation.
-///
-/// The builder is responsible for choosing the final icon (explicit/app/default),
-/// so `Notification.icon` is mandatory and always set.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
-pub enum NotificationIcon {
-    Bytes(Vec<u8>),
-    /// A file path to an image (png/svg/etc). Will be loaded and scaled to fit.
-    FilePath(Arc<PathBuf>),
-    /// A themed icon name, e.g. `"dialog-information-symbolic"`.
-    Themed(Arc<str>),
-}
-
-impl NotificationIcon {
-    pub fn from_str(str: &Arc<str>) -> Self {
-        let s: &str = str.trim();
-        if s.contains('/') || s.starts_with('.') || s.starts_with('~') {
-            Self::FilePath(Arc::new(PathBuf::from(s)))
-        } else {
-            Self::Themed(Arc::clone(str))
-        }
-    }
-}
+pub use crate::ui::icon::Icon as NotificationIcon;
 
 /// Notification urgency, aligned with `org.freedesktop.Notifications` (`urgency` hint).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]

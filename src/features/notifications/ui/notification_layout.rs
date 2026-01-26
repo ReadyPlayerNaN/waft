@@ -7,8 +7,8 @@ use std::rc::Rc;
 use gtk::prelude::*;
 
 use super::countdown_bar::CountdownBarWidget;
-use super::icon::IconWidget;
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
+use crate::ui::icon::IconWidget;
 
 /// Parts of a notification layout that can be customized after building.
 pub struct NotificationLayoutParts {

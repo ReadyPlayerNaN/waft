@@ -12,6 +12,7 @@ use gtk::prelude::ApplicationExtManual;
 
 use crate::config::Config;
 use crate::dbus::DbusHandle;
+use crate::features::audio::AudioPlugin;
 use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
@@ -160,6 +161,14 @@ pub async fn run() -> Result<()> {
         registry.register(plugin);
     }
 
+    if config.is_plugin_enabled("plugin::audio") {
+        let mut plugin = AudioPlugin::new();
+        if let Some(settings) = config.get_plugin_settings("plugin::audio") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
     // Refuse to start without any plugins
     if registry.is_empty() {
         eprintln!("error: no plugins enabled");
@@ -170,7 +179,7 @@ pub async fn run() -> Result<()> {
         eprintln!("  [[plugins]]");
         eprintln!("  id = \"plugin::notifications\"");
         eprintln!();
-        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth");
+        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::audio");
         std::process::exit(1);
     }
 
@@ -207,11 +216,6 @@ pub async fn run() -> Result<()> {
                 app_for_stop.quit();
             });
 
-            // Add window to the application
-            app.add_window(&main_window.window);
-
-            // Start hidden
-            main_window.window.set_visible(false);
             debug!("Created window");
 
             // Setup IPC receiver to handle commands
@@ -254,6 +258,10 @@ pub async fn run() -> Result<()> {
             std::mem::forget(main_window);
         });
     });
+
+    // Override default activate handler so the window is not presented
+    // on first launch — visibility is controlled via IPC commands.
+    app.connect_activate(|_| {});
 
     debug!("Running main loop");
     app.run();

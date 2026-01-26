@@ -1,0 +1,373 @@
+//! Audio plugin - volume control with device selection.
+//!
+//! Provides volume sliders for audio output (speakers) and input (microphone)
+//! with expandable device menus for selecting default devices.
+
+use anyhow::Result;
+use async_trait::async_trait;
+use log::{debug, error, info, warn};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
+
+use gtk::prelude::*;
+
+use crate::plugin::{Plugin, PluginId, Slot, Widget};
+
+use self::control_widget::{AudioControlOutput, AudioControlProps, AudioControlWidget};
+use self::dbus::{
+    get_default_sink, get_default_source, get_sink_volume, get_sinks, get_source_volume,
+    get_sources, is_available, set_default_sink, set_default_source, set_sink_mute,
+    set_sink_volume, set_source_mute, set_source_volume, subscribe_events, AudioEvent,
+};
+use self::store::{create_audio_store, AudioDevice, AudioOp, AudioStore};
+
+mod control_widget;
+mod dbus;
+mod device_menu;
+pub mod store;
+
+pub struct AudioPlugin {
+    store: Rc<AudioStore>,
+    output_control: Rc<RefCell<Option<AudioControlWidget>>>,
+    input_control: Rc<RefCell<Option<AudioControlWidget>>>,
+    event_channel: (flume::Sender<AudioEvent>, flume::Receiver<AudioEvent>),
+}
+
+impl AudioPlugin {
+    pub fn new() -> Self {
+        Self {
+            store: Rc::new(create_audio_store()),
+            output_control: Rc::new(RefCell::new(None)),
+            input_control: Rc::new(RefCell::new(None)),
+            event_channel: flume::unbounded(),
+        }
+    }
+
+    async fn load_audio_state(&self) -> Result<()> {
+        // Get default devices
+        let default_sink = get_default_sink().await.ok();
+        let default_source = get_default_source().await.ok();
+
+        // Get all sinks (outputs)
+        if let Ok(sinks) = get_sinks().await {
+            let devices: Vec<AudioDevice> = sinks.iter().map(|s| s.clone().into()).collect();
+            self.store.emit(AudioOp::SetOutputDevices(devices));
+
+            // Set default output
+            if let Some(ref default) = default_sink {
+                self.store.emit(AudioOp::SetDefaultOutput(default.clone()));
+
+                // Get volume for default sink
+                if let Ok((volume, muted)) = get_sink_volume(default).await {
+                    self.store.emit(AudioOp::SetOutputVolume(volume));
+                    self.store.emit(AudioOp::SetOutputMuted(muted));
+                }
+            }
+        }
+
+        // Get all sources (inputs)
+        if let Ok(sources) = get_sources().await {
+            let devices: Vec<AudioDevice> = sources.iter().map(|s| s.clone().into()).collect();
+            self.store.emit(AudioOp::SetInputDevices(devices));
+
+            // Set default input
+            if let Some(ref default) = default_source {
+                self.store.emit(AudioOp::SetDefaultInput(default.clone()));
+
+                // Get volume for default source
+                if let Ok((volume, muted)) = get_source_volume(default).await {
+                    self.store.emit(AudioOp::SetInputVolume(volume));
+                    self.store.emit(AudioOp::SetInputMuted(muted));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for AudioPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait(?Send)]
+impl Plugin for AudioPlugin {
+    fn id(&self) -> PluginId {
+        PluginId::from_static("plugin::audio")
+    }
+
+    async fn init(&mut self) -> Result<()> {
+        // Check if audio system is available
+        if !is_available().await {
+            warn!("[audio] PulseAudio/PipeWire not available");
+            return Ok(());
+        }
+
+        self.store.emit(AudioOp::SetAvailable(true));
+        info!("[audio] Audio system is available");
+
+        // Load initial state
+        if let Err(e) = self.load_audio_state().await {
+            warn!("[audio] Failed to load initial state: {}", e);
+        }
+
+        // Start event subscription
+        let event_tx = self.event_channel.0.clone();
+        match subscribe_events(event_tx).await {
+            Ok(_handle) => {
+                debug!("[audio] Started event subscription");
+            }
+            Err(e) => {
+                warn!("[audio] Failed to start event subscription: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn create_elements(&mut self) -> Result<()> {
+        let state = self.store.get_state();
+        if !state.available {
+            return Ok(());
+        }
+
+        // Create output control (speakers)
+        let output_control = AudioControlWidget::new(AudioControlProps {
+            icon: "audio-volume-high-symbolic".to_string(),
+            volume: state.output_volume,
+            muted: state.output_muted,
+            devices: state.output_devices.clone(),
+            default_device: state.default_output.clone(),
+        });
+
+        // Connect output control events
+        let store_for_output = self.store.clone();
+        output_control.connect_output(move |event| {
+            let store = store_for_output.clone();
+            match event {
+                AudioControlOutput::VolumeChanged(volume) => {
+                    glib::spawn_future_local(async move {
+                        let sink = store.get_state().default_output.clone();
+                        if let Some(ref sink) = sink {
+                            if let Err(e) = set_sink_volume(sink, volume).await {
+                                error!("[audio] Failed to set sink volume: {}", e);
+                            }
+                        }
+                    });
+                }
+                AudioControlOutput::ToggleMute => {
+                    glib::spawn_future_local(async move {
+                        let (sink, new_muted) = {
+                            let state = store.get_state();
+                            (state.default_output.clone(), !state.output_muted)
+                        };
+                        if let Some(ref sink) = sink {
+                            if let Err(e) = set_sink_mute(sink, new_muted).await {
+                                error!("[audio] Failed to set sink mute: {}", e);
+                            } else {
+                                store.emit(AudioOp::SetOutputMuted(new_muted));
+                            }
+                        }
+                    });
+                }
+                AudioControlOutput::SelectDevice(device_id) => {
+                    glib::spawn_future_local(async move {
+                        if let Err(e) = set_default_sink(&device_id).await {
+                            error!("[audio] Failed to set default sink: {}", e);
+                        } else {
+                            store.emit(AudioOp::SetDefaultOutput(device_id.clone()));
+
+                            // Update volume for new default
+                            if let Ok((volume, muted)) = get_sink_volume(&device_id).await {
+                                store.emit(AudioOp::SetOutputVolume(volume));
+                                store.emit(AudioOp::SetOutputMuted(muted));
+                            }
+                        }
+                    });
+                }
+            }
+        });
+
+        *self.output_control.borrow_mut() = Some(output_control);
+
+        // Create input control (microphone)
+        let input_control = AudioControlWidget::new(AudioControlProps {
+            icon: "audio-input-microphone-symbolic".to_string(),
+            volume: state.input_volume,
+            muted: state.input_muted,
+            devices: state.input_devices.clone(),
+            default_device: state.default_input.clone(),
+        });
+
+        // Connect input control events
+        let store_for_input = self.store.clone();
+        input_control.connect_output(move |event| {
+            let store = store_for_input.clone();
+            match event {
+                AudioControlOutput::VolumeChanged(volume) => {
+                    glib::spawn_future_local(async move {
+                        let source = store.get_state().default_input.clone();
+                        if let Some(ref source) = source {
+                            if let Err(e) = set_source_volume(source, volume).await {
+                                error!("[audio] Failed to set source volume: {}", e);
+                            }
+                        }
+                    });
+                }
+                AudioControlOutput::ToggleMute => {
+                    glib::spawn_future_local(async move {
+                        let (source, new_muted) = {
+                            let state = store.get_state();
+                            (state.default_input.clone(), !state.input_muted)
+                        };
+                        if let Some(ref source) = source {
+                            if let Err(e) = set_source_mute(source, new_muted).await {
+                                error!("[audio] Failed to set source mute: {}", e);
+                            } else {
+                                store.emit(AudioOp::SetInputMuted(new_muted));
+                            }
+                        }
+                    });
+                }
+                AudioControlOutput::SelectDevice(device_id) => {
+                    glib::spawn_future_local(async move {
+                        if let Err(e) = set_default_source(&device_id).await {
+                            error!("[audio] Failed to set default source: {}", e);
+                        } else {
+                            store.emit(AudioOp::SetDefaultInput(device_id.clone()));
+
+                            // Update volume for new default
+                            if let Ok((volume, muted)) = get_source_volume(&device_id).await {
+                                store.emit(AudioOp::SetInputVolume(volume));
+                                store.emit(AudioOp::SetInputMuted(muted));
+                            }
+                        }
+                    });
+                }
+            }
+        });
+
+        *self.input_control.borrow_mut() = Some(input_control);
+        drop(state);
+
+        // Subscribe to store for state changes - output
+        let output_control_ref = self.output_control.clone();
+        let store_for_output_sub = self.store.clone();
+        self.store.subscribe(move || {
+            let state = store_for_output_sub.get_state();
+            if let Some(ref control) = *output_control_ref.borrow() {
+                control.set_volume(state.output_volume);
+                control.set_muted(state.output_muted);
+                control.set_devices(
+                    state.output_devices.clone(),
+                    state.default_output.as_deref(),
+                );
+            }
+        });
+
+        // Subscribe to store for state changes - input
+        let input_control_ref = self.input_control.clone();
+        let store_for_input_sub = self.store.clone();
+        self.store.subscribe(move || {
+            let state = store_for_input_sub.get_state();
+            if let Some(ref control) = *input_control_ref.borrow() {
+                control.set_volume(state.input_volume);
+                control.set_muted(state.input_muted);
+                control.set_devices(
+                    state.input_devices.clone(),
+                    state.default_input.as_deref(),
+                );
+            }
+        });
+
+        // Handle events from pactl subscribe
+        let store_for_events = self.store.clone();
+        let event_rx = self.event_channel.1.clone();
+
+        glib::spawn_future_local(async move {
+            while let Ok(event) = event_rx.recv_async().await {
+                debug!("[audio] Received event: {:?}", event);
+
+                match event {
+                    AudioEvent::SinkChange | AudioEvent::ServerChange => {
+                        // Reload sink state
+                        if let Ok(default) = get_default_sink().await {
+                            store_for_events.emit(AudioOp::SetDefaultOutput(default.clone()));
+
+                            if let Ok((volume, muted)) = get_sink_volume(&default).await {
+                                store_for_events.emit(AudioOp::SetOutputVolume(volume));
+                                store_for_events.emit(AudioOp::SetOutputMuted(muted));
+                            }
+                        }
+
+                        if let Ok(sinks) = get_sinks().await {
+                            let devices: Vec<AudioDevice> =
+                                sinks.iter().map(|s| s.clone().into()).collect();
+                            store_for_events.emit(AudioOp::SetOutputDevices(devices));
+                        }
+                    }
+                    AudioEvent::SourceChange => {
+                        // Reload source state
+                        if let Ok(default) = get_default_source().await {
+                            store_for_events.emit(AudioOp::SetDefaultInput(default.clone()));
+
+                            if let Ok((volume, muted)) = get_source_volume(&default).await {
+                                store_for_events.emit(AudioOp::SetInputVolume(volume));
+                                store_for_events.emit(AudioOp::SetInputMuted(muted));
+                            }
+                        }
+
+                        if let Ok(sources) = get_sources().await {
+                            let devices: Vec<AudioDevice> =
+                                sources.iter().map(|s| s.clone().into()).collect();
+                            store_for_events.emit(AudioOp::SetInputDevices(devices));
+                        }
+                    }
+                    AudioEvent::CardChange => {
+                        // Card change might affect available devices
+                        if let Ok(sinks) = get_sinks().await {
+                            let devices: Vec<AudioDevice> =
+                                sinks.iter().map(|s| s.clone().into()).collect();
+                            store_for_events.emit(AudioOp::SetOutputDevices(devices));
+                        }
+
+                        if let Ok(sources) = get_sources().await {
+                            let devices: Vec<AudioDevice> =
+                                sources.iter().map(|s| s.clone().into()).collect();
+                            store_for_events.emit(AudioOp::SetInputDevices(devices));
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn get_widgets(&self) -> Vec<Arc<Widget>> {
+        let mut widgets = Vec::new();
+
+        // Output control (speakers)
+        if let Some(ref control) = *self.output_control.borrow() {
+            widgets.push(Arc::new(Widget {
+                slot: Slot::Controls,
+                el: control.root.clone().upcast::<gtk::Widget>(),
+                weight: 50,
+            }));
+        }
+
+        // Input control (microphone)
+        if let Some(ref control) = *self.input_control.borrow() {
+            widgets.push(Arc::new(Widget {
+                slot: Slot::Controls,
+                el: control.root.clone().upcast::<gtk::Widget>(),
+                weight: 51,
+            }));
+        }
+
+        widgets
+    }
+}

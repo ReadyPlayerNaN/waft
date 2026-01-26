@@ -71,6 +71,11 @@ impl MainWindowWidget {
             .default_width(OVERLAY_WIDTH_PX)
             .build();
 
+        // Must be set before layer shell init and content build so the window
+        // is never realized in a visible state.  Previously the weather
+        // plugin's busy-poll starved the glib main loop, hiding this race.
+        window.set_visible(false);
+
         // Configure layer shell
         Self::configure_layer_shell(&window);
 
@@ -179,7 +184,7 @@ impl MainWindowWidget {
                 border-radius: 28px;
                 min-height: 48px;
                 padding: 2px 20px 2px 12px;
-                margin: 8px 0;
+                margin: 4px 0;
             }}
 
             .feature-toggle:hover {{
@@ -348,6 +353,115 @@ impl MainWindowWidget {
                 min-height: 2px;
             }}
 
+            /* Slider control styling */
+            .slider-row {{
+                background: @card_bg_color;
+                border-radius: 28px;
+                min-height: 48px;
+                padding: 0;
+                margin: 0;
+            }}
+
+            .slider-row:hover {{
+            }}
+
+            .slider-icon {{
+                background: transparent;
+                border-radius: 50%;
+                min-width: 48px;
+                min-height: 48px;
+                padding: 0;
+            }}
+
+            .slider-icon:hover {{
+                background-color: alpha(@window_fg_color, 0.1);
+            }}
+
+            .slider-scale {{
+                min-width: 120px;
+                margin: 0 8px;
+            }}
+
+            .slider-scale trough {{
+                min-height: 6px;
+                border-radius: 3px;
+                background: alpha(@window_fg_color, 0.15);
+            }}
+
+            .slider-scale highlight {{
+                min-height: 6px;
+                border-radius: 3px;
+                background: @accent_bg_color;
+            }}
+
+            .slider-scale slider {{
+                min-width: 18px;
+                min-height: 18px;
+                border-radius: 50%;
+                background: @window_bg_color;
+                box-shadow: 0 1px 3px alpha(black, 0.3);
+            }}
+
+            .slider-expand {{
+                background: transparent;
+                border-radius: 50%;
+                min-width: 48px;
+                min-height: 48px;
+                padding: 0;
+            }}
+
+            .slider-expand:hover {{
+                background-color: alpha(@window_fg_color, 0.1);
+            }}
+
+            .slider-row.muted {{
+                opacity: 0.7;
+            }}
+
+            .slider-row.muted .slider-icon {{
+                opacity: 0.5;
+            }}
+
+            .slider-row.expanded .slider-expand image {{
+                -gtk-icon-transform: rotate(180deg);
+            }}
+
+            /* Audio device menu styling */
+            .audio-device-menu {{
+                padding: 4px 0;
+            }}
+
+            .audio-device-row {{
+                background: transparent;
+                border-radius: 8px;
+                padding: 8px 12px;
+                margin: 2px 0;
+            }}
+
+            .audio-device-row:hover {{
+                background-color: alpha(@window_fg_color, 0.05);
+            }}
+
+            .audio-device-row.default {{
+                background-color: alpha(@accent_bg_color, 0.15);
+            }}
+
+            .audio-device-row.default:hover {{
+                background-color: alpha(@accent_bg_color, 0.25);
+            }}
+
+            .audio-device-icon {{
+                opacity: 0.8;
+            }}
+
+            .audio-device-name {{
+                font-weight: 400;
+            }}
+
+            .audio-device-check {{
+                color: @accent_bg_color;
+            }}
+
             "#,
             OVERLAY_CORNER_RADIUS_PX
         );
@@ -400,6 +514,13 @@ impl MainWindowWidget {
             left_col.append(&w.el);
         }
         debug!("Appended info widgets {:?}", info_widgets.len());
+
+        // Add controls widgets (e.g., audio sliders)
+        let controls_widgets = registry.get_widgets_for_slot(Slot::Controls);
+        for w in &controls_widgets {
+            right_col.append(&w.el);
+        }
+        debug!("Appended controls widgets {:?}", controls_widgets.len());
 
         // Add feature toggles grid
         let toggles = registry.get_all_feature_toggles();
