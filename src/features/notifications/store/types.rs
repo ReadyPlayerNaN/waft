@@ -133,7 +133,10 @@ impl Group {
 #[derive(Debug, Clone)]
 pub enum NotificationOp {
     Batch(Vec<NotificationOp>),
-    Configure { toast_limit: usize, disable_toasts: bool },
+    Configure {
+        toast_limit: usize,
+        disable_toasts: bool,
+    },
     Ingress(IngressedNotification),
     NotificationDismiss(u64),
     NotificationDismissed(u64),
@@ -219,7 +222,9 @@ impl State {
     }
 
     /// Get notifications grouped by app identifier.
-    pub fn get_grouped_notifications(&self) -> HashMap<Arc<str>, Vec<(&Notification, &ItemLifecycle)>> {
+    pub fn get_grouped_notifications(
+        &self,
+    ) -> HashMap<Arc<str>, Vec<(&Notification, &ItemLifecycle)>> {
         let mut grouped: HashMap<Arc<str>, Vec<(&Notification, &ItemLifecycle)>> = HashMap::new();
         let mut missing_count = 0;
 

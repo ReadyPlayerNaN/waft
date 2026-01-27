@@ -36,10 +36,7 @@ impl FeatureGridWidget {
             }
 
             // Collect menus for this row
-            let menus: Vec<_> = pair
-                .iter()
-                .filter_map(|item| item.menu.clone())
-                .collect();
+            let menus: Vec<_> = pair.iter().filter_map(|item| item.menu.clone()).collect();
 
             if !menus.is_empty() {
                 // Create menu row revealer

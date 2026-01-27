@@ -7,7 +7,7 @@
 /// - GTK4's `set_css_classes` expects `&[&str]`, and `&Vec<&str>` coerces to that.
 #[macro_export]
 macro_rules! classnames {
-    ( $( $name:literal => $enabled:expr ),* $(,)? ) => {{
+    ( $( $name:literal => $enabled:expr_2021 ),* $(,)? ) => {{
         let mut out: Vec<&'static str> = Vec::new();
         $(
             if $enabled {

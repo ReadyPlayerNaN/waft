@@ -686,20 +686,29 @@ impl MainWindowWidget {
         main_vbox.append(&content_row);
 
         // Calculate max height based on monitor size
-        let max_height = if let Some(display) = gtk::gdk::Display::default() {
-            if let Some(monitor) = display.monitors().item(0) {
-                if let Some(monitor) = monitor.downcast_ref::<gtk::gdk::Monitor>() {
-                    let geometry = monitor.geometry();
-                    // Max height = screen height - top margin - bottom margin - some padding
-                    geometry.height() - OVERLAY_TOP_OFFSET_PX - OVERLAY_BOTTOM_OFFSET_PX - 48
-                } else {
-                    800 // fallback
+        let max_height = match gtk::gdk::Display::default() {
+            Some(display) => {
+                match display.monitors().item(0) {
+                    Some(monitor) => {
+                        if let Some(monitor) = monitor.downcast_ref::<gtk::gdk::Monitor>() {
+                            let geometry = monitor.geometry();
+                            // Max height = screen height - top margin - bottom margin - some padding
+                            geometry.height()
+                                - OVERLAY_TOP_OFFSET_PX
+                                - OVERLAY_BOTTOM_OFFSET_PX
+                                - 48
+                        } else {
+                            800 // fallback
+                        }
+                    }
+                    _ => {
+                        800 // fallback
+                    }
                 }
-            } else {
+            }
+            _ => {
                 800 // fallback
             }
-        } else {
-            800 // fallback
         };
 
         let scroller = gtk::ScrolledWindow::new();

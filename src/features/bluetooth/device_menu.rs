@@ -42,10 +42,7 @@ impl DeviceRow {
             .build();
 
         // Device icon
-        let icon_image = gtk::Image::builder()
-            .icon_name(icon)
-            .pixel_size(20)
-            .build();
+        let icon_image = gtk::Image::builder().icon_name(icon).pixel_size(20).build();
 
         // Device name
         let name_label = gtk::Label::builder()

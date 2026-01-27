@@ -73,9 +73,7 @@ impl WeatherWidget {
         content_box.append(&labels_box);
 
         // Loading spinner
-        let spinner = gtk::Spinner::builder()
-            .spinning(true)
-            .build();
+        let spinner = gtk::Spinner::builder().spinning(true).build();
 
         // Error label
         let error_label = gtk::Label::builder()
@@ -119,14 +117,11 @@ impl WeatherWidget {
                 self.error_label.set_visible(false);
 
                 // Update icon
-                self.icon.set_icon_name(Some(data.condition.icon_name(data.is_day)));
+                self.icon
+                    .set_icon_name(Some(data.condition.icon_name(data.is_day)));
 
                 // Update temperature
-                let temp_text = format!(
-                    "{:.0}\u{00B0}{}",
-                    data.temperature,
-                    self.units.symbol()
-                );
+                let temp_text = format!("{:.0}\u{00B0}{}", data.temperature, self.units.symbol());
                 self.temp_label.set_label(&temp_text);
 
                 // Update condition

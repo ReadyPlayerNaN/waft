@@ -35,20 +35,13 @@ pub struct BluetoothDevice {
 
 /// Find all Bluetooth adapters via ObjectManager.GetManagedObjects.
 pub async fn find_all_adapters(conn: &DbusHandle) -> Result<Vec<BluetoothAdapter>> {
-    let proxy = zbus::Proxy::new(
-        &*conn.connection(),
-        BLUEZ_DEST,
-        "/",
-        IFACE_OBJECT_MANAGER,
-    )
-    .await
-    .context("Failed to create ObjectManager proxy")?;
+    let proxy = zbus::Proxy::new(&*conn.connection(), BLUEZ_DEST, "/", IFACE_OBJECT_MANAGER)
+        .await
+        .context("Failed to create ObjectManager proxy")?;
 
     // GetManagedObjects returns Dict<ObjectPath, Dict<Interface, Dict<Property, Variant>>>
-    type ManagedObjects = HashMap<
-        zvariant::OwnedObjectPath,
-        HashMap<String, HashMap<String, OwnedValue>>,
-    >;
+    type ManagedObjects =
+        HashMap<zvariant::OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
 
     let (objects,): (ManagedObjects,) = proxy
         .call("GetManagedObjects", &())
@@ -144,20 +137,16 @@ fn owned_value_to_string(v: OwnedValue) -> Option<String> {
 }
 
 /// Get all paired Bluetooth devices.
-pub async fn get_paired_devices(conn: &DbusHandle, adapter_path: &str) -> Result<Vec<BluetoothDevice>> {
-    let proxy = zbus::Proxy::new(
-        &*conn.connection(),
-        BLUEZ_DEST,
-        "/",
-        IFACE_OBJECT_MANAGER,
-    )
-    .await
-    .context("Failed to create ObjectManager proxy")?;
+pub async fn get_paired_devices(
+    conn: &DbusHandle,
+    adapter_path: &str,
+) -> Result<Vec<BluetoothDevice>> {
+    let proxy = zbus::Proxy::new(&*conn.connection(), BLUEZ_DEST, "/", IFACE_OBJECT_MANAGER)
+        .await
+        .context("Failed to create ObjectManager proxy")?;
 
-    type ManagedObjects = HashMap<
-        zvariant::OwnedObjectPath,
-        HashMap<String, HashMap<String, OwnedValue>>,
-    >;
+    type ManagedObjects =
+        HashMap<zvariant::OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
 
     let (objects,): (ManagedObjects,) = proxy
         .call("GetManagedObjects", &())
@@ -221,14 +210,9 @@ pub async fn get_paired_devices(conn: &DbusHandle, adapter_path: &str) -> Result
 
 /// Connect to a Bluetooth device.
 pub async fn connect_device(conn: Arc<DbusHandle>, device_path: &str) -> Result<()> {
-    let proxy = zbus::Proxy::new(
-        &*conn.connection(),
-        BLUEZ_DEST,
-        device_path,
-        IFACE_DEVICE1,
-    )
-    .await
-    .context("Failed to create Device1 proxy")?;
+    let proxy = zbus::Proxy::new(&*conn.connection(), BLUEZ_DEST, device_path, IFACE_DEVICE1)
+        .await
+        .context("Failed to create Device1 proxy")?;
 
     let _: () = proxy
         .call("Connect", &())
@@ -240,14 +224,9 @@ pub async fn connect_device(conn: Arc<DbusHandle>, device_path: &str) -> Result<
 
 /// Disconnect from a Bluetooth device.
 pub async fn disconnect_device(conn: Arc<DbusHandle>, device_path: &str) -> Result<()> {
-    let proxy = zbus::Proxy::new(
-        &*conn.connection(),
-        BLUEZ_DEST,
-        device_path,
-        IFACE_DEVICE1,
-    )
-    .await
-    .context("Failed to create Device1 proxy")?;
+    let proxy = zbus::Proxy::new(&*conn.connection(), BLUEZ_DEST, device_path, IFACE_DEVICE1)
+        .await
+        .context("Failed to create Device1 proxy")?;
 
     let _: () = proxy
         .call("Disconnect", &())

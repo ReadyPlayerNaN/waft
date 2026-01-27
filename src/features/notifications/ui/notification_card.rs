@@ -130,7 +130,10 @@ impl NotificationCard {
             }
 
             if let Some(ref callback) = *on_output_left.borrow() {
-                callback(NotificationCardOutput::ActionClick(id, "default".to_string()));
+                callback(NotificationCardOutput::ActionClick(
+                    id,
+                    "default".to_string(),
+                ));
                 callback(NotificationCardOutput::Close(id));
             }
             revealer_clone.set_reveal_child(false);

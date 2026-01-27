@@ -15,7 +15,10 @@ pub struct SunsetrState {
 /// Operations for the sunsetr store.
 #[derive(Clone)]
 pub enum SunsetrOp {
-    SetStatus { active: bool, next_transition: Option<String> },
+    SetStatus {
+        active: bool,
+        next_transition: Option<String>,
+    },
     SetBusy(bool),
 }
 
@@ -31,22 +34,22 @@ pub type SunsetrStore = PluginStore<SunsetrOp, SunsetrState>;
 
 /// Create a new sunsetr store instance.
 pub fn create_sunsetr_store() -> SunsetrStore {
-    PluginStore::new(|state: &mut SunsetrState, op: SunsetrOp| {
-        match op {
-            SunsetrOp::SetStatus { active, next_transition } => {
-                let changed = state.active != active
-                    || state.next_transition != next_transition;
-                state.active = active;
-                state.next_transition = next_transition;
-                changed
-            }
-            SunsetrOp::SetBusy(busy) => {
-                if state.busy != busy {
-                    state.busy = busy;
-                    true
-                } else {
-                    false
-                }
+    PluginStore::new(|state: &mut SunsetrState, op: SunsetrOp| match op {
+        SunsetrOp::SetStatus {
+            active,
+            next_transition,
+        } => {
+            let changed = state.active != active || state.next_transition != next_transition;
+            state.active = active;
+            state.next_transition = next_transition;
+            changed
+        }
+        SunsetrOp::SetBusy(busy) => {
+            if state.busy != busy {
+                state.busy = busy;
+                true
+            } else {
+                false
             }
         }
     })

@@ -19,7 +19,7 @@ mod values;
 
 use self::ipc::SunsetrIpcEvents;
 use self::ipc::{spawn_following, spawn_start, spawn_stop};
-use self::store::{create_sunsetr_store, SunsetrOp, SunsetrStore};
+use self::store::{SunsetrOp, SunsetrStore, create_sunsetr_store};
 
 pub struct SunsetrPlugin {
     store: Rc<SunsetrStore>,
@@ -86,7 +86,10 @@ impl Plugin for SunsetrPlugin {
             if let Some(ref toggle) = *toggle_ref.borrow() {
                 toggle.set_active(state.active);
                 toggle.set_details(
-                    state.next_transition.as_ref().map(|text| format!("Until: {}", text)),
+                    state
+                        .next_transition
+                        .as_ref()
+                        .map(|text| format!("Until: {}", text)),
                 );
                 toggle.set_busy(state.busy);
             }

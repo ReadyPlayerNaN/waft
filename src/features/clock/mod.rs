@@ -72,11 +72,7 @@ impl Plugin for ClockPlugin {
             clock.connect_output(move |output| {
                 if matches!(output, ClockOutput::Click) {
                     debug!("Clock clicked, running command: {}", on_click_cmd);
-                    match Command::new("sh")
-                        .arg("-c")
-                        .arg(&on_click_cmd)
-                        .spawn()
-                    {
+                    match Command::new("sh").arg("-c").arg(&on_click_cmd).spawn() {
                         Ok(child) => {
                             // Reap the child in a background thread to avoid zombies
                             std::thread::spawn(move || {

@@ -6,7 +6,7 @@
 //! This implementation uses the `pactl` command as a reliable fallback
 //! that works with both PulseAudio and PipeWire.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -160,7 +160,12 @@ pub async fn get_source_volume(source_name: &str) -> Result<(f64, bool)> {
 pub async fn set_sink_volume(sink_name: &str, volume: f64) -> Result<()> {
     let volume_percent = (volume.clamp(0.0, 1.0) * 100.0).round() as u32;
 
-    let output = run_pactl(&["set-sink-volume", sink_name, &format!("{}%", volume_percent)]).await?;
+    let output = run_pactl(&[
+        "set-sink-volume",
+        sink_name,
+        &format!("{}%", volume_percent),
+    ])
+    .await?;
 
     if !output.status.success() {
         return Err(anyhow!(
@@ -176,7 +181,12 @@ pub async fn set_sink_volume(sink_name: &str, volume: f64) -> Result<()> {
 pub async fn set_source_volume(source_name: &str, volume: f64) -> Result<()> {
     let volume_percent = (volume.clamp(0.0, 1.0) * 100.0).round() as u32;
 
-    let output = run_pactl(&["set-source-volume", source_name, &format!("{}%", volume_percent)]).await?;
+    let output = run_pactl(&[
+        "set-source-volume",
+        source_name,
+        &format!("{}%", volume_percent),
+    ])
+    .await?;
 
     if !output.status.success() {
         return Err(anyhow!(
@@ -349,7 +359,12 @@ fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkInfo>
         } else if trimmed.starts_with("Name:") {
             current_name = Some(trimmed.trim_start_matches("Name:").trim().to_string());
         } else if trimmed.starts_with("Description:") {
-            current_desc = Some(trimmed.trim_start_matches("Description:").trim().to_string());
+            current_desc = Some(
+                trimmed
+                    .trim_start_matches("Description:")
+                    .trim()
+                    .to_string(),
+            );
         } else if trimmed.starts_with("Mute:") {
             current_muted = trimmed.to_lowercase().contains("yes");
         } else if trimmed.starts_with("Volume:") {
@@ -402,7 +417,12 @@ fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<Sourc
         } else if trimmed.starts_with("Name:") {
             current_name = Some(trimmed.trim_start_matches("Name:").trim().to_string());
         } else if trimmed.starts_with("Description:") {
-            current_desc = Some(trimmed.trim_start_matches("Description:").trim().to_string());
+            current_desc = Some(
+                trimmed
+                    .trim_start_matches("Description:")
+                    .trim()
+                    .to_string(),
+            );
         } else if trimmed.starts_with("Mute:") {
             current_muted = trimmed.to_lowercase().contains("yes");
         } else if trimmed.starts_with("Volume:") {

@@ -14,7 +14,7 @@ use crate::plugin::{Plugin, PluginId, Slot, Widget};
 use crate::ui::battery::BatteryWidget;
 
 use self::dbus::{get_battery_info, listen_battery_changes};
-use self::store::{create_battery_store, BatteryOp, BatteryStore};
+use self::store::{BatteryOp, BatteryStore, create_battery_store};
 use self::values::BatteryInfo;
 
 mod dbus;

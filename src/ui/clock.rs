@@ -2,8 +2,8 @@
 //!
 //! Displays current date and time with automatic updates.
 
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use gtk::glib::{DateTime, GString};
 use gtk::prelude::*;
@@ -26,9 +26,7 @@ pub struct ClockWidget {
 impl ClockWidget {
     /// Create a new clock widget with the given initial datetime.
     pub fn new(datetime: &DateTime) -> Self {
-        let root = gtk::Button::builder()
-            .css_classes(["clock-btn"])
-            .build();
+        let root = gtk::Button::builder().css_classes(["clock-btn"]).build();
 
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)

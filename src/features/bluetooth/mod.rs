@@ -19,12 +19,12 @@ use crate::ui::feature_toggle_expandable::{
 };
 
 use self::dbus::{
-    connect_device, disconnect_device, find_all_adapters, get_paired_devices, set_powered,
-    BluetoothAdapter, IFACE_ADAPTER1, IFACE_DEVICE1,
+    BluetoothAdapter, IFACE_ADAPTER1, IFACE_DEVICE1, connect_device, disconnect_device,
+    find_all_adapters, get_paired_devices, set_powered,
 };
 use self::device_menu::{DeviceMenuOutput, DeviceMenuWidget};
 use self::store::{
-    create_bluetooth_store, BluetoothOp, BluetoothStore, DeviceConnectionState, DeviceState,
+    BluetoothOp, BluetoothStore, DeviceConnectionState, DeviceState, create_bluetooth_store,
 };
 
 mod dbus;
@@ -73,8 +73,7 @@ impl BluetoothPlugin {
         let property_tx = self.property_channel.0.clone();
 
         // Listen for PropertiesChanged on any path under org.bluez
-        let rule =
-            "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',sender='org.bluez'";
+        let rule = "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',sender='org.bluez'";
 
         let mut rx = self.dbus.listen_signals(rule).await?;
 
@@ -89,15 +88,17 @@ impl BluetoothPlugin {
                             String,
                             std::collections::HashMap<String, zvariant::OwnedValue>,
                             Vec<String>,
-                        )>() {
+                        )>(
+                        ) {
                             if let Some(ref obj_path) = path {
                                 if iface == IFACE_ADAPTER1 {
                                     if let Some(powered_val) = props.get("Powered") {
                                         if let Ok(powered) = <bool>::try_from(powered_val.clone()) {
-                                            let _ = property_tx.send(PropertyChange::AdapterPowered(
-                                                obj_path.clone(),
-                                                powered,
-                                            ));
+                                            let _ =
+                                                property_tx.send(PropertyChange::AdapterPowered(
+                                                    obj_path.clone(),
+                                                    powered,
+                                                ));
                                             info!(
                                                 "[bluetooth/dbus] Adapter {} powered: {}",
                                                 obj_path, powered
@@ -109,10 +110,11 @@ impl BluetoothPlugin {
                                         if let Ok(connected) =
                                             <bool>::try_from(connected_val.clone())
                                         {
-                                            let _ = property_tx.send(PropertyChange::DeviceConnected(
-                                                obj_path.clone(),
-                                                connected,
-                                            ));
+                                            let _ =
+                                                property_tx.send(PropertyChange::DeviceConnected(
+                                                    obj_path.clone(),
+                                                    connected,
+                                                ));
                                             info!(
                                                 "[bluetooth/dbus] Device {} connected: {}",
                                                 obj_path, connected
@@ -181,10 +183,7 @@ impl BluetoothPlugin {
             title: adapter.name.clone(),
             icon: "bluetooth-symbolic".into(),
             details: if connected_count > 0 {
-                Some(format!(
-                    "{} connected",
-                    connected_count
-                ))
+                Some(format!("{} connected", connected_count))
             } else {
                 None
             },

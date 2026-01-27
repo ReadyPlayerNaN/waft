@@ -22,7 +22,7 @@ use crate::features::notifications::NotificationsPlugin;
 use crate::features::sunsetr::SunsetrPlugin;
 use crate::features::weather::WeatherPlugin;
 use crate::ipc::net as ipc_net;
-use crate::ipc::{command_from_args, ipc_socket_path, IpcCommand};
+use crate::ipc::{IpcCommand, command_from_args, ipc_socket_path};
 use crate::plugin::Plugin;
 use crate::plugin_registry::PluginRegistry;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
@@ -203,7 +203,9 @@ pub async fn run() -> Result<()> {
         eprintln!("  [[plugins]]");
         eprintln!("  id = \"plugin::notifications\"");
         eprintln!();
-        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::agenda");
+        eprintln!(
+            "Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::agenda"
+        );
         std::process::exit(1);
     }
 

@@ -16,11 +16,11 @@ use crate::plugin::{Plugin, PluginId, Slot, Widget};
 
 use self::control_widget::{AudioControlOutput, AudioControlProps, AudioControlWidget};
 use self::dbus::{
-    get_default_sink, get_default_source, get_sink_volume, get_sinks, get_source_volume,
-    get_sources, is_available, set_default_sink, set_default_source, set_sink_mute,
-    set_sink_volume, set_source_mute, set_source_volume, subscribe_events, AudioEvent,
+    AudioEvent, get_default_sink, get_default_source, get_sink_volume, get_sinks,
+    get_source_volume, get_sources, is_available, set_default_sink, set_default_source,
+    set_sink_mute, set_sink_volume, set_source_mute, set_source_volume, subscribe_events,
 };
-use self::store::{create_audio_store, AudioDevice, AudioOp, AudioStore};
+use self::store::{AudioDevice, AudioOp, AudioStore, create_audio_store};
 
 mod control_widget;
 mod dbus;
@@ -165,25 +165,31 @@ impl Plugin for AudioPlugin {
                             (state.default_output.clone(), !state.output_muted)
                         };
                         if let Some(ref sink) = sink {
-                            if let Err(e) = set_sink_mute(sink, new_muted).await {
-                                error!("[audio] Failed to set sink mute: {}", e);
-                            } else {
-                                store.emit(AudioOp::SetOutputMuted(new_muted));
+                            match set_sink_mute(sink, new_muted).await {
+                                Err(e) => {
+                                    error!("[audio] Failed to set sink mute: {}", e);
+                                }
+                                _ => {
+                                    store.emit(AudioOp::SetOutputMuted(new_muted));
+                                }
                             }
                         }
                     });
                 }
                 AudioControlOutput::SelectDevice(device_id) => {
                     glib::spawn_future_local(async move {
-                        if let Err(e) = set_default_sink(&device_id).await {
-                            error!("[audio] Failed to set default sink: {}", e);
-                        } else {
-                            store.emit(AudioOp::SetDefaultOutput(device_id.clone()));
+                        match set_default_sink(&device_id).await {
+                            Err(e) => {
+                                error!("[audio] Failed to set default sink: {}", e);
+                            }
+                            _ => {
+                                store.emit(AudioOp::SetDefaultOutput(device_id.clone()));
 
-                            // Update volume for new default
-                            if let Ok((volume, muted)) = get_sink_volume(&device_id).await {
-                                store.emit(AudioOp::SetOutputVolume(volume));
-                                store.emit(AudioOp::SetOutputMuted(muted));
+                                // Update volume for new default
+                                if let Ok((volume, muted)) = get_sink_volume(&device_id).await {
+                                    store.emit(AudioOp::SetOutputVolume(volume));
+                                    store.emit(AudioOp::SetOutputMuted(muted));
+                                }
                             }
                         }
                     });
@@ -224,25 +230,31 @@ impl Plugin for AudioPlugin {
                             (state.default_input.clone(), !state.input_muted)
                         };
                         if let Some(ref source) = source {
-                            if let Err(e) = set_source_mute(source, new_muted).await {
-                                error!("[audio] Failed to set source mute: {}", e);
-                            } else {
-                                store.emit(AudioOp::SetInputMuted(new_muted));
+                            match set_source_mute(source, new_muted).await {
+                                Err(e) => {
+                                    error!("[audio] Failed to set source mute: {}", e);
+                                }
+                                _ => {
+                                    store.emit(AudioOp::SetInputMuted(new_muted));
+                                }
                             }
                         }
                     });
                 }
                 AudioControlOutput::SelectDevice(device_id) => {
                     glib::spawn_future_local(async move {
-                        if let Err(e) = set_default_source(&device_id).await {
-                            error!("[audio] Failed to set default source: {}", e);
-                        } else {
-                            store.emit(AudioOp::SetDefaultInput(device_id.clone()));
+                        match set_default_source(&device_id).await {
+                            Err(e) => {
+                                error!("[audio] Failed to set default source: {}", e);
+                            }
+                            _ => {
+                                store.emit(AudioOp::SetDefaultInput(device_id.clone()));
 
-                            // Update volume for new default
-                            if let Ok((volume, muted)) = get_source_volume(&device_id).await {
-                                store.emit(AudioOp::SetInputVolume(volume));
-                                store.emit(AudioOp::SetInputMuted(muted));
+                                // Update volume for new default
+                                if let Ok((volume, muted)) = get_source_volume(&device_id).await {
+                                    store.emit(AudioOp::SetInputVolume(volume));
+                                    store.emit(AudioOp::SetInputMuted(muted));
+                                }
                             }
                         }
                     });
@@ -276,10 +288,7 @@ impl Plugin for AudioPlugin {
             if let Some(ref control) = *input_control_ref.borrow() {
                 control.set_volume(state.input_volume);
                 control.set_muted(state.input_muted);
-                control.set_devices(
-                    state.input_devices.clone(),
-                    state.default_input.as_deref(),
-                );
+                control.set_devices(state.input_devices.clone(), state.default_input.as_deref());
             }
         });
 

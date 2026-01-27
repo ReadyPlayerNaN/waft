@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
+use super::toast_widget::ToastWidget;
 use crate::features::notifications::store::{ItemLifecycle, NotificationOp, NotificationStore};
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
-use super::toast_widget::ToastWidget;
 
 /// Output events from the toast list.
 #[derive(Debug, Clone)]
@@ -108,11 +108,8 @@ impl ToastListWidget {
             let state = store.get_state();
 
             // Get all toast IDs (including hidden ones) to know which toasts still exist
-            let all_toast_ids: std::collections::HashSet<u64> = state
-                .toasts
-                .keys()
-                .copied()
-                .collect();
+            let all_toast_ids: std::collections::HashSet<u64> =
+                state.toasts.keys().copied().collect();
 
             // Get hover_paused state to check if new toasts should start paused
             let hover_paused = state.hover_paused;
@@ -235,7 +232,12 @@ impl ToastListWidget {
                             }
                         },
                         move |is_enter| {
-                            Self::handle_hover_change(is_enter, &hover_count_clone, &widgets_for_hover, &store_for_hover);
+                            Self::handle_hover_change(
+                                is_enter,
+                                &hover_count_clone,
+                                &widgets_for_hover,
+                                &store_for_hover,
+                            );
                         },
                     );
 

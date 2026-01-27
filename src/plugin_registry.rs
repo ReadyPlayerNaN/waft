@@ -119,7 +119,9 @@ impl PluginRegistry {
             match plugin.lock() {
                 Ok(guard) => guard.on_overlay_visible(visible),
                 Err(e) => {
-                    warn!("[registry] plugin '{name}' mutex poisoned in notify_overlay_visible: {e}");
+                    warn!(
+                        "[registry] plugin '{name}' mutex poisoned in notify_overlay_visible: {e}"
+                    );
                 }
             }
         }

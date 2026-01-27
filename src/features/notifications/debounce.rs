@@ -32,12 +32,7 @@ impl NotificationDebouncer {
 
         // Spawn debouncer task
         tokio::spawn(async move {
-            debounce_task(
-                ingress_rx,
-                dismiss_rx,
-                immediate_rx,
-                reducer_tx.clone(),
-            ).await;
+            debounce_task(ingress_rx, dismiss_rx, immediate_rx, reducer_tx.clone()).await;
             log::warn!("[debouncer] task exited unexpectedly");
         });
 

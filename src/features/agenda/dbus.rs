@@ -13,7 +13,7 @@ use zvariant::OwnedValue;
 use crate::dbus::DbusHandle;
 use crate::runtime::spawn_on_tokio;
 
-use super::values::{parse_vevent, AgendaEvent, CalendarSource};
+use super::values::{AgendaEvent, CalendarSource, parse_vevent};
 
 const SOURCES_DEST: &str = "org.gnome.evolution.dataserver.Sources5";
 const SOURCES_PATH: &str = "/org/gnome/evolution/dataserver/SourceManager";
@@ -37,10 +37,7 @@ pub async fn discover_calendar_sources(dbus: &Arc<DbusHandle>) -> Result<Vec<Cal
         .context("Failed to create ObjectManager proxy")?;
 
         let (managed,): (
-            HashMap<
-                zvariant::OwnedObjectPath,
-                HashMap<String, HashMap<String, OwnedValue>>,
-            >,
+            HashMap<zvariant::OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>,
         ) = proxy
             .call("GetManagedObjects", &())
             .await
@@ -50,8 +47,7 @@ pub async fn discover_calendar_sources(dbus: &Arc<DbusHandle>) -> Result<Vec<Cal
 
         for (_path, interfaces) in &managed {
             // Look for the exact Source interface (not Source.Writable, Source.OAuth2Support, etc.)
-            let source_iface = interfaces
-                .get("org.gnome.evolution.dataserver.Source");
+            let source_iface = interfaces.get("org.gnome.evolution.dataserver.Source");
 
             if let Some(props) = source_iface {
                 // Get the UID
@@ -77,15 +73,18 @@ pub async fn discover_calendar_sources(dbus: &Arc<DbusHandle>) -> Result<Vec<Cal
                 if let (Some(uid), Some(data)) = (uid, data) {
                     // Only include calendar sources
                     if data.contains("[Calendar]") {
-                        let display_name = extract_display_name(&data)
-                            .unwrap_or_else(|| uid.clone());
+                        let display_name =
+                            extract_display_name(&data).unwrap_or_else(|| uid.clone());
                         sources.push(CalendarSource { uid, display_name });
                     }
                 }
             }
         }
 
-        debug!("[agenda/dbus] Discovered {} calendar sources", sources.len());
+        debug!(
+            "[agenda/dbus] Discovered {} calendar sources",
+            sources.len()
+        );
         Ok::<_, anyhow::Error>(sources)
     })
     .await?;
@@ -107,10 +106,7 @@ fn extract_display_name(data: &str) -> Option<String> {
 /// Open a calendar backend via the CalendarFactory.
 ///
 /// Returns `(object_path, bus_name)` for the opened calendar.
-pub async fn open_calendar(
-    dbus: &Arc<DbusHandle>,
-    source_uid: &str,
-) -> Result<(String, String)> {
+pub async fn open_calendar(dbus: &Arc<DbusHandle>, source_uid: &str) -> Result<(String, String)> {
     let conn = dbus.connection();
     let uid = source_uid.to_string();
 
@@ -179,24 +175,15 @@ pub async fn create_view(
 }
 
 /// Start a calendar view (begins delivering signals).
-pub async fn start_view(
-    dbus: &Arc<DbusHandle>,
-    bus_name: &str,
-    view_path: &str,
-) -> Result<()> {
+pub async fn start_view(dbus: &Arc<DbusHandle>, bus_name: &str, view_path: &str) -> Result<()> {
     let conn = dbus.connection();
     let bus = bus_name.to_string();
     let path = view_path.to_string();
 
     spawn_on_tokio(async move {
-        let proxy = zbus::Proxy::new(
-            &*conn,
-            bus.as_str(),
-            path.as_str(),
-            CALENDAR_VIEW_IFACE,
-        )
-        .await
-        .context("Failed to create CalendarView proxy")?;
+        let proxy = zbus::Proxy::new(&*conn, bus.as_str(), path.as_str(), CALENDAR_VIEW_IFACE)
+            .await
+            .context("Failed to create CalendarView proxy")?;
 
         let _: () = proxy
             .call("Start", &())
@@ -222,14 +209,9 @@ pub async fn stop_and_dispose_view(
     let path = view_path.to_string();
 
     spawn_on_tokio(async move {
-        let proxy = zbus::Proxy::new(
-            &*conn,
-            bus.as_str(),
-            path.as_str(),
-            CALENDAR_VIEW_IFACE,
-        )
-        .await
-        .context("Failed to create CalendarView proxy for cleanup")?;
+        let proxy = zbus::Proxy::new(&*conn, bus.as_str(), path.as_str(), CALENDAR_VIEW_IFACE)
+            .await
+            .context("Failed to create CalendarView proxy for cleanup")?;
 
         // Best-effort stop + dispose
         let _stop: std::result::Result<(), _> = proxy.call("Stop", &()).await;
@@ -260,10 +242,7 @@ pub async fn listen_view_signals(
     tx: flume::Sender<ViewSignal>,
     view_paths: Arc<Mutex<HashSet<String>>>,
 ) -> Result<()> {
-    let rule = format!(
-        "type='signal',interface='{}'",
-        CALENDAR_VIEW_IFACE
-    );
+    let rule = format!("type='signal',interface='{}'", CALENDAR_VIEW_IFACE);
 
     let mut rx = dbus.listen_signals(&rule).await?;
 
@@ -332,7 +311,9 @@ pub async fn listen_view_signals(
                                             ViewSignal::EventsModified(events)
                                         };
                                         if tx.send(signal).is_err() {
-                                            warn!("[agenda/dbus] receiver dropped, stopping signal listener");
+                                            warn!(
+                                                "[agenda/dbus] receiver dropped, stopping signal listener"
+                                            );
                                             break;
                                         }
                                     }
@@ -346,16 +327,13 @@ pub async fn listen_view_signals(
                             }
                         }
                         "ObjectsRemoved" => {
-                            if let Ok((uids,)) =
-                                msg.body().deserialize::<(Vec<String>,)>()
-                            {
-                                debug!(
-                                    "[agenda/dbus] ObjectsRemoved: {} uid(s)",
-                                    uids.len()
-                                );
+                            if let Ok((uids,)) = msg.body().deserialize::<(Vec<String>,)>() {
+                                debug!("[agenda/dbus] ObjectsRemoved: {} uid(s)", uids.len());
                                 if !uids.is_empty() {
                                     if tx.send(ViewSignal::EventsRemoved(uids)).is_err() {
-                                        warn!("[agenda/dbus] receiver dropped, stopping signal listener");
+                                        warn!(
+                                            "[agenda/dbus] receiver dropped, stopping signal listener"
+                                        );
                                         break;
                                     }
                                 }

@@ -1,6 +1,6 @@
 //! Agenda data types and parsing utilities.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use chrono::{Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use log::{debug, warn};
 use serde::Deserialize;
@@ -168,11 +168,18 @@ fn extract_urls_from_text(text: &str, links: &mut Vec<MeetingLink>) {
 fn extract_url_at(text: &str, start: usize) -> String {
     let rest = &text[start..];
     let end = rest
-        .find(|c: char| c == '"' || c == '\'' || c == '<' || c == '>' || c == '(' || c == ')' || c.is_whitespace())
+        .find(|c: char| {
+            c == '"'
+                || c == '\''
+                || c == '<'
+                || c == '>'
+                || c == '('
+                || c == ')'
+                || c.is_whitespace()
+        })
         .unwrap_or(rest.len());
     rest[..end].to_string()
 }
-
 
 /// Parse a subset of ISO 8601 durations: `P[nW] | P[nD][T[nH][nM][nS]]`.
 ///
@@ -513,11 +520,7 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
                 .from_local_datetime(&dt)
                 .single()
                 .map(|d| d.timestamp())
-                .unwrap_or_else(|| {
-                    chrono::Utc
-                        .from_utc_datetime(&dt)
-                        .timestamp()
-                }),
+                .unwrap_or_else(|| chrono::Utc.from_utc_datetime(&dt).timestamp()),
         );
     }
 
@@ -541,7 +544,10 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
             }
             // DST gap — fall through to local time
         } else {
-            warn!("[agenda] Unknown TZID '{}', falling back to local time", tzid_str);
+            warn!(
+                "[agenda] Unknown TZID '{}', falling back to local time",
+                tzid_str
+            );
         }
     }
 
@@ -635,7 +641,10 @@ mod tests {
     #[test]
     fn parse_duration_lowercase() {
         let dur = parse_iso8601_duration("p1dt2h30m").unwrap();
-        assert_eq!(dur, Duration::days(1) + Duration::hours(2) + Duration::minutes(30));
+        assert_eq!(
+            dur,
+            Duration::days(1) + Duration::hours(2) + Duration::minutes(30)
+        );
     }
 
     #[test]
@@ -733,10 +742,7 @@ mod tests {
 
     #[test]
     fn extract_google_meet_from_description() {
-        let event = make_event(
-            Some("Join at https://meet.google.com/abc-defg-hij"),
-            None,
-        );
+        let event = make_event(Some("Join at https://meet.google.com/abc-defg-hij"), None);
         let links = extract_meeting_links(&event);
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].url, "https://meet.google.com/abc-defg-hij");
@@ -745,10 +751,7 @@ mod tests {
 
     #[test]
     fn extract_zoom_from_location() {
-        let event = make_event(
-            None,
-            Some("https://us02web.zoom.us/j/123456789?pwd=abc"),
-        );
+        let event = make_event(None, Some("https://us02web.zoom.us/j/123456789?pwd=abc"));
         let links = extract_meeting_links(&event);
         assert_eq!(links.len(), 1);
         assert!(matches!(links[0].provider, MeetingProvider::Zoom));
@@ -756,10 +759,7 @@ mod tests {
 
     #[test]
     fn extract_teams_microsoft_com() {
-        let event = make_event(
-            Some("https://teams.microsoft.com/meet/abc"),
-            None,
-        );
+        let event = make_event(Some("https://teams.microsoft.com/meet/abc"), None);
         let links = extract_meeting_links(&event);
         assert_eq!(links.len(), 1);
         assert!(matches!(links[0].provider, MeetingProvider::Teams));
@@ -767,10 +767,7 @@ mod tests {
 
     #[test]
     fn extract_teams_live_com() {
-        let event = make_event(
-            Some("https://teams.live.com/meet/abc123"),
-            None,
-        );
+        let event = make_event(Some("https://teams.live.com/meet/abc123"), None);
         let links = extract_meeting_links(&event);
         assert_eq!(links.len(), 1);
         assert!(matches!(links[0].provider, MeetingProvider::Teams));
@@ -778,10 +775,7 @@ mod tests {
 
     #[test]
     fn extract_no_meeting_links() {
-        let event = make_event(
-            Some("Regular meeting in the office"),
-            Some("Room 301"),
-        );
+        let event = make_event(Some("Regular meeting in the office"), Some("Room 301"));
         let links = extract_meeting_links(&event);
         assert!(links.is_empty());
     }
@@ -815,10 +809,7 @@ mod tests {
 
     #[test]
     fn extract_link_in_angle_brackets() {
-        let event = make_event(
-            Some("Join: <https://meet.google.com/abc-def-ghi>"),
-            None,
-        );
+        let event = make_event(Some("Join: <https://meet.google.com/abc-def-ghi>"), None);
         let links = extract_meeting_links(&event);
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].url, "https://meet.google.com/abc-def-ghi");
@@ -826,10 +817,7 @@ mod tests {
 
     #[test]
     fn extract_link_in_quotes() {
-        let event = make_event(
-            Some("Link: \"https://zoom.us/j/999\""),
-            None,
-        );
+        let event = make_event(Some("Link: \"https://zoom.us/j/999\""), None);
         let links = extract_meeting_links(&event);
         assert_eq!(links.len(), 1);
         assert!(links[0].url.starts_with("https://"));
@@ -838,10 +826,7 @@ mod tests {
     #[test]
     fn extract_ignores_http_zoom() {
         // Only https should match
-        let event = make_event(
-            Some("http://zoom.us/j/123"),
-            None,
-        );
+        let event = make_event(Some("http://zoom.us/j/123"), None);
         let links = extract_meeting_links(&event);
         assert!(links.is_empty());
     }
@@ -850,7 +835,9 @@ mod tests {
     fn extract_ignores_teams_non_meet_urls() {
         // Only /meet/ path should match, not /l/meetup-join/ or /meetingOptions/
         let event = make_event(
-            Some("https://teams.microsoft.com/l/meetup-join/abc https://teams.microsoft.com/meetingOptions/?org=123"),
+            Some(
+                "https://teams.microsoft.com/l/meetup-join/abc https://teams.microsoft.com/meetingOptions/?org=123",
+            ),
             None,
         );
         let links = extract_meeting_links(&event);
@@ -1040,10 +1027,7 @@ DESCRIPTION;LANGUAGE=en:English description\r
 END:VEVENT";
 
         let event = parse_vevent(ical).unwrap();
-        assert_eq!(
-            event.description.as_deref(),
-            Some("English description")
-        );
+        assert_eq!(event.description.as_deref(), Some("English description"));
     }
 
     #[test]
@@ -1255,7 +1239,9 @@ END:VEVENT";
     #[test]
     fn extract_zoom_from_html_description() {
         let event = make_event(
-            Some(r#"<b>Zoom:</b><br><a href="https://us06web.zoom.us/j/86257749546?pwd=abc"><u>https://us06web.zoom.us/j/86257749546?pwd=abc</u></a>"#),
+            Some(
+                r#"<b>Zoom:</b><br><a href="https://us06web.zoom.us/j/86257749546?pwd=abc"><u>https://us06web.zoom.us/j/86257749546?pwd=abc</u></a>"#,
+            ),
             None,
         );
         let links = extract_meeting_links(&event);
@@ -1271,16 +1257,15 @@ END:VEVENT";
     fn extract_teams_from_inline_angle_brackets() {
         // Teams URL embedded as text<URL> without whitespace before <
         let event = make_event(
-            Some("Need help?<https://aka.ms/JoinTeamsMeeting> | Join meeting<https://teams.microsoft.com/meet/abc123>"),
+            Some(
+                "Need help?<https://aka.ms/JoinTeamsMeeting> | Join meeting<https://teams.microsoft.com/meet/abc123>",
+            ),
             None,
         );
         let links = extract_meeting_links(&event);
         assert_eq!(links.len(), 1);
         assert!(matches!(links[0].provider, MeetingProvider::Teams));
-        assert_eq!(
-            links[0].url,
-            "https://teams.microsoft.com/meet/abc123"
-        );
+        assert_eq!(links[0].url, "https://teams.microsoft.com/meet/abc123");
     }
 
     #[test]
@@ -1299,7 +1284,9 @@ END:VEVENT";
     fn extract_google_meet_from_czech_description() {
         // Regression: meet.txt format with Czech text
         let event = make_event(
-            Some("Připojte se přes Google Meet: https://meet.google.com/cyz-ksav-zba\nNebo zavolejte na: (CZ) +420 234 610 901"),
+            Some(
+                "Připojte se přes Google Meet: https://meet.google.com/cyz-ksav-zba\nNebo zavolejte na: (CZ) +420 234 610 901",
+            ),
             None,
         );
         let links = extract_meeting_links(&event);
@@ -1312,7 +1299,9 @@ END:VEVENT";
     fn extract_deduplicates_zoom_in_href_and_text() {
         // Same Zoom URL appears in href attribute and as anchor text
         let event = make_event(
-            Some(r#"<a href="https://us06web.zoom.us/j/123?pwd=abc">https://us06web.zoom.us/j/123?pwd=abc</a>"#),
+            Some(
+                r#"<a href="https://us06web.zoom.us/j/123?pwd=abc">https://us06web.zoom.us/j/123?pwd=abc</a>"#,
+            ),
             None,
         );
         let links = extract_meeting_links(&event);
@@ -1376,7 +1365,11 @@ END:VEVENT";
 
         let event = parse_vevent(ical).unwrap();
         let alt = event.alt_description.unwrap();
-        assert!(alt.contains("https://meet.google.com/abc"), "alt_description should contain the meet URL, got: {}", alt);
+        assert!(
+            alt.contains("https://meet.google.com/abc"),
+            "alt_description should contain the meet URL, got: {}",
+            alt
+        );
     }
 
     // ── VALARM nesting ──────────────────────────────────────────

@@ -2,8 +2,8 @@
 //!
 //! Manages battery state with subscription-based notifications.
 
-use crate::store::{PluginStore, StoreOp, StoreState};
 use super::values::BatteryInfo;
+use crate::store::{PluginStore, StoreOp, StoreState};
 
 /// State for the battery plugin.
 #[derive(Clone, Default)]

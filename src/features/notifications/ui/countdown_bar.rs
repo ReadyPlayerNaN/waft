@@ -4,8 +4,8 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use gtk::prelude::*;

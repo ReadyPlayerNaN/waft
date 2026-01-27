@@ -15,7 +15,7 @@ use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, Feature
 
 use self::dbus::DARKMAN_DESTINATION;
 use self::dbus::{get_state, set_state};
-use self::store::{create_darkman_store, DarkmanOp, DarkmanStore};
+use self::store::{DarkmanOp, DarkmanStore, create_darkman_store};
 use self::values::DarkmanMode;
 
 mod dbus;
@@ -95,12 +95,8 @@ impl Plugin for DarkmanPlugin {
                 store.emit(DarkmanOp::SetBusy(true));
 
                 let result = match event {
-                    FeatureToggleOutput::Activate => {
-                        set_state(dbus, DarkmanMode::Dark).await
-                    }
-                    FeatureToggleOutput::Deactivate => {
-                        set_state(dbus, DarkmanMode::Light).await
-                    }
+                    FeatureToggleOutput::Activate => set_state(dbus, DarkmanMode::Dark).await,
+                    FeatureToggleOutput::Deactivate => set_state(dbus, DarkmanMode::Light).await,
                 };
 
                 if let Err(err) = result {

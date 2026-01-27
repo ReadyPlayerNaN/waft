@@ -15,13 +15,13 @@ use crate::dbus::DbusHandle;
 use crate::plugin::{Plugin, PluginId, Slot, Widget};
 
 use self::dbus::{
-    create_view, discover_calendar_sources, listen_view_signals, open_calendar, start_view,
-    stop_and_dispose_view, ViewSignal,
+    ViewSignal, create_view, discover_calendar_sources, listen_view_signals, open_calendar,
+    start_view, stop_and_dispose_view,
 };
-use self::store::{create_agenda_store, AgendaOp, AgendaStore};
+use self::store::{AgendaOp, AgendaStore, create_agenda_store};
 use self::values::{
-    compute_time_range, format_time_range_query, parse_iso8601_duration, parse_period,
-    AgendaConfig, AgendaPeriod,
+    AgendaConfig, AgendaPeriod, compute_time_range, format_time_range_query,
+    parse_iso8601_duration, parse_period,
 };
 use self::widget::AgendaWidget;
 
@@ -78,13 +78,15 @@ impl AgendaPlugin {
             }
         };
 
-        self.store
-            .emit(AgendaOp::SetSources(sources.clone()));
+        self.store.emit(AgendaOp::SetSources(sources.clone()));
         self.store.emit(AgendaOp::SetAvailable(true));
 
         debug!("[agenda] Found {} calendar source(s):", sources.len());
         for source in &sources {
-            debug!("[agenda]   - '{}' (uid: {})", source.display_name, source.uid);
+            debug!(
+                "[agenda]   - '{}' (uid: {})",
+                source.display_name, source.uid
+            );
         }
 
         if sources.is_empty() {
@@ -106,7 +108,9 @@ impl AgendaPlugin {
         {
             let views = self.active_views.borrow();
             for view in views.iter() {
-                if let Err(e) = stop_and_dispose_view(&self.dbus, &view.bus_name, &view.view_path).await {
+                if let Err(e) =
+                    stop_and_dispose_view(&self.dbus, &view.bus_name, &view.view_path).await
+                {
                     debug!("[agenda] failed to stop/dispose view: {e}");
                 }
             }
@@ -127,9 +131,7 @@ impl AgendaPlugin {
                 Ok((calendar_path, bus_name)) => {
                     match create_view(&self.dbus, &bus_name, &calendar_path, &query).await {
                         Ok(view_path) => {
-                            if let Err(e) =
-                                start_view(&self.dbus, &bus_name, &view_path).await
-                            {
+                            if let Err(e) = start_view(&self.dbus, &bus_name, &view_path).await {
                                 warn!(
                                     "[agenda] Failed to start view for '{}': {:?}",
                                     source.display_name, e
@@ -141,7 +143,9 @@ impl AgendaPlugin {
                                 source.display_name, view_path
                             );
                             match self.view_paths.lock() {
-                                Ok(mut paths) => { paths.insert(view_path.clone()); }
+                                Ok(mut paths) => {
+                                    paths.insert(view_path.clone());
+                                }
                                 Err(e) => {
                                     warn!("[agenda] view_paths mutex poisoned, recovering: {e}");
                                     e.into_inner().insert(view_path.clone());
@@ -189,12 +193,18 @@ impl Plugin for AgendaPlugin {
             match parse_iso8601_duration(&self.config.lookahead) {
                 Ok(dur) => Some(dur),
                 Err(e) => {
-                    warn!("[agenda] Invalid lookahead '{}': {:?}", self.config.lookahead, e);
+                    warn!(
+                        "[agenda] Invalid lookahead '{}': {:?}",
+                        self.config.lookahead, e
+                    );
                     None
                 }
             }
         };
-        debug!("[agenda] Configured: {:?}, lookahead: {:?}", self.config, self.lookahead);
+        debug!(
+            "[agenda] Configured: {:?}, lookahead: {:?}",
+            self.config, self.lookahead
+        );
         Ok(())
     }
 
@@ -288,7 +298,9 @@ impl Plugin for AgendaPlugin {
                 {
                     let views = active_views.borrow();
                     for view in views.iter() {
-                        if let Err(e) = stop_and_dispose_view(&dbus, &view.bus_name, &view.view_path).await {
+                        if let Err(e) =
+                            stop_and_dispose_view(&dbus, &view.bus_name, &view.view_path).await
+                        {
                             debug!("[agenda] refresh: failed to stop/dispose view: {e}");
                         }
                     }
@@ -314,9 +326,7 @@ impl Plugin for AgendaPlugin {
                         Ok((calendar_path, bus_name)) => {
                             match create_view(&dbus, &bus_name, &calendar_path, &query).await {
                                 Ok(view_path) => {
-                                    if let Err(e) =
-                                        start_view(&dbus, &bus_name, &view_path).await
-                                    {
+                                    if let Err(e) = start_view(&dbus, &bus_name, &view_path).await {
                                         warn!(
                                             "[agenda] Refresh: failed to start view for '{}': {:?}",
                                             source.display_name, e
@@ -324,9 +334,13 @@ impl Plugin for AgendaPlugin {
                                         continue;
                                     }
                                     match view_paths.lock() {
-                                        Ok(mut paths) => { paths.insert(view_path.clone()); }
+                                        Ok(mut paths) => {
+                                            paths.insert(view_path.clone());
+                                        }
                                         Err(e) => {
-                                            warn!("[agenda] view_paths mutex poisoned during refresh, recovering: {e}");
+                                            warn!(
+                                                "[agenda] view_paths mutex poisoned during refresh, recovering: {e}"
+                                            );
                                             e.into_inner().insert(view_path.clone());
                                         }
                                     }

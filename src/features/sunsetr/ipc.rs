@@ -1,8 +1,8 @@
 use anyhow::Result;
 use flume::Sender;
-use tokio::io::AsyncBufReadExt;
 use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::AsyncBufReadExt;
 
 use super::values::Status;
 

@@ -7,7 +7,7 @@ use gtk::prelude::*;
 use log::{debug, warn};
 
 use super::store::AgendaState;
-use super::values::{extract_meeting_links, AgendaEvent, MeetingLink, MeetingProvider};
+use super::values::{AgendaEvent, MeetingLink, MeetingProvider, extract_meeting_links};
 
 /// GTK4 widget for the agenda display.
 pub struct AgendaWidget {
@@ -126,7 +126,11 @@ impl AgendaWidget {
             .values()
             .filter(|e| e.end_time >= query_since)
             .collect();
-        events.sort_by(|a, b| a.start_time.cmp(&b.start_time).then(a.end_time.cmp(&b.end_time)));
+        events.sort_by(|a, b| {
+            a.start_time
+                .cmp(&b.start_time)
+                .then(a.end_time.cmp(&b.end_time))
+        });
 
         // Current time for past/present detection (use chrono to match event timestamps)
         let now = chrono::Local::now().timestamp();

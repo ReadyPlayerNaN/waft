@@ -12,7 +12,7 @@ use std::time::Duration;
 use gtk::prelude::*;
 
 use crate::features::notifications::store::{
-    create_notification_store, NotificationOp, NotificationStore,
+    NotificationOp, NotificationStore, create_notification_store,
 };
 use crate::features::notifications::ui::notifications_widget::{
     NotificationsWidget, NotificationsWidgetOutput,
@@ -24,7 +24,7 @@ use crate::plugin::WidgetFeatureToggle;
 use crate::plugin::{Plugin, PluginId};
 use crate::plugin::{Slot, Widget};
 
-use self::dbus::client::{close_reasons, IngressEvent, OutboundEvent};
+use self::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
 use self::dbus::server::NotificationsDbusServer;
 use self::debounce::NotificationDebouncer;
 use self::dnd_toggle::{
@@ -290,7 +290,9 @@ impl Plugin for NotificationsPlugin {
         let db_widget = match self.debouncer.as_ref() {
             Some(d) => d.clone(),
             None => {
-                error!("[notifications] debouncer not initialized when creating widget output handler");
+                error!(
+                    "[notifications] debouncer not initialized when creating widget output handler"
+                );
                 return Ok(());
             }
         };

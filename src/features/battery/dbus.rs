@@ -93,11 +93,10 @@ pub async fn listen_battery_changes(
             match rx.recv().await {
                 Ok(msg) => {
                     // Verify the signal is for our device interface
-                    if let Ok((iface, _, _)) = msg.body().deserialize::<(
-                        String,
-                        HashMap<String, OwnedValue>,
-                        Vec<String>,
-                    )>() {
+                    if let Ok((iface, _, _)) =
+                        msg.body()
+                            .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+                    {
                         if iface != IFACE_DEVICE {
                             continue;
                         }

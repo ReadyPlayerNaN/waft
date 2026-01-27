@@ -70,7 +70,10 @@ pub fn create_agenda_store() -> AgendaStore {
                 let keys_to_remove: Vec<String> = state
                     .events
                     .keys()
-                    .filter(|k| k.starts_with(&uid) && (k.len() == uid.len() || k[uid.len()..].starts_with('@')))
+                    .filter(|k| {
+                        k.starts_with(&uid)
+                            && (k.len() == uid.len() || k[uid.len()..].starts_with('@'))
+                    })
                     .cloned()
                     .collect();
                 for key in keys_to_remove {

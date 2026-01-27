@@ -5,5 +5,5 @@
 mod manager;
 mod types;
 
-pub use manager::{create_notification_store, NotificationStore};
+pub use manager::{NotificationStore, create_notification_store};
 pub use types::{ItemLifecycle, Notification, NotificationOp, State};
