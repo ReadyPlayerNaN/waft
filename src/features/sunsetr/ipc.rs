@@ -1,5 +1,6 @@
 use anyhow::Result;
 use flume::Sender;
+use log::warn;
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
@@ -53,7 +54,7 @@ pub async fn spawn_stop(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
 }
 
 pub fn spawn_following(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
-    glib::MainContext::default().spawn_local(async move {
+    tokio::spawn(async move {
         // Best-effort live event stream via `sunsetr S --json --follow`.
         // We keep this robust: parse only valid JSON lines, ignore known non-json errors.
         let mut child = match tokio::process::Command::new("sunsetr")
@@ -65,11 +66,11 @@ pub fn spawn_following(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
         {
             Ok(c) => c,
             Err(e) => {
-                sender
-                    .send(SunsetrIpcEvents::Error(format!(
-                        "sunsetr follow spawn failed: {e}"
-                    )))
-                    .unwrap();
+                if let Err(send_err) = sender.send(SunsetrIpcEvents::Error(format!(
+                    "sunsetr follow spawn failed: {e}"
+                ))) {
+                    warn!("[sunsetr/ipc] failed to send spawn error: {send_err}");
+                }
                 return;
             }
         };
@@ -88,9 +89,11 @@ pub fn spawn_following(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
             }
 
             if is_no_process_error(line) || line.to_lowercase().starts_with("[error]") {
-                match sender.send(SunsetrIpcEvents::Status(Status::inactive())) {
-                    Ok(()) => {}
-                    Err(err) => println!("Sending failed {:?}", err),
+                if sender
+                    .send(SunsetrIpcEvents::Status(Status::inactive()))
+                    .is_err()
+                {
+                    break;
                 }
                 continue;
             }
@@ -99,15 +102,14 @@ pub fn spawn_following(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
                 Ok(ev) => sender.send(SunsetrIpcEvents::Status(Status::from(ev))),
                 Err(_) => Ok(()),
             };
-            match r {
-                Ok(()) => {}
-                Err(err) => println!("Sending failed {:?}", err),
+            if r.is_err() {
+                break;
             }
         }
-        match sender.send(SunsetrIpcEvents::Status(Status::inactive())) {
-            Ok(()) => {}
-            Err(err) => println!("Sending failed {:?}", err),
+        if let Err(e) = sender.send(SunsetrIpcEvents::Status(Status::inactive())) {
+            warn!("[sunsetr/ipc] failed to send inactive status on exit: {e}");
         }
+        warn!("[sunsetr/ipc] follow task exited");
     });
     Ok(())
 }
