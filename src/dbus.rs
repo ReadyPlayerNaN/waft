@@ -164,7 +164,9 @@ impl DbusHandle {
             .to_owned();
 
         // Best-effort bus-side match installation.
-        let bus_side_installed = match zbus::fdo::DBusProxy::new(&*self.conn).await {
+        // Note: This reduces traffic on remote D-Bus connections but doesn't filter what
+        // MessageStream receives locally, so we always do local filtering below.
+        let _ = match zbus::fdo::DBusProxy::new(&*self.conn).await {
             Ok(dbus) => dbus.add_match_rule(rule.clone()).await.is_ok(),
             Err(_) => false,
         };
@@ -185,16 +187,11 @@ impl DbusHandle {
                     }
                 };
 
-                // If bus-side match installation worked, the bus should already be filtering.
-                // Still, keep a cheap local filter as a safety net.
-                if bus_side_installed {
-                    if tx.send(msg).is_err() {
-                        break;
-                    }
-                    continue;
-                }
+                // Always filter locally - MessageStream receives ALL message types,
+                // not just matched signals. The bus-side match rule only affects
+                // which signals the daemon forwards, not what MessageStream sees.
 
-                // Fallback local filter: only forward signals and match interface/member if present.
+                // Only process signal messages (type=4)
                 let msg_type = msg.header().primary().msg_type();
                 if msg_type as u8 != 4 {
                     continue;
@@ -202,14 +199,15 @@ impl DbusHandle {
 
                 let h = msg.header();
 
+                // Filter by interface if specified in match rule
                 let iface_req = rule_str.contains("interface='");
-                let member_req = rule_str.contains("member='");
-
                 let iface_ok = !iface_req
                     || h.interface()
                         .map(|i| rule_str.contains(&format!("interface='{}'", i)))
                         .unwrap_or(false);
 
+                // Filter by member if specified in match rule
+                let member_req = rule_str.contains("member='");
                 let member_ok = !member_req
                     || h.member()
                         .map(|m| rule_str.contains(&format!("member='{}'", m)))
