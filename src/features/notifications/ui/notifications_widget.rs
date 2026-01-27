@@ -41,15 +41,15 @@ impl NotificationsWidget {
         let header = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
-            .margin_start(16)
-            .margin_end(16)
+            .margin_start(0)
+            .margin_end(0)
             .margin_top(16)
             .margin_bottom(8)
             .build();
 
         let header_label = gtk::Label::builder()
             .label("Notifications")
-            .css_classes(["title-4"])
+            .css_classes(["title-3"])
             .hexpand(true)
             .xalign(0.0)
             .build();

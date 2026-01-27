@@ -127,6 +127,7 @@ impl BluetoothPlugin {
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }
+            debug!("[bluetooth] property monitoring stopped");
         });
 
         Ok(())

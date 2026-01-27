@@ -72,12 +72,23 @@ impl Plugin for ClockPlugin {
             clock.connect_output(move |output| {
                 if matches!(output, ClockOutput::Click) {
                     debug!("Clock clicked, running command: {}", on_click_cmd);
-                    if let Err(e) = Command::new("sh")
+                    match Command::new("sh")
                         .arg("-c")
                         .arg(&on_click_cmd)
                         .spawn()
                     {
-                        error!("Failed to run clock on_click command: {}", e);
+                        Ok(child) => {
+                            // Reap the child in a background thread to avoid zombies
+                            std::thread::spawn(move || {
+                                let mut child = child;
+                                if let Err(e) = child.wait() {
+                                    error!("[clock] on_click child wait error: {}", e);
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            error!("Failed to run clock on_click command: {}", e);
+                        }
                     }
                 }
             });

@@ -3,7 +3,7 @@
 //! This module provides the main application entry point and window management.
 
 use anyhow::Result;
-use log::debug;
+use log::{debug, warn};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -12,6 +12,7 @@ use gtk::prelude::ApplicationExtManual;
 
 use crate::config::Config;
 use crate::dbus::DbusHandle;
+use crate::features::agenda::AgendaPlugin;
 use crate::features::audio::AudioPlugin;
 use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::clock::ClockPlugin;
@@ -94,10 +95,15 @@ pub async fn run() -> Result<()> {
                     IpcCommand::Ping => return,
                 };
 
-                let _ = ipc_tx.send_blocking(input);
+                if let Err(e) = ipc_tx.send_blocking(input) {
+                    eprintln!("[ipc] failed to forward command to UI: {e}");
+                }
             };
 
-            let _ = rt.block_on(async { ipc_net::run_server(listener, on_command).await });
+            match rt.block_on(async { ipc_net::run_server(listener, on_command).await }) {
+                Ok(()) => eprintln!("[ipc] server exited cleanly"),
+                Err(e) => eprintln!("[ipc] server error: {e}"),
+            }
         });
     }
 
@@ -169,6 +175,14 @@ pub async fn run() -> Result<()> {
         registry.register(plugin);
     }
 
+    if config.is_plugin_enabled("plugin::agenda") {
+        let mut plugin = AgendaPlugin::new(dbus.clone());
+        if let Some(settings) = config.get_plugin_settings("plugin::agenda") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
     // Refuse to start without any plugins
     if registry.is_empty() {
         eprintln!("error: no plugins enabled");
@@ -179,7 +193,7 @@ pub async fn run() -> Result<()> {
         eprintln!("  [[plugins]]");
         eprintln!("  id = \"plugin::notifications\"");
         eprintln!();
-        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::audio");
+        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::audio, plugin::agenda");
         std::process::exit(1);
     }
 
@@ -250,6 +264,7 @@ pub async fn run() -> Result<()> {
                                 }
                             }
                         }
+                        warn!("[ipc] IPC receiver loop exited — overlay will no longer respond to IPC commands");
                     });
                 }
             }

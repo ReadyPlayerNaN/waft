@@ -31,12 +31,15 @@ impl NotificationDebouncer {
         let (immediate_tx, immediate_rx) = flume::unbounded();
 
         // Spawn debouncer task
-        tokio::spawn(debounce_task(
-            ingress_rx,
-            dismiss_rx,
-            immediate_rx,
-            reducer_tx.clone(),
-        ));
+        tokio::spawn(async move {
+            debounce_task(
+                ingress_rx,
+                dismiss_rx,
+                immediate_rx,
+                reducer_tx.clone(),
+            ).await;
+            log::warn!("[debouncer] task exited unexpectedly");
+        });
 
         Self {
             ingress_tx,

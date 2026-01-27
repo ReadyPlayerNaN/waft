@@ -1,3 +1,4 @@
+pub mod agenda;
 pub mod audio;
 pub mod bluetooth;
 pub mod clock;

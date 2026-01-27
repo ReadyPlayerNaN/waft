@@ -190,8 +190,9 @@ where
         let on_command = on_command.clone();
 
         tokio::spawn(async move {
-            let cmd_res = handle_one_connection(stream, &on_command).await;
-            let _ = cmd_res;
+            if let Err(e) = handle_one_connection(stream, &on_command).await {
+                log::debug!("[ipc] connection handler error: {e}");
+            }
         });
     }
 }

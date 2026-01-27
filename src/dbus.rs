@@ -17,6 +17,7 @@
 //! - Some system services (e.g. BlueZ) live on the **system bus**.
 
 use anyhow::{Context, Result};
+use log::debug;
 use std::sync::Arc;
 
 use tokio::sync::broadcast;
@@ -178,13 +179,18 @@ impl DbusHandle {
             while let Some(next) = stream.next().await {
                 let msg = match next {
                     Ok(m) => m,
-                    Err(_) => continue,
+                    Err(e) => {
+                        debug!("[dbus] signal stream error: {e}");
+                        continue;
+                    }
                 };
 
                 // If bus-side match installation worked, the bus should already be filtering.
                 // Still, keep a cheap local filter as a safety net.
                 if bus_side_installed {
-                    let _ = tx.send(msg);
+                    if tx.send(msg).is_err() {
+                        break;
+                    }
                     continue;
                 }
 
@@ -210,9 +216,12 @@ impl DbusHandle {
                         .unwrap_or(false);
 
                 if iface_ok && member_ok {
-                    let _ = tx.send(msg);
+                    if tx.send(msg).is_err() {
+                        break;
+                    }
                 }
             }
+            debug!("[dbus] signal listener stopped for rule: {rule_str}");
         });
 
         Ok(rx)
@@ -242,6 +251,7 @@ impl DbusHandle {
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
+            debug!("[dbus] value listener stopped");
         });
 
         Ok(())

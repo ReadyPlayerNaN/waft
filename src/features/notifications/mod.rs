@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use log::{debug, info};
+use log::{debug, error, info, warn};
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,17 +11,25 @@ use std::time::Duration;
 
 use gtk::prelude::*;
 
-use crate::features::notifications::store::{create_notification_store, NotificationOp, NotificationStore};
+use crate::features::notifications::store::{
+    create_notification_store, NotificationOp, NotificationStore,
+};
+use crate::features::notifications::ui::notifications_widget::{
+    NotificationsWidget, NotificationsWidgetOutput,
+};
+use crate::features::notifications::ui::toast_window::{
+    HPos, ToastWindowOutput, ToastWindowWidget, VPos,
+};
 use crate::plugin::WidgetFeatureToggle;
 use crate::plugin::{Plugin, PluginId};
-use crate::features::notifications::ui::toast_window::{HPos, ToastWindowOutput, ToastWindowWidget, VPos};
-use crate::features::notifications::ui::notifications_widget::{NotificationsWidget, NotificationsWidgetOutput};
 use crate::plugin::{Slot, Widget};
 
-use self::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
+use self::dbus::client::{close_reasons, IngressEvent, OutboundEvent};
 use self::dbus::server::NotificationsDbusServer;
 use self::debounce::NotificationDebouncer;
-use self::dnd_toggle::{DoNotDisturbToggleInit, DoNotDisturbToggleOutput, DoNotDisturbToggleWidget};
+use self::dnd_toggle::{
+    DoNotDisturbToggleInit, DoNotDisturbToggleOutput, DoNotDisturbToggleWidget,
+};
 
 pub mod dbus;
 mod debounce;
@@ -98,13 +106,27 @@ impl NotificationsPlugin {
         let store = self.store.clone();
         let store_for_interval = self.store.clone();
 
-        *tick_source.lock().unwrap() = Some(glib::timeout_add_local_once(
+        let mut guard = match tick_source.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("[notifications] tick_source mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        *guard = Some(glib::timeout_add_local_once(
             Duration::from_millis(200),
             move || {
                 store.emit(NotificationOp::Tick);
 
                 // Schedule the next tick
-                *tick_source_for_closure.lock().unwrap() = Some(glib::timeout_add_local(
+                let mut guard = match tick_source_for_closure.lock() {
+                    Ok(g) => g,
+                    Err(e) => {
+                        warn!("[notifications] tick_source mutex poisoned, recovering: {e}");
+                        e.into_inner()
+                    }
+                };
+                *guard = Some(glib::timeout_add_local(
                     Duration::from_millis(200),
                     move || {
                         store_for_interval.emit(NotificationOp::Tick);
@@ -135,10 +157,7 @@ impl Plugin for NotificationsPlugin {
 
         info!("Starting notifications dbus server");
         dbus_server
-            .start(
-                self.server_channel.clone(),
-                self.client_receiver.clone(),
-            )
+            .start(self.server_channel.clone(), self.client_receiver.clone())
             .await
             .context("Failed to start DBus notifications server")?;
 
@@ -269,7 +288,13 @@ impl Plugin for NotificationsPlugin {
         let notifications_widget = NotificationsWidget::new(self.store.clone());
 
         // Connect output handler for widget events
-        let db_widget = self.debouncer.as_ref().unwrap().clone();
+        let db_widget = match self.debouncer.as_ref() {
+            Some(d) => d.clone(),
+            None => {
+                error!("[notifications] debouncer not initialized when creating widget output handler");
+                return Ok(());
+            }
+        };
         let outbound_tx_widget = self.client_channel.clone();
         notifications_widget.connect_output(move |event| {
             debug!("[notifications_widget] Received: {:?}", event);
@@ -318,8 +343,11 @@ impl Plugin for NotificationsPlugin {
         match *self.notifications_widget.borrow() {
             Some(ref notifications_widget) => vec![Arc::new(Widget {
                 slot: Slot::Info,
-                weight: 10,
-                el: notifications_widget.widget().clone().upcast::<gtk::Widget>(),
+                weight: 50,
+                el: notifications_widget
+                    .widget()
+                    .clone()
+                    .upcast::<gtk::Widget>(),
             })],
             None => vec![],
         }

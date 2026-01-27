@@ -123,7 +123,13 @@ impl NotificationsDbusServer {
         info!("Successfully started notifications DBus server");
 
         // Spawn outbound signal loop.
-        tokio::spawn(outbound_signal_loop(conn.clone(), outbound_rx));
+        let conn_for_loop = conn.clone();
+        tokio::spawn(async move {
+            if let Err(e) = outbound_signal_loop(conn_for_loop, outbound_rx).await {
+                log::warn!("[notifications/dbus] outbound signal loop error: {e}");
+            }
+            log::debug!("[notifications/dbus] outbound signal loop stopped");
+        });
 
         // Store the connection to keep it alive
         self.connection = Some(conn);

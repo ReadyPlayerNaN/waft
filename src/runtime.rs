@@ -11,6 +11,8 @@
 
 use std::future::Future;
 
+use log::error;
+
 /// Run an async task on the tokio runtime and return its result.
 ///
 /// Use this when you need to `.await` a tokio-dependent future from inside a
@@ -25,7 +27,11 @@ where
         let result = future.await;
         let _ = tx.send(result);
     });
-    rx.recv_async()
-        .await
-        .expect("tokio task was cancelled or panicked")
+    match rx.recv_async().await {
+        Ok(val) => val,
+        Err(e) => {
+            error!("[runtime] tokio task was cancelled or panicked: {e}");
+            panic!("tokio task was cancelled or panicked: {e}");
+        }
+    }
 }

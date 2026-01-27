@@ -462,6 +462,49 @@ impl MainWindowWidget {
                 color: @accent_bg_color;
             }}
 
+            /* Agenda event cards */
+            .agenda-event-card {{
+                background: @card_bg_color;
+                border-radius: 12px;
+                padding: 8px 12px;
+                margin: 2px 0;
+            }}
+
+            .agenda-event-card:hover {{
+                background-color: color-mix(in srgb, @card_bg_color 80%, @window_fg_color);
+            }}
+
+            /* Dim past events */
+            .agenda-event-past {{
+                opacity: 0.5;
+            }}
+
+            /* Now divider */
+            .agenda-divider-now {{
+                margin: 6px 0;
+                min-height: 2px;
+                background: @accent_bg_color;
+            }}
+
+            /* Period separator */
+            .agenda-period-separator {{
+                margin: 8px 0 4px 0;
+                opacity: 0.7;
+            }}
+
+            /* Meeting link buttons */
+            .agenda-meeting-btn {{
+                background: alpha(@accent_bg_color, 0.15);
+                border-radius: 8px;
+                padding: 2px 8px;
+                min-height: 24px;
+                font-size: 12px;
+            }}
+
+            .agenda-meeting-btn:hover {{
+                background: alpha(@accent_bg_color, 0.3);
+            }}
+
             "#,
             OVERLAY_CORNER_RADIUS_PX
         );
