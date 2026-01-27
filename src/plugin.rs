@@ -118,4 +118,8 @@ pub trait Plugin {
     fn get_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
         Vec::new()
     }
+
+    /// Called when the main overlay window visibility changes.
+    /// `visible` is `true` when the overlay appears, `false` when it finishes hiding.
+    fn on_overlay_visible(&self, _visible: bool) {}
 }

@@ -64,6 +64,7 @@ pub struct MainWindowWidget {
     pub animation_progress: Rc<Cell<f64>>,
     pub animating_hide: Rc<Cell<bool>>,
     on_stop: Rc<RefCell<Option<Box<dyn Fn()>>>>,
+    on_hide_complete: Rc<RefCell<Option<Box<dyn Fn()>>>>,
 }
 
 impl MainWindowWidget {
@@ -93,6 +94,7 @@ impl MainWindowWidget {
         clip.set_opacity(0.0);
 
         let on_stop: Rc<RefCell<Option<Box<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let on_hide_complete: Rc<RefCell<Option<Box<dyn Fn()>>>> = Rc::new(RefCell::new(None));
         let animating_hide = Rc::new(Cell::new(false));
         let animation_progress = Rc::new(Cell::new(0.0_f64));
 
@@ -121,10 +123,14 @@ impl MainWindowWidget {
         // When animation finishes, hide the window if we were animating a hide
         let window_ref = window.clone();
         let animating_hide_ref = animating_hide.clone();
+        let on_hide_complete_ref = on_hide_complete.clone();
         animation.connect_done(move |_| {
             if animating_hide_ref.get() {
                 animating_hide_ref.set(false);
                 window_ref.set_visible(false);
+                if let Some(ref cb) = *on_hide_complete_ref.borrow() {
+                    cb();
+                }
             }
             trigger_window_resize();
         });
@@ -177,6 +183,7 @@ impl MainWindowWidget {
             animation_progress,
             animating_hide,
             on_stop,
+            on_hide_complete,
         }
     }
 
@@ -186,6 +193,14 @@ impl MainWindowWidget {
         F: Fn() + 'static,
     {
         *self.on_stop.borrow_mut() = Some(Box::new(callback));
+    }
+
+    /// Set the callback invoked after the hide animation completes.
+    pub fn connect_hide_complete<F>(&self, callback: F)
+    where
+        F: Fn() + 'static,
+    {
+        *self.on_hide_complete.borrow_mut() = Some(Box::new(callback));
     }
 
     fn configure_layer_shell(window: &adw::ApplicationWindow) {

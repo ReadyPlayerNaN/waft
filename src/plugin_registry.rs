@@ -1,6 +1,7 @@
 use super::plugin::{Plugin, Slot, Widget, WidgetFeatureToggle};
 
 use anyhow::Result;
+use log::warn;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -110,6 +111,18 @@ impl PluginRegistry {
         }
 
         Ok(())
+    }
+
+    /// Notify all plugins about overlay visibility changes.
+    pub fn notify_overlay_visible(&self, visible: bool) {
+        for (name, plugin) in &self.plugins {
+            match plugin.lock() {
+                Ok(guard) => guard.on_overlay_visible(visible),
+                Err(e) => {
+                    warn!("[registry] plugin '{name}' mutex poisoned in notify_overlay_visible: {e}");
+                }
+            }
+        }
     }
 
     pub fn len(&self) -> usize {

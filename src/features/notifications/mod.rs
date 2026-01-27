@@ -326,6 +326,12 @@ impl Plugin for NotificationsPlugin {
         Ok(())
     }
 
+    fn on_overlay_visible(&self, visible: bool) {
+        if let Some(ref toast) = self.toast {
+            toast.window.set_visible(!visible);
+        }
+    }
+
     fn get_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
         match *self.dnd_toggle.borrow() {
             Some(ref dnd_toggle) => vec![Arc::new(WidgetFeatureToggle {

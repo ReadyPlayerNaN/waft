@@ -231,6 +231,13 @@ pub async fn run() -> Result<()> {
                 app_for_stop.quit();
             });
 
+            // When the overlay finishes hiding, notify plugins so
+            // secondary windows (e.g. toasts) can reappear.
+            let registry_for_hide = registry.clone();
+            main_window.connect_hide_complete(move || {
+                registry_for_hide.notify_overlay_visible(false);
+            });
+
             debug!("Created window");
 
             // Setup IPC receiver to handle commands
@@ -240,10 +247,12 @@ pub async fn run() -> Result<()> {
                     let animation = main_window.animation.clone();
                     let progress = main_window.animation_progress.clone();
                     let animating_hide = main_window.animating_hide.clone();
+                    let registry_for_ipc = registry.clone();
                     glib::spawn_future_local(async move {
                         while let Ok(input) = rx.recv().await {
                             match input {
                                 MainWindowInput::ShowOverlay => {
+                                    registry_for_ipc.notify_overlay_visible(true);
                                     animating_hide.set(false);
                                     window.set_visible(true);
                                     window.present();
@@ -269,6 +278,7 @@ pub async fn run() -> Result<()> {
                                         animation.set_easing(adw::Easing::EaseInCubic);
                                         animation.play();
                                     } else {
+                                        registry_for_ipc.notify_overlay_visible(true);
                                         animating_hide.set(false);
                                         window.set_visible(true);
                                         window.present();
