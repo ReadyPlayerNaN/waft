@@ -3,6 +3,8 @@
 //! Displays upcoming calendar events as styled cards with past-event dimming,
 //! now/period separators, and meeting link buttons.
 
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use gtk::prelude::*;
 use log::{debug, warn};
 
@@ -16,6 +18,12 @@ pub struct AgendaWidget {
     content_box: gtk::Box,
     empty_label: gtk::Label,
     error_label: gtk::Label,
+    /// Map of event occurrence keys to event card widgets for incremental updates
+    event_cards: RefCell<HashMap<String, gtk::Box>>,
+    /// Track the "now" divider to avoid duplicates
+    now_divider: RefCell<Option<gtk::Separator>>,
+    /// Track period separator to avoid duplicates
+    period_separator: RefCell<Option<gtk::Box>>,
 }
 
 impl AgendaWidget {
@@ -76,6 +84,9 @@ impl AgendaWidget {
             content_box,
             empty_label,
             error_label,
+            event_cards: RefCell::new(HashMap::new()),
+            now_divider: RefCell::new(None),
+            period_separator: RefCell::new(None),
         }
     }
 
@@ -112,11 +123,11 @@ impl AgendaWidget {
         self.empty_label.set_visible(false);
         self.content_box.set_visible(true);
 
-        // Clear existing rows
-        while let Some(child) = self.content_box.first_child() {
-            self.content_box.remove(&child);
-        }
+        self.update_events_incremental(state);
+    }
 
+    /// Incrementally update events without rebuilding the entire widget tree.
+    fn update_events_incremental(&self, state: &AgendaState) {
         // Sort events by start time, then by end time.
         // Filter out events that ended before the query range (e.g. recurring
         // event master instances delivered by EDS outside the requested window).
@@ -132,23 +143,59 @@ impl AgendaWidget {
                 .then(a.end_time.cmp(&b.end_time))
         });
 
-        // Current time for past/present detection (use chrono to match event timestamps)
+        // Current time for past/present detection
         let now = chrono::Local::now().timestamp();
-
         let next_period_start = state.next_period_start;
 
-        // Track whether we've inserted the "now" divider and the period separator
+        // Calculate event keys for the new state
+        let new_event_keys: HashSet<String> = events
+            .iter()
+            .map(|e| e.occurrence_key())
+            .collect();
+
+        // Remove widgets for events no longer present
+        let mut current_cards = self.event_cards.borrow_mut();
+        let current_keys: Vec<String> = current_cards.keys().cloned().collect();
+        for key in current_keys {
+            if !new_event_keys.contains(&key) {
+                if let Some(widget) = current_cards.remove(&key) {
+                    self.content_box.remove(&widget);
+                    debug!("[agenda/widget] Removed event: {}", key);
+                }
+            }
+        }
+        drop(current_cards);
+
+        // Remove old dividers
+        if let Some(divider) = self.now_divider.take() {
+            self.content_box.remove(&divider);
+        }
+        if let Some(separator) = self.period_separator.take() {
+            self.content_box.remove(&separator);
+        }
+
+        // Rebuild the widget tree with events in correct order
+        while let Some(child) = self.content_box.first_child() {
+            self.content_box.remove(&child);
+        }
+
+        let mut current_cards = self.event_cards.borrow_mut();
+        current_cards.clear();
+
         let mut now_divider_inserted = false;
         let mut period_separator_inserted = false;
 
         for event in &events {
             let is_past = event.end_time <= now;
+            let is_ongoing = !event.all_day && event.start_time <= now && now < event.end_time;
+
             debug!(
-                "[agenda/widget] '{}': end_time={} now={} is_past={} desc={}chars alt_desc={}chars loc={}chars",
+                "[agenda/widget] '{}': end_time={} now={} is_past={} ongoing={} desc={}chars alt_desc={}chars loc={}chars",
                 event.summary,
                 event.end_time,
                 now,
                 is_past,
+                is_ongoing,
                 event.description.as_ref().map(|d| d.len()).unwrap_or(0),
                 event.alt_description.as_ref().map(|d| d.len()).unwrap_or(0),
                 event.location.as_ref().map(|d| d.len()).unwrap_or(0),
@@ -163,6 +210,7 @@ impl AgendaWidget {
                         .css_classes(["agenda-divider-now"])
                         .build();
                     self.content_box.append(&divider);
+                    *self.now_divider.borrow_mut() = Some(divider);
                 }
                 now_divider_inserted = true;
             }
@@ -173,13 +221,32 @@ impl AgendaWidget {
                     if event.start_time >= nps {
                         let separator = build_period_separator(nps);
                         self.content_box.append(&separator);
+                        *self.period_separator.borrow_mut() = Some(separator);
                         period_separator_inserted = true;
                     }
                 }
             }
 
-            let is_ongoing = !event.all_day && event.start_time <= now && now < event.end_time;
-            let card = build_event_card(event, is_past, is_ongoing);
+            // Create or reuse event card
+            let event_key = event.occurrence_key();
+            let card = if let Some(existing_card) = current_cards.get(&event_key) {
+                // Update existing card's CSS classes based on past/ongoing state
+                let mut css_classes = vec!["agenda-event-card"];
+                if is_past {
+                    css_classes.push("agenda-event-past");
+                }
+                if is_ongoing {
+                    css_classes.push("agenda-event-ongoing");
+                }
+                existing_card.set_css_classes(&css_classes);
+                existing_card.clone()
+            } else {
+                // Create new card
+                let new_card = build_event_card(event, is_past, is_ongoing);
+                current_cards.insert(event_key, new_card.clone());
+                new_card
+            };
+
             self.content_box.append(&card);
         }
     }

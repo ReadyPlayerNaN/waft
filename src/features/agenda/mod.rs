@@ -123,7 +123,9 @@ impl AgendaPlugin {
                 e.into_inner().clear();
             }
         }
-        self.store.emit(AgendaOp::ClearEvents);
+        // Don't clear events here - let them remain visible while new views are being created.
+        // New events will arrive via D-Bus signals and incrementally replace old ones.
+        // self.store.emit(AgendaOp::ClearEvents);
 
         // Open calendars and create views
         for source in &sources {
@@ -313,7 +315,9 @@ impl Plugin for AgendaPlugin {
                         e.into_inner().clear();
                     }
                 }
-                store.emit(AgendaOp::ClearEvents);
+                // Don't clear events here - let them remain visible while new views are being created.
+                // New events will arrive via D-Bus signals and incrementally replace old ones.
+                // store.emit(AgendaOp::ClearEvents);
 
                 let (since, until, next_period_start) =
                     compute_time_range(&period, lookahead.as_ref());
