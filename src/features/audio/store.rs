@@ -10,6 +10,7 @@ pub struct AudioDevice {
     pub id: String,
     pub name: String,
     pub icon: String,
+    pub secondary_icon: Option<String>,
 }
 
 /// State for the audio plugin.

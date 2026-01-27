@@ -22,6 +22,7 @@ pub struct AudioDeviceDisplay {
     pub id: String,
     pub name: String,
     pub icon: String,
+    pub secondary_icon: Option<String>,
     pub is_default: bool,
 }
 
@@ -31,6 +32,7 @@ impl From<(&AudioDevice, bool)> for AudioDeviceDisplay {
             id: device.id.clone(),
             name: device.name.clone(),
             icon: device.icon.clone(),
+            secondary_icon: device.secondary_icon.clone(),
             is_default,
         }
     }
@@ -80,6 +82,17 @@ impl DeviceRow {
             .build();
 
         content.append(&icon_image);
+
+        // Secondary icon (e.g., HDMI/Bluetooth indicator)
+        if let Some(ref secondary) = device.secondary_icon {
+            let secondary_image = gtk::Image::builder()
+                .icon_name(secondary)
+                .pixel_size(16)
+                .css_classes(["audio-device-secondary-icon"])
+                .build();
+            content.append(&secondary_image);
+        }
+
         content.append(&name_label);
         content.append(&check_icon);
 

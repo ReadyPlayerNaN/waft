@@ -531,6 +531,10 @@ impl MainWindowWidget {
                 font-weight: 400;
             }}
 
+            .audio-device-secondary-icon {{
+                opacity: 0.6;
+            }}
+
             .audio-device-check {{
                 color: @accent_bg_color;
             }}

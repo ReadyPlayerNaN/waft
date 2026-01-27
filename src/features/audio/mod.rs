@@ -16,9 +16,10 @@ use crate::plugin::{Plugin, PluginId, Slot, Widget};
 
 use self::control_widget::{AudioControlOutput, AudioControlProps, AudioControlWidget};
 use self::dbus::{
-    AudioEvent, get_default_sink, get_default_source, get_sink_volume, get_sinks,
-    get_source_volume, get_sources, is_available, set_default_sink, set_default_source,
-    set_sink_mute, set_sink_volume, set_source_mute, set_source_volume, subscribe_events,
+    AudioEvent, get_card_port_info, get_default_sink, get_default_source, get_sink_volume,
+    get_sinks, get_source_volume, get_sources, is_available, set_default_sink,
+    set_default_source, set_sink_mute, set_sink_volume, set_source_mute, set_source_volume,
+    subscribe_events,
 };
 use self::store::{AudioDevice, AudioOp, AudioStore, create_audio_store};
 
@@ -48,10 +49,14 @@ impl AudioPlugin {
         // Get default devices
         let default_sink = get_default_sink().await.ok();
         let default_source = get_default_source().await.ok();
+        let card_ports = get_card_port_info().await.unwrap_or_default();
 
         // Get all sinks (outputs)
         if let Ok(sinks) = get_sinks().await {
-            let devices: Vec<AudioDevice> = sinks.iter().map(|s| s.clone().into()).collect();
+            let devices: Vec<AudioDevice> = sinks
+                .iter()
+                .map(|s| AudioDevice::from_sink(s, &card_ports))
+                .collect();
             self.store.emit(AudioOp::SetOutputDevices(devices));
 
             // Set default output
@@ -68,7 +73,10 @@ impl AudioPlugin {
 
         // Get all sources (inputs)
         if let Ok(sources) = get_sources().await {
-            let devices: Vec<AudioDevice> = sources.iter().map(|s| s.clone().into()).collect();
+            let devices: Vec<AudioDevice> = sources
+                .iter()
+                .map(|s| AudioDevice::from_source(s, &card_ports))
+                .collect();
             self.store.emit(AudioOp::SetInputDevices(devices));
 
             // Set default input
@@ -300,6 +308,8 @@ impl Plugin for AudioPlugin {
             while let Ok(event) = event_rx.recv_async().await {
                 debug!("[audio] Received event: {:?}", event);
 
+                let card_ports = get_card_port_info().await.unwrap_or_default();
+
                 match event {
                     AudioEvent::SinkChange | AudioEvent::ServerChange => {
                         // Reload sink state
@@ -313,8 +323,10 @@ impl Plugin for AudioPlugin {
                         }
 
                         if let Ok(sinks) = get_sinks().await {
-                            let devices: Vec<AudioDevice> =
-                                sinks.iter().map(|s| s.clone().into()).collect();
+                            let devices: Vec<AudioDevice> = sinks
+                                .iter()
+                                .map(|s| AudioDevice::from_sink(s, &card_ports))
+                                .collect();
                             store_for_events.emit(AudioOp::SetOutputDevices(devices));
                         }
                     }
@@ -330,22 +342,28 @@ impl Plugin for AudioPlugin {
                         }
 
                         if let Ok(sources) = get_sources().await {
-                            let devices: Vec<AudioDevice> =
-                                sources.iter().map(|s| s.clone().into()).collect();
+                            let devices: Vec<AudioDevice> = sources
+                                .iter()
+                                .map(|s| AudioDevice::from_source(s, &card_ports))
+                                .collect();
                             store_for_events.emit(AudioOp::SetInputDevices(devices));
                         }
                     }
                     AudioEvent::CardChange => {
                         // Card change might affect available devices
                         if let Ok(sinks) = get_sinks().await {
-                            let devices: Vec<AudioDevice> =
-                                sinks.iter().map(|s| s.clone().into()).collect();
+                            let devices: Vec<AudioDevice> = sinks
+                                .iter()
+                                .map(|s| AudioDevice::from_sink(s, &card_ports))
+                                .collect();
                             store_for_events.emit(AudioOp::SetOutputDevices(devices));
                         }
 
                         if let Ok(sources) = get_sources().await {
-                            let devices: Vec<AudioDevice> =
-                                sources.iter().map(|s| s.clone().into()).collect();
+                            let devices: Vec<AudioDevice> = sources
+                                .iter()
+                                .map(|s| AudioDevice::from_source(s, &card_ports))
+                                .collect();
                             store_for_events.emit(AudioOp::SetInputDevices(devices));
                         }
                     }
