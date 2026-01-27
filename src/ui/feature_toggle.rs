@@ -50,6 +50,7 @@ impl FeatureToggleWidget {
         let icon_image = gtk::Image::builder()
             .icon_name(&props.icon)
             .pixel_size(24)
+            .height_request(24)
             .build();
 
         let text_content = gtk::Box::builder()

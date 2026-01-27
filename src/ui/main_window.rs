@@ -107,8 +107,7 @@ impl MainWindowWidget {
         let target = adw::CallbackAnimationTarget::new(move |value| {
             progress_for_anim.set(value);
             clip_for_anim.set_opacity(value);
-            let margin = OVERLAY_TOP_OFFSET_PX as f64
-                - (1.0 - value) * OVERLAY_SLIDE_OFFSET_PX;
+            let margin = OVERLAY_TOP_OFFSET_PX as f64 - (1.0 - value) * OVERLAY_SLIDE_OFFSET_PX;
             window_for_anim.set_margin(gtk4_layer_shell::Edge::Top, margin as i32);
         });
 
@@ -254,12 +253,16 @@ impl MainWindowWidget {
                 background-color: alpha(@window_fg_color, 0.2);
             }}
 
+            .feature-toggle,
+            .feature-toggle-expandable {{
+              margin: 8px 0 4px;
+            }}
+
             .feature-toggle {{
                 background: @card_bg_color;
                 border-radius: 28px;
                 min-height: 48px;
                 padding: 2px 20px 2px 12px;
-                margin: 4px 0;
             }}
 
             .feature-toggle:hover {{
@@ -295,11 +298,6 @@ impl MainWindowWidget {
                   @accent_bg_color 66%,
                   @card_bg_color
                 );
-            }}
-
-            /* Expandable feature toggle - two connected buttons */
-            .feature-toggle-expandable {{
-                margin: 8px 0;
             }}
 
             .feature-toggle-expandable .toggle-main,
@@ -612,7 +610,10 @@ impl MainWindowWidget {
         }
     }
 
-    fn build_content(window: &adw::ApplicationWindow, registry: &Arc<PluginRegistry>) -> gtk::Frame {
+    fn build_content(
+        window: &adw::ApplicationWindow,
+        registry: &Arc<PluginRegistry>,
+    ) -> gtk::Frame {
         let top_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(16)
