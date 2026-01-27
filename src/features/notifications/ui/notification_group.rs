@@ -14,6 +14,7 @@ use crate::features::notifications::store::ItemLifecycle;
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 use crate::ui::icon::IconWidget;
 use crate::ui::main_window::trigger_window_resize;
+use crate::ui::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 
 /// Output events from a notification group.
 #[derive(Debug, Clone)]
@@ -41,6 +42,7 @@ pub struct NotificationGroup {
     app_title_label: gtk::Label,
     count_label: gtk::Label,
     expand_btn: gtk::Button,
+    menu_chevron: MenuChevronWidget,
     top_card_container: gtk::Box,
     hidden_cards_revealer: gtk::Revealer,
     hidden_cards_container: gtk::Box,
@@ -91,12 +93,12 @@ impl NotificationGroup {
             .visible(false)
             .build();
 
-        // Expand/collapse button
+        let menu_chevron = MenuChevronWidget::new(MenuChevronProps { expanded: false });
         let expand_btn = gtk::Button::builder()
-            .icon_name("pan-down-symbolic")
             .css_classes(["flat", "circular", "notification-expand"])
             .visible(false)
             .build();
+        expand_btn.set_child(menu_chevron.widget());
 
         header.append(icon_widget.widget());
         header.append(&app_title_label);
@@ -133,19 +135,15 @@ impl NotificationGroup {
         let on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationGroupOutput)>>>> =
             Rc::new(RefCell::new(None));
 
-        // Expand button click handler
+        // Menu chevron click handler
         let expanded_clone = expanded.clone();
         let hidden_cards_revealer_clone = hidden_cards_revealer.clone();
-        let expand_btn_clone = expand_btn.clone();
+        let menu_chevron_clone = menu_chevron.clone();
         expand_btn.connect_clicked(move |_| {
             let is_expanded = *expanded_clone.borrow();
             *expanded_clone.borrow_mut() = !is_expanded;
+            menu_chevron_clone.set_expanded(!is_expanded);
             hidden_cards_revealer_clone.set_reveal_child(!is_expanded);
-            expand_btn_clone.set_icon_name(if !is_expanded {
-                "pan-up-symbolic"
-            } else {
-                "pan-down-symbolic"
-            });
         });
 
         // Trigger window resize when expand/collapse animation completes
@@ -160,6 +158,7 @@ impl NotificationGroup {
             app_title_label,
             count_label,
             expand_btn,
+            menu_chevron,
             top_card_container,
             hidden_cards_revealer,
             hidden_cards_container,

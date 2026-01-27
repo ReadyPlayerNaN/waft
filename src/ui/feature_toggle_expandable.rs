@@ -7,6 +7,8 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
+use super::menu_chevron::{MenuChevronProps, MenuChevronWidget};
+
 /// Properties for initializing an expandable feature toggle.
 #[derive(Debug, Clone)]
 pub struct FeatureToggleExpandableProps {
@@ -27,12 +29,12 @@ pub enum FeatureToggleExpandableOutput {
 }
 
 /// Pure GTK4 expandable feature toggle widget.
+#[derive(Clone)]
 pub struct FeatureToggleExpandableWidget {
     pub root: gtk::Box,
     #[allow(dead_code)]
     main_button: gtk::Button,
-    #[allow(dead_code)]
-    expand_button: gtk::Button,
+    menu_chevron: MenuChevronWidget,
     icon_image: gtk::Image,
     #[allow(dead_code)]
     title_label: gtk::Label,
@@ -103,18 +105,13 @@ impl FeatureToggleExpandableWidget {
         main_content.append(&text_content);
 
         main_button.set_child(Some(&main_content));
-
-        // Expand button
+        let menu_chevron = MenuChevronWidget::new(MenuChevronProps {
+            expanded: props.expanded,
+        });
         let expand_button = gtk::Button::builder()
             .css_classes(["toggle-expand"])
             .build();
-
-        let expand_icon = gtk::Image::builder()
-            .icon_name("pan-down-symbolic")
-            .pixel_size(16)
-            .build();
-
-        expand_button.set_child(Some(&expand_icon));
+        expand_button.set_child(menu_chevron.widget());
 
         root.append(&main_button);
         root.append(&expand_button);
@@ -142,7 +139,7 @@ impl FeatureToggleExpandableWidget {
             }
         });
 
-        // Connect expand button click handler
+        // Connect menu chevron click handler
         let on_output_ref = on_output.clone();
         expand_button.connect_clicked(move |_| {
             if let Some(ref callback) = *on_output_ref.borrow() {
@@ -153,7 +150,7 @@ impl FeatureToggleExpandableWidget {
         Self {
             root,
             main_button,
-            expand_button,
+            menu_chevron,
             icon_image,
             title_label,
             details_label,
@@ -198,6 +195,7 @@ impl FeatureToggleExpandableWidget {
     /// Update the expanded state.
     pub fn set_expanded(&self, expanded: bool) {
         *self.expanded.borrow_mut() = expanded;
+        self.menu_chevron.set_expanded(expanded);
         Self::update_css_classes(
             &self.root,
             *self.active.borrow(),
@@ -220,8 +218,8 @@ impl FeatureToggleExpandableWidget {
     }
 
     /// Get a reference to the root widget.
-    pub fn widget(&self) -> &gtk::Box {
-        &self.root
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast::<gtk::Widget>()
     }
 
     fn update_css_classes(container: &gtk::Box, active: bool, busy: bool, expanded: bool) {

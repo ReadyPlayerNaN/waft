@@ -367,9 +367,15 @@ impl MainWindowWidget {
                 font-weight: 600;
             }}
 
-            /* Arrow rotation when expanded */
-            .feature-toggle-expandable.expanded .toggle-expand image {{
-                -gtk-icon-transform: rotate(180deg);
+
+            /* Menu chevron styling */
+            .menu-chevron {{
+                -gtk-icon-transform: rotate(-90deg);
+                transition: -gtk-icon-transform 200ms;
+            }}
+
+            .menu-chevron.expanded {{
+                -gtk-icon-transform: rotate(0deg);
             }}
 
             /* Menu row styling */
@@ -493,10 +499,6 @@ impl MainWindowWidget {
 
             .slider-row.muted .slider-icon {{
                 opacity: 0.5;
-            }}
-
-            .slider-row.expanded .slider-expand image {{
-                -gtk-icon-transform: rotate(180deg);
             }}
 
             /* Audio device menu styling */

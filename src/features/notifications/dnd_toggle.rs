@@ -3,8 +3,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk::prelude::*;
-
 use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 /// Output events from the DnD toggle.

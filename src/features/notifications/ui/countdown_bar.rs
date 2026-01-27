@@ -8,8 +8,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use gtk::prelude::*;
-
 /// Output events from the countdown bar.
 #[derive(Debug, Clone)]
 pub enum CountdownBarOutput {

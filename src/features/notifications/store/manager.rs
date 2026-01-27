@@ -1117,7 +1117,8 @@ mod tests {
         // Simulate time passing and tick to complete Hiding → Hidden transitions
         // We need to manually set hiding timestamps to the past
         {
-            let mut state = store.get_state();
+            #[allow(unused_variables)]
+            let state = store.get_state();
             // Note: We can't modify state through get_state() since it's a read guard
             // The tests need to work differently now - we emit Tick operations
         }

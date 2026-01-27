@@ -253,6 +253,7 @@ impl BluetoothPlugin {
         });
 
         let expand_callback: ExpandCallback = Rc::new(RefCell::new(None));
+        let toggle_clone = toggle.clone();
         let expanded = Rc::new(RefCell::new(false));
 
         // Connect toggle output handler
@@ -285,6 +286,7 @@ impl BluetoothPlugin {
                 FeatureToggleExpandableOutput::ToggleExpand => {
                     let new_expanded = !*expanded.borrow();
                     *expanded.borrow_mut() = new_expanded;
+                    toggle_clone.set_expanded(new_expanded);
 
                     // Trigger the callback (Grid will have set this)
                     if let Some(ref cb) = *expand_callback.borrow() {
@@ -465,7 +467,7 @@ impl Plugin for BluetoothPlugin {
 
         for (_, ui) in adapter_uis.iter() {
             toggles.push(Arc::new(WidgetFeatureToggle {
-                el: ui.toggle.root.clone().upcast::<gtk::Widget>(),
+                el: ui.toggle.widget(),
                 weight: 100,
                 menu: Some(ui.device_menu.root.clone().upcast::<gtk::Widget>()),
                 on_expand_toggled: Some(ui.expand_callback.clone()),

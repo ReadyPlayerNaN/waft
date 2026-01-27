@@ -9,6 +9,7 @@ use glib::SignalHandlerId;
 use gtk::prelude::*;
 
 use super::main_window::trigger_window_resize;
+use super::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 
 /// Output events from the slider control widget.
 #[derive(Debug, Clone)]
@@ -83,12 +84,8 @@ impl SliderControlWidget {
                 .css_classes(["slider-expand"])
                 .build();
 
-            let expand_icon = gtk::Image::builder()
-                .icon_name("pan-down-symbolic")
-                .pixel_size(16)
-                .build();
-
-            expand_button.set_child(Some(&expand_icon));
+            let menu_chevron = MenuChevronWidget::new(MenuChevronProps { expanded: false });
+            expand_button.set_child(menu_chevron.widget());
             slider_row.append(&expand_button);
 
             let revealer = gtk::Revealer::builder()
@@ -104,22 +101,20 @@ impl SliderControlWidget {
             menu_container.append(menu_widget);
             revealer.set_child(Some(&menu_container));
 
-            // Connect expand button click
+            // Connect menu chevron click handler
             let expanded_ref = expanded.clone();
             let revealer_ref = revealer.clone();
-            let expand_icon_ref = expand_icon.clone();
+            let menu_chevron_clone = menu_chevron.clone();
             let slider_row_ref = slider_row.clone();
             expand_button.connect_clicked(move |_| {
                 let new_expanded = !*expanded_ref.borrow();
                 *expanded_ref.borrow_mut() = new_expanded;
-
+                menu_chevron_clone.set_expanded(new_expanded);
                 revealer_ref.set_reveal_child(new_expanded);
 
                 if new_expanded {
-                    expand_icon_ref.set_icon_name(Some("pan-up-symbolic"));
                     slider_row_ref.add_css_class("expanded");
                 } else {
-                    expand_icon_ref.set_icon_name(Some("pan-down-symbolic"));
                     slider_row_ref.remove_css_class("expanded");
                 }
 
