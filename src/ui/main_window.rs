@@ -541,17 +541,18 @@ impl MainWindowWidget {
             .agenda-event-card {{
                 background: @card_bg_color;
                 border-radius: 12px;
-                padding: 8px 12px;
+                padding: 6px 12px;
                 margin: 2px 0;
-            }}
-
-            .agenda-event-card:hover {{
-                background-color: color-mix(in srgb, @card_bg_color 80%, @window_fg_color);
             }}
 
             /* Dim past events */
             .agenda-event-past {{
                 opacity: 0.5;
+            }}
+
+            /* Ongoing event accent border */
+            .agenda-event-ongoing {{
+                border-left: 3px solid @accent_bg_color;
             }}
 
             /* Now divider */
@@ -578,6 +579,22 @@ impl MainWindowWidget {
 
             .agenda-meeting-btn:hover {{
                 background: alpha(@accent_bg_color, 0.3);
+            }}
+
+            .agenda-more-btn {{
+                background: alpha(@accent_bg_color, 0.15);
+                border-radius: 8px;
+                padding: 2px 6px;
+                min-height: 24px;
+                min-width: 24px;
+            }}
+
+            .agenda-more-btn:hover {{
+                background: alpha(@accent_bg_color, 0.3);
+            }}
+
+            .agenda-meeting-popover {{
+                padding: 4px;
             }}
 
             "#,

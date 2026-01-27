@@ -7,7 +7,7 @@ use gtk::prelude::*;
 use log::{debug, warn};
 
 use super::store::AgendaState;
-use super::values::{extract_meeting_links, AgendaEvent, MeetingProvider};
+use super::values::{extract_meeting_links, AgendaEvent, MeetingLink, MeetingProvider};
 
 /// GTK4 widget for the agenda display.
 pub struct AgendaWidget {
@@ -174,7 +174,8 @@ impl AgendaWidget {
                 }
             }
 
-            let card = build_event_card(event, is_past);
+            let is_ongoing = !event.all_day && event.start_time <= now && now < event.end_time;
+            let card = build_event_card(event, is_past, is_ongoing);
             self.content_box.append(&card);
         }
     }
@@ -204,21 +205,23 @@ fn build_period_separator(timestamp: i64) -> gtk::Box {
     container
 }
 
-/// Build a single event card widget.
-fn build_event_card(event: &AgendaEvent, is_past: bool) -> gtk::Box {
-    let css_classes: Vec<&str> = if is_past {
-        vec!["agenda-event-card", "agenda-event-past"]
-    } else {
-        vec!["agenda-event-card"]
-    };
+/// Build a single event card widget as a single horizontal row.
+fn build_event_card(event: &AgendaEvent, is_past: bool, is_ongoing: bool) -> gtk::Box {
+    let mut css_classes: Vec<&str> = vec!["agenda-event-card"];
+    if is_past {
+        css_classes.push("agenda-event-past");
+    }
+    if is_ongoing {
+        css_classes.push("agenda-event-ongoing");
+    }
 
     let card = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(2)
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(8)
         .css_classes(css_classes)
         .build();
 
-    // Top line: time range
+    // Time label (fixed width for alignment)
     let time_text = if event.all_day {
         "All day".to_string()
     } else {
@@ -228,10 +231,11 @@ fn build_event_card(event: &AgendaEvent, is_past: bool) -> gtk::Box {
     let time_label = gtk::Label::builder()
         .label(&time_text)
         .xalign(0.0)
+        .width_chars(13)
         .css_classes(["dim-label", "agenda-event-time", "caption"])
         .build();
 
-    // Summary label (ellipsized)
+    // Summary label (ellipsized, takes remaining space)
     let summary_label = gtk::Label::builder()
         .label(&event.summary)
         .xalign(0.0)
@@ -243,41 +247,88 @@ fn build_event_card(event: &AgendaEvent, is_past: bool) -> gtk::Box {
     card.append(&time_label);
     card.append(&summary_label);
 
-    // Meeting link buttons
+    // Meeting link action widget
     let links = extract_meeting_links(event);
-    if !links.is_empty() {
-        let btn_row = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(4)
-            .margin_top(2)
-            .build();
+    if let Some(action) = build_meeting_action(&links) {
+        card.append(&action);
+    }
 
-        for link in links {
-            let label = match link.provider {
-                MeetingProvider::GoogleMeet => "Meet",
-                MeetingProvider::Zoom => "Zoom",
-                MeetingProvider::Teams => "Teams",
-            };
+    card
+}
 
+/// Map a MeetingProvider to a short display label.
+fn provider_label(provider: &MeetingProvider) -> &'static str {
+    match provider {
+        MeetingProvider::GoogleMeet => "Meet",
+        MeetingProvider::Zoom => "Zoom",
+        MeetingProvider::Teams => "Teams",
+    }
+}
+
+/// Build the meeting action widget for an event card.
+///
+/// - 0 links: returns `None`
+/// - 1 link: returns a direct button
+/// - 2+ links: returns a three-dot menu button with a popover
+fn build_meeting_action(links: &[MeetingLink]) -> Option<gtk::Widget> {
+    match links.len() {
+        0 => None,
+        1 => {
+            let link = &links[0];
             let btn = gtk::Button::builder()
-                .label(label)
+                .label(provider_label(&link.provider))
                 .css_classes(["agenda-meeting-btn"])
                 .build();
 
             let url = link.url.clone();
             btn.connect_clicked(move |_| {
-                if let Err(e) = gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE) {
+                if let Err(e) =
+                    gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE)
+                {
                     warn!("[agenda] failed to open meeting URL: {e}");
                 }
             });
 
-            btn_row.append(&btn);
+            Some(btn.upcast())
         }
+        _ => {
+            let popover_box = gtk::Box::builder()
+                .orientation(gtk::Orientation::Vertical)
+                .spacing(2)
+                .css_classes(["agenda-meeting-popover"])
+                .build();
 
-        card.append(&btn_row);
+            let popover = gtk::Popover::builder().child(&popover_box).build();
+
+            for link in links {
+                let btn = gtk::Button::builder()
+                    .label(provider_label(&link.provider))
+                    .css_classes(["agenda-meeting-btn"])
+                    .build();
+
+                let url = link.url.clone();
+                let popover_ref = popover.clone();
+                btn.connect_clicked(move |_| {
+                    if let Err(e) =
+                        gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE)
+                    {
+                        warn!("[agenda] failed to open meeting URL: {e}");
+                    }
+                    popover_ref.popdown();
+                });
+
+                popover_box.append(&btn);
+            }
+
+            let menu_btn = gtk::MenuButton::builder()
+                .icon_name("view-more-symbolic")
+                .popover(&popover)
+                .css_classes(["agenda-more-btn"])
+                .build();
+
+            Some(menu_btn.upcast())
+        }
     }
-
-    card
 }
 
 /// Format a time range as "HH:MM \u{2013} HH:MM" using glib::DateTime.
