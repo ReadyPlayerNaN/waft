@@ -5,7 +5,7 @@ use std::time::SystemTime;
 pub use crate::ui::icon::Icon as NotificationIcon;
 
 /// Notification urgency, aligned with `org.freedesktop.Notifications` (`urgency` hint).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NotificationUrgency {
     Low,
     Normal,
@@ -20,6 +20,12 @@ impl Ord for NotificationUrgency {
             (_, Self::Critical) => std::cmp::Ordering::Less,
             (_, _) => std::cmp::Ordering::Equal,
         }
+    }
+}
+
+impl PartialOrd for NotificationUrgency {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
