@@ -184,6 +184,8 @@ Currently on `relm4` branch, migrating from legacy GTK to Relm4. See `relm4-migr
 
 **Root cause:** glib's event loop does not integrate with tokio's I/O driver. When a tokio future is polled from glib, glib sees "not ready" and immediately re-polls with no delay, spinning in a tight loop.
 
+**zbus Configuration:** zbus must be configured with the `tokio` feature to integrate with tokio's runtime. By default, zbus uses `async-io`, which causes the same busy-poll issue when polled from `tokio::spawn`. Use `zbus = { version = "5", default-features = false, features = ["tokio"] }` in Cargo.toml.
+
 **Solution:** Always spawn tokio work on the tokio runtime using `tokio::spawn()`. Use executor-agnostic channels (like `flume`) to communicate between runtimes.
 
 ```rust
