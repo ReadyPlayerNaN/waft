@@ -1,5 +1,6 @@
 pub mod agenda;
 pub mod audio;
+pub mod battery;
 pub mod bluetooth;
 pub mod clock;
 pub mod darkman;

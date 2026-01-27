@@ -1,5 +1,6 @@
 //! Pure GTK4 UI components.
 
+pub mod battery;
 pub mod clock;
 pub mod feature_grid;
 pub mod feature_toggle;

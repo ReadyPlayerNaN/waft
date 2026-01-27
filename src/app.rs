@@ -14,6 +14,7 @@ use crate::config::Config;
 use crate::dbus::DbusHandle;
 use crate::features::agenda::AgendaPlugin;
 use crate::features::audio::AudioPlugin;
+use crate::features::battery::BatteryPlugin;
 use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
@@ -167,6 +168,15 @@ pub async fn run() -> Result<()> {
         registry.register(plugin);
     }
 
+    if config.is_plugin_enabled("plugin::battery") {
+        let system_dbus = Arc::new(DbusHandle::connect_system().await?);
+        let mut plugin = BatteryPlugin::new(system_dbus);
+        if let Some(settings) = config.get_plugin_settings("plugin::battery") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
     if config.is_plugin_enabled("plugin::audio") {
         let mut plugin = AudioPlugin::new();
         if let Some(settings) = config.get_plugin_settings("plugin::audio") {
@@ -193,7 +203,7 @@ pub async fn run() -> Result<()> {
         eprintln!("  [[plugins]]");
         eprintln!("  id = \"plugin::notifications\"");
         eprintln!();
-        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::audio, plugin::agenda");
+        eprintln!("Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::agenda");
         std::process::exit(1);
     }
 
