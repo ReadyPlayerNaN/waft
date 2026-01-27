@@ -237,22 +237,45 @@ pub async fn run() -> Result<()> {
             if let Ok(mut rx_slot) = ipc_rx_slot.lock() {
                 if let Some(rx) = rx_slot.take() {
                     let window = main_window.window.clone();
+                    let animation = main_window.animation.clone();
+                    let progress = main_window.animation_progress.clone();
+                    let animating_hide = main_window.animating_hide.clone();
                     glib::spawn_future_local(async move {
                         while let Ok(input) = rx.recv().await {
                             match input {
                                 MainWindowInput::ShowOverlay => {
+                                    animating_hide.set(false);
                                     window.set_visible(true);
                                     window.present();
+                                    animation.set_value_from(progress.get());
+                                    animation.set_value_to(1.0);
+                                    animation.set_easing(adw::Easing::EaseOutCubic);
+                                    animation.play();
                                 }
                                 MainWindowInput::HideOverlay => {
-                                    window.set_visible(false);
+                                    if window.is_visible() && !animating_hide.get() {
+                                        animating_hide.set(true);
+                                        animation.set_value_from(progress.get());
+                                        animation.set_value_to(0.0);
+                                        animation.set_easing(adw::Easing::EaseInCubic);
+                                        animation.play();
+                                    }
                                 }
                                 MainWindowInput::ToggleOverlay => {
-                                    if window.is_visible() {
-                                        window.set_visible(false);
+                                    if window.is_visible() && !animating_hide.get() {
+                                        animating_hide.set(true);
+                                        animation.set_value_from(progress.get());
+                                        animation.set_value_to(0.0);
+                                        animation.set_easing(adw::Easing::EaseInCubic);
+                                        animation.play();
                                     } else {
+                                        animating_hide.set(false);
                                         window.set_visible(true);
                                         window.present();
+                                        animation.set_value_from(progress.get());
+                                        animation.set_value_to(1.0);
+                                        animation.set_easing(adw::Easing::EaseOutCubic);
+                                        animation.play();
                                     }
                                 }
                                 MainWindowInput::StopApp => {
@@ -261,7 +284,13 @@ pub async fn run() -> Result<()> {
                                     }
                                 }
                                 MainWindowInput::RequestHide => {
-                                    window.set_visible(false);
+                                    if window.is_visible() && !animating_hide.get() {
+                                        animating_hide.set(true);
+                                        animation.set_value_from(progress.get());
+                                        animation.set_value_to(0.0);
+                                        animation.set_easing(adw::Easing::EaseInCubic);
+                                        animation.play();
+                                    }
                                 }
                             }
                         }

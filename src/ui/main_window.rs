@@ -2,12 +2,11 @@
 //!
 //! The main overlay window that hosts the application UI.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use adw::prelude::AdwApplicationWindowExt;
-use gtk::prelude::*;
+use adw::prelude::*;
 use gtk4_layer_shell::LayerShell;
 use log::debug;
 
@@ -45,6 +44,8 @@ pub fn trigger_window_resize() {
 const OVERLAY_TOP_OFFSET_PX: i32 = 16;
 const OVERLAY_BOTTOM_OFFSET_PX: i32 = 16;
 const OVERLAY_CORNER_RADIUS_PX: i32 = 8;
+const OVERLAY_SLIDE_OFFSET_PX: f64 = 20.0;
+const OVERLAY_ANIM_DURATION_MS: u32 = 200;
 
 /// Input messages for the main window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +60,9 @@ pub enum MainWindowInput {
 /// Pure GTK4 main window.
 pub struct MainWindowWidget {
     pub window: adw::ApplicationWindow,
+    pub animation: adw::TimedAnimation,
+    pub animation_progress: Rc<Cell<f64>>,
+    pub animating_hide: Rc<Cell<bool>>,
     on_stop: Rc<RefCell<Option<Box<dyn Fn()>>>>,
 }
 
@@ -83,16 +87,60 @@ impl MainWindowWidget {
         Self::apply_css();
 
         // Build content
-        Self::build_content(&window, registry);
+        let clip = Self::build_content(&window, registry);
+
+        // Start in hidden state (fully transparent)
+        clip.set_opacity(0.0);
 
         let on_stop: Rc<RefCell<Option<Box<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let animating_hide = Rc::new(Cell::new(false));
+        let animation_progress = Rc::new(Cell::new(0.0_f64));
+
+        // Create animation callback that drives opacity + layer-shell margin slide.
+        // Animating the layer-shell top margin moves the entire window surface at the
+        // compositor level — no GTK layout recalculation, no size warnings.
+        let clip_for_anim = clip.clone();
+        let window_for_anim = window.clone();
+        let progress_for_anim = animation_progress.clone();
+        let target = adw::CallbackAnimationTarget::new(move |value| {
+            progress_for_anim.set(value);
+            clip_for_anim.set_opacity(value);
+            let margin = OVERLAY_TOP_OFFSET_PX as f64
+                - (1.0 - value) * OVERLAY_SLIDE_OFFSET_PX;
+            window_for_anim.set_margin(gtk4_layer_shell::Edge::Top, margin as i32);
+        });
+
+        let animation = adw::TimedAnimation::builder()
+            .widget(&clip)
+            .value_from(0.0)
+            .value_to(1.0)
+            .duration(OVERLAY_ANIM_DURATION_MS)
+            .target(&target)
+            .build();
+
+        // When animation finishes, hide the window if we were animating a hide
+        let window_ref = window.clone();
+        let animating_hide_ref = animating_hide.clone();
+        animation.connect_done(move |_| {
+            if animating_hide_ref.get() {
+                animating_hide_ref.set(false);
+                window_ref.set_visible(false);
+            }
+            trigger_window_resize();
+        });
 
         // Setup keyboard controller for Escape
-        let window_ref = window.clone();
+        let animation_ref = animation.clone();
+        let progress_ref = animation_progress.clone();
+        let animating_hide_ref = animating_hide.clone();
         let controller = gtk::EventControllerKey::new();
         controller.connect_key_pressed(move |_c, key, _code, _state| {
             if key == gtk::gdk::Key::Escape {
-                window_ref.set_visible(false);
+                animating_hide_ref.set(true);
+                animation_ref.set_value_from(progress_ref.get());
+                animation_ref.set_value_to(0.0);
+                animation_ref.set_easing(adw::Easing::EaseInCubic);
+                animation_ref.play();
                 return gtk::glib::Propagation::Stop;
             }
             gtk::glib::Propagation::Proceed
@@ -100,10 +148,16 @@ impl MainWindowWidget {
         window.add_controller(controller);
 
         // Hide on focus loss
-        let window_ref = window.clone();
+        let animation_ref = animation.clone();
+        let progress_ref = animation_progress.clone();
+        let animating_hide_ref = animating_hide.clone();
         window.connect_is_active_notify(move |w| {
-            if !w.is_active() {
-                window_ref.set_visible(false);
+            if !w.is_active() && !animating_hide_ref.get() {
+                animating_hide_ref.set(true);
+                animation_ref.set_value_from(progress_ref.get());
+                animation_ref.set_value_to(0.0);
+                animation_ref.set_easing(adw::Easing::EaseInCubic);
+                animation_ref.play();
             }
         });
 
@@ -117,7 +171,13 @@ impl MainWindowWidget {
 
         debug!("Created main window");
 
-        Self { window, on_stop }
+        Self {
+            window,
+            animation,
+            animation_progress,
+            animating_hide,
+            on_stop,
+        }
     }
 
     /// Set the callback for app stop requests.
@@ -520,7 +580,7 @@ impl MainWindowWidget {
         }
     }
 
-    fn build_content(window: &adw::ApplicationWindow, registry: &Arc<PluginRegistry>) {
+    fn build_content(window: &adw::ApplicationWindow, registry: &Arc<PluginRegistry>) -> gtk::Frame {
         let top_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(16)
@@ -625,5 +685,6 @@ impl MainWindowWidget {
         clip.set_child(Some(&scroller));
 
         window.set_content(Some(&clip));
+        clip
     }
 }
