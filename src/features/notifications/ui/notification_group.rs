@@ -10,9 +10,9 @@ use std::sync::Arc;
 use gtk::prelude::*;
 
 use super::notification_card::{NotificationCard, NotificationCardOutput};
-use crate::ui::icon::IconWidget;
 use crate::features::notifications::store::ItemLifecycle;
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
+use crate::ui::icon::IconWidget;
 use crate::ui::main_window::trigger_window_resize;
 
 /// Output events from a notification group.
@@ -50,7 +50,11 @@ pub struct NotificationGroup {
 }
 
 impl NotificationGroup {
-    pub fn new(app_ident: Arc<str>, app_title: Arc<str>, icon_hints: Vec<NotificationIcon>) -> Self {
+    pub fn new(
+        app_ident: Arc<str>,
+        app_title: Arc<str>,
+        icon_hints: Vec<NotificationIcon>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
@@ -71,6 +75,7 @@ impl NotificationGroup {
         // App icon (smaller than notification icon)
         let icon_widget = IconWidget::new(icon_hints);
         icon_widget.widget().set_pixel_size(16);
+        icon_widget.widget().set_valign(gtk::Align::Center);
 
         // App title
         let app_title_label = gtk::Label::builder()
