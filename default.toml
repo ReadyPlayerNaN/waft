@@ -1,0 +1,33 @@
+[[plugins]]
+id = "plugin::clock"
+on_click = "gnome-calendar"
+
+[[plugins]]
+id = "plugin::darkman"
+
+[[plugins]]
+id = "plugin::agenda"
+period = "today"
+lookahead = "PT8H"
+refresh_interval = 180
+
+[[plugins]]
+id = "plugin::bluetooth"
+
+[[plugins]]
+id = "plugin::sunsetr"
+
+[[plugins]]
+id = "plugin::audio"
+
+[[plugins]]
+id = "plugin::notifications"
+toast_limit = 3
+disable_toasts = false
+
+[[plugins]]
+id = "plugin::weather"
+latitude = 50.0755
+longitude = 14.4378
+units = "celsius"
+update_interval = 600
