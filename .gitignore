@@ -1,2 +1,8 @@
 target
 *.log
+
+# makepkg artifacts
+pkg/
+*.pkg.tar.*
+.SRCINFO
+/*-git
