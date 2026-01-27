@@ -79,7 +79,7 @@ impl Plugin for WeatherPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self) -> Result<()> {
+    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
         let units = self.units();
         let weather_widget = WeatherWidget::new(units);
 

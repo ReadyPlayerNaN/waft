@@ -55,7 +55,7 @@ impl Plugin for ClockPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self) -> Result<()> {
+    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
         let datetime = DateTime::now_local()?;
         let clock = ClockWidget::new(&datetime);
 

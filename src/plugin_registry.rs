@@ -78,12 +78,12 @@ impl PluginRegistry {
         Ok(())
     }
 
-    pub async fn create_elements(&self) -> Result<()> {
+    pub async fn create_elements(&self, app: &gtk::Application) -> Result<()> {
         for (name, plugin) in self.plugins.iter() {
             let mut guard = plugin
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Plugin mutex poisoned: {}", name))?;
-            if let Err(e) = guard.create_elements().await {
+            if let Err(e) = guard.create_elements(app).await {
                 eprintln!("Failed to initialize plugin '{}': {}", name, e);
                 return Err(e);
             }

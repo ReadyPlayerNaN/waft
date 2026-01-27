@@ -350,7 +350,7 @@ impl Plugin for BluetoothPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self) -> Result<()> {
+    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
         // Get adapters again to have their info
         let adapters = match find_all_adapters(&self.dbus).await {
             Ok(adapters) => adapters,

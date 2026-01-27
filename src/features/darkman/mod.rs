@@ -68,7 +68,7 @@ impl Plugin for DarkmanPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self) -> Result<()> {
+    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
         let initial_active = {
             let state = self.store.get_state();
             DarkmanMode::is_active(state.mode)

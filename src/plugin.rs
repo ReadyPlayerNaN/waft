@@ -103,7 +103,7 @@ pub trait Plugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self) -> Result<()> {
+    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
         Ok(())
     }
 

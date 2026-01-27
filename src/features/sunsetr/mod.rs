@@ -45,7 +45,7 @@ impl Plugin for SunsetrPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self) -> Result<()> {
+    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
         let initial_state = {
             let state = self.store.get_state();
             (state.active, state.next_transition.clone())

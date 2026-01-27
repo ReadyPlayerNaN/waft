@@ -166,7 +166,7 @@ impl Plugin for NotificationsPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self) -> Result<()> {
+    async fn create_elements(&mut self, app: &gtk::Application) -> Result<()> {
         // Configure the store with plugin settings
         self.store.emit(NotificationOp::Configure {
             toast_limit: self.config.toast_limit(),
@@ -192,8 +192,7 @@ impl Plugin for NotificationsPlugin {
         // Create pure GTK4 toast window with store reference
         let toast = self.create_toast_window();
 
-        // Add window to application
-        let app = gtk::Application::default();
+        // Add window to application so GTK tracks it for lifecycle management
         app.add_window(&toast.window);
 
         // Connect output handler for toast events
