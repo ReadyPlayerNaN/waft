@@ -1,4 +1,5 @@
 //! Clock plugin - displays current date and time.
+use crate::menu_state::MenuStore;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -55,7 +56,11 @@ impl Plugin for ClockPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
+    async fn create_elements(
+        &mut self,
+        _app: &gtk::Application,
+        _menu_store: Arc<MenuStore>,
+    ) -> Result<()> {
         let datetime = DateTime::now_local()?;
         let clock = ClockWidget::new(&datetime);
 

@@ -20,6 +20,7 @@ use crate::features::notifications::ui::notifications_widget::{
 use crate::features::notifications::ui::toast_window::{
     HPos, ToastWindowOutput, ToastWindowWidget, VPos,
 };
+use crate::menu_state::MenuStore;
 use crate::plugin::WidgetFeatureToggle;
 use crate::plugin::{Plugin, PluginId};
 use crate::plugin::{Slot, Widget};
@@ -166,7 +167,11 @@ impl Plugin for NotificationsPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self, app: &gtk::Application) -> Result<()> {
+    async fn create_elements(
+        &mut self,
+        app: &gtk::Application,
+        menu_store: Arc<MenuStore>,
+    ) -> Result<()> {
         // Configure the store with plugin settings
         self.store.emit(NotificationOp::Configure {
             toast_limit: self.config.toast_limit(),
@@ -284,7 +289,7 @@ impl Plugin for NotificationsPlugin {
         *self.dnd_toggle.borrow_mut() = Some(dnd_toggle);
 
         // Create NotificationsWidget for the overlay Info slot
-        let notifications_widget = NotificationsWidget::new(self.store.clone());
+        let notifications_widget = NotificationsWidget::new(self.store.clone(), menu_store);
 
         // Connect output handler for widget events
         let db_widget = match self.debouncer.as_ref() {
@@ -340,6 +345,7 @@ impl Plugin for NotificationsPlugin {
                 el: dnd_toggle.widget().clone().upcast::<gtk::Widget>(),
                 weight: 60,
                 menu: None,
+                menu_id: None,
                 on_expand_toggled: None,
             })],
             None => vec![],

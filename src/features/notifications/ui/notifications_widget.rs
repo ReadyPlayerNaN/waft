@@ -11,6 +11,7 @@ use gtk::prelude::*;
 
 use super::notification_group::{NotificationData, NotificationGroup, NotificationGroupOutput};
 use crate::features::notifications::store::{ItemLifecycle, NotificationStore};
+use crate::menu_state::MenuStore;
 
 /// Output events from the notifications widget.
 #[derive(Debug, Clone)]
@@ -27,10 +28,11 @@ pub struct NotificationsWidget {
     groups: Rc<RefCell<HashMap<Arc<str>, NotificationGroup>>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationsWidgetOutput)>>>>,
     store: Rc<NotificationStore>,
+    menu_store: Arc<MenuStore>,
 }
 
 impl NotificationsWidget {
-    pub fn new(store: Rc<NotificationStore>) -> Self {
+    pub fn new(store: Rc<NotificationStore>, menu_store: Arc<MenuStore>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
@@ -116,6 +118,7 @@ impl NotificationsWidget {
             groups,
             on_output,
             store,
+            menu_store,
         };
 
         // Subscribe to store
@@ -143,6 +146,7 @@ impl NotificationsWidget {
         let empty_placeholder = self.empty_placeholder.clone();
         let on_output = self.on_output.clone();
         let store = self.store.clone();
+        let menu_store = self.menu_store.clone();
 
         self.store.subscribe(move || {
             let state = store.get_state();
@@ -175,6 +179,7 @@ impl NotificationsWidget {
                 &groups_container,
                 &empty_placeholder,
                 &on_output,
+                menu_store.clone(),
             );
         });
     }
@@ -191,6 +196,7 @@ impl NotificationsWidget {
         groups_container: &gtk::Box,
         empty_placeholder: &gtk::Box,
         on_output: &Rc<RefCell<Option<Box<dyn Fn(NotificationsWidgetOutput)>>>>,
+        menu_store: Arc<MenuStore>,
     ) {
         log::debug!(
             "[notifications_widget] State changed, {} groups",
@@ -239,7 +245,12 @@ impl NotificationsWidget {
                     .map(|(n, _)| n.icon_hints.clone())
                     .unwrap_or_default();
 
-                let group = NotificationGroup::new(app_id.clone(), app_title, icon_hints);
+                let group = NotificationGroup::new(
+                    app_id.clone(),
+                    app_title,
+                    icon_hints,
+                    menu_store.clone(),
+                );
 
                 let on_output_clone = on_output.clone();
                 group.connect_output(move |event| {

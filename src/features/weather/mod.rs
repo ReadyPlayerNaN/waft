@@ -1,4 +1,5 @@
 //! Weather plugin - displays current weather conditions.
+use crate::menu_state::MenuStore;
 
 mod api;
 pub mod values;
@@ -79,7 +80,11 @@ impl Plugin for WeatherPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
+    async fn create_elements(
+        &mut self,
+        _app: &gtk::Application,
+        _menu_store: Arc<MenuStore>,
+    ) -> Result<()> {
         let units = self.units();
         let weather_widget = WeatherWidget::new(units);
 

@@ -1,4 +1,5 @@
 //! Sunsetr plugin - night light toggle.
+use crate::menu_state::MenuStore;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -45,7 +46,11 @@ impl Plugin for SunsetrPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
+    async fn create_elements(
+        &mut self,
+        _app: &gtk::Application,
+        _menu_store: Arc<MenuStore>,
+    ) -> Result<()> {
         let initial_state = {
             let state = self.store.get_state();
             (state.active, state.next_transition.clone())
@@ -131,6 +136,7 @@ impl Plugin for SunsetrPlugin {
                     el: toggle.root.clone().upcast::<gtk::Widget>(),
                     weight: 200,
                     menu: None,
+                    menu_id: None,
                     on_expand_toggled: None,
                 })]
             }

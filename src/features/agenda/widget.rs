@@ -3,10 +3,10 @@
 //! Displays upcoming calendar events as styled cards with past-event dimming,
 //! now/period separators, and meeting link buttons.
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 use gtk::prelude::*;
 use log::{debug, warn};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 use super::store::AgendaState;
 use super::values::{AgendaEvent, MeetingLink, MeetingProvider, extract_meeting_links};
@@ -148,10 +148,7 @@ impl AgendaWidget {
         let next_period_start = state.next_period_start;
 
         // Calculate event keys for the new state
-        let new_event_keys: HashSet<String> = events
-            .iter()
-            .map(|e| e.occurrence_key())
-            .collect();
+        let new_event_keys: HashSet<String> = events.iter().map(|e| e.occurrence_key()).collect();
 
         // Remove widgets for events no longer present
         let mut current_cards = self.event_cards.borrow_mut();

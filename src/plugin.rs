@@ -6,6 +6,8 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::menu_state::MenuStore;
+
 #[allow(dead_code)]
 pub enum Slot {
     Info,
@@ -32,6 +34,8 @@ pub struct WidgetFeatureToggle {
     /// Callback when expand state changes. Grid connects to this.
     /// Callback receives new expanded state (true = expanded).
     pub on_expand_toggled: Option<ExpandCallback>,
+    /// Optional menu ID for coordinating with MenuStore.
+    pub menu_id: Option<String>,
 }
 
 /// Stable identifier for a plugin.
@@ -103,7 +107,11 @@ pub trait Plugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
+    async fn create_elements(
+        &mut self,
+        _app: &gtk::Application,
+        _menu_store: Arc<MenuStore>,
+    ) -> Result<()> {
         Ok(())
     }
 

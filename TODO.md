@@ -5,6 +5,5 @@
 - Tether plugin?
 - Notification Group header icon should be from app
 - SNI
-- Menu accordion-like collapse
 - Brightness plugin
 - Actions plugin(s): {Shutdown, Lock}(systemd plugin), Settings

@@ -1,4 +1,5 @@
 //! Battery plugin — display battery status from UPower.
+use crate::menu_state::MenuStore;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -66,7 +67,11 @@ impl Plugin for BatteryPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
+    async fn create_elements(
+        &mut self,
+        _app: &gtk::Application,
+        _menu_store: Arc<MenuStore>,
+    ) -> Result<()> {
         let battery_widget = BatteryWidget::new();
 
         // Apply initial state

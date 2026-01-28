@@ -23,6 +23,7 @@ use crate::features::sunsetr::SunsetrPlugin;
 use crate::features::weather::WeatherPlugin;
 use crate::ipc::net as ipc_net;
 use crate::ipc::{IpcCommand, command_from_args, ipc_socket_path};
+use crate::menu_state::create_menu_store;
 use crate::plugin::Plugin;
 use crate::plugin_registry::PluginRegistry;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
@@ -116,7 +117,11 @@ pub async fn run() -> Result<()> {
 
     // Initialize DBus and plugin registry
     let dbus = Arc::new(DbusHandle::connect().await?);
-    let mut registry = PluginRegistry::new();
+
+    // Create menu store for coordinating expandable menus
+    let menu_store = Arc::new(create_menu_store());
+
+    let mut registry = PluginRegistry::new(menu_store);
 
     // Only load plugins that are explicitly enabled in config
     if config.is_plugin_enabled("plugin::clock") {

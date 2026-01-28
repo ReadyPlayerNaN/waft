@@ -1,4 +1,5 @@
 //! Darkman plugin - dark mode toggle.
+use crate::menu_state::MenuStore;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -68,7 +69,11 @@ impl Plugin for DarkmanPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
+    async fn create_elements(
+        &mut self,
+        _app: &gtk::Application,
+        _menu_store: Arc<MenuStore>,
+    ) -> Result<()> {
         let initial_active = {
             let state = self.store.get_state();
             DarkmanMode::is_active(state.mode)
@@ -140,6 +145,7 @@ impl Plugin for DarkmanPlugin {
                     el: toggle.root.clone().upcast::<gtk::Widget>(),
                     weight: 190,
                     menu: None,
+                    menu_id: None,
                     on_expand_toggled: None,
                 })]
             }

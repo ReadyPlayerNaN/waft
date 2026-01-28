@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
+use crate::menu_state::MenuStore;
 use crate::plugin::WidgetFeatureToggle;
 use crate::ui::main_window::trigger_window_resize;
 
@@ -16,7 +17,7 @@ pub struct FeatureGridWidget {
 
 impl FeatureGridWidget {
     /// Create a new feature grid with the given toggles.
-    pub fn new(items: Vec<Arc<WidgetFeatureToggle>>) -> Self {
+    pub fn new(items: Vec<Arc<WidgetFeatureToggle>>, menu_store: Arc<MenuStore>) -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
         let grid = gtk::Grid::builder()
@@ -35,8 +36,12 @@ impl FeatureGridWidget {
                 grid.attach(&item.el, col as i32, grid_row, 1, 1);
             }
 
-            // Collect menus for this row
+            // Collect menus and menu IDs for this row
             let menus: Vec<_> = pair.iter().filter_map(|item| item.menu.clone()).collect();
+            let menu_ids: Vec<String> = pair
+                .iter()
+                .filter_map(|item| item.menu_id.clone())
+                .collect();
 
             if !menus.is_empty() {
                 // Create menu row revealer
@@ -57,7 +62,38 @@ impl FeatureGridWidget {
                 menu_revealer.set_child(Some(&menu_box));
                 grid.attach(&menu_revealer, 0, grid_row + 1, cols, 1);
 
-                // Connect expand callbacks to this revealer
+                // Subscribe revealer to menu store
+                if !menu_ids.is_empty() {
+                    let menu_revealer_clone = menu_revealer.clone();
+                    let menu_store_clone = menu_store.clone();
+                    let menu_ids_clone = menu_ids.clone();
+                    menu_store.subscribe(move || {
+                        let state = menu_store_clone.get_state();
+                        // Show revealer if any menu in this row is active
+                        let should_be_open = state
+                            .active_menu_id
+                            .as_ref()
+                            .map(|id| menu_ids_clone.contains(id))
+                            .unwrap_or(false);
+                        menu_revealer_clone.set_reveal_child(should_be_open);
+                        if should_be_open {
+                            trigger_window_resize();
+                        }
+                    });
+
+                    // Sync initial state
+                    {
+                        let state = menu_store.get_state();
+                        let should_be_open = state
+                            .active_menu_id
+                            .as_ref()
+                            .map(|id| menu_ids.contains(id))
+                            .unwrap_or(false);
+                        menu_revealer.set_reveal_child(should_be_open);
+                    }
+                }
+
+                // Connect expand callbacks to this revealer (for backwards compatibility)
                 for item in pair.iter() {
                     if let Some(ref callback_cell) = item.on_expand_toggled {
                         let revealer = menu_revealer.clone();

@@ -4,6 +4,7 @@ mod config;
 mod dbus;
 mod features;
 mod ipc;
+mod menu_state;
 mod plugin;
 mod plugin_registry;
 mod runtime;

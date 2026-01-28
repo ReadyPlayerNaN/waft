@@ -10,6 +10,7 @@ use adw::prelude::*;
 use gtk4_layer_shell::LayerShell;
 use log::debug;
 
+use crate::menu_state::MenuStore;
 use crate::plugin::Slot;
 use crate::plugin_registry::PluginRegistry;
 use crate::ui::feature_grid::FeatureGridWidget;
@@ -88,7 +89,8 @@ impl MainWindowWidget {
         Self::apply_css();
 
         // Build content
-        let clip = Self::build_content(&window, registry);
+        let menu_store = registry.menu_store();
+        let clip = Self::build_content(&window, registry, menu_store);
 
         // Start in hidden state (fully transparent)
         clip.set_opacity(0.0);
@@ -619,6 +621,7 @@ impl MainWindowWidget {
     fn build_content(
         window: &adw::ApplicationWindow,
         registry: &Arc<PluginRegistry>,
+        menu_store: Arc<MenuStore>,
     ) -> gtk::Frame {
         let top_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -666,7 +669,7 @@ impl MainWindowWidget {
 
         // Add feature toggles grid
         let toggles = registry.get_all_feature_toggles();
-        let grid = FeatureGridWidget::new(toggles);
+        let grid = FeatureGridWidget::new(toggles, menu_store);
         right_col.append(grid.widget());
         debug!("Appended feature toggles widgets");
 

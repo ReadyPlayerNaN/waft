@@ -450,8 +450,7 @@ fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkInfo>
                      ports_lines: &[String],
                      sinks: &mut Vec<SinkInfo>| {
         let port_refs: Vec<&str> = ports_lines.iter().map(|s| s.as_str()).collect();
-        let active_port_available =
-            parse_port_availability(&port_refs, active_port.as_deref());
+        let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
         let is_default = default_sink.map_or(false, |d| d == name);
         sinks.push(SinkInfo {
             name,
@@ -598,8 +597,7 @@ fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<Sourc
             return;
         }
         let port_refs: Vec<&str> = ports_lines.iter().map(|s| s.as_str()).collect();
-        let active_port_available =
-            parse_port_availability(&port_refs, active_port.as_deref());
+        let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
         let is_default = default_source.map_or(false, |d| d == name);
         sources.push(SourceInfo {
             name,
@@ -740,9 +738,7 @@ fn parse_card_ports(output: &str) -> CardPortMap {
                     },
                 );
             }
-            current_card_id = trimmed
-                .strip_prefix("Card #")
-                .map(|s| s.to_string());
+            current_card_id = trimmed.strip_prefix("Card #").map(|s| s.to_string());
             in_ports = false;
             in_port_properties = false;
             current_port_name = None;
@@ -787,7 +783,10 @@ fn parse_card_ports(output: &str) -> CardPortMap {
                 }
             }
 
-            if !in_port_properties && trimmed.contains(':') && !trimmed.starts_with("Part of profile") {
+            if !in_port_properties
+                && trimmed.contains(':')
+                && !trimmed.starts_with("Part of profile")
+            {
                 // This might be a new port line like:
                 // [Out] HDMI1: HDMI / DisplayPort (type: HDMI, priority: 5900, ...)
                 // Save previous port

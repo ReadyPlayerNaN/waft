@@ -5,6 +5,7 @@
 //! full application/plugin surface (GTK init, DBus server/client wiring, etc.),
 //! we only expose the notifications *store* and the minimal types it depends on.
 
+pub mod menu_state;
 pub mod store;
 
 pub mod ui {

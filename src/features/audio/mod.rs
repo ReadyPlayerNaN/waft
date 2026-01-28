@@ -12,14 +12,14 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
+use crate::menu_state::MenuStore;
 use crate::plugin::{Plugin, PluginId, Slot, Widget};
 
 use self::control_widget::{AudioControlOutput, AudioControlProps, AudioControlWidget};
 use self::dbus::{
     AudioEvent, get_card_port_info, get_default_sink, get_default_source, get_sink_volume,
-    get_sinks, get_source_volume, get_sources, is_available, set_default_sink,
-    set_default_source, set_sink_mute, set_sink_volume, set_source_mute, set_source_volume,
-    subscribe_events,
+    get_sinks, get_source_volume, get_sources, is_available, set_default_sink, set_default_source,
+    set_sink_mute, set_sink_volume, set_source_mute, set_source_volume, subscribe_events,
 };
 use self::store::{AudioDevice, AudioOp, AudioStore, create_audio_store};
 
@@ -136,20 +136,27 @@ impl Plugin for AudioPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
+    async fn create_elements(
+        &mut self,
+        _app: &gtk::Application,
+        menu_store: Arc<MenuStore>,
+    ) -> Result<()> {
         let state = self.store.get_state();
         if !state.available {
             return Ok(());
         }
 
         // Create output control (speakers)
-        let output_control = AudioControlWidget::new(AudioControlProps {
-            icon: "audio-volume-high-symbolic".to_string(),
-            volume: state.output_volume,
-            muted: state.output_muted,
-            devices: state.output_devices.clone(),
-            default_device: state.default_output.clone(),
-        });
+        let output_control = AudioControlWidget::new(
+            AudioControlProps {
+                icon: "audio-volume-high-symbolic".to_string(),
+                volume: state.output_volume,
+                muted: state.output_muted,
+                devices: state.output_devices.clone(),
+                default_device: state.default_output.clone(),
+            },
+            menu_store.clone(),
+        );
 
         // Connect output control events
         let store_for_output = self.store.clone();
@@ -208,13 +215,16 @@ impl Plugin for AudioPlugin {
         *self.output_control.borrow_mut() = Some(output_control);
 
         // Create input control (microphone)
-        let input_control = AudioControlWidget::new(AudioControlProps {
-            icon: "audio-input-microphone-symbolic".to_string(),
-            volume: state.input_volume,
-            muted: state.input_muted,
-            devices: state.input_devices.clone(),
-            default_device: state.default_input.clone(),
-        });
+        let input_control = AudioControlWidget::new(
+            AudioControlProps {
+                icon: "audio-input-microphone-symbolic".to_string(),
+                volume: state.input_volume,
+                muted: state.input_muted,
+                devices: state.input_devices.clone(),
+                default_device: state.default_input.clone(),
+            },
+            menu_store,
+        );
 
         // Connect input control events
         let store_for_input = self.store.clone();

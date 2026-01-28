@@ -8,10 +8,12 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gtk::prelude::*;
+use uuid::Uuid;
 
 use super::notification_card::{NotificationCard, NotificationCardOutput};
 use crate::features::notifications::store::ItemLifecycle;
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
+use crate::menu_state::{MenuOp, MenuStore};
 use crate::ui::icon::IconWidget;
 use crate::ui::main_window::trigger_window_resize;
 use crate::ui::menu_chevron::{MenuChevronProps, MenuChevronWidget};
@@ -49,6 +51,7 @@ pub struct NotificationGroup {
     cards: Rc<RefCell<HashMap<u64, NotificationCard>>>,
     expanded: Rc<RefCell<bool>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationGroupOutput)>>>>,
+    menu_id: String,
 }
 
 impl NotificationGroup {
@@ -56,7 +59,10 @@ impl NotificationGroup {
         app_ident: Arc<str>,
         app_title: Arc<str>,
         icon_hints: Vec<NotificationIcon>,
+        menu_store: Arc<MenuStore>,
     ) -> Self {
+        // Generate unique ID for this menu
+        let menu_id = Uuid::new_v4().to_string();
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
@@ -137,19 +143,45 @@ impl NotificationGroup {
 
         // Menu chevron click handler
         let expanded_clone = expanded.clone();
-        let hidden_cards_revealer_clone = hidden_cards_revealer.clone();
-        let menu_chevron_clone = menu_chevron.clone();
+        let menu_store_clone = menu_store.clone();
+        let menu_id_clone = menu_id.clone();
         expand_btn.connect_clicked(move |_| {
-            let is_expanded = *expanded_clone.borrow();
-            *expanded_clone.borrow_mut() = !is_expanded;
-            menu_chevron_clone.set_expanded(!is_expanded);
-            hidden_cards_revealer_clone.set_reveal_child(!is_expanded);
+            let is_currently_open = *expanded_clone.borrow();
+            if is_currently_open {
+                menu_store_clone.emit(MenuOp::CloseMenu(menu_id_clone.clone()));
+            } else {
+                menu_store_clone.emit(MenuOp::OpenMenu(menu_id_clone.clone()));
+            }
         });
 
         // Trigger window resize when expand/collapse animation completes
         hidden_cards_revealer.connect_child_revealed_notify(move |_| {
             trigger_window_resize();
         });
+
+        // Subscribe to menu store updates
+        let hidden_cards_revealer_clone = hidden_cards_revealer.clone();
+        let menu_chevron_clone = menu_chevron.clone();
+        let expanded_clone = expanded.clone();
+        let menu_store_clone = menu_store.clone();
+        let menu_id_clone = menu_id.clone();
+        menu_store.subscribe(move || {
+            let state = menu_store_clone.get_state();
+            let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id_clone);
+
+            *expanded_clone.borrow_mut() = should_be_open;
+            menu_chevron_clone.set_expanded(should_be_open);
+            hidden_cards_revealer_clone.set_reveal_child(should_be_open);
+        });
+
+        // Sync initial state
+        {
+            let state = menu_store.get_state();
+            let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id);
+            *expanded.borrow_mut() = should_be_open;
+            menu_chevron.set_expanded(should_be_open);
+            hidden_cards_revealer.set_reveal_child(should_be_open);
+        }
 
         Self {
             app_ident,
@@ -165,6 +197,7 @@ impl NotificationGroup {
             cards,
             expanded,
             on_output,
+            menu_id,
         }
     }
 

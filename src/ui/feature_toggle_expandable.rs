@@ -4,10 +4,13 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gtk::prelude::*;
+use uuid::Uuid;
 
 use super::menu_chevron::{MenuChevronProps, MenuChevronWidget};
+use crate::menu_state::{MenuOp, MenuStore};
 
 /// Properties for initializing an expandable feature toggle.
 #[derive(Debug, Clone)]
@@ -45,11 +48,14 @@ pub struct FeatureToggleExpandableWidget {
     #[allow(dead_code)]
     expanded: Rc<RefCell<bool>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(FeatureToggleExpandableOutput)>>>>,
+    pub menu_id: String,
 }
 
 impl FeatureToggleExpandableWidget {
     /// Create a new expandable feature toggle widget.
-    pub fn new(props: FeatureToggleExpandableProps) -> Self {
+    pub fn new(props: FeatureToggleExpandableProps, menu_store: Arc<MenuStore>) -> Self {
+        // Generate unique ID for this menu
+        let menu_id = Uuid::new_v4().to_string();
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(0)
@@ -141,11 +147,53 @@ impl FeatureToggleExpandableWidget {
 
         // Connect menu chevron click handler
         let on_output_ref = on_output.clone();
+        let menu_store_clone = menu_store.clone();
+        let menu_id_clone = menu_id.clone();
+        let expanded_ref = expanded.clone();
         expand_button.connect_clicked(move |_| {
+            let is_currently_open = *expanded_ref.borrow();
+            if is_currently_open {
+                menu_store_clone.emit(MenuOp::CloseMenu(menu_id_clone.clone()));
+            } else {
+                menu_store_clone.emit(MenuOp::OpenMenu(menu_id_clone.clone()));
+            }
+
+            // Still emit ToggleExpand for grid coordination
             if let Some(ref callback) = *on_output_ref.borrow() {
                 callback(FeatureToggleExpandableOutput::ToggleExpand);
             }
         });
+
+        // Subscribe to menu store updates
+        let root_clone = root.clone();
+        let menu_chevron_clone = menu_chevron.clone();
+        let expanded_clone = expanded.clone();
+        let active_clone = active.clone();
+        let busy_clone = busy.clone();
+        let menu_store_clone = menu_store.clone();
+        let menu_id_clone = menu_id.clone();
+        menu_store.subscribe(move || {
+            let state = menu_store_clone.get_state();
+            let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id_clone);
+
+            *expanded_clone.borrow_mut() = should_be_open;
+            menu_chevron_clone.set_expanded(should_be_open);
+            Self::update_css_classes(
+                &root_clone,
+                *active_clone.borrow(),
+                *busy_clone.borrow(),
+                should_be_open,
+            );
+        });
+
+        // Sync initial state
+        {
+            let state = menu_store.get_state();
+            let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id);
+            *expanded.borrow_mut() = should_be_open;
+            menu_chevron.set_expanded(should_be_open);
+            Self::update_css_classes(&root, *active.borrow(), *busy.borrow(), should_be_open);
+        }
 
         Self {
             root,
@@ -159,6 +207,7 @@ impl FeatureToggleExpandableWidget {
             busy,
             expanded,
             on_output,
+            menu_id,
         }
     }
 

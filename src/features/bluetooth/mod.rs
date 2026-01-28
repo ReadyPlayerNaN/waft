@@ -13,6 +13,7 @@ use std::sync::Arc;
 use gtk::prelude::*;
 
 use crate::dbus::DbusHandle;
+use crate::menu_state::MenuStore;
 use crate::plugin::{ExpandCallback, Plugin, PluginId, WidgetFeatureToggle};
 use crate::ui::feature_toggle_expandable::{
     FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
@@ -171,6 +172,7 @@ impl BluetoothPlugin {
         adapter: &BluetoothAdapter,
         store: Rc<BluetoothStore>,
         dbus: Arc<DbusHandle>,
+        menu_store: Arc<MenuStore>,
     ) -> AdapterUI {
         let state = store.get_state();
         let connected_count = state
@@ -179,18 +181,21 @@ impl BluetoothPlugin {
             .filter(|d| d.connection == DeviceConnectionState::Connected)
             .count();
 
-        let toggle = FeatureToggleExpandableWidget::new(FeatureToggleExpandableProps {
-            title: adapter.name.clone(),
-            icon: "bluetooth-symbolic".into(),
-            details: if connected_count > 0 {
-                Some(format!("{} connected", connected_count))
-            } else {
-                None
+        let toggle = FeatureToggleExpandableWidget::new(
+            FeatureToggleExpandableProps {
+                title: adapter.name.clone(),
+                icon: "bluetooth-symbolic".into(),
+                details: if connected_count > 0 {
+                    Some(format!("{} connected", connected_count))
+                } else {
+                    None
+                },
+                active: adapter.powered,
+                busy: false,
+                expanded: false,
             },
-            active: adapter.powered,
-            busy: false,
-            expanded: false,
-        });
+            menu_store,
+        );
 
         // Create device menu
         let device_menu = DeviceMenuWidget::new();
@@ -351,7 +356,11 @@ impl Plugin for BluetoothPlugin {
         Ok(())
     }
 
-    async fn create_elements(&mut self, _app: &gtk::Application) -> Result<()> {
+    async fn create_elements(
+        &mut self,
+        _app: &gtk::Application,
+        menu_store: Arc<MenuStore>,
+    ) -> Result<()> {
         // Get adapters again to have their info
         let adapters = match find_all_adapters(&self.dbus).await {
             Ok(adapters) => adapters,
@@ -366,7 +375,12 @@ impl Plugin for BluetoothPlugin {
 
         for adapter in adapters {
             if let Some(store) = stores.get(&adapter.path) {
-                let ui = Self::create_adapter_ui(&adapter, store.clone(), self.dbus.clone());
+                let ui = Self::create_adapter_ui(
+                    &adapter,
+                    store.clone(),
+                    self.dbus.clone(),
+                    menu_store.clone(),
+                );
 
                 // Subscribe to store for state changes
                 let adapter_path = adapter.path.clone();
@@ -471,6 +485,7 @@ impl Plugin for BluetoothPlugin {
                 weight: 100,
                 menu: Some(ui.device_menu.root.clone().upcast::<gtk::Widget>()),
                 on_expand_toggled: Some(ui.expand_callback.clone()),
+                menu_id: Some(ui.toggle.menu_id.clone()),
             }));
         }
 

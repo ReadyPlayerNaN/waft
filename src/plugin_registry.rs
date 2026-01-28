@@ -5,16 +5,21 @@ use log::warn;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::menu_state::MenuStore;
+
 /// Plugin registry that manages all loaded plugins
-#[derive(Default)]
 pub struct PluginRegistry {
     plugins: HashMap<String, Arc<Mutex<Box<dyn Plugin>>>>,
+    menu_store: Arc<MenuStore>,
 }
 
 impl PluginRegistry {
     /// Create a new plugin registry
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(menu_store: Arc<MenuStore>) -> Self {
+        Self {
+            plugins: HashMap::new(),
+            menu_store,
+        }
     }
 
     /// Register a plugin and return a cloneable handle to it.
@@ -84,7 +89,7 @@ impl PluginRegistry {
             let mut guard = plugin
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Plugin mutex poisoned: {}", name))?;
-            if let Err(e) = guard.create_elements(app).await {
+            if let Err(e) = guard.create_elements(app, self.menu_store.clone()).await {
                 eprintln!("Failed to initialize plugin '{}': {}", name, e);
                 return Err(e);
             }
@@ -133,5 +138,9 @@ impl PluginRegistry {
 
     pub fn is_empty(&self) -> bool {
         self.plugins.is_empty()
+    }
+
+    pub fn menu_store(&self) -> Arc<MenuStore> {
+        self.menu_store.clone()
     }
 }

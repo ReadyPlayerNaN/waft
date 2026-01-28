@@ -5,11 +5,13 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gtk::prelude::*;
 
 use super::device_menu::{AudioDeviceDisplay, AudioDeviceMenuOutput, AudioDeviceMenuWidget};
 use super::store::AudioDevice;
+use crate::menu_state::MenuStore;
 use crate::ui::icon::resolve_themed_icon;
 use crate::ui::slider_control::{SliderControlOutput, SliderControlWidget};
 
@@ -70,7 +72,7 @@ pub struct AudioControlWidget {
 
 impl AudioControlWidget {
     /// Create a new audio control widget.
-    pub fn new(props: AudioControlProps) -> Self {
+    pub fn new(props: AudioControlProps, menu_store: Arc<MenuStore>) -> Self {
         // Create device menu and set initial devices
         let device_menu = AudioDeviceMenuWidget::new();
         let devices: Vec<AudioDeviceDisplay> = props
@@ -81,7 +83,12 @@ impl AudioControlWidget {
         device_menu.set_devices(devices);
 
         // Create slider with device menu as expandable content
-        let slider = SliderControlWidget::new(&props.icon, props.volume, Some(&device_menu.root));
+        let slider = SliderControlWidget::new(
+            &props.icon,
+            props.volume,
+            Some(&device_menu.root),
+            menu_store,
+        );
 
         let muted = Rc::new(RefCell::new(props.muted));
         let icon_name = Rc::new(RefCell::new(props.icon.clone()));

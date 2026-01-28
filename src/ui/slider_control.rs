@@ -4,12 +4,15 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use glib::SignalHandlerId;
 use gtk::prelude::*;
+use uuid::Uuid;
 
 use super::main_window::trigger_window_resize;
 use super::menu_chevron::{MenuChevronProps, MenuChevronWidget};
+use crate::menu_state::{MenuOp, MenuStore};
 
 /// Output events from the slider control widget.
 #[derive(Debug, Clone)]
@@ -37,7 +40,13 @@ impl SliderControlWidget {
     /// - `icon`: icon name for the icon button
     /// - `value`: initial value (0.0 - 1.0)
     /// - `menu_widget`: optional widget to show in an expandable menu below the slider
-    pub fn new(icon: &str, value: f64, menu_widget: Option<&impl IsA<gtk::Widget>>) -> Self {
+    /// - `menu_store`: store for coordinating global menu state
+    pub fn new(
+        icon: &str,
+        value: f64,
+        menu_widget: Option<&impl IsA<gtk::Widget>>,
+        menu_store: Arc<MenuStore>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
@@ -78,6 +87,9 @@ impl SliderControlWidget {
         let on_output: Rc<RefCell<Option<Box<dyn Fn(SliderControlOutput)>>>> =
             Rc::new(RefCell::new(None));
 
+        // Generate unique ID for this menu
+        let menu_id = Uuid::new_v4().to_string();
+
         // Optional expand button and menu revealer
         let menu_revealer = if let Some(menu_widget) = menu_widget {
             let expand_button = gtk::Button::builder()
@@ -103,16 +115,33 @@ impl SliderControlWidget {
 
             // Connect menu chevron click handler
             let expanded_ref = expanded.clone();
+            let menu_store_clone = menu_store.clone();
+            let menu_id_clone = menu_id.clone();
+            expand_button.connect_clicked(move |_| {
+                let is_currently_open = *expanded_ref.borrow();
+                if is_currently_open {
+                    menu_store_clone.emit(MenuOp::CloseMenu(menu_id_clone.clone()));
+                } else {
+                    menu_store_clone.emit(MenuOp::OpenMenu(menu_id_clone.clone()));
+                }
+            });
+
+            // Subscribe to menu store updates
             let revealer_ref = revealer.clone();
             let menu_chevron_clone = menu_chevron.clone();
             let slider_row_ref = slider_row.clone();
-            expand_button.connect_clicked(move |_| {
-                let new_expanded = !*expanded_ref.borrow();
-                *expanded_ref.borrow_mut() = new_expanded;
-                menu_chevron_clone.set_expanded(new_expanded);
-                revealer_ref.set_reveal_child(new_expanded);
+            let expanded_ref = expanded.clone();
+            let menu_store_clone = menu_store.clone();
+            let menu_id_clone = menu_id.clone();
+            menu_store.subscribe(move || {
+                let state = menu_store_clone.get_state();
+                let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id_clone);
 
-                if new_expanded {
+                *expanded_ref.borrow_mut() = should_be_open;
+                menu_chevron_clone.set_expanded(should_be_open);
+                revealer_ref.set_reveal_child(should_be_open);
+
+                if should_be_open {
                     slider_row_ref.add_css_class("expanded");
                 } else {
                     slider_row_ref.remove_css_class("expanded");
@@ -120,6 +149,18 @@ impl SliderControlWidget {
 
                 trigger_window_resize();
             });
+
+            // Sync initial state
+            {
+                let state = menu_store.get_state();
+                let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id);
+                *expanded.borrow_mut() = should_be_open;
+                menu_chevron.set_expanded(should_be_open);
+                revealer.set_reveal_child(should_be_open);
+                if should_be_open {
+                    slider_row.add_css_class("expanded");
+                }
+            }
 
             Some(revealer)
         } else {
