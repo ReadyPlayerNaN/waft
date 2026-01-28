@@ -7,3 +7,5 @@
 - SNI
 - Brightness plugin
 - Actions plugin(s): {Shutdown, Lock}(systemd plugin), Settings
+- Unnamed agenda events should display (No title)
+- Replace hardcoded texts with translations
