@@ -242,7 +242,9 @@ impl NotificationsWidget {
 
                 let icon_hints = notifications
                     .first()
-                    .map(|(n, _)| n.icon_hints.clone())
+                    .map(|(n, _)| {
+                        crate::features::notifications::store::reorder_icon_hints_for_group(&n.icon_hints)
+                    })
                     .unwrap_or_default();
 
                 let group = NotificationGroup::new(

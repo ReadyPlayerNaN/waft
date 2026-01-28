@@ -721,6 +721,39 @@ pub fn derive_icon_hints(notification: &IngressedNotification) -> Vec<Notificati
     out
 }
 
+/// Reorder icon hints to prioritize app-level icons for notification groups.
+///
+/// This function moves app-level icons (desktop-entry, app_name) to the front
+/// of the priority list, falling back to notification-specific icons.
+pub fn reorder_icon_hints_for_group(icon_hints: &[NotificationIcon]) -> Vec<NotificationIcon> {
+    if icon_hints.is_empty() {
+        return Vec::new();
+    }
+
+    // derive_icon_hints() adds icons in this order:
+    // - 0-1: image_data (if present)
+    // - 0-1: image_path (if present)
+    // - 0-1: app_icon (if present)
+    // - 0-2: desktop-entry variants (if present)
+    // - 0-1: app_name (if present)
+    //
+    // The last 0-3 entries are always app-level (desktop-entry + app_name).
+    // We identify these by position from the end.
+
+    let (mut app_icons, notif_icons): (Vec<_>, Vec<_>) = icon_hints
+        .iter()
+        .enumerate()
+        .partition(|(idx, _)| {
+            let from_end = icon_hints.len() - idx - 1;
+            // Last 3 positions can be app-level icons
+            from_end < 3
+        });
+
+    // Combine: app-level first, then notification-specific
+    app_icons.extend(notif_icons);
+    app_icons.into_iter().map(|(_, hint)| hint.clone()).collect()
+}
+
 fn sort_notif_list(
     notifications: &HashMap<u64, Notification>,
     top: &mut IndexMap<u64, ItemLifecycle>,

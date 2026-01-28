@@ -3,7 +3,6 @@
 - Caffeine plugin (not sure how)
 - Keyboard layout plugin
 - Tether plugin?
-- Notification Group header icon should be from app
 - SNI
 - Brightness plugin
 - Actions plugin(s): {Shutdown, Lock}(systemd plugin), Settings
