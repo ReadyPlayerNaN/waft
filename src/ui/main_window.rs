@@ -85,9 +85,6 @@ impl MainWindowWidget {
         // Configure layer shell
         Self::configure_layer_shell(&window);
 
-        // Apply CSS
-        Self::apply_css();
-
         // Build content
         let menu_store = registry.menu_store();
         let clip = Self::build_content(&window, registry, menu_store);
@@ -222,7 +219,7 @@ impl MainWindowWidget {
         window.set_margin(gtk4_layer_shell::Edge::Bottom, OVERLAY_BOTTOM_OFFSET_PX);
     }
 
-    fn apply_css() {
+    pub fn apply_css() {
         let css = format!(
             r#"
             window,

@@ -237,6 +237,10 @@ pub async fn run() -> Result<()> {
         // Block the startup signal until async work completes
         glib::MainContext::default().block_on(async move {
             let gtk_app = app.upcast_ref::<gtk::Application>();
+
+            // Apply CSS before creating any windows so they get correct styling
+            MainWindowWidget::apply_css();
+
             let _ = registry.create_elements(gtk_app).await;
 
             // Create the main window
