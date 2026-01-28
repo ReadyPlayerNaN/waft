@@ -3,6 +3,7 @@ mod app;
 mod config;
 mod dbus;
 mod features;
+mod i18n;
 mod ipc;
 mod menu_state;
 mod plugin;

@@ -57,7 +57,7 @@ impl Plugin for SunsetrPlugin {
         };
 
         let toggle = FeatureToggleWidget::new(FeatureToggleProps {
-            title: "Night light".into(),
+            title: crate::i18n::t("nightlight-title").into(),
             icon: "night-light-symbolic".into(),
             details: initial_state.1.clone(),
             active: initial_state.0,
@@ -94,7 +94,7 @@ impl Plugin for SunsetrPlugin {
                     state
                         .next_transition
                         .as_ref()
-                        .map(|text| format!("Until: {}", text)),
+                        .map(|text| crate::i18n::t_args("nightlight-until", &[("time", text)])),
                 );
                 toggle.set_busy(state.busy);
             }

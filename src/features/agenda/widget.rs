@@ -37,7 +37,7 @@ impl AgendaWidget {
 
         // Header
         let header = gtk::Label::builder()
-            .label("Agenda")
+            .label(&crate::i18n::t("agenda-title"))
             .xalign(0.0)
             .css_classes(["title-3", "agenda-header"])
             .build();
@@ -56,7 +56,7 @@ impl AgendaWidget {
 
         // Empty state label
         let empty_label = gtk::Label::builder()
-            .label("No upcoming events")
+            .label(&crate::i18n::t("agenda-empty"))
             .xalign(0.0)
             .css_classes(["dim-label", "agenda-empty"])
             .visible(false)
@@ -260,7 +260,7 @@ fn build_period_separator(timestamp: i64) -> gtk::Box {
     let label_text = glib::DateTime::from_unix_local(timestamp)
         .and_then(|dt| dt.format("%A, %B %-e"))
         .map(|s| s.to_string())
-        .unwrap_or_else(|_| "Next period".to_string());
+        .unwrap_or_else(|_| crate::i18n::t("agenda-next-period"));
 
     let label = gtk::Label::builder()
         .label(&label_text)
@@ -291,7 +291,7 @@ fn build_event_card(event: &AgendaEvent, is_past: bool, is_ongoing: bool) -> gtk
 
     // Time label (fixed width for alignment)
     let time_text = if event.all_day {
-        "All day".to_string()
+        crate::i18n::t("agenda-all-day")
     } else {
         format_time_range(event.start_time, event.end_time)
     };

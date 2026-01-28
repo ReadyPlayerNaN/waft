@@ -109,7 +109,7 @@ impl Plugin for WeatherPlugin {
                     Err(e) => {
                         error!("[weather] Failed to fetch weather: {:?}", e);
                         if let Some(ref widget) = *widget_ref.borrow() {
-                            widget.update(&WeatherState::Error("Failed to load".to_string()));
+                            widget.update(&WeatherState::Error(crate::i18n::t("weather-failed-to-load")));
                         }
                     }
                 }

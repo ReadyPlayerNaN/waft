@@ -41,16 +41,17 @@ impl BatteryState {
         }
     }
 
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Unknown => "Unknown",
-            Self::Charging => "Charging",
-            Self::Discharging => "Discharging",
-            Self::Empty => "Empty",
-            Self::FullyCharged => "Fully charged",
-            Self::PendingCharge => "Pending charge",
-            Self::PendingDischarge => "Pending discharge",
-        }
+    pub fn label(&self) -> String {
+        let key = match self {
+            Self::Unknown => "battery-unknown",
+            Self::Charging => "battery-charging",
+            Self::Discharging => "battery-discharging",
+            Self::Empty => "battery-empty",
+            Self::FullyCharged => "battery-fully-charged",
+            Self::PendingCharge => "battery-pending-charge",
+            Self::PendingDischarge => "battery-pending-discharge",
+        };
+        crate::i18n::t(key)
     }
 }
 
@@ -59,12 +60,14 @@ impl BatteryInfo {
     pub fn status_text(&self) -> String {
         match self.state {
             BatteryState::Discharging if self.time_to_empty > 0 => {
-                format!("{} remaining", format_time_remaining(self.time_to_empty))
+                let time = format_time_remaining(self.time_to_empty);
+                crate::i18n::t_args("battery-time-remaining", &[("time", &time)])
             }
             BatteryState::Charging if self.time_to_full > 0 => {
-                format!("{} to full", format_time_remaining(self.time_to_full))
+                let time = format_time_remaining(self.time_to_full);
+                crate::i18n::t_args("battery-time-to-full", &[("time", &time)])
             }
-            _ => self.state.label().to_string(),
+            _ => self.state.label(),
         }
     }
 }
@@ -74,14 +77,14 @@ impl BatteryInfo {
 /// Omits hours when 0, shows `"< 1min"` for values under 60 seconds.
 fn format_time_remaining(seconds: i64) -> String {
     if seconds <= 0 {
-        return "< 1min".to_string();
+        return crate::i18n::t("battery-time-less-than-minute");
     }
 
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
 
     if hours == 0 && minutes == 0 {
-        return "< 1min".to_string();
+        return crate::i18n::t("battery-time-less-than-minute");
     }
 
     if hours == 0 {

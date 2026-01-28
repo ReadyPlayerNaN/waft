@@ -50,7 +50,7 @@ impl NotificationsWidget {
             .build();
 
         let header_label = gtk::Label::builder()
-            .label("Notifications")
+            .label(&crate::i18n::t("notifications-title"))
             .css_classes(["title-3"])
             .hexpand(true)
             .xalign(0.0)
@@ -98,7 +98,7 @@ impl NotificationsWidget {
             .build();
 
         let empty_label = gtk::Label::builder()
-            .label("No notifications")
+            .label(&crate::i18n::t("notifications-empty"))
             .css_classes(["dim-label"])
             .build();
 

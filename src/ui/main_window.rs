@@ -73,7 +73,7 @@ impl MainWindowWidget {
     pub fn new(app: &adw::Application, registry: &Arc<PluginRegistry>) -> Self {
         let window = adw::ApplicationWindow::builder()
             .application(app)
-            .title("sacrebleui (overlay host)")
+            .title(&crate::i18n::t("app-title"))
             .default_width(OVERLAY_WIDTH_PX)
             .build();
 

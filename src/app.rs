@@ -115,6 +115,9 @@ pub async fn run() -> Result<()> {
     // Load configuration
     let config = Config::load();
 
+    // Initialize i18n system
+    crate::i18n::init();
+
     // Initialize DBus and plugin registry
     let dbus = Arc::new(DbusHandle::connect().await?);
 

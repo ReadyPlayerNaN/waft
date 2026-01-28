@@ -57,7 +57,7 @@ pub async fn find_all_adapters(conn: &DbusHandle) -> Result<Vec<BluetoothAdapter
                 .get("Alias")
                 .or_else(|| adapter_props.get("Name"))
                 .and_then(|v| owned_value_to_string(v.clone()))
-                .unwrap_or_else(|| "Bluetooth".to_string());
+                .unwrap_or_else(|| crate::i18n::t("bluetooth-title"));
 
             let powered = adapter_props
                 .get("Powered")
@@ -180,7 +180,7 @@ pub async fn get_paired_devices(
                 .get("Alias")
                 .or_else(|| device_props.get("Name"))
                 .and_then(|v| owned_value_to_string(v.clone()))
-                .unwrap_or_else(|| "Unknown Device".to_string());
+                .unwrap_or_else(|| crate::i18n::t("bluetooth-unknown-device"));
 
             let icon = device_props
                 .get("Icon")

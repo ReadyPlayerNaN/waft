@@ -50,13 +50,13 @@ impl WeatherWidget {
             .build();
 
         let temp_label = gtk::Label::builder()
-            .label("--")
+            .label(&crate::i18n::t("weather-placeholder"))
             .xalign(0.0)
             .css_classes(["title-3", "weather-temp"])
             .build();
 
         let condition_label = gtk::Label::builder()
-            .label("Loading...")
+            .label(&crate::i18n::t("weather-loading"))
             .xalign(0.0)
             .css_classes(["dim-label", "weather-condition"])
             .build();
@@ -125,7 +125,7 @@ impl WeatherWidget {
                 self.temp_label.set_label(&temp_text);
 
                 // Update condition
-                self.condition_label.set_label(data.condition.description());
+                self.condition_label.set_label(&data.condition.description());
             }
             WeatherState::Error(msg) => {
                 self.spinner.set_visible(false);

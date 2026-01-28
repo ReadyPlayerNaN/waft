@@ -51,18 +51,19 @@ impl WeatherCondition {
     }
 
     /// Get a human-readable description of this condition.
-    pub fn description(&self) -> &'static str {
-        match self {
-            Self::Clear => "Clear",
-            Self::PartlyCloudy => "Partly Cloudy",
-            Self::Cloudy => "Cloudy",
-            Self::Fog => "Fog",
-            Self::Drizzle => "Drizzle",
-            Self::Rain => "Rain",
-            Self::FreezingRain => "Freezing Rain",
-            Self::Snow => "Snow",
-            Self::Thunderstorm => "Thunderstorm",
-        }
+    pub fn description(&self) -> String {
+        let key = match self {
+            Self::Clear => "weather-clear",
+            Self::PartlyCloudy => "weather-partly-cloudy",
+            Self::Cloudy => "weather-cloudy",
+            Self::Fog => "weather-fog",
+            Self::Drizzle => "weather-drizzle",
+            Self::Rain => "weather-rain",
+            Self::FreezingRain => "weather-freezing-rain",
+            Self::Snow => "weather-snow",
+            Self::Thunderstorm => "weather-thunderstorm",
+        };
+        crate::i18n::t(key)
     }
 }
 
