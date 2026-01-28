@@ -7,5 +7,4 @@
 - SNI
 - Brightness plugin
 - Actions plugin(s): {Shutdown, Lock}(systemd plugin), Settings
-- Unnamed agenda events should display (No title)
 - Create strategy for "Failed to load widgets"

@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use super::store::AgendaState;
-use super::values::{AgendaEvent, MeetingLink, MeetingProvider, extract_meeting_links};
+use super::values::{extract_meeting_links, AgendaEvent, MeetingLink, MeetingProvider};
 
 /// GTK4 widget for the agenda display.
 pub struct AgendaWidget {
@@ -304,8 +304,14 @@ fn build_event_card(event: &AgendaEvent, is_past: bool, is_ongoing: bool) -> gtk
         .build();
 
     // Summary label (ellipsized, takes remaining space)
+    let summary_text = if event.summary.trim().is_empty() {
+        crate::i18n::t("agenda-no-title")
+    } else {
+        event.summary.clone()
+    };
+
     let summary_label = gtk::Label::builder()
-        .label(&event.summary)
+        .label(&summary_text)
         .xalign(0.0)
         .hexpand(true)
         .ellipsize(gtk::pango::EllipsizeMode::End)

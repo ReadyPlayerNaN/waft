@@ -1,6 +1,6 @@
 //! Agenda data types and parsing utilities.
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use chrono::{Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use log::{debug, warn};
 use serde::Deserialize;
@@ -1000,6 +1000,19 @@ DTEND:20250126T110000Z\r
 END:VEVENT";
 
         assert!(parse_vevent(ical).is_none());
+    }
+
+    #[test]
+    fn parse_vevent_missing_summary_results_in_empty_string() {
+        let ical = "\
+BEGIN:VEVENT\r
+UID:evt-no-summary\r
+DTSTART:20250126T100000Z\r
+DTEND:20250126T110000Z\r
+END:VEVENT";
+
+        let event = parse_vevent(ical).unwrap();
+        assert_eq!(event.summary, "");
     }
 
     #[test]
