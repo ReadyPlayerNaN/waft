@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use log::{debug, warn};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -254,7 +255,8 @@ pub async fn run() -> Result<()> {
             // Apply CSS before creating any windows so they get correct styling
             MainWindowWidget::apply_css();
 
-            let _ = registry.create_elements(gtk_app).await;
+            let registrar = Rc::new(crate::plugin_registry::RegistrarHandle::new(registry.clone()));
+            let _ = registry.create_elements(gtk_app, registrar).await;
 
             // Create the main window
             let main_window = MainWindowWidget::new(&app, &registry);

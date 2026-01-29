@@ -1,7 +1,13 @@
-#[allow(dead_code)]
-use gtk::prelude::*;
+use crate::menu_state::MenuStore;
+use crate::ui::feature_toggle_expandable::{
+    FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
+
+pub type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(FeatureToggleExpandableOutput)>>>>;
+pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
 
 #[derive(Clone)]
 pub struct WiredToggleWidget {
@@ -9,124 +15,147 @@ pub struct WiredToggleWidget {
 }
 
 struct WiredToggleWidgetInner {
-    root: gtk::Box,
     interface_name: String,
-    enabled: RefCell<bool>,
-    carrier: RefCell<bool>,
-    device_state: RefCell<u32>,
-    icon: gtk::Image,
-    details_label: gtk::Label,
-    switch: gtk::Switch,
+    toggle: FeatureToggleExpandableWidget,
+    output_callback: OutputCallback,
+    expand_callback: ExpandCallback,
 }
 
 impl WiredToggleWidget {
-    pub fn new(interface_name: String) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(12)
-            .hexpand(true)
-            .build();
+    pub fn new(
+        interface_name: String,
+        enabled: bool,
+        carrier: bool,
+        device_state: u32,
+        menu_store: Arc<MenuStore>,
+    ) -> Self {
+        let is_connected = device_state == 100;
 
-        let icon = gtk::Image::builder()
-            .icon_name("network-wired-symbolic")
-            .pixel_size(24)
-            .build();
+        let initial_details = if enabled {
+            if is_connected {
+                Some(crate::i18n::t("network-connected"))
+            } else if carrier {
+                Some(crate::i18n::t("network-disconnected"))
+            } else {
+                Some(crate::i18n::t("network-disconnected"))
+            }
+        } else {
+            Some(crate::i18n::t("network-disabled"))
+        };
 
-        let labels_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .hexpand(true)
-            .build();
+        let icon = if enabled {
+            if is_connected {
+                "network-wired-symbolic"
+            } else if carrier {
+                "network-wired-disconnected-symbolic"
+            } else {
+                "network-wired-disconnected-symbolic"
+            }
+        } else {
+            "network-wired-offline-symbolic"
+        };
 
-        let title_label = gtk::Label::builder()
-            .label(&format!("Wired ({})", interface_name))
-            .halign(gtk::Align::Start)
-            .build();
+        let toggle = FeatureToggleExpandableWidget::new(
+            FeatureToggleExpandableProps {
+                title: format!("Wired ({})", interface_name),
+                icon: icon.into(),
+                details: initial_details,
+                active: enabled,
+                busy: false,
+                expanded: false,
+            },
+            menu_store,
+        );
 
-        let details_label = gtk::Label::builder()
-            .label("Disabled")
-            .halign(gtk::Align::Start)
-            .build();
-        details_label.add_css_class("dim-label");
-        details_label.add_css_class("caption");
+        let output_callback: OutputCallback = Rc::new(RefCell::new(None));
+        let expand_callback: ExpandCallback = Rc::new(RefCell::new(None));
 
-        let switch = gtk::Switch::builder()
-            .valign(gtk::Align::Center)
-            .build();
-
-        labels_box.append(&title_label);
-        labels_box.append(&details_label);
-
-        root.append(&icon);
-        root.append(&labels_box);
-        root.append(&switch);
+        // Connect toggle output to callback
+        let output_cb = output_callback.clone();
+        toggle.connect_output(move |event| {
+            if let Some(ref cb) = *output_cb.borrow() {
+                cb(event);
+            }
+        });
 
         Self {
             inner: Rc::new(WiredToggleWidgetInner {
-                root,
                 interface_name,
-                enabled: RefCell::new(false),
-                carrier: RefCell::new(false),
-                device_state: RefCell::new(0),
-                icon,
-                details_label,
-                switch,
+                toggle,
+                output_callback,
+                expand_callback,
             }),
         }
     }
 
     pub fn widget(&self) -> gtk::Widget {
-        self.inner.root.clone().upcast()
+        self.inner.toggle.widget()
     }
 
-    pub fn set_enabled(&self, enabled: bool) {
-        *self.inner.enabled.borrow_mut() = enabled;
-        self.update_ui();
+    pub fn menu_id(&self) -> String {
+        self.inner.toggle.menu_id.to_string()
     }
 
-    pub fn set_carrier(&self, carrier: bool) {
-        *self.inner.carrier.borrow_mut() = carrier;
-        self.update_ui();
+    pub fn connect_output<F: Fn(FeatureToggleExpandableOutput) + 'static>(&self, callback: F) {
+        *self.inner.output_callback.borrow_mut() = Some(Box::new(callback));
     }
 
-    pub fn set_device_state(&self, device_state: u32) {
-        *self.inner.device_state.borrow_mut() = device_state;
-        self.update_ui();
+    pub fn set_expand_callback<F: Fn(bool) + 'static>(&self, callback: F) {
+        *self.inner.expand_callback.borrow_mut() = Some(Box::new(callback));
+
+        let expand_cb = self.inner.expand_callback.clone();
+        self.inner.toggle.set_expand_callback(move |expanded| {
+            if let Some(ref cb) = *expand_cb.borrow() {
+                cb(expanded);
+            }
+        });
     }
 
-    fn get_signal_icon(&self) -> &'static str {
-        let enabled = *self.inner.enabled.borrow();
-        let device_state = *self.inner.device_state.borrow();
-        let carrier = *self.inner.carrier.borrow();
+    pub fn expand_callback(&self) -> ExpandCallback {
+        self.inner.expand_callback.clone()
+    }
 
-        if !enabled {
-            "network-wired-offline-symbolic"
-        } else if device_state == 100 {
-            "network-wired-symbolic"
-        } else if carrier {
-            "network-wired-disconnected-symbolic"
+    pub fn set_active(&self, active: bool) {
+        self.inner.toggle.set_active(active);
+    }
+
+    pub fn set_icon(&self, icon: &str) {
+        self.inner.toggle.set_icon(icon);
+    }
+
+    pub fn set_details(&self, details: Option<String>) {
+        self.inner.toggle.set_details(details);
+    }
+
+    pub fn update_state(&self, enabled: bool, carrier: bool, device_state: u32) {
+        let is_connected = device_state == 100;
+
+        let details = if enabled {
+            if is_connected {
+                Some(crate::i18n::t("network-connected"))
+            } else if carrier {
+                Some(crate::i18n::t("network-disconnected"))
+            } else {
+                Some(crate::i18n::t("network-disconnected"))
+            }
         } else {
-            "network-wired-disconnected-symbolic"
-        }
-    }
-
-    fn update_ui(&self) {
-        let enabled = *self.inner.enabled.borrow();
-        let device_state = *self.inner.device_state.borrow();
-        let carrier = *self.inner.carrier.borrow();
-
-        self.inner.icon.set_icon_name(Some(self.get_signal_icon()));
-
-        let details = if !enabled {
-            "Disabled".to_string()
-        } else if device_state == 100 {
-            "Connected".to_string()
-        } else if carrier {
-            "Disconnected".to_string()
-        } else {
-            "No cable".to_string()
+            Some(crate::i18n::t("network-disabled"))
         };
-        self.inner.details_label.set_label(&details);
 
-        self.inner.switch.set_active(enabled);
+        let icon = if enabled {
+            if is_connected {
+                "network-wired-symbolic"
+            } else if carrier {
+                "network-wired-disconnected-symbolic"
+            } else {
+                "network-wired-disconnected-symbolic"
+            }
+        } else {
+            "network-wired-offline-symbolic"
+        };
+
+        self.set_active(enabled);
+        self.set_icon(icon);
+        self.set_details(details);
     }
 }

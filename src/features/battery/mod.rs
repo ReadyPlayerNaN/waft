@@ -11,7 +11,7 @@ use std::sync::Arc;
 use gtk::prelude::*;
 
 use crate::dbus::DbusHandle;
-use crate::plugin::{Plugin, PluginId, Slot, Widget};
+use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetRegistrar};
 use crate::ui::battery::BatteryWidget;
 
 use self::dbus::{get_battery_info, listen_battery_changes};
@@ -71,6 +71,7 @@ impl Plugin for BatteryPlugin {
         &mut self,
         _app: &gtk::Application,
         _menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let battery_widget = BatteryWidget::new();
 
@@ -79,6 +80,14 @@ impl Plugin for BatteryPlugin {
             let state = self.store.get_state();
             battery_widget.update(&state.info);
         }
+
+        // Register the widget
+        registrar.register_widget(Arc::new(Widget {
+            id: "battery:main".to_string(),
+            slot: Slot::Header,
+            el: battery_widget.root.clone().upcast::<gtk::Widget>(),
+            weight: 30,
+        }));
 
         *self.widget.borrow_mut() = Some(battery_widget);
 
@@ -103,18 +112,5 @@ impl Plugin for BatteryPlugin {
         });
 
         Ok(())
-    }
-
-    fn get_widgets(&self) -> Vec<Arc<Widget>> {
-        match *self.widget.borrow() {
-            Some(ref battery) => {
-                vec![Arc::new(Widget {
-                    slot: Slot::Header,
-                    el: battery.root.clone().upcast::<gtk::Widget>(),
-                    weight: 30,
-                })]
-            }
-            None => vec![],
-        }
     }
 }

@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use gtk::prelude::*;
 
-use crate::plugin::{Plugin, PluginId, Slot, Widget};
+use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetRegistrar};
 use crate::ui::weather::{WeatherState, WeatherWidget};
 
 use self::api::fetch_weather;
@@ -84,9 +84,18 @@ impl Plugin for WeatherPlugin {
         &mut self,
         _app: &gtk::Application,
         _menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let units = self.units();
         let weather_widget = WeatherWidget::new(units);
+
+        // Register the widget
+        registrar.register_widget(Arc::new(Widget {
+            id: "weather:main".to_string(),
+            slot: Slot::Header,
+            el: weather_widget.root.clone().upcast::<gtk::Widget>(),
+            weight: 20,
+        }));
 
         // Store the widget
         *self.widget.borrow_mut() = Some(weather_widget);
@@ -139,18 +148,5 @@ impl Plugin for WeatherPlugin {
         });
 
         Ok(())
-    }
-
-    fn get_widgets(&self) -> Vec<Arc<Widget>> {
-        match *self.widget.borrow() {
-            Some(ref weather) => {
-                vec![Arc::new(Widget {
-                    slot: Slot::Header,
-                    el: weather.root.clone().upcast::<gtk::Widget>(),
-                    weight: 20,
-                })]
-            }
-            None => vec![],
-        }
     }
 }

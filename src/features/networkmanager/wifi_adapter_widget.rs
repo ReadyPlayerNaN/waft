@@ -1,20 +1,15 @@
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
 use crate::plugin::WidgetFeatureToggle;
-use crate::ui::feature_toggle_expandable::{
-    FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
-};
+use crate::ui::feature_toggle_expandable::FeatureToggleExpandableOutput;
 use log::{debug, error, info};
 use nmrs::NetworkManager;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use super::dbus;
 use super::store::{AccessPointState, NetworkOp, NetworkStore, WiFiAdapterState};
 use super::wifi_menu::{WiFiMenuOutput, WiFiMenuWidget};
-
-pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
+use super::wifi_toggle::WiFiToggleWidget;
 
 #[derive(Clone)]
 pub struct WiFiAdapterWidget {
@@ -22,9 +17,8 @@ pub struct WiFiAdapterWidget {
     store: Arc<NetworkStore>,
     nm: Option<NetworkManager>,
     dbus: Arc<DbusHandle>,
-    toggle: FeatureToggleExpandableWidget,
+    toggle: WiFiToggleWidget,
     menu: WiFiMenuWidget,
-    expand_callback: ExpandCallback,
 }
 
 impl WiFiAdapterWidget {
@@ -35,26 +29,11 @@ impl WiFiAdapterWidget {
         dbus: Arc<DbusHandle>,
         menu_store: Arc<MenuStore>,
     ) -> Self {
-        let initial_details = if let Some(ref ssid) = adapter.active_connection {
-            Some(ssid.clone())
-        } else {
-            let count = adapter.access_points.len();
-            if count > 0 {
-                Some(format!("{} network{} available", count, if count == 1 { "" } else { "s" }))
-            } else {
-                None
-            }
-        };
-
-        let toggle = FeatureToggleExpandableWidget::new(
-            FeatureToggleExpandableProps {
-                title: format!("WiFi ({})", adapter.interface_name),
-                icon: "network-wireless-symbolic".into(),
-                details: initial_details,
-                active: adapter.enabled,
-                busy: false,
-                expanded: false,
-            },
+        let toggle = WiFiToggleWidget::new(
+            adapter.interface_name.clone(),
+            adapter.enabled,
+            adapter.active_connection.clone(),
+            adapter.access_points.len(),
             menu_store,
         );
 
@@ -68,8 +47,6 @@ impl WiFiAdapterWidget {
         menu.set_networks(networks);
         menu.set_active_ssid(adapter.active_connection.clone());
 
-        let expand_callback: ExpandCallback = Rc::new(RefCell::new(None));
-
         let mut widget = Self {
             path: adapter.path.clone(),
             store,
@@ -77,7 +54,6 @@ impl WiFiAdapterWidget {
             dbus,
             toggle,
             menu,
-            expand_callback,
         };
 
         widget.setup_toggle_handlers();
@@ -89,11 +65,12 @@ impl WiFiAdapterWidget {
 
     pub fn widget(&self) -> Arc<WidgetFeatureToggle> {
         Arc::new(WidgetFeatureToggle {
+            id: format!("networkmanager:wifi:{}", self.path),
             el: self.toggle.widget(),
             weight: 100,
             menu: Some(self.menu.widget()),
-            on_expand_toggled: Some(self.expand_callback.clone()),
-            menu_id: Some(self.toggle.menu_id.clone()),
+            on_expand_toggled: Some(self.toggle.expand_callback()),
+            menu_id: Some(self.toggle.menu_id()),
         })
     }
 
@@ -115,7 +92,6 @@ impl WiFiAdapterWidget {
                     store.emit(NetworkOp::SetWiFiBusy(device_path.clone(), true));
 
                     let (tx, rx) = std::sync::mpsc::channel();
-                    let _device_path_clone = device_path.clone();
 
                     std::thread::spawn(move || {
                         tokio::runtime::Runtime::new()
@@ -171,7 +147,7 @@ impl WiFiAdapterWidget {
         let nm_for_expand = self.nm.clone();
         let dbus_for_expand = self.dbus.clone();
 
-        let expand_cb = move |will_be_open: bool| {
+        self.toggle.set_expand_callback(move |will_be_open: bool| {
             if will_be_open {
                 debug!("WiFi menu opening, scanning for networks");
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -294,17 +270,6 @@ impl WiFiAdapterWidget {
                     glib::ControlFlow::Break
                 });
             }
-        };
-
-        *self.expand_callback.borrow_mut() = Some(Box::new(expand_cb));
-
-        self.toggle.set_expand_callback({
-            let expand_callback = self.expand_callback.clone();
-            move |will_be_open| {
-                if let Some(ref cb) = *expand_callback.borrow() {
-                    cb(will_be_open);
-                }
-            }
         });
     }
 
@@ -415,18 +380,7 @@ impl WiFiAdapterWidget {
     pub fn sync_state(&self, state: &WiFiAdapterState) {
         self.toggle.set_active(state.enabled);
         self.toggle.set_busy(state.busy);
-
-        let details = if let Some(ref ssid) = state.active_connection {
-            Some(ssid.clone())
-        } else {
-            let count = state.access_points.len();
-            if count > 0 {
-                Some(format!("{} network{} available", count, if count == 1 { "" } else { "s" }))
-            } else {
-                None
-            }
-        };
-        self.toggle.set_details(details);
+        self.toggle.update_state(state.enabled, state.active_connection.clone(), state.access_points.len());
 
         let networks: Vec<(String, u8, bool)> = state
             .access_points

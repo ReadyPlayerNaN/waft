@@ -13,7 +13,7 @@ use std::time::Duration;
 use gtk::prelude::*;
 
 use crate::dbus::DbusHandle;
-use crate::plugin::{Plugin, PluginId, Slot, Widget};
+use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetRegistrar};
 
 use self::dbus::{
     ViewSignal, create_view, discover_calendar_sources, listen_view_signals, open_calendar,
@@ -232,6 +232,7 @@ impl Plugin for AgendaPlugin {
         &mut self,
         _app: &gtk::Application,
         _menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let agenda_widget = AgendaWidget::new();
 
@@ -240,6 +241,14 @@ impl Plugin for AgendaPlugin {
             let state = self.store.get_state();
             agenda_widget.update(&state);
         }
+
+        // Register the widget
+        registrar.register_widget(Arc::new(Widget {
+            id: "agenda:main".to_string(),
+            slot: Slot::Info,
+            el: agenda_widget.root.clone().upcast::<gtk::Widget>(),
+            weight: 30,
+        }));
 
         *self.widget.borrow_mut() = Some(agenda_widget);
 
@@ -382,18 +391,5 @@ impl Plugin for AgendaPlugin {
         });
 
         Ok(())
-    }
-
-    fn get_widgets(&self) -> Vec<Arc<Widget>> {
-        match *self.widget.borrow() {
-            Some(ref w) => {
-                vec![Arc::new(Widget {
-                    slot: Slot::Info,
-                    el: w.root.clone().upcast::<gtk::Widget>(),
-                    weight: 30,
-                })]
-            }
-            None => vec![],
-        }
     }
 }

@@ -13,7 +13,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
-use crate::plugin::{Plugin, PluginId, WidgetFeatureToggle};
+use crate::plugin::{Plugin, PluginId, WidgetRegistrar};
 use log::{debug, error, info};
 use nmrs::NetworkManager;
 use std::cell::RefCell;
@@ -30,6 +30,8 @@ pub struct NetworkManagerPlugin {
     dbus: Arc<DbusHandle>,
     nm: Option<NetworkManager>,
     store: Arc<NetworkStore>,
+    menu_store: Option<Arc<MenuStore>>,
+    registrar: Option<Rc<dyn WidgetRegistrar>>,
     ethernet_uis: Rc<RefCell<HashMap<String, WiredAdapterWidget>>>,
     wifi_uis: Rc<RefCell<HashMap<String, WiFiAdapterWidget>>>,
 }
@@ -41,6 +43,8 @@ impl NetworkManagerPlugin {
             dbus,
             nm: None,
             store,
+            menu_store: None,
+            registrar: None,
             ethernet_uis: Rc::new(RefCell::new(HashMap::new())),
             wifi_uis: Rc::new(RefCell::new(HashMap::new())),
         }
@@ -147,8 +151,13 @@ impl Plugin for NetworkManagerPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        _menu_store: Arc<MenuStore>,
+        menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
+        // Store registrar and menu_store for runtime use (device add/remove)
+        self.menu_store = Some(menu_store.clone());
+        self.registrar = Some(registrar.clone());
+
         let state = self.store.get_state();
 
         // Create Ethernet UIs using WiredAdapterWidget
@@ -163,8 +172,11 @@ impl Plugin for NetworkManagerPlugin {
                 self.store.clone(),
                 self.nm.clone(),
                 self.dbus.clone(),
-                _menu_store.clone(),
+                menu_store.clone(),
             );
+
+            // Register the feature toggle
+            registrar.register_feature_toggle(widget.widget());
 
             self.ethernet_uis.borrow_mut().insert(path.clone(), widget);
         }
@@ -181,30 +193,185 @@ impl Plugin for NetworkManagerPlugin {
                 self.store.clone(),
                 self.nm.clone(),
                 self.dbus.clone(),
-                _menu_store.clone(),
+                menu_store.clone(),
             );
+
+            // Register the feature toggle
+            registrar.register_feature_toggle(widget.widget());
 
             self.wifi_uis.borrow_mut().insert(path.clone(), widget);
         }
 
+        // Subscribe to device add/remove signals
+        self.subscribe_device_signals();
+
         Ok(())
     }
+}
 
-    fn get_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
-        let mut toggles = Vec::new();
+impl NetworkManagerPlugin {
+    /// Subscribe to NetworkManager device add/remove signals for dynamic widget updates.
+    fn subscribe_device_signals(&self) {
+        // Clone all required state for the async handlers
+        let dbus = self.dbus.clone();
+        let store = self.store.clone();
+        let nm = self.nm.clone();
+        let menu_store = self.menu_store.clone();
+        let registrar = self.registrar.clone();
+        let ethernet_uis = self.ethernet_uis.clone();
+        let wifi_uis = self.wifi_uis.clone();
 
-        // Add WiFi toggles
-        let wifi_uis = self.wifi_uis.borrow();
-        for (_, widget) in wifi_uis.iter() {
-            toggles.push(widget.widget());
-        }
+        // Device added subscription - callback will be called on each signal
+        let dbus_for_add = dbus.clone();
+        let store_for_add = store.clone();
+        let nm_for_add = nm.clone();
+        let menu_store_for_add = menu_store.clone();
+        let registrar_for_add = registrar.clone();
+        let ethernet_uis_for_add = ethernet_uis.clone();
+        let wifi_uis_for_add = wifi_uis.clone();
 
-        // Add Ethernet toggles
-        let ethernet_uis = self.ethernet_uis.borrow();
-        for (_, widget) in ethernet_uis.iter() {
-            toggles.push(widget.widget());
-        }
+        glib::spawn_future_local(async move {
+            if let Err(e) = dbus::subscribe_device_added(dbus_for_add.clone(), move |device_path| {
+                debug!("Device added signal: {}", device_path);
 
-        toggles
+                // Clone state for use in the spawned future
+                let dbus = dbus_for_add.clone();
+                let store = store_for_add.clone();
+                let nm = nm_for_add.clone();
+                let menu_store = menu_store_for_add.clone();
+                let registrar = registrar_for_add.clone();
+                let ethernet_uis = ethernet_uis_for_add.clone();
+                let wifi_uis = wifi_uis_for_add.clone();
+
+                // Spawn a future to handle device info lookup (can't be async in callback)
+                glib::spawn_future_local(async move {
+                    // Get device info
+                    let device_info = match dbus::get_device_info(&dbus, &device_path).await {
+                        Ok(Some(info)) => info,
+                        Ok(None) => {
+                            debug!("Ignoring non-managed device: {}", device_path);
+                            return;
+                        }
+                        Err(e) => {
+                            error!("Failed to get device info: {}", e);
+                            return;
+                        }
+                    };
+
+                    let registrar = match &registrar {
+                        Some(r) => r.clone(),
+                        None => return,
+                    };
+                    let menu_store = match &menu_store {
+                        Some(m) => m.clone(),
+                        None => return,
+                    };
+
+                    match device_info.device_type {
+                        1 => {
+                            // Ethernet
+                            let carrier = device_info.device_state >= 30;
+                            let active_connection = if device_info.device_state == 100 {
+                                Some(device_info.path.clone())
+                            } else {
+                                None
+                            };
+                            let enabled = device_info.device_state >= 20;
+
+                            info!(
+                                "Hot-plugged Ethernet {}: enabled={}, carrier={}, state={}",
+                                device_info.interface_name, enabled, carrier, device_info.device_state
+                            );
+
+                            let adapter = EthernetAdapterState {
+                                path: device_info.path.clone(),
+                                interface_name: device_info.interface_name.clone(),
+                                enabled,
+                                carrier,
+                                device_state: device_info.device_state,
+                                active_connection,
+                                available_connections: vec![],
+                            };
+
+                            store.emit(NetworkOp::AddEthernetAdapter(adapter.clone()));
+
+                            let widget = WiredAdapterWidget::new(
+                                &adapter,
+                                store.clone(),
+                                nm.clone(),
+                                dbus.clone(),
+                                menu_store,
+                            );
+
+                            registrar.register_feature_toggle(widget.widget());
+                            ethernet_uis.borrow_mut().insert(device_info.path.clone(), widget);
+                        }
+                        2 => {
+                            // WiFi
+                            info!(
+                                "Hot-plugged WiFi {}: state={}",
+                                device_info.interface_name, device_info.device_state
+                            );
+
+                            let adapter = WiFiAdapterState {
+                                path: device_info.path.clone(),
+                                interface_name: device_info.interface_name.clone(),
+                                enabled: true,
+                                busy: false,
+                                active_connection: None,
+                                access_points: HashMap::new(),
+                                scanning: false,
+                            };
+
+                            store.emit(NetworkOp::AddWiFiAdapter(adapter.clone()));
+
+                            let widget = WiFiAdapterWidget::new(
+                                &adapter,
+                                store.clone(),
+                                nm.clone(),
+                                dbus.clone(),
+                                menu_store,
+                            );
+
+                            registrar.register_feature_toggle(widget.widget());
+                            wifi_uis.borrow_mut().insert(device_info.path.clone(), widget);
+                        }
+                        _ => {}
+                    }
+                });
+            }).await {
+                error!("Failed to subscribe to DeviceAdded signal: {}", e);
+            }
+        });
+
+        // Device removed subscription
+        glib::spawn_future_local(async move {
+            if let Err(e) = dbus::subscribe_device_removed(dbus.clone(), move |device_path| {
+                debug!("Device removed signal: {}", device_path);
+
+                let registrar = match &registrar {
+                    Some(r) => r.clone(),
+                    None => return,
+                };
+
+                // Check ethernet adapters
+                if let Some(widget) = ethernet_uis.borrow_mut().remove(&device_path) {
+                    info!("Removing Ethernet adapter widget: {}", device_path);
+                    let id = widget.widget().id.clone();
+                    registrar.unregister_feature_toggle(&id);
+                    store.emit(NetworkOp::RemoveEthernetAdapter(device_path.clone()));
+                }
+
+                // Check wifi adapters
+                if let Some(widget) = wifi_uis.borrow_mut().remove(&device_path) {
+                    info!("Removing WiFi adapter widget: {}", device_path);
+                    let id = widget.widget().id.clone();
+                    registrar.unregister_feature_toggle(&id);
+                    store.emit(NetworkOp::RemoveWiFiAdapter(device_path.clone()));
+                }
+            }).await {
+                error!("Failed to subscribe to DeviceRemoved signal: {}", e);
+            }
+        });
     }
 }

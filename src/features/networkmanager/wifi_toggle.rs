@@ -1,6 +1,13 @@
-use gtk::prelude::*;
+use crate::menu_state::MenuStore;
+use crate::ui::feature_toggle_expandable::{
+    FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
+
+pub type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(FeatureToggleExpandableOutput)>>>>;
+pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
 
 #[derive(Clone)]
 pub struct WiFiToggleWidget {
@@ -8,118 +15,110 @@ pub struct WiFiToggleWidget {
 }
 
 struct WiFiToggleWidgetInner {
-    root: gtk::Box,
     interface_name: String,
-    enabled: RefCell<bool>,
-    active_ssid: RefCell<Option<String>>,
-    network_count: RefCell<usize>,
-    icon: gtk::Image,
-    details_label: gtk::Label,
-    switch: gtk::Switch,
+    toggle: FeatureToggleExpandableWidget,
+    output_callback: OutputCallback,
+    expand_callback: ExpandCallback,
 }
 
 impl WiFiToggleWidget {
-    pub fn new(interface_name: String) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(12)
-            .hexpand(true)
-            .build();
+    pub fn new(
+        interface_name: String,
+        enabled: bool,
+        active_ssid: Option<String>,
+        network_count: usize,
+        menu_store: Arc<MenuStore>,
+    ) -> Self {
+        let initial_details = if let Some(ref ssid) = active_ssid {
+            Some(ssid.clone())
+        } else if network_count > 0 {
+            Some(format!("{} network{} available", network_count, if network_count == 1 { "" } else { "s" }))
+        } else {
+            None
+        };
 
-        let icon = gtk::Image::builder()
-            .icon_name("network-wireless-symbolic")
-            .pixel_size(24)
-            .build();
+        let toggle = FeatureToggleExpandableWidget::new(
+            FeatureToggleExpandableProps {
+                title: format!("WiFi ({})", interface_name),
+                icon: "network-wireless-symbolic".into(),
+                details: initial_details,
+                active: enabled,
+                busy: false,
+                expanded: false,
+            },
+            menu_store,
+        );
 
-        let labels_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .hexpand(true)
-            .build();
+        let output_callback: OutputCallback = Rc::new(RefCell::new(None));
+        let expand_callback: ExpandCallback = Rc::new(RefCell::new(None));
 
-        let title_label = gtk::Label::builder()
-            .label(&format!("WiFi ({})", interface_name))
-            .halign(gtk::Align::Start)
-            .build();
-
-        let details_label = gtk::Label::builder()
-            .label("Disabled")
-            .halign(gtk::Align::Start)
-            .build();
-        details_label.add_css_class("dim-label");
-        details_label.add_css_class("caption");
-
-        let switch = gtk::Switch::builder()
-            .valign(gtk::Align::Center)
-            .build();
-
-        labels_box.append(&title_label);
-        labels_box.append(&details_label);
-
-        root.append(&icon);
-        root.append(&labels_box);
-        root.append(&switch);
+        // Connect toggle output to callback
+        let output_cb = output_callback.clone();
+        toggle.connect_output(move |event| {
+            if let Some(ref cb) = *output_cb.borrow() {
+                cb(event);
+            }
+        });
 
         Self {
             inner: Rc::new(WiFiToggleWidgetInner {
-                root,
                 interface_name,
-                enabled: RefCell::new(false),
-                active_ssid: RefCell::new(None),
-                network_count: RefCell::new(0),
-                icon,
-                details_label,
-                switch,
+                toggle,
+                output_callback,
+                expand_callback,
             }),
         }
     }
 
     pub fn widget(&self) -> gtk::Widget {
-        self.inner.root.clone().upcast()
+        self.inner.toggle.widget()
     }
 
-    pub fn set_enabled(&self, enabled: bool) {
-        *self.inner.enabled.borrow_mut() = enabled;
-        self.update_ui();
+    pub fn menu_id(&self) -> String {
+        self.inner.toggle.menu_id.to_string()
     }
 
-    pub fn set_active_ssid(&self, ssid: Option<String>) {
-        *self.inner.active_ssid.borrow_mut() = ssid;
-        self.update_ui();
+    pub fn connect_output<F: Fn(FeatureToggleExpandableOutput) + 'static>(&self, callback: F) {
+        *self.inner.output_callback.borrow_mut() = Some(Box::new(callback));
     }
 
-    pub fn set_network_count(&self, count: usize) {
-        *self.inner.network_count.borrow_mut() = count;
-        self.update_ui();
+    pub fn set_expand_callback<F: Fn(bool) + 'static>(&self, callback: F) {
+        *self.inner.expand_callback.borrow_mut() = Some(Box::new(callback));
+
+        let expand_cb = self.inner.expand_callback.clone();
+        self.inner.toggle.set_expand_callback(move |expanded| {
+            if let Some(ref cb) = *expand_cb.borrow() {
+                cb(expanded);
+            }
+        });
     }
 
-    fn get_signal_icon(&self) -> &'static str {
-        if !*self.inner.enabled.borrow() {
-            "network-wireless-disabled-symbolic"
-        } else if self.inner.active_ssid.borrow().is_some() {
-            "network-wireless-symbolic"
-        } else {
-            "network-wireless-no-route-symbolic"
-        }
+    pub fn expand_callback(&self) -> ExpandCallback {
+        self.inner.expand_callback.clone()
     }
 
-    fn update_ui(&self) {
-        let enabled = *self.inner.enabled.borrow();
-        let active_ssid = self.inner.active_ssid.borrow();
-        let network_count = *self.inner.network_count.borrow();
+    pub fn set_active(&self, active: bool) {
+        self.inner.toggle.set_active(active);
+    }
 
-        self.inner.icon.set_icon_name(Some(self.get_signal_icon()));
+    pub fn set_busy(&self, busy: bool) {
+        self.inner.toggle.set_busy(busy);
+    }
 
-        let details = if !enabled {
-            "Disabled".to_string()
-        } else if let Some(ref ssid) = *active_ssid {
-            ssid.clone()
+    pub fn set_details(&self, details: Option<String>) {
+        self.inner.toggle.set_details(details);
+    }
+
+    pub fn update_state(&self, enabled: bool, active_ssid: Option<String>, network_count: usize) {
+        let details = if let Some(ref ssid) = active_ssid {
+            Some(ssid.clone())
         } else if network_count > 0 {
-            format!("{} networks available", network_count)
+            Some(format!("{} network{} available", network_count, if network_count == 1 { "" } else { "s" }))
         } else {
-            "No networks".to_string()
+            None
         };
-        self.inner.details_label.set_label(&details);
 
-        self.inner.switch.set_active(enabled);
+        self.set_active(enabled);
+        self.set_details(details);
     }
 }

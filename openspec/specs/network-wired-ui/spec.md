@@ -66,6 +66,25 @@ The system SHALL allow wired adapter toggles to expand and show connection detai
 - **THEN** the menu displays connection details (link speed, IP, mask, gateway)
 - **AND** uses the network-connection-details capability
 
+### Requirement: WiredAdapterWidget implements wired UI
+The wired adapter UI SHALL be implemented using the WiredAdapterWidget architecture.
+
+#### Scenario: WiredAdapterWidget owns toggle and menu
+- **WHEN** a wired adapter is displayed
+- **THEN** a WiredAdapterWidget instance SHALL manage the UI
+- **AND** the widget SHALL own the FeatureToggleExpandableWidget
+- **AND** the widget SHALL own the EthernetMenuWidget
+
+#### Scenario: Event handlers are in WiredAdapterWidget
+- **WHEN** the user interacts with the wired adapter UI
+- **THEN** event handlers SHALL be methods in WiredAdapterWidget
+- **AND** NOT inline closures in mod.rs
+
+#### Scenario: State synchronization is in WiredAdapterWidget
+- **WHEN** the wired adapter state changes
+- **THEN** WiredAdapterWidget SHALL update the UI
+- **AND** NOT mod.rs
+
 ### Requirement: Status labels are internationalized
 
 The system SHALL use i18n translation keys for all status labels.

@@ -1,16 +1,26 @@
-use super::plugin::{Plugin, Slot, Widget, WidgetFeatureToggle};
+use super::plugin::{Plugin, Slot, Widget, WidgetFeatureToggle, WidgetRegistrar};
 
 use anyhow::Result;
 use log::warn;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::menu_state::MenuStore;
 
-/// Plugin registry that manages all loaded plugins
+/// Plugin registry that manages all loaded plugins.
+///
+/// Uses `RefCell` for widget/toggle storage since all access is from the main GTK thread.
 pub struct PluginRegistry {
     plugins: HashMap<String, Arc<Mutex<Box<dyn Plugin>>>>,
     menu_store: Arc<MenuStore>,
+    /// Registered widgets (dynamically updated by plugins)
+    widgets: RefCell<Vec<Arc<Widget>>>,
+    /// Registered feature toggles (dynamically updated by plugins)
+    toggles: RefCell<Vec<Arc<WidgetFeatureToggle>>>,
+    /// Subscribers notified when widgets or toggles change
+    subscribers: RefCell<Vec<Rc<dyn Fn()>>>,
 }
 
 impl PluginRegistry {
@@ -19,6 +29,9 @@ impl PluginRegistry {
         Self {
             plugins: HashMap::new(),
             menu_store,
+            widgets: RefCell::new(Vec::new()),
+            toggles: RefCell::new(Vec::new()),
+            subscribers: RefCell::new(Vec::new()),
         }
     }
 
@@ -32,40 +45,30 @@ impl PluginRegistry {
 
     /// Get all widget elements for a given slot, sorted by weight (heavier goes lower).
     ///
-    /// This returns the widget `el` values so callers can directly `append()` them into
-    /// the target container (`header`, `left_col`, `right_col`).
-    #[allow(dead_code)]
+    /// This returns the registered widgets filtered by slot and sorted by weight.
     pub fn get_widgets_for_slot(&self, slot: Slot) -> Vec<Arc<Widget>> {
-        let mut widgets: Vec<Arc<Widget>> = Vec::new();
-
-        for plugin in self.plugins.values() {
-            if let Ok(guard) = plugin.lock() {
-                widgets.extend(guard.get_widgets());
-            }
-        }
-
-        widgets.retain(|w| {
-            matches!(
-                (&w.slot, &slot),
-                (Slot::Info, Slot::Info)
-                    | (Slot::Controls, Slot::Controls)
-                    | (Slot::Header, Slot::Header)
-            )
-        });
+        let mut widgets: Vec<Arc<Widget>> = self
+            .widgets
+            .borrow()
+            .iter()
+            .filter(|w| {
+                matches!(
+                    (&w.slot, &slot),
+                    (Slot::Info, Slot::Info)
+                        | (Slot::Controls, Slot::Controls)
+                        | (Slot::Header, Slot::Header)
+                )
+            })
+            .cloned()
+            .collect();
         widgets.sort_by_key(|w| w.weight);
         widgets
     }
 
-    /// Get all feature toggles from all plugins
+    /// Get all feature toggles, sorted by weight
     pub fn get_all_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
-        let mut toggles = Vec::new();
-        for plugin in self.plugins.values() {
-            if let Ok(guard) = plugin.lock() {
-                let t = guard.get_feature_toggles();
-                toggles.extend(t);
-            }
-        }
-
+        let mut toggles: Vec<Arc<WidgetFeatureToggle>> =
+            self.toggles.borrow().iter().cloned().collect();
         toggles.sort_by_key(|w| w.weight);
         toggles
     }
@@ -84,12 +87,19 @@ impl PluginRegistry {
         Ok(())
     }
 
-    pub async fn create_elements(&self, app: &gtk::Application) -> Result<()> {
+    pub async fn create_elements(
+        &self,
+        app: &gtk::Application,
+        registrar: Rc<dyn WidgetRegistrar>,
+    ) -> Result<()> {
         for (name, plugin) in self.plugins.iter() {
             let mut guard = plugin
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Plugin mutex poisoned: {}", name))?;
-            if let Err(e) = guard.create_elements(app, self.menu_store.clone()).await {
+            if let Err(e) = guard
+                .create_elements(app, self.menu_store.clone(), registrar.clone())
+                .await
+            {
                 eprintln!("Failed to initialize plugin '{}': {}", name, e);
                 return Err(e);
             }
@@ -142,5 +152,80 @@ impl PluginRegistry {
 
     pub fn menu_store(&self) -> Arc<MenuStore> {
         self.menu_store.clone()
+    }
+
+    /// Subscribe to widget/toggle changes.
+    ///
+    /// The callback is invoked whenever widgets or toggles are registered or unregistered.
+    /// Subscribers should call `get_widgets_for_slot()` or `get_all_feature_toggles()`
+    /// to get the current state.
+    pub fn subscribe_widgets<F>(&self, callback: F)
+    where
+        F: Fn() + 'static,
+    {
+        self.subscribers.borrow_mut().push(Rc::new(callback));
+    }
+
+    /// Notify all subscribers that widgets/toggles have changed.
+    fn notify_subscribers(&self) {
+        for callback in self.subscribers.borrow().iter() {
+            callback();
+        }
+    }
+}
+
+impl WidgetRegistrar for PluginRegistry {
+    fn register_widget(&self, widget: Arc<Widget>) {
+        self.widgets.borrow_mut().push(widget);
+        self.notify_subscribers();
+    }
+
+    fn register_feature_toggle(&self, toggle: Arc<WidgetFeatureToggle>) {
+        self.toggles.borrow_mut().push(toggle);
+        self.notify_subscribers();
+    }
+
+    fn unregister_widget(&self, id: &str) {
+        self.widgets.borrow_mut().retain(|w| w.id != id);
+        self.notify_subscribers();
+    }
+
+    fn unregister_feature_toggle(&self, id: &str) {
+        self.toggles.borrow_mut().retain(|t| t.id != id);
+        self.notify_subscribers();
+    }
+}
+
+/// A wrapper that allows Arc<PluginRegistry> to be used as Rc<dyn WidgetRegistrar>.
+///
+/// This exists because:
+/// - Arc<PluginRegistry> is needed for sharing across closures
+/// - Rc<dyn WidgetRegistrar> is needed for plugins (main-thread-only)
+/// - Plugins keep the registrar for runtime widget updates
+pub struct RegistrarHandle {
+    registry: Arc<PluginRegistry>,
+}
+
+impl RegistrarHandle {
+    pub fn new(registry: Arc<PluginRegistry>) -> Self {
+        Self { registry }
+    }
+}
+
+impl WidgetRegistrar for RegistrarHandle {
+    fn register_widget(&self, widget: Arc<Widget>) {
+        self.registry.register_widget(widget);
+    }
+
+    fn register_feature_toggle(&self, toggle: Arc<WidgetFeatureToggle>) {
+        self.registry.register_feature_toggle(toggle);
+    }
+
+    fn unregister_widget(&self, id: &str) {
+        self.registry.unregister_widget(id);
+    }
+
+    fn unregister_feature_toggle(&self, id: &str) {
+        self.registry.unregister_feature_toggle(id);
     }
 }

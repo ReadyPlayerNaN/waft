@@ -13,7 +13,7 @@ use std::sync::Arc;
 use gtk::prelude::*;
 
 use crate::menu_state::MenuStore;
-use crate::plugin::{Plugin, PluginId, Slot, Widget};
+use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetRegistrar};
 
 use self::control_widget::{AudioControlOutput, AudioControlProps, AudioControlWidget};
 use self::dbus::{
@@ -140,6 +140,7 @@ impl Plugin for AudioPlugin {
         &mut self,
         _app: &gtk::Application,
         menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let state = self.store.get_state();
         if !state.available {
@@ -281,6 +282,25 @@ impl Plugin for AudioPlugin {
         });
 
         *self.input_control.borrow_mut() = Some(input_control);
+
+        // Register widgets
+        if let Some(ref control) = *self.output_control.borrow() {
+            registrar.register_widget(Arc::new(Widget {
+                id: "audio:output".to_string(),
+                slot: Slot::Controls,
+                el: control.root.clone().upcast::<gtk::Widget>(),
+                weight: 50,
+            }));
+        }
+        if let Some(ref control) = *self.input_control.borrow() {
+            registrar.register_widget(Arc::new(Widget {
+                id: "audio:input".to_string(),
+                slot: Slot::Controls,
+                el: control.root.clone().upcast::<gtk::Widget>(),
+                weight: 51,
+            }));
+        }
+
         drop(state);
 
         // Subscribe to store for state changes - output
@@ -382,29 +402,5 @@ impl Plugin for AudioPlugin {
         });
 
         Ok(())
-    }
-
-    fn get_widgets(&self) -> Vec<Arc<Widget>> {
-        let mut widgets = Vec::new();
-
-        // Output control (speakers)
-        if let Some(ref control) = *self.output_control.borrow() {
-            widgets.push(Arc::new(Widget {
-                slot: Slot::Controls,
-                el: control.root.clone().upcast::<gtk::Widget>(),
-                weight: 50,
-            }));
-        }
-
-        // Input control (microphone)
-        if let Some(ref control) = *self.input_control.borrow() {
-            widgets.push(Arc::new(Widget {
-                slot: Slot::Controls,
-                el: control.root.clone().upcast::<gtk::Widget>(),
-                weight: 51,
-            }));
-        }
-
-        widgets
     }
 }

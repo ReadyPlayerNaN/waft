@@ -1,9 +1,7 @@
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
 use crate::plugin::WidgetFeatureToggle;
-use crate::ui::feature_toggle_expandable::{
-    FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
-};
+use crate::ui::feature_toggle_expandable::FeatureToggleExpandableOutput;
 use log::{debug, error, info};
 use nmrs::NetworkManager;
 use std::cell::RefCell;
@@ -13,8 +11,7 @@ use std::sync::Arc;
 use super::dbus;
 use super::ethernet_menu::{ConnectionDetails, EthernetMenuWidget};
 use super::store::{EthernetAdapterState, NetworkStore};
-
-pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
+use super::wired_toggle_widget::WiredToggleWidget;
 
 #[derive(Clone)]
 pub struct WiredAdapterWidget {
@@ -22,9 +19,8 @@ pub struct WiredAdapterWidget {
     store: Arc<NetworkStore>,
     nm: Option<NetworkManager>,
     dbus: Arc<DbusHandle>,
-    toggle: FeatureToggleExpandableWidget,
+    toggle: WiredToggleWidget,
     menu: EthernetMenuWidget,
-    expand_callback: ExpandCallback,
 }
 
 impl WiredAdapterWidget {
@@ -35,46 +31,15 @@ impl WiredAdapterWidget {
         dbus: Arc<DbusHandle>,
         menu_store: Arc<MenuStore>,
     ) -> Self {
-        let is_connected = adapter.device_state == 100;
-
-        let initial_details = if adapter.enabled {
-            if is_connected {
-                Some(crate::i18n::t("network-connected"))
-            } else if adapter.carrier {
-                Some(crate::i18n::t("network-disconnected"))
-            } else {
-                Some(crate::i18n::t("network-disconnected"))
-            }
-        } else {
-            Some(crate::i18n::t("network-disabled"))
-        };
-
-        let icon = if adapter.enabled {
-            if is_connected {
-                "network-wired-symbolic"
-            } else if adapter.carrier {
-                "network-wired-disconnected-symbolic"
-            } else {
-                "network-wired-disconnected-symbolic"
-            }
-        } else {
-            "network-wired-offline-symbolic"
-        };
-
-        let toggle = FeatureToggleExpandableWidget::new(
-            FeatureToggleExpandableProps {
-                title: format!("Wired ({})", adapter.interface_name),
-                icon: icon.into(),
-                details: initial_details,
-                active: adapter.enabled,
-                busy: false,
-                expanded: false,
-            },
+        let toggle = WiredToggleWidget::new(
+            adapter.interface_name.clone(),
+            adapter.enabled,
+            adapter.carrier,
+            adapter.device_state,
             menu_store,
         );
 
         let menu = EthernetMenuWidget::new();
-        let expand_callback: ExpandCallback = Rc::new(RefCell::new(None));
 
         let mut widget = Self {
             path: adapter.path.clone(),
@@ -83,7 +48,6 @@ impl WiredAdapterWidget {
             dbus,
             toggle,
             menu,
-            expand_callback,
         };
 
         widget.setup_toggle_handlers();
@@ -94,11 +58,12 @@ impl WiredAdapterWidget {
 
     pub fn widget(&self) -> Arc<WidgetFeatureToggle> {
         Arc::new(WidgetFeatureToggle {
+            id: format!("networkmanager:wired:{}", self.path),
             el: self.toggle.widget(),
             weight: 101,
             menu: Some(self.menu.widget()),
-            on_expand_toggled: Some(self.expand_callback.clone()),
-            menu_id: Some(self.toggle.menu_id.clone()),
+            on_expand_toggled: Some(self.toggle.expand_callback()),
+            menu_id: Some(self.toggle.menu_id()),
         })
     }
 
@@ -182,7 +147,7 @@ impl WiredAdapterWidget {
         let device_path_clone = self.path.clone();
         let dbus_clone = self.dbus.clone();
 
-        let expand_cb = move |expanded: bool| {
+        self.toggle.set_expand_callback(move |expanded: bool| {
             if expanded {
                 debug!("Fetching ethernet connection details for {}", device_path_clone);
                 let menu = menu_clone.clone();
@@ -231,40 +196,11 @@ impl WiredAdapterWidget {
             } else {
                 menu_clone.clear();
             }
-        };
-        *self.expand_callback.borrow_mut() = Some(Box::new(expand_cb));
+        });
     }
 
     #[allow(dead_code)]
     pub fn sync_state(&self, state: &EthernetAdapterState) {
-        let is_connected = state.device_state == 100;
-
-        let details = if state.enabled {
-            if is_connected {
-                Some(crate::i18n::t("network-connected"))
-            } else if state.carrier {
-                Some(crate::i18n::t("network-disconnected"))
-            } else {
-                Some(crate::i18n::t("network-disconnected"))
-            }
-        } else {
-            Some(crate::i18n::t("network-disabled"))
-        };
-
-        let icon = if state.enabled {
-            if is_connected {
-                "network-wired-symbolic"
-            } else if state.carrier {
-                "network-wired-disconnected-symbolic"
-            } else {
-                "network-wired-disconnected-symbolic"
-            }
-        } else {
-            "network-wired-offline-symbolic"
-        };
-
-        self.toggle.set_active(state.enabled);
-        self.toggle.set_icon(icon);
-        self.toggle.set_details(details);
+        self.toggle.update_state(state.enabled, state.carrier, state.device_state);
     }
 }

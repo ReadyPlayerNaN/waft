@@ -11,7 +11,7 @@ use std::sync::Arc;
 use gtk::prelude::*;
 
 use crate::dbus::DbusHandle;
-use crate::plugin::{Plugin, PluginId, WidgetFeatureToggle};
+use crate::plugin::{Plugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
 use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 use self::dbus::DARKMAN_DESTINATION;
@@ -73,6 +73,7 @@ impl Plugin for DarkmanPlugin {
         &mut self,
         _app: &gtk::Application,
         _menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let initial_active = {
             let state = self.store.get_state();
@@ -112,6 +113,16 @@ impl Plugin for DarkmanPlugin {
             });
         });
 
+        // Register the feature toggle
+        registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
+            id: "darkman:toggle".to_string(),
+            el: toggle.root.clone().upcast::<gtk::Widget>(),
+            weight: 190,
+            menu: None,
+            menu_id: None,
+            on_expand_toggled: None,
+        }));
+
         *self.toggle.borrow_mut() = Some(toggle);
 
         // Subscribe to store for state changes
@@ -136,20 +147,5 @@ impl Plugin for DarkmanPlugin {
         });
 
         Ok(())
-    }
-
-    fn get_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
-        match *self.toggle.borrow() {
-            Some(ref toggle) => {
-                vec![Arc::new(WidgetFeatureToggle {
-                    el: toggle.root.clone().upcast::<gtk::Widget>(),
-                    weight: 190,
-                    menu: None,
-                    menu_id: None,
-                    on_expand_toggled: None,
-                })]
-            }
-            None => vec![],
-        }
     }
 }

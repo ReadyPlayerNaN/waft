@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
-use crate::plugin::{Plugin, PluginId, WidgetFeatureToggle};
+use crate::plugin::{Plugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
 use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 mod ipc;
@@ -50,6 +50,7 @@ impl Plugin for SunsetrPlugin {
         &mut self,
         _app: &gtk::Application,
         _menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let initial_state = {
             let state = self.store.get_state();
@@ -80,6 +81,16 @@ impl Plugin for SunsetrPlugin {
                 };
             });
         });
+
+        // Register the feature toggle
+        registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
+            id: "sunsetr:toggle".to_string(),
+            el: toggle.root.clone().upcast::<gtk::Widget>(),
+            weight: 200,
+            menu: None,
+            menu_id: None,
+            on_expand_toggled: None,
+        }));
 
         *self.toggle.borrow_mut() = Some(toggle);
 
@@ -127,20 +138,5 @@ impl Plugin for SunsetrPlugin {
         spawn_following(ipc_tx)?;
 
         Ok(())
-    }
-
-    fn get_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
-        match *self.toggle.borrow() {
-            Some(ref toggle) => {
-                vec![Arc::new(WidgetFeatureToggle {
-                    el: toggle.root.clone().upcast::<gtk::Widget>(),
-                    weight: 200,
-                    menu: None,
-                    menu_id: None,
-                    on_expand_toggled: None,
-                })]
-            }
-            None => vec![],
-        }
     }
 }

@@ -14,7 +14,7 @@ use std::time::Duration;
 use gtk::glib::DateTime;
 use gtk::prelude::*;
 
-use crate::plugin::{Plugin, PluginId, Slot, Widget};
+use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetRegistrar};
 use crate::ui::clock::{ClockOutput, ClockWidget};
 
 /// Configuration for the clock plugin.
@@ -60,6 +60,7 @@ impl Plugin for ClockPlugin {
         &mut self,
         _app: &gtk::Application,
         _menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let datetime = DateTime::now_local()?;
         let clock = ClockWidget::new(&datetime);
@@ -95,7 +96,15 @@ impl Plugin for ClockPlugin {
             });
         }
 
-        // Store the clock widget
+        // Register the widget
+        registrar.register_widget(Arc::new(Widget {
+            id: "clock:main".to_string(),
+            slot: Slot::Header,
+            el: clock.root.clone().upcast::<gtk::Widget>(),
+            weight: 10,
+        }));
+
+        // Store the clock widget for tick updates
         *self.widget.borrow_mut() = Some(clock);
 
         // Schedule tick updates
@@ -115,18 +124,5 @@ impl Plugin for ClockPlugin {
         });
 
         Ok(())
-    }
-
-    fn get_widgets(&self) -> Vec<Arc<Widget>> {
-        match *self.widget.borrow() {
-            Some(ref clock) => {
-                vec![Arc::new(Widget {
-                    slot: Slot::Header,
-                    el: clock.root.clone().upcast::<gtk::Widget>(),
-                    weight: 10,
-                })]
-            }
-            None => vec![],
-        }
     }
 }

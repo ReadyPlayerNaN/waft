@@ -14,7 +14,7 @@ use gtk::prelude::*;
 
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
-use crate::plugin::{ExpandCallback, Plugin, PluginId, WidgetFeatureToggle};
+use crate::plugin::{ExpandCallback, Plugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
 use crate::ui::feature_toggle_expandable::{
     FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
 };
@@ -355,6 +355,7 @@ impl Plugin for BluetoothPlugin {
         &mut self,
         _app: &gtk::Application,
         menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         // Get adapters again to have their info
         let adapters = match find_all_adapters(&self.dbus).await {
@@ -424,6 +425,16 @@ impl Plugin for BluetoothPlugin {
                     }
                 });
 
+                // Register the feature toggle
+                registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
+                    id: format!("bluetooth:{}", adapter.path),
+                    el: ui.toggle.widget(),
+                    weight: 100,
+                    menu: Some(ui.device_menu.root.clone().upcast::<gtk::Widget>()),
+                    on_expand_toggled: Some(ui.expand_callback.clone()),
+                    menu_id: Some(ui.toggle.menu_id.clone()),
+                }));
+
                 adapter_uis.insert(adapter.path.clone(), ui);
             }
         }
@@ -465,22 +476,5 @@ impl Plugin for BluetoothPlugin {
         });
 
         Ok(())
-    }
-
-    fn get_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
-        let adapter_uis = self.adapter_uis.borrow();
-        let mut toggles = Vec::new();
-
-        for (_, ui) in adapter_uis.iter() {
-            toggles.push(Arc::new(WidgetFeatureToggle {
-                el: ui.toggle.widget(),
-                weight: 100,
-                menu: Some(ui.device_menu.root.clone().upcast::<gtk::Widget>()),
-                on_expand_toggled: Some(ui.expand_callback.clone()),
-                menu_id: Some(ui.toggle.menu_id.clone()),
-            }));
-        }
-
-        toggles
     }
 }

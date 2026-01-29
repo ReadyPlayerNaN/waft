@@ -21,9 +21,7 @@ use crate::features::notifications::ui::toast_window::{
     HPos, ToastWindowOutput, ToastWindowWidget, VPos,
 };
 use crate::menu_state::MenuStore;
-use crate::plugin::WidgetFeatureToggle;
-use crate::plugin::{Plugin, PluginId};
-use crate::plugin::{Slot, Widget};
+use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetFeatureToggle, WidgetRegistrar};
 
 use self::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
 use self::dbus::server::NotificationsDbusServer;
@@ -171,6 +169,7 @@ impl Plugin for NotificationsPlugin {
         &mut self,
         app: &gtk::Application,
         menu_store: Arc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         // Configure the store with plugin settings
         self.store.emit(NotificationOp::Configure {
@@ -328,6 +327,26 @@ impl Plugin for NotificationsPlugin {
 
         *self.notifications_widget.borrow_mut() = Some(notifications_widget);
 
+        // Register widgets
+        if let Some(ref dnd_toggle) = *self.dnd_toggle.borrow() {
+            registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
+                id: "notifications:dnd".to_string(),
+                el: dnd_toggle.widget().clone().upcast::<gtk::Widget>(),
+                weight: 60,
+                menu: None,
+                menu_id: None,
+                on_expand_toggled: None,
+            }));
+        }
+        if let Some(ref notifications_widget) = *self.notifications_widget.borrow() {
+            registrar.register_widget(Arc::new(Widget {
+                id: "notifications:list".to_string(),
+                slot: Slot::Info,
+                weight: 50,
+                el: notifications_widget.widget().clone().upcast::<gtk::Widget>(),
+            }));
+        }
+
         self.schedule_tick();
 
         Ok(())
@@ -336,33 +355,6 @@ impl Plugin for NotificationsPlugin {
     fn on_overlay_visible(&self, visible: bool) {
         if let Some(ref toast) = self.toast {
             toast.window.set_visible(!visible);
-        }
-    }
-
-    fn get_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
-        match *self.dnd_toggle.borrow() {
-            Some(ref dnd_toggle) => vec![Arc::new(WidgetFeatureToggle {
-                el: dnd_toggle.widget().clone().upcast::<gtk::Widget>(),
-                weight: 60,
-                menu: None,
-                menu_id: None,
-                on_expand_toggled: None,
-            })],
-            None => vec![],
-        }
-    }
-
-    fn get_widgets(&self) -> Vec<Arc<Widget>> {
-        match *self.notifications_widget.borrow() {
-            Some(ref notifications_widget) => vec![Arc::new(Widget {
-                slot: Slot::Info,
-                weight: 50,
-                el: notifications_widget
-                    .widget()
-                    .clone()
-                    .upcast::<gtk::Widget>(),
-            })],
-            None => vec![],
         }
     }
 }

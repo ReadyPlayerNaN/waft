@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 use nmrs::{DeviceState, DeviceType, NetworkManager};
+use std::sync::Arc;
 use zbus::zvariant::OwnedValue;
 
 use crate::dbus::DbusHandle;
@@ -205,6 +206,109 @@ pub async fn activate_connection(
         .deserialize()?;
 
     Ok(active_conn_path.to_string())
+}
+
+// =============================================================================
+// Device signal subscriptions
+// =============================================================================
+
+/// Subscribe to DeviceAdded signal from NetworkManager.
+/// Calls the provided callback for each device added.
+pub async fn subscribe_device_added<F>(dbus: Arc<DbusHandle>, mut callback: F) -> Result<()>
+where
+    F: FnMut(String) + 'static,
+{
+    use futures_util::StreamExt;
+    use zbus::zvariant::ObjectPath;
+
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(NM_SERVICE)?
+        .path(NM_PATH)?
+        .interface(NM_INTERFACE)?
+        .member("DeviceAdded")?
+        .build();
+
+    let mut stream = zbus::MessageStream::for_match_rule(rule, &*dbus.connection(), None).await?;
+
+    while let Some(msg) = stream.next().await {
+        if let Ok(msg) = msg {
+            let body = msg.body();
+            if let Ok(path) = body.deserialize::<ObjectPath<'_>>() {
+                callback(path.to_string());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Subscribe to DeviceRemoved signal from NetworkManager.
+/// Calls the provided callback for each device removed.
+pub async fn subscribe_device_removed<F>(dbus: Arc<DbusHandle>, mut callback: F) -> Result<()>
+where
+    F: FnMut(String) + 'static,
+{
+    use futures_util::StreamExt;
+    use zbus::zvariant::ObjectPath;
+
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(NM_SERVICE)?
+        .path(NM_PATH)?
+        .interface(NM_INTERFACE)?
+        .member("DeviceRemoved")?
+        .build();
+
+    let mut stream = zbus::MessageStream::for_match_rule(rule, &*dbus.connection(), None).await?;
+
+    while let Some(msg) = stream.next().await {
+        if let Ok(msg) = msg {
+            let body = msg.body();
+            if let Ok(path) = body.deserialize::<ObjectPath<'_>>() {
+                callback(path.to_string());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Get device info for a specific device path using D-Bus.
+pub async fn get_device_info(dbus: &DbusHandle, device_path: &str) -> Result<Option<DeviceInfo>> {
+    // Get device type
+    let device_type: u32 = match get_device_property::<u32>(dbus, device_path, "DeviceType").await {
+        Ok(t) => t,
+        Err(_) => return Ok(None),
+    };
+
+    // Only handle ethernet and wifi
+    if device_type != DEVICE_TYPE_ETHERNET && device_type != DEVICE_TYPE_WIFI {
+        return Ok(None);
+    }
+
+    // Get interface name
+    let interface_name: String = get_device_property(dbus, device_path, "Interface").await?;
+
+    // Skip virtual interfaces
+    if is_virtual_interface(&interface_name) {
+        return Ok(None);
+    }
+
+    // Get managed state
+    let managed: bool = get_device_property(dbus, device_path, "Managed").await.unwrap_or(false);
+
+    // Get device state
+    let device_state: u32 = get_device_property(dbus, device_path, "State").await.unwrap_or(0);
+
+    Ok(Some(DeviceInfo {
+        path: device_path.to_string(),
+        device_type,
+        interface_name,
+        managed,
+        real: true,
+        device_state,
+    }))
 }
 
 // =============================================================================

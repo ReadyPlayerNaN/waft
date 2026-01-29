@@ -8,6 +8,25 @@ use std::sync::Arc;
 
 use crate::menu_state::MenuStore;
 
+/// Trait for registering and unregistering widgets at runtime.
+///
+/// Plugins receive an `Rc<dyn WidgetRegistrar>` during `create_elements()`
+/// and use it to dynamically register/unregister their widgets.
+/// Uses `Rc` because all widget operations must happen on the main GTK thread.
+pub trait WidgetRegistrar {
+    /// Register a slot widget. Notifies subscribers of the change.
+    fn register_widget(&self, widget: Arc<Widget>);
+
+    /// Register a feature toggle. Notifies subscribers of the change.
+    fn register_feature_toggle(&self, toggle: Arc<WidgetFeatureToggle>);
+
+    /// Unregister a slot widget by its ID. Notifies subscribers of the change.
+    fn unregister_widget(&self, id: &str);
+
+    /// Unregister a feature toggle by its ID. Notifies subscribers of the change.
+    fn unregister_feature_toggle(&self, id: &str);
+}
+
 #[allow(dead_code)]
 pub enum Slot {
     Info,
@@ -16,6 +35,7 @@ pub enum Slot {
 }
 
 pub struct Widget {
+    pub id: String,
     pub slot: Slot,
     pub weight: i32,
     pub el: gtk::Widget,
@@ -27,6 +47,7 @@ pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
 
 /// A feature toggle widget with optional expandable menu.
 pub struct WidgetFeatureToggle {
+    pub id: String,
     pub weight: i32,
     pub el: gtk::Widget,
     /// Optional menu widget (for expandable toggles).
@@ -111,20 +132,13 @@ pub trait Plugin {
         &mut self,
         _app: &gtk::Application,
         _menu_store: Arc<MenuStore>,
+        _registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         Ok(())
     }
 
     async fn cleanup(&mut self) -> Result<()> {
         Ok(())
-    }
-
-    fn get_widgets(&self) -> Vec<Arc<Widget>> {
-        Vec::new()
-    }
-
-    fn get_feature_toggles(&self) -> Vec<Arc<WidgetFeatureToggle>> {
-        Vec::new()
     }
 
     /// Called when the main overlay window visibility changes.
