@@ -6,3 +6,4 @@ pkg/
 *.pkg.tar.*
 .SRCINFO
 /*-git
+node_modules
