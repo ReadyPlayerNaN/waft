@@ -354,3 +354,7 @@ pub async fn listen_view_signals(
 
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "dbus_tests.rs"]
+mod tests;

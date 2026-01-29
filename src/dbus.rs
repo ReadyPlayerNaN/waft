@@ -32,11 +32,8 @@ pub struct DbusHandle {
 }
 
 impl DbusHandle {
-    /// Access the underlying zbus connection.
-    ///
-    /// This is intended for advanced integrations that need to create typed proxies
-    /// (e.g. BlueZ ObjectManager) that aren't covered by the convenience helpers on
-    /// `DbusHandle`.
+    /// Access the underlying zbus connection for advanced integrations
+    /// that need typed proxies (e.g. BlueZ ObjectManager).
     pub fn connection(&self) -> Arc<Connection> {
         self.conn.clone()
     }
@@ -54,9 +51,7 @@ impl DbusHandle {
         })
     }
 
-    /// Connect to the system bus.
-    ///
-    /// Use this for system services like BlueZ (`org.bluez`).
+    /// Connect to the system bus. Use for system services like BlueZ.
     pub async fn connect_system() -> Result<Self> {
         let conn = Connection::system()
             .await
@@ -67,12 +62,8 @@ impl DbusHandle {
         })
     }
 
-    /// Read a DBus property as a `String` (best-effort).
-    ///
-    /// Notes:
-    /// - This uses `org.freedesktop.DBus.Properties.Get`.
-    /// - `destination` here is the **service name** you’re talking to (e.g. `nl.whynothugo.darkman`).
-    /// - Returns `Ok(None)` if the property exists but is not a string.
+    /// Get a string property via org.freedesktop.DBus.Properties.Get.
+    /// Returns None if property doesn't exist or isn't a string.
     pub async fn get_property(
         &self,
         destination: &str,
@@ -88,25 +79,16 @@ impl DbusHandle {
         .await
         .context("Failed to create DBus Properties proxy")?;
 
-        // Get(interface_name, property_name) -> (v)
-        //
-        // IMPORTANT: the first argument is the *interface name* that owns the property,
-        // not the bus name. Many services use the same string for both; call sites should
-        // pass the correct interface name.
+        // Note: destination is interface name, not bus name (often the same)
         let (value,): (OwnedValue,) = proxy
             .call("Get", &(destination, property))
             .await
             .context("Failed to get property via DBus")?;
 
-        // `Get` returns a DBus variant (as `OwnedValue`).
         Ok(owned_value_to_string(value))
     }
 
-    /// Set a DBus property from a `&str` (best-effort).
-    ///
-    /// Notes:
-    /// - This uses `org.freedesktop.DBus.Properties.Set`.
-    /// - `destination` here is the **service name** you’re talking to.
+    /// Set a string property via org.freedesktop.DBus.Properties.Set.
     pub async fn set_property(
         &self,
         destination: &str,
@@ -123,13 +105,7 @@ impl DbusHandle {
         .await
         .context("Failed to create DBus Properties proxy")?;
 
-        // Set(interface_name, property_name, v) -> ()
-        //
-        // The third parameter is a DBus variant. We pass a `zvariant::Value` which will be
-        // marshalled as `v` by zbus.
         let v = Value::from(value.to_string());
-
-        // Help type inference: `Set` returns `()`.
         let call_res: std::result::Result<(), _> =
             proxy.call("Set", &(destination, property, v)).await;
 
@@ -138,34 +114,119 @@ impl DbusHandle {
         Ok(())
     }
 
-    /// Listen for DBus signals matching a match rule, forwarding each raw `Message`
-    /// into a `tokio::sync::broadcast` channel.
-    ///
-    /// This is intentionally low-level so feature modules can decode what they need.
-    ///
-    /// `match_rule` is a DBus match string like:
-    /// - `type='signal',interface='nl.whynothugo.darkman',member='ModeChanged'`
-    ///
-    /// Implementation note:
-    /// Prefer **bus-side filtering**:
-    /// - Install the match on the bus via `org.freedesktop.DBus.AddMatch` (typed `MatchRule`).
-    /// - Then consume incoming messages and forward only those that match (typically the bus will
-    ///   only deliver matches once `AddMatch` succeeds).
-    ///
-    /// Fallback:
-    /// - If we can't install the match rule (unexpected bus/proxy failure), we still listen to the
-    ///   connection message stream and do conservative local filtering on interface/member.
+    /// Get a typed property via org.freedesktop.DBus.Properties.Get.
+    /// Returns T::default() if property doesn't exist or type conversion fails.
+    pub async fn get_typed_property<T>(
+        &self,
+        destination: &str,
+        path: &str,
+        property: &str,
+    ) -> Result<T>
+    where
+        T: TryFrom<OwnedValue> + Default,
+    {
+        let proxy = zbus::Proxy::new(
+            &*self.conn,
+            destination,
+            path,
+            "org.freedesktop.DBus.Properties",
+        )
+        .await
+        .context("Failed to create DBus Properties proxy")?;
+
+        let result: std::result::Result<(OwnedValue,), zbus::Error> =
+            proxy.call("Get", &(destination, property)).await;
+
+        match result {
+            Ok((value,)) => Ok(T::try_from(value).unwrap_or_default()),
+            Err(_) => Ok(T::default()),
+        }
+    }
+
+    /// Get all properties via org.freedesktop.DBus.Properties.GetAll.
+    /// Returns HashMap of property names to values.
+    pub async fn get_all_properties(
+        &self,
+        destination: &str,
+        path: &str,
+        interface: &str,
+    ) -> Result<std::collections::HashMap<String, OwnedValue>> {
+        let proxy = zbus::Proxy::new(
+            &*self.conn,
+            destination,
+            path,
+            "org.freedesktop.DBus.Properties",
+        )
+        .await
+        .context("Failed to create DBus Properties proxy")?;
+
+        let (props,): (std::collections::HashMap<String, OwnedValue>,) = proxy
+            .call("GetAll", &(interface,))
+            .await
+            .context("Failed to call GetAll on DBus Properties")?;
+
+        Ok(props)
+    }
+
+    /// Listen for PropertiesChanged signals on a specific interface.
+    /// Calls callback with interface name and changed properties HashMap.
+    pub async fn listen_properties_changed(
+        &self,
+        destination: &str,
+        path: &str,
+        interface: &str,
+        mut on_change: impl FnMut(String, std::collections::HashMap<String, OwnedValue>) + Send + 'static,
+    ) -> Result<()> {
+        let rule = format!(
+            "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='{}',sender='{}'",
+            escape_match_value(path),
+            escape_match_value(destination)
+        );
+
+        let mut rx = self.listen_signals(&rule).await?;
+        let filter_interface = interface.to_string();
+
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(msg) => {
+                        // Parse PropertiesChanged signal body:
+                        // (interface_name, changed_properties, invalidated_properties)
+                        if let Ok((iface, changed, _invalidated)) = msg
+                            .body()
+                            .deserialize::<(
+                                String,
+                                std::collections::HashMap<String, OwnedValue>,
+                                Vec<String>,
+                            )>()
+                        {
+                            // Only process changes for our target interface
+                            if iface == filter_interface {
+                                on_change(iface, changed);
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            debug!("[dbus] properties changed listener stopped");
+        });
+
+        Ok(())
+    }
+
+    /// Listen for DBus signals matching a match rule.
+    /// Returns broadcast receiver for matched messages.
+    /// Uses bus-side filtering when possible, with local filtering fallback.
     pub async fn listen_signals(&self, match_rule: &str) -> Result<broadcast::Receiver<Message>> {
         let (tx, rx) = broadcast::channel::<Message>(64);
 
-        // Parse into a typed zbus match rule (this is what `AddMatch` expects).
         let rule: zbus::MatchRule<'static> = zbus::MatchRule::try_from(match_rule)
             .with_context(|| format!("Invalid DBus match rule: {match_rule}"))?
             .to_owned();
 
-        // Best-effort bus-side match installation.
-        // Note: This reduces traffic on remote D-Bus connections but doesn't filter what
-        // MessageStream receives locally, so we always do local filtering below.
+        // Best-effort bus-side match installation (local filtering always applied)
         let _ = match zbus::fdo::DBusProxy::new(&*self.conn).await {
             Ok(dbus) => dbus.add_match_rule(rule.clone()).await.is_ok(),
             Err(_) => false,
@@ -175,7 +236,6 @@ impl DbusHandle {
         let rule_str = match_rule.to_string();
 
         tokio::spawn(async move {
-            // NOTE: `MessageStream` yields `Result<Message, zbus::Error>`.
             let mut stream = zbus::MessageStream::from(&*conn);
 
             while let Some(next) = stream.next().await {
@@ -187,10 +247,7 @@ impl DbusHandle {
                     }
                 };
 
-                // Always filter locally - MessageStream receives ALL message types,
-                // not just matched signals. The bus-side match rule only affects
-                // which signals the daemon forwards, not what MessageStream sees.
-
+                // Always filter locally (MessageStream receives all message types)
                 // Only process signal messages (type=4)
                 let msg_type = msg.header().primary().msg_type();
                 if msg_type as u8 != 4 {
@@ -225,8 +282,8 @@ impl DbusHandle {
         Ok(rx)
     }
 
-    /// Convenience helper to listen for a *single* string argument carried by a signal,
-    /// calling `on_value(Some(String))` for each decoded value.
+    /// Listen for signals with a single string argument.
+    /// Calls callback with decoded string for each signal.
     pub async fn listen_for_values(
         &self,
         interface: &str,
@@ -256,8 +313,44 @@ impl DbusHandle {
     }
 }
 
+/// Extract a bool from an OwnedValue.
+pub fn owned_value_to_bool(v: OwnedValue) -> Option<bool> {
+    let val: Value = v.into();
+    if let Value::Bool(b) = val {
+        return Some(b);
+    }
+    None
+}
+
+/// Extract a u32 from an OwnedValue.
+pub fn owned_value_to_u32(v: OwnedValue) -> Option<u32> {
+    let val: Value = v.into();
+    if let Value::U32(n) = val {
+        return Some(n);
+    }
+    None
+}
+
+/// Extract an i64 from an OwnedValue.
+pub fn owned_value_to_i64(v: OwnedValue) -> Option<i64> {
+    let val: Value = v.into();
+    if let Value::I64(n) = val {
+        return Some(n);
+    }
+    None
+}
+
+/// Extract an f64 from an OwnedValue.
+pub fn owned_value_to_f64(v: OwnedValue) -> Option<f64> {
+    let val: Value = v.into();
+    if let Value::F64(n) = val {
+        return Some(n);
+    }
+    None
+}
+
 /// Best-effort conversion of `OwnedValue` to `String`.
-fn owned_value_to_string(v: OwnedValue) -> Option<String> {
+pub fn owned_value_to_string(v: OwnedValue) -> Option<String> {
     let val: Value = v.into();
     if let Value::Str(s) = val {
         return Some(s.to_string());
@@ -282,3 +375,7 @@ fn escape_match_value(s: &str) -> String {
 }
 
 use futures_util::StreamExt;
+
+#[cfg(test)]
+#[path = "dbus_tests.rs"]
+mod tests;

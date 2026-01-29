@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use zvariant::{OwnedValue, Value};
 
-use crate::dbus::DbusHandle;
+use crate::dbus::{owned_value_to_bool, owned_value_to_string, DbusHandle};
 
 pub const BLUEZ_DEST: &str = "org.bluez";
 pub const IFACE_ADAPTER1: &str = "org.bluez.Adapter1";
@@ -118,25 +118,8 @@ pub async fn set_powered(conn: Arc<DbusHandle>, adapter_path: &str, powered: boo
     Ok(())
 }
 
-/// Extract a bool from an OwnedValue.
-fn owned_value_to_bool(v: OwnedValue) -> Option<bool> {
-    let val: Value = v.into();
-    if let Value::Bool(b) = val {
-        return Some(b);
-    }
-    None
-}
-
-/// Extract a string from an OwnedValue.
-fn owned_value_to_string(v: OwnedValue) -> Option<String> {
-    let val: Value = v.into();
-    if let Value::Str(s) = val {
-        return Some(s.to_string());
-    }
-    None
-}
-
-/// Get all paired Bluetooth devices.
+/// Get all paired devices belonging to the specified adapter via ObjectManager.
+/// Only returns devices where Paired=true, sorted by name.
 pub async fn get_paired_devices(
     conn: &DbusHandle,
     adapter_path: &str,
@@ -235,3 +218,7 @@ pub async fn disconnect_device(conn: Arc<DbusHandle>, device_path: &str) -> Resu
 
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "dbus_tests.rs"]
+mod tests;

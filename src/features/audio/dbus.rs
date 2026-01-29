@@ -343,7 +343,7 @@ pub async fn subscribe_events(
 }
 
 /// Audio event types from pactl subscribe.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AudioEvent {
     SinkChange,
     SourceChange,
@@ -960,3 +960,7 @@ impl AudioDevice {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "dbus_tests.rs"]
+mod tests;

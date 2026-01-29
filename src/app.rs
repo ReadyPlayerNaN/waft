@@ -203,7 +203,8 @@ pub async fn run() -> Result<()> {
     }
 
     if config.is_plugin_enabled("plugin::networkmanager") {
-        let mut plugin = NetworkManagerPlugin::new(registry.menu_store().clone());
+        let system_dbus = Arc::new(DbusHandle::connect_system().await?);
+        let mut plugin = NetworkManagerPlugin::new(system_dbus);
         if let Some(settings) = config.get_plugin_settings("plugin::networkmanager") {
             plugin.configure(settings)?;
         }

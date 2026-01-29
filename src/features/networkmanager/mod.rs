@@ -9,6 +9,7 @@ mod wifi_toggle;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
 use crate::plugin::{ExpandCallback, Plugin, PluginId, WidgetFeatureToggle};
 use crate::ui::feature_toggle_expandable::{
@@ -39,15 +40,17 @@ struct WiFiAdapterUI {
 }
 
 pub struct NetworkManagerPlugin {
+    dbus: Arc<DbusHandle>,
     store: Arc<NetworkStore>,
     ethernet_uis: Rc<RefCell<HashMap<String, EthernetAdapterUI>>>,
     wifi_uis: Rc<RefCell<HashMap<String, WiFiAdapterUI>>>,
 }
 
 impl NetworkManagerPlugin {
-    pub fn new(_menu_store: Arc<MenuStore>) -> Self {
+    pub fn new(dbus: Arc<DbusHandle>) -> Self {
         let store = Arc::new(create_network_store());
         Self {
+            dbus,
             store,
             ethernet_uis: Rc::new(RefCell::new(HashMap::new())),
             wifi_uis: Rc::new(RefCell::new(HashMap::new())),
@@ -62,7 +65,7 @@ impl Plugin for NetworkManagerPlugin {
     }
 
     async fn init(&mut self) -> Result<()> {
-        let available = dbus::check_availability().await;
+        let available = dbus::check_availability(&self.dbus).await;
         info!("NetworkManager available: {}", available);
 
         self.store.emit(NetworkOp::SetAvailable(available));
@@ -71,7 +74,7 @@ impl Plugin for NetworkManagerPlugin {
             return Ok(());
         }
 
-        match dbus::get_all_devices().await {
+        match dbus::get_all_devices(&self.dbus).await {
             Ok(devices) => {
                 info!("Found {} network devices", devices.len());
 
@@ -179,10 +182,12 @@ impl Plugin for NetworkManagerPlugin {
             // Connect toggle output handler
             let device_path = path.clone();
             let store_clone = self.store.clone();
+            let dbus_clone = self.dbus.clone();
             toggle.connect_output(move |event| {
                 debug!("WiFi toggle event: {:?}", event);
                 let device_path = device_path.clone();
                 let store = store_clone.clone();
+                let dbus = dbus_clone.clone();
 
                 match event {
                     FeatureToggleExpandableOutput::Activate
@@ -198,7 +203,7 @@ impl Plugin for NetworkManagerPlugin {
                             tokio::runtime::Runtime::new()
                                 .unwrap()
                                 .block_on(async move {
-                                    if let Err(e) = dbus::set_wireless_enabled(&device_path_clone, enabled).await
+                                    if let Err(e) = dbus::set_wireless_enabled(&dbus, enabled).await
                                     {
                                         error!("Failed to set WiFi enabled state: {}", e);
                                     }
@@ -245,6 +250,7 @@ impl Plugin for NetworkManagerPlugin {
             let store_for_expand = self.store.clone();
             let menu_for_expand = menu.clone();
             let toggle_for_expand = toggle.clone();
+            let dbus_for_expand = self.dbus.clone();
             toggle.set_expand_callback({
                 let expand_callback = expand_callback.clone();
                 move |will_be_open| {
@@ -258,12 +264,13 @@ impl Plugin for NetworkManagerPlugin {
                         debug!("WiFi menu opening, scanning for networks");
                         let (tx, rx) = std::sync::mpsc::channel();
                         let device_path_clone = device_path_for_expand.clone();
+                        let dbus = dbus_for_expand.clone();
 
                         std::thread::spawn(move || {
                             tokio::runtime::Runtime::new()
                                 .unwrap()
                                 .block_on(async move {
-                                    if let Err(e) = dbus::request_scan(&device_path_clone).await {
+                                    if let Err(e) = dbus::request_scan(&dbus, &device_path_clone).await {
                                         error!("Failed to request WiFi scan: {}", e);
                                         let _ = tx.send(None);
                                         return;
@@ -271,13 +278,13 @@ impl Plugin for NetworkManagerPlugin {
 
                                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-                                    match dbus::get_access_points(&device_path_clone).await {
+                                    match dbus::get_access_points(&dbus, &device_path_clone).await {
                                         Ok(aps) => {
                                             // Deduplicate by SSID, keeping strongest signal
                                             let mut networks_by_ssid: std::collections::HashMap<String, AccessPointState> = std::collections::HashMap::new();
 
                                             for ap in aps {
-                                                match dbus::get_connections_for_ssid(&ap.ssid).await {
+                                                match dbus::get_connections_for_ssid(&dbus, &ap.ssid).await {
                                                     Ok(connections) if !connections.is_empty() => {
                                                         let secure = ap.is_secure();
                                                         let network = AccessPointState {
@@ -382,12 +389,14 @@ impl Plugin for NetworkManagerPlugin {
             let store_clone = self.store.clone();
             let menu_clone = menu.clone();
             let toggle_clone2 = toggle.clone();
+            let dbus_clone2 = self.dbus.clone();
             menu.connect_output(move |output| {
                 debug!("WiFi menu output: {:?}", output);
                 let device_path = device_path.clone();
                 let store = store_clone.clone();
                 let menu = menu_clone.clone();
                 let toggle = toggle_clone2.clone();
+                let dbus = dbus_clone2.clone();
 
                 match output {
                     WiFiMenuOutput::Connect(ssid) => {
@@ -404,11 +413,12 @@ impl Plugin for NetworkManagerPlugin {
                                 .unwrap()
                                 .block_on(async move {
                                     // Find connection for this SSID
-                                    match dbus::get_connections_for_ssid(&ssid_clone).await {
+                                    match dbus::get_connections_for_ssid(&dbus, &ssid_clone).await {
                                         Ok(connections) => {
                                             if let Some(conn_path) = connections.first() {
                                                 // Activate existing connection
                                                 match dbus::activate_connection(
+                                                    &dbus,
                                                     Some(conn_path),
                                                     &device_path_clone,
                                                     None,
