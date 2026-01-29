@@ -37,7 +37,6 @@ struct AdapterUI {
     toggle: FeatureToggleExpandableWidget,
     device_menu: DeviceMenuWidget,
     expand_callback: ExpandCallback,
-    expanded: Rc<RefCell<bool>>,
 }
 
 /// Represents a property change from DBus.
@@ -258,22 +257,16 @@ impl BluetoothPlugin {
         });
 
         let expand_callback: ExpandCallback = Rc::new(RefCell::new(None));
-        let toggle_clone = toggle.clone();
-        let expanded = Rc::new(RefCell::new(false));
 
         // Connect toggle output handler
         let adapter_path = adapter.path.clone();
         let store_for_toggle = store.clone();
-        let expand_callback_clone = expand_callback.clone();
-        let expanded_clone = expanded.clone();
 
         toggle.connect_output(move |event| {
             debug!("[bluetooth/ui] Toggle event: {:?}", event);
             let dbus = dbus.clone();
             let store = store_for_toggle.clone();
             let adapter_path = adapter_path.clone();
-            let expand_callback = expand_callback_clone.clone();
-            let expanded = expanded_clone.clone();
 
             match event {
                 FeatureToggleExpandableOutput::Activate
@@ -289,14 +282,17 @@ impl BluetoothPlugin {
                     });
                 }
                 FeatureToggleExpandableOutput::ToggleExpand => {
-                    let new_expanded = !*expanded.borrow();
-                    *expanded.borrow_mut() = new_expanded;
-                    toggle_clone.set_expanded(new_expanded);
+                    // ToggleExpand is deprecated - expand state is managed by widget
+                }
+            }
+        });
 
-                    // Trigger the callback (Grid will have set this)
-                    if let Some(ref cb) = *expand_callback.borrow() {
-                        cb(new_expanded);
-                    }
+        // Set up expand callback for grid revealer
+        toggle.set_expand_callback({
+            let expand_callback = expand_callback.clone();
+            move |will_be_open| {
+                if let Some(ref cb) = *expand_callback.borrow() {
+                    cb(will_be_open);
                 }
             }
         });
@@ -305,7 +301,6 @@ impl BluetoothPlugin {
             toggle,
             device_menu,
             expand_callback,
-            expanded,
         }
     }
 }
@@ -410,9 +405,6 @@ impl Plugin for BluetoothPlugin {
                             } else {
                                 None
                             });
-
-                            // Update expanded visual state
-                            ui.toggle.set_expanded(*ui.expanded.borrow());
 
                             // Update device menu
                             let devices: Vec<_> = state

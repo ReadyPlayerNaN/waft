@@ -48,9 +48,14 @@ pub type MenuStore = PluginStore<MenuOp, MenuState>;
 pub fn create_menu_store() -> MenuStore {
     MenuStore::new(|state, op| match op {
         MenuOp::OpenMenu(id) => {
-            let changed = state.active_menu_id.as_ref() != Some(&id);
-            state.active_menu_id = Some(id);
-            changed
+            // Toggle behavior: if already open, close it; otherwise open it
+            if state.active_menu_id.as_ref() == Some(&id) {
+                state.active_menu_id = None; // Close if already open
+                true
+            } else {
+                state.active_menu_id = Some(id); // Open and close others
+                true
+            }
         }
         MenuOp::CloseMenu(id) => {
             if state.active_menu_id.as_ref() == Some(&id) {

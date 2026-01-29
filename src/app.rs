@@ -18,6 +18,7 @@ use crate::features::battery::BatteryPlugin;
 use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
+use crate::features::networkmanager::NetworkManagerPlugin;
 use crate::features::notifications::NotificationsPlugin;
 use crate::features::sunsetr::SunsetrPlugin;
 use crate::features::weather::WeatherPlugin;
@@ -201,6 +202,14 @@ pub async fn run() -> Result<()> {
         registry.register(plugin);
     }
 
+    if config.is_plugin_enabled("plugin::networkmanager") {
+        let mut plugin = NetworkManagerPlugin::new(registry.menu_store().clone());
+        if let Some(settings) = config.get_plugin_settings("plugin::networkmanager") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
     // Refuse to start without any plugins
     if registry.is_empty() {
         eprintln!("error: no plugins enabled");
@@ -212,7 +221,7 @@ pub async fn run() -> Result<()> {
         eprintln!("  id = \"plugin::notifications\"");
         eprintln!();
         eprintln!(
-            "Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::agenda"
+            "Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::agenda, plugin::networkmanager"
         );
         std::process::exit(1);
     }

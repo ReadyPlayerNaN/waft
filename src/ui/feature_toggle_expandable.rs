@@ -48,6 +48,7 @@ pub struct FeatureToggleExpandableWidget {
     #[allow(dead_code)]
     expanded: Rc<RefCell<bool>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(FeatureToggleExpandableOutput)>>>>,
+    on_expand: Rc<RefCell<Option<Box<dyn Fn(bool)>>>>,
     pub menu_id: String,
 }
 
@@ -127,6 +128,7 @@ impl FeatureToggleExpandableWidget {
         let expanded = Rc::new(RefCell::new(props.expanded));
         let on_output: Rc<RefCell<Option<Box<dyn Fn(FeatureToggleExpandableOutput)>>>> =
             Rc::new(RefCell::new(None));
+        let on_expand: Rc<RefCell<Option<Box<dyn Fn(bool)>>>> = Rc::new(RefCell::new(None));
 
         // Update CSS classes based on initial state
         Self::update_css_classes(&root, props.active, props.busy, props.expanded);
@@ -146,22 +148,11 @@ impl FeatureToggleExpandableWidget {
         });
 
         // Connect menu chevron click handler
-        let on_output_ref = on_output.clone();
         let menu_store_clone = menu_store.clone();
         let menu_id_clone = menu_id.clone();
-        let expanded_ref = expanded.clone();
         expand_button.connect_clicked(move |_| {
-            let is_currently_open = *expanded_ref.borrow();
-            if is_currently_open {
-                menu_store_clone.emit(MenuOp::CloseMenu(menu_id_clone.clone()));
-            } else {
-                menu_store_clone.emit(MenuOp::OpenMenu(menu_id_clone.clone()));
-            }
-
-            // Still emit ToggleExpand for grid coordination
-            if let Some(ref callback) = *on_output_ref.borrow() {
-                callback(FeatureToggleExpandableOutput::ToggleExpand);
-            }
+            // Always emit OpenMenu - MenuStore will handle toggle logic
+            menu_store_clone.emit(MenuOp::OpenMenu(menu_id_clone.clone()));
         });
 
         // Subscribe to menu store updates
@@ -172,6 +163,7 @@ impl FeatureToggleExpandableWidget {
         let busy_clone = busy.clone();
         let menu_store_clone = menu_store.clone();
         let menu_id_clone = menu_id.clone();
+        let on_expand_clone = on_expand.clone();
         menu_store.subscribe(move || {
             let state = menu_store_clone.get_state();
             let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id_clone);
@@ -184,6 +176,11 @@ impl FeatureToggleExpandableWidget {
                 *busy_clone.borrow(),
                 should_be_open,
             );
+
+            // Notify plugin of expand state change
+            if let Some(ref callback) = *on_expand_clone.borrow() {
+                callback(should_be_open);
+            }
         });
 
         // Sync initial state
@@ -207,8 +204,17 @@ impl FeatureToggleExpandableWidget {
             busy,
             expanded,
             on_output,
+            on_expand,
             menu_id,
         }
+    }
+
+    /// Set the callback for expand state changes.
+    pub fn set_expand_callback<F>(&self, callback: F)
+    where
+        F: Fn(bool) + 'static,
+    {
+        *self.on_expand.borrow_mut() = Some(Box::new(callback));
     }
 
     /// Set the callback for output events.
@@ -238,18 +244,6 @@ impl FeatureToggleExpandableWidget {
             *self.active.borrow(),
             busy,
             *self.expanded.borrow(),
-        );
-    }
-
-    /// Update the expanded state.
-    pub fn set_expanded(&self, expanded: bool) {
-        *self.expanded.borrow_mut() = expanded;
-        self.menu_chevron.set_expanded(expanded);
-        Self::update_css_classes(
-            &self.root,
-            *self.active.borrow(),
-            *self.busy.borrow(),
-            expanded,
         );
     }
 

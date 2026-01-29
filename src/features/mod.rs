@@ -4,6 +4,7 @@ pub mod battery;
 pub mod bluetooth;
 pub mod clock;
 pub mod darkman;
+pub mod networkmanager;
 pub mod notifications;
 pub mod sunsetr;
 pub mod weather;
