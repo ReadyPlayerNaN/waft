@@ -42,6 +42,16 @@ weather-thunderstorm = Thunderstorm
 bluetooth-title = Bluetooth
 bluetooth-unknown-device = Unknown Device
 
+# Network
+network-disabled = Disabled
+network-connected = Connected
+network-disconnected = Disconnected
+network-link-speed = Link Speed
+network-ipv4-address = IPv4 Address
+network-ipv6-address = IPv6 Address
+network-subnet-mask = Subnet Mask
+network-gateway = Gateway
+
 # Battery states
 battery-unknown = Unknown
 battery-charging = Charging

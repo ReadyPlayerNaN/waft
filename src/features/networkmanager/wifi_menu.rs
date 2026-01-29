@@ -3,6 +3,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::ui::menu_item::MenuItemWidget;
+
 #[derive(Debug, Clone)]
 pub enum WiFiMenuOutput {
     Connect(String), // SSID
@@ -11,7 +13,7 @@ pub enum WiFiMenuOutput {
 }
 
 struct NetworkRow {
-    root: gtk::Box,
+    widget: gtk::Widget,
     spinner: gtk::Spinner,
 }
 
@@ -24,7 +26,8 @@ impl NetworkRow {
         is_connecting: bool,
         on_output: Rc<RefCell<Option<Box<dyn Fn(WiFiMenuOutput)>>>>,
     ) -> Self {
-        let root = gtk::Box::builder()
+        // Build content structure
+        let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(12)
             .css_classes(["network-row"])
@@ -70,29 +73,29 @@ impl NetworkRow {
             .visible(is_connecting)
             .build();
 
-        root.append(&icon_image);
-        root.append(&ssid_label);
+        content.append(&icon_image);
+        content.append(&ssid_label);
         if let Some(ref lock) = security_icon {
-            root.append(lock);
+            content.append(lock);
         }
-        root.append(&spinner);
+        content.append(&spinner);
 
-        // Make clickable if not already active
-        if !is_active {
-            let gesture = gtk::GestureClick::new();
+        // Wrap with MenuItemWidget if not already active
+        let widget = if !is_active {
             let ssid_clone = ssid.to_string();
-            gesture.connect_released(move |_, _, _, _| {
+            let menu_item = MenuItemWidget::new(&content, move || {
                 if let Some(ref callback) = *on_output.borrow() {
                     callback(WiFiMenuOutput::Connect(ssid_clone.clone()));
                 }
             });
-            root.add_controller(gesture);
-            root.add_css_class("clickable");
+            content.add_css_class("clickable");
+            menu_item.widget().clone().upcast()
         } else {
-            root.add_css_class("active");
-        }
+            content.add_css_class("active");
+            content.upcast()
+        };
 
-        Self { root, spinner }
+        Self { widget, spinner }
     }
 
     fn set_connecting(&self, connecting: bool) {
@@ -177,7 +180,7 @@ impl WiFiMenuWidget {
                 false,
                 self.inner.on_output.clone(),
             );
-            self.inner.networks_box.append(&row.root);
+            self.inner.networks_box.append(&row.widget);
             self.inner.network_rows.borrow_mut().insert(ssid, row);
         }
     }

@@ -1,6 +1,5 @@
 mod dbus;
 mod ethernet_menu;
-mod ethernet_toggle;
 mod store;
 mod vpn_menu;
 mod vpn_toggle;
@@ -15,9 +14,9 @@ use crate::plugin::{ExpandCallback, Plugin, PluginId, WidgetFeatureToggle};
 use crate::ui::feature_toggle_expandable::{
     FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
 };
-use ethernet_menu::EthernetMenuWidget;
-use ethernet_toggle::EthernetToggleWidget;
+use ethernet_menu::{ConnectionDetails, EthernetMenuWidget};
 use log::{debug, error, info};
+use nmrs::NetworkManager;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -29,8 +28,9 @@ use store::{
 use wifi_menu::{WiFiMenuOutput, WiFiMenuWidget};
 
 struct EthernetAdapterUI {
-    toggle: EthernetToggleWidget,
+    toggle: FeatureToggleExpandableWidget,
     menu: EthernetMenuWidget,
+    expand_callback: ExpandCallback,
 }
 
 struct WiFiAdapterUI {
@@ -41,6 +41,7 @@ struct WiFiAdapterUI {
 
 pub struct NetworkManagerPlugin {
     dbus: Arc<DbusHandle>,
+    nm: Option<NetworkManager>,
     store: Arc<NetworkStore>,
     ethernet_uis: Rc<RefCell<HashMap<String, EthernetAdapterUI>>>,
     wifi_uis: Rc<RefCell<HashMap<String, WiFiAdapterUI>>>,
@@ -51,6 +52,7 @@ impl NetworkManagerPlugin {
         let store = Arc::new(create_network_store());
         Self {
             dbus,
+            nm: None,
             store,
             ethernet_uis: Rc::new(RefCell::new(HashMap::new())),
             wifi_uis: Rc::new(RefCell::new(HashMap::new())),
@@ -65,16 +67,22 @@ impl Plugin for NetworkManagerPlugin {
     }
 
     async fn init(&mut self) -> Result<()> {
-        let available = dbus::check_availability(&self.dbus).await;
-        info!("NetworkManager available: {}", available);
+        // Try to create nmrs NetworkManager instance
+        let nm = match NetworkManager::new().await {
+            Ok(nm) => {
+                info!("NetworkManager available: true");
+                self.nm = Some(nm);
+                self.store.emit(NetworkOp::SetAvailable(true));
+                self.nm.as_ref().unwrap()
+            }
+            Err(e) => {
+                info!("NetworkManager not available: {}", e);
+                self.store.emit(NetworkOp::SetAvailable(false));
+                return Ok(());
+            }
+        };
 
-        self.store.emit(NetworkOp::SetAvailable(available));
-
-        if !available {
-            return Ok(());
-        }
-
-        match dbus::get_all_devices(&self.dbus).await {
+        match dbus::get_all_devices_nmrs(nm).await {
             Ok(devices) => {
                 info!("Found {} network devices", devices.len());
 
@@ -86,13 +94,40 @@ impl Plugin for NetworkManagerPlugin {
 
                     match device.device_type {
                         1 => {
-                            // Ethernet
+                            // Ethernet - device state is included in DeviceInfo from nmrs
+                            let device_state = device.device_state;
+                            debug!("Device state for {}: {}", device.interface_name, device_state);
+
+                            // Derive carrier from device state:
+                            // - Unavailable (20) = no carrier (cable not connected)
+                            // - Disconnected (30) or higher = carrier present
+                            let carrier = device_state >= 30;
+                            debug!("Carrier for {} (derived from state): {}", device.interface_name, carrier);
+
+                            // Derive active connection presence from state (100 = Activated)
+                            // nmrs doesn't expose the active connection path directly
+                            let active_connection: Option<String> = if device_state == 100 {
+                                Some(device.path.clone()) // Use device path as placeholder
+                            } else {
+                                None
+                            };
+                            debug!("Active connection for {}: {:?}", device.interface_name, active_connection);
+
+                            // Device state: 20 = unavailable, 30 = disconnected, 100 = activated, etc.
+                            let enabled = device_state >= 20; // Not unmanaged (10) or unknown (0)
+
+                            info!(
+                                "Ethernet {} initialized: enabled={}, carrier={}, state={}, active_conn={:?}",
+                                device.interface_name, enabled, carrier, device_state, active_connection
+                            );
+
                             let adapter = EthernetAdapterState {
                                 path: device.path.clone(),
                                 interface_name: device.interface_name.clone(),
-                                enabled: true,
-                                carrier: false,
-                                active_connection: None,
+                                enabled,
+                                carrier,
+                                device_state,
+                                active_connection,
                                 available_connections: vec![],
                             };
                             self.store.emit(NetworkOp::AddEthernetAdapter(adapter));
@@ -131,12 +166,201 @@ impl Plugin for NetworkManagerPlugin {
 
         // Create Ethernet UIs
         for (path, adapter) in &state.ethernet_adapters {
-            let toggle = EthernetToggleWidget::new(adapter.interface_name.clone());
+            info!(
+                "Creating UI for ethernet {}: enabled={}, carrier={}, state={}, active_conn={:?}",
+                adapter.interface_name, adapter.enabled, adapter.carrier, adapter.device_state, adapter.active_connection
+            );
+
+            // Device states: 100 = activated/connected, 30 = disconnected, 20 = unavailable
+            let is_connected = adapter.device_state == 100;
+
+            let initial_details = if adapter.enabled {
+                if is_connected {
+                    Some(crate::i18n::t("network-connected"))
+                } else if adapter.carrier {
+                    Some(crate::i18n::t("network-disconnected"))
+                } else {
+                    Some(crate::i18n::t("network-disconnected"))
+                }
+            } else {
+                Some(crate::i18n::t("network-disabled"))
+            };
+
+            let icon = if adapter.enabled {
+                if is_connected {
+                    "network-wired-symbolic"
+                } else if adapter.carrier {
+                    "network-wired-disconnected-symbolic"
+                } else {
+                    "network-wired-disconnected-symbolic"
+                }
+            } else {
+                "network-wired-offline-symbolic"
+            };
+
+            let toggle = FeatureToggleExpandableWidget::new(
+                FeatureToggleExpandableProps {
+                    title: format!("Wired ({})", adapter.interface_name),
+                    icon: icon.into(),
+                    details: initial_details,
+                    active: adapter.enabled,
+                    busy: false,
+                    expanded: false,
+                },
+                _menu_store.clone(),
+            );
+
             let menu = EthernetMenuWidget::new();
+            let expand_callback: ExpandCallback = Rc::new(RefCell::new(None));
+
+            // Connect toggle output handler
+            let device_path = path.clone();
+            let store_clone = self.store.clone();
+            let nm_clone = self.nm.clone();
+            toggle.connect_output(move |event| {
+                debug!("Ethernet toggle event: {:?}", event);
+                let device_path = device_path.clone();
+                let _store = store_clone.clone();
+                let nm = nm_clone.clone();
+
+                match event {
+                    FeatureToggleExpandableOutput::Activate
+                    | FeatureToggleExpandableOutput::Deactivate => {
+                        let enabled = matches!(event, FeatureToggleExpandableOutput::Activate);
+
+                        info!("Ethernet toggle: enabled={}, device={}", enabled, device_path);
+
+                        // Use separate thread with tokio runtime for nmrs work
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            tokio::runtime::Runtime::new()
+                                .unwrap()
+                                .block_on(async move {
+                                    if let Some(nm) = nm {
+                                        if enabled {
+                                            // Activate wired connection using nmrs
+                                            match dbus::connect_wired_nmrs(&nm).await {
+                                                Ok(_) => {
+                                                    info!("Successfully activated ethernet device");
+                                                }
+                                                Err(e) => {
+                                                    error!("Failed to activate ethernet device: {}", e);
+                                                }
+                                            }
+                                        } else {
+                                            // Disconnect using nmrs
+                                            match dbus::disconnect_nmrs(&nm).await {
+                                                Ok(_) => {
+                                                    info!("Successfully disconnected ethernet device");
+                                                }
+                                                Err(e) => {
+                                                    error!("Failed to disconnect ethernet device: {}", e);
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        error!("NetworkManager not available");
+                                    }
+                                    let _ = tx.send(enabled);
+                                });
+                        });
+
+                        // Poll for results in glib main loop
+                        let rx = std::rc::Rc::new(std::cell::RefCell::new(Some(rx)));
+                        glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+                            let receiver_opt = rx.borrow_mut().take();
+                            if let Some(receiver) = receiver_opt {
+                                match receiver.try_recv() {
+                                    Ok(_enabled) => {
+                                        // Operation completed
+                                        return glib::ControlFlow::Break;
+                                    }
+                                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                        *rx.borrow_mut() = Some(receiver);
+                                        return glib::ControlFlow::Continue;
+                                    }
+                                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                        return glib::ControlFlow::Break;
+                                    }
+                                }
+                            }
+                            glib::ControlFlow::Break
+                        });
+                    }
+                    FeatureToggleExpandableOutput::ToggleExpand => {
+                        // Expand is handled by the menu system automatically
+                    }
+                }
+            });
+
+            // Setup expand callback to fetch connection details
+            let menu_clone = menu.clone();
+            let device_path_clone = path.clone();
+            let dbus_clone = self.dbus.clone();
+            let expand_cb = move |expanded: bool| {
+                if expanded {
+                    debug!("Fetching ethernet connection details for {}", device_path_clone);
+                    let menu = menu_clone.clone();
+                    let device_path = device_path_clone.clone();
+                    let dbus = dbus_clone.clone();
+
+                    // Fetch connection details using separate thread with tokio
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    std::thread::spawn(move || {
+                        tokio::runtime::Runtime::new()
+                            .unwrap()
+                            .block_on(async move {
+                                let mut details = ConnectionDetails::default();
+
+                                // Get link speed
+                                if let Ok(Some(speed)) = dbus::get_link_speed(&dbus, &device_path).await {
+                                    if speed >= 1000 {
+                                        details.link_speed = Some(format!("{} Gbps", speed / 1000));
+                                    } else {
+                                        details.link_speed = Some(format!("{} Mbps", speed));
+                                    }
+                                }
+
+                                // Note: IP address/gateway display removed from scope (nmrs doesn't expose these directly)
+
+                                let _ = tx.send(details);
+                            });
+                    });
+
+                    // Poll for results in glib main loop
+                    let rx = Rc::new(RefCell::new(Some(rx)));
+                    glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+                        let receiver_opt = rx.borrow_mut().take();
+                        if let Some(receiver) = receiver_opt {
+                            match receiver.try_recv() {
+                                Ok(details) => {
+                                    menu.set_connection_details(Some(details));
+                                    return glib::ControlFlow::Break;
+                                }
+                                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                    *rx.borrow_mut() = Some(receiver);
+                                    return glib::ControlFlow::Continue;
+                                }
+                                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                    return glib::ControlFlow::Break;
+                                }
+                            }
+                        }
+                        glib::ControlFlow::Break
+                    });
+                } else {
+                    menu_clone.clear();
+                }
+            };
+            *expand_callback.borrow_mut() = Some(Box::new(expand_cb));
 
             self.ethernet_uis.borrow_mut().insert(
                 path.clone(),
-                EthernetAdapterUI { toggle, menu },
+                EthernetAdapterUI {
+                    toggle,
+                    menu,
+                    expand_callback,
+                },
             );
         }
 
@@ -182,12 +406,12 @@ impl Plugin for NetworkManagerPlugin {
             // Connect toggle output handler
             let device_path = path.clone();
             let store_clone = self.store.clone();
-            let dbus_clone = self.dbus.clone();
+            let nm_clone = self.nm.clone();
             toggle.connect_output(move |event| {
                 debug!("WiFi toggle event: {:?}", event);
                 let device_path = device_path.clone();
                 let store = store_clone.clone();
-                let dbus = dbus_clone.clone();
+                let nm = nm_clone.clone();
 
                 match event {
                     FeatureToggleExpandableOutput::Activate
@@ -195,17 +419,19 @@ impl Plugin for NetworkManagerPlugin {
                         let enabled = matches!(event, FeatureToggleExpandableOutput::Activate);
                         store.emit(NetworkOp::SetWiFiBusy(device_path.clone(), true));
 
-                        // Use separate thread with tokio runtime for DBus work
+                        // Use separate thread with tokio runtime for nmrs work
                         let (tx, rx) = std::sync::mpsc::channel();
-                        let device_path_clone = device_path.clone();
+                        let _device_path_clone = device_path.clone();
 
                         std::thread::spawn(move || {
                             tokio::runtime::Runtime::new()
                                 .unwrap()
                                 .block_on(async move {
-                                    if let Err(e) = dbus::set_wireless_enabled(&dbus, enabled).await
-                                    {
-                                        error!("Failed to set WiFi enabled state: {}", e);
+                                    if let Some(nm) = nm {
+                                        if let Err(e) = dbus::set_wifi_enabled_nmrs(&nm, enabled).await
+                                        {
+                                            error!("Failed to set WiFi enabled state: {}", e);
+                                        }
                                     }
                                     let _ = tx.send(enabled);
                                 });
@@ -250,6 +476,7 @@ impl Plugin for NetworkManagerPlugin {
             let store_for_expand = self.store.clone();
             let menu_for_expand = menu.clone();
             let toggle_for_expand = toggle.clone();
+            let nm_for_expand = self.nm.clone();
             let dbus_for_expand = self.dbus.clone();
             toggle.set_expand_callback({
                 let expand_callback = expand_callback.clone();
@@ -263,14 +490,21 @@ impl Plugin for NetworkManagerPlugin {
                     if will_be_open {
                         debug!("WiFi menu opening, scanning for networks");
                         let (tx, rx) = std::sync::mpsc::channel();
-                        let device_path_clone = device_path_for_expand.clone();
+                        let nm = nm_for_expand.clone();
                         let dbus = dbus_for_expand.clone();
 
                         std::thread::spawn(move || {
                             tokio::runtime::Runtime::new()
                                 .unwrap()
                                 .block_on(async move {
-                                    if let Err(e) = dbus::request_scan(&dbus, &device_path_clone).await {
+                                    // Use nmrs for scan and network listing
+                                    let Some(ref nm) = nm else {
+                                        error!("NetworkManager not available");
+                                        let _ = tx.send(None);
+                                        return;
+                                    };
+
+                                    if let Err(e) = dbus::scan_networks_nmrs(nm).await {
                                         error!("Failed to request WiFi scan: {}", e);
                                         let _ = tx.send(None);
                                         return;
@@ -278,7 +512,8 @@ impl Plugin for NetworkManagerPlugin {
 
                                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-                                    match dbus::get_access_points(&dbus, &device_path_clone).await {
+                                    // Use nmrs for listing networks
+                                    match dbus::list_networks_nmrs(nm).await {
                                         Ok(aps) => {
                                             // Deduplicate by SSID, keeping strongest signal
                                             let mut networks_by_ssid: std::collections::HashMap<String, AccessPointState> = std::collections::HashMap::new();
@@ -529,8 +764,8 @@ impl Plugin for NetworkManagerPlugin {
                 el: ui.toggle.widget(),
                 weight: 101,
                 menu: Some(ui.menu.widget()),
-                on_expand_toggled: None,
-                menu_id: None,
+                on_expand_toggled: Some(ui.expand_callback.clone()),
+                menu_id: Some(ui.toggle.menu_id.clone()),
             }));
         }
 

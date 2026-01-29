@@ -42,6 +42,16 @@ weather-thunderstorm = Bouřka
 bluetooth-title = Bluetooth
 bluetooth-unknown-device = Neznámé zařízení
 
+# Network
+network-disabled = Vypnuto
+network-connected = Připojeno
+network-disconnected = Odpojeno
+network-link-speed = Rychlost připojení
+network-ipv4-address = IPv4 adresa
+network-ipv6-address = IPv6 adresa
+network-subnet-mask = Maska podsítě
+network-gateway = Brána
+
 # Battery states
 battery-unknown = Neznámý stav
 battery-charging = Nabíjení

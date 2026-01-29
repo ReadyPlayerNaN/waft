@@ -41,6 +41,7 @@ pub struct EthernetAdapterState {
     pub interface_name: String,
     pub enabled: bool,
     pub carrier: bool,
+    pub device_state: u32,
     pub active_connection: Option<String>,
     pub available_connections: Vec<ConnectionProfile>,
 }

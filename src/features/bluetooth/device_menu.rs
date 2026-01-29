@@ -10,6 +10,7 @@ use glib::SignalHandlerId;
 use gtk::prelude::*;
 
 use super::store::DeviceConnectionState;
+use crate::ui::menu_item::MenuItemWidget;
 
 /// Output events from the device menu.
 #[derive(Debug, Clone)]
@@ -20,7 +21,8 @@ pub enum DeviceMenuOutput {
 
 /// A single device row in the menu.
 struct DeviceRow {
-    root: gtk::Box,
+    menu_item: MenuItemWidget,
+    content: gtk::Box,
     spinner: gtk::Spinner,
     switch: gtk::Switch,
     connection_state: Rc<RefCell<DeviceConnectionState>>,
@@ -35,7 +37,8 @@ impl DeviceRow {
         connection: DeviceConnectionState,
         on_output: Rc<RefCell<Option<Box<dyn Fn(DeviceMenuOutput)>>>>,
     ) -> Self {
-        let root = gtk::Box::builder()
+        // Build content structure
+        let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(12)
             .css_classes(["device-row"])
@@ -63,10 +66,10 @@ impl DeviceRow {
             .css_classes(["device-switch"])
             .build();
 
-        root.append(&icon_image);
-        root.append(&name_label);
-        root.append(&spinner);
-        root.append(&switch);
+        content.append(&icon_image);
+        content.append(&name_label);
+        content.append(&spinner);
+        content.append(&switch);
 
         let connection_state = Rc::new(RefCell::new(connection.clone()));
 
@@ -98,8 +101,16 @@ impl DeviceRow {
             glib::Propagation::Stop
         });
 
+        // Wrap content with MenuItemWidget
+        let switch_clone = switch.clone();
+        let menu_item = MenuItemWidget::new(&content, move || {
+            // Toggle the switch when row is clicked
+            switch_clone.set_active(!switch_clone.is_active());
+        });
+
         Self {
-            root,
+            menu_item,
+            content,
             spinner,
             switch,
             connection_state,
@@ -196,7 +207,7 @@ impl DeviceMenuWidget {
 
         for path in removed {
             if let Some(row) = rows.remove(&path) {
-                self.root.remove(&row.root);
+                self.root.remove(row.menu_item.widget());
             }
         }
 
@@ -214,7 +225,7 @@ impl DeviceMenuWidget {
                     connection,
                     self.on_output.clone(),
                 );
-                self.root.append(&row.root);
+                self.root.append(row.menu_item.widget());
                 rows.insert(path, row);
             }
         }

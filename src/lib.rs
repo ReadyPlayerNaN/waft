@@ -11,6 +11,9 @@ pub mod store;
 pub mod ui {
     #[path = "icon.rs"]
     pub mod icon;
+
+    #[path = "menu_item.rs"]
+    pub mod menu_item;
 }
 
 pub mod features {
