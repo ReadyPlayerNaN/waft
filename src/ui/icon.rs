@@ -24,7 +24,7 @@ impl Icon {
         if s.contains('/') || s.starts_with('.') || s.starts_with('~') {
             Self::FilePath(Arc::new(PathBuf::from(s)))
         } else {
-            Self::Themed(Arc::clone(str))
+            Self::Themed(Arc::from(s))
         }
     }
 }
@@ -122,3 +122,7 @@ impl IconWidget {
         &self.image
     }
 }
+
+#[cfg(test)]
+#[path = "icon_tests.rs"]
+mod tests;
