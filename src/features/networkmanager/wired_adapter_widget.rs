@@ -169,6 +169,13 @@ impl WiredAdapterWidget {
                                 }
                             }
 
+                            if let Ok(ip_config) = dbus::get_ip_configuration(&dbus, &device_path).await {
+                                details.ipv4_address = ip_config.ipv4_address;
+                                details.ipv6_address = ip_config.ipv6_address;
+                                details.subnet_mask = ip_config.subnet_mask;
+                                details.gateway = ip_config.gateway;
+                            }
+
                             let _ = tx.send(details);
                         });
                 });

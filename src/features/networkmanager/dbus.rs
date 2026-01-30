@@ -132,6 +132,185 @@ pub async fn get_link_speed(dbus: &DbusHandle, device_path: &str) -> Result<Opti
     }
 }
 
+/// Get IPv4 configuration for a device.
+/// Returns (address, prefix_length, gateway) if available.
+/// Note: nmrs doesn't expose IP4Config, so we use D-Bus directly.
+pub async fn get_ip4_config(
+    dbus: &DbusHandle,
+    device_path: &str,
+) -> Result<Option<(String, u32, Option<String>)>> {
+    // Get the IP4Config object path from the device
+    let ip4_config_path: String = match dbus
+        .connection()
+        .call_method(
+            Some(NM_SERVICE),
+            device_path,
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &(NM_DEVICE_INTERFACE, "Ip4Config"),
+        )
+        .await
+    {
+        Ok(reply) => {
+            let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+            match zbus::zvariant::OwnedObjectPath::try_from(value) {
+                Ok(path) => path.to_string(),
+                Err(_) => return Ok(None),
+            }
+        }
+        Err(_) => return Ok(None),
+    };
+
+    if ip4_config_path == "/" {
+        return Ok(None);
+    }
+
+    // Get AddressData from IP4Config
+    let address_data: Vec<std::collections::HashMap<String, OwnedValue>> = match dbus
+        .connection()
+        .call_method(
+            Some(NM_SERVICE),
+            ip4_config_path.as_str(),
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &("org.freedesktop.NetworkManager.IP4Config", "AddressData"),
+        )
+        .await
+    {
+        Ok(reply) => {
+            let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+            match Vec::<std::collections::HashMap<String, OwnedValue>>::try_from(value) {
+                Ok(data) => data,
+                Err(_) => return Ok(None),
+            }
+        }
+        Err(_) => return Ok(None),
+    };
+
+    if address_data.is_empty() {
+        return Ok(None);
+    }
+
+    let first_addr = &address_data[0];
+    let address = first_addr
+        .get("address")
+        .and_then(|v| String::try_from(v.clone()).ok());
+    let prefix = first_addr
+        .get("prefix")
+        .and_then(|v| u32::try_from(v.clone()).ok());
+
+    let (address, prefix) = match (address, prefix) {
+        (Some(a), Some(p)) => (a, p),
+        _ => return Ok(None),
+    };
+
+    // Get Gateway from IP4Config
+    let gateway: Option<String> = match dbus
+        .connection()
+        .call_method(
+            Some(NM_SERVICE),
+            ip4_config_path.as_str(),
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &("org.freedesktop.NetworkManager.IP4Config", "Gateway"),
+        )
+        .await
+    {
+        Ok(reply) => {
+            let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+            match String::try_from(value) {
+                Ok(gw) if !gw.is_empty() => Some(gw),
+                _ => None,
+            }
+        }
+        Err(_) => None,
+    };
+
+    Ok(Some((address, prefix, gateway)))
+}
+
+/// Get IPv6 configuration for a device.
+/// Returns the IPv6 address if available.
+/// Note: nmrs doesn't expose IP6Config, so we use D-Bus directly.
+pub async fn get_ip6_config(dbus: &DbusHandle, device_path: &str) -> Result<Option<String>> {
+    // Get the IP6Config object path from the device
+    let ip6_config_path: String = match dbus
+        .connection()
+        .call_method(
+            Some(NM_SERVICE),
+            device_path,
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &(NM_DEVICE_INTERFACE, "Ip6Config"),
+        )
+        .await
+    {
+        Ok(reply) => {
+            let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+            match zbus::zvariant::OwnedObjectPath::try_from(value) {
+                Ok(path) => path.to_string(),
+                Err(_) => return Ok(None),
+            }
+        }
+        Err(_) => return Ok(None),
+    };
+
+    if ip6_config_path == "/" {
+        return Ok(None);
+    }
+
+    // Get AddressData from IP6Config
+    let address_data: Vec<std::collections::HashMap<String, OwnedValue>> = match dbus
+        .connection()
+        .call_method(
+            Some(NM_SERVICE),
+            ip6_config_path.as_str(),
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &("org.freedesktop.NetworkManager.IP6Config", "AddressData"),
+        )
+        .await
+    {
+        Ok(reply) => {
+            let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+            match Vec::<std::collections::HashMap<String, OwnedValue>>::try_from(value) {
+                Ok(data) => data,
+                Err(_) => return Ok(None),
+            }
+        }
+        Err(_) => return Ok(None),
+    };
+
+    if address_data.is_empty() {
+        return Ok(None);
+    }
+
+    let first_addr = &address_data[0];
+    let address = first_addr
+        .get("address")
+        .and_then(|v| String::try_from(v.clone()).ok());
+
+    Ok(address)
+}
+
+/// Get combined IP configuration for a device.
+/// Returns an IpConfiguration struct with all available IP information.
+pub async fn get_ip_configuration(dbus: &DbusHandle, device_path: &str) -> Result<IpConfiguration> {
+    let mut config = IpConfiguration::default();
+
+    if let Ok(Some((address, prefix, gateway))) = get_ip4_config(dbus, device_path).await {
+        config.ipv4_address = Some(address);
+        config.subnet_mask = Some(prefix_to_subnet_mask(prefix));
+        config.gateway = gateway;
+    }
+
+    if let Ok(Some(address)) = get_ip6_config(dbus, device_path).await {
+        config.ipv6_address = Some(address);
+    }
+
+    Ok(config)
+}
+
 /// Find all saved WiFi connections matching the given SSID.
 /// Note: nmrs doesn't expose saved connection profiles, so we use D-Bus directly.
 pub async fn get_connections_for_ssid(dbus: &DbusHandle, ssid: &str) -> Result<Vec<String>> {
@@ -274,6 +453,17 @@ where
     Ok(())
 }
 
+/// Send-safe version of get_device_info for use with spawn_on_tokio.
+///
+/// This wrapper is needed because `get_device_info` borrows the DbusHandle,
+/// but `spawn_on_tokio` requires a `Send + 'static` future.
+pub async fn get_device_info_sendable(
+    dbus: Arc<DbusHandle>,
+    device_path: String,
+) -> Result<Option<DeviceInfo>> {
+    get_device_info(&dbus, &device_path).await
+}
+
 /// Get device info for a specific device path using D-Bus.
 pub async fn get_device_info(dbus: &DbusHandle, device_path: &str) -> Result<Option<DeviceInfo>> {
     // Get device type
@@ -341,6 +531,14 @@ impl AccessPoint {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct IpConfiguration {
+    pub ipv4_address: Option<String>,
+    pub ipv6_address: Option<String>,
+    pub subnet_mask: Option<String>,
+    pub gateway: Option<String>,
+}
+
 fn device_state_to_u32(state: &DeviceState) -> u32 {
     match state {
         DeviceState::Unmanaged => 10,
@@ -391,6 +589,23 @@ fn access_point_from_nmrs(network: &nmrs::Network) -> AccessPoint {
 fn is_virtual_interface(name: &str) -> bool {
     let virtual_prefixes = ["docker", "veth", "br-", "virbr", "vnet"];
     virtual_prefixes.iter().any(|prefix| name.starts_with(prefix))
+}
+
+fn prefix_to_subnet_mask(prefix: u32) -> String {
+    if prefix == 0 {
+        return "0.0.0.0".to_string();
+    }
+    if prefix > 32 {
+        return "255.255.255.255".to_string();
+    }
+    let mask: u32 = !0u32 << (32 - prefix);
+    format!(
+        "{}.{}.{}.{}",
+        (mask >> 24) & 0xFF,
+        (mask >> 16) & 0xFF,
+        (mask >> 8) & 0xFF,
+        mask & 0xFF
+    )
 }
 
 async fn get_device_property<T>(dbus: &DbusHandle, path: &str, property: &str) -> Result<T>

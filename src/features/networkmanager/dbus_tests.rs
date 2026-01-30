@@ -143,3 +143,57 @@ fn test_access_point_is_not_secure_with_no_flags() {
 // - get_connections_for_ssid() finds matching WiFi connections
 // - get_connections_for_ssid() returns empty list when no matches
 // - get_connections_for_ssid() handles SSID byte array comparison
+
+// Tests for prefix_to_subnet_mask conversion
+
+#[test]
+fn test_prefix_to_subnet_mask_24() {
+    assert_eq!(prefix_to_subnet_mask(24), "255.255.255.0");
+}
+
+#[test]
+fn test_prefix_to_subnet_mask_16() {
+    assert_eq!(prefix_to_subnet_mask(16), "255.255.0.0");
+}
+
+#[test]
+fn test_prefix_to_subnet_mask_8() {
+    assert_eq!(prefix_to_subnet_mask(8), "255.0.0.0");
+}
+
+#[test]
+fn test_prefix_to_subnet_mask_32() {
+    assert_eq!(prefix_to_subnet_mask(32), "255.255.255.255");
+}
+
+#[test]
+fn test_prefix_to_subnet_mask_0() {
+    assert_eq!(prefix_to_subnet_mask(0), "0.0.0.0");
+}
+
+#[test]
+fn test_prefix_to_subnet_mask_greater_than_32() {
+    // Edge case: prefix > 32 should saturate to /32
+    assert_eq!(prefix_to_subnet_mask(33), "255.255.255.255");
+    assert_eq!(prefix_to_subnet_mask(64), "255.255.255.255");
+}
+
+#[test]
+fn test_prefix_to_subnet_mask_common_values() {
+    // /25 through /31 for fine-grained subnetting
+    assert_eq!(prefix_to_subnet_mask(25), "255.255.255.128");
+    assert_eq!(prefix_to_subnet_mask(26), "255.255.255.192");
+    assert_eq!(prefix_to_subnet_mask(27), "255.255.255.224");
+    assert_eq!(prefix_to_subnet_mask(28), "255.255.255.240");
+    assert_eq!(prefix_to_subnet_mask(29), "255.255.255.248");
+    assert_eq!(prefix_to_subnet_mask(30), "255.255.255.252");
+    assert_eq!(prefix_to_subnet_mask(31), "255.255.255.254");
+}
+
+#[test]
+fn test_prefix_to_subnet_mask_class_boundaries() {
+    // Class A, B, C default masks
+    assert_eq!(prefix_to_subnet_mask(8), "255.0.0.0");      // Class A
+    assert_eq!(prefix_to_subnet_mask(16), "255.255.0.0");   // Class B
+    assert_eq!(prefix_to_subnet_mask(24), "255.255.255.0"); // Class C
+}

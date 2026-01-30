@@ -126,12 +126,19 @@ impl FeatureGridWidget {
                 }
 
                 // Connect expand callbacks to this revealer (for backwards compatibility)
+                // Preserve any existing callback and chain it with the revealer callback
                 for item in pair.iter() {
                     if let Some(ref callback_cell) = item.on_expand_toggled {
                         let revealer = menu_revealer.clone();
+                        // Take the existing callback if any
+                        let existing_callback = callback_cell.borrow_mut().take();
                         *callback_cell.borrow_mut() = Some(Box::new(move |expanded| {
                             revealer.set_reveal_child(expanded);
                             trigger_window_resize();
+                            // Call the original callback if it exists
+                            if let Some(ref cb) = existing_callback {
+                                cb(expanded);
+                            }
                         }));
                     }
                 }

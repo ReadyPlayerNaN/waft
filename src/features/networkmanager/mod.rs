@@ -245,8 +245,11 @@ impl NetworkManagerPlugin {
 
                 // Spawn a future to handle device info lookup (can't be async in callback)
                 glib::spawn_future_local(async move {
-                    // Get device info
-                    let device_info = match dbus::get_device_info(&dbus, &device_path).await {
+                    // Get device info using spawn_on_tokio to avoid CPU spin.
+                    // zbus D-Bus calls are tokio-dependent and must run on the tokio runtime.
+                    let device_info = match crate::runtime::spawn_on_tokio(
+                        dbus::get_device_info_sendable(dbus.clone(), device_path.clone())
+                    ).await {
                         Ok(Some(info)) => info,
                         Ok(None) => {
                             debug!("Ignoring non-managed device: {}", device_path);
