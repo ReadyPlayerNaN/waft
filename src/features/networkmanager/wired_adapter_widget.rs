@@ -70,11 +70,13 @@ impl WiredAdapterWidget {
     fn setup_toggle_handlers(&mut self) {
         let device_path = self.path.clone();
         let nm_clone = self.nm.clone();
+        let dbus_clone = self.dbus.clone();
 
         self.toggle.connect_output(move |event| {
             debug!("Ethernet toggle event: {:?}", event);
             let device_path = device_path.clone();
             let nm = nm_clone.clone();
+            let dbus = dbus_clone.clone();
 
             match event {
                 FeatureToggleExpandableOutput::Activate
@@ -83,56 +85,36 @@ impl WiredAdapterWidget {
 
                     info!("Ethernet toggle: enabled={}, device={}", enabled, device_path);
 
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    std::thread::spawn(move || {
-                        tokio::runtime::Runtime::new()
-                            .unwrap()
-                            .block_on(async move {
-                                if let Some(nm) = nm {
-                                    if enabled {
-                                        match dbus::connect_wired_nmrs(&nm).await {
-                                            Ok(_) => {
-                                                info!("Successfully activated ethernet device");
-                                            }
-                                            Err(e) => {
-                                                error!("Failed to activate ethernet device: {}", e);
-                                            }
-                                        }
-                                    } else {
-                                        match dbus::disconnect_nmrs(&nm).await {
-                                            Ok(_) => {
-                                                info!("Successfully disconnected ethernet device");
-                                            }
-                                            Err(e) => {
-                                                error!("Failed to disconnect ethernet device: {}", e);
-                                            }
-                                        }
+                    glib::spawn_future_local(async move {
+                        if enabled {
+                            // Use nmrs for connecting (it auto-activates wired)
+                            if let Some(nm) = nm {
+                                match crate::runtime::spawn_on_tokio(async move {
+                                    dbus::connect_wired_nmrs(&nm).await
+                                }).await {
+                                    Ok(_) => {
+                                        info!("Successfully activated ethernet device");
                                     }
-                                } else {
-                                    error!("NetworkManager not available");
+                                    Err(e) => {
+                                        error!("Failed to activate ethernet device: {}", e);
+                                    }
                                 }
-                                let _ = tx.send(enabled);
-                            });
-                    });
-
-                    let rx = std::rc::Rc::new(std::cell::RefCell::new(Some(rx)));
-                    glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
-                        let receiver_opt = rx.borrow_mut().take();
-                        if let Some(receiver) = receiver_opt {
-                            match receiver.try_recv() {
-                                Ok(_enabled) => {
-                                    return glib::ControlFlow::Break;
+                            } else {
+                                error!("NetworkManager not available");
+                            }
+                        } else {
+                            // Use D-Bus to disconnect the specific device
+                            match crate::runtime::spawn_on_tokio(
+                                dbus::disconnect_device_sendable(dbus.clone(), device_path.clone())
+                            ).await {
+                                Ok(_) => {
+                                    info!("Successfully disconnected ethernet device: {}", device_path);
                                 }
-                                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                                    *rx.borrow_mut() = Some(receiver);
-                                    return glib::ControlFlow::Continue;
-                                }
-                                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                                    return glib::ControlFlow::Break;
+                                Err(e) => {
+                                    error!("Failed to disconnect ethernet device {}: {}", device_path, e);
                                 }
                             }
                         }
-                        glib::ControlFlow::Break
                     });
                 }
                 FeatureToggleExpandableOutput::ToggleExpand => {
@@ -206,7 +188,6 @@ impl WiredAdapterWidget {
         });
     }
 
-    #[allow(dead_code)]
     pub fn sync_state(&self, state: &EthernetAdapterState) {
         self.toggle.update_state(state.enabled, state.carrier, state.device_state);
     }

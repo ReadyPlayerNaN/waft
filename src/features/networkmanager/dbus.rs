@@ -18,6 +18,9 @@ const NM_SERVICE: &str = "org.freedesktop.NetworkManager";
 const NM_PATH: &str = "/org/freedesktop/NetworkManager";
 const NM_INTERFACE: &str = "org.freedesktop.NetworkManager";
 const NM_DEVICE_INTERFACE: &str = "org.freedesktop.NetworkManager.Device";
+const NM_SETTINGS_PATH: &str = "/org/freedesktop/NetworkManager/Settings";
+const NM_SETTINGS_INTERFACE: &str = "org.freedesktop.NetworkManager.Settings";
+const NM_CONNECTION_ACTIVE_INTERFACE: &str = "org.freedesktop.NetworkManager.Connection.Active";
 
 const DEVICE_TYPE_ETHERNET: u32 = 1;
 const DEVICE_TYPE_WIFI: u32 = 2;
@@ -117,6 +120,24 @@ pub async fn disconnect_nmrs(nm: &NetworkManager) -> Result<()> {
     nm.disconnect()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to disconnect: {}", e))
+}
+
+/// Disconnect a specific device via D-Bus.
+/// This calls the Disconnect method on the Device interface.
+pub async fn disconnect_device(dbus: &DbusHandle, device_path: &str) -> Result<()> {
+    const NM_DEVICE_INTERFACE: &str = "org.freedesktop.NetworkManager.Device";
+
+    dbus.connection()
+        .call_method(
+            Some(NM_SERVICE),
+            device_path,
+            Some(NM_DEVICE_INTERFACE),
+            "Disconnect",
+            &(),
+        )
+        .await?;
+
+    Ok(())
 }
 
 // =============================================================================
@@ -388,6 +409,379 @@ pub async fn activate_connection(
 }
 
 // =============================================================================
+// VPN D-Bus functions
+// =============================================================================
+
+/// Information about a VPN connection profile.
+#[derive(Debug, Clone)]
+pub struct VpnConnectionInfo {
+    pub path: String,
+    pub uuid: String,
+    pub name: String,
+}
+
+/// Get all configured VPN connection profiles.
+/// Note: nmrs doesn't expose VPN connection profiles, so we use D-Bus directly.
+pub async fn get_vpn_connections(dbus: &DbusHandle) -> Result<Vec<VpnConnectionInfo>> {
+    let settings_paths: Vec<zbus::zvariant::OwnedObjectPath> = dbus
+        .connection()
+        .call_method(
+            Some(NM_SERVICE),
+            NM_SETTINGS_PATH,
+            Some(NM_SETTINGS_INTERFACE),
+            "ListConnections",
+            &(),
+        )
+        .await?
+        .body()
+        .deserialize()?;
+
+    let mut vpn_connections = Vec::new();
+
+    for settings_path in settings_paths {
+        let path_str = settings_path.as_str();
+
+        let settings: std::collections::HashMap<String, std::collections::HashMap<String, OwnedValue>> = dbus
+            .connection()
+            .call_method(
+                Some(NM_SERVICE),
+                path_str,
+                Some("org.freedesktop.NetworkManager.Settings.Connection"),
+                "GetSettings",
+                &(),
+            )
+            .await?
+            .body()
+            .deserialize()?;
+
+        // Check if this is a VPN connection
+        if let Some(connection) = settings.get("connection") {
+            if let Some(conn_type) = connection.get("type") {
+                if let Ok(type_str) = String::try_from(conn_type.clone()) {
+                    if type_str == "vpn" {
+                        let name = connection
+                            .get("id")
+                            .and_then(|v| String::try_from(v.clone()).ok())
+                            .unwrap_or_else(|| "Unknown VPN".to_string());
+                        let uuid = connection
+                            .get("uuid")
+                            .and_then(|v| String::try_from(v.clone()).ok())
+                            .unwrap_or_default();
+
+                        vpn_connections.push(VpnConnectionInfo {
+                            path: path_str.to_string(),
+                            uuid,
+                            name,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(vpn_connections)
+}
+
+/// Get currently active VPN connections.
+/// Returns a list of (active_connection_path, connection_path, uuid, state).
+/// ActiveConnection states: 0=unknown, 1=activating, 2=activated, 3=deactivating, 4=deactivated
+pub async fn get_active_vpn_connections(dbus: &DbusHandle) -> Result<Vec<(String, String, String, u32)>> {
+    // Get ActiveConnections property from NetworkManager
+    let active_connections: Vec<zbus::zvariant::OwnedObjectPath> = match dbus
+        .connection()
+        .call_method(
+            Some(NM_SERVICE),
+            NM_PATH,
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &(NM_INTERFACE, "ActiveConnections"),
+        )
+        .await
+    {
+        Ok(reply) => {
+            let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+            Vec::<zbus::zvariant::OwnedObjectPath>::try_from(value).unwrap_or_default()
+        }
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut vpn_active = Vec::new();
+
+    for active_conn_path in active_connections {
+        let path_str = active_conn_path.as_str();
+
+        // Get the Type property (e.g., "vpn")
+        let conn_type: String = match dbus
+            .connection()
+            .call_method(
+                Some(NM_SERVICE),
+                path_str,
+                Some("org.freedesktop.DBus.Properties"),
+                "Get",
+                &(NM_CONNECTION_ACTIVE_INTERFACE, "Type"),
+            )
+            .await
+        {
+            Ok(reply) => {
+                let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+                String::try_from(value).unwrap_or_default()
+            }
+            Err(_) => continue,
+        };
+
+        if conn_type == "vpn" {
+            // Get Connection (Settings path)
+            let connection_path: String = match dbus
+                .connection()
+                .call_method(
+                    Some(NM_SERVICE),
+                    path_str,
+                    Some("org.freedesktop.DBus.Properties"),
+                    "Get",
+                    &(NM_CONNECTION_ACTIVE_INTERFACE, "Connection"),
+                )
+                .await
+            {
+                Ok(reply) => {
+                    let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+                    zbus::zvariant::OwnedObjectPath::try_from(value)
+                        .map(|p| p.to_string())
+                        .unwrap_or_default()
+                }
+                Err(_) => continue,
+            };
+
+            // Get UUID
+            let uuid: String = match dbus
+                .connection()
+                .call_method(
+                    Some(NM_SERVICE),
+                    path_str,
+                    Some("org.freedesktop.DBus.Properties"),
+                    "Get",
+                    &(NM_CONNECTION_ACTIVE_INTERFACE, "Uuid"),
+                )
+                .await
+            {
+                Ok(reply) => {
+                    let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+                    String::try_from(value).unwrap_or_default()
+                }
+                Err(_) => continue,
+            };
+
+            // Get State
+            let state: u32 = match dbus
+                .connection()
+                .call_method(
+                    Some(NM_SERVICE),
+                    path_str,
+                    Some("org.freedesktop.DBus.Properties"),
+                    "Get",
+                    &(NM_CONNECTION_ACTIVE_INTERFACE, "State"),
+                )
+                .await
+            {
+                Ok(reply) => {
+                    let value: OwnedValue = reply.body().deserialize::<(OwnedValue,)>()?.0;
+                    u32::try_from(value).unwrap_or(0)
+                }
+                Err(_) => 0, // Unknown state
+            };
+
+            vpn_active.push((path_str.to_string(), connection_path, uuid, state));
+        }
+    }
+
+    Ok(vpn_active)
+}
+
+/// Activate a VPN connection.
+/// Returns the active connection path on success.
+pub async fn activate_vpn_connection(dbus: &DbusHandle, connection_path: &str) -> Result<String> {
+    let conn_path = zbus::zvariant::ObjectPath::try_from(connection_path)?;
+    let device_path = zbus::zvariant::ObjectPath::try_from("/")?;
+    let specific_path = zbus::zvariant::ObjectPath::try_from("/")?;
+
+    let active_conn_path: zbus::zvariant::OwnedObjectPath = dbus
+        .connection()
+        .call_method(
+            Some(NM_SERVICE),
+            NM_PATH,
+            Some(NM_INTERFACE),
+            "ActivateConnection",
+            &(conn_path, device_path, specific_path),
+        )
+        .await?
+        .body()
+        .deserialize()?;
+
+    Ok(active_conn_path.to_string())
+}
+
+/// Deactivate an active VPN connection.
+pub async fn deactivate_vpn_connection(
+    dbus: &DbusHandle,
+    active_connection_path: &str,
+) -> Result<()> {
+    dbus.connection()
+        .call_method(
+            Some(NM_SERVICE),
+            NM_PATH,
+            Some(NM_INTERFACE),
+            "DeactivateConnection",
+            &(zbus::zvariant::ObjectPath::try_from(active_connection_path)?),
+        )
+        .await?;
+
+    Ok(())
+}
+
+/// Send-safe version of get_vpn_connections for use with spawn_on_tokio.
+pub async fn get_vpn_connections_sendable(dbus: Arc<DbusHandle>) -> Result<Vec<VpnConnectionInfo>> {
+    get_vpn_connections(&dbus).await
+}
+
+/// Send-safe version of get_active_vpn_connections for use with spawn_on_tokio.
+pub async fn get_active_vpn_connections_sendable(
+    dbus: Arc<DbusHandle>,
+) -> Result<Vec<(String, String, String, u32)>> {
+    get_active_vpn_connections(&dbus).await
+}
+
+/// Send-safe version of activate_vpn_connection for use with spawn_on_tokio.
+pub async fn activate_vpn_connection_sendable(
+    dbus: Arc<DbusHandle>,
+    connection_path: String,
+) -> Result<String> {
+    activate_vpn_connection(&dbus, &connection_path).await
+}
+
+/// Send-safe version of deactivate_vpn_connection for use with spawn_on_tokio.
+pub async fn deactivate_vpn_connection_sendable(
+    dbus: Arc<DbusHandle>,
+    active_connection_path: String,
+) -> Result<()> {
+    deactivate_vpn_connection(&dbus, &active_connection_path).await
+}
+
+/// Send-safe version of disconnect_device for use with spawn_on_tokio.
+pub async fn disconnect_device_sendable(dbus: Arc<DbusHandle>, device_path: String) -> Result<()> {
+    disconnect_device(&dbus, &device_path).await
+}
+
+/// VPN interface for VPN-specific properties
+const NM_VPN_CONNECTION_INTERFACE: &str = "org.freedesktop.NetworkManager.VPN.Connection";
+
+/// Subscribe to VPN state changes.
+/// Monitors PropertiesChanged signals on active connections to detect VPN state changes.
+/// Handles both ActiveConnection.State and VPN.Connection.VpnState.
+pub async fn subscribe_vpn_state_changed<F>(dbus: Arc<DbusHandle>, mut callback: F) -> Result<()>
+where
+    F: FnMut(String, u32) + 'static,
+{
+    use futures_util::StreamExt;
+    use log::debug;
+
+    // Subscribe to PropertiesChanged signals on the NetworkManager path
+    // This will catch ActiveConnections changes
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(NM_SERVICE)?
+        .interface("org.freedesktop.DBus.Properties")?
+        .member("PropertiesChanged")?
+        .build();
+
+    let mut stream = zbus::MessageStream::for_match_rule(rule, &*dbus.connection(), None).await?;
+
+    while let Some(msg) = stream.next().await {
+        if let Ok(msg) = msg {
+            let path = msg.header().path().map(|p| p.to_string()).unwrap_or_default();
+
+            // Check if this is an active connection path
+            if path.contains("/ActiveConnection/") {
+                let body = msg.body();
+                let deserialize_result: Result<
+                    (
+                        String,
+                        std::collections::HashMap<String, OwnedValue>,
+                        Vec<String>,
+                    ),
+                    _,
+                > = body.deserialize();
+
+                if let Ok((interface, changed, _invalidated)) = deserialize_result {
+                    // Handle ActiveConnection.State changes
+                    if interface == NM_CONNECTION_ACTIVE_INTERFACE {
+                        if let Some(state_value) = changed.get("State") {
+                            if let Ok(state) = u32::try_from(state_value.clone()) {
+                                debug!("ActiveConnection State changed: path={}, state={}", path, state);
+                                // Check if this is a VPN connection
+                                let is_vpn = if let Some(type_value) = changed.get("Type") {
+                                    String::try_from(type_value.clone())
+                                        .map(|t| t == "vpn")
+                                        .unwrap_or(false)
+                                } else {
+                                    // Type not in changed properties, query it
+                                    get_active_connection_type(&dbus, &path)
+                                        .await
+                                        .map(|t| t == "vpn")
+                                        .unwrap_or(false)
+                                };
+
+                                if is_vpn {
+                                    debug!("VPN ActiveConnection state: path={}, state={}", path, state);
+                                    callback(path, state);
+                                }
+                            }
+                        }
+                    }
+                    // Handle VPN.Connection.VpnState changes
+                    else if interface == NM_VPN_CONNECTION_INTERFACE {
+                        if let Some(vpn_state_value) = changed.get("VpnState") {
+                            if let Ok(vpn_state) = u32::try_from(vpn_state_value.clone()) {
+                                debug!("VPN.Connection VpnState changed: path={}, vpn_state={}", path, vpn_state);
+                                // Convert VPN-specific state to ActiveConnection state
+                                // VPN states: 0=unknown, 1=prepare, 2=need_auth, 3=connect, 4=ip_config, 5=activated, 6=failed, 7=disconnected
+                                // ActiveConnection states: 0=unknown, 1=activating, 2=activated, 3=deactivating, 4=deactivated
+                                let active_state = match vpn_state {
+                                    5 => 2,      // Activated -> Activated
+                                    6 | 7 => 4,  // Failed/Disconnected -> Deactivated
+                                    1 | 2 | 3 | 4 => 1, // Prepare/NeedAuth/Connect/IPConfig -> Activating
+                                    _ => 0,      // Unknown
+                                };
+                                callback(path, active_state);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Helper to get the Type of an active connection.
+async fn get_active_connection_type(dbus: &DbusHandle, path: &str) -> Result<String> {
+    let conn_type: OwnedValue = dbus
+        .connection()
+        .call_method(
+            Some(NM_SERVICE),
+            path,
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &(NM_CONNECTION_ACTIVE_INTERFACE, "Type"),
+        )
+        .await?
+        .body()
+        .deserialize::<(OwnedValue,)>()?
+        .0;
+
+    String::try_from(conn_type).map_err(|e| anyhow::anyhow!("Failed to get connection type: {:?}", e))
+}
+
+// =============================================================================
 // Device signal subscriptions
 // =============================================================================
 
@@ -446,6 +840,42 @@ where
             let body = msg.body();
             if let Ok(path) = body.deserialize::<ObjectPath<'_>>() {
                 callback(path.to_string());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Subscribe to StateChanged signal from a specific device.
+/// The callback receives (device_path, new_state, old_state, reason).
+pub async fn subscribe_device_state_changed<F>(dbus: Arc<DbusHandle>, mut callback: F) -> Result<()>
+where
+    F: FnMut(String, u32, u32, u32) + 'static,
+{
+    use futures_util::StreamExt;
+    use log::debug;
+
+    const NM_DEVICE_INTERFACE: &str = "org.freedesktop.NetworkManager.Device";
+
+    // Subscribe to StateChanged signals from any Device
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(NM_SERVICE)?
+        .interface(NM_DEVICE_INTERFACE)?
+        .member("StateChanged")?
+        .build();
+
+    let mut stream = zbus::MessageStream::for_match_rule(rule, &*dbus.connection(), None).await?;
+
+    while let Some(msg) = stream.next().await {
+        if let Ok(msg) = msg {
+            let path = msg.header().path().map(|p| p.to_string()).unwrap_or_default();
+            let body = msg.body();
+            // StateChanged signal has signature (uuu) - new_state, old_state, reason
+            if let Ok((new_state, old_state, reason)) = body.deserialize::<(u32, u32, u32)>() {
+                debug!("Device state changed: path={}, new={}, old={}, reason={}", path, new_state, old_state, reason);
+                callback(path, new_state, old_state, reason);
             }
         }
     }

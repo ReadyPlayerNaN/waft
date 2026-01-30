@@ -68,78 +68,94 @@ impl FeatureGridWidget {
                 self.grid.attach(&item.el, col as i32, grid_row, 1, 1);
             }
 
-            // Collect menus and menu IDs for this row
-            let menus: Vec<_> = pair.iter().filter_map(|item| item.menu.clone()).collect();
-            let menu_ids: Vec<String> = pair
+            // Collect menus for this row
+            let menus_with_ids: Vec<_> = pair
                 .iter()
-                .filter_map(|item| item.menu_id.clone())
+                .filter_map(|item| {
+                    item.menu
+                        .clone()
+                        .map(|menu| (menu, item.menu_id.clone(), item.on_expand_toggled.clone()))
+                })
                 .collect();
 
-            if !menus.is_empty() {
-                // Create menu row revealer
-                let menu_revealer = gtk::Revealer::builder()
-                    .transition_type(gtk::RevealerTransitionType::SlideDown)
-                    .reveal_child(false)
+            if !menus_with_ids.is_empty() {
+                // Create a container Stack to hold all menu revealers for this row
+                let menu_container = gtk::Stack::builder()
+                    .transition_type(gtk::StackTransitionType::SlideDown)
                     .build();
 
-                let menu_box = gtk::Box::builder()
-                    .orientation(gtk::Orientation::Vertical)
-                    .css_classes(["feature-grid-menu-row"])
-                    .build();
+                // Attach the stack to the grid
+                self.grid.attach(&menu_container, 0, grid_row + 1, cols, 1);
 
-                for menu in menus {
-                    menu_box.append(&menu);
-                }
+                // Create a separate revealer for each menu
+                for (menu, menu_id, callback_cell) in menus_with_ids {
+                    if let Some(menu_id) = menu_id {
+                        let menu_box = gtk::Box::builder()
+                            .orientation(gtk::Orientation::Vertical)
+                            .css_classes(["feature-grid-menu-row"])
+                            .build();
+                        menu_box.append(&menu);
 
-                menu_revealer.set_child(Some(&menu_box));
-                self.grid.attach(&menu_revealer, 0, grid_row + 1, cols, 1);
+                        let menu_revealer = gtk::Revealer::builder()
+                            .transition_type(gtk::RevealerTransitionType::SlideDown)
+                            .reveal_child(false)
+                            .build();
+                        menu_revealer.set_child(Some(&menu_box));
 
-                // Subscribe revealer to menu store
-                if !menu_ids.is_empty() {
-                    let menu_revealer_clone = menu_revealer.clone();
-                    let menu_store_clone = self.menu_store.clone();
-                    let menu_ids_clone = menu_ids.clone();
-                    self.menu_store.subscribe(move || {
-                        let state = menu_store_clone.get_state();
-                        // Show revealer if any menu in this row is active
-                        let should_be_open = state
-                            .active_menu_id
-                            .as_ref()
-                            .map(|id| menu_ids_clone.contains(id))
-                            .unwrap_or(false);
-                        menu_revealer_clone.set_reveal_child(should_be_open);
-                        if should_be_open {
+                        // Add revealer to the stack
+                        menu_container.add_named(&menu_revealer, Some(&menu_id));
+
+                        // Trigger window resize when animation completes
+                        menu_revealer.connect_child_revealed_notify(move |_| {
                             trigger_window_resize();
-                        }
-                    });
+                        });
 
-                    // Sync initial state
-                    {
-                        let state = self.menu_store.get_state();
-                        let should_be_open = state
-                            .active_menu_id
-                            .as_ref()
-                            .map(|id| menu_ids.contains(id))
-                            .unwrap_or(false);
-                        menu_revealer.set_reveal_child(should_be_open);
-                    }
-                }
+                        // Subscribe this revealer to menu store
+                        let menu_revealer_clone = menu_revealer.clone();
+                        let menu_container_clone = menu_container.clone();
+                        let menu_store_clone = self.menu_store.clone();
+                        let menu_id_clone = menu_id.clone();
+                        self.menu_store.subscribe(move || {
+                            let state = menu_store_clone.get_state();
+                            let should_be_open = state
+                                .active_menu_id
+                                .as_ref()
+                                .map(|id| *id == menu_id_clone)
+                                .unwrap_or(false);
 
-                // Connect expand callbacks to this revealer (for backwards compatibility)
-                // Preserve any existing callback and chain it with the revealer callback
-                for item in pair.iter() {
-                    if let Some(ref callback_cell) = item.on_expand_toggled {
-                        let revealer = menu_revealer.clone();
-                        // Take the existing callback if any
-                        let existing_callback = callback_cell.borrow_mut().take();
-                        *callback_cell.borrow_mut() = Some(Box::new(move |expanded| {
-                            revealer.set_reveal_child(expanded);
-                            trigger_window_resize();
-                            // Call the original callback if it exists
-                            if let Some(ref cb) = existing_callback {
-                                cb(expanded);
+                            if should_be_open {
+                                // Switch stack to show this menu's revealer
+                                menu_container_clone.set_visible_child_name(&menu_id_clone);
                             }
-                        }));
+
+                            menu_revealer_clone.set_reveal_child(should_be_open);
+                        });
+
+                        // Sync initial state
+                        {
+                            let state = self.menu_store.get_state();
+                            let should_be_open = state
+                                .active_menu_id
+                                .as_ref()
+                                .map(|id| *id == menu_id)
+                                .unwrap_or(false);
+
+                            if should_be_open {
+                                menu_container.set_visible_child_name(&menu_id);
+                            }
+
+                            menu_revealer.set_reveal_child(should_be_open);
+                        }
+
+                        // Connect expand callback for plugin
+                        if let Some(ref callback_cell) = callback_cell {
+                            let existing_callback = callback_cell.borrow_mut().take();
+                            *callback_cell.borrow_mut() = Some(Box::new(move |expanded| {
+                                if let Some(ref cb) = existing_callback {
+                                    cb(expanded);
+                                }
+                            }));
+                        }
                     }
                 }
             }

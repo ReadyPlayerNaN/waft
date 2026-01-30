@@ -52,6 +52,13 @@ network-ipv6-address = IPv6 Address
 network-subnet-mask = Subnet Mask
 network-gateway = Gateway
 
+# VPN
+vpn-title = VPN
+vpn-connected = Connected
+vpn-disconnected = Disconnected
+vpn-connecting = Connecting...
+vpn-disconnecting = Disconnecting...
+
 # Battery states
 battery-unknown = Unknown
 battery-charging = Charging

@@ -52,6 +52,13 @@ network-ipv6-address = IPv6 adresa
 network-subnet-mask = Maska podsítě
 network-gateway = Brána
 
+# VPN
+vpn-title = VPN
+vpn-connected = Připojeno
+vpn-disconnected = Odpojeno
+vpn-connecting = Připojování...
+vpn-disconnecting = Odpojování...
+
 # Battery states
 battery-unknown = Neznámý stav
 battery-charging = Nabíjení

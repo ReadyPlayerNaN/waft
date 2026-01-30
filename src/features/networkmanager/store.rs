@@ -74,9 +74,7 @@ pub enum NetworkOp {
     SetWiFiScanning(String, bool),
     AddEthernetAdapter(EthernetAdapterState),
     RemoveEthernetAdapter(String),
-    SetEthernetEnabled(String, bool),
-    SetEthernetCarrier(String, bool),
-    SetActiveEthernetConnection(String, Option<String>),
+    SetEthernetDeviceState(String, u32),
     SetVpnConnections(Vec<VpnConnectionState>),
     SetVpnState(String, VpnState),
 }
@@ -167,26 +165,21 @@ pub fn create_network_store() -> NetworkStore {
                     return true;
                 }
             }
-            NetworkOp::SetEthernetEnabled(path, enabled) => {
+            NetworkOp::SetEthernetDeviceState(path, device_state) => {
                 if let Some(adapter) = state.ethernet_adapters.get_mut(&path) {
-                    if adapter.enabled != enabled {
-                        adapter.enabled = enabled;
-                        return true;
-                    }
-                }
-            }
-            NetworkOp::SetEthernetCarrier(path, carrier) => {
-                if let Some(adapter) = state.ethernet_adapters.get_mut(&path) {
-                    if adapter.carrier != carrier {
-                        adapter.carrier = carrier;
-                        return true;
-                    }
-                }
-            }
-            NetworkOp::SetActiveEthernetConnection(path, connection) => {
-                if let Some(adapter) = state.ethernet_adapters.get_mut(&path) {
-                    if adapter.active_connection != connection {
-                        adapter.active_connection = connection;
+                    if adapter.device_state != device_state {
+                        adapter.device_state = device_state;
+                        // Derive enabled and carrier from device state
+                        // - Unavailable (20) = no carrier (cable not connected)
+                        // - Disconnected (30) or higher = carrier present
+                        // - Activated (100) = connected
+                        adapter.carrier = device_state >= 30;
+                        adapter.enabled = device_state >= 20;
+                        adapter.active_connection = if device_state == 100 {
+                            Some(adapter.path.clone()) // Placeholder
+                        } else {
+                            None
+                        };
                         return true;
                     }
                 }

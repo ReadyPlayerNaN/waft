@@ -60,7 +60,7 @@ impl WiredToggleWidget {
                 title: format!("Wired ({})", interface_name),
                 icon: icon.into(),
                 details: initial_details,
-                active: enabled,
+                active: is_connected,
                 busy: false,
                 expanded: false,
             },
@@ -154,7 +154,7 @@ impl WiredToggleWidget {
             "network-wired-offline-symbolic"
         };
 
-        self.set_active(enabled);
+        self.set_active(is_connected);
         self.set_icon(icon);
         self.set_details(details);
     }
