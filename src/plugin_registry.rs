@@ -142,6 +142,34 @@ impl PluginRegistry {
         }
     }
 
+    /// Notify all plugins that the session is locking.
+    pub fn notify_session_locked(&self) {
+        for (name, plugin) in &self.plugins {
+            match plugin.lock() {
+                Ok(guard) => guard.on_session_lock(),
+                Err(e) => {
+                    warn!(
+                        "[registry] plugin '{name}' mutex poisoned in notify_session_locked: {e}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Notify all plugins that the session has unlocked.
+    pub fn notify_session_unlocked(&self) {
+        for (name, plugin) in &self.plugins {
+            match plugin.lock() {
+                Ok(guard) => guard.on_session_unlock(),
+                Err(e) => {
+                    warn!(
+                        "[registry] plugin '{name}' mutex poisoned in notify_session_unlocked: {e}"
+                    );
+                }
+            }
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.plugins.len()
     }

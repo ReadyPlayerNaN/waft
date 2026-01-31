@@ -144,4 +144,12 @@ pub trait Plugin {
     /// Called when the main overlay window visibility changes.
     /// `visible` is `true` when the overlay appears, `false` when it finishes hiding.
     fn on_overlay_visible(&self, _visible: bool) {}
+
+    /// Called when the session is about to lock (screen locker activating).
+    /// Plugins should pause animations and hide any visible windows.
+    fn on_session_lock(&self) {}
+
+    /// Called when the session unlocks (screen locker deactivated).
+    /// Plugins should resume normal operation.
+    fn on_session_unlock(&self) {}
 }

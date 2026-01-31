@@ -71,6 +71,7 @@ pub struct NotificationsPlugin {
     tick_source: Arc<std::sync::Mutex<Option<glib::SourceId>>>,
     toast: Option<ToastWindowWidget>,
     debouncer: Option<NotificationDebouncer>,
+    session_locked: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl NotificationsPlugin {
@@ -92,6 +93,7 @@ impl NotificationsPlugin {
             tick_source: Arc::new(std::sync::Mutex::new(None)),
             toast: None,
             debouncer: None,
+            session_locked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -353,8 +355,50 @@ impl Plugin for NotificationsPlugin {
     }
 
     fn on_overlay_visible(&self, visible: bool) {
+        // Don't show toast window if session is locked
+        if self.session_locked.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
         if let Some(ref toast) = self.toast {
             toast.window.set_visible(!visible);
         }
+    }
+
+    fn on_session_lock(&self) {
+        use std::sync::atomic::Ordering;
+
+        debug!("[notifications] Session locked, hiding toast window");
+        self.session_locked.store(true, Ordering::Relaxed);
+
+        // Hide toast window
+        if let Some(ref toast) = self.toast {
+            toast.window.set_visible(false);
+        }
+
+        // Stop the tick timer to pause countdown bars
+        let mut guard = match self.tick_source.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("[notifications] tick_source mutex poisoned in on_session_lock: {e}");
+                e.into_inner()
+            }
+        };
+        if let Some(source_id) = guard.take() {
+            source_id.remove();
+        }
+    }
+
+    fn on_session_unlock(&self) {
+        use std::sync::atomic::Ordering;
+
+        debug!("[notifications] Session unlocked, resuming toast processing");
+        self.session_locked.store(false, Ordering::Relaxed);
+
+        // Restart the tick timer
+        self.schedule_tick();
+
+        // Toast window will be shown when a new notification arrives or
+        // on_overlay_visible(false) is called. We don't force it visible
+        // immediately since the overlay might be about to show.
     }
 }

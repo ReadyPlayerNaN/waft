@@ -309,6 +309,30 @@ impl MainWindowWidget {
         *self.on_hide_complete.borrow_mut() = Some(Box::new(callback));
     }
 
+    /// Handle session lock: stop animations and hide window immediately.
+    pub fn on_session_lock(&self) {
+        // Stop any running animation immediately
+        self.animation.pause();
+
+        // Force window to hidden state without animation
+        self.animating_hide.set(false);
+        self.window.set_visible(false);
+
+        debug!("[main_window] Session locked, window hidden");
+    }
+
+    /// Handle session unlock: reset animation state to clean values.
+    pub fn on_session_unlock(&self) {
+        // Reset animation state to initial values
+        self.animation_progress.set(0.0);
+        self.animating_hide.set(false);
+
+        // Ensure window stays hidden (clean state after unlock)
+        self.window.set_visible(false);
+
+        debug!("[main_window] Session unlocked, state reset");
+    }
+
     fn configure_layer_shell(window: &adw::ApplicationWindow) {
         window.set_decorated(false);
         window.set_hide_on_close(true);

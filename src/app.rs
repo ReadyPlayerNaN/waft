@@ -17,10 +17,12 @@ use crate::features::agenda::AgendaPlugin;
 use crate::features::audio::AudioPlugin;
 use crate::features::battery::BatteryPlugin;
 use crate::features::bluetooth::BluetoothPlugin;
+use crate::features::brightness::BrightnessPlugin;
 use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
 use crate::features::networkmanager::NetworkManagerPlugin;
 use crate::features::notifications::NotificationsPlugin;
+use crate::features::session::{SessionMonitor, SessionEvent};
 use crate::features::sunsetr::SunsetrPlugin;
 use crate::features::weather::WeatherPlugin;
 use crate::ipc::net as ipc_net;
@@ -195,6 +197,14 @@ pub async fn run() -> Result<()> {
         registry.register(plugin);
     }
 
+    if config.is_plugin_enabled("plugin::brightness") {
+        let mut plugin = BrightnessPlugin::new();
+        if let Some(settings) = config.get_plugin_settings("plugin::brightness") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
     if config.is_plugin_enabled("plugin::agenda") {
         let mut plugin = AgendaPlugin::new(dbus.clone());
         if let Some(settings) = config.get_plugin_settings("plugin::agenda") {
@@ -223,7 +233,7 @@ pub async fn run() -> Result<()> {
         eprintln!("  id = \"plugin::notifications\"");
         eprintln!();
         eprintln!(
-            "Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::agenda, plugin::networkmanager"
+            "Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::brightness, plugin::agenda, plugin::networkmanager"
         );
         std::process::exit(1);
     }
@@ -233,6 +243,10 @@ pub async fn run() -> Result<()> {
 
     let registry_arc = Arc::new(registry);
 
+    // Initialize session monitor for lock/unlock detection
+    let session_monitor = SessionMonitor::new().await;
+    let session_rx = session_monitor.as_ref().map(|m| m.subscribe());
+
     // Create the application
     let app = adw::Application::builder()
         .application_id("com.sacrebleui.overlay")
@@ -240,12 +254,14 @@ pub async fn run() -> Result<()> {
 
     let ipc_rx_for_startup = ipc_rx.clone();
     let registry_for_startup = registry_arc.clone();
+    let session_rx_for_startup = Arc::new(Mutex::new(session_rx));
 
     app.connect_startup(move |app| {
         debug!("Started gtk app");
 
         let registry = registry_for_startup.clone();
         let ipc_rx_slot = ipc_rx_for_startup.clone();
+        let session_rx_slot = session_rx_for_startup.clone();
         let app = app.clone();
 
         // Block the startup signal until async work completes
@@ -341,6 +357,48 @@ pub async fn run() -> Result<()> {
                             }
                         }
                         warn!("[ipc] IPC receiver loop exited — overlay will no longer respond to IPC commands");
+                    });
+                }
+            }
+
+            // Setup session lock/unlock receiver
+            if let Ok(mut rx_slot) = session_rx_slot.lock() {
+                if let Some(mut rx) = rx_slot.take() {
+                    let registry_for_session = registry.clone();
+                    let window_for_session = main_window.window.clone();
+                    let animation_for_session = main_window.animation.clone();
+                    let progress_for_session = main_window.animation_progress.clone();
+                    let animating_hide_for_session = main_window.animating_hide.clone();
+
+                    glib::spawn_future_local(async move {
+                        loop {
+                            match rx.recv().await {
+                                Ok(event) => {
+                                    match event {
+                                        SessionEvent::Lock => {
+                                            debug!("[app] Session lock detected");
+                                            // Stop animation and hide window
+                                            animation_for_session.pause();
+                                            animating_hide_for_session.set(false);
+                                            window_for_session.set_visible(false);
+                                            // Notify all plugins
+                                            registry_for_session.notify_session_locked();
+                                        }
+                                        SessionEvent::Unlock => {
+                                            debug!("[app] Session unlock detected");
+                                            // Reset animation state
+                                            progress_for_session.set(0.0);
+                                            animating_hide_for_session.set(false);
+                                            // Notify all plugins
+                                            registry_for_session.notify_session_unlocked();
+                                        }
+                                    }
+                                }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                            }
+                        }
+                        warn!("[session] Session event receiver loop exited");
                     });
                 }
             }

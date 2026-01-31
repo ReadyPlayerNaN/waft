@@ -1,9 +1,7 @@
 - WiFi plugin
-- VPN plugin (Maybe networkmanager plugin?)
 - Caffeine plugin (not sure how)
 - Keyboard layout plugin
 - Tether plugin?
 - SNI
-- Brightness plugin
 - Actions plugin(s): {Shutdown, Lock}(systemd plugin), Settings
 - Create strategy for "Failed to load widgets"
