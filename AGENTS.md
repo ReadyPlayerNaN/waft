@@ -15,19 +15,87 @@ cargo test --lib     # Run library unit tests only
 cargo test notifications_store_reduce  # Run specific test module
 ```
 
+---
+
+## OpenSpec & Project Specifications
+
+**This project uses OpenSpec for specification-driven development.** All changes are documented with structured specifications in the `specs/` directory. Each change includes:
+
+- **proposal.md** - Rationale: why this change is needed
+- **design.md** - Implementation details and technical decisions
+- **tasks.md** - Work breakdown and step-by-step tasks
+- **specs/** - Detailed capability specifications
+
+**Active OpenSpec Changes (10+ archived specs):**
+- Display brightness plugin control with brightnessctl/ddcutil backends
+- VPN network support and toggle
+- WiFi and Ethernet network management
+- Menu UI consistency across Bluetooth, WiFi, VPN
+- NetworkManager library migration (custom D-Bus → nmrs crate)
+- Dynamic plugin widget registration at runtime
+- Session lock awareness (pause animations when locked)
+- Icon resolution and theme support
+- DBus signal testing and error handling
+- Notification store reducer pattern
+
+When implementing features:
+1. Check `specs/` for existing specifications
+2. Review related `proposal.md` and `design.md` for context
+3. Follow tasks outlined in `tasks.md`
+4. Keep specifications up-to-date with implementation
+
+---
+
 ## Architecture Overview
 
-**sacrebleui** is a Wayland-only overlay UI application using Relm4 + libadwaita. It acts as a notification server (owns `org.freedesktop.Notifications` on DBus) and provides an overlay panel with feature toggles.
+**sacrebleui** is a Wayland-only overlay UI application using Rust, GTK4, libadwaita, and Relm4. It acts as a notification server (owns `org.freedesktop.Notifications` on DBus) and provides an extensible overlay panel with feature toggles and a plugin-based architecture.
+
+### Technology Stack
+
+- **Framework:** Relm4 (declarative GTK4 component architecture)
+- **UI:** libadwaita (modern GTK4 library), gtk4-layer-shell (Wayland layer-shell protocol)
+- **Async:** Tokio (multi-threaded runtime), flume (executor-agnostic channels)
+- **System:** zbus 5.0 (DBus), nmrs 2.0 (NetworkManager bindings)
+- **Config:** TOML (`~/.config/sacrebleui/config.toml`)
+- **Localization:** Fluent (internationalization support)
 
 ### Core Components
 
-- **Entry point:** `src/main.rs` → `app::run()`
-- **App model:** `src/app.rs` - Relm4 `SimpleComponent`, manages overlay window (layer-shell), plugin registry, IPC commands
-- **Plugin system:** `src/plugin.rs`, `src/plugin_registry.rs` - Non-`Send` plugin trait for GTK compatibility
-- **Notifications:** `src/features/notifications/` - DBus server, reducer-based state management, UI components
-- **IPC:** `src/ipc/` - JSON commands over Unix socket (show/hide/toggle/ping)
+- **Entry point:** `src/main.rs` → Tokio entrypoint → `app::run()`
+- **App model:** `src/app.rs` - Relm4 `SimpleComponent`, manages overlay window (layer-shell), plugin registry, IPC server, async orchestration
+- **Plugin system:** `src/plugin.rs`, `src/plugin_registry.rs` - `#[async_trait(?Send)]` plugin trait for GTK compatibility
+- **Notifications:** `src/features/notifications/` - DBus server implementation, reducer-based state management, toast UI
+- **IPC:** `src/ipc/` - JSON command server over Unix socket (show/hide/toggle/ping)
+- **UI Components:** `src/ui/` - Layer-shell window, feature grid, toggles, sliders, menus, icons, clock, battery, weather
+- **Features (plugins):** `src/features/` - 11 pluggable features including audio, brightness, WiFi, Bluetooth, VPN, battery, clock, etc.
 
-### Plugin System
+### Plugin Architecture
+
+The application is **plugin-centric** with 11 plugins:
+
+| Plugin | Type | Purpose |
+|--------|------|---------|
+| **notifications** | Core | DBus notification server, toast display, Do Not Disturb toggle |
+| **audio** | Control | Volume slider, audio device selection |
+| **brightness** | Control | Master brightness slider + per-display fine-tuning |
+| **networkmanager** | Control | WiFi toggle, Ethernet adapter info, VPN connection toggle |
+| **bluetooth** | Control | Device discovery, connection management, menu |
+| **battery** | Info | Battery percentage, health, charging status |
+| **clock** | Info | Current time and date with timezone support |
+| **darkman** | Toggle | Dark mode control via darkman DBus service |
+| **sunsetr** | Toggle | Night light control via sunsetr CLI |
+| **agenda** | Info | Calendar/event display |
+| **weather** | Info | Weather information via HTTP API |
+
+**Plugin Lifecycle:**
+- `configure()` - Parse plugin-specific TOML config
+- `init()` - Async initialization (DBus, channels, state setup)
+- `create_elements()` - Construct GTK widgets after GTK init
+- `cleanup()` - Graceful shutdown
+
+**Widget Slots:** `Info`, `Controls`, `Header`
+
+### Plugin System Implementation
 
 Plugins implement the `Plugin` trait (`#[async_trait(?Send)]`):
 - `init()` - async initialization (DBus, channels, pure Rust state only)
@@ -35,14 +103,110 @@ Plugins implement the `Plugin` trait (`#[async_trait(?Send)]`):
 - Widgets placed into slots: `Info`, `Controls`, `Header`
 - Registration is manual in `app.rs` via `PluginRegistry`
 - Registry stores plugins behind `Arc<Mutex<Box<dyn Plugin>>>`
+- Dynamic widget registration via `WidgetRegistrar` trait
 
 **Documentation requirement:** When adding or modifying plugin configuration options, always update the plugin's README.md file (`src/features/<plugin>/README.md`) to document the new/changed options.
+
+### Directory Structure
+
+```
+src/
+├── main.rs                 # Tokio entrypoint
+├── app.rs                  # Main GTK application, plugin orchestration
+├── lib.rs                  # Public library API for tests
+├── plugin.rs               # Plugin trait (#[async_trait(?Send)])
+├── plugin_registry.rs      # Plugin registration and discovery
+├── config.rs               # TOML configuration loading
+├── dbus.rs                 # Generic DBus handle for plugins
+├── menu_state.rs           # Menu expansion/collapse state
+├── store.rs                # Global state store
+├── ipc/                    # Unix socket IPC command server
+├── i18n/                   # Fluent localization (Internationalization)
+├── runtime.rs              # Async runtime helpers
+├── ui/                     # Core UI components
+│   ├── main_window.rs      # Layer-shell overlay window
+│   ├── feature_grid.rs     # Grid layout for feature toggles
+│   ├── feature_toggle.rs   # Generic toggle widget
+│   ├── feature_toggle_expandable.rs  # Toggle with expandable menu
+│   ├── slider_control.rs   # Slider with menu extraction
+│   ├── menu_item.rs        # Reusable menu item component
+│   ├── menu_chevron.rs     # Chevron icon for menus
+│   ├── icon.rs             # Theme icon resolution
+│   ├── battery.rs          # Battery status display
+│   ├── clock.rs            # Clock display
+│   ├── weather.rs          # Weather display
+│   └── style.rs            # CSS styling
+└── features/               # Plugin implementations (11 total)
+    ├── agenda/             # Calendar/agenda plugin
+    ├── audio/              # Audio control (volume, device selection)
+    ├── battery/            # Battery status and health
+    ├── bluetooth/          # Bluetooth device management
+    ├── brightness/         # Display brightness control (NEW)
+    ├── clock/              # Time and date display
+    ├── darkman/            # Dark mode toggle
+    ├── networkmanager/     # WiFi, Ethernet, VPN management
+    ├── notifications/      # Desktop notification handling (core)
+    ├── session/            # Session lock detection
+    ├── sunsetr/            # Night light control
+    └── weather/            # Weather information
+```
+
+### Recent Development (Last 25 Commits)
+
+**Feature Development:**
+- **a8faa48** - Display brightness control (brightnessctl/ddcutil backends, master + per-display)
+- **b968f72** - VPN connection toggle with menu widget
+- **877bb9c** - Wired network adapter info display fix
+- **e973f36** - Dynamic widget registration at runtime
+- **5fdc658** - Unified menu item design across all plugins
+- **413ebc4** - Major refactor: Migrated from custom D-Bus to nmrs crate (450 LOC reduction)
+- **a06c14d** - WiFi and Ethernet adapter management
+- **f44004a** - i18n support with Fluent localization
+
+**Infrastructure & Testing:**
+- **1902c07** - Expanded DBus test coverage
+- **5d8e13f** - Icon resolution test suite
+- **d89dfa9** - Initialized OpenSpec for specification-driven development
+
+**Current Branch:** `network` (feature development)
+**Main Branch:** `relm4` (integration target)
+**Branch Status:** Clean (all work committed)
+
+### Key Architectural Patterns
+
+**Async-First Architecture with Clear Threading Boundaries:**
+- **Main Thread:** GTK widgets and UI rendering (not `Send`/`Sync`)
+- **Tokio Runtime:** All async I/O, DBus, file operations, background tasks
+- **Channel-based Communication:** flume (executor-agnostic) for tokio ↔ glib communication
+
+**Important:** Never run tokio futures inside `glib::spawn_future_local()` - causes 100% CPU busy-polling. Always spawn tokio work on the tokio runtime and communicate via executor-agnostic channels.
+
+**Widget Registration Pattern:**
+- Plugins use `WidgetRegistrar` to dynamically register/unregister widgets at runtime
+- Enables hot-reloading and graceful shutdown
+- Prevents widget lifecycle coupling
+
+**Non-`Send` Plugin Trait:**
+- Uses `#[async_trait(?Send)]` for GTK compatibility
+- Plugins live on main thread, never moved into tokio tasks directly
+- Plugin state split: Send-safe for background tasks, GTK types for UI thread
+
+**Layer-Shell Dynamic Resizing:**
+- Manual `window.set_default_size(width, -1)` when content changes
+- Deferred via `idle_add_local` to prevent recursion
+- Animated content (revealers) triggers resize after animation completes
+
+**Session Lock Awareness:**
+- `on_session_lock()` hook pauses animations and expensive operations when locked
+- Reduces power consumption and visual artifacts during lock screen
 
 ### State Management
 
 - **Notifications store:** `AsyncReducible` reducer pattern in `src/features/notifications/store.rs`
 - **Domain types:** `src/features/notifications/types.rs`
 - **Operations:** `NotificationOp` enum (ingress, dismiss, retract, tick)
+- **Plugin-local state:** Each plugin owns domain state; UI composes what plugins provide
+- **Explicit state flow:** Avoid hidden couplings; expose explicit APIs or events
 
 ---
 
@@ -376,3 +540,46 @@ let handle = match self.field.as_ref() {
 3. **Explicit state flow** - Avoid hidden couplings; expose explicit APIs or events
 4. **Event bus is optional** - Use for declarative tiles; imperative API acceptable for widgets
 5. **Main-thread UI, no forced `Send + Sync`** - Use async for blocking work; keep GTK types on main thread
+
+---
+
+## Future Work & Known Limitations
+
+### Planned Features
+
+From TODO.md:
+- **WiFi plugin** - Separate WiFi-specific management (distinct from NetworkManager integration)
+- **Caffeine plugin** - Prevent sleep/screensaver (systemd inhibitor)
+- **Keyboard layout plugin** - Display and switch input methods
+- **SNI (Status Notifier Items) support** - Systray compatibility
+- **Action plugins** - Shutdown, lock, logout via systemd
+- **Settings integration** - Preferences UI within overlay
+- **Error handling strategy** - Unified "Failed to load widgets" recovery
+
+### Known Limitations
+
+- **Notifications persistence:** In-memory only; not persisted to disk
+- **Desktop app icon resolution:** No `.desktop` file lookup (GDesktopAppInfo not used)
+- **Wayland-only:** No X11 support
+- **One overlay instance:** Single unified overlay per session
+
+### Configuration
+
+Default config location: `~/.config/sacrebleui/config.toml`
+
+```toml
+[[plugins]]
+id = "plugin::notifications"
+toast_limit = 3
+disable_toasts = false
+
+[[plugins]]
+id = "plugin::brightness"
+# Optional backend configuration
+
+[[plugins]]
+id = "plugin::networkmanager"
+# VPN and network settings
+```
+
+See individual plugin README.md files in `src/features/<plugin>/` for plugin-specific configuration options.
