@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use zvariant::{OwnedValue, Value};
 
-use crate::dbus::{DbusHandle, owned_value_to_bool, owned_value_to_string};
+use crate::dbus::DbusHandle;
 
 pub const BLUEZ_DEST: &str = "org.bluez";
 pub const IFACE_ADAPTER1: &str = "org.bluez.Adapter1";
@@ -29,7 +29,6 @@ pub struct BluetoothDevice {
     pub path: String,
     pub name: String,
     pub icon: String,
-    pub paired: bool,
     pub connected: bool,
 }
 
@@ -72,25 +71,6 @@ pub async fn find_all_adapters(conn: &DbusHandle) -> Result<Vec<BluetoothAdapter
     adapters.sort_by(|a, b| a.path.cmp(&b.path));
 
     Ok(adapters)
-}
-
-/// Get the Powered property from an adapter.
-pub async fn get_powered(conn: &DbusHandle, adapter_path: &str) -> Result<bool> {
-    let proxy = zbus::Proxy::new(
-        &*conn.connection(),
-        BLUEZ_DEST,
-        adapter_path,
-        IFACE_PROPERTIES,
-    )
-    .await
-    .context("Failed to create Properties proxy")?;
-
-    let (value,): (OwnedValue,) = proxy
-        .call("Get", &(IFACE_ADAPTER1, "Powered"))
-        .await
-        .context("Failed to get Powered property")?;
-
-    Ok(owned_value_to_bool(value).unwrap_or(false))
 }
 
 /// Set the Powered property on an adapter.
@@ -168,7 +148,6 @@ pub async fn get_paired_devices(
                 path: path_str,
                 name,
                 icon,
-                paired,
                 connected,
             });
         }
