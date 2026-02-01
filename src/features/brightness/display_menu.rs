@@ -177,16 +177,12 @@ impl DisplayMenuWidget {
     }
 
     /// Update brightness for a specific display.
+    #[allow(dead_code)] // Called from BrightnessControlWidget::update_brightness
     pub fn update_brightness(&self, display_id: &str, brightness: f64) {
         let rows = self.rows.borrow();
         if let Some(row) = rows.get(display_id) {
             row.set_brightness(brightness);
         }
-    }
-
-    /// Get a reference to the root widget.
-    pub fn widget(&self) -> &gtk::Box {
-        &self.root
     }
 }
 

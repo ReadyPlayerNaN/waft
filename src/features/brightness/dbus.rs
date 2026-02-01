@@ -11,6 +11,7 @@ use super::store::DisplayType;
 
 /// Information about a discovered display.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // max_brightness is parsed but not yet consumed
 pub struct DiscoveredDisplay {
     pub id: String,
     pub name: String,
@@ -192,6 +193,7 @@ async fn get_ddc_brightness(display_num: u32) -> Result<f64> {
 }
 
 /// Get brightness for a device.
+#[allow(dead_code)] // Available for future use but discover_displays is currently used instead
 pub async fn get_brightness(device_id: &str) -> Result<f64> {
     if let Some(device_name) = device_id.strip_prefix("backlight:") {
         get_backlight_brightness(device_name).await
