@@ -3,6 +3,7 @@
 //! Manages darkman state with instance-based stores.
 
 use super::values::DarkmanMode;
+use crate::set_field;
 use crate::store::{PluginStore, StoreOp, StoreState};
 
 /// State for the darkman plugin.
@@ -32,21 +33,7 @@ pub type DarkmanStore = PluginStore<DarkmanOp, DarkmanState>;
 /// Create a new darkman store instance.
 pub fn create_darkman_store() -> DarkmanStore {
     PluginStore::new(|state: &mut DarkmanState, op: DarkmanOp| match op {
-        DarkmanOp::SetMode(mode) => {
-            if state.mode != mode {
-                state.mode = mode;
-                true
-            } else {
-                false
-            }
-        }
-        DarkmanOp::SetBusy(busy) => {
-            if state.busy != busy {
-                state.busy = busy;
-                true
-            } else {
-                false
-            }
-        }
+        DarkmanOp::SetMode(mode) => set_field!(state.mode, mode),
+        DarkmanOp::SetBusy(busy) => set_field!(state.busy, busy),
     })
 }

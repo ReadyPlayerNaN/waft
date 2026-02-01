@@ -4,6 +4,7 @@
 
 use super::values::BatteryInfo;
 use crate::store::{PluginStore, StoreOp, StoreState};
+use crate::set_field;
 
 /// State for the battery plugin.
 #[derive(Clone, Default)]
@@ -30,13 +31,6 @@ pub type BatteryStore = PluginStore<BatteryOp, BatteryStoreState>;
 /// Create a new battery store instance.
 pub fn create_battery_store() -> BatteryStore {
     PluginStore::new(|state: &mut BatteryStoreState, op: BatteryOp| match op {
-        BatteryOp::SetInfo(info) => {
-            if state.info != info {
-                state.info = info;
-                true
-            } else {
-                false
-            }
-        }
+        BatteryOp::SetInfo(info) => set_field!(state.info, info),
     })
 }

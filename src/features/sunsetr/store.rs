@@ -2,6 +2,7 @@
 //!
 //! Manages sunsetr state with instance-based stores.
 
+use crate::set_field;
 use crate::store::{PluginStore, StoreOp, StoreState};
 
 /// State for the sunsetr plugin.
@@ -44,13 +45,6 @@ pub fn create_sunsetr_store() -> SunsetrStore {
             state.next_transition = next_transition;
             changed
         }
-        SunsetrOp::SetBusy(busy) => {
-            if state.busy != busy {
-                state.busy = busy;
-                true
-            } else {
-                false
-            }
-        }
+        SunsetrOp::SetBusy(busy) => set_field!(state.busy, busy),
     })
 }

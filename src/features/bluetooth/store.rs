@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use crate::set_field;
 use crate::store::{PluginStore, StoreOp, StoreState};
 
 /// Connection state for a device.
@@ -60,48 +61,20 @@ pub type BluetoothStore = PluginStore<BluetoothOp, BluetoothState>;
 /// Create a new bluetooth store instance.
 pub fn create_bluetooth_store() -> BluetoothStore {
     PluginStore::new(|state: &mut BluetoothState, op: BluetoothOp| match op {
-        BluetoothOp::SetPowered(powered) => {
-            if state.powered != powered {
-                state.powered = powered;
-                true
-            } else {
-                false
-            }
-        }
-        BluetoothOp::SetBusy(busy) => {
-            if state.busy != busy {
-                state.busy = busy;
-                true
-            } else {
-                false
-            }
-        }
-        BluetoothOp::SetAvailable(available) => {
-            if state.available != available {
-                state.available = available;
-                true
-            } else {
-                false
-            }
-        }
+        BluetoothOp::SetPowered(powered) => set_field!(state.powered, powered),
+        BluetoothOp::SetBusy(busy) => set_field!(state.busy, busy),
+        BluetoothOp::SetAvailable(available) => set_field!(state.available, available),
         BluetoothOp::SetDevices(devices) => {
             let new_devices: HashMap<String, DeviceState> =
                 devices.into_iter().map(|d| (d.path.clone(), d)).collect();
-            if state.devices != new_devices {
-                state.devices = new_devices;
-                true
-            } else {
-                false
-            }
+            set_field!(state.devices, new_devices)
         }
         BluetoothOp::SetDeviceConnection(path, connection) => {
             if let Some(device) = state.devices.get_mut(&path) {
-                if device.connection != connection {
-                    device.connection = connection;
-                    return true;
-                }
+                set_field!(device.connection, connection)
+            } else {
+                false
             }
-            false
         }
     })
 }

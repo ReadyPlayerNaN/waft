@@ -2,6 +2,7 @@
 //!
 //! Manages audio state for input and output devices.
 
+use crate::set_field;
 use crate::store::{PluginStore, StoreOp, StoreState};
 
 /// Represents an audio device.
@@ -54,14 +55,7 @@ pub type AudioStore = PluginStore<AudioOp, AudioState>;
 /// Create a new audio store instance.
 pub fn create_audio_store() -> AudioStore {
     PluginStore::new(|state: &mut AudioState, op: AudioOp| match op {
-        AudioOp::SetAvailable(available) => {
-            if state.available != available {
-                state.available = available;
-                true
-            } else {
-                false
-            }
-        }
+        AudioOp::SetAvailable(available) => set_field!(state.available, available),
         AudioOp::SetOutputVolume(volume) => {
             let volume = volume.clamp(0.0, 1.0);
             if (state.output_volume - volume).abs() > f64::EPSILON {
@@ -71,29 +65,11 @@ pub fn create_audio_store() -> AudioStore {
                 false
             }
         }
-        AudioOp::SetOutputMuted(muted) => {
-            if state.output_muted != muted {
-                state.output_muted = muted;
-                true
-            } else {
-                false
-            }
-        }
-        AudioOp::SetOutputDevices(devices) => {
-            if state.output_devices != devices {
-                state.output_devices = devices;
-                true
-            } else {
-                false
-            }
-        }
+        AudioOp::SetOutputMuted(muted) => set_field!(state.output_muted, muted),
+        AudioOp::SetOutputDevices(devices) => set_field!(state.output_devices, devices),
         AudioOp::SetDefaultOutput(id) => {
-            if state.default_output.as_ref() != Some(&id) {
-                state.default_output = Some(id);
-                true
-            } else {
-                false
-            }
+            let new_val = Some(id);
+            set_field!(state.default_output, new_val)
         }
         AudioOp::SetInputVolume(volume) => {
             let volume = volume.clamp(0.0, 1.0);
@@ -104,29 +80,11 @@ pub fn create_audio_store() -> AudioStore {
                 false
             }
         }
-        AudioOp::SetInputMuted(muted) => {
-            if state.input_muted != muted {
-                state.input_muted = muted;
-                true
-            } else {
-                false
-            }
-        }
-        AudioOp::SetInputDevices(devices) => {
-            if state.input_devices != devices {
-                state.input_devices = devices;
-                true
-            } else {
-                false
-            }
-        }
+        AudioOp::SetInputMuted(muted) => set_field!(state.input_muted, muted),
+        AudioOp::SetInputDevices(devices) => set_field!(state.input_devices, devices),
         AudioOp::SetDefaultInput(id) => {
-            if state.default_input.as_ref() != Some(&id) {
-                state.default_input = Some(id);
-                true
-            } else {
-                false
-            }
+            let new_val = Some(id);
+            set_field!(state.default_input, new_val)
         }
     })
 }

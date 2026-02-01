@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::set_field;
 use crate::store::{PluginStore, StoreOp, StoreState};
 
 use super::values::{AgendaEvent, CalendarSource};
@@ -91,46 +92,11 @@ pub fn create_agenda_store() -> AgendaStore {
                 true
             }
         }
-        AgendaOp::SetAvailable(available) => {
-            if state.available != available {
-                state.available = available;
-                true
-            } else {
-                false
-            }
-        }
-        AgendaOp::SetLoading(loading) => {
-            if state.loading != loading {
-                state.loading = loading;
-                true
-            } else {
-                false
-            }
-        }
-        AgendaOp::SetError(error) => {
-            if state.error != error {
-                state.error = error;
-                true
-            } else {
-                false
-            }
-        }
-        AgendaOp::SetNextPeriodStart(ts) => {
-            if state.next_period_start != ts {
-                state.next_period_start = ts;
-                true
-            } else {
-                false
-            }
-        }
-        AgendaOp::SetQuerySince(since) => {
-            if state.query_since != Some(since) {
-                state.query_since = Some(since);
-                true
-            } else {
-                false
-            }
-        }
+        AgendaOp::SetAvailable(available) => set_field!(state.available, available),
+        AgendaOp::SetLoading(loading) => set_field!(state.loading, loading),
+        AgendaOp::SetError(error) => set_field!(state.error, error),
+        AgendaOp::SetNextPeriodStart(ts) => set_field!(state.next_period_start, ts),
+        AgendaOp::SetQuerySince(since) => set_field!(state.query_since, Some(since)),
     })
 }
 

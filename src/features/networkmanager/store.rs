@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use crate::set_field;
 use crate::store::{PluginStore, StoreOp, StoreState};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,27 +101,17 @@ pub type NetworkStore = PluginStore<NetworkOp, NetworkState>;
 pub fn create_network_store() -> NetworkStore {
     PluginStore::new(|state: &mut NetworkState, op: NetworkOp| {
         match op {
-            NetworkOp::SetAvailable(available) => {
-                if state.available != available {
-                    state.available = available;
-                    return true;
-                }
-            }
+            NetworkOp::SetAvailable(available) => set_field!(state.available, available),
             NetworkOp::AddWiFiAdapter(adapter) => {
                 state.wifi_adapters.insert(adapter.path.clone(), adapter);
-                return true;
+                true
             }
-            NetworkOp::RemoveWiFiAdapter(path) => {
-                if state.wifi_adapters.remove(&path).is_some() {
-                    return true;
-                }
-            }
+            NetworkOp::RemoveWiFiAdapter(path) => state.wifi_adapters.remove(&path).is_some(),
             NetworkOp::SetWiFiEnabled(path, enabled) => {
                 if let Some(adapter) = state.wifi_adapters.get_mut(&path) {
-                    if adapter.enabled != enabled {
-                        adapter.enabled = enabled;
-                        return true;
-                    }
+                    set_field!(adapter.enabled, enabled)
+                } else {
+                    false
                 }
             }
             NetworkOp::SetWiFiAccessPoints(path, access_points) => {
@@ -129,41 +120,38 @@ pub fn create_network_store() -> NetworkStore {
                         .into_iter()
                         .map(|ap| (ap.path.clone(), ap))
                         .collect();
-                    return true;
+                    true
+                } else {
+                    false
                 }
             }
             NetworkOp::SetActiveWiFiConnection(path, connection) => {
                 if let Some(adapter) = state.wifi_adapters.get_mut(&path) {
-                    if adapter.active_connection != connection {
-                        adapter.active_connection = connection;
-                        return true;
-                    }
+                    set_field!(adapter.active_connection, connection)
+                } else {
+                    false
                 }
             }
             NetworkOp::SetWiFiBusy(path, busy) => {
                 if let Some(adapter) = state.wifi_adapters.get_mut(&path) {
-                    if adapter.busy != busy {
-                        adapter.busy = busy;
-                        return true;
-                    }
+                    set_field!(adapter.busy, busy)
+                } else {
+                    false
                 }
             }
             NetworkOp::SetWiFiScanning(path, scanning) => {
                 if let Some(adapter) = state.wifi_adapters.get_mut(&path) {
-                    if adapter.scanning != scanning {
-                        adapter.scanning = scanning;
-                        return true;
-                    }
+                    set_field!(adapter.scanning, scanning)
+                } else {
+                    false
                 }
             }
             NetworkOp::AddEthernetAdapter(adapter) => {
                 state.ethernet_adapters.insert(adapter.path.clone(), adapter);
-                return true;
+                true
             }
             NetworkOp::RemoveEthernetAdapter(path) => {
-                if state.ethernet_adapters.remove(&path).is_some() {
-                    return true;
-                }
+                state.ethernet_adapters.remove(&path).is_some()
             }
             NetworkOp::SetEthernetDeviceState(path, device_state) => {
                 if let Some(adapter) = state.ethernet_adapters.get_mut(&path) {
@@ -180,8 +168,12 @@ pub fn create_network_store() -> NetworkStore {
                         } else {
                             None
                         };
-                        return true;
+                        true
+                    } else {
+                        false
                     }
+                } else {
+                    false
                 }
             }
             NetworkOp::SetVpnConnections(connections) => {
@@ -190,18 +182,20 @@ pub fn create_network_store() -> NetworkStore {
                     .map(|conn| (conn.path.clone(), conn))
                     .collect();
                 state.update_vpn_active_state();
-                return true;
+                true
             }
             NetworkOp::SetVpnState(path, vpn_state) => {
                 if let Some(conn) = state.vpn_connections.get_mut(&path) {
-                    if conn.state != vpn_state {
-                        conn.state = vpn_state;
+                    if set_field!(conn.state, vpn_state) {
                         state.update_vpn_active_state();
-                        return true;
+                        true
+                    } else {
+                        false
                     }
+                } else {
+                    false
                 }
             }
         }
-        false
     })
 }

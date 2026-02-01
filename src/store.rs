@@ -9,6 +9,39 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::RwLock;
 
+/// Helper macro for setting a field if its value changes.
+///
+/// Returns `true` if the value changed, `false` otherwise.
+/// This is the most common pattern in store operations.
+///
+/// # Examples
+///
+/// ```ignore
+/// set_field!(state.enabled, enabled) // Sets state.enabled = enabled if changed
+/// set_field!(state.volume, volume, |v| (v - old_v).abs() > f64::EPSILON) // Custom comparison
+/// ```
+#[macro_export]
+macro_rules! set_field {
+    // Simple field setter with default equality check
+    ($state_field:expr, $value:expr) => {{
+        if $state_field != $value {
+            $state_field = $value;
+            true
+        } else {
+            false
+        }
+    }};
+    // Field setter with custom comparison function
+    ($state_field:expr, $value:expr, $cmp:expr) => {{
+        if $cmp(&$state_field, &$value) {
+            $state_field = $value;
+            true
+        } else {
+            false
+        }
+    }};
+}
+
 /// Marker trait for store operations.
 ///
 /// Operations are dispatched to the store and processed by the processor function.
