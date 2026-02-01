@@ -1,14 +1,11 @@
 use std::collections::HashMap;
+
+use crate::common::ConnectionState;
 use crate::set_field;
 use crate::store::{PluginStore, StoreOp, StoreState};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VpnState {
-    Disconnected,
-    Connecting,
-    Connected,
-    Disconnecting,
-}
+/// Type alias for VPN connection state.
+pub type VpnState = ConnectionState;
 
 #[derive(Debug, Clone)]
 pub struct AccessPointState {

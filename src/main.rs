@@ -1,5 +1,6 @@
 use anyhow::Result;
 mod app;
+mod common;
 mod config;
 mod dbus;
 mod features;

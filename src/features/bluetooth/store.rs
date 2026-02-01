@@ -4,18 +4,12 @@
 
 use std::collections::HashMap;
 
+use crate::common::ConnectionState;
 use crate::set_field;
 use crate::store::{PluginStore, StoreOp, StoreState};
 
-/// Connection state for a device.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum DeviceConnectionState {
-    #[default]
-    Disconnected,
-    Connecting,
-    Connected,
-    Disconnecting,
-}
+/// Type alias for Bluetooth device connection state.
+pub type DeviceConnectionState = ConnectionState;
 
 /// State for a single Bluetooth device.
 #[derive(Clone, Debug, PartialEq, Eq)]
