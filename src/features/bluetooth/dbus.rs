@@ -53,16 +53,12 @@ pub async fn find_all_adapters(conn: &DbusHandle) -> Result<Vec<BluetoothAdapter
     // Find all objects that have the org.bluez.Adapter1 interface
     for (path, interfaces) in objects {
         if let Some(adapter_props) = interfaces.get(IFACE_ADAPTER1) {
-            let name = adapter_props
-                .get("Alias")
-                .or_else(|| adapter_props.get("Name"))
-                .and_then(|v| owned_value_to_string(v.clone()))
-                .unwrap_or_else(|| crate::i18n::t("bluetooth-title"));
-
-            let powered = adapter_props
-                .get("Powered")
-                .and_then(|v| owned_value_to_bool(v.clone()))
-                .unwrap_or(false);
+            let name = DbusHandle::extract_property_or(
+                adapter_props,
+                &["Alias", "Name"],
+                crate::i18n::t("bluetooth-title"),
+            );
+            let powered = DbusHandle::extract_property(adapter_props, "Powered", false);
 
             adapters.push(BluetoothAdapter {
                 path: path.to_string(),
@@ -149,31 +145,24 @@ pub async fn get_paired_devices(
         }
 
         if let Some(device_props) = interfaces.get(IFACE_DEVICE1) {
-            let paired = device_props
-                .get("Paired")
-                .and_then(|v| owned_value_to_bool(v.clone()))
-                .unwrap_or(false);
+            let paired = DbusHandle::extract_property(device_props, "Paired", false);
 
             // Only include paired devices
             if !paired {
                 continue;
             }
 
-            let name = device_props
-                .get("Alias")
-                .or_else(|| device_props.get("Name"))
-                .and_then(|v| owned_value_to_string(v.clone()))
-                .unwrap_or_else(|| crate::i18n::t("bluetooth-unknown-device"));
-
-            let icon = device_props
-                .get("Icon")
-                .and_then(|v| owned_value_to_string(v.clone()))
-                .unwrap_or_else(|| "bluetooth-symbolic".to_string());
-
-            let connected = device_props
-                .get("Connected")
-                .and_then(|v| owned_value_to_bool(v.clone()))
-                .unwrap_or(false);
+            let name = DbusHandle::extract_property_or(
+                device_props,
+                &["Alias", "Name"],
+                crate::i18n::t("bluetooth-unknown-device"),
+            );
+            let icon = DbusHandle::extract_property(
+                device_props,
+                "Icon",
+                "bluetooth-symbolic".to_string(),
+            );
+            let connected = DbusHandle::extract_property(device_props, "Connected", false);
 
             devices.push(BluetoothDevice {
                 path: path_str,

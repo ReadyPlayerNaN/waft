@@ -168,6 +168,61 @@ impl DbusHandle {
         Ok(props)
     }
 
+    /// Extract a typed property from a properties HashMap.
+    ///
+    /// Attempts to extract and convert the property value using TryFrom.
+    /// Returns the converted value on success, or the provided default on failure.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let available = DbusHandle::extract_property::<bool>(&props, "Available", false);
+    /// let percentage = DbusHandle::extract_property::<f64>(&props, "Percentage", 0.0);
+    /// ```
+    pub fn extract_property<T>(
+        props: &std::collections::HashMap<String, OwnedValue>,
+        property_name: &str,
+        default: T,
+    ) -> T
+    where
+        T: TryFrom<OwnedValue>,
+    {
+        props
+            .get(property_name)
+            .and_then(|v| T::try_from(v.clone()).ok())
+            .unwrap_or(default)
+    }
+
+    /// Extract a property from a HashMap, trying multiple property names in order.
+    ///
+    /// Useful when a property may have multiple names (e.g., "Alias" or "Name").
+    /// Returns the first property found that successfully converts, or the default.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let name = DbusHandle::extract_property_or::<String>(
+    ///     &props,
+    ///     &["Alias", "Name"],
+    ///     "Unknown".to_string()
+    /// );
+    /// ```
+    pub fn extract_property_or<T>(
+        props: &std::collections::HashMap<String, OwnedValue>,
+        property_names: &[&str],
+        default: T,
+    ) -> T
+    where
+        T: TryFrom<OwnedValue>,
+    {
+        for name in property_names {
+            if let Some(v) = props.get(*name) {
+                if let Ok(value) = T::try_from(v.clone()) {
+                    return value;
+                }
+            }
+        }
+        default
+    }
+
     /// Listen for PropertiesChanged signals on a specific interface.
     /// Calls callback with interface name and changed properties HashMap.
     pub async fn listen_properties_changed(

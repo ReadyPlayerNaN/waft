@@ -21,35 +21,12 @@ pub async fn get_battery_info(conn: &DbusHandle) -> Result<BatteryInfo> {
         .await
         .context("Failed to get UPower DisplayDevice properties")?;
 
-    let present = props
-        .get("IsPresent")
-        .and_then(|v| <bool>::try_from(v.clone()).ok())
-        .unwrap_or(false);
-
-    let percentage = props
-        .get("Percentage")
-        .and_then(|v| <f64>::try_from(v.clone()).ok())
-        .unwrap_or(0.0);
-
-    let state_u32 = props
-        .get("State")
-        .and_then(|v| <u32>::try_from(v.clone()).ok())
-        .unwrap_or(0);
-
-    let icon_name = props
-        .get("IconName")
-        .and_then(|v| <String>::try_from(v.clone()).ok())
-        .unwrap_or_default();
-
-    let time_to_empty = props
-        .get("TimeToEmpty")
-        .and_then(|v| <i64>::try_from(v.clone()).ok())
-        .unwrap_or(0);
-
-    let time_to_full = props
-        .get("TimeToFull")
-        .and_then(|v| <i64>::try_from(v.clone()).ok())
-        .unwrap_or(0);
+    let present = DbusHandle::extract_property(&props, "IsPresent", false);
+    let percentage = DbusHandle::extract_property(&props, "Percentage", 0.0);
+    let state_u32: u32 = DbusHandle::extract_property(&props, "State", 0);
+    let icon_name = DbusHandle::extract_property(&props, "IconName", String::new());
+    let time_to_empty = DbusHandle::extract_property(&props, "TimeToEmpty", 0);
+    let time_to_full = DbusHandle::extract_property(&props, "TimeToFull", 0);
 
     Ok(BatteryInfo {
         present,
