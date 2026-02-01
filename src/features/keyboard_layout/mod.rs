@@ -143,15 +143,15 @@ impl Plugin for KeyboardLayoutPlugin {
             warn!("[keyboard-layout] Event receiver closed unexpectedly");
         });
 
-        // Register widget in header slot with weight 95 (before systemd_actions at 100/101)
+        // Register widget in actions slot with weight 10 (first in actions group)
         registrar.register_widget(Arc::new(Widget {
             id: "keyboard-layout:indicator".to_string(),
-            slot: Slot::Header,
+            slot: Slot::Actions,
             el: keyboard_widget.root.clone().into(),
-            weight: 95,
+            weight: 10,
         }));
 
-        info!("[keyboard-layout] Widget registered in header");
+        info!("[keyboard-layout] Widget registered in actions slot");
         Ok(())
     }
 }

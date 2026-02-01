@@ -32,6 +32,7 @@ pub enum Slot {
     Info,
     Controls,
     Header,
+    Actions,
 }
 
 pub struct Widget {

@@ -209,20 +209,20 @@ impl Plugin for SystemdActionsPlugin {
             });
         });
 
-        // Register session widget
+        // Register session widget in actions slot
         registrar.register_widget(Arc::new(Widget {
             id: "systemd-actions:session".to_string(),
-            slot: Slot::Header,
+            slot: Slot::Actions,
             el: session_widget.root.upcast::<gtk::Widget>(),
-            weight: 100,
+            weight: 20,
         }));
 
-        // Register power widget
+        // Register power widget in actions slot
         registrar.register_widget(Arc::new(Widget {
             id: "systemd-actions:power".to_string(),
-            slot: Slot::Header,
+            slot: Slot::Actions,
             el: power_widget.root.upcast::<gtk::Widget>(),
-            weight: 101,
+            weight: 21,
         }));
 
         Ok(())

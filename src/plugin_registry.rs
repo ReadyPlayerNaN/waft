@@ -57,6 +57,7 @@ impl PluginRegistry {
                     (Slot::Info, Slot::Info)
                         | (Slot::Controls, Slot::Controls)
                         | (Slot::Header, Slot::Header)
+                        | (Slot::Actions, Slot::Actions)
                 )
             })
             .cloned()

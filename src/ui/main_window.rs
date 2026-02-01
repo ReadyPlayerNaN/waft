@@ -138,6 +138,7 @@ pub enum MainWindowInput {
 /// References to the slot containers for dynamic widget synchronization.
 struct SlotContainers {
     header_box: gtk::Box,
+    actions_box: gtk::Box,
     info_col: gtk::Box,
     controls_col: gtk::Box,
     feature_grid: FeatureGridWidget,
@@ -176,6 +177,7 @@ impl MainWindowWidget {
 
         // Subscribe to widget changes for dynamic updates
         let header_box = containers.header_box.clone();
+        let actions_box = containers.actions_box.clone();
         let info_col = containers.info_col.clone();
         let controls_col = containers.controls_col.clone();
         let feature_grid = Rc::new(containers.feature_grid);
@@ -183,10 +185,12 @@ impl MainWindowWidget {
         registry.subscribe_widgets(move || {
             debug!("[main_window] Widget change detected, syncing slots");
             let header_widgets = registry_for_sync.get_widgets_for_slot(Slot::Header);
+            let actions_widgets = registry_for_sync.get_widgets_for_slot(Slot::Actions);
             let info_widgets = registry_for_sync.get_widgets_for_slot(Slot::Info);
             let controls_widgets = registry_for_sync.get_widgets_for_slot(Slot::Controls);
 
             sync_slot_widgets(&header_box, &header_widgets);
+            sync_slot_widgets(&actions_box, &actions_widgets);
             sync_slot_widgets(&info_col, &info_widgets);
             sync_slot_widgets(&controls_col, &controls_widgets);
 
@@ -783,6 +787,24 @@ impl MainWindowWidget {
         }
         debug!("Appended header widgets {:?}", header_widgets.len());
 
+        // Create actions box (right-aligned in header)
+        let actions_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(8)
+            .halign(gtk::Align::End)
+            .hexpand(true)
+            .build();
+
+        // Add actions widgets (set widget_name to ID for diffing)
+        let actions_widgets = registry.get_widgets_for_slot(Slot::Actions);
+        for w in &actions_widgets {
+            w.el.set_widget_name(&w.id);
+            actions_box.append(&w.el);
+        }
+        debug!("Appended actions widgets {:?}", actions_widgets.len());
+
+        top_box.append(&actions_box);
+
         // Add info widgets (set widget_name to ID for diffing)
         let info_widgets = registry.get_widgets_for_slot(Slot::Info);
         for w in &info_widgets {
@@ -871,6 +893,7 @@ impl MainWindowWidget {
 
         let containers = SlotContainers {
             header_box: top_box,
+            actions_box,
             info_col: left_col,
             controls_col: right_col,
             feature_grid: grid,
