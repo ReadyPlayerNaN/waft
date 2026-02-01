@@ -401,6 +401,68 @@ impl WiFiAdapterWidget {
                 }
                 WiFiMenuOutput::Disconnect => {
                     debug!("Disconnecting from WiFi");
+                    let device_path_clone = device_path.clone();
+                    let store_clone = store.clone();
+                    let menu_clone = menu.clone();
+                    let toggle_clone = toggle.clone();
+                    let dbus_clone = dbus.clone();
+
+                    let (tx, rx) = std::sync::mpsc::channel();
+
+                    std::thread::spawn(move || {
+                        tokio::runtime::Runtime::new()
+                            .unwrap()
+                            .block_on(async move {
+                                match dbus::disconnect_device_sendable(
+                                    dbus_clone,
+                                    device_path_clone.clone(),
+                                )
+                                .await
+                                {
+                                    Ok(()) => {
+                                        let _ = tx.send(Ok(()));
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(Err(format!(
+                                            "Failed to disconnect: {}",
+                                            e
+                                        )));
+                                    }
+                                }
+                            });
+                    });
+
+                    let rx = std::rc::Rc::new(std::cell::RefCell::new(Some(rx)));
+                    glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+                        let receiver_opt = rx.borrow_mut().take();
+
+                        if let Some(receiver) = receiver_opt {
+                            match receiver.try_recv() {
+                                Ok(Ok(())) => {
+                                    info!("Successfully disconnected from WiFi");
+                                    store_clone.emit(NetworkOp::SetActiveWiFiConnection(
+                                        device_path.clone(),
+                                        None,
+                                    ));
+                                    toggle_clone.set_details(None);
+                                    menu_clone.set_active_ssid(None);
+                                    return glib::ControlFlow::Break;
+                                }
+                                Ok(Err(err_msg)) => {
+                                    error!("{}", err_msg);
+                                    return glib::ControlFlow::Break;
+                                }
+                                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                    *rx.borrow_mut() = Some(receiver);
+                                    return glib::ControlFlow::Continue;
+                                }
+                                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                    return glib::ControlFlow::Break;
+                                }
+                            }
+                        }
+                        glib::ControlFlow::Break
+                    });
                 }
                 WiFiMenuOutput::Scan => {
                     debug!("Scan button clicked (shouldn't happen - auto-scan on menu open)");

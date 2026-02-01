@@ -193,7 +193,6 @@ impl BrightnessControlWidget {
     }
 
     /// Update displays and refresh UI.
-    #[allow(dead_code)] // Available for store-driven updates
     pub fn set_displays(&self, displays: Vec<Display>) {
         *self.displays.borrow_mut() = displays.clone();
 
@@ -209,7 +208,6 @@ impl BrightnessControlWidget {
     }
 
     /// Update brightness for a specific display (from external source).
-    #[allow(dead_code)] // Available for external brightness updates
     pub fn update_brightness(&self, display_id: &str, brightness: f64) {
         // Update in our list
         {

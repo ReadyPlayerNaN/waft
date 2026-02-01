@@ -2,6 +2,7 @@
 
 pub mod battery;
 pub mod clock;
+pub mod failed_widget;
 pub mod feature_grid;
 pub mod feature_toggle;
 pub mod feature_toggle_expandable;

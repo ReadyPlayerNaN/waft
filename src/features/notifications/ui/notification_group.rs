@@ -345,4 +345,19 @@ impl NotificationGroup {
     pub fn widget(&self) -> &gtk::Box {
         &self.root
     }
+
+    /// Get a notification card by its ID.
+    pub fn get_notification(&self, id: u64) -> Option<std::cell::Ref<'_, NotificationCard>> {
+        let cards = self.cards.borrow();
+        if cards.contains_key(&id) {
+            Some(std::cell::Ref::map(cards, |c| c.get(&id).unwrap()))
+        } else {
+            None
+        }
+    }
+
+    /// Get all notification IDs in this group for panel display.
+    pub fn get_panel_notification_ids(&self) -> Vec<u64> {
+        self.cards.borrow().keys().cloned().collect()
+    }
 }

@@ -60,8 +60,11 @@ impl KeyboardLayoutWidget {
         // Query initial layout
         widget.query_and_update_label();
 
-        // Connect click handler
-        widget.connect_click_handler(app);
+        // Connect click handler (left-click for next layout)
+        widget.connect_click_handler(app.clone());
+
+        // Connect secondary click handler (right-click for previous layout)
+        widget.connect_secondary_click_handler(app);
 
         widget
     }
@@ -109,7 +112,7 @@ impl KeyboardLayoutWidget {
         });
     }
 
-    /// Connect the button click handler for cycling layouts.
+    /// Connect the button click handler for cycling to the next layout.
     fn connect_click_handler(&self, app: gtk::Application) {
         let backend = self.backend.clone();
         let label = self.label.clone();
@@ -159,6 +162,67 @@ impl KeyboardLayoutWidget {
                 }
             });
         });
+    }
+
+    /// Connect a secondary click handler for cycling to the previous layout.
+    fn connect_secondary_click_handler(&self, app: gtk::Application) {
+        let backend = self.backend.clone();
+        let label = self.label.clone();
+        let root_button = self.root.clone();
+
+        // Create a gesture for secondary (right) click
+        let gesture = gtk::GestureClick::new();
+        gesture.set_button(3); // Secondary button (right-click)
+
+        gesture.connect_released(move |gesture, _, _, _| {
+            // Stop propagation
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+
+            let backend = backend.clone();
+            let label = label.clone();
+            let app = app.clone();
+            let root_button = root_button.clone();
+
+            // Store previous layout for error recovery
+            let previous_label = label.label().to_string();
+
+            glib::spawn_future_local(async move {
+                // Spawn on tokio runtime for async backend call
+                let result: anyhow::Result<String> = crate::runtime::spawn_on_tokio(async move {
+                    let backend_guard = backend.lock().await;
+                    if let Some(ref backend) = *backend_guard {
+                        // Cycle to previous layout
+                        backend.switch_prev().await?;
+                        // Query new layout
+                        let info = backend.get_layout_info().await?;
+                        Ok(info.current)
+                    } else {
+                        Err(anyhow::anyhow!("Keyboard layout backend not available"))
+                    }
+                })
+                .await;
+
+                match result {
+                    Ok(new_layout) => {
+                        label.set_label(&new_layout);
+                        // Update accessible description
+                        root_button.update_property(&[gtk::accessible::Property::Description(
+                            &format!("Current layout: {}", new_layout),
+                        )]);
+                        info!("[keyboard-layout] Cycled to previous layout: {}", new_layout);
+                    }
+                    Err(e) => {
+                        error!("[keyboard-layout] Failed to cycle to previous layout: {}", e);
+                        // Revert to previous label
+                        label.set_label(&previous_label);
+                        // Show error dialog
+                        Self::show_error_dialog(&app, &e);
+                    }
+                }
+            });
+        });
+
+        self.root.add_controller(gesture);
     }
 
     /// Show an error dialog for layout switching failures.

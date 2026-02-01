@@ -202,10 +202,38 @@ impl Plugin for BrightnessPlugin {
 
         // Subscribe to store changes to update widget
         let control_ref = self.control.clone();
+        let store_ref = self.store.clone();
+        // Track previous state to detect what changed
+        let prev_displays: Rc<RefCell<Vec<Display>>> =
+            Rc::new(RefCell::new(state.displays.clone()));
+
         self.store.subscribe(move || {
-            // Widget updates are handled via callbacks, but we could add
-            // additional state synchronization here if needed
-            let _ = control_ref;
+            let state = store_ref.get_state();
+            if let Some(ref control) = *control_ref.borrow() {
+                // Check if display list changed
+                let prev = prev_displays.borrow();
+                if state.displays.len() != prev.len()
+                    || state
+                        .displays
+                        .iter()
+                        .zip(prev.iter())
+                        .any(|(a, b)| a.id != b.id)
+                {
+                    // Display list changed - full refresh
+                    drop(prev);
+                    *prev_displays.borrow_mut() = state.displays.clone();
+                    control.set_displays(state.displays);
+                } else {
+                    // Check for brightness changes on individual displays
+                    for (current, previous) in state.displays.iter().zip(prev.iter()) {
+                        if (current.brightness - previous.brightness).abs() > 0.001 {
+                            control.update_brightness(&current.id, current.brightness);
+                        }
+                    }
+                    drop(prev);
+                    *prev_displays.borrow_mut() = state.displays.clone();
+                }
+            }
         });
 
         Ok(())

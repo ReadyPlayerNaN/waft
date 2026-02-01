@@ -123,6 +123,11 @@ impl ToastWindowWidget {
         self.window.present();
     }
 
+    /// Hide the window.
+    pub fn hide(&self) {
+        self.window.set_visible(false);
+    }
+
     fn configure_layer_shell(window: &gtk::Window, hpos: HPos, vpos: VPos) {
         window.init_layer_shell();
         window.set_layer(gtk4_layer_shell::Layer::Overlay);

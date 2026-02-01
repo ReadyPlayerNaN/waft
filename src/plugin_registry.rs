@@ -1,13 +1,15 @@
 use super::plugin::{Plugin, Slot, Widget, WidgetFeatureToggle, WidgetRegistrar};
 
 use anyhow::Result;
-use log::warn;
+use gtk::prelude::*;
+use log::{error, warn};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::menu_state::MenuStore;
+use crate::ui::failed_widget::FailedWidget;
 
 /// Plugin registry that manages all loaded plugins.
 ///
@@ -74,37 +76,92 @@ impl PluginRegistry {
         toggles
     }
 
-    /// Initialize all plugins
+    /// Initialize all plugins.
+    ///
+    /// Plugins that fail to initialize are logged but don't prevent other plugins
+    /// from loading. Returns Ok even if some plugins fail.
     pub async fn init(&self) -> Result<()> {
+        let mut failed_plugins = Vec::new();
+
         for (name, plugin) in self.plugins.iter() {
-            let mut guard = plugin
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Plugin mutex poisoned: {}", name))?;
+            let mut guard = match plugin.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    error!("[registry] Plugin '{}' mutex poisoned during init: {}", name, e);
+                    failed_plugins.push((name.clone(), "mutex poisoned".to_string()));
+                    continue;
+                }
+            };
+
             if let Err(e) = guard.init().await {
-                eprintln!("Failed to initialize plugin '{}': {}", name, e);
-                return Err(e);
+                error!("[registry] Failed to initialize plugin '{}': {}", name, e);
+                failed_plugins.push((name.clone(), e.to_string()));
             }
         }
+
+        if !failed_plugins.is_empty() {
+            warn!(
+                "[registry] {} plugin(s) failed to initialize: {:?}",
+                failed_plugins.len(),
+                failed_plugins.iter().map(|(n, _)| n).collect::<Vec<_>>()
+            );
+        }
+
         Ok(())
     }
 
+    /// Create UI elements for all plugins.
+    ///
+    /// Plugins that fail to create elements get a "failed widget" placeholder
+    /// registered in the Info slot. Returns Ok even if some plugins fail.
     pub async fn create_elements(
         &self,
         app: &gtk::Application,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
+        let mut failed_plugins = Vec::new();
+
         for (name, plugin) in self.plugins.iter() {
-            let mut guard = plugin
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Plugin mutex poisoned: {}", name))?;
+            let mut guard = match plugin.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    error!(
+                        "[registry] Plugin '{}' mutex poisoned during create_elements: {}",
+                        name, e
+                    );
+                    failed_plugins.push((name.clone(), "mutex poisoned".to_string()));
+                    continue;
+                }
+            };
+
             if let Err(e) = guard
                 .create_elements(app, self.menu_store.clone(), registrar.clone())
                 .await
             {
-                eprintln!("Failed to initialize plugin '{}': {}", name, e);
-                return Err(e);
+                error!("[registry] Failed to create elements for plugin '{}': {}", name, e);
+                failed_plugins.push((name.clone(), e.to_string()));
             }
         }
+
+        // Register failed widget indicators for plugins that failed
+        for (name, error_msg) in &failed_plugins {
+            let failed_widget = FailedWidget::new(name, error_msg);
+            registrar.register_widget(Arc::new(Widget {
+                id: format!("{}:failed", name),
+                slot: Slot::Info,
+                weight: 999, // Show at the bottom
+                el: failed_widget.widget().clone().upcast::<gtk::Widget>(),
+            }));
+        }
+
+        if !failed_plugins.is_empty() {
+            warn!(
+                "[registry] {} plugin(s) failed to create elements: {:?}",
+                failed_plugins.len(),
+                failed_plugins.iter().map(|(n, _)| n).collect::<Vec<_>>()
+            );
+        }
+
         Ok(())
     }
 

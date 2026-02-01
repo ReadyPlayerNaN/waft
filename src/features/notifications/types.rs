@@ -86,13 +86,17 @@ pub struct AppIdent {
     pub ident: Arc<str>,
 }
 
+/// A notification ready for display in the UI.
+///
+/// This struct contains all the data needed to render a notification card,
+/// including the resolved icon hints and formatted display data.
 #[derive(Debug, Clone)]
 pub struct NotificationDisplay {
     pub actions: Vec<NotificationAction>,
     pub app: Option<AppIdent>,
     pub created_at: SystemTime,
     pub description: Arc<str>,
-    pub icon: NotificationIcon,
+    pub icon_hints: Vec<NotificationIcon>,
     pub id: u64,
     pub replaces_id: Option<u64>,
     pub title: Arc<str>,
@@ -101,6 +105,22 @@ pub struct NotificationDisplay {
 }
 
 impl NotificationDisplay {
+    /// Create a NotificationDisplay from a store Notification.
+    pub fn from_notification(notification: &crate::features::notifications::store::Notification) -> Self {
+        Self {
+            actions: notification.actions.clone(),
+            app: notification.app.clone(),
+            created_at: notification.created_at,
+            description: notification.description.clone(),
+            icon_hints: notification.icon_hints.clone(),
+            id: notification.id,
+            replaces_id: notification.replaces_id,
+            title: notification.title.clone(),
+            ttl: notification.ttl,
+            urgency: notification.urgency,
+        }
+    }
+
     pub fn app_id(&self) -> Arc<str> {
         match &self.app {
             Some(app) => app.ident.clone(),

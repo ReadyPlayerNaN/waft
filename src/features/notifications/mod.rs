@@ -366,7 +366,11 @@ impl Plugin for NotificationsPlugin {
             return;
         }
         if let Some(ref toast) = self.toast {
-            toast.window.set_visible(!visible);
+            if visible {
+                toast.hide();
+            } else {
+                toast.present();
+            }
         }
     }
 
@@ -378,7 +382,7 @@ impl Plugin for NotificationsPlugin {
 
         // Hide toast window
         if let Some(ref toast) = self.toast {
-            toast.window.set_visible(false);
+            toast.hide();
         }
 
         // Stop the tick timer to pause countdown bars
