@@ -42,6 +42,7 @@ pub type CardPortMap = HashMap<(String, String), CardPortInfo>;
 
 /// Sink (output device) information.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // volume_percent and muted are parsed but not yet consumed
 pub struct SinkInfo {
     pub name: String,
     pub description: String,
@@ -58,6 +59,7 @@ pub struct SinkInfo {
 
 /// Source (input device) information.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // volume_percent and muted are parsed but not yet consumed
 pub struct SourceInfo {
     pub name: String,
     pub description: String,

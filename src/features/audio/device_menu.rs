@@ -197,20 +197,6 @@ impl AudioDeviceMenuWidget {
             }
         }
     }
-
-    /// Update which device is the default.
-    pub fn set_default(&self, default_id: Option<&str>) {
-        let rows = self.rows.borrow();
-        for (id, row) in rows.iter() {
-            let is_default = default_id.map_or(false, |d| d == id);
-            row.set_default(is_default);
-        }
-    }
-
-    /// Get a reference to the root widget.
-    pub fn widget(&self) -> &gtk::Box {
-        &self.root
-    }
 }
 
 impl Default for AudioDeviceMenuWidget {

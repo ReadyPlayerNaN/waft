@@ -22,7 +22,6 @@ pub enum DeviceMenuOutput {
 /// A single device row in the menu.
 struct DeviceRow {
     menu_item: MenuItemWidget,
-    content: gtk::Box,
     spinner: gtk::Spinner,
     switch: gtk::Switch,
     connection_state: Rc<RefCell<DeviceConnectionState>>,
@@ -110,7 +109,6 @@ impl DeviceRow {
 
         Self {
             menu_item,
-            content,
             spinner,
             switch,
             connection_state,
@@ -229,18 +227,6 @@ impl DeviceMenuWidget {
                 rows.insert(path, row);
             }
         }
-    }
-
-    /// Update a single device's connection state.
-    pub fn set_device_connection(&self, path: &str, connection: DeviceConnectionState) {
-        if let Some(row) = self.rows.borrow().get(path) {
-            row.update_connection(connection);
-        }
-    }
-
-    /// Get a reference to the root widget.
-    pub fn widget(&self) -> &gtk::Box {
-        &self.root
     }
 }
 

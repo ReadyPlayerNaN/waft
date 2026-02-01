@@ -11,6 +11,7 @@ use super::values::{AgendaEvent, CalendarSource};
 
 /// Operations for the agenda store.
 #[derive(Clone)]
+#[allow(dead_code)] // ClearEvents is tested but not yet used in production
 pub enum AgendaOp {
     SetSources(Vec<CalendarSource>),
     UpsertEvents(Vec<AgendaEvent>),
