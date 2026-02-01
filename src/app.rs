@@ -20,6 +20,7 @@ use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::brightness::BrightnessPlugin;
 use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
+use crate::features::keyboard_layout::KeyboardLayoutPlugin;
 use crate::features::networkmanager::NetworkManagerPlugin;
 use crate::features::notifications::NotificationsPlugin;
 use crate::features::session::{SessionEvent, SessionMonitor};
@@ -218,6 +219,14 @@ pub async fn run() -> Result<()> {
         let system_dbus = Arc::new(DbusHandle::connect_system().await?);
         let mut plugin = NetworkManagerPlugin::new(system_dbus);
         if let Some(settings) = config.get_plugin_settings("plugin::networkmanager") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
+    if config.is_plugin_enabled("plugin::keyboard-layout") {
+        let mut plugin = KeyboardLayoutPlugin::new();
+        if let Some(settings) = config.get_plugin_settings("plugin::keyboard-layout") {
             plugin.configure(settings)?;
         }
         registry.register(plugin);

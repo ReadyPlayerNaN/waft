@@ -5,6 +5,7 @@ pub mod bluetooth;
 pub mod brightness;
 pub mod clock;
 pub mod darkman;
+pub mod keyboard_layout;
 pub mod networkmanager;
 pub mod notifications;
 pub mod session;
