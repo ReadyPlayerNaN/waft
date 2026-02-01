@@ -114,35 +114,6 @@ impl DbusHandle {
         Ok(())
     }
 
-    /// Get a typed property via org.freedesktop.DBus.Properties.Get.
-    /// Returns T::default() if property doesn't exist or type conversion fails.
-    pub async fn get_typed_property<T>(
-        &self,
-        destination: &str,
-        path: &str,
-        property: &str,
-    ) -> Result<T>
-    where
-        T: TryFrom<OwnedValue> + Default,
-    {
-        let proxy = zbus::Proxy::new(
-            &*self.conn,
-            destination,
-            path,
-            "org.freedesktop.DBus.Properties",
-        )
-        .await
-        .context("Failed to create DBus Properties proxy")?;
-
-        let result: std::result::Result<(OwnedValue,), zbus::Error> =
-            proxy.call("Get", &(destination, property)).await;
-
-        match result {
-            Ok((value,)) => Ok(T::try_from(value).unwrap_or_default()),
-            Err(_) => Ok(T::default()),
-        }
-    }
-
     /// Get all properties via org.freedesktop.DBus.Properties.GetAll.
     /// Returns HashMap of property names to values.
     pub async fn get_all_properties(
@@ -366,42 +337,6 @@ impl DbusHandle {
 
         Ok(())
     }
-}
-
-/// Extract a bool from an OwnedValue.
-pub fn owned_value_to_bool(v: OwnedValue) -> Option<bool> {
-    let val: Value = v.into();
-    if let Value::Bool(b) = val {
-        return Some(b);
-    }
-    None
-}
-
-/// Extract a u32 from an OwnedValue.
-pub fn owned_value_to_u32(v: OwnedValue) -> Option<u32> {
-    let val: Value = v.into();
-    if let Value::U32(n) = val {
-        return Some(n);
-    }
-    None
-}
-
-/// Extract an i64 from an OwnedValue.
-pub fn owned_value_to_i64(v: OwnedValue) -> Option<i64> {
-    let val: Value = v.into();
-    if let Value::I64(n) = val {
-        return Some(n);
-    }
-    None
-}
-
-/// Extract an f64 from an OwnedValue.
-pub fn owned_value_to_f64(v: OwnedValue) -> Option<f64> {
-    let val: Value = v.into();
-    if let Value::F64(n) = val {
-        return Some(n);
-    }
-    None
 }
 
 /// Best-effort conversion of `OwnedValue` to `String`.

@@ -49,9 +49,4 @@ impl Config {
     pub fn is_plugin_enabled(&self, plugin_id: &str) -> bool {
         self.plugins.iter().any(|p| p.id == plugin_id)
     }
-
-    /// Check if any plugins are configured.
-    pub fn has_plugins(&self) -> bool {
-        !self.plugins.is_empty()
-    }
 }
