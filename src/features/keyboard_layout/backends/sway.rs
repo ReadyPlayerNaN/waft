@@ -21,6 +21,7 @@ use super::{extract_abbreviation, KeyboardLayoutBackend, LayoutEvent, LayoutInfo
 
 /// Sway input device from `swaymsg -t get_inputs`.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // xkb_active_layout_name is part of Sway's JSON but we use index instead
 struct SwayInput {
     /// Input device type (e.g., "keyboard")
     #[serde(rename = "type")]

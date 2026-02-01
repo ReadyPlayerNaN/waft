@@ -40,6 +40,7 @@ pub enum LayoutEvent {
 
 /// Information about the current keyboard layout state.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // available and current_index are for future layout picker UI
 pub struct LayoutInfo {
     /// Current layout abbreviation (e.g., "US", "CZ")
     pub current: String,
@@ -54,6 +55,7 @@ pub struct LayoutInfo {
 /// Each backend implements compositor-specific methods for querying and switching
 /// keyboard layouts.
 #[async_trait]
+#[allow(dead_code)] // switch_prev is for future backward-switch UI action
 pub trait KeyboardLayoutBackend: Send + Sync {
     /// Get information about the current keyboard layout state.
     async fn get_layout_info(&self) -> Result<LayoutInfo>;
