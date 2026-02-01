@@ -870,6 +870,8 @@ impl MainWindowWidget {
             .spacing(8)
             .halign(gtk::Align::End)
             .hexpand(true)
+            .vexpand(false)
+            .valign(gtk::Align::Start)
             .build();
 
         // Add actions widgets (set widget_name to ID for diffing)
