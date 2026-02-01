@@ -12,11 +12,13 @@ use super::backends::KeyboardLayoutBackend;
 
 /// Keyboard layout indicator and switcher widget.
 ///
-/// Displays the current keyboard layout as an uppercase abbreviation (e.g., "US", "DE")
-/// and cycles through available layouts when clicked.
+/// Displays a keyboard icon and the current keyboard layout as an uppercase abbreviation
+/// (e.g., "US", "DE") and cycles through available layouts when clicked.
 pub struct KeyboardLayoutWidget {
     pub root: gtk::Button,
     pub label: gtk::Label,
+    #[allow(dead_code)] // Icon is displayed in UI, field keeps it alive
+    icon: gtk::Image,
     backend: Arc<Mutex<Option<Arc<dyn KeyboardLayoutBackend>>>>,
 }
 
@@ -36,13 +38,27 @@ impl KeyboardLayoutWidget {
             .css_classes(["keyboard-layout-button"])
             .build();
 
+        // Create content box for icon and label
+        let content_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(6)
+            .build();
+
+        // Create keyboard icon
+        let icon = gtk::Image::builder()
+            .icon_name("input-keyboard-symbolic")
+            .css_classes(["keyboard-layout-icon"])
+            .build();
+
         // Create label
         let label = gtk::Label::builder()
             .css_classes(["keyboard-layout-label"])
             .label("??") // Fallback label
             .build();
 
-        root.set_child(Some(&label));
+        content_box.append(&icon);
+        content_box.append(&label);
+        root.set_child(Some(&content_box));
 
         // Set accessible properties
         root.set_accessible_role(gtk::AccessibleRole::Button);
@@ -54,6 +70,7 @@ impl KeyboardLayoutWidget {
         let widget = Self {
             root,
             label,
+            icon,
             backend,
         };
 

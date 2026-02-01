@@ -127,7 +127,7 @@ impl Plugin for SystemdActionsPlugin {
         // Create session action menu and widget
         let session_menu = ActionMenuWidget::new_session_menu();
         let session_widget =
-            ActionGroupWidget::new("system-users-symbolic", session_menu, menu_store.clone());
+            ActionGroupWidget::new("system-lock-screen-symbolic", session_menu, menu_store.clone());
 
         // Create power action menu and widget
         let power_menu = ActionMenuWidget::new_power_menu();

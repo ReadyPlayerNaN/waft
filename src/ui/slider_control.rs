@@ -51,6 +51,8 @@ impl SliderControlWidget {
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
             .css_classes(["slider-control"])
+            .valign(gtk::Align::Start)
+            .vexpand(false)
             .build();
 
         // Slider row
