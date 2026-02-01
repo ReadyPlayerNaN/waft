@@ -345,7 +345,10 @@ impl Plugin for NotificationsPlugin {
                 id: "notifications:list".to_string(),
                 slot: Slot::Info,
                 weight: 50,
-                el: notifications_widget.widget().clone().upcast::<gtk::Widget>(),
+                el: notifications_widget
+                    .widget()
+                    .clone()
+                    .upcast::<gtk::Widget>(),
             }));
         }
 
@@ -356,7 +359,10 @@ impl Plugin for NotificationsPlugin {
 
     fn on_overlay_visible(&self, visible: bool) {
         // Don't show toast window if session is locked
-        if self.session_locked.load(std::sync::atomic::Ordering::Relaxed) {
+        if self
+            .session_locked
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             return;
         }
         if let Some(ref toast) = self.toast {

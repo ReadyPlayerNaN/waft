@@ -1,6 +1,6 @@
 //! Agenda data types and parsing utilities.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use chrono::{Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use log::{debug, warn};
 use serde::Deserialize;

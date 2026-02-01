@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use zvariant::{OwnedValue, Value};
 
-use crate::dbus::{owned_value_to_bool, owned_value_to_string, DbusHandle};
+use crate::dbus::{DbusHandle, owned_value_to_bool, owned_value_to_string};
 
 pub const BLUEZ_DEST: &str = "org.bluez";
 pub const IFACE_ADAPTER1: &str = "org.bluez.Adapter1";

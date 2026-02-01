@@ -230,7 +230,9 @@ impl DbusHandle {
         destination: &str,
         path: &str,
         interface: &str,
-        mut on_change: impl FnMut(String, std::collections::HashMap<String, OwnedValue>) + Send + 'static,
+        mut on_change: impl FnMut(String, std::collections::HashMap<String, OwnedValue>)
+        + Send
+        + 'static,
     ) -> Result<()> {
         let rule = format!(
             "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='{}',sender='{}'",
@@ -247,14 +249,12 @@ impl DbusHandle {
                     Ok(msg) => {
                         // Parse PropertiesChanged signal body:
                         // (interface_name, changed_properties, invalidated_properties)
-                        if let Ok((iface, changed, _invalidated)) = msg
-                            .body()
-                            .deserialize::<(
-                                String,
-                                std::collections::HashMap<String, OwnedValue>,
-                                Vec<String>,
-                            )>()
-                        {
+                        if let Ok((iface, changed, _invalidated)) = msg.body().deserialize::<(
+                            String,
+                            std::collections::HashMap<String, OwnedValue>,
+                            Vec<String>,
+                        )>(
+                        ) {
                             // Only process changes for our target interface
                             if iface == filter_interface {
                                 on_change(iface, changed);

@@ -83,7 +83,10 @@ impl WiredAdapterWidget {
                 | FeatureToggleExpandableOutput::Deactivate => {
                     let enabled = matches!(event, FeatureToggleExpandableOutput::Activate);
 
-                    info!("Ethernet toggle: enabled={}, device={}", enabled, device_path);
+                    info!(
+                        "Ethernet toggle: enabled={}, device={}",
+                        enabled, device_path
+                    );
 
                     glib::spawn_future_local(async move {
                         if enabled {
@@ -91,7 +94,9 @@ impl WiredAdapterWidget {
                             if let Some(nm) = nm {
                                 match crate::runtime::spawn_on_tokio(async move {
                                     dbus::connect_wired_nmrs(&nm).await
-                                }).await {
+                                })
+                                .await
+                                {
                                     Ok(_) => {
                                         info!("Successfully activated ethernet device");
                                     }
@@ -104,14 +109,23 @@ impl WiredAdapterWidget {
                             }
                         } else {
                             // Use D-Bus to disconnect the specific device
-                            match crate::runtime::spawn_on_tokio(
-                                dbus::disconnect_device_sendable(dbus.clone(), device_path.clone())
-                            ).await {
+                            match crate::runtime::spawn_on_tokio(dbus::disconnect_device_sendable(
+                                dbus.clone(),
+                                device_path.clone(),
+                            ))
+                            .await
+                            {
                                 Ok(_) => {
-                                    info!("Successfully disconnected ethernet device: {}", device_path);
+                                    info!(
+                                        "Successfully disconnected ethernet device: {}",
+                                        device_path
+                                    );
                                 }
                                 Err(e) => {
-                                    error!("Failed to disconnect ethernet device {}: {}", device_path, e);
+                                    error!(
+                                        "Failed to disconnect ethernet device {}: {}",
+                                        device_path, e
+                                    );
                                 }
                             }
                         }
@@ -131,7 +145,10 @@ impl WiredAdapterWidget {
 
         self.toggle.set_expand_callback(move |expanded: bool| {
             if expanded {
-                debug!("Fetching ethernet connection details for {}", device_path_clone);
+                debug!(
+                    "Fetching ethernet connection details for {}",
+                    device_path_clone
+                );
                 let menu = menu_clone.clone();
                 let device_path = device_path_clone.clone();
                 let dbus = dbus_clone.clone();
@@ -143,7 +160,8 @@ impl WiredAdapterWidget {
                         .block_on(async move {
                             let mut details = ConnectionDetails::default();
 
-                            if let Ok(Some(speed)) = dbus::get_link_speed(&dbus, &device_path).await {
+                            if let Ok(Some(speed)) = dbus::get_link_speed(&dbus, &device_path).await
+                            {
                                 if speed >= 1000 {
                                     details.link_speed = Some(format!("{} Gbps", speed / 1000));
                                 } else {
@@ -151,7 +169,9 @@ impl WiredAdapterWidget {
                                 }
                             }
 
-                            if let Ok(ip_config) = dbus::get_ip_configuration(&dbus, &device_path).await {
+                            if let Ok(ip_config) =
+                                dbus::get_ip_configuration(&dbus, &device_path).await
+                            {
                                 details.ipv4_address = ip_config.ipv4_address;
                                 details.ipv6_address = ip_config.ipv6_address;
                                 details.subnet_mask = ip_config.subnet_mask;
@@ -189,6 +209,7 @@ impl WiredAdapterWidget {
     }
 
     pub fn sync_state(&self, state: &EthernetAdapterState) {
-        self.toggle.update_state(state.enabled, state.carrier, state.device_state);
+        self.toggle
+            .update_state(state.enabled, state.carrier, state.device_state);
     }
 }

@@ -15,10 +15,12 @@ use gtk::prelude::*;
 use crate::menu_state::MenuStore;
 use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetRegistrar};
 
-use self::control_widget::{BrightnessControlOutput, BrightnessControlProps, BrightnessControlWidget};
+use self::control_widget::{
+    BrightnessControlOutput, BrightnessControlProps, BrightnessControlWidget,
+};
 use self::dbus::{
-    discover_backlight_devices, discover_ddc_monitors, is_brightnessctl_available,
-    is_ddcutil_available, set_brightness, DiscoveredDisplay,
+    DiscoveredDisplay, discover_backlight_devices, discover_ddc_monitors,
+    is_brightnessctl_available, is_ddcutil_available, set_brightness,
 };
 use self::store::{BrightnessOp, BrightnessStore, Display, DisplayType, create_brightness_store};
 
@@ -84,12 +86,10 @@ impl BrightnessPlugin {
         }
 
         // Sort: backlights first, then externals, alphabetically within each group
-        displays.sort_by(|a, b| {
-            match (&a.display_type, &b.display_type) {
-                (DisplayType::Backlight, DisplayType::External) => std::cmp::Ordering::Less,
-                (DisplayType::External, DisplayType::Backlight) => std::cmp::Ordering::Greater,
-                _ => a.name.cmp(&b.name),
-            }
+        displays.sort_by(|a, b| match (&a.display_type, &b.display_type) {
+            (DisplayType::Backlight, DisplayType::External) => std::cmp::Ordering::Less,
+            (DisplayType::External, DisplayType::Backlight) => std::cmp::Ordering::Greater,
+            _ => a.name.cmp(&b.name),
         });
 
         displays
@@ -127,7 +127,10 @@ impl Plugin for BrightnessPlugin {
             return Ok(());
         }
 
-        info!("[brightness] Found {} controllable displays", displays.len());
+        info!(
+            "[brightness] Found {} controllable displays",
+            displays.len()
+        );
         self.store.emit(BrightnessOp::SetAvailable(true));
         self.store.emit(BrightnessOp::SetDisplays(displays));
 

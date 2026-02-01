@@ -85,7 +85,7 @@ impl VpnWidget {
                 VpnState::Connected => return (Some(conn.name.clone()), VpnState::Connected),
                 VpnState::Connecting => return (Some(conn.name.clone()), VpnState::Connecting),
                 VpnState::Disconnecting => {
-                    return (Some(conn.name.clone()), VpnState::Disconnecting)
+                    return (Some(conn.name.clone()), VpnState::Disconnecting);
                 }
                 VpnState::Disconnected => {}
             }
@@ -186,10 +186,12 @@ impl VpnWidget {
                     ));
 
                     glib::spawn_future_local(async move {
-                        match crate::runtime::spawn_on_tokio(dbus::activate_vpn_connection_sendable(
-                            dbus_clone,
-                            conn_path_clone.clone(),
-                        ))
+                        match crate::runtime::spawn_on_tokio(
+                            dbus::activate_vpn_connection_sendable(
+                                dbus_clone,
+                                conn_path_clone.clone(),
+                            ),
+                        )
                         .await
                         {
                             Ok(active_path) => {
@@ -314,4 +316,3 @@ impl VpnWidget {
         }
     }
 }
-

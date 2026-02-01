@@ -139,12 +139,7 @@ pub async fn discover_ddc_monitors() -> Result<Vec<DiscoveredDisplay>> {
                 current_model = None;
             }
         } else if trimmed.starts_with("Model:") {
-            current_model = Some(
-                trimmed
-                    .trim_start_matches("Model:")
-                    .trim()
-                    .to_string(),
-            );
+            current_model = Some(trimmed.trim_start_matches("Model:").trim().to_string());
         } else if current_model.is_none() && trimmed.contains("Monitor") {
             // Fallback: use any line mentioning Monitor as the name
             current_model = Some(trimmed.to_string());

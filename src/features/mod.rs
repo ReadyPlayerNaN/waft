@@ -9,4 +9,5 @@ pub mod networkmanager;
 pub mod notifications;
 pub mod session;
 pub mod sunsetr;
+pub mod systemd_actions;
 pub mod weather;

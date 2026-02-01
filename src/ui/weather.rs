@@ -125,7 +125,8 @@ impl WeatherWidget {
                 self.temp_label.set_label(&temp_text);
 
                 // Update condition
-                self.condition_label.set_label(&data.condition.description());
+                self.condition_label
+                    .set_label(&data.condition.description());
             }
             WeatherState::Error(msg) => {
                 self.spinner.set_visible(false);

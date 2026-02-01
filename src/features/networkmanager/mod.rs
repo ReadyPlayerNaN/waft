@@ -10,11 +10,11 @@ mod wifi_toggle;
 mod wired_adapter_widget;
 mod wired_toggle_widget;
 
-use anyhow::Result;
-use async_trait::async_trait;
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
 use crate::plugin::{Plugin, PluginId, WidgetRegistrar};
+use anyhow::Result;
+use async_trait::async_trait;
 use log::{debug, error, info};
 use nmrs::NetworkManager;
 use std::cell::RefCell;
@@ -22,8 +22,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 use store::{
-    create_network_store, EthernetAdapterState, NetworkOp, NetworkStore, VpnConnectionState,
-    VpnState, WiFiAdapterState,
+    EthernetAdapterState, NetworkOp, NetworkStore, VpnConnectionState, VpnState, WiFiAdapterState,
+    create_network_store,
 };
 use vpn_widget::VpnWidget;
 use wifi_adapter_widget::WiFiAdapterWidget;
@@ -92,13 +92,19 @@ impl Plugin for NetworkManagerPlugin {
                         1 => {
                             // Ethernet - device state is included in DeviceInfo from nmrs
                             let device_state = device.device_state;
-                            debug!("Device state for {}: {}", device.interface_name, device_state);
+                            debug!(
+                                "Device state for {}: {}",
+                                device.interface_name, device_state
+                            );
 
                             // Derive carrier from device state:
                             // - Unavailable (20) = no carrier (cable not connected)
                             // - Disconnected (30) or higher = carrier present
                             let carrier = device_state >= 30;
-                            debug!("Carrier for {} (derived from state): {}", device.interface_name, carrier);
+                            debug!(
+                                "Carrier for {} (derived from state): {}",
+                                device.interface_name, carrier
+                            );
 
                             // Derive active connection presence from state (100 = Activated)
                             // nmrs doesn't expose the active connection path directly
@@ -107,14 +113,21 @@ impl Plugin for NetworkManagerPlugin {
                             } else {
                                 None
                             };
-                            debug!("Active connection for {}: {:?}", device.interface_name, active_connection);
+                            debug!(
+                                "Active connection for {}: {:?}",
+                                device.interface_name, active_connection
+                            );
 
                             // Device state: 20 = unavailable, 30 = disconnected, 100 = activated, etc.
                             let enabled = device_state >= 20; // Not unmanaged (10) or unknown (0)
 
                             info!(
                                 "Ethernet {} initialized: enabled={}, carrier={}, state={}, active_conn={:?}",
-                                device.interface_name, enabled, carrier, device_state, active_connection
+                                device.interface_name,
+                                enabled,
+                                carrier,
+                                device_state,
+                                active_connection
                             );
 
                             let adapter = EthernetAdapterState {
@@ -219,7 +232,11 @@ impl Plugin for NetworkManagerPlugin {
         for (path, adapter) in &state.ethernet_adapters {
             info!(
                 "Creating UI for ethernet {}: enabled={}, carrier={}, state={}, active_conn={:?}",
-                adapter.interface_name, adapter.enabled, adapter.carrier, adapter.device_state, adapter.active_connection
+                adapter.interface_name,
+                adapter.enabled,
+                adapter.carrier,
+                adapter.device_state,
+                adapter.active_connection
             );
 
             let widget = WiredAdapterWidget::new(
@@ -305,105 +322,125 @@ impl NetworkManagerPlugin {
         let vpn_ui = self.vpn_ui.clone();
 
         glib::spawn_future_local(async move {
-            if let Err(e) = dbus::subscribe_vpn_state_changed(dbus.clone(), move |_path, state_code| {
-                debug!("VPN state changed: path={}, state={}", _path, state_code);
+            if let Err(e) =
+                dbus::subscribe_vpn_state_changed(dbus.clone(), move |_path, state_code| {
+                    debug!("VPN state changed: path={}, state={}", _path, state_code);
 
-                // Convert state code to VpnState
-                // ActiveConnection states: 0=unknown, 1=activating, 2=activated, 3=deactivating, 4=deactivated
-                let _new_state = match state_code {
-                    1 => VpnState::Connecting,
-                    2 => VpnState::Connected,
-                    3 => VpnState::Disconnecting,
-                    _ => VpnState::Disconnected,
-                };
-
-                // We need to find the connection path by querying active connections
-                // For now, refresh all VPN connections
-                let dbus_clone = dbus.clone();
-                let store_clone = store.clone();
-                let vpn_ui_clone = vpn_ui.clone();
-
-                glib::spawn_future_local(async move {
-                    debug!("VPN state signal received, refreshing VPN states...");
-
-                    // Get current VPN connections and their states
-                    let vpn_connections = match crate::runtime::spawn_on_tokio(
-                        dbus::get_vpn_connections_sendable(dbus_clone.clone())
-                    ).await {
-                        Ok(conns) => {
-                            debug!("Got {} VPN connection profiles", conns.len());
-                            conns
-                        }
-                        Err(e) => {
-                            error!("Failed to refresh VPN connections: {}", e);
-                            return;
-                        }
+                    // Convert state code to VpnState
+                    // ActiveConnection states: 0=unknown, 1=activating, 2=activated, 3=deactivating, 4=deactivated
+                    let _new_state = match state_code {
+                        1 => VpnState::Connecting,
+                        2 => VpnState::Connected,
+                        3 => VpnState::Disconnecting,
+                        _ => VpnState::Disconnected,
                     };
 
-                    let active_vpns = match crate::runtime::spawn_on_tokio(
-                        dbus::get_active_vpn_connections_sendable(dbus_clone)
-                    ).await {
-                        Ok(active) => {
-                            debug!("Got {} active VPN connections", active.len());
-                            for (active_path, conn_path, uuid, state) in &active {
-                                debug!("  Active VPN: active={}, conn={}, uuid={}, state={}", active_path, conn_path, uuid, state);
+                    // We need to find the connection path by querying active connections
+                    // For now, refresh all VPN connections
+                    let dbus_clone = dbus.clone();
+                    let store_clone = store.clone();
+                    let vpn_ui_clone = vpn_ui.clone();
+
+                    glib::spawn_future_local(async move {
+                        debug!("VPN state signal received, refreshing VPN states...");
+
+                        // Get current VPN connections and their states
+                        let vpn_connections = match crate::runtime::spawn_on_tokio(
+                            dbus::get_vpn_connections_sendable(dbus_clone.clone()),
+                        )
+                        .await
+                        {
+                            Ok(conns) => {
+                                debug!("Got {} VPN connection profiles", conns.len());
+                                conns
                             }
-                            active
-                        }
-                        Err(e) => {
-                            error!("Failed to get active VPN connections: {}", e);
-                            Vec::new()
-                        }
-                    };
+                            Err(e) => {
+                                error!("Failed to refresh VPN connections: {}", e);
+                                return;
+                            }
+                        };
 
-                    let mut vpn_states: Vec<VpnConnectionState> = Vec::new();
-
-                    for vpn in vpn_connections {
-                        // Tuple is (active_path, connection_path, uuid, state)
-                        let active_info = active_vpns
-                            .iter()
-                            .find(|(_, _, uuid, _)| *uuid == vpn.uuid);
-
-                        let state = active_info
-                            .map(|(_, _, _, state_code)| {
-                                // ActiveConnection states: 0=unknown, 1=activating, 2=activated, 3=deactivating, 4=deactivated
-                                match state_code {
-                                    1 => VpnState::Connecting,
-                                    2 => VpnState::Connected,
-                                    3 => VpnState::Disconnecting,
-                                    _ => VpnState::Disconnected,
+                        let active_vpns = match crate::runtime::spawn_on_tokio(
+                            dbus::get_active_vpn_connections_sendable(dbus_clone),
+                        )
+                        .await
+                        {
+                            Ok(active) => {
+                                debug!("Got {} active VPN connections", active.len());
+                                for (active_path, conn_path, uuid, state) in &active {
+                                    debug!(
+                                        "  Active VPN: active={}, conn={}, uuid={}, state={}",
+                                        active_path, conn_path, uuid, state
+                                    );
                                 }
-                            })
-                            .unwrap_or(VpnState::Disconnected);
+                                active
+                            }
+                            Err(e) => {
+                                error!("Failed to get active VPN connections: {}", e);
+                                Vec::new()
+                            }
+                        };
 
-                        debug!("VPN '{}' state: {:?} (active_info={:?})", vpn.name, state, active_info.is_some());
+                        let mut vpn_states: Vec<VpnConnectionState> = Vec::new();
 
-                        vpn_states.push(VpnConnectionState {
-                            path: vpn.path.clone(),
-                            name: vpn.name,
-                            state,
-                        });
+                        for vpn in vpn_connections {
+                            // Tuple is (active_path, connection_path, uuid, state)
+                            let active_info =
+                                active_vpns.iter().find(|(_, _, uuid, _)| *uuid == vpn.uuid);
 
-                        // Update active_connections map in VpnWidget
-                        if let Some(ref widget) = *vpn_ui_clone.borrow() {
-                            if let Some((active_path, conn_path, _, _)) = active_info {
-                                widget.set_active_connection(conn_path, Some(active_path.clone()));
-                            } else {
-                                widget.set_active_connection(&vpn.path, None);
+                            let state = active_info
+                                .map(|(_, _, _, state_code)| {
+                                    // ActiveConnection states: 0=unknown, 1=activating, 2=activated, 3=deactivating, 4=deactivated
+                                    match state_code {
+                                        1 => VpnState::Connecting,
+                                        2 => VpnState::Connected,
+                                        3 => VpnState::Disconnecting,
+                                        _ => VpnState::Disconnected,
+                                    }
+                                })
+                                .unwrap_or(VpnState::Disconnected);
+
+                            debug!(
+                                "VPN '{}' state: {:?} (active_info={:?})",
+                                vpn.name,
+                                state,
+                                active_info.is_some()
+                            );
+
+                            vpn_states.push(VpnConnectionState {
+                                path: vpn.path.clone(),
+                                name: vpn.name,
+                                state,
+                            });
+
+                            // Update active_connections map in VpnWidget
+                            if let Some(ref widget) = *vpn_ui_clone.borrow() {
+                                if let Some((active_path, conn_path, _, _)) = active_info {
+                                    widget.set_active_connection(
+                                        conn_path,
+                                        Some(active_path.clone()),
+                                    );
+                                } else {
+                                    widget.set_active_connection(&vpn.path, None);
+                                }
                             }
                         }
-                    }
 
-                    debug!("Emitting SetVpnConnections with {} states", vpn_states.len());
-                    store_clone.emit(NetworkOp::SetVpnConnections(vpn_states));
+                        debug!(
+                            "Emitting SetVpnConnections with {} states",
+                            vpn_states.len()
+                        );
+                        store_clone.emit(NetworkOp::SetVpnConnections(vpn_states));
 
-                    // Update the UI widget
-                    if let Some(ref widget) = *vpn_ui_clone.borrow() {
-                        debug!("Calling vpn_widget.sync_state()");
-                        widget.sync_state();
-                    }
-                });
-            }).await {
+                        // Update the UI widget
+                        if let Some(ref widget) = *vpn_ui_clone.borrow() {
+                            debug!("Calling vpn_widget.sync_state()");
+                            widget.sync_state();
+                        }
+                    });
+                })
+                .await
+            {
                 error!("Failed to subscribe to VPN state changes: {}", e);
             }
         });
@@ -447,8 +484,10 @@ impl NetworkManagerPlugin {
                     // Get device info using spawn_on_tokio to avoid CPU spin.
                     // zbus D-Bus calls are tokio-dependent and must run on the tokio runtime.
                     let device_info = match crate::runtime::spawn_on_tokio(
-                        dbus::get_device_info_sendable(dbus.clone(), device_path.clone())
-                    ).await {
+                        dbus::get_device_info_sendable(dbus.clone(), device_path.clone()),
+                    )
+                    .await
+                    {
                         Ok(Some(info)) => info,
                         Ok(None) => {
                             debug!("Ignoring non-managed device: {}", device_path);
@@ -482,7 +521,10 @@ impl NetworkManagerPlugin {
 
                             info!(
                                 "Hot-plugged Ethernet {}: enabled={}, carrier={}, state={}",
-                                device_info.interface_name, enabled, carrier, device_info.device_state
+                                device_info.interface_name,
+                                enabled,
+                                carrier,
+                                device_info.device_state
                             );
 
                             let adapter = EthernetAdapterState {
@@ -506,7 +548,9 @@ impl NetworkManagerPlugin {
                             );
 
                             registrar.register_feature_toggle(widget.widget());
-                            ethernet_uis.borrow_mut().insert(device_info.path.clone(), widget);
+                            ethernet_uis
+                                .borrow_mut()
+                                .insert(device_info.path.clone(), widget);
                         }
                         2 => {
                             // WiFi
@@ -536,12 +580,16 @@ impl NetworkManagerPlugin {
                             );
 
                             registrar.register_feature_toggle(widget.widget());
-                            wifi_uis.borrow_mut().insert(device_info.path.clone(), widget);
+                            wifi_uis
+                                .borrow_mut()
+                                .insert(device_info.path.clone(), widget);
                         }
                         _ => {}
                     }
                 });
-            }).await {
+            })
+            .await
+            {
                 error!("Failed to subscribe to DeviceAdded signal: {}", e);
             }
         });
@@ -571,7 +619,9 @@ impl NetworkManagerPlugin {
                     registrar.unregister_feature_toggle(&id);
                     store.emit(NetworkOp::RemoveWiFiAdapter(device_path.clone()));
                 }
-            }).await {
+            })
+            .await
+            {
                 error!("Failed to subscribe to DeviceRemoved signal: {}", e);
             }
         });
@@ -582,30 +632,44 @@ impl NetworkManagerPlugin {
         let ethernet_uis_for_state = self.ethernet_uis.clone();
 
         glib::spawn_future_local(async move {
-            if let Err(e) = dbus::subscribe_device_state_changed(dbus_for_state.clone(), move |device_path, new_state, _old_state, _reason| {
-                debug!("Device state change signal: path={}, new_state={}", device_path, new_state);
+            if let Err(e) = dbus::subscribe_device_state_changed(
+                dbus_for_state.clone(),
+                move |device_path, new_state, _old_state, _reason| {
+                    debug!(
+                        "Device state change signal: path={}, new_state={}",
+                        device_path, new_state
+                    );
 
-                // Check if this is one of our tracked ethernet adapters
-                // IMPORTANT: Release the read lock before calling emit() to avoid deadlock.
-                // RwLock does not allow upgrading read -> write locks.
-                let is_tracked = {
-                    let state = store_for_state.get_state();
-                    state.ethernet_adapters.contains_key(&device_path)
-                }; // read lock released here
-
-                if is_tracked {
-                    info!("Ethernet device {} state changed to {}", device_path, new_state);
-                    store_for_state.emit(NetworkOp::SetEthernetDeviceState(device_path.clone(), new_state));
-
-                    // Update the UI widget - get fresh state after emit
-                    if let Some(widget) = ethernet_uis_for_state.borrow().get(&device_path) {
+                    // Check if this is one of our tracked ethernet adapters
+                    // IMPORTANT: Release the read lock before calling emit() to avoid deadlock.
+                    // RwLock does not allow upgrading read -> write locks.
+                    let is_tracked = {
                         let state = store_for_state.get_state();
-                        if let Some(adapter) = state.ethernet_adapters.get(&device_path) {
-                            widget.sync_state(adapter);
+                        state.ethernet_adapters.contains_key(&device_path)
+                    }; // read lock released here
+
+                    if is_tracked {
+                        info!(
+                            "Ethernet device {} state changed to {}",
+                            device_path, new_state
+                        );
+                        store_for_state.emit(NetworkOp::SetEthernetDeviceState(
+                            device_path.clone(),
+                            new_state,
+                        ));
+
+                        // Update the UI widget - get fresh state after emit
+                        if let Some(widget) = ethernet_uis_for_state.borrow().get(&device_path) {
+                            let state = store_for_state.get_state();
+                            if let Some(adapter) = state.ethernet_adapters.get(&device_path) {
+                                widget.sync_state(adapter);
+                            }
                         }
                     }
-                }
-            }).await {
+                },
+            )
+            .await
+            {
                 error!("Failed to subscribe to device state changes: {}", e);
             }
         });

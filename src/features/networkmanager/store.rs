@@ -144,7 +144,9 @@ pub fn create_network_store() -> NetworkStore {
                 }
             }
             NetworkOp::AddEthernetAdapter(adapter) => {
-                state.ethernet_adapters.insert(adapter.path.clone(), adapter);
+                state
+                    .ethernet_adapters
+                    .insert(adapter.path.clone(), adapter);
                 true
             }
             NetworkOp::RemoveEthernetAdapter(path) => {

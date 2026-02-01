@@ -32,7 +32,11 @@ impl WiFiToggleWidget {
         let initial_details = if let Some(ref ssid) = active_ssid {
             Some(ssid.clone())
         } else if network_count > 0 {
-            Some(format!("{} network{} available", network_count, if network_count == 1 { "" } else { "s" }))
+            Some(format!(
+                "{} network{} available",
+                network_count,
+                if network_count == 1 { "" } else { "s" }
+            ))
         } else {
             None
         };
@@ -113,7 +117,11 @@ impl WiFiToggleWidget {
         let details = if let Some(ref ssid) = active_ssid {
             Some(ssid.clone())
         } else if network_count > 0 {
-            Some(format!("{} network{} available", network_count, if network_count == 1 { "" } else { "s" }))
+            Some(format!(
+                "{} network{} available",
+                network_count,
+                if network_count == 1 { "" } else { "s" }
+            ))
         } else {
             None
         };

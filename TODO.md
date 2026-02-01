@@ -3,5 +3,4 @@
 - Keyboard layout plugin
 - Tether plugin?
 - SNI
-- Actions plugin(s): {Shutdown, Lock}(systemd plugin), Settings
 - Create strategy for "Failed to load widgets"

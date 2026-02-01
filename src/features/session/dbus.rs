@@ -77,7 +77,13 @@ impl SessionMonitor {
         );
 
         // Start listener for Lock signals
-        Self::listen_signal(conn.clone(), &lock_rule, SessionEvent::Lock, event_tx.clone()).await?;
+        Self::listen_signal(
+            conn.clone(),
+            &lock_rule,
+            SessionEvent::Lock,
+            event_tx.clone(),
+        )
+        .await?;
 
         // Start listener for Unlock signals
         Self::listen_signal(conn, &unlock_rule, SessionEvent::Unlock, event_tx).await?;
@@ -130,12 +136,13 @@ impl SessionMonitor {
                     .map(|i| i.as_str() == "org.freedesktop.login1.Session")
                     .unwrap_or(false);
 
-                let member_ok = h.member().map(|m| {
-                    match event {
+                let member_ok = h
+                    .member()
+                    .map(|m| match event {
                         SessionEvent::Lock => m.as_str() == "Lock",
                         SessionEvent::Unlock => m.as_str() == "Unlock",
-                    }
-                }).unwrap_or(false);
+                    })
+                    .unwrap_or(false);
 
                 if iface_ok && member_ok {
                     debug!("[session] Received {:?} signal", event);

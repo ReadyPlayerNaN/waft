@@ -740,10 +740,8 @@ pub fn reorder_icon_hints_for_group(icon_hints: &[NotificationIcon]) -> Vec<Noti
     // The last 0-3 entries are always app-level (desktop-entry + app_name).
     // We identify these by position from the end.
 
-    let (mut app_icons, notif_icons): (Vec<_>, Vec<_>) = icon_hints
-        .iter()
-        .enumerate()
-        .partition(|(idx, _)| {
+    let (mut app_icons, notif_icons): (Vec<_>, Vec<_>) =
+        icon_hints.iter().enumerate().partition(|(idx, _)| {
             let from_end = icon_hints.len() - idx - 1;
             // Last 3 positions can be app-level icons
             from_end < 3
@@ -751,7 +749,10 @@ pub fn reorder_icon_hints_for_group(icon_hints: &[NotificationIcon]) -> Vec<Noti
 
     // Combine: app-level first, then notification-specific
     app_icons.extend(notif_icons);
-    app_icons.into_iter().map(|(_, hint)| hint.clone()).collect()
+    app_icons
+        .into_iter()
+        .map(|(_, hint)| hint.clone())
+        .collect()
 }
 
 fn sort_notif_list(

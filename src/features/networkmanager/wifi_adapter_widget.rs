@@ -115,8 +115,14 @@ impl WiFiAdapterWidget {
                         if let Some(receiver) = receiver_opt {
                             match receiver.try_recv() {
                                 Ok(enabled) => {
-                                    store.emit(NetworkOp::SetWiFiEnabled(device_path_for_poll.clone(), enabled));
-                                    store.emit(NetworkOp::SetWiFiBusy(device_path_for_poll.clone(), false));
+                                    store.emit(NetworkOp::SetWiFiEnabled(
+                                        device_path_for_poll.clone(),
+                                        enabled,
+                                    ));
+                                    store.emit(NetworkOp::SetWiFiBusy(
+                                        device_path_for_poll.clone(),
+                                        false,
+                                    ));
                                     return glib::ControlFlow::Break;
                                 }
                                 Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -124,7 +130,10 @@ impl WiFiAdapterWidget {
                                     return glib::ControlFlow::Continue;
                                 }
                                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                                    store.emit(NetworkOp::SetWiFiBusy(device_path_for_poll.clone(), false));
+                                    store.emit(NetworkOp::SetWiFiBusy(
+                                        device_path_for_poll.clone(),
+                                        false,
+                                    ));
                                     return glib::ControlFlow::Break;
                                 }
                             }
@@ -174,10 +183,14 @@ impl WiFiAdapterWidget {
 
                             match dbus::list_networks_nmrs(nm).await {
                                 Ok(aps) => {
-                                    let mut networks_by_ssid: std::collections::HashMap<String, AccessPointState> = std::collections::HashMap::new();
+                                    let mut networks_by_ssid: std::collections::HashMap<
+                                        String,
+                                        AccessPointState,
+                                    > = std::collections::HashMap::new();
 
                                     for ap in aps {
-                                        match dbus::get_connections_for_ssid(&dbus, &ap.ssid).await {
+                                        match dbus::get_connections_for_ssid(&dbus, &ap.ssid).await
+                                        {
                                             Ok(connections) if !connections.is_empty() => {
                                                 let secure = ap.is_secure();
                                                 let network = AccessPointState {
@@ -189,22 +202,29 @@ impl WiFiAdapterWidget {
                                                 };
 
                                                 match networks_by_ssid.get(&ap.ssid) {
-                                                    Some(existing) if existing.strength >= ap.strength => {
+                                                    Some(existing)
+                                                        if existing.strength >= ap.strength =>
+                                                    {
                                                         // Keep existing (stronger or equal)
                                                     }
                                                     _ => {
                                                         // Replace with this one (stronger)
-                                                        networks_by_ssid.insert(ap.ssid.clone(), network);
+                                                        networks_by_ssid
+                                                            .insert(ap.ssid.clone(), network);
                                                     }
                                                 }
                                             }
                                             _ => {
-                                                debug!("Skipping network {} (no saved profile)", ap.ssid);
+                                                debug!(
+                                                    "Skipping network {} (no saved profile)",
+                                                    ap.ssid
+                                                );
                                             }
                                         }
                                     }
 
-                                    let known_networks: Vec<AccessPointState> = networks_by_ssid.into_values().collect();
+                                    let known_networks: Vec<AccessPointState> =
+                                        networks_by_ssid.into_values().collect();
                                     let _ = tx.send(Some(known_networks));
                                 }
                                 Err(e) => {
@@ -233,7 +253,9 @@ impl WiFiAdapterWidget {
 
                                 let active_ssid = {
                                     let state = store_clone.get_state();
-                                    state.wifi_adapters.get(&device_path_clone)
+                                    state
+                                        .wifi_adapters
+                                        .get(&device_path_clone)
                                         .and_then(|adapter| adapter.active_connection.clone())
                                 };
 
@@ -248,7 +270,11 @@ impl WiFiAdapterWidget {
                                 if let Some(ref ssid) = active_ssid {
                                     toggle_clone.set_details(Some(ssid.clone()));
                                 } else if count > 0 {
-                                    toggle_clone.set_details(Some(format!("{} network{} available", count, if count == 1 { "" } else { "s" })));
+                                    toggle_clone.set_details(Some(format!(
+                                        "{} network{} available",
+                                        count,
+                                        if count == 1 { "" } else { "s" }
+                                    )));
                                 } else {
                                     toggle_clone.set_details(Some("No networks found".to_string()));
                                 }
@@ -316,15 +342,22 @@ impl WiFiAdapterWidget {
                                                     let _ = tx.send(Ok(ssid_clone.clone()));
                                                 }
                                                 Err(e) => {
-                                                    let _ = tx.send(Err(format!("Failed to activate connection: {}", e)));
+                                                    let _ = tx.send(Err(format!(
+                                                        "Failed to activate connection: {}",
+                                                        e
+                                                    )));
                                                 }
                                             }
                                         } else {
-                                            let _ = tx.send(Err(format!("No saved connection found for SSID: {}", ssid_clone)));
+                                            let _ = tx.send(Err(format!(
+                                                "No saved connection found for SSID: {}",
+                                                ssid_clone
+                                            )));
                                         }
                                     }
                                     Err(e) => {
-                                        let _ = tx.send(Err(format!("Failed to get connections: {}", e)));
+                                        let _ = tx
+                                            .send(Err(format!("Failed to get connections: {}", e)));
                                     }
                                 }
                             });
@@ -380,7 +413,11 @@ impl WiFiAdapterWidget {
     pub fn sync_state(&self, state: &WiFiAdapterState) {
         self.toggle.set_active(state.enabled);
         self.toggle.set_busy(state.busy);
-        self.toggle.update_state(state.enabled, state.active_connection.clone(), state.access_points.len());
+        self.toggle.update_state(
+            state.enabled,
+            state.active_connection.clone(),
+            state.access_points.len(),
+        );
 
         let networks: Vec<(String, u8, bool)> = state
             .access_points

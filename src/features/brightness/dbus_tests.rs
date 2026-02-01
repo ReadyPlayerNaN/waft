@@ -4,7 +4,10 @@ use super::*;
 
 #[test]
 fn test_humanize_backlight_name_intel() {
-    assert_eq!(humanize_backlight_name("intel_backlight"), "Built-in Display");
+    assert_eq!(
+        humanize_backlight_name("intel_backlight"),
+        "Built-in Display"
+    );
 }
 
 #[test]

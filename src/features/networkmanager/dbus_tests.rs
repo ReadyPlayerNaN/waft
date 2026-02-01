@@ -193,7 +193,7 @@ fn test_prefix_to_subnet_mask_common_values() {
 #[test]
 fn test_prefix_to_subnet_mask_class_boundaries() {
     // Class A, B, C default masks
-    assert_eq!(prefix_to_subnet_mask(8), "255.0.0.0");      // Class A
-    assert_eq!(prefix_to_subnet_mask(16), "255.255.0.0");   // Class B
+    assert_eq!(prefix_to_subnet_mask(8), "255.0.0.0"); // Class A
+    assert_eq!(prefix_to_subnet_mask(16), "255.255.0.0"); // Class B
     assert_eq!(prefix_to_subnet_mask(24), "255.255.255.0"); // Class C
 }

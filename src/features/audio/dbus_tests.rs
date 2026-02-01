@@ -21,25 +21,37 @@ fn test_parse_volume_percent_returns_none_for_invalid() {
 #[test]
 fn test_parse_event_line_sink_change() {
     let line = "Event 'change' on sink #0";
-    assert!(matches!(parse_event_line(line), Some(AudioEvent::SinkChange)));
+    assert!(matches!(
+        parse_event_line(line),
+        Some(AudioEvent::SinkChange)
+    ));
 }
 
 #[test]
 fn test_parse_event_line_source_change() {
     let line = "Event 'change' on source #1";
-    assert!(matches!(parse_event_line(line), Some(AudioEvent::SourceChange)));
+    assert!(matches!(
+        parse_event_line(line),
+        Some(AudioEvent::SourceChange)
+    ));
 }
 
 #[test]
 fn test_parse_event_line_server_change() {
     let line = "Event 'change' on server";
-    assert!(matches!(parse_event_line(line), Some(AudioEvent::ServerChange)));
+    assert!(matches!(
+        parse_event_line(line),
+        Some(AudioEvent::ServerChange)
+    ));
 }
 
 #[test]
 fn test_parse_event_line_card_change() {
     let line = "Event 'change' on card #2";
-    assert!(matches!(parse_event_line(line), Some(AudioEvent::CardChange)));
+    assert!(matches!(
+        parse_event_line(line),
+        Some(AudioEvent::CardChange)
+    ));
 }
 
 #[test]
@@ -57,7 +69,10 @@ fn test_parse_event_line_ignores_source_output() {
 #[test]
 fn test_parse_property_line_extracts_key_value() {
     let line = "    device.icon_name = \"audio-headphones\"";
-    assert_eq!(parse_property_line(line), Some(("device.icon_name", "audio-headphones")));
+    assert_eq!(
+        parse_property_line(line),
+        Some(("device.icon_name", "audio-headphones"))
+    );
 }
 
 #[test]
@@ -75,7 +90,10 @@ fn test_parse_property_line_returns_none_for_invalid() {
 #[test]
 fn test_compute_primary_icon_sink_uses_icon_name() {
     let icon_name = Some("audio-headphones".to_string());
-    assert_eq!(compute_primary_icon_sink(&icon_name), "audio-headphones-symbolic");
+    assert_eq!(
+        compute_primary_icon_sink(&icon_name),
+        "audio-headphones-symbolic"
+    );
 }
 
 #[test]
@@ -86,26 +104,38 @@ fn test_compute_primary_icon_sink_defaults_to_speakers() {
 #[test]
 fn test_compute_primary_icon_source_uses_icon_name() {
     let icon_name = Some("audio-headset".to_string());
-    assert_eq!(compute_primary_icon_source(&icon_name), "audio-headset-symbolic");
+    assert_eq!(
+        compute_primary_icon_source(&icon_name),
+        "audio-headset-symbolic"
+    );
 }
 
 #[test]
 fn test_compute_primary_icon_source_defaults_to_microphone() {
-    assert_eq!(compute_primary_icon_source(&None), "audio-input-microphone-symbolic");
+    assert_eq!(
+        compute_primary_icon_source(&None),
+        "audio-input-microphone-symbolic"
+    );
 }
 
 #[test]
 fn test_compute_secondary_icon_video_display() {
     let icon_name = Some("video-display".to_string());
     let bus = None;
-    assert_eq!(compute_secondary_icon(&icon_name, &bus), Some("video-joined-displays-symbolic".to_string()));
+    assert_eq!(
+        compute_secondary_icon(&icon_name, &bus),
+        Some("video-joined-displays-symbolic".to_string())
+    );
 }
 
 #[test]
 fn test_compute_secondary_icon_bluetooth() {
     let icon_name = None;
     let bus = Some("bluetooth".to_string());
-    assert_eq!(compute_secondary_icon(&icon_name, &bus), Some("bluetooth-symbolic".to_string()));
+    assert_eq!(
+        compute_secondary_icon(&icon_name, &bus),
+        Some("bluetooth-symbolic".to_string())
+    );
 }
 
 #[test]

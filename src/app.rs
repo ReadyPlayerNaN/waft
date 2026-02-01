@@ -22,8 +22,9 @@ use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
 use crate::features::networkmanager::NetworkManagerPlugin;
 use crate::features::notifications::NotificationsPlugin;
-use crate::features::session::{SessionMonitor, SessionEvent};
+use crate::features::session::{SessionEvent, SessionMonitor};
 use crate::features::sunsetr::SunsetrPlugin;
+use crate::features::systemd_actions::SystemdActionsPlugin;
 use crate::features::weather::WeatherPlugin;
 use crate::ipc::net as ipc_net;
 use crate::ipc::{IpcCommand, command_from_args, ipc_socket_path};
@@ -217,6 +218,14 @@ pub async fn run() -> Result<()> {
         let system_dbus = Arc::new(DbusHandle::connect_system().await?);
         let mut plugin = NetworkManagerPlugin::new(system_dbus);
         if let Some(settings) = config.get_plugin_settings("plugin::networkmanager") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
+    if config.is_plugin_enabled("plugin::systemd-actions") {
+        let mut plugin = SystemdActionsPlugin::new();
+        if let Some(settings) = config.get_plugin_settings("plugin::systemd-actions") {
             plugin.configure(settings)?;
         }
         registry.register(plugin);

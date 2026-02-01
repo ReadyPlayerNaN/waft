@@ -134,7 +134,9 @@ impl EthernetMenuWidget {
             // Only show fields that have values
             if let Some(ref speed) = details.link_speed {
                 self.inner.link_speed_row.set_value(speed);
-                self.inner.details_box.append(self.inner.link_speed_row.widget());
+                self.inner
+                    .details_box
+                    .append(self.inner.link_speed_row.widget());
             }
 
             if let Some(ref ipv4) = details.ipv4_address {
@@ -149,12 +151,16 @@ impl EthernetMenuWidget {
 
             if let Some(ref mask) = details.subnet_mask {
                 self.inner.subnet_row.set_value(mask);
-                self.inner.details_box.append(self.inner.subnet_row.widget());
+                self.inner
+                    .details_box
+                    .append(self.inner.subnet_row.widget());
             }
 
             if let Some(ref gw) = details.gateway {
                 self.inner.gateway_row.set_value(gw);
-                self.inner.details_box.append(self.inner.gateway_row.widget());
+                self.inner
+                    .details_box
+                    .append(self.inner.gateway_row.widget());
             }
 
             // If no details are available, show empty message

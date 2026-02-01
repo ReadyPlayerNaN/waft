@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use super::store::AgendaState;
-use super::values::{extract_meeting_links, AgendaEvent, MeetingLink, MeetingProvider};
+use super::values::{AgendaEvent, MeetingLink, MeetingProvider, extract_meeting_links};
 
 /// GTK4 widget for the agenda display.
 pub struct AgendaWidget {

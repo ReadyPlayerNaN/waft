@@ -353,7 +353,10 @@ pub async fn get_connections_for_ssid(dbus: &DbusHandle, ssid: &str) -> Result<V
     for settings_path in settings_paths {
         let path_str = settings_path.as_str();
 
-        let settings: std::collections::HashMap<String, std::collections::HashMap<String, OwnedValue>> = dbus
+        let settings: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, OwnedValue>,
+        > = dbus
             .connection()
             .call_method(
                 Some(NM_SERVICE),
@@ -441,7 +444,10 @@ pub async fn get_vpn_connections(dbus: &DbusHandle) -> Result<Vec<VpnConnectionI
     for settings_path in settings_paths {
         let path_str = settings_path.as_str();
 
-        let settings: std::collections::HashMap<String, std::collections::HashMap<String, OwnedValue>> = dbus
+        let settings: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, OwnedValue>,
+        > = dbus
             .connection()
             .call_method(
                 Some(NM_SERVICE),
@@ -485,7 +491,9 @@ pub async fn get_vpn_connections(dbus: &DbusHandle) -> Result<Vec<VpnConnectionI
 /// Get currently active VPN connections.
 /// Returns a list of (active_connection_path, connection_path, uuid, state).
 /// ActiveConnection states: 0=unknown, 1=activating, 2=activated, 3=deactivating, 4=deactivated
-pub async fn get_active_vpn_connections(dbus: &DbusHandle) -> Result<Vec<(String, String, String, u32)>> {
+pub async fn get_active_vpn_connections(
+    dbus: &DbusHandle,
+) -> Result<Vec<(String, String, String, u32)>> {
     // Get ActiveConnections property from NetworkManager
     let active_connections: Vec<zbus::zvariant::OwnedObjectPath> = match dbus
         .connection()
@@ -696,7 +704,11 @@ where
 
     while let Some(msg) = stream.next().await {
         if let Ok(msg) = msg {
-            let path = msg.header().path().map(|p| p.to_string()).unwrap_or_default();
+            let path = msg
+                .header()
+                .path()
+                .map(|p| p.to_string())
+                .unwrap_or_default();
 
             // Check if this is an active connection path
             if path.contains("/ActiveConnection/") {
@@ -715,7 +727,10 @@ where
                     if interface == NM_CONNECTION_ACTIVE_INTERFACE {
                         if let Some(state_value) = changed.get("State") {
                             if let Ok(state) = u32::try_from(state_value.clone()) {
-                                debug!("ActiveConnection State changed: path={}, state={}", path, state);
+                                debug!(
+                                    "ActiveConnection State changed: path={}, state={}",
+                                    path, state
+                                );
                                 // Check if this is a VPN connection
                                 let is_vpn = if let Some(type_value) = changed.get("Type") {
                                     String::try_from(type_value.clone())
@@ -730,7 +745,10 @@ where
                                 };
 
                                 if is_vpn {
-                                    debug!("VPN ActiveConnection state: path={}, state={}", path, state);
+                                    debug!(
+                                        "VPN ActiveConnection state: path={}, state={}",
+                                        path, state
+                                    );
                                     callback(path, state);
                                 }
                             }
@@ -740,15 +758,18 @@ where
                     else if interface == NM_VPN_CONNECTION_INTERFACE {
                         if let Some(vpn_state_value) = changed.get("VpnState") {
                             if let Ok(vpn_state) = u32::try_from(vpn_state_value.clone()) {
-                                debug!("VPN.Connection VpnState changed: path={}, vpn_state={}", path, vpn_state);
+                                debug!(
+                                    "VPN.Connection VpnState changed: path={}, vpn_state={}",
+                                    path, vpn_state
+                                );
                                 // Convert VPN-specific state to ActiveConnection state
                                 // VPN states: 0=unknown, 1=prepare, 2=need_auth, 3=connect, 4=ip_config, 5=activated, 6=failed, 7=disconnected
                                 // ActiveConnection states: 0=unknown, 1=activating, 2=activated, 3=deactivating, 4=deactivated
                                 let active_state = match vpn_state {
-                                    5 => 2,      // Activated -> Activated
-                                    6 | 7 => 4,  // Failed/Disconnected -> Deactivated
+                                    5 => 2,             // Activated -> Activated
+                                    6 | 7 => 4,         // Failed/Disconnected -> Deactivated
                                     1 | 2 | 3 | 4 => 1, // Prepare/NeedAuth/Connect/IPConfig -> Activating
-                                    _ => 0,      // Unknown
+                                    _ => 0,             // Unknown
                                 };
                                 callback(path, active_state);
                             }
@@ -778,7 +799,8 @@ async fn get_active_connection_type(dbus: &DbusHandle, path: &str) -> Result<Str
         .deserialize::<(OwnedValue,)>()?
         .0;
 
-    String::try_from(conn_type).map_err(|e| anyhow::anyhow!("Failed to get connection type: {:?}", e))
+    String::try_from(conn_type)
+        .map_err(|e| anyhow::anyhow!("Failed to get connection type: {:?}", e))
 }
 
 // =============================================================================
@@ -870,11 +892,18 @@ where
 
     while let Some(msg) = stream.next().await {
         if let Ok(msg) = msg {
-            let path = msg.header().path().map(|p| p.to_string()).unwrap_or_default();
+            let path = msg
+                .header()
+                .path()
+                .map(|p| p.to_string())
+                .unwrap_or_default();
             let body = msg.body();
             // StateChanged signal has signature (uuu) - new_state, old_state, reason
             if let Ok((new_state, old_state, reason)) = body.deserialize::<(u32, u32, u32)>() {
-                debug!("Device state changed: path={}, new={}, old={}, reason={}", path, new_state, old_state, reason);
+                debug!(
+                    "Device state changed: path={}, new={}, old={}, reason={}",
+                    path, new_state, old_state, reason
+                );
                 callback(path, new_state, old_state, reason);
             }
         }
@@ -916,10 +945,14 @@ pub async fn get_device_info(dbus: &DbusHandle, device_path: &str) -> Result<Opt
     }
 
     // Get managed state
-    let managed: bool = get_device_property(dbus, device_path, "Managed").await.unwrap_or(false);
+    let managed: bool = get_device_property(dbus, device_path, "Managed")
+        .await
+        .unwrap_or(false);
 
     // Get device state
-    let device_state: u32 = get_device_property(dbus, device_path, "State").await.unwrap_or(0);
+    let device_state: u32 = get_device_property(dbus, device_path, "State")
+        .await
+        .unwrap_or(0);
 
     Ok(Some(DeviceInfo {
         path: device_path.to_string(),
@@ -1007,7 +1040,10 @@ fn access_point_from_nmrs(network: &nmrs::Network) -> AccessPoint {
     let rsn_flags: u32 = if network.is_eap { 1 } else { 0 };
 
     AccessPoint {
-        path: network.bssid.clone().unwrap_or_else(|| network.ssid.clone()),
+        path: network
+            .bssid
+            .clone()
+            .unwrap_or_else(|| network.ssid.clone()),
         ssid: network.ssid.clone(),
         strength: network.strength.unwrap_or(0),
         flags,
@@ -1018,7 +1054,9 @@ fn access_point_from_nmrs(network: &nmrs::Network) -> AccessPoint {
 
 fn is_virtual_interface(name: &str) -> bool {
     let virtual_prefixes = ["docker", "veth", "br-", "virbr", "vnet"];
-    virtual_prefixes.iter().any(|prefix| name.starts_with(prefix))
+    virtual_prefixes
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
 }
 
 fn prefix_to_subnet_mask(prefix: u32) -> String {
