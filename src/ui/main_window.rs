@@ -174,7 +174,7 @@ impl MainWindowWidget {
 
         // Build content
         let menu_store = registry.menu_store();
-        let (clip, containers) = Self::build_content(&window, registry, menu_store);
+        let (clip, containers) = Self::build_content(&window, registry, menu_store.clone());
 
         // Subscribe to widget changes for dynamic updates
         let header_box = containers.header_box.clone();
@@ -264,18 +264,92 @@ impl MainWindowWidget {
         });
         window.add_controller(controller);
 
-        // Hide on focus loss
+        // Track when a popover recently closed - this prevents is_active_notify from
+        // hiding immediately when the popover close callback hasn't finished processing.
+        let popover_recently_closed = Rc::new(Cell::new(false));
+
+        // Subscribe to menu store for popover close events.
+        // When a popover closes, we defer the hide decision to let focus settle.
+        let animation_for_popover = animation.clone();
+        let progress_for_popover = animation_progress.clone();
+        let animating_hide_for_popover = animating_hide.clone();
+        let window_for_popover = window.clone();
+        let menu_store_for_popover = menu_store.clone();
+        let popover_recently_closed_for_sub = popover_recently_closed.clone();
+
+        // Track previous popover state to detect closes
+        let prev_had_popover = Rc::new(Cell::new(false));
+
+        menu_store.subscribe(move || {
+            let state = menu_store_for_popover.get_state();
+            let has_popover = state.active_popover_id.is_some();
+            let had_popover = prev_had_popover.get();
+            prev_had_popover.set(has_popover);
+
+            // A popover just closed
+            if had_popover && !has_popover {
+                // Set flag so is_active_notify knows to wait
+                popover_recently_closed_for_sub.set(true);
+
+                let window_ref = window_for_popover.clone();
+                let animating_hide = animating_hide_for_popover.clone();
+                let animation = animation_for_popover.clone();
+                let progress = progress_for_popover.clone();
+                let recently_closed_flag = popover_recently_closed_for_sub.clone();
+
+                // Defer to let focus settle
+                gtk::glib::idle_add_local_once(move || {
+                    // Clear the flag - we're now handling the deferred decision
+                    recently_closed_flag.set(false);
+
+                    // If window regained focus, don't hide
+                    if window_ref.is_active() || animating_hide.get() {
+                        return;
+                    }
+                    // Window lost focus to external app, hide overlay
+                    animating_hide.set(true);
+                    animation.set_value_from(progress.get());
+                    animation.set_value_to(0.0);
+                    animation.set_easing(adw::Easing::EaseInCubic);
+                    animation.play();
+                });
+            }
+        });
+
+        // Hide on focus loss, but not when:
+        // 1. A popover is currently open
+        // 2. A popover just closed (let the deferred handler deal with it)
         let animation_ref = animation.clone();
         let progress_ref = animation_progress.clone();
         let animating_hide_ref = animating_hide.clone();
+        let menu_store_for_focus = menu_store;
+        let popover_recently_closed_for_focus = popover_recently_closed;
         window.connect_is_active_notify(move |w| {
-            if !w.is_active() && !animating_hide_ref.get() {
-                animating_hide_ref.set(true);
-                animation_ref.set_value_from(progress_ref.get());
-                animation_ref.set_value_to(0.0);
-                animation_ref.set_easing(adw::Easing::EaseInCubic);
-                animation_ref.play();
+            if w.is_active() {
+                return;
             }
+
+            if animating_hide_ref.get() {
+                return;
+            }
+
+            // Check if any popover is open - if so, let the popover close handler deal with it
+            let state = menu_store_for_focus.get_state();
+            if state.active_popover_id.is_some() {
+                return;
+            }
+
+            // Check if a popover just closed - let the deferred handler deal with it
+            if popover_recently_closed_for_focus.get() {
+                return;
+            }
+
+            // No popovers involved, hide immediately
+            animating_hide_ref.set(true);
+            animation_ref.set_value_from(progress_ref.get());
+            animation_ref.set_value_to(0.0);
+            animation_ref.set_easing(adw::Easing::EaseInCubic);
+            animation_ref.play();
         });
 
         // Set up resize callback for layer-shell window resizing

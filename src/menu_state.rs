@@ -10,12 +10,15 @@ use crate::store::{PluginStore, StoreOp, StoreState};
 pub struct MenuState {
     /// UUID of the currently active menu, or None if all menus are closed.
     pub active_menu_id: Option<String>,
+    /// ID of the currently open popover, or None if no popover is open.
+    pub active_popover_id: Option<String>,
 }
 
 impl Default for MenuState {
     fn default() -> Self {
         Self {
             active_menu_id: None,
+            active_popover_id: None,
         }
     }
 }
@@ -38,6 +41,10 @@ pub enum MenuOp {
     CloseMenu(String),
     /// Close all menus.
     CloseAll,
+    /// Track that a popover has opened.
+    PopoverOpened(String),
+    /// Track that a popover has closed.
+    PopoverClosed(String),
 }
 
 impl StoreOp for MenuOp {}
@@ -70,6 +77,18 @@ pub fn create_menu_store() -> MenuStore {
             let changed = state.active_menu_id.is_some();
             state.active_menu_id = None;
             changed
+        }
+        MenuOp::PopoverOpened(id) => {
+            state.active_popover_id = Some(id);
+            true
+        }
+        MenuOp::PopoverClosed(id) => {
+            if state.active_popover_id.as_ref() == Some(&id) {
+                state.active_popover_id = None;
+                true
+            } else {
+                false
+            }
         }
     })
 }

@@ -7,6 +7,9 @@ use gtk::prelude::*;
 use log::{debug, warn};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use crate::menu_state::{MenuOp, MenuStore};
 
 use super::store::AgendaState;
 use super::values::{AgendaEvent, MeetingLink, MeetingProvider, extract_meeting_links};
@@ -24,11 +27,13 @@ pub struct AgendaWidget {
     now_divider: RefCell<Option<gtk::Separator>>,
     /// Track period separator to avoid duplicates
     period_separator: RefCell<Option<gtk::Box>>,
+    /// MenuStore for tracking popover state
+    menu_store: Arc<MenuStore>,
 }
 
 impl AgendaWidget {
     /// Create a new agenda widget.
-    pub fn new() -> Self {
+    pub fn new(menu_store: Arc<MenuStore>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(8)
@@ -87,6 +92,7 @@ impl AgendaWidget {
             event_cards: RefCell::new(HashMap::new()),
             now_divider: RefCell::new(None),
             period_separator: RefCell::new(None),
+            menu_store,
         }
     }
 
@@ -239,7 +245,7 @@ impl AgendaWidget {
                 existing_card.clone()
             } else {
                 // Create new card
-                let new_card = build_event_card(event, is_past, is_ongoing);
+                let new_card = build_event_card(event, is_past, is_ongoing, &self.menu_store);
                 current_cards.insert(event_key, new_card.clone());
                 new_card
             };
@@ -274,7 +280,12 @@ fn build_period_separator(timestamp: i64) -> gtk::Box {
 }
 
 /// Build a single event card widget as a single horizontal row.
-fn build_event_card(event: &AgendaEvent, is_past: bool, is_ongoing: bool) -> gtk::Box {
+fn build_event_card(
+    event: &AgendaEvent,
+    is_past: bool,
+    is_ongoing: bool,
+    menu_store: &Arc<MenuStore>,
+) -> gtk::Box {
     let mut css_classes: Vec<&str> = vec!["agenda-event-card"];
     if is_past {
         css_classes.push("agenda-event-past");
@@ -323,7 +334,7 @@ fn build_event_card(event: &AgendaEvent, is_past: bool, is_ongoing: bool) -> gtk
 
     // Meeting link action widget
     let links = extract_meeting_links(event);
-    if let Some(action) = build_meeting_action(&links) {
+    if let Some(action) = build_meeting_action(&links, menu_store) {
         card.append(&action);
     }
 
@@ -344,7 +355,7 @@ fn provider_label(provider: &MeetingProvider) -> &'static str {
 /// - 0 links: returns `None`
 /// - 1 link: returns a direct button
 /// - 2+ links: returns a three-dot menu button with a popover
-fn build_meeting_action(links: &[MeetingLink]) -> Option<gtk::Widget> {
+fn build_meeting_action(links: &[MeetingLink], menu_store: &Arc<MenuStore>) -> Option<gtk::Widget> {
     match links.len() {
         0 => None,
         1 => {
@@ -373,6 +384,22 @@ fn build_meeting_action(links: &[MeetingLink]) -> Option<gtk::Widget> {
                 .build();
 
             let popover = gtk::Popover::builder().child(&popover_box).build();
+
+            // Generate unique ID for this popover
+            let popover_id = uuid::Uuid::new_v4().to_string();
+
+            // Track popover visibility in menu store
+            let menu_store_show = menu_store.clone();
+            let popover_id_show = popover_id.clone();
+            popover.connect_show(move |_| {
+                menu_store_show.emit(MenuOp::PopoverOpened(popover_id_show.clone()));
+            });
+
+            let menu_store_close = menu_store.clone();
+            let popover_id_close = popover_id;
+            popover.connect_closed(move |_| {
+                menu_store_close.emit(MenuOp::PopoverClosed(popover_id_close.clone()));
+            });
 
             for link in links {
                 let btn = gtk::Button::builder()

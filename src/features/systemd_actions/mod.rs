@@ -17,7 +17,6 @@ use log::{error, warn};
 use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
@@ -127,23 +126,13 @@ impl Plugin for SystemdActionsPlugin {
 
         // Create session action menu and widget
         let session_menu = ActionMenuWidget::new_session_menu();
-        let session_menu_id = format!("systemd-actions-session-{}", Uuid::new_v4());
-        let session_widget = ActionGroupWidget::new(
-            "system-users-symbolic",
-            session_menu,
-            session_menu_id,
-            menu_store.clone(),
-        );
+        let session_widget =
+            ActionGroupWidget::new("system-users-symbolic", session_menu, menu_store.clone());
 
         // Create power action menu and widget
         let power_menu = ActionMenuWidget::new_power_menu();
-        let power_menu_id = format!("systemd-actions-power-{}", Uuid::new_v4());
-        let power_widget = ActionGroupWidget::new(
-            "system-shutdown-symbolic",
-            power_menu,
-            power_menu_id,
-            menu_store.clone(),
-        );
+        let power_widget =
+            ActionGroupWidget::new("system-shutdown-symbolic", power_menu, menu_store.clone());
 
         // Connect session widget output to D-Bus actions
         let dbus_client_session = self.dbus_client.clone();

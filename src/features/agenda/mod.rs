@@ -231,10 +231,10 @@ impl Plugin for AgendaPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        _menu_store: Arc<MenuStore>,
+        menu_store: Arc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
-        let agenda_widget = AgendaWidget::new();
+        let agenda_widget = AgendaWidget::new(menu_store);
 
         // Initial render
         {
