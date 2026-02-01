@@ -6,6 +6,8 @@
 //! - Saved connection profile lookup
 //! - WiFi connection activation with saved credentials
 
+#![allow(dead_code)] // NetworkManager plugin is under development
+
 use anyhow::Result;
 use nmrs::{DeviceState, DeviceType, NetworkManager};
 use std::sync::Arc;

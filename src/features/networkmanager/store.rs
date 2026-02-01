@@ -1,3 +1,5 @@
+#![allow(dead_code)] // NetworkManager plugin is under development
+
 use std::collections::HashMap;
 
 use crate::common::ConnectionState;

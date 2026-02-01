@@ -82,11 +82,6 @@ impl ClockWidget {
         self.time_label.set_label(&Self::format_time(datetime));
     }
 
-    /// Get a reference to the root widget.
-    pub fn widget(&self) -> &gtk::Button {
-        &self.root
-    }
-
     fn format_datetime_str(d: &DateTime, format: &str) -> GString {
         match d.format(format) {
             Ok(s) => s,

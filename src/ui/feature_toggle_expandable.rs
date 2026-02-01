@@ -25,6 +25,7 @@ pub struct FeatureToggleExpandableProps {
 
 /// Output events from the expandable feature toggle.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // ToggleExpand is part of the API but handled internally now
 pub enum FeatureToggleExpandableOutput {
     Activate,
     Deactivate,
@@ -37,6 +38,7 @@ pub struct FeatureToggleExpandableWidget {
     pub root: gtk::Box,
     #[allow(dead_code)]
     main_button: gtk::Button,
+    #[allow(dead_code)] // Stored for future menu chevron visibility control
     menu_chevron: MenuChevronWidget,
     icon_image: gtk::Image,
     #[allow(dead_code)]

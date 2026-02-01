@@ -1,5 +1,7 @@
 //! Notification data types.
 
+#![allow(dead_code)] // Many fields and methods are for future UI features
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;

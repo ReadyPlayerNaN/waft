@@ -1,3 +1,5 @@
+#![allow(dead_code)] // NetworkManager plugin is under development
+
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
 use crate::plugin::WidgetFeatureToggle;

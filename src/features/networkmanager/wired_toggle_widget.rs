@@ -1,3 +1,5 @@
+#![allow(dead_code)] // NetworkManager plugin is under development
+
 use crate::menu_state::MenuStore;
 use crate::ui::feature_toggle_expandable::{
     FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,

@@ -13,6 +13,7 @@ use crate::menu_state::MenuStore;
 /// Plugins receive an `Rc<dyn WidgetRegistrar>` during `create_elements()`
 /// and use it to dynamically register/unregister their widgets.
 /// Uses `Rc` because all widget operations must happen on the main GTK thread.
+#[allow(dead_code)] // unregister methods are part of the API but not yet used
 pub trait WidgetRegistrar {
     /// Register a slot widget. Notifies subscribers of the change.
     fn register_widget(&self, widget: Arc<Widget>);

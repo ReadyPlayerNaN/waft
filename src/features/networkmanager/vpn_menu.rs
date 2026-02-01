@@ -2,6 +2,8 @@
 //!
 //! Displays a list of configured VPN connections with connect/disconnect toggles.
 
+#![allow(dead_code)] // NetworkManager plugin is under development
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

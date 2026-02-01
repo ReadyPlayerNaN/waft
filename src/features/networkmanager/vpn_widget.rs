@@ -3,6 +3,8 @@
 //! Coordinates the VPN toggle and menu widgets, handling state synchronization
 //! and D-Bus operations for VPN connections.
 
+#![allow(dead_code)] // NetworkManager plugin is under development
+
 use crate::dbus::DbusHandle;
 use crate::menu_state::{MenuOp, MenuStore};
 use crate::plugin::WidgetFeatureToggle;

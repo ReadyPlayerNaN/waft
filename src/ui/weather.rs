@@ -8,6 +8,7 @@ use crate::features::weather::values::{TemperatureUnit, WeatherData};
 
 /// State of the weather widget.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Loading state is part of the API but weather is loaded eagerly
 pub enum WeatherState {
     Loading,
     Loaded(WeatherData),
@@ -136,10 +137,5 @@ impl WeatherWidget {
                 self.error_label.set_label(msg);
             }
         }
-    }
-
-    /// Get a reference to the root widget.
-    pub fn widget(&self) -> &gtk::Box {
-        &self.root
     }
 }

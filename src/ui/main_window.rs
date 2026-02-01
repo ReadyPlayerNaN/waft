@@ -127,6 +127,7 @@ fn sync_slot_widgets(container: &gtk::Box, new_widgets: &[Arc<Widget>]) {
 
 /// Input messages for the main window.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // RequestHide is part of the API for future use
 pub enum MainWindowInput {
     ShowOverlay,
     HideOverlay,
@@ -314,6 +315,7 @@ impl MainWindowWidget {
     }
 
     /// Handle session lock: stop animations and hide window immediately.
+    #[allow(dead_code)] // API for future session lock detection
     pub fn on_session_lock(&self) {
         // Stop any running animation immediately
         self.animation.pause();
@@ -326,6 +328,7 @@ impl MainWindowWidget {
     }
 
     /// Handle session unlock: reset animation state to clean values.
+    #[allow(dead_code)] // API for future session lock detection
     pub fn on_session_unlock(&self) {
         // Reset animation state to initial values
         self.animation_progress.set(0.0);

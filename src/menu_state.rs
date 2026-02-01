@@ -30,6 +30,7 @@ impl StoreState for MenuState {
 
 /// Operations that can be performed on menu state.
 #[derive(Clone, Debug)]
+#[allow(dead_code)] // CloseAll is part of the API but not yet used
 pub enum MenuOp {
     /// Open a specific menu (closes any other open menu).
     OpenMenu(String),

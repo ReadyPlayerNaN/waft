@@ -40,6 +40,7 @@ impl MenuChevronWidget {
         Self::update_css_classes(&self.root, expanded);
     }
 
+    #[allow(dead_code)] // API for future menu chevron visibility control
     pub fn set_visible(&self, visible: bool) {
         self.root.set_visible(visible);
     }

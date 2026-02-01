@@ -1,3 +1,5 @@
+#![allow(dead_code)] // NetworkManager plugin is under development
+
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;

@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Many fields and enum variants are for future UI features
+
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::SystemTime;

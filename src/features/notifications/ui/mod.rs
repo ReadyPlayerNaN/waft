@@ -1,5 +1,7 @@
 //! Notification UI components.
 
+#![allow(dead_code)] // Many UI methods and fields are for features being developed
+
 pub mod countdown_bar;
 pub mod notification_card;
 pub mod notification_group;
