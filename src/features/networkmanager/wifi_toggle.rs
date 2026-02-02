@@ -1,14 +1,14 @@
 #![allow(dead_code)] // NetworkManager plugin is under development
 
 use crate::menu_state::MenuStore;
-use crate::ui::feature_toggle_expandable::{
-    FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
+use crate::ui::feature_toggle::{
+    FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-pub type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(FeatureToggleExpandableOutput)>>>>;
+pub type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(FeatureToggleOutput)>>>>;
 pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
 
 #[derive(Clone)]
@@ -18,7 +18,7 @@ pub struct WiFiToggleWidget {
 
 struct WiFiToggleWidgetInner {
     interface_name: String,
-    toggle: FeatureToggleExpandableWidget,
+    toggle: FeatureToggleWidget,
     output_callback: OutputCallback,
     expand_callback: ExpandCallback,
 }
@@ -43,16 +43,16 @@ impl WiFiToggleWidget {
             None
         };
 
-        let toggle = FeatureToggleExpandableWidget::new(
-            FeatureToggleExpandableProps {
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
                 title: format!("WiFi ({})", interface_name),
                 icon: "network-wireless-symbolic".into(),
                 details: initial_details,
                 active: enabled,
                 busy: false,
-                expanded: false,
+                expandable: true,
             },
-            menu_store,
+            Some(menu_store),
         );
 
         let output_callback: OutputCallback = Rc::new(RefCell::new(None));
@@ -81,10 +81,10 @@ impl WiFiToggleWidget {
     }
 
     pub fn menu_id(&self) -> String {
-        self.inner.toggle.menu_id.to_string()
+        self.inner.toggle.menu_id.clone().unwrap_or_default()
     }
 
-    pub fn connect_output<F: Fn(FeatureToggleExpandableOutput) + 'static>(&self, callback: F) {
+    pub fn connect_output<F: Fn(FeatureToggleOutput) + 'static>(&self, callback: F) {
         *self.inner.output_callback.borrow_mut() = Some(Box::new(callback));
     }
 

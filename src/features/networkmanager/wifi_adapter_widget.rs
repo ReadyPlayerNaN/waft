@@ -1,7 +1,7 @@
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
 use crate::plugin::WidgetFeatureToggle;
-use crate::ui::feature_toggle_expandable::FeatureToggleExpandableOutput;
+use crate::ui::feature_toggle::FeatureToggleOutput;
 use log::{debug, error, info};
 use nmrs::NetworkManager;
 use std::sync::Arc;
@@ -86,9 +86,9 @@ impl WiFiAdapterWidget {
             let nm = nm_clone.clone();
 
             match event {
-                FeatureToggleExpandableOutput::Activate
-                | FeatureToggleExpandableOutput::Deactivate => {
-                    let enabled = matches!(event, FeatureToggleExpandableOutput::Activate);
+                FeatureToggleOutput::Activate
+                | FeatureToggleOutput::Deactivate => {
+                    let enabled = matches!(event, FeatureToggleOutput::Activate);
                     store.emit(NetworkOp::SetWiFiBusy(device_path.clone(), true));
 
                     let (tx, rx) = std::sync::mpsc::channel();
@@ -140,9 +140,6 @@ impl WiFiAdapterWidget {
                         }
                         glib::ControlFlow::Break
                     });
-                }
-                FeatureToggleExpandableOutput::ToggleExpand => {
-                    // ToggleExpand is deprecated - expand state is managed by widget
                 }
             }
         });

@@ -3,7 +3,7 @@
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
 use crate::plugin::WidgetFeatureToggle;
-use crate::ui::feature_toggle_expandable::FeatureToggleExpandableOutput;
+use crate::ui::feature_toggle::FeatureToggleOutput;
 use log::{debug, error, info};
 use nmrs::NetworkManager;
 use std::cell::RefCell;
@@ -81,9 +81,9 @@ impl WiredAdapterWidget {
             let dbus = dbus_clone.clone();
 
             match event {
-                FeatureToggleExpandableOutput::Activate
-                | FeatureToggleExpandableOutput::Deactivate => {
-                    let enabled = matches!(event, FeatureToggleExpandableOutput::Activate);
+                FeatureToggleOutput::Activate
+                | FeatureToggleOutput::Deactivate => {
+                    let enabled = matches!(event, FeatureToggleOutput::Activate);
 
                     info!(
                         "Ethernet toggle: enabled={}, device={}",
@@ -132,9 +132,6 @@ impl WiredAdapterWidget {
                             }
                         }
                     });
-                }
-                FeatureToggleExpandableOutput::ToggleExpand => {
-                    // Expand is handled by the menu system automatically
                 }
             }
         });

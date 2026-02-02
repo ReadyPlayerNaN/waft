@@ -5,7 +5,6 @@ pub mod clock;
 pub mod failed_widget;
 pub mod feature_grid;
 pub mod feature_toggle;
-pub mod feature_toggle_expandable;
 pub mod icon;
 pub mod main_window;
 pub mod menu_chevron;

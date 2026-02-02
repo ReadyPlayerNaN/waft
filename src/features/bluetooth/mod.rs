@@ -15,9 +15,7 @@ use gtk::prelude::*;
 use crate::dbus::DbusHandle;
 use crate::menu_state::MenuStore;
 use crate::plugin::{ExpandCallback, Plugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
-use crate::ui::feature_toggle_expandable::{
-    FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
-};
+use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 use self::dbus::{
     BluetoothAdapter, IFACE_ADAPTER1, IFACE_DEVICE1, connect_device, disconnect_device,
@@ -34,7 +32,7 @@ pub mod store;
 
 /// State for a single adapter's UI components.
 struct AdapterUI {
-    toggle: FeatureToggleExpandableWidget,
+    toggle: FeatureToggleWidget,
     device_menu: DeviceMenuWidget,
     expand_callback: ExpandCallback,
 }
@@ -180,8 +178,8 @@ impl BluetoothPlugin {
             .filter(|d| d.connection == DeviceConnectionState::Connected)
             .count();
 
-        let toggle = FeatureToggleExpandableWidget::new(
-            FeatureToggleExpandableProps {
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
                 title: adapter.name.clone(),
                 icon: "bluetooth-symbolic".into(),
                 details: if connected_count > 0 {
@@ -191,9 +189,9 @@ impl BluetoothPlugin {
                 },
                 active: adapter.powered,
                 busy: false,
-                expanded: false,
+                expandable: true, // Bluetooth always shows device menu
             },
-            menu_store,
+            Some(menu_store),
         );
 
         // Create device menu
@@ -269,9 +267,8 @@ impl BluetoothPlugin {
             let adapter_path = adapter_path.clone();
 
             match event {
-                FeatureToggleExpandableOutput::Activate
-                | FeatureToggleExpandableOutput::Deactivate => {
-                    let powered = matches!(event, FeatureToggleExpandableOutput::Activate);
+                FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
+                    let powered = matches!(event, FeatureToggleOutput::Activate);
                     store.emit(BluetoothOp::SetBusy(true));
 
                     glib::spawn_future_local(async move {
@@ -280,9 +277,6 @@ impl BluetoothPlugin {
                             store.emit(BluetoothOp::SetBusy(false));
                         }
                     });
-                }
-                FeatureToggleExpandableOutput::ToggleExpand => {
-                    // ToggleExpand is deprecated - expand state is managed by widget
                 }
             }
         });
@@ -432,7 +426,7 @@ impl Plugin for BluetoothPlugin {
                     weight: 100,
                     menu: Some(ui.device_menu.root.clone().upcast::<gtk::Widget>()),
                     on_expand_toggled: Some(ui.expand_callback.clone()),
-                    menu_id: Some(ui.toggle.menu_id.clone()),
+                    menu_id: ui.toggle.menu_id.clone(),
                 }));
 
                 adapter_uis.insert(adapter.path.clone(), ui);

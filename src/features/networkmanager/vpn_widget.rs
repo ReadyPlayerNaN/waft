@@ -8,7 +8,7 @@
 use crate::dbus::DbusHandle;
 use crate::menu_state::{MenuOp, MenuStore};
 use crate::plugin::WidgetFeatureToggle;
-use crate::ui::feature_toggle_expandable::FeatureToggleExpandableOutput;
+use crate::ui::feature_toggle::FeatureToggleOutput;
 use log::{debug, error, info};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -106,12 +106,12 @@ impl VpnWidget {
             debug!("VPN toggle event: {:?}", event);
 
             match event {
-                FeatureToggleExpandableOutput::Activate => {
+                FeatureToggleOutput::Activate => {
                     // When disconnected, expand menu so user can select which VPN to connect
                     debug!("VPN activate - expanding menu for VPN selection");
                     menu_store.emit(MenuOp::OpenMenu(menu_id.clone()));
                 }
-                FeatureToggleExpandableOutput::Deactivate => {
+                FeatureToggleOutput::Deactivate => {
                     // Disconnect all active VPNs
                     info!("VPN toggle: deactivating all VPNs");
 
@@ -156,9 +156,6 @@ impl VpnWidget {
                             }
                         });
                     }
-                }
-                FeatureToggleExpandableOutput::ToggleExpand => {
-                    // Handled by expand callback
                 }
             }
         });
