@@ -63,6 +63,7 @@ impl FeatureToggleWidget {
         let title_label = gtk::Label::builder()
             .label(&props.title)
             .css_classes(["heading", "title"])
+            .xalign(0.0)
             .build();
 
         let details_revealer = gtk::Revealer::builder()
