@@ -14,6 +14,7 @@ pub enum SunsetrIpcEvents {
     Busy(bool),
     Status(Status),
     Error(String),
+    ActivePreset(Option<String>),
 }
 
 pub async fn spawn_start(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
@@ -98,7 +99,20 @@ pub fn spawn_following(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
             }
 
             let r = match serde_json::from_str::<SunsetrJsonEvent>(line) {
-                Ok(ev) => sender.send(SunsetrIpcEvents::Status(Status::from(ev))),
+                Ok(ev) => {
+                    // Send active preset update
+                    let preset = ev.active_preset.as_ref().and_then(|p| {
+                        if p == "default" {
+                            None
+                        } else {
+                            Some(p.clone())
+                        }
+                    });
+                    let _ = sender.send(SunsetrIpcEvents::ActivePreset(preset));
+
+                    // Send status update
+                    sender.send(SunsetrIpcEvents::Status(Status::from(ev)))
+                }
                 Err(_) => Ok(()),
             };
             if r.is_err() {
@@ -317,6 +331,9 @@ struct SunsetrJsonEvent {
 
     // Some follow-mode events use `to_period`.
     to_period: Option<String>,
+
+    // Active preset name (or "default")
+    active_preset: Option<String>,
 }
 
 impl From<SunsetrJsonEvent> for Status {

@@ -85,24 +85,25 @@ impl Plugin for SunsetrPlugin {
         let (ipc_tx, ipc_rx) = unbounded::<SunsetrIpcEvents>();
 
         // Connect preset menu output handler
-        let ipc_sender_for_preset = ipc_tx.clone();
         preset_menu.connect_output(move |event| {
             debug!("[sunsetr/preset-menu] Received: {:?}", event);
-            match event {
-                PresetMenuOutput::SelectPreset(preset_name) => {
-                    let ipc_sender = ipc_sender_for_preset.clone();
-                    let preset = preset_name.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = ipc::set_preset(&preset).await {
-                            warn!("[sunsetr] preset switch failed: {e}");
-                        }
-                        // Trigger a status refresh after preset switch
-                        if let Err(e) = spawn_start(ipc_sender).await {
-                            warn!("[sunsetr] refresh after preset switch failed: {e}");
-                        }
-                    });
+
+            // Spawn tokio work on tokio runtime, NOT in glib context
+            tokio::spawn(async move {
+                let preset_name = match event {
+                    PresetMenuOutput::SelectPreset(name) => name,
+                    PresetMenuOutput::SelectDefault => "default".to_string(),
+                };
+
+                if let Err(e) = ipc::set_preset(&preset_name).await {
+                    warn!("[sunsetr] preset switch to '{}' failed: {e}", preset_name);
+                    return;
                 }
-            }
+
+                // Don't trigger spawn_start - the spawn_following() process
+                // will automatically pick up the preset change via IPC events
+                debug!("[sunsetr] preset switch to '{}' completed", preset_name);
+            });
         });
 
         // Connect toggle output handler
@@ -126,38 +127,41 @@ impl Plugin for SunsetrPlugin {
 
         // Set up expand callback to load presets
         // Use a channel to send presets from tokio to glib thread
-        let (preset_tx, preset_rx) = unbounded::<Vec<String>>();
+        let (preset_tx, preset_rx) = unbounded::<(Vec<String>, Option<String>)>();
         let preset_menu_for_rx = self.preset_menu.clone();
         let store_for_presets = self.store.clone();
 
         // Handle incoming preset lists on glib thread
         glib::spawn_future_local(async move {
-            while let Ok(presets) = preset_rx.recv_async().await {
+            while let Ok((presets, active_preset)) = preset_rx.recv_async().await {
                 // Update has_presets flag in store
                 let has_presets = !presets.is_empty();
                 store_for_presets.emit(SunsetrOp::SetHasPresets(has_presets));
 
                 // Update preset menu
                 if let Some(ref menu) = *preset_menu_for_rx.borrow() {
-                    menu.set_presets(presets);
+                    menu.set_presets(presets, active_preset);
                 }
             }
         });
 
+        let store_for_expand = self.store.clone();
         toggle.set_expand_callback(move |will_be_open| {
             if will_be_open {
                 debug!("[sunsetr] Menu expanded, loading presets");
                 let sender = preset_tx.clone();
+                // Extract active preset before entering tokio context
+                let active_preset = store_for_expand.get_state().active_preset.clone();
                 tokio::spawn(async move {
                     match ipc::query_presets().await {
                         Ok(presets) => {
                             debug!("[sunsetr] Loaded {} presets", presets.len());
-                            let _ = sender.send(presets);
+                            let _ = sender.send((presets, active_preset));
                         }
                         Err(e) => {
                             warn!("[sunsetr] Failed to load presets: {e}");
                             // Send empty list on error
-                            let _ = sender.send(vec![]);
+                            let _ = sender.send((vec![], None));
                         }
                     }
                 });
@@ -181,6 +185,7 @@ impl Plugin for SunsetrPlugin {
 
         // Subscribe to store for state changes
         let toggle_ref = self.toggle.clone();
+        let preset_menu_ref = self.preset_menu.clone();
         let store = self.store.clone();
         self.store.subscribe(move || {
             let state = store.get_state();
@@ -213,6 +218,11 @@ impl Plugin for SunsetrPlugin {
                 // Only show expand button when sunsetr is running and presets are configured
                 toggle.set_expandable(state.active && state.has_presets);
             }
+
+            // Update preset menu checkmarks when active preset changes
+            if let Some(ref menu) = *preset_menu_ref.borrow() {
+                menu.update_active_preset(state.active_preset.clone());
+            }
         });
 
         // Handle IPC events
@@ -231,6 +241,9 @@ impl Plugin for SunsetrPlugin {
                     }
                     SunsetrIpcEvents::Busy(busy) => {
                         store_for_ipc.emit(SunsetrOp::SetBusy(busy));
+                    }
+                    SunsetrIpcEvents::ActivePreset(preset) => {
+                        store_for_ipc.emit(SunsetrOp::SetActivePreset(preset));
                     }
                     SunsetrIpcEvents::Error(_error) => {
                         // Errors are logged by the IPC module

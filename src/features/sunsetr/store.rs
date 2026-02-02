@@ -17,6 +17,8 @@ pub struct SunsetrState {
     pub busy: bool,
     /// True if presets are available
     pub has_presets: bool,
+    /// Currently active preset (None = default, Some(name) = preset active)
+    pub active_preset: Option<String>,
 }
 
 /// Operations for the sunsetr store.
@@ -29,6 +31,7 @@ pub enum SunsetrOp {
     },
     SetBusy(bool),
     SetHasPresets(bool),
+    SetActivePreset(Option<String>),
 }
 
 impl StoreOp for SunsetrOp {}
@@ -59,5 +62,6 @@ pub fn create_sunsetr_store() -> SunsetrStore {
         }
         SunsetrOp::SetBusy(busy) => set_field!(state.busy, busy),
         SunsetrOp::SetHasPresets(has_presets) => set_field!(state.has_presets, has_presets),
+        SunsetrOp::SetActivePreset(preset) => set_field!(state.active_preset, preset),
     })
 }

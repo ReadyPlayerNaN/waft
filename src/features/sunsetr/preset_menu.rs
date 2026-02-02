@@ -7,12 +7,68 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
-use crate::ui::menu_item::MenuItemWidget;
+/// A single preset menu item with an optional checkmark.
+#[derive(Clone)]
+struct PresetMenuItem {
+    root: gtk::Button,
+    checkmark: gtk::Image,
+}
+
+impl PresetMenuItem {
+    fn new(label: &str, is_active: bool) -> Self {
+        let hbox = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(12)
+            .build();
+
+        // Icon on left
+        let icon = gtk::Image::builder()
+            .icon_name("preferences-system-symbolic")
+            .pixel_size(16)
+            .build();
+        hbox.append(&icon);
+
+        // Label in middle
+        let label_widget = gtk::Label::builder()
+            .label(label)
+            .hexpand(true)
+            .halign(gtk::Align::Start)
+            .build();
+        hbox.append(&label_widget);
+
+        // Checkmark on right
+        let checkmark = gtk::Image::builder()
+            .icon_name("object-select-symbolic")
+            .pixel_size(16)
+            .visible(is_active)
+            .build();
+        hbox.append(&checkmark);
+
+        let button = gtk::Button::builder()
+            .css_classes(["menu-item"])
+            .child(&hbox)
+            .build();
+
+        Self {
+            root: button,
+            checkmark,
+        }
+    }
+
+    fn set_active(&self, active: bool) {
+        self.checkmark.set_visible(active);
+    }
+
+    fn widget(&self) -> &gtk::Button {
+        &self.root
+    }
+}
 
 /// Output events from the preset menu.
 #[derive(Debug, Clone)]
 pub enum PresetMenuOutput {
-    SelectPreset(String), // preset name
+    SelectPreset(String), // Select a named preset
+    SelectDefault,        // Clear preset, return to default
 }
 
 /// Sunsetr preset menu widget.
@@ -20,6 +76,7 @@ pub struct PresetMenuWidget {
     pub root: gtk::Box,
     items_container: gtk::Box,
     on_output: Rc<RefCell<Option<Box<dyn Fn(PresetMenuOutput)>>>>,
+    menu_items: RefCell<Vec<(Option<String>, PresetMenuItem)>>, // (preset_name, item) - None for "Default"
 }
 
 impl PresetMenuWidget {
@@ -43,6 +100,7 @@ impl PresetMenuWidget {
             root,
             items_container,
             on_output,
+            menu_items: RefCell::new(Vec::new()),
         }
     }
 
@@ -55,7 +113,7 @@ impl PresetMenuWidget {
     }
 
     /// Update the list of presets.
-    pub fn set_presets(&self, presets: Vec<String>) {
+    pub fn set_presets(&self, presets: Vec<String>, active_preset: Option<String>) {
         // Remove all existing items
         while let Some(child) = self.items_container.first_child() {
             self.items_container.remove(&child);
@@ -72,41 +130,60 @@ impl PresetMenuWidget {
                 .margin_end(12)
                 .build();
             self.items_container.append(&no_presets_label);
+            *self.menu_items.borrow_mut() = Vec::new();
             return;
         }
 
-        // Create menu items for each preset
-        for preset_name in presets {
-            let on_output = self.on_output.clone();
-            let preset_name_clone = preset_name.clone();
+        let mut menu_items = Vec::new();
 
-            // Create menu item content
-            let content = gtk::Box::builder()
-                .orientation(gtk::Orientation::Horizontal)
-                .spacing(12)
-                .build();
+        // Add "Default" option first
+        let default_item = PresetMenuItem::new("Default", active_preset.is_none());
+        let default_button = default_item.widget();
+        default_button.connect_clicked({
+            let callback = self.on_output.clone();
+            move |_| {
+                if let Some(ref cb) = *callback.borrow() {
+                    cb(PresetMenuOutput::SelectDefault);
+                }
+            }
+        });
+        self.items_container.append(default_button);
+        menu_items.push((None, default_item));
 
-            let icon = gtk::Image::builder()
-                .icon_name("preferences-system-symbolic")
-                .pixel_size(16)
-                .build();
+        // Add regular presets
+        for preset in presets {
+            let is_active = active_preset.as_ref() == Some(&preset);
+            let item = PresetMenuItem::new(&preset, is_active);
+            let button = item.widget();
 
-            let label = gtk::Label::builder()
-                .label(&preset_name)
-                .hexpand(true)
-                .xalign(0.0)
-                .build();
-
-            content.append(&icon);
-            content.append(&label);
-
-            let menu_item = MenuItemWidget::new(&content, move || {
-                if let Some(ref callback) = *on_output.borrow() {
-                    callback(PresetMenuOutput::SelectPreset(preset_name_clone.clone()));
+            button.connect_clicked({
+                let preset = preset.clone();
+                let callback = self.on_output.clone();
+                move |_| {
+                    if let Some(ref cb) = *callback.borrow() {
+                        cb(PresetMenuOutput::SelectPreset(preset.clone()));
+                    }
                 }
             });
 
-            self.items_container.append(menu_item.widget());
+            self.items_container.append(button);
+            menu_items.push((Some(preset), item));
+        }
+
+        *self.menu_items.borrow_mut() = menu_items;
+    }
+
+    /// Update which preset is marked as active without rebuilding the menu.
+    pub fn update_active_preset(&self, active_preset: Option<String>) {
+        let items = self.menu_items.borrow();
+
+        for (preset_name, item) in items.iter() {
+            let is_active = match (preset_name, &active_preset) {
+                (None, None) => true,        // Default is active when no preset
+                (Some(name), Some(active)) => name == active, // Preset matches
+                _ => false,
+            };
+            item.set_active(is_active);
         }
     }
 
