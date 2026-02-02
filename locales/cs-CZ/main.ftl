@@ -10,6 +10,9 @@ notifications-empty = Žádná oznámení
 # Do Not Disturb
 dnd-title = Nerušit
 
+# Caffeine
+caffeine-title = Nezamykat
+
 # Dark Mode
 darkman-title = Tmavý režim
 

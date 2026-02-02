@@ -21,6 +21,9 @@ id = "plugin::sunsetr"
 id = "plugin::audio"
 
 [[plugins]]
+id = "plugin::caffeine"
+
+[[plugins]]
 id = "plugin::notifications"
 toast_limit = 3
 disable_toasts = false

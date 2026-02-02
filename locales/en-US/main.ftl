@@ -10,6 +10,9 @@ notifications-empty = No notifications
 # Do Not Disturb
 dnd-title = Do not disturb
 
+# Caffeine
+caffeine-title = Keep Awake
+
 # Dark Mode
 darkman-title = Dark Mode
 

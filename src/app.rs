@@ -18,6 +18,7 @@ use crate::features::audio::AudioPlugin;
 use crate::features::battery::BatteryPlugin;
 use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::brightness::BrightnessPlugin;
+use crate::features::caffeine::CaffeinePlugin;
 use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
 use crate::features::keyboard_layout::KeyboardLayoutPlugin;
@@ -202,6 +203,14 @@ pub async fn run() -> Result<()> {
     if config.is_plugin_enabled("plugin::brightness") {
         let mut plugin = BrightnessPlugin::new();
         if let Some(settings) = config.get_plugin_settings("plugin::brightness") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
+    if config.is_plugin_enabled("plugin::caffeine") {
+        let mut plugin = CaffeinePlugin::new(dbus.clone());
+        if let Some(settings) = config.get_plugin_settings("plugin::caffeine") {
             plugin.configure(settings)?;
         }
         registry.register(plugin);
