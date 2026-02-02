@@ -33,3 +33,25 @@
 
 - WiFi: Support connecting to new (unsaved) networks with password prompt
 - WiFi: Signal strength icon updates in toggle (currently just on/off)
+
+## 4. Feature toggle loading state
+
+Can we do CSS animated borders?
+
+## 5. Feature toggle off main button hover colour
+
+It has primary accent on hover, but it should be neutral
+
+## 6. Notification deprioritization
+
+Some notifications may be deprioritized and maybe formatted in a different way. Write down suggestions here:
+
+- Device connected (set lower priority, add ttl?)
+
+## 7. Notification toast bubbles
+
+We could create a more fun way to deal with notifications: Bubbles, like in Civilization VI.
+
+## 8. Notification toast window position
+
+We should support at least bottom. We need to deal with order of the toasts and potentially fix all the animations
