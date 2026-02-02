@@ -10,9 +10,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::plugin::{ExpandCallback, Plugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
-use crate::ui::feature_toggle_expandable::{
-    FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
-};
+use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 mod ipc;
 mod preset_menu;
@@ -26,7 +24,7 @@ use self::store::{SunsetrOp, SunsetrStore, create_sunsetr_store};
 
 pub struct SunsetrPlugin {
     store: Rc<SunsetrStore>,
-    toggle: Rc<RefCell<Option<FeatureToggleExpandableWidget>>>,
+    toggle: Rc<RefCell<Option<FeatureToggleWidget>>>,
     preset_menu: Rc<RefCell<Option<PresetMenuWidget>>>,
 }
 
@@ -61,16 +59,16 @@ impl Plugin for SunsetrPlugin {
             (state.active, state.next_transition.clone())
         };
 
-        let toggle = FeatureToggleExpandableWidget::new(
-            FeatureToggleExpandableProps {
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
                 title: crate::i18n::t("nightlight-title").into(),
                 icon: "night-light-symbolic".into(),
                 details: initial_state.1.clone(),
                 active: initial_state.0,
                 busy: false,
-                expanded: false,
+                expandable: initial_state.0, // Expandable only when active
             },
-            menu_store.clone(),
+            Some(menu_store.clone()), // Menu support enabled
         );
 
         // Create preset menu
@@ -110,9 +108,8 @@ impl Plugin for SunsetrPlugin {
             // This prevents busy-polling (see AGENTS.md: Runtime Mixing)
             tokio::spawn(async move {
                 let result = match event {
-                    FeatureToggleExpandableOutput::Activate => spawn_start(ipc_sender).await,
-                    FeatureToggleExpandableOutput::Deactivate => spawn_stop(ipc_sender).await,
-                    FeatureToggleExpandableOutput::ToggleExpand => Ok(()), // Managed by widget
+                    FeatureToggleOutput::Activate => spawn_start(ipc_sender).await,
+                    FeatureToggleOutput::Deactivate => spawn_stop(ipc_sender).await,
                 };
                 if let Err(e) = result {
                     warn!("[sunsetr] toggle action failed: {e}");
@@ -162,7 +159,7 @@ impl Plugin for SunsetrPlugin {
             el: toggle.widget(),
             weight: 200,
             menu: Some(preset_menu.widget()),
-            menu_id: Some(toggle.menu_id.clone()),
+            menu_id: toggle.menu_id.clone(),
             on_expand_toggled: Some(expand_callback),
         }));
 
@@ -198,6 +195,10 @@ impl Plugin for SunsetrPlugin {
 
                 toggle.set_details(details);
                 toggle.set_busy(state.busy);
+
+                // Toggle expandability based on active state
+                // Only show expand button when sunsetr is running
+                toggle.set_expandable(state.active);
             }
         });
 

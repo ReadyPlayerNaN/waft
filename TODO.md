@@ -20,36 +20,36 @@ The sunsetr feature toggle now displays period-aware labels based on current mod
 - "Denní režim do HH:MM" when in day mode
 - "Noční světlo do HH:MM" when in night mode
 
-## 3. Universal Feature toggle component - DEFERRED
+## 3. Universal Feature toggle component - ✅ COMPLETE
 
-**Status:** Design complete, implementation deferred for future work.
-
-**Reasoning:** This is a non-trivial refactor affecting multiple plugins. The design
-is documented in the OpenSpec change, but implementation should be done when:
-1. Critical bugs are resolved (done ✅)
-2. Can be properly tested (needs running app)
-3. All plugins can be migrated at once
-
-**Design:** See `openspec/changes/fix-sunsetr-and-unify-toggles/design.md`
-- Single component renders both MainButton and ExpandButton
-- CSS class "expandable" controls expand button visibility
-- No widget rebuilding on state changes
-
-**Decision:** Implemented Task 4 using existing FeatureToggleExpandableWidget instead.
-
-## 4. Sunsetr preset menu - ✅ IMPLEMENTED
-
-**Status:** Complete. Implemented using existing FeatureToggleExpandableWidget.
+**Status:** Implemented and verified.
 
 Implementation:
-- ✅ Migrated sunsetr to FeatureToggleExpandableWidget
+- ✅ Redesigned FeatureToggleWidget with Box root (was Button)
+- ✅ Always renders both MainButton and ExpandButton
+- ✅ CSS class "expandable" controls expand button visibility
+- ✅ Added `set_expandable()` method for runtime switching
+- ✅ Integrated MenuStore and expand callback support
+- ✅ Added CSS rule: `.feature-toggle:not(.expandable) .toggle-expand { display: none; }`
+- ✅ Migrated caffeine, darkman, and notifications plugins
+- ✅ Migrated sunsetr to use unified component with dynamic expandability
+
+**Design:** See `openspec/changes/fix-sunsetr-and-unify-toggles/design.md`
+
+## 4. Sunsetr preset menu - ✅ COMPLETE & VERIFIED
+
+**Status:** Complete. Fully functional with dynamic expandability.
+
+Implementation:
+- ✅ Migrated sunsetr to unified FeatureToggleWidget
 - ✅ Created PresetMenuWidget to display available presets
 - ✅ Added IPC functions: `query_presets()` and `set_preset()`
 - ✅ Lazy loading: presets queried when menu expanded
 - ✅ Preset switching via `sunsetr preset <name>`
 - ✅ Status refresh after preset switch
+- ✅ **Dynamic expandability**: expand button only shows when sunsetr is active
 
-**Implementation:** Commit `29ad311`
+**Key feature:** Toggle is simple when sunsetr is OFF, expandable when ON.
 
 ## 5. Plugins to implement
 

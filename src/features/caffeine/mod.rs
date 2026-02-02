@@ -64,13 +64,17 @@ impl Plugin for CaffeinePlugin {
         // Store the app reference for getting window later
         *self.app.borrow_mut() = Some(app.clone());
 
-        let toggle = FeatureToggleWidget::new(FeatureToggleProps {
-            title: crate::i18n::t("caffeine-title").into(),
-            icon: "changes-allow-symbolic".into(),
-            details: None,
-            active: false,
-            busy: false,
-        });
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
+                title: crate::i18n::t("caffeine-title").into(),
+                icon: "changes-allow-symbolic".into(),
+                details: None,
+                active: false,
+                busy: false,
+                expandable: false,
+            },
+            None, // No menu support
+        );
 
         // Connect output handler
         let dbus = self.dbus.clone();

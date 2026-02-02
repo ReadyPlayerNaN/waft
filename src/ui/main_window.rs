@@ -579,6 +579,10 @@ impl MainWindowWidget {
                 font-weight: 600;
             }}
 
+            /* Hide expand button when toggle is not expandable */
+            .feature-toggle:not(.expandable) .toggle-expand {{
+                display: none;
+            }}
 
             /* Menu chevron styling */
             .menu-chevron {{

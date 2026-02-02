@@ -80,13 +80,17 @@ impl Plugin for DarkmanPlugin {
             DarkmanMode::is_active(state.mode)
         };
 
-        let toggle = FeatureToggleWidget::new(FeatureToggleProps {
-            title: crate::i18n::t("darkman-title").into(),
-            icon: "weather-clear-night-symbolic".into(),
-            details: None,
-            active: initial_active,
-            busy: false,
-        });
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
+                title: crate::i18n::t("darkman-title").into(),
+                icon: "weather-clear-night-symbolic".into(),
+                details: None,
+                active: initial_active,
+                busy: false,
+                expandable: false,
+            },
+            None, // No menu support
+        );
 
         // Connect output handler
         let dbus = self.dbus.clone();

@@ -27,13 +27,17 @@ pub struct DoNotDisturbToggleWidget {
 impl DoNotDisturbToggleWidget {
     /// Create a new DnD toggle widget.
     pub fn new(init: DoNotDisturbToggleInit) -> Self {
-        let toggle = FeatureToggleWidget::new(FeatureToggleProps {
-            title: crate::i18n::t("dnd-title").into(),
-            icon: "notifications-disabled-symbolic".into(),
-            details: None,
-            active: init.active,
-            busy: init.busy,
-        });
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
+                title: crate::i18n::t("dnd-title").into(),
+                icon: "notifications-disabled-symbolic".into(),
+                details: None,
+                active: init.active,
+                busy: init.busy,
+                expandable: false,
+            },
+            None, // No menu support
+        );
 
         let on_output: Rc<RefCell<Option<Box<dyn Fn(DoNotDisturbToggleOutput)>>>> =
             Rc::new(RefCell::new(None));
@@ -71,7 +75,7 @@ impl DoNotDisturbToggleWidget {
     }
 
     /// Get a reference to the root widget.
-    pub fn widget(&self) -> &gtk::Button {
+    pub fn widget(&self) -> gtk::Widget {
         self.toggle.widget()
     }
 }
