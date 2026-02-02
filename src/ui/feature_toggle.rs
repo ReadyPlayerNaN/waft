@@ -38,6 +38,7 @@ pub struct FeatureToggleWidget {
     pub root: gtk::Box,
     main_button: gtk::Button,
     expand_button: gtk::Button,
+    expand_revealer: gtk::Revealer,
     menu_chevron: MenuChevronWidget,
     icon_image: gtk::Image,
     title_label: gtk::Label,
@@ -128,12 +129,17 @@ impl FeatureToggleWidget {
             .build();
         expand_button.set_child(menu_chevron.widget());
 
-        // Add both buttons to root
-        root.append(&main_button);
-        root.append(&expand_button);
+        // Wrap expand button in revealer for smooth slide-left transition
+        let expand_revealer = gtk::Revealer::builder()
+            .transition_type(gtk::RevealerTransitionType::SlideLeft)
+            .transition_duration(200) // 200ms transition
+            .reveal_child(props.expandable)
+            .build();
+        expand_revealer.set_child(Some(&expand_button));
 
-        // Set initial visibility of expand button
-        expand_button.set_visible(props.expandable);
+        // Add main button and revealer to root
+        root.append(&main_button);
+        root.append(&expand_revealer);
 
         let active = Rc::new(RefCell::new(props.active));
         let busy = Rc::new(RefCell::new(props.busy));
@@ -220,6 +226,7 @@ impl FeatureToggleWidget {
             root,
             main_button,
             expand_button,
+            expand_revealer,
             menu_chevron,
             icon_image,
             title_label,
@@ -277,11 +284,11 @@ impl FeatureToggleWidget {
     }
 
     /// Update the expandable state.
-    /// When false, the expand button is hidden.
-    /// When true, the expand button is visible.
+    /// When false, the expand button slides out (hidden).
+    /// When true, the expand button slides in (visible).
     pub fn set_expandable(&self, expandable: bool) {
         *self.expandable.borrow_mut() = expandable;
-        self.expand_button.set_visible(expandable);
+        self.expand_revealer.set_reveal_child(expandable);
         Self::update_css_classes(
             &self.root,
             *self.active.borrow(),
