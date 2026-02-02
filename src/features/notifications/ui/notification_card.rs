@@ -25,6 +25,7 @@ pub struct NotificationCard {
     revealer: gtk::Revealer,
     layout: NotificationLayoutParts,
     on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationCardOutput)>>>>,
+    hidden: Rc<RefCell<bool>>,
 }
 
 impl NotificationCard {
@@ -72,6 +73,9 @@ impl NotificationCard {
         revealer.set_child(Some(&layout.card_box));
         root.append(&revealer);
 
+        // Track hidden state for gesture handler guards
+        let hidden = Rc::new(RefCell::new(false));
+
         // When revealer finishes animating, trigger window resize and cleanup
         let root_clone = root.clone();
         revealer.connect_child_revealed_notify(move |rev| {
@@ -79,11 +83,16 @@ impl NotificationCard {
             trigger_window_resize();
 
             if !rev.is_child_revealed() {
-                if let Some(parent) = root_clone.parent() {
-                    if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
-                        parent_box.remove(&root_clone);
+                // Defer widget removal to after current event processing completes
+                // This prevents GTK CRITICAL errors when gesture handlers are still active
+                let root_for_removal = root_clone.clone();
+                gtk::glib::idle_add_local_once(move || {
+                    if let Some(parent) = root_for_removal.parent() {
+                        if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+                            parent_box.remove(&root_for_removal);
+                        }
                     }
-                }
+                });
             }
         });
 
@@ -100,9 +109,15 @@ impl NotificationCard {
         // Right-click to close
         let on_output_right = on_output.clone();
         let revealer_clone = revealer.clone();
+        let hidden_clone = hidden.clone();
         let right_click = gtk::GestureClick::new();
         right_click.set_button(3);
         right_click.connect_pressed(move |_gesture, _n_press, _x, _y| {
+            // Guard: ignore if already hidden
+            if *hidden_clone.borrow() {
+                return;
+            }
+            *hidden_clone.borrow_mut() = true;
             revealer_clone.set_reveal_child(false);
             if let Some(ref callback) = *on_output_right.borrow() {
                 callback(NotificationCardOutput::Close(id));
@@ -113,9 +128,15 @@ impl NotificationCard {
         // Left-click for default action
         let on_output_left = on_output.clone();
         let revealer_clone = revealer.clone();
+        let hidden_clone = hidden.clone();
         let left_click = gtk::GestureClick::new();
         left_click.set_button(1);
         left_click.connect_pressed(move |gesture, _n_press, x, y| {
+            // Guard: ignore if already hidden
+            if *hidden_clone.borrow() {
+                return;
+            }
+
             // Check if click is on an interactive element
             if let Some(widget) = gesture.widget() {
                 if let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT) {
@@ -129,6 +150,7 @@ impl NotificationCard {
                 }
             }
 
+            *hidden_clone.borrow_mut() = true;
             if let Some(ref callback) = *on_output_left.borrow() {
                 callback(NotificationCardOutput::ActionClick(
                     id,
@@ -146,6 +168,7 @@ impl NotificationCard {
             revealer,
             layout,
             on_output,
+            hidden,
         }
     }
 

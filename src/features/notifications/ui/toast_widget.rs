@@ -85,12 +85,16 @@ impl ToastWidget {
         let root_clone = root.clone();
         revealer.connect_child_revealed_notify(move |rev| {
             if !rev.is_child_revealed() && *remove_on_hide_clone.borrow() {
-                // Remove from parent - this is the authoritative cleanup
-                if let Some(parent) = root_clone.parent() {
-                    if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
-                        parent_box.remove(&root_clone);
+                // Defer widget removal to after current event processing completes
+                // This prevents GTK CRITICAL errors when gesture handlers are still active
+                let root_for_removal = root_clone.clone();
+                gtk::glib::idle_add_local_once(move || {
+                    if let Some(parent) = root_for_removal.parent() {
+                        if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+                            parent_box.remove(&root_for_removal);
+                        }
                     }
-                }
+                });
             }
         });
 
