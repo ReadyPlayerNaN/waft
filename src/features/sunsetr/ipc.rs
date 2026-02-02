@@ -194,6 +194,36 @@ async fn run_ipc_variants(variants: &[&[&str]]) -> anyhow::Result<()> {
     anyhow::bail!("sunsetr command failed: {}", errors.join(" | "))
 }
 
+/// Query available sunsetr presets
+pub async fn query_presets() -> anyhow::Result<Vec<String>> {
+    let (code, stdout, stderr) = run_sunsetr(&["preset", "list"]).await?;
+
+    if code != 0 {
+        anyhow::bail!("sunsetr preset list failed (code {code}): {stderr}");
+    }
+
+    // Parse preset list - one preset per line
+    let presets: Vec<String> = stdout
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
+        .collect();
+
+    Ok(presets)
+}
+
+/// Switch to a specific preset
+pub async fn set_preset(preset_name: &str) -> anyhow::Result<()> {
+    let (code, _stdout, stderr) = run_sunsetr(&["preset", preset_name]).await?;
+
+    if code != 0 {
+        anyhow::bail!("sunsetr preset {preset_name} failed (code {code}): {stderr}");
+    }
+
+    Ok(())
+}
+
 async fn refresh_after_start() -> anyhow::Result<Status> {
     // `sunsetr -b` returns before daemon is ready; wait until status JSON is available.
     let mut last_err: Option<anyhow::Error> = None;

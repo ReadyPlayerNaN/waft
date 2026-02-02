@@ -9,22 +9,25 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gtk::prelude::*;
-
-use crate::plugin::{Plugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
-use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
+use crate::plugin::{ExpandCallback, Plugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
+use crate::ui::feature_toggle_expandable::{
+    FeatureToggleExpandableOutput, FeatureToggleExpandableProps, FeatureToggleExpandableWidget,
+};
 
 mod ipc;
+mod preset_menu;
 pub mod store;
 mod values;
 
 use self::ipc::SunsetrIpcEvents;
 use self::ipc::{spawn_following, spawn_start, spawn_stop};
+use self::preset_menu::{PresetMenuOutput, PresetMenuWidget};
 use self::store::{SunsetrOp, SunsetrStore, create_sunsetr_store};
 
 pub struct SunsetrPlugin {
     store: Rc<SunsetrStore>,
-    toggle: Rc<RefCell<Option<FeatureToggleWidget>>>,
+    toggle: Rc<RefCell<Option<FeatureToggleExpandableWidget>>>,
+    preset_menu: Rc<RefCell<Option<PresetMenuWidget>>>,
 }
 
 impl SunsetrPlugin {
@@ -32,6 +35,7 @@ impl SunsetrPlugin {
         Self {
             store: Rc::new(create_sunsetr_store()),
             toggle: Rc::new(RefCell::new(None)),
+            preset_menu: Rc::new(RefCell::new(None)),
         }
     }
 }
@@ -49,7 +53,7 @@ impl Plugin for SunsetrPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        _menu_store: Arc<MenuStore>,
+        menu_store: Arc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let initial_state = {
@@ -57,18 +61,46 @@ impl Plugin for SunsetrPlugin {
             (state.active, state.next_transition.clone())
         };
 
-        let toggle = FeatureToggleWidget::new(FeatureToggleProps {
-            title: crate::i18n::t("nightlight-title").into(),
-            icon: "night-light-symbolic".into(),
-            details: initial_state.1.clone(),
-            active: initial_state.0,
-            busy: false,
-        });
+        let toggle = FeatureToggleExpandableWidget::new(
+            FeatureToggleExpandableProps {
+                title: crate::i18n::t("nightlight-title").into(),
+                icon: "night-light-symbolic".into(),
+                details: initial_state.1.clone(),
+                active: initial_state.0,
+                busy: false,
+                expanded: false,
+            },
+            menu_store.clone(),
+        );
+
+        // Create preset menu
+        let preset_menu = PresetMenuWidget::new();
 
         // Create IPC channel
         let (ipc_tx, ipc_rx) = unbounded::<SunsetrIpcEvents>();
 
-        // Connect output handler
+        // Connect preset menu output handler
+        let ipc_sender_for_preset = ipc_tx.clone();
+        preset_menu.connect_output(move |event| {
+            debug!("[sunsetr/preset-menu] Received: {:?}", event);
+            match event {
+                PresetMenuOutput::SelectPreset(preset_name) => {
+                    let ipc_sender = ipc_sender_for_preset.clone();
+                    let preset = preset_name.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = ipc::set_preset(&preset).await {
+                            warn!("[sunsetr] preset switch failed: {e}");
+                        }
+                        // Trigger a status refresh after preset switch
+                        if let Err(e) = spawn_start(ipc_sender).await {
+                            warn!("[sunsetr] refresh after preset switch failed: {e}");
+                        }
+                    });
+                }
+            }
+        });
+
+        // Connect toggle output handler
         let ipc_sender = ipc_tx.clone();
         toggle.connect_output(move |event| {
             debug!("[sunsetr/ui] Received: {:?}", event);
@@ -78,8 +110,9 @@ impl Plugin for SunsetrPlugin {
             // This prevents busy-polling (see AGENTS.md: Runtime Mixing)
             tokio::spawn(async move {
                 let result = match event {
-                    FeatureToggleOutput::Activate => spawn_start(ipc_sender).await,
-                    FeatureToggleOutput::Deactivate => spawn_stop(ipc_sender).await,
+                    FeatureToggleExpandableOutput::Activate => spawn_start(ipc_sender).await,
+                    FeatureToggleExpandableOutput::Deactivate => spawn_stop(ipc_sender).await,
+                    FeatureToggleExpandableOutput::ToggleExpand => Ok(()), // Managed by widget
                 };
                 if let Err(e) = result {
                     warn!("[sunsetr] toggle action failed: {e}");
@@ -87,17 +120,54 @@ impl Plugin for SunsetrPlugin {
             });
         });
 
+        // Set up expand callback to load presets
+        // Use a channel to send presets from tokio to glib thread
+        let (preset_tx, preset_rx) = unbounded::<Vec<String>>();
+        let preset_menu_for_rx = self.preset_menu.clone();
+
+        // Handle incoming preset lists on glib thread
+        glib::spawn_future_local(async move {
+            while let Ok(presets) = preset_rx.recv_async().await {
+                if let Some(ref menu) = *preset_menu_for_rx.borrow() {
+                    menu.set_presets(presets);
+                }
+            }
+        });
+
+        toggle.set_expand_callback(move |will_be_open| {
+            if will_be_open {
+                debug!("[sunsetr] Menu expanded, loading presets");
+                let sender = preset_tx.clone();
+                tokio::spawn(async move {
+                    match ipc::query_presets().await {
+                        Ok(presets) => {
+                            debug!("[sunsetr] Loaded {} presets", presets.len());
+                            let _ = sender.send(presets);
+                        }
+                        Err(e) => {
+                            warn!("[sunsetr] Failed to load presets: {e}");
+                            // Send empty list on error
+                            let _ = sender.send(vec![]);
+                        }
+                    }
+                });
+            }
+        });
+
+        let expand_callback: ExpandCallback = Rc::new(RefCell::new(None));
+
         // Register the feature toggle
         registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
             id: "sunsetr:toggle".to_string(),
-            el: toggle.root.clone().upcast::<gtk::Widget>(),
+            el: toggle.widget(),
             weight: 200,
-            menu: None,
-            menu_id: None,
-            on_expand_toggled: None,
+            menu: Some(preset_menu.widget()),
+            menu_id: Some(toggle.menu_id.clone()),
+            on_expand_toggled: Some(expand_callback),
         }));
 
         *self.toggle.borrow_mut() = Some(toggle);
+        *self.preset_menu.borrow_mut() = Some(preset_menu);
 
         // Subscribe to store for state changes
         let toggle_ref = self.toggle.clone();

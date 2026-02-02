@@ -22,6 +22,9 @@ nightlight-until = Until: { $time }
 nightlight-day-until = Day mode until { $time }
 nightlight-night-until = Night light until { $time }
 
+# Sunsetr
+sunsetr-no-presets = No presets configured
+
 # Agenda
 agenda-title = Agenda
 agenda-empty = No upcoming events

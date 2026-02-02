@@ -22,6 +22,9 @@ nightlight-until = Do: { $time }
 nightlight-day-until = Denní režim do { $time }
 nightlight-night-until = Noční světlo do { $time }
 
+# Sunsetr
+sunsetr-no-presets = Nejsou nakonfigurovány žádné předvolby
+
 # Agenda
 agenda-title = Kalendář
 agenda-empty = Žádné nadcházející události
