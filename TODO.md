@@ -1,39 +1,55 @@
-## 1. Sunsetr hangs the application
+## 1. Sunsetr hangs the application - PARTIALLY FIXED
 
-Setting: During the daylight (before sunsetr switches to night light), while sunsetr is running
-Action: Click on the Night light feature toggle
-Result: The application hangs, UI is no longer responsive
-Memory dump -> diagnose-cpu-20260202-135933.log
+**Status:** Critical busy-polling bug FIXED. State logic FIXED. Needs testing.
 
-### Expected result
+**Fixed:**
+- ✅ Runtime mixing bug (tokio in glib) causing busy-polling - moved to tokio::spawn
+- ✅ State logic now represents "process running" not "night period"
+- ✅ Period-aware labels: "Denní režim do {čas}" / "Noční světlo do {čas}"
 
-The plugin behaviour is wrong. The Feature Toggle should display as "on", whenever the sunsetr is running. When the sunsetr shuts down (or is not running), the feature toggle should display as "off". Clicking feature toggle that is "off" should check if sunsetr is running, if yes, then just update the status to plugin state; if not, then it should start sunsetr and propagate the status to plugin state.
+**Needs Testing:**
+- [ ] Verify no hang when clicking toggle during daylight
+- [ ] Verify toggle shows "on" when sunsetr runs during day
+- [ ] Verify labels display correctly for both periods
 
-## 2. Sunsetr label
+**Remaining (lower priority):**
+- Preset menu (Task 4) - requires expand button implementation
 
-The sunsetr feature toggle should display "Denní režim do {čas}" and "Noční světlo do {čas}", based on the sunsetr period.
+See: `openspec/changes/fix-sunsetr-and-unify-toggles/` for full spec
 
-## 3. Universal Feature toggle component
+## 2. Sunsetr label - FIXED
 
-There should be only a single Feature Toggle component. The Feature Toggle and Extendable Feature Toggle must be merged together. Internally, there must still be two variants, identical to the current two variants, but the UI must allow to switch between them. I think the best way to do this is to resolve this exclusively by CSS styling = both variants would render
+The sunsetr feature toggle now displays period-aware labels based on current mode.
 
-```
-<gtk::Box>
-  <MainButton />
-  <ExpandButton />
-</gtk::Box>
-```
+## 3. Universal Feature toggle component - TODO
 
-But only the expandable case would receive CSS class "expandable".
+**Status:** Design complete, implementation deferred.
 
-## 4. Sunsetr options
+**Reasoning:** This is a non-trivial refactor affecting multiple plugins. The design
+is documented in the OpenSpec change, but implementation should be done when:
+1. Critical bugs are resolved (done)
+2. Can be properly tested (needs running app)
+3. All plugins can be migrated at once
 
-The sunsetr feature toggle must be expandable, but only if the sunsetr is running. If it is running, it must provide menu, that allows switching sunsetr presets.
+**Design:** See `openspec/changes/fix-sunsetr-and-unify-toggles/design.md`
+- Single component renders both MainButton and ExpandButton
+- CSS class "expandable" controls expand button visibility
+- No widget rebuilding on state changes
+
+## 4. Sunsetr options - TODO
+
+**Status:** Blocked by Task 3.
+
+Requires expandable toggle to be implemented first. Design includes:
+- Query `sunsetr preset list --json` on menu expand
+- Populate menu with available presets
+- Switch via `sunsetr preset set <name>`
 
 ## 5. Plugins to implement
 
 - Tether plugin?
 - SNI
+- Caffeine (completed separately)
 
 ## 6. NetworkManager plugin enhancements
 
