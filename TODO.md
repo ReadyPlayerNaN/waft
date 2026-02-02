@@ -20,9 +20,9 @@ The sunsetr feature toggle now displays period-aware labels based on current mod
 - "Denní režim do HH:MM" when in day mode
 - "Noční světlo do HH:MM" when in night mode
 
-## 3. Universal Feature toggle component - TODO
+## 3. Universal Feature toggle component - DEFERRED
 
-**Status:** Design complete, implementation deferred.
+**Status:** Design complete, implementation deferred for future work.
 
 **Reasoning:** This is a non-trivial refactor affecting multiple plugins. The design
 is documented in the OpenSpec change, but implementation should be done when:
@@ -35,16 +35,21 @@ is documented in the OpenSpec change, but implementation should be done when:
 - CSS class "expandable" controls expand button visibility
 - No widget rebuilding on state changes
 
-## 4. Sunsetr options - TODO
+**Decision:** Implemented Task 4 using existing FeatureToggleExpandableWidget instead.
 
-**Status:** Blocked by Task 3. Design complete.
+## 4. Sunsetr preset menu - ✅ IMPLEMENTED
 
-Requires expandable toggle to be implemented first. Design includes:
-- Query `sunsetr preset list --json` on menu expand
-- Populate menu with available presets
-- Switch via `sunsetr preset set <name>`
+**Status:** Complete. Implemented using existing FeatureToggleExpandableWidget.
 
-**Design:** See `openspec/changes/fix-sunsetr-and-unify-toggles/` specs and tasks
+Implementation:
+- ✅ Migrated sunsetr to FeatureToggleExpandableWidget
+- ✅ Created PresetMenuWidget to display available presets
+- ✅ Added IPC functions: `query_presets()` and `set_preset()`
+- ✅ Lazy loading: presets queried when menu expanded
+- ✅ Preset switching via `sunsetr preset <name>`
+- ✅ Status refresh after preset switch
+
+**Implementation:** Commit `29ad311`
 
 ## 5. Plugins to implement
 

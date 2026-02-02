@@ -32,17 +32,17 @@
 
 **Status:** Design complete, implementation deferred for future work.
 
-## 5. Add sunsetr preset menu (Task 4) - DEFERRED
+## 5. Add sunsetr preset menu (Task 4) - ✅ COMPLETE
 
-- [ ] 5.1 Make sunsetr toggle expandable when process is running
-- [ ] 5.2 Add IPC function to query `sunsetr preset list --json`
-- [ ] 5.3 Parse preset list JSON response
-- [ ] 5.4 Populate menu with preset options on expand
-- [ ] 5.5 Add IPC function to switch preset via `sunsetr preset set <name>`
-- [ ] 5.6 Connect menu item clicks to preset switching
-- [ ] 5.7 Test: clicking preset switches sunsetr period
+- [x] 5.1 Make sunsetr toggle expandable (migrated to FeatureToggleExpandableWidget)
+- [x] 5.2 Add IPC function to query `sunsetr preset list`
+- [x] 5.3 Parse preset list response (line-separated preset names)
+- [x] 5.4 Populate menu with preset options on expand
+- [x] 5.5 Add IPC function to switch preset via `sunsetr preset <name>`
+- [x] 5.6 Connect menu item clicks to preset switching
+- [ ] 5.7 Test: clicking preset switches sunsetr period (needs running app)
 
-**Status:** Blocked by Task 3. Design complete.
+**Status:** Implemented using existing FeatureToggleExpandableWidget (Task 3 deferred).
 
 ## 6. Verification - ✅ COMPLETE
 
