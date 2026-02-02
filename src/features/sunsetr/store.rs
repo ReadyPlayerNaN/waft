@@ -15,6 +15,8 @@ pub struct SunsetrState {
     /// Next transition time (HH:MM)
     pub next_transition: Option<String>,
     pub busy: bool,
+    /// True if presets are available
+    pub has_presets: bool,
 }
 
 /// Operations for the sunsetr store.
@@ -26,6 +28,7 @@ pub enum SunsetrOp {
         next_transition: Option<String>,
     },
     SetBusy(bool),
+    SetHasPresets(bool),
 }
 
 impl StoreOp for SunsetrOp {}
@@ -55,5 +58,6 @@ pub fn create_sunsetr_store() -> SunsetrStore {
             changed
         }
         SunsetrOp::SetBusy(busy) => set_field!(state.busy, busy),
+        SunsetrOp::SetHasPresets(has_presets) => set_field!(state.has_presets, has_presets),
     })
 }

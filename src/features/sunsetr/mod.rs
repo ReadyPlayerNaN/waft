@@ -54,9 +54,16 @@ impl Plugin for SunsetrPlugin {
         menu_store: Arc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
+        // Load presets initially to determine if toggle should be expandable
+        let has_presets = match ipc::query_presets().await {
+            Ok(presets) => !presets.is_empty(),
+            Err(_) => false,
+        };
+        self.store.emit(SunsetrOp::SetHasPresets(has_presets));
+
         let initial_state = {
             let state = self.store.get_state();
-            (state.active, state.next_transition.clone())
+            (state.active, state.next_transition.clone(), state.has_presets)
         };
 
         let toggle = FeatureToggleWidget::new(
@@ -66,7 +73,7 @@ impl Plugin for SunsetrPlugin {
                 details: initial_state.1.clone(),
                 active: initial_state.0,
                 busy: false,
-                expandable: initial_state.0, // Expandable only when active
+                expandable: initial_state.0 && initial_state.2, // Expandable when active AND presets available
             },
             Some(menu_store.clone()), // Menu support enabled
         );
@@ -121,10 +128,16 @@ impl Plugin for SunsetrPlugin {
         // Use a channel to send presets from tokio to glib thread
         let (preset_tx, preset_rx) = unbounded::<Vec<String>>();
         let preset_menu_for_rx = self.preset_menu.clone();
+        let store_for_presets = self.store.clone();
 
         // Handle incoming preset lists on glib thread
         glib::spawn_future_local(async move {
             while let Ok(presets) = preset_rx.recv_async().await {
+                // Update has_presets flag in store
+                let has_presets = !presets.is_empty();
+                store_for_presets.emit(SunsetrOp::SetHasPresets(has_presets));
+
+                // Update preset menu
                 if let Some(ref menu) = *preset_menu_for_rx.borrow() {
                     menu.set_presets(presets);
                 }
@@ -196,9 +209,9 @@ impl Plugin for SunsetrPlugin {
                 toggle.set_details(details);
                 toggle.set_busy(state.busy);
 
-                // Toggle expandability based on active state
-                // Only show expand button when sunsetr is running
-                toggle.set_expandable(state.active);
+                // Toggle expandability based on active state AND preset availability
+                // Only show expand button when sunsetr is running and presets are configured
+                toggle.set_expandable(state.active && state.has_presets);
             }
         });
 
