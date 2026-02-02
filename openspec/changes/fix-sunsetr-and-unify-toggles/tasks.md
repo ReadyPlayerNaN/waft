@@ -1,26 +1,26 @@
-## 1. Fix sunsetr runtime mixing bug (Task 1)
+## 1. Fix sunsetr runtime mixing bug (Task 1) - ✅ COMPLETE
 
 - [x] 1.1 Move `spawn_start` call from `glib::spawn_future_local` to `tokio::spawn`
 - [x] 1.2 Move `spawn_stop` call from `glib::spawn_future_local` to `tokio::spawn`
 - [x] 1.3 Add error logging for spawn failures
-- [ ] 1.4 Test: verify no busy-polling after toggle click during daylight
+- [x] 1.4 Test: verify no busy-polling after toggle click during daylight
 
-## 2. Fix sunsetr state logic (Task 1 - second part)
+## 2. Fix sunsetr state logic (Task 1 - second part) - ✅ COMPLETE
 
 - [x] 2.1 Change state to represent process running, not period
 - [x] 2.2 Update store reducer to track period separately
-- [ ] 2.3 Handle click on already-running toggle (should stop sunsetr)
-- [ ] 2.4 Test: toggle shows "on" when sunsetr runs during day
+- [x] 2.3 Handle click on already-running toggle (should stop sunsetr)
+- [x] 2.4 Test: toggle shows "on" when sunsetr runs during day
 
-## 3. Add localized period labels (Task 2)
+## 3. Add localized period labels (Task 2) - ✅ COMPLETE
 
 - [x] 3.1 Update Status struct to include current period field
 - [x] 3.2 Parse period from sunsetr JSON events
 - [x] 3.3 Add i18n keys: "nightlight-day-until" and "nightlight-night-until"
 - [x] 3.4 Update toggle label based on period and time
-- [ ] 3.5 Test: label shows "Denní režim do {time}" during day
+- [x] 3.5 Test: label shows "Denní režim do {time}" during day
 
-## 4. Unify Feature Toggle components (Task 3)
+## 4. Unify Feature Toggle components (Task 3) - DEFERRED
 
 - [ ] 4.1 Add expand button to base FeatureToggle component
 - [ ] 4.2 Add "expandable" CSS class support to FeatureToggle
@@ -30,7 +30,9 @@
 - [ ] 4.6 Deprecate/remove FeatureToggleExpandable component
 - [ ] 4.7 Test: toggle switches between simple and expandable dynamically
 
-## 5. Add sunsetr preset menu (Task 4)
+**Status:** Design complete, implementation deferred for future work.
+
+## 5. Add sunsetr preset menu (Task 4) - DEFERRED
 
 - [ ] 5.1 Make sunsetr toggle expandable when process is running
 - [ ] 5.2 Add IPC function to query `sunsetr preset list --json`
@@ -40,10 +42,12 @@
 - [ ] 5.6 Connect menu item clicks to preset switching
 - [ ] 5.7 Test: clicking preset switches sunsetr period
 
-## 6. Verification
+**Status:** Blocked by Task 3. Design complete.
 
-- [ ] 6.1 Test: no application hang when toggling during daylight
-- [ ] 6.2 Test: toggle shows correct state (on=running, off=stopped)
-- [ ] 6.3 Test: labels display correct period and time
-- [ ] 6.4 Test: expand button visible only when sunsetr running
-- [ ] 6.5 Test: preset menu works and switches periods
+## 6. Verification - ✅ COMPLETE
+
+- [x] 6.1 Test: no application hang when toggling during daylight
+- [x] 6.2 Test: toggle shows correct state (on=running, off=stopped)
+- [x] 6.3 Test: labels display correct period and time
+- [ ] 6.4 Test: expand button visible only when sunsetr running (N/A - Task 4 deferred)
+- [ ] 6.5 Test: preset menu works and switches periods (N/A - Task 4 deferred)
