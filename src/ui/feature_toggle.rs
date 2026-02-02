@@ -36,10 +36,7 @@ pub enum FeatureToggleOutput {
 #[derive(Clone)]
 pub struct FeatureToggleWidget {
     pub root: gtk::Box,
-    main_button: gtk::Button,
-    expand_button: gtk::Button,
     expand_revealer: gtk::Revealer,
-    menu_chevron: MenuChevronWidget,
     icon_image: gtk::Image,
     title_label: gtk::Label,
     details_label: gtk::Label,
@@ -51,7 +48,6 @@ pub struct FeatureToggleWidget {
     on_output: Rc<RefCell<Option<Box<dyn Fn(FeatureToggleOutput)>>>>,
     on_expand: Rc<RefCell<Option<Box<dyn Fn(bool)>>>>,
     pub menu_id: Option<String>,
-    menu_store: Option<Arc<MenuStore>>,
 }
 
 impl FeatureToggleWidget {
@@ -224,10 +220,7 @@ impl FeatureToggleWidget {
 
         Self {
             root,
-            main_button,
-            expand_button,
             expand_revealer,
-            menu_chevron,
             icon_image,
             title_label,
             details_label,
@@ -239,7 +232,6 @@ impl FeatureToggleWidget {
             on_output,
             on_expand,
             menu_id,
-            menu_store,
         }
     }
 
