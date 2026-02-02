@@ -19,6 +19,8 @@ darkman-title = Dark Mode
 # Night Light
 nightlight-title = Night light
 nightlight-until = Until: { $time }
+nightlight-day-until = Day mode until { $time }
+nightlight-night-until = Night light until { $time }
 
 # Agenda
 agenda-title = Agenda

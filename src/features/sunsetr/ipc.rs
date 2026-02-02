@@ -296,13 +296,14 @@ impl From<SunsetrJsonEvent> for Status {
             .period
             .as_deref()
             .or_else(|| ev.to_period.as_deref())
-            .unwrap_or(PERIOD_DAY);
+            .map(|s| s.to_string());
 
-        let active = !period.eq_ignore_ascii_case(PERIOD_DAY);
         let next_transition_text = ev.next_period.as_deref().and_then(hhmm_from_rfc3339);
 
         Status {
-            active,
+            // If we got a JSON event, sunsetr is running (active=true)
+            active: true,
+            period,
             next_transition_text,
         }
     }

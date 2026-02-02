@@ -19,6 +19,8 @@ darkman-title = Tmavý režim
 # Night Light
 nightlight-title = Noční světlo
 nightlight-until = Do: { $time }
+nightlight-day-until = Denní režim do { $time }
+nightlight-night-until = Noční světlo do { $time }
 
 # Agenda
 agenda-title = Kalendář

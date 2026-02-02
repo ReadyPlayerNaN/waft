@@ -4,7 +4,7 @@ use crate::menu_state::MenuStore;
 use anyhow::Result;
 use async_trait::async_trait;
 use flume::unbounded;
-use log::debug;
+use log::{debug, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -74,11 +74,16 @@ impl Plugin for SunsetrPlugin {
             debug!("[sunsetr/ui] Received: {:?}", event);
             let ipc_sender = ipc_sender.clone();
 
-            glib::spawn_future_local(async move {
-                let _ = match event {
+            // Spawn tokio work on tokio runtime, NOT in glib context
+            // This prevents busy-polling (see AGENTS.md: Runtime Mixing)
+            tokio::spawn(async move {
+                let result = match event {
                     FeatureToggleOutput::Activate => spawn_start(ipc_sender).await,
                     FeatureToggleOutput::Deactivate => spawn_stop(ipc_sender).await,
                 };
+                if let Err(e) = result {
+                    warn!("[sunsetr] toggle action failed: {e}");
+                }
             });
         });
 
@@ -101,12 +106,27 @@ impl Plugin for SunsetrPlugin {
             let state = store.get_state();
             if let Some(ref toggle) = *toggle_ref.borrow() {
                 toggle.set_active(state.active);
-                toggle.set_details(
-                    state
-                        .next_transition
+
+                // Set period-aware label
+                let details = if let Some(ref time) = state.next_transition {
+                    let is_night = state
+                        .period
                         .as_ref()
-                        .map(|text| crate::i18n::t_args("nightlight-until", &[("time", text)])),
-                );
+                        .map(|p| !p.eq_ignore_ascii_case("day"))
+                        .unwrap_or(false);
+
+                    let key = if is_night {
+                        "nightlight-night-until"
+                    } else {
+                        "nightlight-day-until"
+                    };
+
+                    Some(crate::i18n::t_args(key, &[("time", time)]))
+                } else {
+                    None
+                };
+
+                toggle.set_details(details);
                 toggle.set_busy(state.busy);
             }
         });
@@ -120,6 +140,7 @@ impl Plugin for SunsetrPlugin {
                     SunsetrIpcEvents::Status(status) => {
                         store_for_ipc.emit(SunsetrOp::SetStatus {
                             active: status.active,
+                            period: status.period,
                             next_transition: status.next_transition_text,
                         });
                         store_for_ipc.emit(SunsetrOp::SetBusy(false));
