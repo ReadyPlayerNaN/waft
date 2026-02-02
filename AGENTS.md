@@ -277,6 +277,40 @@ Non-goals: No `gio`/`GDesktopAppInfo` dependency for `.desktop` file resolution.
 
 ---
 
+## Project-Specific Terminology
+
+This section defines domain-specific terms used throughout the codebase. Understanding these terms helps AI agents interpret code correctly and maintain consistent naming.
+
+### UI Components
+
+- **Feature Toggle** - A UI component widget (in `src/ui/feature_toggle.rs`) that displays a toggleable tile with icon, title, status text, and optional expandable menu. Used by plugins to present controls (WiFi, Bluetooth, DND, etc.).
+- **Toast** - A temporary popup notification that appears on screen and auto-dismisses after a timeout. Part of the notifications plugin (`src/features/notifications/ui/toast_widget.rs`).
+- **Notification Card** - A persistent notification item displayed in the notification center panel. Unlike toasts, cards remain until explicitly dismissed (`src/features/notifications/ui/notification_card.rs`).
+- **Revealer** - GTK4 widget (`gtk::Revealer`) used extensively for smooth show/hide animations with slide transitions. Controls visibility with `set_reveal_child()`.
+- **Menu Chevron** - Small arrow icon widget (`src/ui/menu_chevron.rs`) that rotates to indicate expandable menu state (open/closed).
+- **Slider Control** - Volume or brightness control widget (`src/ui/slider_control.rs`) combining a slider with an expandable menu.
+
+### Architecture Terms
+
+- **Plugin** - A self-contained feature module implementing the `Plugin` trait. Examples: notifications, audio, WiFi, brightness. Plugins provide widgets and handle domain logic.
+- **Widget Registrar** - Dynamic registration pattern allowing plugins to add/remove widgets from the UI at runtime without rebuilding the entire tree.
+- **Feature Spec** - Declarative data structure (`FeatureSpec`) describing a feature toggle's state (active, open, status text). Separates UI state from plugin logic.
+- **Overlay** - The main layer-shell window that appears on top of other applications. Displays the feature grid and notification toasts.
+
+### System Integration
+
+- **Layer-shell** - Wayland protocol (`gtk4-layer-shell`) that positions windows in compositor layers (background, bottom, top, overlay). Enables persistent overlay UI.
+- **Session Lock** - System lock screen state. Plugins pause expensive operations when locked (`on_session_lock()` hook) to save power.
+- **DND (Do Not Disturb)** - Notification mode that suppresses toast popups while still collecting notifications in the panel.
+
+### Patterns & Techniques
+
+- **Idle Add** - Pattern using `glib::idle_add_local_once()` to defer operations until after current GTK event processing completes. Prevents race conditions and GTK assertions.
+- **Hidden Flag** - Boolean flag (`Rc<RefCell<bool>>`) used in dismissable widgets to prevent gesture handlers from accessing destroyed widgets during animations.
+- **Deferred Removal** - Pattern combining `idle_add_local_once()` with widget removal to ensure all event handlers complete before destruction.
+
+---
+
 ## Detailed Concepts
 
 ### FeatureSpec and FeatureToggle
