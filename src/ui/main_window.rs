@@ -470,14 +470,15 @@ impl MainWindowWidget {
               margin: 8px 0 4px;
             }}
 
-            .feature-toggle {{
+            /* Unified feature toggle - default (non-expandable) state */
+            .feature-toggle .toggle-main {{
                 background: @card_bg_color;
                 border-radius: 28px;
                 min-height: 48px;
                 padding: 2px 20px 2px 12px;
             }}
 
-            .feature-toggle:hover {{
+            .feature-toggle .toggle-main:hover {{
               background-color: color-mix(
                 in srgb,
                 @accent_bg_color 20%,
@@ -485,17 +486,17 @@ impl MainWindowWidget {
               );
             }}
 
-            .feature-toggle .title {{
+            .feature-toggle .toggle-main .title {{
               font-weight: 600;
             }}
 
-            .feature-toggle .details {{
+            .feature-toggle .toggle-main .details {{
               font-size: 14px;
               margin: 0;
               padding: 0;
             }}
 
-            .feature-toggle.active {{
+            .feature-toggle.active .toggle-main {{
                 background-color: color-mix(
                   in srgb,
                   @accent_bg_color 33%,
@@ -504,7 +505,7 @@ impl MainWindowWidget {
                 color: var(--button_bg_color);
             }}
 
-            .feature-toggle.active:hover {{
+            .feature-toggle.active .toggle-main:hover {{
                 background-color: color-mix(
                   in srgb,
                   @accent_bg_color 66%,
@@ -575,13 +576,44 @@ impl MainWindowWidget {
                 );
             }}
 
-            .feature-toggle-expandable .toggle-main .title {{
-                font-weight: 600;
+            /* Unified feature toggle - expandable state */
+            .feature-toggle.expandable .toggle-main {{
+                border-radius: 28px 0 0 28px;
+                padding: 2px 12px 2px 12px;
             }}
 
-            /* Hide expand button when toggle is not expandable */
-            .feature-toggle:not(.expandable) .toggle-expand {{
-                display: none;
+            .feature-toggle.expandable .toggle-expand {{
+                background: @card_bg_color;
+                border-radius: 0 28px 28px 0;
+                padding: 2px 16px 2px 8px;
+                min-height: 48px;
+                min-width: 32px;
+                border-left: 1px solid alpha(@window_fg_color, 0.1);
+            }}
+
+            .feature-toggle.expandable .toggle-expand:hover {{
+                background-color: color-mix(in srgb, @card_bg_color 80%, @window_fg_color);
+            }}
+
+            .feature-toggle.expandable.active .toggle-expand {{
+                border-left-color: color-mix(in srgb, @accent_bg_color 50%, @card_bg_color);
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 20%,
+                  @card_bg_color
+                );
+            }}
+
+            .feature-toggle.expandable.active .toggle-expand:hover {{
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 50%,
+                  @card_bg_color
+                );
+            }}
+
+            .feature-toggle-expandable .toggle-main .title {{
+                font-weight: 600;
             }}
 
             /* Menu chevron styling */

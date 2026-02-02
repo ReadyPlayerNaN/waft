@@ -132,6 +132,9 @@ impl FeatureToggleWidget {
         root.append(&main_button);
         root.append(&expand_button);
 
+        // Set initial visibility of expand button
+        expand_button.set_visible(props.expandable);
+
         let active = Rc::new(RefCell::new(props.active));
         let busy = Rc::new(RefCell::new(props.busy));
         let expandable = Rc::new(RefCell::new(props.expandable));
@@ -199,10 +202,17 @@ impl FeatureToggleWidget {
             // Sync initial state
             {
                 let state = store.get_state();
-                let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id.as_ref().unwrap());
+                let should_be_open =
+                    state.active_menu_id.as_ref() == Some(&menu_id.as_ref().unwrap());
                 *expanded.borrow_mut() = should_be_open;
                 menu_chevron.set_expanded(should_be_open);
-                Self::update_css_classes(&root, *active.borrow(), *busy.borrow(), props.expandable, should_be_open);
+                Self::update_css_classes(
+                    &root,
+                    *active.borrow(),
+                    *busy.borrow(),
+                    props.expandable,
+                    should_be_open,
+                );
             }
         }
 
@@ -267,10 +277,11 @@ impl FeatureToggleWidget {
     }
 
     /// Update the expandable state.
-    /// When false, the expand button is hidden via CSS.
+    /// When false, the expand button is hidden.
     /// When true, the expand button is visible.
     pub fn set_expandable(&self, expandable: bool) {
         *self.expandable.borrow_mut() = expandable;
+        self.expand_button.set_visible(expandable);
         Self::update_css_classes(
             &self.root,
             *self.active.borrow(),
