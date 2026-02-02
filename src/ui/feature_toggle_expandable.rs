@@ -1,5 +1,41 @@
 //! Pure GTK4 Expandable Feature Toggle widget.
 //!
+//! **DEPRECATED**: This component is deprecated in favor of the unified `FeatureToggleWidget`.
+//!
+//! The unified `FeatureToggleWidget` in `feature_toggle.rs` now supports both simple and expandable
+//! modes via the `expandable` property, with smooth transitions when switching between modes.
+//!
+//! **Migration Guide**:
+//! ```rust
+//! // Old (deprecated):
+//! use crate::ui::feature_toggle_expandable::{FeatureToggleExpandableWidget, FeatureToggleExpandableProps};
+//! let toggle = FeatureToggleExpandableWidget::new(
+//!     FeatureToggleExpandableProps { /* ... */ },
+//!     menu_store.clone(),
+//! );
+//!
+//! // New (recommended):
+//! use crate::ui::feature_toggle::{FeatureToggleWidget, FeatureToggleProps};
+//! let toggle = FeatureToggleWidget::new(
+//!     FeatureToggleProps {
+//!         expandable: true,  // Enable expand button
+//!         // ... other props
+//!     },
+//!     Some(menu_store.clone()),  // Optional menu store
+//! );
+//! ```
+//!
+//! **Benefits of unified component**:
+//! - Dynamic switching: Can change `expandable` state at runtime via `set_expandable()`
+//! - Smooth transitions: Expand button slides in/out with 200ms animation
+//! - Less code duplication: Single component for both use cases
+//! - Better maintainability: One set of styling rules
+//!
+//! This component is kept for backward compatibility with existing plugins (bluetooth, networkmanager).
+//! New code should use `FeatureToggleWidget` instead.
+//!
+//! ---
+//!
 //! A toggle button with icon, title, details, and an expand button for menus.
 
 use std::cell::RefCell;
@@ -13,6 +49,10 @@ use super::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use crate::menu_state::{MenuOp, MenuStore};
 
 /// Properties for initializing an expandable feature toggle.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use FeatureToggleProps with expandable: true instead"
+)]
 #[derive(Debug, Clone)]
 pub struct FeatureToggleExpandableProps {
     pub active: bool,
@@ -24,6 +64,10 @@ pub struct FeatureToggleExpandableProps {
 }
 
 /// Output events from the expandable feature toggle.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use FeatureToggleOutput instead"
+)]
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // ToggleExpand is part of the API but handled internally now
 pub enum FeatureToggleExpandableOutput {
@@ -33,6 +77,10 @@ pub enum FeatureToggleExpandableOutput {
 }
 
 /// Pure GTK4 expandable feature toggle widget.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use FeatureToggleWidget with expandable: true instead. See module docs for migration guide."
+)]
 #[derive(Clone)]
 pub struct FeatureToggleExpandableWidget {
     pub root: gtk::Box,
@@ -56,6 +104,10 @@ pub struct FeatureToggleExpandableWidget {
 
 impl FeatureToggleExpandableWidget {
     /// Create a new expandable feature toggle widget.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use FeatureToggleWidget::new() with expandable: true instead"
+    )]
     pub fn new(props: FeatureToggleExpandableProps, menu_store: Arc<MenuStore>) -> Self {
         // Generate unique ID for this menu
         let menu_id = Uuid::new_v4().to_string();
