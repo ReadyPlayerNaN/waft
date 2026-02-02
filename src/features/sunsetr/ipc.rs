@@ -8,7 +8,6 @@ use tokio::io::AsyncBufReadExt;
 use super::values::Status;
 
 const ERR_NO_PROCESS: &str = "no sunsetr process is running";
-const PERIOD_DAY: &str = "day";
 
 #[derive(Debug, Clone)]
 pub enum SunsetrIpcEvents {

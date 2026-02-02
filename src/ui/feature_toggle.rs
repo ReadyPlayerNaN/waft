@@ -311,11 +311,6 @@ impl FeatureToggleWidget {
         self.icon_image.set_icon_name(Some(icon));
     }
 
-    /// Update the title.
-    pub fn set_title(&self, title: &str) {
-        self.title_label.set_label(title);
-    }
-
     /// Get a reference to the root widget.
     pub fn widget(&self) -> gtk::Widget {
         self.root.clone().upcast::<gtk::Widget>()

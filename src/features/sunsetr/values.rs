@@ -17,11 +17,4 @@ impl Status {
             next_transition_text: None,
         }
     }
-
-    pub fn is_night_period(&self) -> bool {
-        self.period
-            .as_ref()
-            .map(|p| !p.eq_ignore_ascii_case("day"))
-            .unwrap_or(false)
-    }
 }
