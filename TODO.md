@@ -54,6 +54,7 @@
 **Root Cause:**
 
 Looking at the actual IPC logs:
+
 ```json
 {"event_type":"preset_changed","from_preset":"day","to_preset":"gaming",...}
 {"event_type":"state_applied","active_preset":"gaming",...}
@@ -81,6 +82,7 @@ if ev.active_preset.is_some() {
 ## 2. Plugins to implement
 
 **Needs developer clarification:**
+
 - Tether plugin? - What functionality is needed? Mobile hotspot detection/control?
 - SNI - What is SNI in this context? Server Name Indication? Social Network Integration? Please specify requirements.
 
@@ -91,6 +93,7 @@ if ev.active_preset.is_some() {
 **Status:** Requires implementation - significant work needed
 
 **Current limitation:**
+
 - WiFi menu only shows networks with saved connection profiles (`wifi_adapter_widget.rs:214-220`)
 - Networks are filtered: `let profiles = dbus::get_connections_for_ssid(&dbus, &ap.ssid).await?;`
 - If `profiles.is_empty()`, the network is excluded from the menu
@@ -98,12 +101,14 @@ if ev.active_preset.is_some() {
 **What needs to be built:**
 
 1. **D-Bus connection creation** (`dbus.rs`):
+
    - Add `create_wireless_connection()` function to create NM connection profiles dynamically
    - Use D-Bus `AddAndActivateConnection()` method on Settings interface
    - Handle WPA2/WPA3 security types and credentials
    - Current `activate_connection()` (line 390) requires existing connection_path
 
 2. **Password dialog UI** (new file or widget):
+
    - Create GTK dialog for password entry
    - Support different security types (WPA2-PSK, WPA3-SAE, etc.)
    - Show network name (SSID) in dialog
@@ -116,6 +121,7 @@ if ev.active_preset.is_some() {
    - Trigger password dialog when connecting to unsaved network
 
 **Files to modify:**
+
 - `src/features/networkmanager/dbus.rs` - Add D-Bus connection creation
 - `src/features/networkmanager/wifi_adapter_widget.rs` - Remove filter, add password dialog logic
 - `src/features/networkmanager/wifi_menu.rs` - Add visual indicators for unsaved networks
@@ -128,6 +134,7 @@ if ev.active_preset.is_some() {
 **Status:** Easier to implement - infrastructure exists
 
 **Current behavior:**
+
 - WiFi toggle shows generic WiFi icon regardless of signal strength
 - Signal strength IS available (`AccessPointState.strength: u8` in dbus.rs:984-991)
 - Menu already shows signal strength icons (`wifi_menu.rs:39-47`)
@@ -135,15 +142,18 @@ if ev.active_preset.is_some() {
 **What needs to be done:**
 
 1. **Track active connection signal strength** (`wifi_adapter_widget.rs`):
+
    - Currently widget stores `active_ssid: Option<String>` (line 34)
    - Need to add `active_signal_strength: Option<u8>`
    - Update signal strength when network list refreshes (line 156-236)
 
 2. **Pass signal strength to toggle** (`wifi_toggle.rs`):
+
    - Add `set_signal_strength(strength: Option<u8>)` method
    - Update icon dynamically based on strength
 
 3. **Icon selection logic** (reuse from `wifi_menu.rs:39-47`):
+
    ```rust
    fn signal_icon(strength: u8) -> &'static str {
        match strength {
@@ -161,6 +171,7 @@ if ev.active_preset.is_some() {
    - Update signal strength icon in real-time (every few seconds)
 
 **Files to modify:**
+
 - `src/features/networkmanager/wifi_adapter_widget.rs` - Track active signal strength
 - `src/features/networkmanager/wifi_toggle.rs` - Add signal strength icon updates
 - `src/features/networkmanager/dbus.rs` - Optional: Add AccessPoint signal subscription
@@ -172,6 +183,7 @@ if ev.active_preset.is_some() {
 **Implementation:** Added CSS outline for busy state (GTK4 doesn't support @keyframes animations).
 
 **Changes made:**
+
 - Used `outline` instead of `border` to avoid layout jump
 - Applied to `.feature-toggle.busy .toggle-main`
 - Applied to `.feature-toggle-expandable.busy .toggle-main` and `.toggle-expand`
@@ -184,6 +196,7 @@ if ev.active_preset.is_some() {
 **Issue:** Inactive toggle had primary accent color on hover, but should use neutral color.
 
 **Fix:** Changed hover background in `src/ui/main_window.rs:481-487`
+
 - **Before:** `@accent_bg_color 20%` mixed with `@card_bg_color`
 - **After:** `@window_fg_color 10%` mixed with `@card_bg_color`
 
@@ -194,6 +207,7 @@ if ev.active_preset.is_some() {
 **Issue:** Feature toggles weren't taking equal 50% width in the grid.
 
 **Fix:**
+
 - Added `column_homogeneous(true)` to grid in `src/ui/feature_grid.rs:30-34`
 - Added `hexpand(true)` to toggle root container in `src/ui/feature_toggle.rs:63-67`
 
@@ -205,32 +219,22 @@ if ev.active_preset.is_some() {
 
 **Proposed notification categories and treatments:**
 
-**High priority (default behavior):**
-- Security alerts
-- Critical system errors
-- Incoming calls/messages
+**Medium urgency (short TTL, 3-5 seconds):**
 
-**Medium priority (short TTL, 3-5 seconds):**
 - Device connected/disconnected
 - WiFi/network connected
 - Screenshot saved
 - USB device mounted/unmounted
 - Media player track changes
 
-**Low priority (very short TTL, 1-2 seconds, minimal UI):**
-- Volume change notifications (transient slider/OSD)
-- Brightness change notifications (transient slider/OSD)
+**Low urgency (very short TTL, 1-2 seconds, minimal UI):**
+
 - Clipboard/copy confirmations
 
 **Persistent indicators (no toast, status bar only):**
+
 - Battery fully charged (status icon update)
 - Software update available - non-security (can show badge)
-
-**Implementation requirements:**
-- Add priority field to notification data structure
-- Implement TTL (time-to-live) per notification
-- Create minimal UI variant for transient notifications
-- Add filtering logic in notification manager
 
 **Needs developer decision:** Confirm priority assignments and UX approach before implementation.
 
@@ -241,12 +245,14 @@ if ev.active_preset.is_some() {
 **Concept:** Replace traditional toast notifications with bubble-style notifications like Civilization VI.
 
 **Needs developer input:**
+
 - Visual design mockup or reference
 - Animation behavior specification
 - Interaction model (click to dismiss, auto-fade, etc.)
 - How this integrates with task #6 (deprioritization) and task #8 (positioning)
 
 **Questions to answer:**
+
 - Should all notifications use bubbles, or only certain types?
 - Where do bubbles appear (corners, edges, center)?
 - How do multiple bubbles stack or cluster?
@@ -260,6 +266,7 @@ if ev.active_preset.is_some() {
 **Requested:** Support bottom position (and potentially other positions)
 
 **Implementation considerations:**
+
 - Add position configuration (top, bottom, top-left, top-right, bottom-left, bottom-right)
 - Fix toast ordering when position changes:
   - Top position: newest on top (stack grows downward)
@@ -270,10 +277,12 @@ if ev.active_preset.is_some() {
 - Consider interaction with task #7 (bubble style) if both are implemented
 
 **Files to investigate:**
+
 - Notification toast window implementation
 - Animation/transition code
 - Configuration/settings storage
 
 **Needs developer input:**
+
 - Should this be user-configurable or hardcoded?
 - Which positions should be supported initially?

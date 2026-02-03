@@ -12,6 +12,7 @@ use indexmap::IndexMap;
 
 use super::super::dbus::ingress::IngressedNotification;
 use super::super::types::{AppIdent, NotificationAction, NotificationIcon, NotificationUrgency};
+use super::deprioritize;
 use super::types::{Group, ItemLifecycle, Notification, NotificationOp, State};
 use crate::store::{PluginStore, StoreOp, StoreState};
 
@@ -339,7 +340,7 @@ fn process_ingress(state: &mut State, n: IngressedNotification) {
         state.notifications.len()
     );
     reconcile_group_on_ingress(state, notif_id, group_id, app_title);
-    reconcile_toast_on_ingress(state, notif_id, true);
+    reconcile_toast_on_ingress(state, &n, true);
     // Add to panel notifications (unlimited)
     state
         .panel_notifications
@@ -379,7 +380,7 @@ fn process_ingress_batch(state: &mut State, ops: Vec<NotificationOp>) -> bool {
                 state.notifications.len()
             );
             reconcile_group_on_ingress(state, notif_id, group_id, app_title);
-            reconcile_toast_on_ingress(state, notif_id, false);
+            reconcile_toast_on_ingress(state, &n, false);
             // Add to panel notifications (unlimited)
             state
                 .panel_notifications
@@ -534,20 +535,21 @@ fn reconcile_group_on_ingress(
     state.archive.insert(group_id, ItemLifecycle::Visible);
 }
 
-fn reconcile_toast_on_ingress(state: &mut State, notif_id: u64, do_sort: bool) {
+fn reconcile_toast_on_ingress(
+    state: &mut State,
+    notification: &IngressedNotification,
+    do_sort: bool,
+) {
     // Skip toasts entirely if disabled
     if state.disable_toasts {
         return;
     }
 
-    let notification = state.notifications.get(&notif_id);
-    let should_toast =
-        notification.map_or(false, |n| should_toast(state.dnd, n.urgency, n.resident));
-
-    if !should_toast {
+    if !should_toast(notification, state.dnd) {
         return;
     }
 
+    let notif_id = notification.id;
     if state.toasts.is_empty() {
         state.toasts.insert(notif_id, ItemLifecycle::Appearing);
         state
@@ -583,17 +585,27 @@ fn remove_replaced_notification(state: &mut State, old_id: u64) {
 
 /// Determines whether a notification should be shown as a toast.
 ///
+/// Deprioritization rules are checked first to suppress toasts for certain
+/// notification types (e.g., power/battery, software updates).
+///
 /// When DND (Do Not Disturb) is enabled:
 /// - Critical notifications always show as toasts
 /// - Resident notifications always show as toasts
 /// - All other notifications are suppressed
 ///
-/// When DND is disabled, all notifications show as toasts.
-fn should_toast(dnd: bool, urgency: NotificationUrgency, resident: bool) -> bool {
+/// When DND is disabled, all non-suppressed notifications show as toasts.
+fn should_toast(notification: &IngressedNotification, dnd: bool) -> bool {
+    // Check deprioritization rules first
+    if let Some(result) = deprioritize::check_deprioritize(notification)
+        && result.suppress_toast
+    {
+        return false; // Panel only
+    }
+
     if !dnd {
         return true;
     }
-    matches!(urgency, NotificationUrgency::Critical) || resident
+    matches!(notification.hints.urgency, NotificationUrgency::Critical) || notification.hints.resident
 }
 
 fn create_notification(n: &IngressedNotification) -> Notification {
@@ -637,6 +649,13 @@ fn derive_app_ident(notification: &IngressedNotification) -> Option<AppIdent> {
 }
 
 fn derive_toast_ttl(notification: &IngressedNotification) -> Option<u64> {
+    // Check deprioritization rules first
+    if let Some(result) = deprioritize::check_deprioritize(notification)
+        && let Some(ttl) = result.toast_ttl
+    {
+        return Some(ttl);
+    }
+
     // Explicit TTL > 0: use it (already in milliseconds from DBus)
     if let Some(ttl) = notification.ttl {
         if ttl > 0 {
@@ -1365,5 +1384,159 @@ mod tests {
         );
 
         // UI would display as [10,9,8,5,4] - newest first, promoted toasts at bottom in their original order
+    }
+
+    // Deprioritization integration tests
+
+    fn make_notification_with_app(
+        id: u64,
+        app_name: &str,
+        urgency: NotificationUrgency,
+    ) -> IngressedNotification {
+        IngressedNotification {
+            app_name: Some(Arc::from(app_name)),
+            actions: vec![],
+            created_at: SystemTime::now(),
+            description: Arc::from("Test description"),
+            icon: None,
+            id,
+            hints: make_hints(urgency, false),
+            replaces_id: None,
+            title: Arc::from("Test title"),
+            ttl: None,
+        }
+    }
+
+    fn make_notification_with_category(
+        id: u64,
+        category: crate::features::notifications::types::NotificationCategory,
+    ) -> IngressedNotification {
+        let mut hints = make_hints(NotificationUrgency::Normal, false);
+        hints.category = Some(category);
+        IngressedNotification {
+            app_name: Some(Arc::from("test-app")),
+            actions: vec![],
+            created_at: SystemTime::now(),
+            description: Arc::from("Test description"),
+            icon: None,
+            id,
+            hints,
+            replaces_id: None,
+            title: Arc::from("Test title"),
+            ttl: None,
+        }
+    }
+
+    #[test]
+    fn test_deprioritize_power_app_suppresses_toast() {
+        let store = create_notification_store();
+        let notif = make_notification_with_app(1, "upower", NotificationUrgency::Normal);
+
+        store.emit(NotificationOp::Ingress(notif));
+
+        let state = store.get_state();
+        // Notification should be in store and panel
+        assert!(state.notifications.contains_key(&1));
+        assert!(state.panel_notifications.contains_key(&1));
+        // But NOT in toasts (suppressed)
+        assert!(!state.toasts.contains_key(&1));
+    }
+
+    #[test]
+    fn test_deprioritize_update_app_suppresses_toast() {
+        let store = create_notification_store();
+        let notif = make_notification_with_app(1, "gnome-software", NotificationUrgency::Normal);
+
+        store.emit(NotificationOp::Ingress(notif));
+
+        let state = store.get_state();
+        assert!(state.notifications.contains_key(&1));
+        assert!(state.panel_notifications.contains_key(&1));
+        assert!(!state.toasts.contains_key(&1));
+    }
+
+    #[test]
+    fn test_deprioritize_screenshot_app_shows_toast_with_short_ttl() {
+        let store = create_notification_store();
+        let notif = make_notification_with_app(1, "flameshot", NotificationUrgency::Normal);
+
+        store.emit(NotificationOp::Ingress(notif));
+
+        let state = store.get_state();
+        assert!(state.notifications.contains_key(&1));
+        assert!(state.panel_notifications.contains_key(&1));
+        // Should be in toasts
+        assert!(state.toasts.contains_key(&1));
+        // Toast TTL should be 4000ms
+        let notification = state.notifications.get(&1).unwrap();
+        assert_eq!(notification.toast_ttl, Some(4_000));
+    }
+
+    #[test]
+    fn test_deprioritize_clipboard_app_shows_toast_with_short_ttl() {
+        let store = create_notification_store();
+        let notif = make_notification_with_app(1, "klipper", NotificationUrgency::Normal);
+
+        store.emit(NotificationOp::Ingress(notif));
+
+        let state = store.get_state();
+        assert!(state.notifications.contains_key(&1));
+        assert!(state.toasts.contains_key(&1));
+        // Toast TTL should be 2000ms
+        let notification = state.notifications.get(&1).unwrap();
+        assert_eq!(notification.toast_ttl, Some(2_000));
+    }
+
+    #[test]
+    fn test_deprioritize_device_category_shows_toast_with_short_ttl() {
+        use crate::features::notifications::types::{DeviceStatus, NotificationCategory};
+        let store = create_notification_store();
+        let notif = make_notification_with_category(
+            1,
+            NotificationCategory::Device(DeviceStatus::Added),
+        );
+
+        store.emit(NotificationOp::Ingress(notif));
+
+        let state = store.get_state();
+        assert!(state.notifications.contains_key(&1));
+        assert!(state.toasts.contains_key(&1));
+        // Toast TTL should be 4000ms
+        let notification = state.notifications.get(&1).unwrap();
+        assert_eq!(notification.toast_ttl, Some(4_000));
+    }
+
+    #[test]
+    fn test_deprioritize_network_category_shows_toast_with_short_ttl() {
+        use crate::features::notifications::types::{NetworkStatus, NotificationCategory};
+        let store = create_notification_store();
+        let notif = make_notification_with_category(
+            1,
+            NotificationCategory::Network(NetworkStatus::Connected),
+        );
+
+        store.emit(NotificationOp::Ingress(notif));
+
+        let state = store.get_state();
+        assert!(state.notifications.contains_key(&1));
+        assert!(state.toasts.contains_key(&1));
+        // Toast TTL should be 4000ms
+        let notification = state.notifications.get(&1).unwrap();
+        assert_eq!(notification.toast_ttl, Some(4_000));
+    }
+
+    #[test]
+    fn test_normal_app_shows_toast_with_default_ttl() {
+        let store = create_notification_store();
+        let notif = make_notification_with_app(1, "firefox", NotificationUrgency::Normal);
+
+        store.emit(NotificationOp::Ingress(notif));
+
+        let state = store.get_state();
+        assert!(state.notifications.contains_key(&1));
+        assert!(state.toasts.contains_key(&1));
+        // Toast TTL should be default 10000ms for Normal urgency
+        let notification = state.notifications.get(&1).unwrap();
+        assert_eq!(notification.toast_ttl, Some(10_000));
     }
 }
