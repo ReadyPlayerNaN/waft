@@ -481,7 +481,7 @@ impl MainWindowWidget {
             .feature-toggle .toggle-main:hover {{
               background-color: color-mix(
                 in srgb,
-                @accent_bg_color 20%,
+                @window_fg_color 10%,
                 @card_bg_color
               );
             }}
@@ -511,6 +511,12 @@ impl MainWindowWidget {
                   @accent_bg_color 66%,
                   @card_bg_color
                 );
+            }}
+
+            /* Busy/loading state - use outline to avoid layout jump */
+            .feature-toggle.busy .toggle-main {{
+                outline: 2px solid alpha(@accent_bg_color, 0.6);
+                outline-offset: -2px;
             }}
 
             .feature-toggle-expandable .toggle-main,
@@ -574,6 +580,12 @@ impl MainWindowWidget {
                   @accent_bg_color 50%,
                   @card_bg_color
                 );
+            }}
+
+            .feature-toggle-expandable.busy .toggle-main,
+            .feature-toggle-expandable.busy .toggle-expand {{
+                outline: 2px solid alpha(@accent_bg_color, 0.6);
+                outline-offset: -2px;
             }}
 
             /* Unified feature toggle - expandable state */

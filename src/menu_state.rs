@@ -6,21 +6,12 @@
 use crate::store::{PluginStore, StoreOp, StoreState};
 
 /// State tracking which menu (if any) is currently open.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct MenuState {
     /// UUID of the currently active menu, or None if all menus are closed.
     pub active_menu_id: Option<String>,
     /// ID of the currently open popover, or None if no popover is open.
     pub active_popover_id: Option<String>,
-}
-
-impl Default for MenuState {
-    fn default() -> Self {
-        Self {
-            active_menu_id: None,
-            active_popover_id: None,
-        }
-    }
 }
 
 impl StoreState for MenuState {

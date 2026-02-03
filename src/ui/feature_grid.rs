@@ -30,6 +30,7 @@ impl FeatureGridWidget {
         let grid = gtk::Grid::builder()
             .column_spacing(12)
             .row_spacing(0)
+            .column_homogeneous(true)
             .css_classes(["feature-grid"])
             .build();
 

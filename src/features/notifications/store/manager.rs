@@ -321,11 +321,11 @@ fn process_tick(state: &mut State) -> (Vec<NotificationOp>, bool) {
 
 fn process_ingress(state: &mut State, n: IngressedNotification) {
     // Handle replaces_id: remove the old notification if it exists
-    if let Some(old_id) = n.replaces_id {
-        if old_id != 0 && state.notifications.contains_key(&old_id) {
-            log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
-            remove_replaced_notification(state, old_id);
-        }
+    if let Some(old_id) = n.replaces_id
+        && old_id != 0 && state.notifications.contains_key(&old_id)
+    {
+        log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
+        remove_replaced_notification(state, old_id);
     }
 
     let notification = create_notification(&n);

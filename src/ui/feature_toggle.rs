@@ -63,6 +63,7 @@ impl FeatureToggleWidget {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(0)
+            .hexpand(true)
             .css_classes(["feature-toggle"])
             .build();
 

@@ -100,15 +100,18 @@ pub fn spawn_following(sender: Sender<SunsetrIpcEvents>) -> Result<()> {
 
             let r = match serde_json::from_str::<SunsetrJsonEvent>(line) {
                 Ok(ev) => {
-                    // Send active preset update
-                    let preset = ev.active_preset.as_ref().and_then(|p| {
-                        if p == "default" {
-                            None
-                        } else {
-                            Some(p.clone())
-                        }
-                    });
-                    let _ = sender.send(SunsetrIpcEvents::ActivePreset(preset));
+                    // Only send active preset update if the event actually contains active_preset
+                    // (preset_changed events don't have this field, only state_applied events do)
+                    if ev.active_preset.is_some() {
+                        let preset = ev.active_preset.as_ref().and_then(|p| {
+                            if p == "default" {
+                                None
+                            } else {
+                                Some(p.clone())
+                            }
+                        });
+                        let _ = sender.send(SunsetrIpcEvents::ActivePreset(preset));
+                    }
 
                     // Send status update
                     sender.send(SunsetrIpcEvents::Status(Status::from(ev)))
