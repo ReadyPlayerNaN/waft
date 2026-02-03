@@ -294,4 +294,71 @@ mod tests {
         assert!(state.error.is_none());
         assert!(state.next_period_start.is_none());
     }
+
+    #[test]
+    fn remove_then_upsert_handles_time_change_correctly() {
+        // Regression test for duplicate events when time changes
+        // Simulates the correct handling of ObjectsModified: Remove old occurrences, then insert new
+        let store = create_agenda_store();
+
+        // Initial event at 14:00 (1770127200 = 2026-02-03 14:00 UTC)
+        store.emit(AgendaOp::UpsertEvents(vec![make_event(
+            "event-123",
+            1770127200,
+            1770130800,
+        )]));
+
+        let state = store.get_state();
+        assert_eq!(state.events.len(), 1);
+        assert!(state.events.contains_key("event-123@1770127200"));
+
+        // Event time changed to 15:00 (1770130800 = 2026-02-03 15:00 UTC)
+        // Simulate correct handling: remove old occurrences, then upsert new
+        store.emit(AgendaOp::RemoveEvents(vec!["event-123".to_string()]));
+        store.emit(AgendaOp::UpsertEvents(vec![make_event(
+            "event-123",
+            1770130800,
+            1770134400,
+        )]));
+
+        let state = store.get_state();
+        // Should only have 1 event with the new time
+        assert_eq!(
+            state.events.len(),
+            1,
+            "Should have exactly 1 event after time change. Keys: {:?}",
+            state.events.keys().collect::<Vec<_>>()
+        );
+        assert!(!state.events.contains_key("event-123@1770127200"), "Old occurrence should be removed");
+        assert!(state.events.contains_key("event-123@1770130800"), "New occurrence should exist");
+        assert_eq!(state.events["event-123@1770130800"].end_time, 1770134400);
+    }
+
+    #[test]
+    fn upsert_only_creates_duplicates_when_time_changes() {
+        // Demonstrates the bug: UpsertEvents alone creates duplicates when time changes
+        let store = create_agenda_store();
+
+        // Initial event at 14:00
+        store.emit(AgendaOp::UpsertEvents(vec![make_event(
+            "event-123",
+            1770127200,
+            1770130800,
+        )]));
+
+        // Event time changed to 15:00 - upsert without remove
+        store.emit(AgendaOp::UpsertEvents(vec![make_event(
+            "event-123",
+            1770130800,
+            1770134400,
+        )]));
+
+        let state = store.get_state();
+        // BUG: This creates a duplicate
+        assert_eq!(
+            state.events.len(),
+            2,
+            "BUG: UpsertEvents creates duplicate when time changes"
+        );
+    }
 }
