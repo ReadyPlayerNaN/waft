@@ -1,7 +1,7 @@
 //! Agenda data types and parsing utilities.
 
 use anyhow::{Result, bail};
-use chrono::{Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
+use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use log::{debug, warn};
 use serde::Deserialize;
 
@@ -326,6 +326,8 @@ pub fn parse_vevent(ical_str: &str) -> Option<AgendaEvent> {
     let mut description = None;
     let mut alt_description = None;
     let mut location = None;
+    let mut recurrence_id: Option<i64> = None;
+    let mut rrule: Option<String> = None;
 
     for line in unfolded.lines() {
         let line = line.trim_end_matches('\r');
@@ -386,6 +388,11 @@ pub fn parse_vevent(ical_str: &str) -> Option<AgendaEvent> {
             if !value.is_empty() {
                 location = Some(unescape_ical(&value));
             }
+        } else if line.starts_with("RECURRENCE-ID") {
+            let (params, value) = split_ical_property(line, "RECURRENCE-ID");
+            recurrence_id = parse_ical_datetime(&value, &params);
+        } else if line.starts_with("RRULE:") {
+            rrule = Some(line[6..].to_string());
         }
     }
 
@@ -393,6 +400,18 @@ pub fn parse_vevent(ical_str: &str) -> Option<AgendaEvent> {
     let summary = summary.unwrap_or_default();
     let start_time = dtstart?;
     let end_time = dtend.unwrap_or(start_time + 3600);
+
+    // For recurring events, EDS returns the master event's DTSTART but we need
+    // to calculate the actual occurrence date. RECURRENCE-ID (if present) gives
+    // us the exact occurrence; otherwise we calculate from RRULE.
+    let (start_time, end_time) = if let Some(recur_id) = recurrence_id {
+        let offset = recur_id - start_time;
+        (start_time + offset, end_time + offset)
+    } else if let Some(ref rule) = rrule {
+        calculate_rrule_occurrence(start_time, end_time, rule).unwrap_or((start_time, end_time))
+    } else {
+        (start_time, end_time)
+    };
 
     debug!(
         "[agenda] parsed '{}' (uid={}): start={} (raw: {}) end={} (raw: {}) desc={:?} alt_desc={}chars loc={:?}",
@@ -473,6 +492,106 @@ fn split_ical_property(line: &str, prop_name: &str) -> (String, String) {
         (params, value)
     } else {
         (String::new(), rest.to_string())
+    }
+}
+
+/// Calculate the occurrence timestamp for a recurring event based on RRULE.
+///
+/// Handles FREQ=WEEKLY with BYDAY (e.g., "FREQ=WEEKLY;BYDAY=TU").
+/// Handles FREQ=DAILY (e.g., "FREQ=DAILY").
+/// Returns the new (start_time, end_time) if calculation succeeds, None otherwise.
+fn calculate_rrule_occurrence(dtstart: i64, dtend: i64, rrule: &str) -> Option<(i64, i64)> {
+    // Parse RRULE components
+    let mut freq = None;
+    let mut byday = None;
+
+    for part in rrule.split(';') {
+        if let Some(rest) = part.strip_prefix("FREQ=") {
+            freq = Some(rest);
+        } else if let Some(rest) = part.strip_prefix("BYDAY=") {
+            byday = Some(rest);
+        }
+    }
+
+    let freq = freq?;
+    let today = Local::now().date_naive();
+    let dtstart_dt = Local.timestamp_opt(dtstart, 0).single()?;
+    let dtstart_date = dtstart_dt.date_naive();
+    let dtstart_time = dtstart_dt.time();
+    let duration = dtend - dtstart;
+
+    let occurrence_date = match freq {
+        "DAILY" => {
+            // For daily events, use today's date
+            if today >= dtstart_date {
+                today
+            } else {
+                return None;
+            }
+        }
+        "WEEKLY" => {
+            // For weekly events, find the occurrence in the current week
+            let target_weekday = if let Some(byday) = byday {
+                parse_byday(byday)?
+            } else {
+                // No BYDAY means same weekday as DTSTART
+                dtstart_date.weekday()
+            };
+
+            // Find the most recent occurrence of target_weekday that's <= today
+            // or the next upcoming one if we haven't reached it this week yet
+            let today_weekday = today.weekday();
+            let days_diff = (target_weekday.num_days_from_monday() as i64)
+                - (today_weekday.num_days_from_monday() as i64);
+
+            // Get this week's occurrence of the target weekday
+            let occurrence = today + chrono::Duration::days(days_diff);
+
+            // Only use it if it's on or after DTSTART
+            if occurrence >= dtstart_date {
+                occurrence
+            } else {
+                return None;
+            }
+        }
+        _ => {
+            debug!(
+                "[agenda] RRULE FREQ={} not supported for occurrence calculation",
+                freq
+            );
+            return None;
+        }
+    };
+
+    // Combine occurrence date with original time-of-day
+    // This properly handles DST by letting chrono do the conversion
+    let occurrence_dt = occurrence_date.and_time(dtstart_time);
+    let occurrence_start = Local
+        .from_local_datetime(&occurrence_dt)
+        .single()
+        .map(|d| d.timestamp())?;
+
+    Some((occurrence_start, occurrence_start + duration))
+}
+
+/// Parse BYDAY value to a weekday.
+///
+/// Handles simple cases like "TU", "MO", etc.
+fn parse_byday(byday: &str) -> Option<chrono::Weekday> {
+    use chrono::Weekday;
+    // Take the first day if multiple are specified (e.g., "MO,WE,FR")
+    let day = byday.split(',').next()?;
+    // Strip any numeric prefix (e.g., "1MO" for first Monday)
+    let day = day.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-');
+    match day {
+        "MO" => Some(Weekday::Mon),
+        "TU" => Some(Weekday::Tue),
+        "WE" => Some(Weekday::Wed),
+        "TH" => Some(Weekday::Thu),
+        "FR" => Some(Weekday::Fri),
+        "SA" => Some(Weekday::Sat),
+        "SU" => Some(Weekday::Sun),
+        _ => None,
     }
 }
 
@@ -565,6 +684,7 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Datelike;
 
     /// Helper: create an AgendaEvent with optional description/location.
     fn make_event(desc: Option<&str>, loc: Option<&str>) -> AgendaEvent {
@@ -1457,5 +1577,97 @@ END:VEVENT";
             "VALARM description should not leak into event: {:?}",
             event.description
         );
+    }
+
+    // ── RECURRENCE-ID handling ──────────────────────────────────────
+
+    #[test]
+    fn parse_vevent_recurring_with_recurrence_id() {
+        // Master event starts 2025-09-09T08:30 Prague, occurrence on 2026-02-03
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:test-recurring@example.com\r
+SUMMARY:Daily Standup\r
+DTSTART;TZID=Europe/Prague:20250909T083000\r
+DTEND;TZID=Europe/Prague:20250909T083500\r
+RECURRENCE-ID;TZID=Europe/Prague:20260203T083000\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+
+        // Should use occurrence date (Feb 3, 2026), not master date (Sep 9, 2025)
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+        assert_eq!(start_dt.year(), 2026);
+        assert_eq!(start_dt.month(), 2);
+        assert_eq!(start_dt.day(), 3);
+
+        // Duration should be preserved (5 minutes)
+        assert_eq!(event.end_time - event.start_time, 300);
+    }
+
+    #[test]
+    fn parse_vevent_recurring_with_rrule_weekly() {
+        // Master event starts 2025-09-09T08:30 Prague (a Tuesday), repeats weekly on Tuesday
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:test-rrule@example.com\r
+SUMMARY:Weekly Meeting\r
+DTSTART;TZID=Europe/Prague:20250909T083000\r
+DTEND;TZID=Europe/Prague:20250909T093000\r
+RRULE:FREQ=WEEKLY;BYDAY=TU\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+
+        // Should be adjusted to today's date (or the current week's Tuesday)
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+        let today = chrono::Local::now().date_naive();
+
+        // The occurrence should be in the current year, not 2025
+        assert!(
+            start_dt.year() >= today.year(),
+            "Expected year >= {}, got {}",
+            today.year(),
+            start_dt.year()
+        );
+
+        // Duration should be preserved (1 hour)
+        assert_eq!(event.end_time - event.start_time, 3600);
+    }
+
+    #[test]
+    fn parse_vevent_recurring_with_rrule_daily() {
+        // Master event starts 2025-09-09T12:00 UTC, repeats daily
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:test-rrule-daily@example.com\r
+SUMMARY:Daily Reminder\r
+DTSTART:20250909T120000Z\r
+DTEND:20250909T121500Z\r
+RRULE:FREQ=DAILY\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+
+        // Should be adjusted to today's date
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+        let today = chrono::Local::now().date_naive();
+
+        // The occurrence should be today (or close to it)
+        assert!(
+            start_dt.year() >= today.year(),
+            "Expected year >= {}, got {}",
+            today.year(),
+            start_dt.year()
+        );
+
+        // Duration should be preserved (15 minutes)
+        assert_eq!(event.end_time - event.start_time, 900);
     }
 }
