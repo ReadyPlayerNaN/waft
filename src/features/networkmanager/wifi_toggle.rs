@@ -8,6 +8,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::wifi_icon::get_wifi_icon;
+
 pub type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(FeatureToggleOutput)>>>>;
 pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
 
@@ -29,6 +31,7 @@ impl WiFiToggleWidget {
         enabled: bool,
         active_ssid: Option<String>,
         network_count: usize,
+        signal_strength: Option<u8>,
         menu_store: Arc<MenuStore>,
     ) -> Self {
         let initial_details = if let Some(ref ssid) = active_ssid {
@@ -43,10 +46,12 @@ impl WiFiToggleWidget {
             None
         };
 
+        let initial_icon = get_wifi_icon(signal_strength, enabled, active_ssid.is_some());
+
         let toggle = FeatureToggleWidget::new(
             FeatureToggleProps {
                 title: format!("WiFi ({})", interface_name),
-                icon: "network-wireless-symbolic".into(),
+                icon: initial_icon.into(),
                 details: initial_details,
                 active: enabled,
                 busy: false,
@@ -115,7 +120,17 @@ impl WiFiToggleWidget {
         self.inner.toggle.set_details(details);
     }
 
-    pub fn update_state(&self, enabled: bool, active_ssid: Option<String>, network_count: usize) {
+    pub fn set_icon(&self, icon: &str) {
+        self.inner.toggle.set_icon(icon);
+    }
+
+    pub fn update_state(
+        &self,
+        enabled: bool,
+        active_ssid: Option<String>,
+        network_count: usize,
+        signal_strength: Option<u8>,
+    ) {
         let details = if let Some(ref ssid) = active_ssid {
             Some(ssid.clone())
         } else if network_count > 0 {
@@ -127,6 +142,9 @@ impl WiFiToggleWidget {
         } else {
             None
         };
+
+        let icon = get_wifi_icon(signal_strength, enabled, active_ssid.is_some());
+        self.set_icon(icon);
 
         self.set_active(enabled);
         self.set_details(details);

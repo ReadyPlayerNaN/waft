@@ -212,6 +212,29 @@ src/
 
 ## Critical Rules
 
+### Naming Conventions (MUST follow)
+
+**FORBIDDEN: Generic "utils" naming**
+
+Never use `utils`, `helpers`, `misc`, or similar vague module/file names. Every module must be named semantically based on what it contains or does.
+
+```rust
+// BAD - vague, meaningless
+mod wifi_utils;
+mod helpers;
+mod misc;
+
+// GOOD - semantic, descriptive
+mod wifi_icon;          // Contains WiFi icon selection logic
+mod signal_strength;    // Signal strength calculations
+mod network_scanner;    // Network scanning functionality
+```
+
+This rule applies to:
+- Module names (`mod foo`)
+- File names (`foo.rs`)
+- Directory names (`src/features/foo/`)
+
 ### GTK Init Boundary (has caused crashes)
 
 Plugins are initialized **before** GTK. Creating widgets in `init()` will crash with `GTK has not been initialized`.

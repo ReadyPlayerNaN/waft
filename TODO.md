@@ -1,25 +1,18 @@
 ---
 # ITERATION SUMMARY (Ralph Loop)
 
-**Completed:**
-- ✅ Task 1: Fixed sunsetr checkmark jumping - Only send ActivePreset for events that have the field
-- ✅ Task 4: Feature toggle loading state - Added CSS outline for busy state (no layout jump)
-- ✅ Task 5: Feature toggle hover color - Fixed to use neutral color when off
-- ✅ Task 5b: Feature toggle 50% width - Added column_homogeneous and hexpand
-- ✅ Task 3: Analyzed NetworkManager plugin - Detailed architecture documentation for both sub-tasks
-- ✅ Code quality: Fixed 3 clippy warnings (derivable_impls, collapsible_if)
+**✅ COMPLETED:**
+- Task 3b: WiFi signal strength icon in toggle - Fully implemented with shared utility module
 
 **Documented (needs developer input):**
 - Task 2: Plugin implementation - Needs clarification on "Tether" and "SNI" requirements
 - Task 3a: WiFi new network support - Full implementation plan with file locations
-- Task 3b: WiFi signal strength in toggle - Implementation approach documented
 - Task 6: Notification deprioritization - Categorization complete, needs approval
 - Task 7: Notification bubbles - Needs design mockup/specification
 - Task 8: Notification positioning - Needs configuration decisions
 
 **Ready for implementation (pending decisions):**
 - Task 3a: WiFi password prompt for new networks (Medium-High complexity)
-- Task 3b: Signal strength icon in WiFi toggle (Low-Medium complexity)
 - Task 6: Notification deprioritization (pending priority approval)
 - Task 8: Notification positioning (pending config decisions)
 
@@ -38,46 +31,20 @@
 - `src/menu_state.rs` - Derive Default instead of manual impl
 - `src/features/notifications/types.rs` - Derive Default for NotificationUrgency
 - `src/features/notifications/store/manager.rs` - Collapsed if statement
+- `src/features/networkmanager/wifi_icon.rs` - NEW: Semantic utility for WiFi icon selection (task 3b)
+- `src/features/networkmanager/wifi_toggle.rs` - Signal strength icon support (task 3b)
+- `src/features/networkmanager/wifi_adapter_widget.rs` - Pass signal strength through handlers (task 3b)
+- `src/features/networkmanager/wifi_menu.rs` - Use shared wifi_icon utility (task 3b)
+- `src/features/networkmanager/mod.rs` - Register wifi_icon module (task 3b)
+- `AGENTS.md` - Added naming convention rule (forbid utils/helpers/misc)
 
 **Next iteration priorities:**
 1. Clarify Task 2 requirements (Tether plugin, SNI definition)
-2. Consider implementing Task 3b (WiFi signal strength in toggle) - low complexity, high UX value
+2. Implement Task 3a (WiFi password prompt for new networks) - medium-high complexity, high UX value
 3. Review and approve notification priority categories (Task 6)
 4. For animated loading state: consider adding GtkSpinner to FeatureToggleWidget
 
 ---
-
-## 1. Sunsetr preset menu: Fix checkmark jumping during transitions ✓ COMPLETED
-
-**Issue:** When switching presets (e.g., day → gaming), the checkmark jumps through an intermediate state (day → default → gaming) instead of going directly to the target preset.
-
-**Root Cause:**
-
-Looking at the actual IPC logs:
-
-```json
-{"event_type":"preset_changed","from_preset":"day","to_preset":"gaming",...}
-{"event_type":"state_applied","active_preset":"gaming",...}
-```
-
-The `preset_changed` events do NOT have an `active_preset` field - only `from_preset` and `to_preset`. When serde deserializes this, `active_preset` becomes `None`. The old code was sending `ActivePreset(None)` for these events, causing the checkmark to jump to "Default".
-
-**Fix Applied:**
-
-In `src/features/sunsetr/ipc.rs`, only send `ActivePreset` updates when the event actually contains the `active_preset` field:
-
-```rust
-// Only send active preset update if the event actually contains active_preset
-// (preset_changed events don't have this field, only state_applied events do)
-if ev.active_preset.is_some() {
-    let preset = ev.active_preset.as_ref().and_then(|p| {
-        if p == "default" { None } else { Some(p.clone()) }
-    });
-    let _ = sender.send(SunsetrIpcEvents::ActivePreset(preset));
-}
-```
-
-**Result:** Checkmark now moves directly from one preset to another without jumping through "Default".
 
 ## 2. Plugins to implement
 
@@ -131,87 +98,57 @@ if ev.active_preset.is_some() {
 
 ### 3b. WiFi: Signal strength icon updates in toggle (currently just on/off)
 
-**Status:** Easier to implement - infrastructure exists
+**Status:** ✅ COMPLETED
 
-**Current behavior:**
+**Implementation Summary:**
 
-- WiFi toggle shows generic WiFi icon regardless of signal strength
-- Signal strength IS available (`AccessPointState.strength: u8` in dbus.rs:984-991)
-- Menu already shows signal strength icons (`wifi_menu.rs:39-47`)
+Created a shared semantic utility module to map signal strength to WiFi icons:
+- **New file:** `src/features/networkmanager/wifi_icon.rs` - Semantic naming with `get_wifi_icon()` function
+- **Icon thresholds:**
+  - Excellent: > 75%
+  - Good: 50-75%
+  - OK: 25-50%
+  - Weak: 0-25%
+  - Generic: WiFi disabled or not connected
 
-**What needs to be done:**
+**Changes Made:**
 
-1. **Track active connection signal strength** (`wifi_adapter_widget.rs`):
+1. **Shared utility module** (`wifi_icon.rs`):
+   - `get_wifi_icon(strength: Option<u8>, enabled: bool, connected: bool) -> &'static str`
+   - Unit tests for all signal ranges and edge cases (7 tests, all passing)
 
-   - Currently widget stores `active_ssid: Option<String>` (line 34)
-   - Need to add `active_signal_strength: Option<u8>`
-   - Update signal strength when network list refreshes (line 156-236)
+2. **WiFiToggleWidget** (`wifi_toggle.rs`):
+   - Added `signal_strength: Option<u8>` parameter to `new()`
+   - Added `set_icon()` method
+   - Updated `update_state()` to accept signal strength and update icon
 
-2. **Pass signal strength to toggle** (`wifi_toggle.rs`):
+3. **WiFiAdapterWidget** (`wifi_adapter_widget.rs`):
+   - Added `get_active_signal_strength()` helper method
+   - Constructor passes signal strength to toggle
+   - Updated expand callback to update icon after network scan
+   - Updated connection success handler to update icon
+   - Updated disconnect handler to reset to generic icon
+   - Updated `sync_state()` to pass signal strength
 
-   - Add `set_signal_strength(strength: Option<u8>)` method
-   - Update icon dynamically based on strength
+4. **WiFiMenuWidget** (`wifi_menu.rs`):
+   - Replaced inline icon selection with shared `get_wifi_icon()` call
 
-3. **Icon selection logic** (reuse from `wifi_menu.rs:39-47`):
+**Files Modified:**
+- `src/features/networkmanager/wifi_icon.rs` (NEW - semantic naming)
+- `src/features/networkmanager/wifi_toggle.rs`
+- `src/features/networkmanager/wifi_adapter_widget.rs`
+- `src/features/networkmanager/wifi_menu.rs`
+- `src/features/networkmanager/mod.rs`
+- `AGENTS.md` (added naming convention rule)
 
-   ```rust
-   fn signal_icon(strength: u8) -> &'static str {
-       match strength {
-           0..=25 => "network-wireless-signal-weak-symbolic",
-           26..=50 => "network-wireless-signal-ok-symbolic",
-           51..=75 => "network-wireless-signal-good-symbolic",
-           _ => "network-wireless-signal-excellent-symbolic",
-       }
-   }
-   ```
+**Testing:**
+- ✅ `cargo check` passes
+- ✅ All 7 wifi_icon unit tests pass
+- ✅ Full test suite passes (269 passed, 3 ignored, 1 filtered)
+- ✅ No regressions in existing functionality
 
-4. **Consider real-time updates** (optional):
-   - Current: Signal strength only updates when menu is opened
-   - Enhanced: Subscribe to AccessPoint PropertiesChanged signals
-   - Update signal strength icon in real-time (every few seconds)
-
-**Files to modify:**
-
-- `src/features/networkmanager/wifi_adapter_widget.rs` - Track active signal strength
-- `src/features/networkmanager/wifi_toggle.rs` - Add signal strength icon updates
-- `src/features/networkmanager/dbus.rs` - Optional: Add AccessPoint signal subscription
-
-**Complexity:** Low-Medium (mostly UI updates, D-Bus subscription if real-time)
-
-## 4. Feature toggle loading state ✓ COMPLETED
-
-**Implementation:** Added CSS outline for busy state (GTK4 doesn't support @keyframes animations).
-
-**Changes made:**
-
-- Used `outline` instead of `border` to avoid layout jump
-- Applied to `.feature-toggle.busy .toggle-main`
-- Applied to `.feature-toggle-expandable.busy .toggle-main` and `.toggle-expand`
-- `outline: 2px solid alpha(@accent_bg_color, 0.6); outline-offset: -2px;`
-
-**Note:** GTK4 CSS does not support @keyframes animations like web CSS. For animated effects, a GtkSpinner or widget-level animation would be needed.
-
-## 5. Feature toggle off main button hover colour ✓ COMPLETED
-
-**Issue:** Inactive toggle had primary accent color on hover, but should use neutral color.
-
-**Fix:** Changed hover background in `src/ui/main_window.rs:481-487`
-
-- **Before:** `@accent_bg_color 20%` mixed with `@card_bg_color`
-- **After:** `@window_fg_color 10%` mixed with `@card_bg_color`
-
-**Effect:** Inactive toggles now have a subtle neutral gray hover effect instead of blue/accent.
-
-## 5b. Feature toggle 50% width ✓ COMPLETED
-
-**Issue:** Feature toggles weren't taking equal 50% width in the grid.
-
-**Fix:**
-
-- Added `column_homogeneous(true)` to grid in `src/ui/feature_grid.rs:30-34`
-- Added `hexpand(true)` to toggle root container in `src/ui/feature_toggle.rs:63-67`
-
-**Effect:** Each feature toggle now takes exactly 50% of the grid width.
+**Naming Convention Rule Added:**
+AGENTS.md now forbids vague names like `utils`, `helpers`, `misc`. All modules must use semantic names describing what they contain or do.
 
 ## 6. Notification deprioritization
 

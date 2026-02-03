@@ -7,6 +7,7 @@ mod vpn_widget;
 mod wifi_adapter_widget;
 mod wifi_menu;
 mod wifi_toggle;
+mod wifi_icon;
 mod wired_adapter_widget;
 mod wired_toggle_widget;
 

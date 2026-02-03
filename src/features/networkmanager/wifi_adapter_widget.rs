@@ -10,6 +10,7 @@ use super::dbus;
 use super::store::{AccessPointState, NetworkOp, NetworkStore, WiFiAdapterState};
 use super::wifi_menu::{WiFiMenuOutput, WiFiMenuWidget};
 use super::wifi_toggle::WiFiToggleWidget;
+use super::wifi_icon::get_wifi_icon;
 
 #[derive(Clone)]
 pub struct WiFiAdapterWidget {
@@ -22,6 +23,16 @@ pub struct WiFiAdapterWidget {
 }
 
 impl WiFiAdapterWidget {
+    fn get_active_signal_strength(state: &WiFiAdapterState) -> Option<u8> {
+        state.active_connection.as_ref().and_then(|ssid| {
+            state
+                .access_points
+                .values()
+                .find(|ap| &ap.ssid == ssid)
+                .map(|ap| ap.strength)
+        })
+    }
+
     pub fn new(
         adapter: &WiFiAdapterState,
         store: Arc<NetworkStore>,
@@ -29,11 +40,14 @@ impl WiFiAdapterWidget {
         dbus: Arc<DbusHandle>,
         menu_store: Arc<MenuStore>,
     ) -> Self {
+        let signal_strength = Self::get_active_signal_strength(adapter);
+
         let toggle = WiFiToggleWidget::new(
             adapter.interface_name.clone(),
             adapter.enabled,
             adapter.active_connection.clone(),
             adapter.access_points.len(),
+            signal_strength,
             menu_store,
         );
 
@@ -266,6 +280,13 @@ impl WiFiAdapterWidget {
                                 let count = access_points.len();
                                 if let Some(ref ssid) = active_ssid {
                                     toggle_clone.set_details(Some(ssid.clone()));
+                                    // Update icon with signal strength from active connection
+                                    let signal_strength = access_points
+                                        .iter()
+                                        .find(|ap| &ap.ssid == ssid)
+                                        .map(|ap| ap.strength);
+                                    let icon = get_wifi_icon(signal_strength, true, true);
+                                    toggle_clone.set_icon(icon);
                                 } else if count > 0 {
                                     toggle_clone.set_details(Some(format!(
                                         "{} network{} available",
@@ -376,6 +397,22 @@ impl WiFiAdapterWidget {
                                     toggle.set_details(Some(connected_ssid.clone()));
                                     menu.set_active_ssid(Some(connected_ssid.clone()));
                                     menu.set_connecting(&ssid_for_cleanup, false);
+                                    // Update icon with signal strength from store
+                                    let signal_strength = {
+                                        let state = store.get_state();
+                                        state
+                                            .wifi_adapters
+                                            .get(&device_path)
+                                            .and_then(|adapter| {
+                                                adapter
+                                                    .access_points
+                                                    .values()
+                                                    .find(|ap| ap.ssid == connected_ssid)
+                                                    .map(|ap| ap.strength)
+                                            })
+                                    };
+                                    let icon = get_wifi_icon(signal_strength, true, true);
+                                    toggle.set_icon(icon);
                                     return glib::ControlFlow::Break;
                                 }
                                 Ok(Err(err_msg)) => {
@@ -443,6 +480,8 @@ impl WiFiAdapterWidget {
                                     ));
                                     toggle_clone.set_details(None);
                                     menu_clone.set_active_ssid(None);
+                                    // Reset to generic icon when disconnected
+                                    toggle_clone.set_icon(get_wifi_icon(None, true, false));
                                     return glib::ControlFlow::Break;
                                 }
                                 Ok(Err(err_msg)) => {
@@ -470,12 +509,15 @@ impl WiFiAdapterWidget {
 
     #[allow(dead_code)]
     pub fn sync_state(&self, state: &WiFiAdapterState) {
+        let signal_strength = Self::get_active_signal_strength(state);
+
         self.toggle.set_active(state.enabled);
         self.toggle.set_busy(state.busy);
         self.toggle.update_state(
             state.enabled,
             state.active_connection.clone(),
             state.access_points.len(),
+            signal_strength,
         );
 
         let networks: Vec<(String, u8, bool)> = state

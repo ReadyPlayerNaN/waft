@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use super::wifi_icon::get_wifi_icon;
 use crate::ui::menu_item::MenuItemWidget;
 
 #[derive(Debug, Clone)]
@@ -36,15 +37,7 @@ impl NetworkRow {
             .build();
 
         // Signal strength icon
-        let signal_icon = if strength > 75 {
-            "network-wireless-signal-excellent-symbolic"
-        } else if strength > 50 {
-            "network-wireless-signal-good-symbolic"
-        } else if strength > 25 {
-            "network-wireless-signal-ok-symbolic"
-        } else {
-            "network-wireless-signal-weak-symbolic"
-        };
+        let signal_icon = get_wifi_icon(Some(strength), true, true);
 
         let icon_image = gtk::Image::builder()
             .icon_name(signal_icon)
