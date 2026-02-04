@@ -159,160 +159,168 @@ impl WiFiAdapterWidget {
         });
     }
 
-    fn setup_expand_callback(&mut self) {
-        let device_path_for_expand = self.path.clone();
-        let store_for_expand = self.store.clone();
-        let menu_for_expand = self.menu.clone();
-        let toggle_for_expand = self.toggle.clone();
-        let nm_for_expand = self.nm.clone();
-        let dbus_for_expand = self.dbus.clone();
+    fn trigger_scan(&self) {
+        debug!("Triggering WiFi network scan");
 
-        self.toggle.set_expand_callback(move |will_be_open: bool| {
-            if will_be_open {
-                debug!("WiFi menu opening, scanning for networks");
-                let (tx, rx) = std::sync::mpsc::channel();
-                let nm = nm_for_expand.clone();
-                let dbus = dbus_for_expand.clone();
+        // Start scanning - show loader
+        self.menu.set_scanning(true);
 
-                std::thread::spawn(move || {
-                    tokio::runtime::Runtime::new()
-                        .unwrap()
-                        .block_on(async move {
-                            let Some(ref nm) = nm else {
-                                error!("NetworkManager not available");
-                                let _ = tx.send(None);
-                                return;
-                            };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let nm = self.nm.clone();
+        let dbus = self.dbus.clone();
 
-                            if let Err(e) = dbus::scan_networks_nmrs(nm).await {
-                                error!("Failed to request WiFi scan: {}", e);
-                                let _ = tx.send(None);
-                                return;
-                            }
+        std::thread::spawn(move || {
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async move {
+                    let Some(ref nm) = nm else {
+                        error!("NetworkManager not available");
+                        let _ = tx.send(None);
+                        return;
+                    };
 
-                            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    if let Err(e) = dbus::scan_networks_nmrs(nm).await {
+                        error!("Failed to request WiFi scan: {}", e);
+                        let _ = tx.send(None);
+                        return;
+                    }
 
-                            match dbus::list_networks_nmrs(nm).await {
-                                Ok(aps) => {
-                                    let mut networks_by_ssid: std::collections::HashMap<
-                                        String,
-                                        AccessPointState,
-                                    > = std::collections::HashMap::new();
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-                                    for ap in aps {
-                                        match dbus::get_connections_for_ssid(&dbus, &ap.ssid).await
-                                        {
-                                            Ok(connections) if !connections.is_empty() => {
-                                                let secure = ap.is_secure();
-                                                let network = AccessPointState {
-                                                    path: ap.path.clone(),
-                                                    ssid: ap.ssid.clone(),
-                                                    strength: ap.strength,
-                                                    secure,
-                                                    connecting: false,
-                                                };
+                    match dbus::list_networks_nmrs(nm).await {
+                        Ok(aps) => {
+                            let mut networks_by_ssid: std::collections::HashMap<
+                                String,
+                                AccessPointState,
+                            > = std::collections::HashMap::new();
 
-                                                match networks_by_ssid.get(&ap.ssid) {
-                                                    Some(existing)
-                                                        if existing.strength >= ap.strength =>
-                                                    {
-                                                        // Keep existing (stronger or equal)
-                                                    }
-                                                    _ => {
-                                                        // Replace with this one (stronger)
-                                                        networks_by_ssid
-                                                            .insert(ap.ssid.clone(), network);
-                                                    }
-                                                }
+                            for ap in aps {
+                                match dbus::get_connections_for_ssid(&dbus, &ap.ssid).await
+                                {
+                                    Ok(connections) if !connections.is_empty() => {
+                                        let secure = ap.is_secure();
+                                        let network = AccessPointState {
+                                            path: ap.path.clone(),
+                                            ssid: ap.ssid.clone(),
+                                            strength: ap.strength,
+                                            secure,
+                                            connecting: false,
+                                        };
+
+                                        match networks_by_ssid.get(&ap.ssid) {
+                                            Some(existing)
+                                                if existing.strength >= ap.strength =>
+                                            {
+                                                // Keep existing (stronger or equal)
                                             }
                                             _ => {
-                                                debug!(
-                                                    "Skipping network {} (no saved profile)",
-                                                    ap.ssid
-                                                );
+                                                // Replace with this one (stronger)
+                                                networks_by_ssid
+                                                    .insert(ap.ssid.clone(), network);
                                             }
                                         }
                                     }
-
-                                    let known_networks: Vec<AccessPointState> =
-                                        networks_by_ssid.into_values().collect();
-                                    let _ = tx.send(Some(known_networks));
-                                }
-                                Err(e) => {
-                                    error!("Failed to get access points after scan: {}", e);
-                                    let _ = tx.send(None);
+                                    _ => {
+                                        debug!(
+                                            "Skipping network {} (no saved profile)",
+                                            ap.ssid
+                                        );
+                                    }
                                 }
                             }
-                        });
-                });
 
-                let rx = std::rc::Rc::new(std::cell::RefCell::new(Some(rx)));
-                let menu_clone = menu_for_expand.clone();
-                let toggle_clone = toggle_for_expand.clone();
-                let store_clone = store_for_expand.clone();
-                let device_path_clone = device_path_for_expand.clone();
-                glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
-                    let receiver_opt = rx.borrow_mut().take();
-
-                    if let Some(receiver) = receiver_opt {
-                        match receiver.try_recv() {
-                            Ok(Some(access_points)) => {
-                                store_clone.emit(NetworkOp::SetWiFiAccessPoints(
-                                    device_path_clone.clone(),
-                                    access_points.clone(),
-                                ));
-
-                                let active_ssid = {
-                                    let state = store_clone.get_state();
-                                    state
-                                        .wifi_adapters
-                                        .get(&device_path_clone)
-                                        .and_then(|adapter| adapter.active_connection.clone())
-                                };
-
-                                let networks: Vec<(String, u8, bool)> = access_points
-                                    .iter()
-                                    .map(|ap| (ap.ssid.clone(), ap.strength, ap.secure))
-                                    .collect();
-                                menu_clone.set_networks(networks);
-                                menu_clone.set_active_ssid(active_ssid.clone());
-
-                                let count = access_points.len();
-                                if let Some(ref ssid) = active_ssid {
-                                    toggle_clone.set_details(Some(ssid.clone()));
-                                    // Update icon with signal strength from active connection
-                                    let signal_strength = access_points
-                                        .iter()
-                                        .find(|ap| &ap.ssid == ssid)
-                                        .map(|ap| ap.strength);
-                                    let icon = get_wifi_icon(signal_strength, true, true);
-                                    toggle_clone.set_icon(icon);
-                                } else if count > 0 {
-                                    toggle_clone.set_details(Some(format!(
-                                        "{} network{} available",
-                                        count,
-                                        if count == 1 { "" } else { "s" }
-                                    )));
-                                } else {
-                                    toggle_clone.set_details(Some("No networks found".to_string()));
-                                }
-
-                                return glib::ControlFlow::Break;
-                            }
-                            Ok(None) => {
-                                return glib::ControlFlow::Break;
-                            }
-                            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                                *rx.borrow_mut() = Some(receiver);
-                                return glib::ControlFlow::Continue;
-                            }
-                            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                                return glib::ControlFlow::Break;
-                            }
+                            let known_networks: Vec<AccessPointState> =
+                                networks_by_ssid.into_values().collect();
+                            let _ = tx.send(Some(known_networks));
+                        }
+                        Err(e) => {
+                            error!("Failed to get access points after scan: {}", e);
+                            let _ = tx.send(None);
                         }
                     }
-                    glib::ControlFlow::Break
                 });
+        });
+
+        let rx = std::rc::Rc::new(std::cell::RefCell::new(Some(rx)));
+        let menu_clone = self.menu.clone();
+        let toggle_clone = self.toggle.clone();
+        let store_clone = self.store.clone();
+        let device_path_clone = self.path.clone();
+        glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+            let receiver_opt = rx.borrow_mut().take();
+
+            if let Some(receiver) = receiver_opt {
+                match receiver.try_recv() {
+                    Ok(Some(access_points)) => {
+                        store_clone.emit(NetworkOp::SetWiFiAccessPoints(
+                            device_path_clone.clone(),
+                            access_points.clone(),
+                        ));
+
+                        let active_ssid = {
+                            let state = store_clone.get_state();
+                            state
+                                .wifi_adapters
+                                .get(&device_path_clone)
+                                .and_then(|adapter| adapter.active_connection.clone())
+                        };
+
+                        let networks: Vec<(String, u8, bool)> = access_points
+                            .iter()
+                            .map(|ap| (ap.ssid.clone(), ap.strength, ap.secure))
+                            .collect();
+                        menu_clone.set_networks(networks);
+                        menu_clone.set_active_ssid(active_ssid.clone());
+
+                        let count = access_points.len();
+                        if let Some(ref ssid) = active_ssid {
+                            toggle_clone.set_details(Some(ssid.clone()));
+                            // Update icon with signal strength from active connection
+                            let signal_strength = access_points
+                                .iter()
+                                .find(|ap| &ap.ssid == ssid)
+                                .map(|ap| ap.strength);
+                            let icon = get_wifi_icon(signal_strength, true, true);
+                            toggle_clone.set_icon(icon);
+                        } else if count > 0 {
+                            toggle_clone.set_details(Some(format!(
+                                "{} network{} available",
+                                count,
+                                if count == 1 { "" } else { "s" }
+                            )));
+                        } else {
+                            toggle_clone.set_details(Some("No networks found".to_string()));
+                        }
+
+                        // End scanning - success case
+                        menu_clone.set_scanning(false);
+
+                        return glib::ControlFlow::Break;
+                    }
+                    Ok(None) => {
+                        // End scanning - failure case
+                        menu_clone.set_scanning(false);
+                        return glib::ControlFlow::Break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        *rx.borrow_mut() = Some(receiver);
+                        return glib::ControlFlow::Continue;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        return glib::ControlFlow::Break;
+                    }
+                }
+            }
+            glib::ControlFlow::Break
+        });
+    }
+
+    fn setup_expand_callback(&mut self) {
+        let widget_clone = self.clone();
+
+        self.toggle.set_expand_callback(move |will_be_open: bool| {
+            if will_be_open {
+                widget_clone.trigger_scan();
             }
         });
     }
@@ -323,6 +331,7 @@ impl WiFiAdapterWidget {
         let menu_clone = self.menu.clone();
         let toggle_clone = self.toggle.clone();
         let dbus_clone = self.dbus.clone();
+        let widget_for_scan = self.clone();
 
         self.menu.connect_output(move |output| {
             debug!("WiFi menu output: {:?}", output);
@@ -501,7 +510,8 @@ impl WiFiAdapterWidget {
                     });
                 }
                 WiFiMenuOutput::Scan => {
-                    debug!("Scan button clicked (shouldn't happen - auto-scan on menu open)");
+                    debug!("Scan/Refresh button clicked");
+                    widget_for_scan.trigger_scan();
                 }
             }
         });

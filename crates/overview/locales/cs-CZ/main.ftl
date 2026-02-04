@@ -60,6 +60,11 @@ network-ipv6-address = IPv6 adresa
 network-subnet-mask = Maska podsítě
 network-gateway = Brána
 
+# WiFi
+wifi-scanning = Vyhledávání sítí...
+wifi-no-networks = Nebyly nalezeny žádné sítě
+wifi-refresh = Obnovit
+
 # VPN
 vpn-title = VPN
 vpn-connected = Připojeno

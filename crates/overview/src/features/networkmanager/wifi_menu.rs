@@ -107,6 +107,12 @@ pub struct WiFiMenuWidget {
 struct WiFiMenuWidgetInner {
     root: gtk::Box,
     networks_box: gtk::Box,
+    loader_box: gtk::Box,
+    empty_state_box: gtk::Box,
+    scan_spinner: gtk::Spinner,
+    scan_label: gtk::Label,
+    empty_label: gtk::Label,
+    refresh_button: gtk::Button,
     network_rows: RefCell<HashMap<String, NetworkRow>>,
     active_ssid: RefCell<Option<String>>,
     on_output: Rc<RefCell<Option<Box<dyn Fn(WiFiMenuOutput)>>>>,
@@ -128,15 +134,76 @@ impl WiFiMenuWidget {
             .spacing(4)
             .build();
 
+        // Loader box (shown during scanning)
+        let loader_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(8)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::Center)
+            .margin_top(20)
+            .margin_bottom(20)
+            .visible(false)
+            .build();
+
+        let scan_spinner = gtk::Spinner::builder()
+            .spinning(true)
+            .build();
+
+        let scan_label = gtk::Label::builder()
+            .label("Scanning for networks...")
+            .build();
+
+        loader_box.append(&scan_spinner);
+        loader_box.append(&scan_label);
+
+        // Empty state box (shown when no networks found)
+        let empty_state_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(12)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::Center)
+            .margin_top(20)
+            .margin_bottom(20)
+            .visible(false)
+            .build();
+
+        let empty_label = gtk::Label::builder()
+            .label("No networks found")
+            .build();
+
+        let refresh_button = gtk::Button::builder()
+            .label("Refresh")
+            .halign(gtk::Align::Center)
+            .build();
+
+        empty_state_box.append(&empty_label);
+        empty_state_box.append(&refresh_button);
+
+        root.append(&loader_box);
         root.append(&networks_box);
+        root.append(&empty_state_box);
 
         let on_output: Rc<RefCell<Option<Box<dyn Fn(WiFiMenuOutput)>>>> =
             Rc::new(RefCell::new(None));
+
+        // Connect refresh button handler
+        let on_output_for_refresh = on_output.clone();
+        refresh_button.connect_clicked(move |_| {
+            if let Some(ref callback) = *on_output_for_refresh.borrow() {
+                callback(WiFiMenuOutput::Scan);
+            }
+        });
 
         Self {
             inner: Rc::new(WiFiMenuWidgetInner {
                 root,
                 networks_box,
+                loader_box,
+                empty_state_box,
+                scan_spinner,
+                scan_label,
+                empty_label,
+                refresh_button,
                 network_rows: RefCell::new(HashMap::new()),
                 active_ssid: RefCell::new(None),
                 on_output,
@@ -160,23 +227,32 @@ impl WiFiMenuWidget {
         }
         self.inner.network_rows.borrow_mut().clear();
 
-        // Sort by signal strength
-        let mut networks = networks;
-        networks.sort_by(|a, b| b.1.cmp(&a.1));
+        // Handle empty state
+        if networks.is_empty() {
+            self.inner.networks_box.set_visible(false);
+            self.inner.empty_state_box.set_visible(true);
+        } else {
+            self.inner.networks_box.set_visible(true);
+            self.inner.empty_state_box.set_visible(false);
 
-        // Add network rows
-        for (ssid, strength, secure) in networks {
-            let is_active = active_ssid.as_ref() == Some(&ssid);
-            let row = NetworkRow::new(
-                &ssid,
-                strength,
-                secure,
-                is_active,
-                false,
-                self.inner.on_output.clone(),
-            );
-            self.inner.networks_box.append(&row.widget);
-            self.inner.network_rows.borrow_mut().insert(ssid, row);
+            // Sort by signal strength
+            let mut networks = networks;
+            networks.sort_by(|a, b| b.1.cmp(&a.1));
+
+            // Add network rows
+            for (ssid, strength, secure) in networks {
+                let is_active = active_ssid.as_ref() == Some(&ssid);
+                let row = NetworkRow::new(
+                    &ssid,
+                    strength,
+                    secure,
+                    is_active,
+                    false,
+                    self.inner.on_output.clone(),
+                );
+                self.inner.networks_box.append(&row.widget);
+                self.inner.network_rows.borrow_mut().insert(ssid, row);
+            }
         }
     }
 
@@ -187,6 +263,16 @@ impl WiFiMenuWidget {
     pub fn set_connecting(&self, ssid: &str, connecting: bool) {
         if let Some(row) = self.inner.network_rows.borrow().get(ssid) {
             row.set_connecting(connecting);
+        }
+    }
+
+    pub fn set_scanning(&self, scanning: bool) {
+        if scanning {
+            self.inner.loader_box.set_visible(true);
+            self.inner.networks_box.set_visible(false);
+            self.inner.empty_state_box.set_visible(false);
+        } else {
+            self.inner.loader_box.set_visible(false);
         }
     }
 

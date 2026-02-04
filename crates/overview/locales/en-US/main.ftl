@@ -60,6 +60,11 @@ network-ipv6-address = IPv6 Address
 network-subnet-mask = Subnet Mask
 network-gateway = Gateway
 
+# WiFi
+wifi-scanning = Scanning for networks...
+wifi-no-networks = No networks found
+wifi-refresh = Refresh
+
 # VPN
 vpn-title = VPN
 vpn-connected = Connected
