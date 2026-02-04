@@ -15,7 +15,7 @@ Real-time Claude API usage tracking for waft-overview. Displays message counts a
 ### Prerequisites
 
 1. **Admin API Key**: Get one from [Anthropic Console → API Keys](https://console.anthropic.com/settings/keys)
-   - Must start with `sk-ant-admin-`
+   - Must start with `sk-ant-admin` (e.g., `sk-ant-admin01-...`)
    - Regular API keys will not work
 
 ### Configuration
@@ -184,7 +184,7 @@ The plugin sums all buckets to calculate:
 **Error:** `Authentication failed - check API key`
 
 **Solutions:**
-1. Verify API key starts with `sk-ant-admin-`
+1. Verify API key starts with `sk-ant-admin` (e.g., `sk-ant-admin01-...`)
 2. Check key is copied correctly (no extra spaces)
 3. Ensure it's an Admin API key, not a regular API key
 4. Verify key hasn't been revoked in Anthropic Console

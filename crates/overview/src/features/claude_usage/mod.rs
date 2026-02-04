@@ -110,8 +110,8 @@ impl Plugin for ClaudeUsagePlugin {
             anyhow::bail!("Claude usage plugin requires an API key");
         }
 
-        if !self.config.api_key.starts_with("sk-ant-admin-") {
-            anyhow::bail!("Invalid API key format - must start with 'sk-ant-admin-'");
+        if !self.config.api_key.starts_with("sk-ant-admin") {
+            anyhow::bail!("Invalid API key format - must start with 'sk-ant-admin'");
         }
 
         debug!("Configured claude-usage plugin: window={}, update_interval={}s",

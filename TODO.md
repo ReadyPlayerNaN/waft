@@ -28,8 +28,7 @@
 - `src/ui/main_window.rs` - CSS fixes for tasks 4 & 5
 - `src/ui/feature_grid.rs` - Added column_homogeneous for 50% width (task 5b)
 - `src/ui/feature_toggle.rs` - Added hexpand for 50% width (task 5b)
-- `src/menu_state.rs` - Derive Default instead of manual impl
-- `src/features/notifications/types.rs` - Derive Default for NotificationUrgency
+- `src/menu_state.rs` - Derive Default instead of manual impl - `src/features/notifications/types.rs` - Derive Default for NotificationUrgency
 - `src/features/notifications/store/manager.rs` - Collapsed if statement
 - `src/features/networkmanager/wifi_icon.rs` - NEW: Semantic utility for WiFi icon selection (task 3b)
 - `src/features/networkmanager/wifi_toggle.rs` - Signal strength icon support (task 3b)
@@ -103,6 +102,7 @@
 **Implementation Summary:**
 
 Created a shared semantic utility module to map signal strength to WiFi icons:
+
 - **New file:** `src/features/networkmanager/wifi_icon.rs` - Semantic naming with `get_wifi_icon()` function
 - **Icon thresholds:**
   - Excellent: > 75%
@@ -114,15 +114,18 @@ Created a shared semantic utility module to map signal strength to WiFi icons:
 **Changes Made:**
 
 1. **Shared utility module** (`wifi_icon.rs`):
+
    - `get_wifi_icon(strength: Option<u8>, enabled: bool, connected: bool) -> &'static str`
    - Unit tests for all signal ranges and edge cases (7 tests, all passing)
 
 2. **WiFiToggleWidget** (`wifi_toggle.rs`):
+
    - Added `signal_strength: Option<u8>` parameter to `new()`
    - Added `set_icon()` method
    - Updated `update_state()` to accept signal strength and update icon
 
 3. **WiFiAdapterWidget** (`wifi_adapter_widget.rs`):
+
    - Added `get_active_signal_strength()` helper method
    - Constructor passes signal strength to toggle
    - Updated expand callback to update icon after network scan
@@ -134,6 +137,7 @@ Created a shared semantic utility module to map signal strength to WiFi icons:
    - Replaced inline icon selection with shared `get_wifi_icon()` call
 
 **Files Modified:**
+
 - `src/features/networkmanager/wifi_icon.rs` (NEW - semantic naming)
 - `src/features/networkmanager/wifi_toggle.rs`
 - `src/features/networkmanager/wifi_adapter_widget.rs`
@@ -142,6 +146,7 @@ Created a shared semantic utility module to map signal strength to WiFi icons:
 - `AGENTS.md` (added naming convention rule)
 
 **Testing:**
+
 - ✅ `cargo check` passes
 - ✅ All 7 wifi_icon unit tests pass
 - ✅ Full test suite passes (269 passed, 3 ignored, 1 filtered)
@@ -223,3 +228,7 @@ AGENTS.md now forbids vague names like `utils`, `helpers`, `misc`. All modules m
 
 - Should this be user-configurable or hardcoded?
 - Which positions should be supported initially?
+
+## 9. Claude Code limit plugin
+
+Simple plugin displaying anthropic logo and remaining weekly limit for Claude Code subscription
