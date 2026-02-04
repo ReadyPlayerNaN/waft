@@ -20,8 +20,16 @@ pub async fn fetch_usage(
     app_start_time: DateTime<Utc>,
 ) -> Result<UsageData> {
     let api_key = api_key.to_string();
-    let starting_at = window.starting_at(app_start_time);
     let ending_at = Utc::now();
+    let mut starting_at = window.starting_at(app_start_time);
+
+    // Ensure starting_at is before ending_at
+    if starting_at >= ending_at {
+        log::warn!("[claude-usage] starting_at ({}) >= ending_at ({}), adjusting to 1 hour ago",
+                   starting_at, ending_at);
+        starting_at = ending_at - chrono::Duration::hours(1);
+    }
+
     let bucket_width = window.bucket_width();
 
     spawn_on_tokio(async move {
@@ -30,6 +38,9 @@ pub async fn fetch_usage(
         // Format as clean RFC 3339 without fractional seconds: YYYY-MM-DDTHH:MM:SSZ
         let starting_at_str = starting_at.format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let ending_at_str = ending_at.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+        log::debug!("[claude-usage] Time range: {} to {} (window: {:?})",
+                   starting_at_str, ending_at_str, window);
 
         let url = format!(
             "{}?starting_at={}&ending_at={}&bucket_width={}",
@@ -49,23 +60,27 @@ pub async fn fetch_usage(
             .await
             .context("Failed to fetch usage data")?;
 
-        // Check for authentication errors
-        if response.status() == 401 {
-            anyhow::bail!("Authentication failed - check API key");
-        }
-
-        // Check for rate limiting
-        if response.status() == 429 {
-            anyhow::bail!("Rate limited - try again later");
-        }
-
         // Get response text for debugging
+        let status = response.status();
         let response_text = response
             .text()
             .await
             .context("Failed to read response body")?;
 
-        log::debug!("[claude-usage] API response: {}", response_text);
+        log::debug!("[claude-usage] API response (status {}): {}", status, response_text);
+
+        // Check for error responses
+        if !status.is_success() {
+            // Try to parse error message from response
+            if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                if let Some(error_msg) = error_json.get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str()) {
+                    anyhow::bail!("API error: {}", error_msg);
+                }
+            }
+            anyhow::bail!("API request failed with status {}: {}", status, response_text);
+        }
 
         let usage_response: UsageResponse = serde_json::from_str(&response_text)
             .context("Failed to parse usage response")?;
