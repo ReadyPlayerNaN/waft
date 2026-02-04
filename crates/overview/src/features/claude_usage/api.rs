@@ -1,23 +1,82 @@
-//! Claude Console API client for usage limits.
+//! Admin API client for rate limit information.
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 
-use super::values::{OrganizationInfo, UsageData};
+use super::values::{RateLimitInfo, UsageData};
 use crate::runtime::spawn_on_tokio;
 
 const ADMIN_API_BASE: &str = "https://api.anthropic.com/v1/organizations";
-const CONSOLE_API_BASE: &str = "https://claude.ai/api/organizations";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-/// Fetch organization ID from Admin API.
-pub async fn fetch_organization_id(api_key: &str) -> Result<String> {
+/// Parse rate limit header value as u64.
+fn parse_header_u64(headers: &reqwest::header::HeaderMap, name: &str) -> Option<u64> {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
+}
+
+/// Parse rate limit reset timestamp header.
+fn parse_reset_time(headers: &reqwest::header::HeaderMap, name: &str) -> Option<DateTime<Utc>> {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))
+}
+
+/// Extract rate limit info from response headers.
+fn extract_rate_limits(headers: &reqwest::header::HeaderMap) -> UsageData {
+    // Request limits
+    let req_limit = parse_header_u64(headers, "anthropic-ratelimit-requests-limit");
+    let req_remaining = parse_header_u64(headers, "anthropic-ratelimit-requests-remaining");
+    let req_reset = parse_reset_time(headers, "anthropic-ratelimit-requests-reset");
+
+    let requests = if let (Some(limit), Some(remaining), Some(resets_at)) =
+        (req_limit, req_remaining, req_reset)
+    {
+        Some(RateLimitInfo {
+            used: limit.saturating_sub(remaining),
+            limit,
+            resets_at,
+        })
+    } else {
+        None
+    };
+
+    // Token limits
+    let tok_limit = parse_header_u64(headers, "anthropic-ratelimit-tokens-limit");
+    let tok_remaining = parse_header_u64(headers, "anthropic-ratelimit-tokens-remaining");
+    let tok_reset = parse_reset_time(headers, "anthropic-ratelimit-tokens-reset");
+
+    let tokens = if let (Some(limit), Some(remaining), Some(resets_at)) =
+        (tok_limit, tok_remaining, tok_reset)
+    {
+        Some(RateLimitInfo {
+            used: limit.saturating_sub(remaining),
+            limit,
+            resets_at,
+        })
+    } else {
+        None
+    };
+
+    UsageData { requests, tokens }
+}
+
+/// Fetch rate limit information from Admin API.
+///
+/// Makes a lightweight API call to /v1/organizations/me and extracts
+/// rate limit information from the response headers.
+pub async fn fetch_usage(api_key: &str) -> Result<UsageData> {
     let api_key = api_key.to_string();
 
     spawn_on_tokio(async move {
         let client = reqwest::Client::new();
         let url = format!("{}/me", ADMIN_API_BASE);
 
-        log::debug!("[claude-usage] Fetching organization ID");
+        log::debug!("[claude-usage] Fetching rate limits from Admin API");
 
         let response = client
             .get(&url)
@@ -25,72 +84,22 @@ pub async fn fetch_organization_id(api_key: &str) -> Result<String> {
             .header("anthropic-version", ANTHROPIC_VERSION)
             .send()
             .await
-            .context("Failed to fetch organization info")?;
+            .context("Failed to fetch from Admin API")?;
 
         let status = response.status();
-        let response_text = response
-            .text()
-            .await
-            .context("Failed to read response body")?;
 
         if !status.is_success() {
-            anyhow::bail!("Failed to get organization ID: status {}", status);
+            anyhow::bail!("Admin API returned status {}", status);
         }
 
-        let org_info: OrganizationInfo = serde_json::from_str(&response_text)
-            .context("Failed to parse organization info")?;
+        let headers = response.headers().clone();
+        let usage_data = extract_rate_limits(&headers);
 
-        log::debug!("[claude-usage] Organization: {} ({})", org_info.name, org_info.id);
-
-        Ok(org_info.id)
-    })
-    .await
-}
-
-/// Fetch usage limit data from Claude Console API.
-///
-/// The HTTP request runs on the tokio runtime via [`spawn_on_tokio`] so that
-/// this function can be safely awaited from a glib async context without
-/// causing busy-polling.
-pub async fn fetch_usage(api_key: &str, org_id: &str) -> Result<UsageData> {
-    let api_key = api_key.to_string();
-    let org_id = org_id.to_string();
-
-    spawn_on_tokio(async move {
-        let client = reqwest::Client::new();
-        let url = format!("{}/{}/usage", CONSOLE_API_BASE, org_id);
-
-        log::debug!("[claude-usage] Fetching usage limits");
-
-        let response = client
-            .get(&url)
-            .header("x-api-key", &api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .send()
-            .await
-            .context("Failed to fetch usage data")?;
-
-        let status = response.status();
-        let response_text = response
-            .text()
-            .await
-            .context("Failed to read response body")?;
-
-        log::debug!("[claude-usage] API response (status {}): {}", status, response_text);
-
-        if !status.is_success() {
-            if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
-                if let Some(error_msg) = error_json.get("error")
-                    .and_then(|e| e.get("message"))
-                    .and_then(|m| m.as_str()) {
-                    anyhow::bail!("API error: {}", error_msg);
-                }
-            }
-            anyhow::bail!("API request failed with status {}: {}", status, response_text);
-        }
-
-        let usage_data: UsageData = serde_json::from_str(&response_text)
-            .context("Failed to parse usage response")?;
+        log::debug!(
+            "[claude-usage] Rate limits - Requests: {:?}, Tokens: {:?}",
+            usage_data.requests.as_ref().map(|r| (r.used, r.limit)),
+            usage_data.tokens.as_ref().map(|t| (t.used, t.limit))
+        );
 
         Ok(usage_data)
     })

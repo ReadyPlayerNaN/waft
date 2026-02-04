@@ -17,10 +17,10 @@ pub enum ClaudeUsageState {
 /// Pure GTK4 Claude usage widget - displays usage limits and reset times.
 pub struct ClaudeUsageWidget {
     pub root: gtk::Box,
-    session_label: gtk::Label,
-    session_reset: gtk::Label,
-    weekly_label: gtk::Label,
-    weekly_reset: gtk::Label,
+    requests_label: gtk::Label,
+    requests_reset: gtk::Label,
+    tokens_label: gtk::Label,
+    tokens_reset: gtk::Label,
     spinner: gtk::Spinner,
     error_label: gtk::Label,
     content_box: gtk::Box,
@@ -54,57 +54,57 @@ impl ClaudeUsageWidget {
 
         root.append(&logo);
 
-        // Session limit section
-        let session_box = gtk::Box::builder()
+        // Requests limit section
+        let requests_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(2)
             .valign(gtk::Align::Center)
             .build();
 
-        let session_label = gtk::Label::builder()
-            .label("Session: --")
+        let requests_label = gtk::Label::builder()
+            .label("Requests: --")
             .xalign(0.0)
             .css_classes(["title-3"])
             .build();
 
-        let session_reset = gtk::Label::builder()
+        let requests_reset = gtk::Label::builder()
             .label("Resets --")
             .xalign(0.0)
             .css_classes(["dim-label", "caption"])
             .build();
 
-        session_box.append(&session_label);
-        session_box.append(&session_reset);
+        requests_box.append(&requests_label);
+        requests_box.append(&requests_reset);
 
-        // Weekly limit section
-        let weekly_box = gtk::Box::builder()
+        // Tokens limit section
+        let tokens_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(2)
             .valign(gtk::Align::Center)
             .build();
 
-        let weekly_label = gtk::Label::builder()
-            .label("Weekly: --")
+        let tokens_label = gtk::Label::builder()
+            .label("Tokens: --")
             .xalign(0.0)
             .css_classes(["title-3"])
             .build();
 
-        let weekly_reset = gtk::Label::builder()
+        let tokens_reset = gtk::Label::builder()
             .label("Resets --")
             .xalign(0.0)
             .css_classes(["dim-label", "caption"])
             .build();
 
-        weekly_box.append(&weekly_label);
-        weekly_box.append(&weekly_reset);
+        tokens_box.append(&tokens_label);
+        tokens_box.append(&tokens_reset);
 
         // Content box (both sections)
         let content_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(16)
             .build();
-        content_box.append(&session_box);
-        content_box.append(&weekly_box);
+        content_box.append(&requests_box);
+        content_box.append(&tokens_box);
 
         // Loading spinner
         let spinner = gtk::Spinner::builder().spinning(true).build();
@@ -125,10 +125,10 @@ impl ClaudeUsageWidget {
 
         Self {
             root,
-            session_label,
-            session_reset,
-            weekly_label,
-            weekly_reset,
+            requests_label,
+            requests_reset,
+            tokens_label,
+            tokens_reset,
             spinner,
             error_label,
             content_box,
@@ -150,22 +150,22 @@ impl ClaudeUsageWidget {
                 self.content_box.set_visible(true);
                 self.error_label.set_visible(false);
 
-                // Update session limit (5-hour)
-                if let Some(ref five_hour) = data.five_hour {
-                    self.session_label.set_label(&format!("Session: {:.0}%", five_hour.utilization));
-                    self.session_reset.set_label(&format!("Resets {}", five_hour.format_reset_time()));
+                // Update request limits
+                if let Some(ref requests) = data.requests {
+                    self.requests_label.set_label(&format!("Requests: {:.0}%", requests.utilization()));
+                    self.requests_reset.set_label(&format!("Resets {}", requests.format_reset_time()));
                 } else {
-                    self.session_label.set_label("Session: N/A");
-                    self.session_reset.set_label("");
+                    self.requests_label.set_label("Requests: N/A");
+                    self.requests_reset.set_label("");
                 }
 
-                // Update weekly limit (7-day)
-                if let Some(ref seven_day) = data.seven_day {
-                    self.weekly_label.set_label(&format!("Weekly: {:.0}%", seven_day.utilization));
-                    self.weekly_reset.set_label(&format!("Resets {}", seven_day.format_reset_time()));
+                // Update token limits
+                if let Some(ref tokens) = data.tokens {
+                    self.tokens_label.set_label(&format!("Tokens: {:.0}%", tokens.utilization()));
+                    self.tokens_reset.set_label(&format!("Resets {}", tokens.format_reset_time()));
                 } else {
-                    self.weekly_label.set_label("Weekly: N/A");
-                    self.weekly_reset.set_label("");
+                    self.tokens_label.set_label("Tokens: N/A");
+                    self.tokens_reset.set_label("");
                 }
             }
             ClaudeUsageState::Error(msg) => {

@@ -18,7 +18,7 @@ use gtk::prelude::*;
 use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetRegistrar};
 use crate::ui::claude_usage::{ClaudeUsageState, ClaudeUsageWidget};
 
-use self::api::{fetch_organization_id, fetch_usage};
+use self::api::fetch_usage;
 
 /// Configuration for the Claude usage plugin.
 #[derive(Debug, Clone, Deserialize)]
@@ -42,7 +42,6 @@ impl Default for ClaudeUsageConfig {
 pub struct ClaudeUsagePlugin {
     widget: Rc<RefCell<Option<ClaudeUsageWidget>>>,
     config: ClaudeUsageConfig,
-    org_id: Option<String>,
 }
 
 impl ClaudeUsagePlugin {
@@ -50,7 +49,6 @@ impl ClaudeUsagePlugin {
         Self {
             widget: Rc::new(RefCell::new(None)),
             config: ClaudeUsageConfig::default(),
-            org_id: None,
         }
     }
 }
@@ -78,9 +76,6 @@ impl Plugin for ClaudeUsagePlugin {
     }
 
     async fn init(&mut self) -> Result<()> {
-        // Fetch organization ID
-        let org_id = fetch_organization_id(&self.config.api_key).await?;
-        self.org_id = Some(org_id);
         Ok(())
     }
 
@@ -103,11 +98,6 @@ impl Plugin for ClaudeUsagePlugin {
         // Store the widget
         *self.widget.borrow_mut() = Some(usage_widget);
 
-        // Get org ID
-        let org_id = self.org_id.clone().ok_or_else(|| {
-            anyhow::anyhow!("Organization ID not initialized")
-        })?;
-
         // Initial fetch
         let widget_ref = self.widget.clone();
         let api_key = self.config.api_key.clone();
@@ -116,10 +106,9 @@ impl Plugin for ClaudeUsagePlugin {
         {
             let widget_ref = widget_ref.clone();
             let api_key = api_key.clone();
-            let org_id = org_id.clone();
             glib::spawn_future_local(async move {
-                debug!("[claude-usage] Fetching initial usage limits");
-                match fetch_usage(&api_key, &org_id).await {
+                debug!("[claude-usage] Fetching initial rate limits");
+                match fetch_usage(&api_key).await {
                     Ok(data) => {
                         debug!("[claude-usage] Loaded usage limits");
                         if let Some(ref widget) = *widget_ref.borrow() {
@@ -143,10 +132,9 @@ impl Plugin for ClaudeUsagePlugin {
         glib::timeout_add_local(Duration::from_secs(update_interval), move || {
             let widget_ref = widget_ref.clone();
             let api_key = api_key.clone();
-            let org_id = org_id.clone();
             glib::spawn_future_local(async move {
-                debug!("[claude-usage] Fetching usage update");
-                match fetch_usage(&api_key, &org_id).await {
+                debug!("[claude-usage] Fetching rate limit update");
+                match fetch_usage(&api_key).await {
                     Ok(data) => {
                         if let Some(ref widget) = *widget_ref.borrow() {
                             widget.update(&ClaudeUsageState::Loaded(data));

@@ -1,25 +1,34 @@
-//! Data types for Claude usage limits.
+//! Data types for Claude usage limits from API headers.
 
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 
-/// Usage limit information for a specific window.
-#[derive(Debug, Clone, Deserialize)]
-pub struct LimitInfo {
-    /// Utilization percentage (0.0 - 100.0)
-    pub utilization: f64,
+/// Rate limit information from API response headers.
+#[derive(Debug, Clone)]
+pub struct RateLimitInfo {
+    /// Current usage count
+    pub used: u64,
+    /// Maximum allowed
+    pub limit: u64,
     /// When this limit resets
     pub resets_at: DateTime<Utc>,
 }
 
-impl LimitInfo {
+impl RateLimitInfo {
+    /// Calculate utilization percentage (0.0 - 100.0).
+    pub fn utilization(&self) -> f64 {
+        if self.limit == 0 {
+            return 0.0;
+        }
+        (self.used as f64 / self.limit as f64) * 100.0
+    }
+
     /// Format the reset time as a human-readable string.
     pub fn format_reset_time(&self) -> String {
         let now = Utc::now();
         let duration = self.resets_at.signed_duration_since(now);
 
         if duration.num_seconds() < 0 {
-            return "Reset past".to_string();
+            return "Now".to_string();
         }
 
         let hours = duration.num_hours();
@@ -31,34 +40,19 @@ impl LimitInfo {
             format!("{}", local_time)
         } else if hours > 0 {
             format!("{}h {}min", hours, minutes)
-        } else {
+        } else if minutes > 0 {
             format!("{}min", minutes)
+        } else {
+            "< 1min".to_string()
         }
     }
 }
 
-/// Usage data from Claude Console API.
-#[derive(Debug, Clone, Deserialize)]
+/// Usage data from Admin API rate limit headers.
+#[derive(Debug, Clone)]
 pub struct UsageData {
-    /// 5-hour session limit
-    pub five_hour: Option<LimitInfo>,
-    /// 7-day weekly limit (all models)
-    pub seven_day: Option<LimitInfo>,
-    /// 7-day limit for Sonnet only
-    pub seven_day_sonnet: Option<LimitInfo>,
-    /// 7-day limit for Opus only
-    pub seven_day_opus: Option<LimitInfo>,
-    /// 7-day OAuth apps limit
-    pub seven_day_oauth_apps: Option<LimitInfo>,
-    /// 7-day cowork limit
-    pub seven_day_cowork: Option<LimitInfo>,
-}
-
-/// Organization info from Admin API.
-#[derive(Debug, Deserialize)]
-pub struct OrganizationInfo {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub org_type: String,
-    pub name: String,
+    /// Request-based rate limit (usually per-minute)
+    pub requests: Option<RateLimitInfo>,
+    /// Token-based rate limit (usually per-minute)
+    pub tokens: Option<RateLimitInfo>,
 }
