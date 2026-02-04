@@ -93,6 +93,15 @@ pub async fn fetch_usage(api_key: &str) -> Result<UsageData> {
         }
 
         let headers = response.headers().clone();
+
+        // Log all headers for debugging
+        log::debug!("[claude-usage] Response headers:");
+        for (name, value) in headers.iter() {
+            if name.as_str().starts_with("anthropic-ratelimit") {
+                log::debug!("  {}: {:?}", name, value);
+            }
+        }
+
         let usage_data = extract_rate_limits(&headers);
 
         log::debug!(
