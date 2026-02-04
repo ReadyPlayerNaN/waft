@@ -23,10 +23,14 @@ pub async fn fetch_usage(
     let ending_at = Utc::now();
     let mut starting_at = window.starting_at(app_start_time);
 
-    // Ensure starting_at is before ending_at
-    if starting_at >= ending_at {
-        log::warn!("[claude-usage] starting_at ({}) >= ending_at ({}), adjusting to 1 hour ago",
-                   starting_at, ending_at);
+    // The API requires starting_at to be strictly before ending_at.
+    // When formatted to seconds (no fractional seconds), times within
+    // the same second become equal, which the API rejects.
+    // Ensure at least 1 minute between starting_at and ending_at.
+    let min_duration = chrono::Duration::minutes(1);
+    if ending_at - starting_at < min_duration {
+        log::warn!("[claude-usage] Time range too small ({}s), adjusting to 1 hour ago",
+                   (ending_at - starting_at).num_seconds());
         starting_at = ending_at - chrono::Duration::hours(1);
     }
 
