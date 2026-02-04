@@ -520,6 +520,11 @@ fn calculate_rrule_occurrence(dtstart: i64, dtend: i64, rrule: &str) -> Option<(
     let dtstart_time = dtstart_dt.time();
     let duration = dtend - dtstart;
 
+    debug!(
+        "[agenda] calculate_rrule_occurrence: RRULE='{}' dtstart={} byday={:?}",
+        rrule, dtstart_date, byday
+    );
+
     let occurrence_date = match freq {
         "DAILY" => {
             // For daily events, use today's date
@@ -552,6 +557,56 @@ fn calculate_rrule_occurrence(dtstart: i64, dtend: i64, rrule: &str) -> Option<(
                 occurrence
             } else {
                 return None;
+            }
+        }
+        "MONTHLY" => {
+            if let Some(byday_value) = byday {
+                // MONTHLY with BYDAY (e.g., "1WE" = first Wednesday, "2TU" = second Tuesday)
+                let (position, target_weekday) = parse_monthly_byday(byday_value)?;
+
+                // Try to find the occurrence in the current month first
+                let mut candidate_date = find_nth_weekday_in_month(today.year(), today.month(), position, target_weekday)?;
+
+                // If we've already passed this month's occurrence, try next month
+                if candidate_date < today {
+                    let (next_year, next_month) = if today.month() == 12 {
+                        (today.year() + 1, 1)
+                    } else {
+                        (today.year(), today.month() + 1)
+                    };
+                    candidate_date = find_nth_weekday_in_month(next_year, next_month, position, target_weekday)?;
+                }
+
+                // Ensure the occurrence is on or after DTSTART
+                if candidate_date >= dtstart_date {
+                    candidate_date
+                } else {
+                    return None;
+                }
+            } else {
+                // Simple MONTHLY without BYDAY - same day-of-month each month
+                let dtstart_day = dtstart_date.day();
+
+                // Try this month first with the same day
+                let mut occurrence = today.with_day(dtstart_day);
+
+                // If the day doesn't exist in this month (e.g., Jan 31 -> Feb 31),
+                // or if we've already passed it this month, try next month
+                if occurrence.is_none() || occurrence.map(|occ| occ < today).unwrap_or(false) {
+                    // Calculate next month
+                    let next_month_date = if today.month() == 12 {
+                        NaiveDate::from_ymd_opt(today.year() + 1, 1, 1)?
+                    } else {
+                        NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1)?
+                    };
+                    occurrence = next_month_date.with_day(dtstart_day);
+                }
+
+                // Ensure the occurrence exists and is on or after DTSTART
+                match occurrence {
+                    Some(occ) if occ >= dtstart_date => occ,
+                    _ => return None,
+                }
             }
         }
         _ => {
@@ -592,6 +647,103 @@ fn parse_byday(byday: &str) -> Option<chrono::Weekday> {
         "SA" => Some(Weekday::Sat),
         "SU" => Some(Weekday::Sun),
         _ => None,
+    }
+}
+
+/// Parse MONTHLY BYDAY value to extract position and weekday.
+///
+/// Examples:
+/// - "1WE" -> (1, Weekday::Wed) - first Wednesday
+/// - "2TU" -> (2, Weekday::Tue) - second Tuesday
+/// - "-1FR" -> (-1, Weekday::Fri) - last Friday
+fn parse_monthly_byday(byday: &str) -> Option<(i32, chrono::Weekday)> {
+    use chrono::Weekday;
+
+    // Take the first day if multiple are specified
+    let day = byday.split(',').next()?;
+
+    // Extract the numeric position (1, 2, 3, -1, etc.)
+    let pos_end = day.find(|c: char| c.is_ascii_alphabetic())?;
+    let pos_str = &day[..pos_end];
+    let position: i32 = pos_str.parse().ok()?;
+
+    // Extract the weekday part
+    let weekday_str = &day[pos_end..];
+    let weekday = match weekday_str {
+        "MO" => Weekday::Mon,
+        "TU" => Weekday::Tue,
+        "WE" => Weekday::Wed,
+        "TH" => Weekday::Thu,
+        "FR" => Weekday::Fri,
+        "SA" => Weekday::Sat,
+        "SU" => Weekday::Sun,
+        _ => return None,
+    };
+
+    Some((position, weekday))
+}
+
+/// Find the nth occurrence of a weekday in a given month.
+///
+/// Positive positions count from the start (1 = first, 2 = second, etc.)
+/// Negative positions count from the end (-1 = last, -2 = second to last, etc.)
+fn find_nth_weekday_in_month(
+    year: i32,
+    month: u32,
+    position: i32,
+    target_weekday: chrono::Weekday,
+) -> Option<NaiveDate> {
+    // Get the first day of the month
+    let first_day = NaiveDate::from_ymd_opt(year, month, 1)?;
+
+    if position > 0 {
+        // Positive position: count from start of month
+        // Find the first occurrence of target_weekday
+        let first_day_weekday = first_day.weekday();
+        let days_until_target = (target_weekday.num_days_from_monday() as i32
+            - first_day_weekday.num_days_from_monday() as i32
+            + 7) % 7;
+
+        let first_occurrence = first_day + chrono::Duration::days(days_until_target as i64);
+
+        // Add weeks to get to the nth occurrence
+        let occurrence = first_occurrence + chrono::Duration::weeks((position - 1) as i64);
+
+        // Verify it's still in the same month
+        if occurrence.month() == month {
+            Some(occurrence)
+        } else {
+            None
+        }
+    } else if position < 0 {
+        // Negative position: count from end of month
+        // Get the last day of the month
+        let last_day = if month == 12 {
+            NaiveDate::from_ymd_opt(year + 1, 1, 1)? - chrono::Duration::days(1)
+        } else {
+            NaiveDate::from_ymd_opt(year, month + 1, 1)? - chrono::Duration::days(1)
+        };
+
+        // Find the last occurrence of target_weekday
+        let last_day_weekday = last_day.weekday();
+        let days_back_to_target = (last_day_weekday.num_days_from_monday() as i32
+            - target_weekday.num_days_from_monday() as i32
+            + 7) % 7;
+
+        let last_occurrence = last_day - chrono::Duration::days(days_back_to_target as i64);
+
+        // Subtract weeks to get to the nth from last occurrence
+        let occurrence = last_occurrence + chrono::Duration::weeks((position + 1) as i64);
+
+        // Verify it's still in the same month
+        if occurrence.month() == month {
+            Some(occurrence)
+        } else {
+            None
+        }
+    } else {
+        // position == 0 is invalid
+        None
     }
 }
 
@@ -1669,5 +1821,271 @@ END:VCALENDAR";
 
         // Duration should be preserved (15 minutes)
         assert_eq!(event.end_time - event.start_time, 900);
+    }
+
+    #[test]
+    fn parse_vevent_recurring_with_rrule_monthly_basic() {
+        // Monthly event on the 7th, starting in January 2026
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:monthly-test@example.com\r
+SUMMARY:Monthly 1:1\r
+DTSTART;TZID=Europe/Prague:20260107T130000\r
+DTEND;TZID=Europe/Prague:20260107T135000\r
+RRULE:FREQ=MONTHLY\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+        let today = chrono::Local::now().date_naive();
+
+        // Should be the 7th of current or next month, not January 7, 2026
+        assert_eq!(start_dt.day(), 7);
+        assert!(
+            start_dt.year() >= today.year(),
+            "Expected year >= {}, got {}",
+            today.year(),
+            start_dt.year()
+        );
+
+        // If it's the 7th or earlier in the month, should be this month
+        // If it's after the 7th, should be next month
+        let expected_month = if today.day() < 7 {
+            today.month()
+        } else {
+            if today.month() == 12 {
+                1
+            } else {
+                today.month() + 1
+            }
+        };
+
+        assert_eq!(start_dt.month(), expected_month);
+
+        // Duration should be preserved (50 minutes)
+        assert_eq!(event.end_time - event.start_time, 3000);
+    }
+
+    #[test]
+    fn parse_vevent_recurring_with_rrule_monthly_end_of_month() {
+        // Monthly event on the 31st, testing edge case for months without 31 days
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:monthly-end-test@example.com\r
+SUMMARY:End of Month Review\r
+DTSTART;TZID=Europe/Prague:20260131T140000\r
+DTEND;TZID=Europe/Prague:20260131T150000\r
+RRULE:FREQ=MONTHLY\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+        let today = chrono::Local::now().date_naive();
+
+        // The event should be calculated, even if some months don't have 31 days
+        // It should find the next valid month with 31 days
+        assert!(
+            start_dt.year() >= today.year(),
+            "Expected year >= {}, got {}",
+            today.year(),
+            start_dt.year()
+        );
+
+        // Should be the 31st of some month
+        assert_eq!(start_dt.day(), 31);
+
+        // Duration should be preserved (1 hour)
+        assert_eq!(event.end_time - event.start_time, 3600);
+    }
+
+    #[test]
+    fn parse_vevent_recurring_with_rrule_monthly_future_start() {
+        // Monthly event that hasn't started yet (DTSTART in the future)
+        // Using a date far in the future to ensure test stability
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:monthly-future-test@example.com\r
+SUMMARY:Future Monthly Event\r
+DTSTART;TZID=Europe/Prague:20301215T100000\r
+DTEND;TZID=Europe/Prague:20301215T110000\r
+RRULE:FREQ=MONTHLY\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+
+        // Should keep the original date since the series hasn't started yet
+        assert_eq!(start_dt.year(), 2030);
+        assert_eq!(start_dt.month(), 12);
+        assert_eq!(start_dt.day(), 15);
+
+        // Duration should be preserved (1 hour)
+        assert_eq!(event.end_time - event.start_time, 3600);
+    }
+
+    #[test]
+    fn parse_vevent_recurring_with_rrule_monthly_beginning_of_month() {
+        // Monthly event on the 1st
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:monthly-first-test@example.com\r
+SUMMARY:First of Month\r
+DTSTART;TZID=Europe/Prague:20260101T090000\r
+DTEND;TZID=Europe/Prague:20260101T100000\r
+RRULE:FREQ=MONTHLY\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+        let today = chrono::Local::now().date_naive();
+
+        // Should be the 1st of current or next month
+        assert_eq!(start_dt.day(), 1);
+        assert!(
+            start_dt.year() >= today.year(),
+            "Expected year >= {}, got {}",
+            today.year(),
+            start_dt.year()
+        );
+
+        // If today is the 1st, should be this month
+        // Otherwise, should be next month
+        let expected_month = if today.day() == 1 {
+            today.month()
+        } else {
+            if today.month() == 12 {
+                1
+            } else {
+                today.month() + 1
+            }
+        };
+
+        assert_eq!(start_dt.month(), expected_month);
+
+        // Duration should be preserved (1 hour)
+        assert_eq!(event.end_time - event.start_time, 3600);
+    }
+
+    #[test]
+    fn parse_vevent_recurring_with_rrule_monthly_byday_first_wednesday() {
+        // Monthly event on the first Wednesday (BYDAY=1WE)
+        // This matches the "1:1:1" event pattern
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:monthly-byday-test@example.com\r
+SUMMARY:1:1 Meeting\r
+DTSTART;TZID=Europe/Prague:20260107T130000\r
+DTEND;TZID=Europe/Prague:20260107T135000\r
+RRULE:FREQ=MONTHLY;BYDAY=1WE\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+        let today = chrono::Local::now().date_naive();
+
+        // Should be the first Wednesday of current or next month
+        assert_eq!(start_dt.weekday(), chrono::Weekday::Wed);
+        assert!(
+            start_dt.year() >= today.year(),
+            "Expected year >= {}, got {}",
+            today.year(),
+            start_dt.year()
+        );
+
+        // Should be in the first 7 days of the month (first week)
+        assert!(
+            start_dt.day() <= 7,
+            "First Wednesday should be in days 1-7, got day {}",
+            start_dt.day()
+        );
+
+        // Duration should be preserved (50 minutes)
+        assert_eq!(event.end_time - event.start_time, 3000);
+    }
+
+    #[test]
+    fn parse_vevent_recurring_with_rrule_monthly_byday_second_tuesday() {
+        // Monthly event on the second Tuesday (BYDAY=2TU)
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:monthly-byday-2tu-test@example.com\r
+SUMMARY:Monthly Review\r
+DTSTART;TZID=Europe/Prague:20260113T100000\r
+DTEND;TZID=Europe/Prague:20260113T110000\r
+RRULE:FREQ=MONTHLY;BYDAY=2TU\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+        let today = chrono::Local::now().date_naive();
+
+        // Should be a Tuesday
+        assert_eq!(start_dt.weekday(), chrono::Weekday::Tue);
+        assert!(
+            start_dt.year() >= today.year(),
+            "Expected year >= {}, got {}",
+            today.year(),
+            start_dt.year()
+        );
+
+        // Should be in the 8-14 day range (second week)
+        assert!(
+            start_dt.day() >= 8 && start_dt.day() <= 14,
+            "Second Tuesday should be in days 8-14, got day {}",
+            start_dt.day()
+        );
+
+        // Duration should be preserved (1 hour)
+        assert_eq!(event.end_time - event.start_time, 3600);
+    }
+
+    #[test]
+    fn parse_vevent_recurring_with_rrule_monthly_byday_last_friday() {
+        // Monthly event on the last Friday (BYDAY=-1FR)
+        let ical = "\
+BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:monthly-byday-last-test@example.com\r
+SUMMARY:End of Month Party\r
+DTSTART;TZID=Europe/Prague:20260130T170000\r
+DTEND;TZID=Europe/Prague:20260130T180000\r
+RRULE:FREQ=MONTHLY;BYDAY=-1FR\r
+END:VEVENT\r
+END:VCALENDAR";
+
+        let event = parse_vevent(ical).expect("should parse");
+        let start_dt = chrono::Local.timestamp_opt(event.start_time, 0).unwrap();
+        let today = chrono::Local::now().date_naive();
+
+        // Should be a Friday
+        assert_eq!(start_dt.weekday(), chrono::Weekday::Fri);
+        assert!(
+            start_dt.year() >= today.year(),
+            "Expected year >= {}, got {}",
+            today.year(),
+            start_dt.year()
+        );
+
+        // Should be in the last week of the month (day >= 22 typically)
+        assert!(
+            start_dt.day() >= 22,
+            "Last Friday should be in the last week (day >= 22), got day {}",
+            start_dt.day()
+        );
+
+        // Duration should be preserved (1 hour)
+        assert_eq!(event.end_time - event.start_time, 3600);
     }
 }
