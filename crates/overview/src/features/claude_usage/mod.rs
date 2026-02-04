@@ -1,4 +1,4 @@
-//! Claude usage plugin - displays API usage metrics.
+//! Claude usage plugin - displays API usage limits.
 use crate::menu_state::MenuStore;
 
 mod api;
@@ -6,7 +6,6 @@ pub mod values;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use log::{debug, error};
 use serde::Deserialize;
 use std::cell::RefCell;
@@ -17,39 +16,9 @@ use std::time::Duration;
 use gtk::prelude::*;
 
 use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetRegistrar};
-use crate::ui::claude_usage::{ClaudeUsageState, ClaudeUsageWidget, MetricsConfig};
+use crate::ui::claude_usage::{ClaudeUsageState, ClaudeUsageWidget};
 
-use self::api::fetch_usage;
-use self::values::UsageWindow;
-
-/// Configuration for metrics display.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
-pub struct MetricsSettings {
-    pub show_message_count: bool,
-    pub show_token_usage: bool,
-    pub show_rate_info: bool,
-}
-
-impl Default for MetricsSettings {
-    fn default() -> Self {
-        Self {
-            show_message_count: true,
-            show_token_usage: true,
-            show_rate_info: false,
-        }
-    }
-}
-
-impl From<MetricsSettings> for MetricsConfig {
-    fn from(settings: MetricsSettings) -> Self {
-        Self {
-            show_message_count: settings.show_message_count,
-            show_token_usage: settings.show_token_usage,
-            show_rate_info: settings.show_rate_info,
-        }
-    }
-}
+use self::api::{fetch_organization_id, fetch_usage};
 
 /// Configuration for the Claude usage plugin.
 #[derive(Debug, Clone, Deserialize)]
@@ -59,10 +28,6 @@ pub struct ClaudeUsageConfig {
     pub api_key: String,
     /// Update interval in seconds (default: 300 = 5 minutes).
     pub update_interval: u64,
-    /// Usage window: "session", "hourly", "daily", or "weekly".
-    pub window: String,
-    /// Metrics display configuration.
-    pub metrics: MetricsSettings,
 }
 
 impl Default for ClaudeUsageConfig {
@@ -70,8 +35,6 @@ impl Default for ClaudeUsageConfig {
         Self {
             api_key: String::new(),
             update_interval: 300,
-            window: "session".to_string(),
-            metrics: MetricsSettings::default(),
         }
     }
 }
@@ -79,7 +42,7 @@ impl Default for ClaudeUsageConfig {
 pub struct ClaudeUsagePlugin {
     widget: Rc<RefCell<Option<ClaudeUsageWidget>>>,
     config: ClaudeUsageConfig,
-    app_start_time: DateTime<Utc>,
+    org_id: Option<String>,
 }
 
 impl ClaudeUsagePlugin {
@@ -87,12 +50,8 @@ impl ClaudeUsagePlugin {
         Self {
             widget: Rc::new(RefCell::new(None)),
             config: ClaudeUsageConfig::default(),
-            app_start_time: Utc::now(),
+            org_id: None,
         }
-    }
-
-    fn window(&self) -> UsageWindow {
-        UsageWindow::from_str(&self.config.window)
     }
 }
 
@@ -114,12 +73,14 @@ impl Plugin for ClaudeUsagePlugin {
             anyhow::bail!("Invalid API key format - must start with 'sk-ant-admin'");
         }
 
-        debug!("Configured claude-usage plugin: window={}, update_interval={}s",
-               self.config.window, self.config.update_interval);
+        debug!("Configured claude-usage plugin: update_interval={}s", self.config.update_interval);
         Ok(())
     }
 
     async fn init(&mut self) -> Result<()> {
+        // Fetch organization ID
+        let org_id = fetch_organization_id(&self.config.api_key).await?;
+        self.org_id = Some(org_id);
         Ok(())
     }
 
@@ -142,33 +103,34 @@ impl Plugin for ClaudeUsagePlugin {
         // Store the widget
         *self.widget.borrow_mut() = Some(usage_widget);
 
+        // Get org ID
+        let org_id = self.org_id.clone().ok_or_else(|| {
+            anyhow::anyhow!("Organization ID not initialized")
+        })?;
+
         // Initial fetch
         let widget_ref = self.widget.clone();
         let api_key = self.config.api_key.clone();
-        let window = self.window();
-        let app_start_time = self.app_start_time;
-        let metrics_config: MetricsConfig = self.config.metrics.clone().into();
 
         // Fetch usage in background using glib spawn
         {
             let widget_ref = widget_ref.clone();
-            let metrics_config = metrics_config.clone();
             let api_key = api_key.clone();
+            let org_id = org_id.clone();
             glib::spawn_future_local(async move {
-                debug!("[claude-usage] Fetching initial usage for window: {:?}", window);
-                match fetch_usage(&api_key, window, app_start_time).await {
+                debug!("[claude-usage] Fetching initial usage limits");
+                match fetch_usage(&api_key, &org_id).await {
                     Ok(data) => {
-                        debug!("[claude-usage] Loaded: {} messages, {} tokens",
-                               data.message_count, data.total_tokens);
+                        debug!("[claude-usage] Loaded usage limits");
                         if let Some(ref widget) = *widget_ref.borrow() {
-                            widget.update(&ClaudeUsageState::Loaded(data, metrics_config));
+                            widget.update(&ClaudeUsageState::Loaded(data));
                         }
                     }
                     Err(e) => {
                         error!("[claude-usage] Failed to fetch usage: {:?}", e);
                         if let Some(ref widget) = *widget_ref.borrow() {
                             widget.update(&ClaudeUsageState::Error(
-                                "Failed to load usage".to_string(),
+                                "Failed to load".to_string(),
                             ));
                         }
                     }
@@ -180,14 +142,14 @@ impl Plugin for ClaudeUsagePlugin {
         let update_interval = self.config.update_interval;
         glib::timeout_add_local(Duration::from_secs(update_interval), move || {
             let widget_ref = widget_ref.clone();
-            let metrics_config = metrics_config.clone();
             let api_key = api_key.clone();
+            let org_id = org_id.clone();
             glib::spawn_future_local(async move {
                 debug!("[claude-usage] Fetching usage update");
-                match fetch_usage(&api_key, window, app_start_time).await {
+                match fetch_usage(&api_key, &org_id).await {
                     Ok(data) => {
                         if let Some(ref widget) = *widget_ref.borrow() {
-                            widget.update(&ClaudeUsageState::Loaded(data, metrics_config));
+                            widget.update(&ClaudeUsageState::Loaded(data));
                         }
                     }
                     Err(e) => {

@@ -1,6 +1,6 @@
 //! Pure GTK4 Claude usage widget.
 //!
-//! Displays Claude API usage metrics with icon and statistics.
+//! Displays Claude API usage limits with percentages and reset times.
 
 use gtk::prelude::*;
 
@@ -10,35 +10,17 @@ use crate::features::claude_usage::values::UsageData;
 #[derive(Debug, Clone)]
 pub enum ClaudeUsageState {
     Loading,
-    Loaded(UsageData, MetricsConfig),
+    Loaded(UsageData),
     Error(String),
 }
 
-/// Configuration for which metrics to display.
-#[derive(Debug, Clone)]
-pub struct MetricsConfig {
-    pub show_message_count: bool,
-    pub show_token_usage: bool,
-    pub show_rate_info: bool,
-}
-
-impl Default for MetricsConfig {
-    fn default() -> Self {
-        Self {
-            show_message_count: true,
-            show_token_usage: true,
-            show_rate_info: false,
-        }
-    }
-}
-
-/// Pure GTK4 Claude usage widget - displays usage icon and metrics.
+/// Pure GTK4 Claude usage widget - displays usage limits and reset times.
 pub struct ClaudeUsageWidget {
     pub root: gtk::Box,
-    icon: gtk::Image,
-    metrics_box: gtk::Box,
-    message_label: gtk::Label,
-    token_label: gtk::Label,
+    session_label: gtk::Label,
+    session_reset: gtk::Label,
+    weekly_label: gtk::Label,
+    weekly_reset: gtk::Label,
     spinner: gtk::Spinner,
     error_label: gtk::Label,
     content_box: gtk::Box,
@@ -49,46 +31,80 @@ impl ClaudeUsageWidget {
     pub fn new() -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
-            .spacing(8)
+            .spacing(12)
             .css_classes(["claude-usage-container"])
             .build();
 
-        // Claude icon
-        let icon = gtk::Image::builder()
-            .icon_name("user-info-symbolic")
-            .pixel_size(32)
-            .css_classes(["claude-usage-icon"])
-            .build();
+        // Anthropic logo
+        let logo_path = "crates/overview/resources/anthropic-logo.svg";
+        let logo = if let Ok(texture) = gtk::gdk::Texture::from_filename(logo_path) {
+            gtk::Image::builder()
+                .paintable(&texture)
+                .pixel_size(24)
+                .valign(gtk::Align::Center)
+                .build()
+        } else {
+            // Fallback to generic icon
+            gtk::Image::builder()
+                .icon_name("user-info-symbolic")
+                .pixel_size(24)
+                .valign(gtk::Align::Center)
+                .build()
+        };
 
-        // Metrics labels
-        let metrics_box = gtk::Box::builder()
+        root.append(&logo);
+
+        // Session limit section
+        let session_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
-            .spacing(0)
+            .spacing(2)
             .valign(gtk::Align::Center)
             .build();
 
-        let message_label = gtk::Label::builder()
-            .label("Messages: --")
+        let session_label = gtk::Label::builder()
+            .label("Session: --")
             .xalign(0.0)
             .css_classes(["title-3"])
             .build();
 
-        let token_label = gtk::Label::builder()
-            .label("Tokens: --")
+        let session_reset = gtk::Label::builder()
+            .label("Resets --")
             .xalign(0.0)
-            .css_classes(["dim-label"])
+            .css_classes(["dim-label", "caption"])
             .build();
 
-        metrics_box.append(&message_label);
-        metrics_box.append(&token_label);
+        session_box.append(&session_label);
+        session_box.append(&session_reset);
 
-        // Content box (icon + metrics)
+        // Weekly limit section
+        let weekly_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(2)
+            .valign(gtk::Align::Center)
+            .build();
+
+        let weekly_label = gtk::Label::builder()
+            .label("Weekly: --")
+            .xalign(0.0)
+            .css_classes(["title-3"])
+            .build();
+
+        let weekly_reset = gtk::Label::builder()
+            .label("Resets --")
+            .xalign(0.0)
+            .css_classes(["dim-label", "caption"])
+            .build();
+
+        weekly_box.append(&weekly_label);
+        weekly_box.append(&weekly_reset);
+
+        // Content box (both sections)
         let content_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
-            .spacing(8)
+            .spacing(16)
             .build();
-        content_box.append(&icon);
-        content_box.append(&metrics_box);
+        content_box.append(&session_box);
+        content_box.append(&weekly_box);
 
         // Loading spinner
         let spinner = gtk::Spinner::builder().spinning(true).build();
@@ -109,10 +125,10 @@ impl ClaudeUsageWidget {
 
         Self {
             root,
-            icon,
-            metrics_box,
-            message_label,
-            token_label,
+            session_label,
+            session_reset,
+            weekly_label,
+            weekly_reset,
             spinner,
             error_label,
             content_box,
@@ -128,32 +144,29 @@ impl ClaudeUsageWidget {
                 self.content_box.set_visible(false);
                 self.error_label.set_visible(false);
             }
-            ClaudeUsageState::Loaded(data, config) => {
+            ClaudeUsageState::Loaded(data) => {
                 self.spinner.set_visible(false);
                 self.spinner.set_spinning(false);
                 self.content_box.set_visible(true);
                 self.error_label.set_visible(false);
 
-                // Update message count
-                if config.show_message_count {
-                    let msg_text = format!("Messages: {}", UsageData::format_messages(data.message_count));
-                    self.message_label.set_label(&msg_text);
-                    self.message_label.set_visible(true);
+                // Update session limit (5-hour)
+                if let Some(ref five_hour) = data.five_hour {
+                    self.session_label.set_label(&format!("Session: {:.0}%", five_hour.utilization));
+                    self.session_reset.set_label(&format!("Resets {}", five_hour.format_reset_time()));
                 } else {
-                    self.message_label.set_visible(false);
+                    self.session_label.set_label("Session: N/A");
+                    self.session_reset.set_label("");
                 }
 
-                // Update token usage
-                if config.show_token_usage {
-                    let token_text = format!("Tokens: {}", UsageData::format_tokens(data.total_tokens));
-                    self.token_label.set_label(&token_text);
-                    self.token_label.set_visible(true);
+                // Update weekly limit (7-day)
+                if let Some(ref seven_day) = data.seven_day {
+                    self.weekly_label.set_label(&format!("Weekly: {:.0}%", seven_day.utilization));
+                    self.weekly_reset.set_label(&format!("Resets {}", seven_day.format_reset_time()));
                 } else {
-                    self.token_label.set_visible(false);
+                    self.weekly_label.set_label("Weekly: N/A");
+                    self.weekly_reset.set_label("");
                 }
-
-                // Hide metrics box if no metrics are shown
-                self.metrics_box.set_visible(config.show_message_count || config.show_token_usage);
             }
             ClaudeUsageState::Error(msg) => {
                 self.spinner.set_visible(false);
