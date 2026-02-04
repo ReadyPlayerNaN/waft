@@ -2061,45 +2061,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a50f4cf475b65d88e057964e0e9bb1f0aa9bbb2036dc65c64596b42932536984"
 
 [[package]]
-name = "sacrebleui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-channel",
- "async-trait",
- "chrono",
- "chrono-tz",
- "dirs",
- "env_logger",
- "fluent-bundle",
- "flume",
- "futures-util",
- "gio 0.20.12",
- "glib 0.21.5",
- "gtk4",
- "gtk4-layer-shell",
- "indexmap",
- "libadwaita",
- "log",
- "nmrs",
- "once_cell",
- "reqwest",
- "serde",
- "serde_json",
- "sys-locale",
- "tokio",
- "tokio-stream",
- "toml 0.8.23",
- "unic-langid",
- "uuid",
- "wayland-client",
- "wayland-protocols",
- "wayland-sys",
- "zbus",
- "zvariant",
-]
-
-[[package]]
 name = "schannel"
 version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2801,6 +2762,45 @@ name = "version-compare"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03c2856837ef78f57382f06b2b8563a2f512f7185d732608fd9176cb3b8edf0e"
+
+[[package]]
+name = "waft-overview"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "dirs",
+ "env_logger",
+ "fluent-bundle",
+ "flume",
+ "futures-util",
+ "gio 0.20.12",
+ "glib 0.21.5",
+ "gtk4",
+ "gtk4-layer-shell",
+ "indexmap",
+ "libadwaita",
+ "log",
+ "nmrs",
+ "once_cell",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sys-locale",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "unic-langid",
+ "uuid",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-sys",
+ "zbus",
+ "zvariant",
+]
 
 [[package]]
 name = "want"

@@ -307,7 +307,7 @@ async fn inhibit_screensaver(dbus: &DbusHandle, path: &str) -> Result<bool> {
     let proxy = zbus::Proxy::new(&*conn, SCREENSAVER_DESTINATION, path, SCREENSAVER_INTERFACE).await?;
 
     // Inhibit(application_name: s, reason: s) -> u (cookie)
-    let app_name = "sacrebleui";
+    let app_name = "waft-overview";
     let reason = "User activated caffeine mode";
 
     let (cookie,): (u32,) = proxy.call("Inhibit", &(app_name, reason)).await?;

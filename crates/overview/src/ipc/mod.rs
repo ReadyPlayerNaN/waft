@@ -11,9 +11,9 @@
 //! - command parsing for `toggle` / `show` / `hide` (plus `ping`)
 //! - async networking helpers under `ipc::net`
 //! - simple argv-to-command mapping for the new Relm4 CLI mode:
-//!   - `sacrebleui`            => start server (if already running => error / non-zero)
-//!   - `sacrebleui toggle`     => client: send toggle
-//!   - `sacrebleui show|hide`  => client: send show/hide
+//!   - `waft-overview`            => start server (if already running => error / non-zero)
+//!   - `waft-overview toggle`     => client: send toggle
+//!   - `waft-overview show|hide`  => client: send show/hide
 
 pub mod net;
 
@@ -83,7 +83,7 @@ pub fn ipc_socket_path() -> Result<PathBuf, IpcError> {
 
     let wayland_display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".into());
 
-    let filename = format!("sacrebleui.{wayland_display}.sock");
+    let filename = format!("waft-overview.{wayland_display}.sock");
     Ok(PathBuf::from(runtime_dir).join(filename))
 }
 
@@ -248,13 +248,13 @@ mod tests {
 
     #[test]
     fn command_from_args_supports_words_and_json() {
-        let args = vec!["sacrebleui".to_string(), "toggle".to_string()];
+        let args = vec!["waft-overview".to_string(), "toggle".to_string()];
         assert_eq!(command_from_args(&args).unwrap(), Some(IpcCommand::Toggle));
 
-        let args = vec!["sacrebleui".to_string(), r#"{"cmd":"hide"}"#.to_string()];
+        let args = vec!["waft-overview".to_string(), r#"{"cmd":"hide"}"#.to_string()];
         assert_eq!(command_from_args(&args).unwrap(), Some(IpcCommand::Hide));
 
-        let args = vec!["sacrebleui".to_string()];
+        let args = vec!["waft-overview".to_string()];
         assert_eq!(command_from_args(&args).unwrap(), None);
     }
 }

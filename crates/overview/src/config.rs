@@ -1,6 +1,6 @@
 //! Application configuration.
 //!
-//! Loads configuration from `~/.config/sacrebleui/config.toml`.
+//! Loads configuration from `~/.config/waft/config.toml`.
 //! Each plugin defines and parses its own configuration shape.
 
 use serde::Deserialize;
@@ -25,7 +25,7 @@ pub struct Config {
 impl Config {
     /// Get the configuration file path.
     pub fn config_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|d| d.join("sacrebleui").join("config.toml"))
+        dirs::config_dir().map(|d| d.join("waft").join("config.toml"))
     }
 
     /// Load configuration from file, or return default if not found.

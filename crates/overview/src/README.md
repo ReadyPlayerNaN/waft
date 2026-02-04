@@ -1,6 +1,6 @@
 # Plugin Architecture
 
-This document describes the plugin architecture used in sacrebleui.
+This document describes the plugin architecture used in waft-overview.
 
 ## Plugin Trait
 
@@ -41,7 +41,7 @@ Each widget has a `weight` that determines ordering within its slot (lower = ear
 
 ## Configuration Format
 
-Plugins are configured in `~/.config/sacrebleui/config.toml`:
+Plugins are configured in `~/.config/waft-overview/config.toml`:
 
 ```toml
 [[plugins]]

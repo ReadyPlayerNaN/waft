@@ -17,7 +17,7 @@ This plugin adds two action group buttons to the header:
 
 ## Configuration
 
-Enable the plugin in your `~/.config/sacrebleui/config.toml`:
+Enable the plugin in your `~/.config/waft-overview/config.toml`:
 
 ```toml
 [[plugins]]

@@ -17,7 +17,7 @@ Volume control plugin with expandable device selection menus for audio output (s
 
 ## Configuration
 
-Enable the plugin in `~/.config/sacrebleui/config.toml`:
+Enable the plugin in `~/.config/waft-overview/config.toml`:
 
 ```toml
 [[plugins]]

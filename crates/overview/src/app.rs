@@ -38,8 +38,8 @@ use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
 /// Run the overlay host app (pure GTK4 entrypoint from `main.rs`).
 pub async fn run() -> Result<()> {
     // CLI/IPC policy:
-    // - `sacrebleui` (no args): start UI + become server; if already running => exit non-zero
-    // - `sacrebleui toggle|show|hide`: IPC client command and exit
+    // - `waft-overview` (no args): start UI + become server; if already running => exit non-zero
+    // - `waft-overview toggle|show|hide`: IPC client command and exit
     let args: Vec<String> = std::env::args().collect();
     let socket = match ipc_socket_path() {
         Ok(p) => p,
@@ -253,7 +253,7 @@ pub async fn run() -> Result<()> {
     if registry.is_empty() {
         eprintln!("error: no plugins enabled");
         eprintln!();
-        eprintln!("Configure plugins in ~/.config/sacrebleui/config.toml");
+        eprintln!("Configure plugins in ~/.config/waft/config.toml");
         eprintln!("Example:");
         eprintln!();
         eprintln!("  [[plugins]]");
@@ -276,7 +276,7 @@ pub async fn run() -> Result<()> {
 
     // Create the application
     let app = adw::Application::builder()
-        .application_id("com.sacrebleui.overlay")
+        .application_id("com.waft.overview")
         .build();
 
     let ipc_rx_for_startup = ipc_rx.clone();

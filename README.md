@@ -1,4 +1,8 @@
-# sacrebleui
+# waft
+
+A Wayland-native toolkit monorepo containing multiple overlay UI applications.
+
+## waft-overview
 
 A Wayland-only overlay UI application built with Relm4 and libadwaita that provides a notification server and customizable overlay panel with feature toggles.
 
@@ -13,25 +17,25 @@ A Wayland-only overlay UI application built with Relm4 and libadwaita that provi
 ## Installation
 
 ```bash
-cargo build --release
+cargo build --release --package waft-overview
 ```
 
 ## Usage
 
 ```bash
 # Start the overlay (runs as a daemon)
-sacrebleui
+waft-overview
 
 # Control the overlay from another terminal
-sacrebleui show      # Show the overlay
-sacrebleui hide      # Hide the overlay
-sacrebleui toggle    # Toggle overlay visibility
-sacrebleui stop      # Stop the daemon
+waft-overview show      # Show the overlay
+waft-overview hide      # Hide the overlay
+waft-overview toggle    # Toggle overlay visibility
+waft-overview stop      # Stop the daemon
 ```
 
 ## Configuration
 
-Configuration is loaded from `~/.config/sacrebleui/config.toml`.
+Configuration is loaded from `~/.config/waft/config.toml`.
 
 Plugins must be explicitly enabled in the configuration file. If no configuration file exists or no plugins are listed, no plugins will be loaded.
 
@@ -57,22 +61,22 @@ disable_toasts = false
 
 | Plugin ID | Description | Documentation |
 |-----------|-------------|---------------|
-| `plugin::clock` | Displays current date and time | [README](src/features/clock/README.md) |
-| `plugin::darkman` | Dark mode toggle via darkman | [README](src/features/darkman/README.md) |
-| `plugin::sunsetr` | Night light toggle via sunsetr | [README](src/features/sunsetr/README.md) |
-| `plugin::notifications` | Desktop notification handling | [README](src/features/notifications/README.md) |
+| `plugin::clock` | Displays current date and time | [README](crates/overview/src/features/clock/README.md) |
+| `plugin::darkman` | Dark mode toggle via darkman | [README](crates/overview/src/features/darkman/README.md) |
+| `plugin::sunsetr` | Night light toggle via sunsetr | [README](crates/overview/src/features/sunsetr/README.md) |
+| `plugin::notifications` | Desktop notification handling | [README](crates/overview/src/features/notifications/README.md) |
 
 ## Architecture
 
-sacrebleui uses an async-first architecture with clear boundaries between the main thread (GTK widgets) and background tasks (Tokio runtime).
+waft uses an async-first architecture with clear boundaries between the main thread (GTK widgets) and background tasks (Tokio runtime).
 
 ### Core Components
 
-- **Entry point:** `src/main.rs` → `app::run()`
-- **App model:** `src/app.rs` - Relm4 `SimpleComponent` managing overlay window and plugin registry
-- **Plugin system:** `src/plugin.rs`, `src/plugin_registry.rs` - Non-`Send` plugin trait for GTK compatibility
-- **Notifications:** `src/features/notifications/` - DBus server with reducer-based state management
-- **IPC:** `src/ipc/` - JSON commands over Unix socket (show/hide/toggle/ping)
+- **Entry point:** `crates/overview/src/main.rs` → `app::run()`
+- **App model:** `crates/overview/src/app.rs` - Relm4 `SimpleComponent` managing overlay window and plugin registry
+- **Plugin system:** `crates/overview/src/plugin.rs`, `crates/overview/src/plugin_registry.rs` - Non-`Send` plugin trait for GTK compatibility
+- **Notifications:** `crates/overview/src/features/notifications/` - DBus server with reducer-based state management
+- **IPC:** `crates/overview/src/ipc/` - JSON commands over Unix socket (show/hide/toggle/ping)
 
 ### Plugin System
 

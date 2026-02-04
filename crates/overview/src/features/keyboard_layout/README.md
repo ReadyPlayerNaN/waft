@@ -116,7 +116,7 @@ localectl set-x11-keymap us,de,fr
 
 ## Configuration
 
-Enable the plugin in `~/.config/sacrebleui/config.toml`:
+Enable the plugin in `~/.config/waft-overview/config.toml`:
 
 ```toml
 [[plugins]]
@@ -155,7 +155,7 @@ The extraction logic:
 
 2. **Check which backend is detected** in application logs:
    ```bash
-   sacrebleui 2>&1 | grep keyboard-layout
+   waft-overview 2>&1 | grep keyboard-layout
    ```
    You should see a message like:
    ```

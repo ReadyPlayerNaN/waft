@@ -212,8 +212,8 @@ impl NotificationsService {
     /// Returns: (name, vendor, version, spec_version)
     fn get_server_information(&self) -> (String, String, String, String) {
         (
-            "sacrebleui".to_string(),
-            "sacrebleui".to_string(),
+            "waft-overview".to_string(),
+            "waft-overview".to_string(),
             env!("CARGO_PKG_VERSION").to_string(),
             "1.2".to_string(),
         )
