@@ -4,6 +4,7 @@ pub mod battery;
 pub mod bluetooth;
 pub mod brightness;
 pub mod caffeine;
+pub mod claude_usage;
 pub mod clock;
 pub mod darkman;
 pub mod keyboard_layout;

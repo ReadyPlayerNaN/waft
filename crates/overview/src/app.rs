@@ -19,6 +19,7 @@ use crate::features::battery::BatteryPlugin;
 use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::brightness::BrightnessPlugin;
 use crate::features::caffeine::CaffeinePlugin;
+use crate::features::claude_usage::ClaudeUsagePlugin;
 use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
 use crate::features::keyboard_layout::KeyboardLayoutPlugin;
@@ -169,6 +170,14 @@ pub async fn run() -> Result<()> {
     if config.is_plugin_enabled("plugin::weather") {
         let mut plugin = WeatherPlugin::new();
         if let Some(settings) = config.get_plugin_settings("plugin::weather") {
+            plugin.configure(settings)?;
+        }
+        registry.register(plugin);
+    }
+
+    if config.is_plugin_enabled("plugin::claude-usage") {
+        let mut plugin = ClaudeUsagePlugin::new();
+        if let Some(settings) = config.get_plugin_settings("plugin::claude-usage") {
             plugin.configure(settings)?;
         }
         registry.register(plugin);
