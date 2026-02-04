@@ -103,23 +103,42 @@ impl UsageData {
     }
 }
 
-/// API response bucket from Anthropic Admin API.
+/// Cache creation tokens from Anthropic Admin API.
 #[derive(Debug, Deserialize)]
-pub struct UsageBucket {
-    pub start_time: String,
-    pub end_time: String,
+pub struct CacheCreation {
     #[serde(default)]
-    pub count: u64,
+    pub ephemeral_1h_input_tokens: u64,
     #[serde(default)]
-    pub input_tokens: u64,
+    pub ephemeral_5m_input_tokens: u64,
+}
+
+/// Usage result item from Anthropic Admin API.
+#[derive(Debug, Deserialize)]
+pub struct UsageResult {
+    #[serde(default)]
+    pub uncached_input_tokens: u64,
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
     #[serde(default)]
     pub output_tokens: u64,
     #[serde(default)]
-    pub cache_read_tokens: u64,
+    pub cache_creation: Option<CacheCreation>,
+}
+
+/// Time bucket from Anthropic Admin API.
+#[derive(Debug, Deserialize)]
+pub struct TimeBucket {
+    pub starting_at: String,
+    pub ending_at: String,
+    pub results: Vec<UsageResult>,
 }
 
 /// API response from Anthropic Admin API.
 #[derive(Debug, Deserialize)]
 pub struct UsageResponse {
-    pub buckets: Vec<UsageBucket>,
+    pub data: Vec<TimeBucket>,
+    #[serde(default)]
+    pub has_more: bool,
+    #[serde(default)]
+    pub next_page: Option<String>,
 }
