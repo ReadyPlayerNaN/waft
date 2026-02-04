@@ -269,7 +269,7 @@ impl WiFiMenuWidget {
     pub fn set_scanning(&self, scanning: bool) {
         if scanning {
             self.inner.loader_box.set_visible(true);
-            self.inner.networks_box.set_visible(false);
+            // Only hide empty state, keep networks visible if they exist
             self.inner.empty_state_box.set_visible(false);
         } else {
             self.inner.loader_box.set_visible(false);
