@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
-use super::{IpcCommand, IpcError, command_to_json_line, parse_command_from_json};
+use crate::{IpcCommand, IpcError, command_to_json_line, parse_command_from_json};
 
 /// IPC runtime error.
 #[derive(Debug)]

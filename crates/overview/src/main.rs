@@ -1,11 +1,9 @@
 use anyhow::Result;
 mod app;
 mod common;
-mod config;
 mod dbus;
 mod features;
 mod i18n;
-mod ipc;
 mod menu_state;
 mod plugin;
 mod plugin_registry;
