@@ -20,8 +20,7 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result, anyhow};
 use flume::{Receiver, Sender};
-use log::info;
-use log::warn;
+use log::{debug, info, warn};
 use zbus::fdo;
 use zbus::names::WellKnownName;
 use zbus::object_server::SignalEmitter;
@@ -236,12 +235,40 @@ impl NotificationsService {
         hints: HashMap<String, OwnedValue>,
         expire_timeout: i32,
     ) -> fdo::Result<u32> {
-        if let Some(sender) = header.sender().map(|s| s.to_string()) {
+        let dbus_sender = header.sender().map(|s| s.to_string());
+        if let Some(ref sender) = dbus_sender {
             let mut guard = self.inner._last_sender.lock().unwrap();
-            *guard = Some(sender);
+            *guard = Some(sender.clone());
         }
 
         let id = self.allocate_id();
+
+        // Debug: log the raw notification payload for research purposes.
+        {
+            let decoded = decode_hints(hints.clone());
+            debug!(
+                "[notifications/dbus] Notify raw payload:\n  \
+                 sender={:?}\n  \
+                 app_name={:?}\n  \
+                 replaces_id={}\n  \
+                 icon={:?}\n  \
+                 summary={:?}\n  \
+                 body={:?}\n  \
+                 actions={:?}\n  \
+                 expire_timeout={}\n  \
+                 hints={:#?}",
+                dbus_sender,
+                app_name,
+                replaces_id,
+                icon,
+                summary,
+                body,
+                actions,
+                expire_timeout,
+                decoded,
+            );
+        }
+
         let hints =
             parse_hints(&decode_hints(hints)).map_err(|e| fdo::Error::Failed(e.to_string()))?;
 
