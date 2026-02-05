@@ -877,6 +877,27 @@ impl MainWindowWidget {
                 margin-left: 12px;
             }}
 
+            .agenda-show-past-pill {{
+                background: alpha(@window_fg_color, 0.1);
+                border-radius: 8px;
+                padding: 2px 8px;
+                min-height: 24px;
+                font-size: 12px;
+                opacity: 0.5;
+                border: none;
+            }}
+
+            .agenda-show-past-pill:checked {{
+                background: alpha(@accent_bg_color, 0.15);
+                color: @accent_bg_color;
+                opacity: 1.0;
+            }}
+
+            .agenda-show-past-pill:hover {{
+                background: alpha(@accent_bg_color, 0.3);
+                opacity: 1.0;
+            }}
+
             "#,
             OVERLAY_CORNER_RADIUS_PX
         );

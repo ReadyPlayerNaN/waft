@@ -7,13 +7,14 @@
 use gtk::prelude::*;
 use log::debug;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::menu_state::{MenuOp, MenuStore};
+use crate::ui::main_window::trigger_window_resize;
 
-use super::store::AgendaState;
+use super::store::{AgendaOp, AgendaState, AgendaStore};
 use super::ui::agenda_card::{AgendaCard, AgendaCardOutput};
 use super::values::AgendaEvent;
 
@@ -32,23 +33,66 @@ pub struct AgendaWidget {
     period_separator: RefCell<Option<gtk::Box>>,
     /// MenuStore for tracking popover state
     menu_store: Arc<MenuStore>,
+    /// Toggle button for showing/hiding past events
+    show_past_btn: gtk::ToggleButton,
+    /// Revealer wrapping past events for smooth slide animation
+    past_revealer: gtk::Revealer,
+    /// Container inside the revealer holding past event cards and the now divider
+    past_box: gtk::Box,
 }
 
 impl AgendaWidget {
     /// Create a new agenda widget.
-    pub fn new(menu_store: Arc<MenuStore>) -> Self {
+    pub fn new(menu_store: Arc<MenuStore>, agenda_store: Rc<AgendaStore>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(8)
             .css_classes(["agenda-container"])
             .build();
 
-        // Header
-        let header = gtk::Label::builder()
+        // Header row: title + show-past pill
+        let header = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(8)
+            .build();
+
+        let header_label = gtk::Label::builder()
             .label(&crate::i18n::t("agenda-title"))
             .xalign(0.0)
+            .hexpand(true)
             .css_classes(["title-3", "agenda-header"])
             .build();
+
+        let show_past_btn = gtk::ToggleButton::builder()
+            .icon_name("task-past-due-symbolic")
+            .tooltip_text(&crate::i18n::t("agenda-hide-past-tooltip"))
+            .css_classes(["agenda-show-past-pill"])
+            .active(false)
+            .build();
+
+        {
+            let store = agenda_store.clone();
+            let btn = show_past_btn.clone();
+            show_past_btn.connect_toggled(move |_| {
+                store.emit(AgendaOp::SetShowPast(!btn.is_active()));
+            });
+        }
+
+        header.append(&header_label);
+        header.append(&show_past_btn);
+
+        // Revealer for past events with slide-down animation
+        let past_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .build();
+
+        let past_revealer = gtk::Revealer::builder()
+            .transition_type(gtk::RevealerTransitionType::SlideDown)
+            .transition_duration(200)
+            .reveal_child(true)
+            .build();
+        past_revealer.set_child(Some(&past_box));
 
         // Loading spinner
         let spinner = gtk::Spinner::builder()
@@ -86,6 +130,20 @@ impl AgendaWidget {
 
         content_box.set_visible(false);
 
+        // Trigger window resize after past-events animation completes
+        // and show empty label if no future events remain visible.
+        {
+            let content_box_ref = content_box.clone();
+            let empty_label_ref = empty_label.clone();
+            past_revealer.connect_child_revealed_notify(move |rev| {
+                trigger_window_resize();
+                if !rev.is_child_revealed() && rev.next_sibling().is_none() {
+                    content_box_ref.set_visible(false);
+                    empty_label_ref.set_visible(true);
+                }
+            });
+        }
+
         let event_cards: Rc<RefCell<HashMap<String, AgendaCard>>> =
             Rc::new(RefCell::new(HashMap::new()));
 
@@ -110,11 +168,16 @@ impl AgendaWidget {
             now_divider: RefCell::new(None),
             period_separator: RefCell::new(None),
             menu_store,
+            show_past_btn,
+            past_revealer,
+            past_box,
         }
     }
 
     /// Update the widget to reflect current state.
     pub fn update(&self, state: &AgendaState) {
+        self.show_past_btn.set_active(!state.show_past);
+
         if state.loading {
             self.spinner.set_visible(true);
             self.spinner.set_spinning(true);
@@ -170,38 +233,21 @@ impl AgendaWidget {
         let now = chrono::Local::now().timestamp();
         let next_period_start = state.next_period_start;
 
-        // Calculate event keys for the new state
-        let new_event_keys: HashSet<String> = events.iter().map(|e| e.occurrence_key()).collect();
-
-        // Remove widgets for events no longer present
-        let mut current_cards = self.event_cards.borrow_mut();
-        let current_keys: Vec<String> = current_cards.keys().cloned().collect();
-        for key in current_keys {
-            if !new_event_keys.contains(&key) {
-                if let Some(card) = current_cards.remove(&key) {
-                    self.content_box.remove(&card.root);
-                    debug!("[agenda/widget] Removed event: {}", key);
-                }
-            }
-        }
-        drop(current_cards);
-
-        // Remove old dividers
-        if let Some(divider) = self.now_divider.take() {
-            self.content_box.remove(&divider);
-        }
-        if let Some(separator) = self.period_separator.take() {
-            self.content_box.remove(&separator);
-        }
-
-        // Rebuild the widget tree with events in correct order
+        // Clear old state
+        self.now_divider.take();
+        self.period_separator.take();
         while let Some(child) = self.content_box.first_child() {
             self.content_box.remove(&child);
+        }
+        while let Some(child) = self.past_box.first_child() {
+            self.past_box.remove(&child);
         }
 
         let mut current_cards = self.event_cards.borrow_mut();
         current_cards.clear();
 
+        let mut has_past_events = false;
+        let mut has_future_events = false;
         let mut now_divider_inserted = false;
         let mut period_separator_inserted = false;
 
@@ -221,33 +267,6 @@ impl AgendaWidget {
                 event.location.as_ref().map(|d| d.len()).unwrap_or(0),
             );
 
-            // Insert "now" divider: before the first non-past event
-            if !now_divider_inserted && !is_past {
-                // Only insert if there were past events before
-                if self.content_box.first_child().is_some() {
-                    let divider = gtk::Separator::builder()
-                        .orientation(gtk::Orientation::Horizontal)
-                        .css_classes(["agenda-divider-now"])
-                        .build();
-                    self.content_box.append(&divider);
-                    *self.now_divider.borrow_mut() = Some(divider);
-                }
-                now_divider_inserted = true;
-            }
-
-            // Insert period separator before the first event in the next period
-            if !period_separator_inserted {
-                if let Some(nps) = next_period_start {
-                    if event.start_time >= nps {
-                        let separator = build_period_separator(nps);
-                        self.content_box.append(&separator);
-                        *self.period_separator.borrow_mut() = Some(separator);
-                        period_separator_inserted = true;
-                    }
-                }
-            }
-
-            // Create new card
             let event_key = event.occurrence_key();
             let card = AgendaCard::new(event, is_past, is_ongoing, &self.menu_store);
 
@@ -258,8 +277,51 @@ impl AgendaWidget {
                 }
             });
 
-            self.content_box.append(&card.root);
+            if is_past {
+                self.past_box.append(&card.root);
+                has_past_events = true;
+            } else {
+                // Insert "now" divider into past_box before the first future event
+                if !now_divider_inserted && has_past_events {
+                    let divider = gtk::Separator::builder()
+                        .orientation(gtk::Orientation::Horizontal)
+                        .css_classes(["agenda-divider-now"])
+                        .build();
+                    self.past_box.append(&divider);
+                    *self.now_divider.borrow_mut() = Some(divider);
+                    now_divider_inserted = true;
+                }
+
+                // Insert period separator before the first event in the next period
+                if !period_separator_inserted {
+                    if let Some(nps) = next_period_start {
+                        if event.start_time >= nps {
+                            let separator = build_period_separator(nps);
+                            self.content_box.append(&separator);
+                            *self.period_separator.borrow_mut() = Some(separator);
+                            period_separator_inserted = true;
+                        }
+                    }
+                }
+
+                self.content_box.append(&card.root);
+                has_future_events = true;
+            }
+
             current_cards.insert(event_key, card);
+        }
+
+        // Add the past revealer at the top of content_box (before future cards)
+        if has_past_events {
+            self.content_box.prepend(&self.past_revealer);
+            self.past_revealer.set_reveal_child(state.show_past);
+        }
+
+        // If no future events and past is already collapsed, show empty immediately.
+        // (When past is animating to collapse, child_revealed_notify handles it.)
+        if !has_future_events && !state.show_past && !self.past_revealer.is_child_revealed() {
+            self.content_box.set_visible(false);
+            self.empty_label.set_visible(true);
         }
     }
 }

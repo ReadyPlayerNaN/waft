@@ -31,6 +31,7 @@ agenda-empty = No upcoming events
 agenda-next-period = Next period
 agenda-all-day = All day
 agenda-no-title = (No title)
+agenda-hide-past-tooltip = Hide past events
 
 # Weather
 weather-placeholder = --

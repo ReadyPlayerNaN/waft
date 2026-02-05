@@ -31,6 +31,7 @@ agenda-empty = Žádné nadcházející události
 agenda-next-period = Další období
 agenda-all-day = Celý den
 agenda-no-title = (Bez názvu)
+agenda-hide-past-tooltip = Skrýt uplynulé události
 
 # Weather
 weather-placeholder = --

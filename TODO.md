@@ -1,7 +1,3 @@
-## Collapsing past agenda
-
-The agenda widget header should have a pill/button on the right. Clicking it will toggle active/inactive state. When inactive, the agenda plugin MUST hide displaying the past events. When active, there is no filtering.
-
 ## Notification parsing failures
 
 Received this warning about a notification from Slack. The parsing failed and the notification text was empty. This should be handled gracefully and the text should be visible. A part of this fix should be creating a suggestion on how to display links in notifications - if it is a markdown, we can format it and have clickable text-link; if it is just a link, we can display clickable text "Link to YouTube", potentially we can display link previews.

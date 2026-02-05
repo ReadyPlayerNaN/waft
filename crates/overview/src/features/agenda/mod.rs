@@ -235,7 +235,7 @@ impl Plugin for AgendaPlugin {
         menu_store: Arc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
-        let agenda_widget = AgendaWidget::new(menu_store);
+        let agenda_widget = AgendaWidget::new(menu_store, self.store.clone());
 
         // Initial render
         {

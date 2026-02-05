@@ -22,12 +22,13 @@ pub enum AgendaOp {
     SetError(Option<String>),
     SetNextPeriodStart(Option<i64>),
     SetQuerySince(i64),
+    SetShowPast(bool),
 }
 
 impl StoreOp for AgendaOp {}
 
 /// State for the agenda plugin.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct AgendaState {
     pub sources: Vec<CalendarSource>,
     pub events: BTreeMap<String, AgendaEvent>,
@@ -37,6 +38,23 @@ pub struct AgendaState {
     pub next_period_start: Option<i64>,
     /// Start of the current query time range (events ending before this are out of range).
     pub query_since: Option<i64>,
+    /// Whether to show past events. `true` = no filtering (default), `false` = hide past.
+    pub show_past: bool,
+}
+
+impl Default for AgendaState {
+    fn default() -> Self {
+        Self {
+            sources: Vec::new(),
+            events: BTreeMap::new(),
+            available: false,
+            loading: false,
+            error: None,
+            next_period_start: None,
+            query_since: None,
+            show_past: true,
+        }
+    }
 }
 
 impl StoreState for AgendaState {
@@ -98,6 +116,7 @@ pub fn create_agenda_store() -> AgendaStore {
         AgendaOp::SetError(error) => set_field!(state.error, error),
         AgendaOp::SetNextPeriodStart(ts) => set_field!(state.next_period_start, ts),
         AgendaOp::SetQuerySince(since) => set_field!(state.query_since, Some(since)),
+        AgendaOp::SetShowPast(show) => set_field!(state.show_past, show),
     })
 }
 
@@ -294,6 +313,23 @@ mod tests {
         assert!(!state.loading);
         assert!(state.error.is_none());
         assert!(state.next_period_start.is_none());
+        assert!(state.show_past);
+    }
+
+    #[test]
+    fn default_state_show_past_is_true() {
+        let store = create_agenda_store();
+        assert!(store.get_state().show_past);
+    }
+
+    #[test]
+    fn set_show_past_updates_state() {
+        let store = create_agenda_store();
+        assert!(store.get_state().show_past);
+        store.emit(AgendaOp::SetShowPast(false));
+        assert!(!store.get_state().show_past);
+        store.emit(AgendaOp::SetShowPast(true));
+        assert!(store.get_state().show_past);
     }
 
     #[test]
