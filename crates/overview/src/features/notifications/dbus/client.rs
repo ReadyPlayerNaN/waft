@@ -13,6 +13,9 @@ pub mod capabilities {
     /// Supports markup in body (Pango markup). If advertised, the UI must render markup.
     pub const BODY_MARKUP: &str = "body-markup";
 
+    /// Supports clickable hyperlinks in body (`<a href="...">` tags).
+    pub const BODY_HYPERLINKS: &str = "body-hyperlinks";
+
     // Intentionally not supported / not advertised for now:
     // pub const PERSISTENCE: &str = "persistence";
     // pub const ICON_STATIC: &str = "icon-static";
@@ -82,5 +85,6 @@ pub fn advertised_capabilities() -> Vec<&'static str> {
         capabilities::ACTIONS,
         capabilities::BODY,
         capabilities::BODY_MARKUP,
+        capabilities::BODY_HYPERLINKS,
     ]
 }

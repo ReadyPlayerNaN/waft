@@ -7,6 +7,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 
 use super::countdown_bar::CountdownBarWidget;
+use super::notification_markup;
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 use crate::ui::icon::IconWidget;
 
@@ -80,7 +81,7 @@ impl NotificationLayoutParts {
             .xalign(0.0)
             .use_markup(true)
             .build();
-        title_label.set_markup(&config.title);
+        title_label.set_markup(&notification_markup::prepare_title(&config.title));
 
         // Description label
         let description_label = gtk::Label::builder()
@@ -90,7 +91,7 @@ impl NotificationLayoutParts {
             .xalign(0.0)
             .use_markup(true)
             .build();
-        description_label.set_markup(&config.description);
+        description_label.set_markup(&notification_markup::prepare_description(&config.description));
 
         content_box.append(&title_label);
         content_box.append(&description_label);
@@ -189,7 +190,9 @@ impl NotificationLayoutParts {
 
     /// Update the title and description labels.
     pub fn update(&self, title: &str, description: &str) {
-        self.title_label.set_markup(title);
-        self.description_label.set_markup(description);
+        self.title_label
+            .set_markup(&notification_markup::prepare_title(title));
+        self.description_label
+            .set_markup(&notification_markup::prepare_description(description));
     }
 }
