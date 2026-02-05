@@ -18,6 +18,7 @@ use crate::menu_state::MenuStore;
 pub enum NotificationsWidgetOutput {
     ActionClick(u64, String),
     Dismiss(u64),
+    DismissAll(Vec<u64>),
 }
 
 /// The main notifications widget for the overlay.
@@ -262,6 +263,9 @@ impl NotificationsWidget {
                         match event {
                             NotificationGroupOutput::ActionClick(id, action_key) => {
                                 callback(NotificationsWidgetOutput::ActionClick(id, action_key));
+                            }
+                            NotificationGroupOutput::ClearAll(ids) => {
+                                callback(NotificationsWidgetOutput::DismissAll(ids));
                             }
                             NotificationGroupOutput::Close(id) => {
                                 callback(NotificationsWidgetOutput::Dismiss(id));

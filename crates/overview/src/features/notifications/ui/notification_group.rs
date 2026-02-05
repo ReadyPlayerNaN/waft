@@ -22,6 +22,7 @@ use crate::ui::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 #[derive(Debug, Clone)]
 pub enum NotificationGroupOutput {
     ActionClick(u64, String),
+    ClearAll(Vec<u64>),
     Close(u64),
 }
 
@@ -42,6 +43,7 @@ pub struct NotificationGroup {
     pub root: gtk::Box,
     header: gtk::Box,
     app_title_label: gtk::Label,
+    clear_btn: gtk::Button,
     count_label: gtk::Label,
     expand_btn: gtk::Button,
     menu_chevron: MenuChevronWidget,
@@ -99,6 +101,13 @@ impl NotificationGroup {
             .visible(false)
             .build();
 
+        // Clear all button
+        let clear_btn = gtk::Button::builder()
+            .icon_name("edit-clear-symbolic")
+            .css_classes(["flat", "circular", "notification-clear"])
+            .visible(false)
+            .build();
+
         let menu_chevron = MenuChevronWidget::new(MenuChevronProps { expanded: false });
         let expand_btn = gtk::Button::builder()
             .css_classes(["flat", "circular", "notification-expand"])
@@ -108,6 +117,7 @@ impl NotificationGroup {
 
         header.append(icon_widget.widget());
         header.append(&app_title_label);
+        header.append(&clear_btn);
         header.append(&count_label);
         header.append(&expand_btn);
 
@@ -140,6 +150,16 @@ impl NotificationGroup {
         let expanded = Rc::new(RefCell::new(false));
         let on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationGroupOutput)>>>> =
             Rc::new(RefCell::new(None));
+
+        // Clear all click handler
+        let cards_clone = cards.clone();
+        let on_output_clone = on_output.clone();
+        clear_btn.connect_clicked(move |_| {
+            let ids: Vec<u64> = cards_clone.borrow().keys().cloned().collect();
+            if let Some(ref callback) = *on_output_clone.borrow() {
+                callback(NotificationGroupOutput::ClearAll(ids));
+            }
+        });
 
         // Menu chevron click handler
         let expanded_clone = expanded.clone();
@@ -188,6 +208,7 @@ impl NotificationGroup {
             root,
             header,
             app_title_label,
+            clear_btn,
             count_label,
             expand_btn,
             menu_chevron,
@@ -236,13 +257,15 @@ impl NotificationGroup {
             total_count
         );
 
-        // Update count badge
+        // Update count badge and clear button
         if total_count > 1 {
             self.count_label.set_label(&format!("{}", total_count));
             self.count_label.set_visible(true);
+            self.clear_btn.set_visible(true);
             self.expand_btn.set_visible(true);
         } else {
             self.count_label.set_visible(false);
+            self.clear_btn.set_visible(false);
             self.expand_btn.set_visible(false);
         }
 

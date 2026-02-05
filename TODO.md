@@ -1,3 +1,11 @@
+## Agenda event details
+
+If there are any details to agenda event, it should show clickable button with the expand chevron on the right. Expanding it would show details like location, attendees, responses and a description
+
+## Collapsing past agenda
+
+The agenda widget header should have a pill/button on the right. Clicking it will toggle active/inactive state. When inactive, the agenda plugin MUST hide displaying the past events. When active, there is no filtering.
+
 ## 2. Plugins to implement
 
 **Needs developer clarification:**

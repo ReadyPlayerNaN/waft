@@ -324,6 +324,15 @@ impl Plugin for NotificationsPlugin {
                     });
                     let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
                 }
+                NotificationsWidgetOutput::DismissAll(ids) => {
+                    for id in ids {
+                        let _ = outbound_tx_widget.send(OutboundEvent::NotificationClosed {
+                            id: id as u32,
+                            reason: close_reasons::DISMISSED_BY_USER,
+                        });
+                        let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
+                    }
+                }
             }
         });
 
