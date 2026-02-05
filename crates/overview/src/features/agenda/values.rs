@@ -31,6 +31,23 @@ impl Default for AgendaConfig {
     }
 }
 
+/// RSVP participation status for an attendee.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PartStat {
+    Accepted,
+    Declined,
+    Tentative,
+    NeedsAction,
+}
+
+/// An attendee of a calendar event.
+#[derive(Debug, Clone)]
+pub struct Attendee {
+    pub name: Option<String>,
+    pub email: String,
+    pub status: PartStat,
+}
+
 /// A single calendar event.
 #[derive(Debug, Clone)]
 pub struct AgendaEvent {
@@ -43,6 +60,7 @@ pub struct AgendaEvent {
     /// HTML description from X-ALT-DESC property (Exchange/O365/Google).
     pub alt_description: Option<String>,
     pub location: Option<String>,
+    pub attendees: Vec<Attendee>,
 }
 
 impl AgendaEvent {
@@ -53,6 +71,14 @@ impl AgendaEvent {
     /// overwriting today's occurrence in the store.
     pub fn occurrence_key(&self) -> String {
         format!("{}@{}", self.uid, self.start_time)
+    }
+
+    /// Whether this event has any detail fields worth showing in an expanded view.
+    pub fn has_details(&self) -> bool {
+        self.location.is_some()
+            || !self.attendees.is_empty()
+            || self.description.is_some()
+            || self.alt_description.is_some()
     }
 }
 
@@ -306,6 +332,60 @@ pub fn format_time_range_query(since: i64, until: i64) -> String {
     )
 }
 
+/// Extract a parameter value from an iCal property parameter string.
+///
+/// Handles both quoted (`CN="John Doe"`) and unquoted (`PARTSTAT=ACCEPTED`) values.
+/// Returns `None` if the key is not present.
+pub fn extract_ical_param(params: &str, key: &str) -> Option<String> {
+    let needle = format!("{}=", key);
+    let start = params.find(&needle)?;
+    let after_key = &params[start + needle.len()..];
+
+    if after_key.starts_with('"') {
+        let end = after_key[1..].find('"')?;
+        Some(after_key[1..1 + end].to_string())
+    } else {
+        let end = after_key.find(';').unwrap_or(after_key.len());
+        let val = after_key[..end].trim();
+        if val.is_empty() {
+            None
+        } else {
+            Some(val.to_string())
+        }
+    }
+}
+
+/// Parse an iCal ATTENDEE line into an `Attendee`.
+///
+/// Expected format: `ATTENDEE;CN=Name;PARTSTAT=ACCEPTED:mailto:user@example.com`
+/// Returns `None` if the line doesn't contain a `mailto:` value.
+pub fn parse_attendee_line(line: &str) -> Option<Attendee> {
+    // Split into params and value at the first colon followed by "mailto:"
+    let mailto_pos = line.find("mailto:")?;
+    // The colon before "mailto:" is the property value separator
+    let colon_pos = line[..mailto_pos].rfind(':')?;
+    let params = &line[..colon_pos];
+    let email = line[mailto_pos + 7..].to_string();
+
+    if email.is_empty() {
+        return None;
+    }
+
+    let name = extract_ical_param(params, "CN");
+    let status = match extract_ical_param(params, "PARTSTAT").as_deref() {
+        Some("ACCEPTED") => PartStat::Accepted,
+        Some("DECLINED") => PartStat::Declined,
+        Some("TENTATIVE") => PartStat::Tentative,
+        _ => PartStat::NeedsAction,
+    };
+
+    Some(Attendee {
+        name,
+        email,
+        status,
+    })
+}
+
 /// Parse a VEVENT from an iCalendar string.
 ///
 /// This is a minimal line-by-line scanner — no external iCal crate needed.
@@ -328,6 +408,7 @@ pub fn parse_vevent(ical_str: &str) -> Option<AgendaEvent> {
     let mut location = None;
     let mut recurrence_id: Option<i64> = None;
     let mut rrule: Option<String> = None;
+    let mut attendees: Vec<Attendee> = Vec::new();
 
     for line in unfolded.lines() {
         let line = line.trim_end_matches('\r');
@@ -388,6 +469,10 @@ pub fn parse_vevent(ical_str: &str) -> Option<AgendaEvent> {
             if !value.is_empty() {
                 location = Some(unescape_ical(&value));
             }
+        } else if line.starts_with("ATTENDEE") {
+            if let Some(attendee) = parse_attendee_line(line) {
+                attendees.push(attendee);
+            }
         } else if line.starts_with("RECURRENCE-ID") {
             let (params, value) = split_ical_property(line, "RECURRENCE-ID");
             recurrence_id = parse_ical_datetime(&value, &params);
@@ -435,6 +520,7 @@ pub fn parse_vevent(ical_str: &str) -> Option<AgendaEvent> {
         description,
         alt_description,
         location,
+        attendees,
     })
 }
 
@@ -849,6 +935,7 @@ mod tests {
             description: desc.map(|s| s.to_string()),
             alt_description: None,
             location: loc.map(|s| s.to_string()),
+            attendees: Vec::new(),
         }
     }
 
@@ -863,6 +950,7 @@ mod tests {
             description: None,
             alt_description: Some(alt_desc.to_string()),
             location: None,
+            attendees: Vec::new(),
         }
     }
 
@@ -2087,5 +2175,179 @@ END:VCALENDAR";
 
         // Duration should be preserved (1 hour)
         assert_eq!(event.end_time - event.start_time, 3600);
+    }
+
+    // ── extract_ical_param ────────────────────────────────────────
+
+    #[test]
+    fn extract_ical_param_basic() {
+        assert_eq!(
+            extract_ical_param(";CN=John;PARTSTAT=ACCEPTED", "PARTSTAT"),
+            Some("ACCEPTED".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_ical_param_quoted() {
+        assert_eq!(
+            extract_ical_param(";CN=\"John Doe\";PARTSTAT=ACCEPTED", "CN"),
+            Some("John Doe".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_ical_param_missing() {
+        assert_eq!(
+            extract_ical_param(";CN=John", "PARTSTAT"),
+            None
+        );
+    }
+
+    // ── parse_attendee_line ───────────────────────────────────────
+
+    #[test]
+    fn parse_attendee_basic() {
+        let line = "ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:alice@example.com";
+        let att = parse_attendee_line(line).unwrap();
+        assert_eq!(att.name, Some("Alice".to_string()));
+        assert_eq!(att.email, "alice@example.com");
+        assert_eq!(att.status, PartStat::Accepted);
+    }
+
+    #[test]
+    fn parse_attendee_declined() {
+        let line = "ATTENDEE;CN=Bob;PARTSTAT=DECLINED:mailto:bob@example.com";
+        let att = parse_attendee_line(line).unwrap();
+        assert_eq!(att.status, PartStat::Declined);
+    }
+
+    #[test]
+    fn parse_attendee_tentative() {
+        let line = "ATTENDEE;CN=Carol;PARTSTAT=TENTATIVE:mailto:carol@example.com";
+        let att = parse_attendee_line(line).unwrap();
+        assert_eq!(att.status, PartStat::Tentative);
+    }
+
+    #[test]
+    fn parse_attendee_needs_action_default() {
+        let line = "ATTENDEE;CN=Dave:mailto:dave@example.com";
+        let att = parse_attendee_line(line).unwrap();
+        assert_eq!(att.status, PartStat::NeedsAction);
+    }
+
+    #[test]
+    fn parse_attendee_no_cn() {
+        let line = "ATTENDEE;PARTSTAT=ACCEPTED:mailto:anon@example.com";
+        let att = parse_attendee_line(line).unwrap();
+        assert!(att.name.is_none());
+        assert_eq!(att.email, "anon@example.com");
+    }
+
+    #[test]
+    fn parse_attendee_quoted_cn() {
+        let line = "ATTENDEE;CN=\"Jane Doe\";PARTSTAT=ACCEPTED:mailto:jane@example.com";
+        let att = parse_attendee_line(line).unwrap();
+        assert_eq!(att.name, Some("Jane Doe".to_string()));
+    }
+
+    #[test]
+    fn parse_attendee_no_mailto_returns_none() {
+        let line = "ATTENDEE;CN=Test:urn:something";
+        assert!(parse_attendee_line(line).is_none());
+    }
+
+    // ── parse_vevent with ATTENDEE ────────────────────────────────
+
+    #[test]
+    fn parse_vevent_with_attendees() {
+        let ical = "\
+BEGIN:VEVENT\r
+UID:evt-attendees\r
+SUMMARY:Team Meeting\r
+DTSTART:20250126T100000Z\r
+DTEND:20250126T110000Z\r
+ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:alice@example.com\r
+ATTENDEE;CN=Bob;PARTSTAT=DECLINED:mailto:bob@example.com\r
+END:VEVENT";
+
+        let event = parse_vevent(ical).unwrap();
+        assert_eq!(event.attendees.len(), 2);
+        assert_eq!(event.attendees[0].name, Some("Alice".to_string()));
+        assert_eq!(event.attendees[0].status, PartStat::Accepted);
+        assert_eq!(event.attendees[1].name, Some("Bob".to_string()));
+        assert_eq!(event.attendees[1].status, PartStat::Declined);
+    }
+
+    #[test]
+    fn parse_vevent_without_attendees() {
+        let ical = "\
+BEGIN:VEVENT\r
+UID:evt-no-attendees\r
+SUMMARY:Solo Event\r
+DTSTART:20250126T100000Z\r
+DTEND:20250126T110000Z\r
+END:VEVENT";
+
+        let event = parse_vevent(ical).unwrap();
+        assert!(event.attendees.is_empty());
+    }
+
+    #[test]
+    fn parse_vevent_valarm_attendee_not_parsed() {
+        // ATTENDEE inside VALARM should be ignored
+        let ical = "\
+BEGIN:VEVENT\r
+UID:evt-valarm-att\r
+SUMMARY:Meeting\r
+DTSTART:20250126T100000Z\r
+DTEND:20250126T110000Z\r
+ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:alice@example.com\r
+BEGIN:VALARM\r
+ACTION:EMAIL\r
+ATTENDEE:mailto:alarm@example.com\r
+TRIGGER:-PT15M\r
+END:VALARM\r
+END:VEVENT";
+
+        let event = parse_vevent(ical).unwrap();
+        assert_eq!(event.attendees.len(), 1);
+        assert_eq!(event.attendees[0].email, "alice@example.com");
+    }
+
+    // ── has_details ──────────────────────────────────────────────
+
+    #[test]
+    fn has_details_with_location() {
+        let event = make_event(None, Some("Room 1"));
+        assert!(event.has_details());
+    }
+
+    #[test]
+    fn has_details_with_description() {
+        let event = make_event(Some("Notes"), None);
+        assert!(event.has_details());
+    }
+
+    #[test]
+    fn has_details_with_alt_description() {
+        let event = make_event_with_alt_desc("<html>Notes</html>");
+        assert!(event.has_details());
+    }
+
+    #[test]
+    fn has_details_with_attendees() {
+        let mut event = make_event(None, None);
+        event.attendees.push(Attendee {
+            name: Some("Alice".to_string()),
+            email: "alice@example.com".to_string(),
+            status: PartStat::Accepted,
+        });
+        assert!(event.has_details());
+    }
+
+    #[test]
+    fn has_details_with_none() {
+        let event = make_event(None, None);
+        assert!(!event.has_details());
     }
 }

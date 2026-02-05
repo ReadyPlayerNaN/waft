@@ -861,6 +861,22 @@ impl MainWindowWidget {
                 padding: 4px;
             }}
 
+            .agenda-expand-btn {{
+                min-width: 24px;
+                min-height: 24px;
+                padding: 0;
+                opacity: 0.6;
+            }}
+
+            .agenda-expand-btn:hover {{
+                opacity: 1.0;
+            }}
+
+            .agenda-event-details {{
+                padding: 4px 12px 8px 12px;
+                margin-left: 12px;
+            }}
+
             "#,
             OVERLAY_CORNER_RADIUS_PX
         );

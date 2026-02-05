@@ -28,6 +28,7 @@ use self::widget::AgendaWidget;
 
 mod dbus;
 pub mod store;
+mod ui;
 pub mod values;
 mod widget;
 

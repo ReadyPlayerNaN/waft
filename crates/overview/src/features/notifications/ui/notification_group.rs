@@ -83,8 +83,7 @@ impl NotificationGroup {
             .build();
 
         // App icon (smaller than notification icon)
-        let icon_widget = IconWidget::new(icon_hints);
-        icon_widget.widget().set_pixel_size(16);
+        let icon_widget = IconWidget::new(icon_hints, 16);
         icon_widget.widget().set_valign(gtk::Align::Center);
 
         // App title

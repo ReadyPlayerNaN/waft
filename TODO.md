@@ -1,10 +1,18 @@
-## Agenda event details
-
-If there are any details to agenda event, it should show clickable button with the expand chevron on the right. Expanding it would show details like location, attendees, responses and a description
-
 ## Collapsing past agenda
 
 The agenda widget header should have a pill/button on the right. Clicking it will toggle active/inactive state. When inactive, the agenda plugin MUST hide displaying the past events. When active, there is no filtering.
+
+## Notification parsing failures
+
+Received this warning about a notification from Slack. The parsing failed and the notification text was empty. This should be handled gracefully and the text should be visible. A part of this fix should be creating a suggestion on how to display links in notifications - if it is a markdown, we can format it and have clickable text-link; if it is just a link, we can display clickable text "Link to YouTube", potentially we can display link previews.
+
+```
+(waft-overview:504141): Gtk-WARNING **: 12:29:57.621: Failed to set text 'XX XX: takovych lyrics jsem mel jako malej spoustu :smile: nevedel jsem ze jsou takhle sestrihy :hahaha: https://www.youtube.com/watch?v=iefStFNywPE&list=RDiefStFNywPE&start_radio=1' from markup due to error parsing markup: Chyba na řádku 1: Entita nekončí středníkem; pravděpodobně jste použili znak & bez úmyslu začít entitu – zapište prosím ligaturu et jako &amp;
+```
+
+## Auxiliary notification group splits
+
+Sometimes apps have workspaces. It would be useful to split notifications to groups per app workspace. We should investigate if there is a generic way to achieve this. Good example is Slack. Running multiple workspaces seems to be prefixing the notification title with `[{workspace_name}` and that could be used to group notifications more productively. The Workspace name (if detected) MUST appear in thenotification group header. Optionally we can even load the workspace icon and display it in the notification group header as a secondary icon to provide more visual hints.
 
 ## 2. Plugins to implement
 

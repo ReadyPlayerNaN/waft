@@ -1,18 +1,21 @@
-//! Agenda GTK4 widget.
+//! Agenda GTK4 widget (smart container).
 //!
 //! Displays upcoming calendar events as styled cards with past-event dimming,
-//! now/period separators, and meeting link buttons.
+//! now/period separators, and meeting link buttons. Delegates presentational
+//! concerns to extracted UI components in `super::ui`.
 
 use gtk::prelude::*;
-use log::{debug, warn};
+use log::debug;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::menu_state::{MenuOp, MenuStore};
 
 use super::store::AgendaState;
-use super::values::{AgendaEvent, MeetingLink, MeetingProvider, extract_meeting_links};
+use super::ui::agenda_card::{AgendaCard, AgendaCardOutput};
+use super::values::AgendaEvent;
 
 /// GTK4 widget for the agenda display.
 pub struct AgendaWidget {
@@ -22,7 +25,7 @@ pub struct AgendaWidget {
     empty_label: gtk::Label,
     error_label: gtk::Label,
     /// Map of event occurrence keys to event card widgets for incremental updates
-    event_cards: RefCell<HashMap<String, gtk::Box>>,
+    event_cards: Rc<RefCell<HashMap<String, AgendaCard>>>,
     /// Track the "now" divider to avoid duplicates
     now_divider: RefCell<Option<gtk::Separator>>,
     /// Track period separator to avoid duplicates
@@ -83,13 +86,27 @@ impl AgendaWidget {
 
         content_box.set_visible(false);
 
+        let event_cards: Rc<RefCell<HashMap<String, AgendaCard>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+
+        // Single MenuStore subscription for all cards
+        let event_cards_ref = event_cards.clone();
+        let menu_store_sub = menu_store.clone();
+        menu_store.subscribe(move || {
+            let state = menu_store_sub.get_state();
+            for card in event_cards_ref.borrow().values() {
+                let open = state.active_menu_id.as_deref() == Some(card.menu_id());
+                card.set_expanded(open);
+            }
+        });
+
         Self {
             root,
             spinner,
             content_box,
             empty_label,
             error_label,
-            event_cards: RefCell::new(HashMap::new()),
+            event_cards,
             now_divider: RefCell::new(None),
             period_separator: RefCell::new(None),
             menu_store,
@@ -161,8 +178,8 @@ impl AgendaWidget {
         let current_keys: Vec<String> = current_cards.keys().cloned().collect();
         for key in current_keys {
             if !new_event_keys.contains(&key) {
-                if let Some(widget) = current_cards.remove(&key) {
-                    self.content_box.remove(&widget);
+                if let Some(card) = current_cards.remove(&key) {
+                    self.content_box.remove(&card.root);
                     debug!("[agenda/widget] Removed event: {}", key);
                 }
             }
@@ -230,27 +247,19 @@ impl AgendaWidget {
                 }
             }
 
-            // Create or reuse event card
+            // Create new card
             let event_key = event.occurrence_key();
-            let card = if let Some(existing_card) = current_cards.get(&event_key) {
-                // Update existing card's CSS classes based on past/ongoing state
-                let mut css_classes = vec!["agenda-event-card"];
-                if is_past {
-                    css_classes.push("agenda-event-past");
-                }
-                if is_ongoing {
-                    css_classes.push("agenda-event-ongoing");
-                }
-                existing_card.set_css_classes(&css_classes);
-                existing_card.clone()
-            } else {
-                // Create new card
-                let new_card = build_event_card(event, is_past, is_ongoing, &self.menu_store);
-                current_cards.insert(event_key, new_card.clone());
-                new_card
-            };
+            let card = AgendaCard::new(event, is_past, is_ongoing, &self.menu_store);
 
-            self.content_box.append(&card);
+            let menu_store_ref = self.menu_store.clone();
+            card.connect_output(move |output| match output {
+                AgendaCardOutput::ToggleExpand(menu_id) => {
+                    menu_store_ref.emit(MenuOp::OpenMenu(menu_id));
+                }
+            });
+
+            self.content_box.append(&card.root);
+            current_cards.insert(event_key, card);
         }
     }
 }
@@ -277,172 +286,4 @@ fn build_period_separator(timestamp: i64) -> gtk::Box {
 
     container.append(&label);
     container
-}
-
-/// Build a single event card widget as a single horizontal row.
-fn build_event_card(
-    event: &AgendaEvent,
-    is_past: bool,
-    is_ongoing: bool,
-    menu_store: &Arc<MenuStore>,
-) -> gtk::Box {
-    let mut css_classes: Vec<&str> = vec!["agenda-event-card"];
-    if is_past {
-        css_classes.push("agenda-event-past");
-    }
-    if is_ongoing {
-        css_classes.push("agenda-event-ongoing");
-    }
-
-    let card = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(8)
-        .css_classes(css_classes)
-        .build();
-
-    // Time label (fixed width for alignment)
-    let time_text = if event.all_day {
-        crate::i18n::t("agenda-all-day")
-    } else {
-        format_time_range(event.start_time, event.end_time)
-    };
-
-    let time_label = gtk::Label::builder()
-        .label(&time_text)
-        .xalign(0.0)
-        .width_chars(13)
-        .css_classes(["dim-label", "agenda-event-time", "caption"])
-        .build();
-
-    // Summary label (ellipsized, takes remaining space)
-    let summary_text = if event.summary.trim().is_empty() {
-        crate::i18n::t("agenda-no-title")
-    } else {
-        event.summary.clone()
-    };
-
-    let summary_label = gtk::Label::builder()
-        .label(&summary_text)
-        .xalign(0.0)
-        .hexpand(true)
-        .ellipsize(gtk::pango::EllipsizeMode::End)
-        .css_classes(["agenda-event-summary"])
-        .build();
-
-    card.append(&time_label);
-    card.append(&summary_label);
-
-    // Meeting link action widget
-    let links = extract_meeting_links(event);
-    if let Some(action) = build_meeting_action(&links, menu_store) {
-        card.append(&action);
-    }
-
-    card
-}
-
-/// Map a MeetingProvider to a short display label.
-fn provider_label(provider: &MeetingProvider) -> &'static str {
-    match provider {
-        MeetingProvider::GoogleMeet => "Meet",
-        MeetingProvider::Zoom => "Zoom",
-        MeetingProvider::Teams => "Teams",
-    }
-}
-
-/// Build the meeting action widget for an event card.
-///
-/// - 0 links: returns `None`
-/// - 1 link: returns a direct button
-/// - 2+ links: returns a three-dot menu button with a popover
-fn build_meeting_action(links: &[MeetingLink], menu_store: &Arc<MenuStore>) -> Option<gtk::Widget> {
-    match links.len() {
-        0 => None,
-        1 => {
-            let link = &links[0];
-            let btn = gtk::Button::builder()
-                .label(provider_label(&link.provider))
-                .css_classes(["agenda-meeting-btn"])
-                .build();
-
-            let url = link.url.clone();
-            btn.connect_clicked(move |_| {
-                if let Err(e) =
-                    gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE)
-                {
-                    warn!("[agenda] failed to open meeting URL: {e}");
-                }
-            });
-
-            Some(btn.upcast())
-        }
-        _ => {
-            let popover_box = gtk::Box::builder()
-                .orientation(gtk::Orientation::Vertical)
-                .spacing(2)
-                .css_classes(["agenda-meeting-popover"])
-                .build();
-
-            let popover = gtk::Popover::builder().child(&popover_box).build();
-
-            // Generate unique ID for this popover
-            let popover_id = uuid::Uuid::new_v4().to_string();
-
-            // Track popover visibility in menu store
-            let menu_store_show = menu_store.clone();
-            let popover_id_show = popover_id.clone();
-            popover.connect_show(move |_| {
-                menu_store_show.emit(MenuOp::PopoverOpened(popover_id_show.clone()));
-            });
-
-            let menu_store_close = menu_store.clone();
-            let popover_id_close = popover_id;
-            popover.connect_closed(move |_| {
-                menu_store_close.emit(MenuOp::PopoverClosed(popover_id_close.clone()));
-            });
-
-            for link in links {
-                let btn = gtk::Button::builder()
-                    .label(provider_label(&link.provider))
-                    .css_classes(["agenda-meeting-btn"])
-                    .build();
-
-                let url = link.url.clone();
-                let popover_ref = popover.clone();
-                btn.connect_clicked(move |_| {
-                    if let Err(e) =
-                        gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE)
-                    {
-                        warn!("[agenda] failed to open meeting URL: {e}");
-                    }
-                    popover_ref.popdown();
-                });
-
-                popover_box.append(&btn);
-            }
-
-            let menu_btn = gtk::MenuButton::builder()
-                .icon_name("view-more-symbolic")
-                .popover(&popover)
-                .css_classes(["agenda-more-btn"])
-                .build();
-
-            Some(menu_btn.upcast())
-        }
-    }
-}
-
-/// Format a time range as "HH:MM \u{2013} HH:MM" using glib::DateTime.
-fn format_time_range(start: i64, end: i64) -> String {
-    let start_str = format_timestamp(start);
-    let end_str = format_timestamp(end);
-    format!("{} \u{2013} {}", start_str, end_str)
-}
-
-/// Format a unix timestamp as "HH:MM" in local time using glib::DateTime.
-fn format_timestamp(ts: i64) -> String {
-    glib::DateTime::from_unix_local(ts)
-        .and_then(|dt| dt.format("%H:%M"))
-        .map(|s| s.to_string())
-        .unwrap_or_else(|_| "--:--".to_string())
 }

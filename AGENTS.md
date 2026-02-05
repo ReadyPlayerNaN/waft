@@ -235,6 +235,29 @@ This rule applies to:
 - File names (`foo.rs`)
 - Directory names (`src/features/foo/`)
 
+### Icon Usage Rule
+
+**FORBIDDEN: Using `gtk::Image` directly for icons**
+
+Never use `gtk::Image::builder().icon_name(...)` to create icons. Use `ui::icon::IconWidget` instead — it provides theme resolution, fallback handling, and consistent API.
+
+- `IconWidget::from_name("icon-name", pixel_size)` for simple named icons
+- `IconWidget::new(icon_hints, pixel_size)` for multi-source icons (themed/file/bytes)
+
+### UI Component Architecture
+
+**React-ish component pattern: dumb widgets + smart containers**
+
+Structure UI as presentational (dumb) widgets orchestrated by smart containers:
+
+- **Dumb widgets** receive data via `Props` structs and constructor args. They emit events via `Output` enums and `connect_output()` callbacks. They never hold store references or subscribe to stores (exception: self-contained popover tracking via `MenuStore`).
+- **Smart containers** own store subscriptions, manage state, create child widgets, connect callbacks, and push state changes down via setter methods (e.g. `set_expanded(bool)`).
+- **Data flows down** (Props/setters), **events flow up** (Output callbacks) — unidirectional.
+
+Naming conventions: `*Props` for input structs, `*Output` for event enums, `connect_output()` for callback registration, `pub root` for the GTK root widget, `widget()` accessor.
+
+When a widget has no events (purely presentational), skip the `Output` enum and `connect_output`.
+
 ### GTK Init Boundary (has caused crashes)
 
 Plugins are initialized **before** GTK. Creating widgets in `init()` will crash with `GTK has not been initialized`.

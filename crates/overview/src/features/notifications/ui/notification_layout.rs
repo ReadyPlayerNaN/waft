@@ -96,7 +96,7 @@ impl NotificationLayoutParts {
         content_box.append(&description_label);
 
         // Icon widget
-        let icon_widget = IconWidget::new(config.icon_hints);
+        let icon_widget = IconWidget::new(config.icon_hints, 32);
 
         // Spacer
         let spacer = gtk::Box::builder().hexpand(true).build();

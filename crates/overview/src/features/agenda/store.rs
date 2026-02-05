@@ -115,6 +115,7 @@ mod tests {
             description: None,
             alt_description: None,
             location: None,
+            attendees: Vec::new(),
         }
     }
 
@@ -308,9 +309,11 @@ mod tests {
             1770130800,
         )]));
 
-        let state = store.get_state();
-        assert_eq!(state.events.len(), 1);
-        assert!(state.events.contains_key("event-123@1770127200"));
+        {
+            let state = store.get_state();
+            assert_eq!(state.events.len(), 1);
+            assert!(state.events.contains_key("event-123@1770127200"));
+        }
 
         // Event time changed to 15:00 (1770130800 = 2026-02-03 15:00 UTC)
         // Simulate correct handling: remove old occurrences, then upsert new

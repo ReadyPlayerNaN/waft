@@ -65,15 +65,20 @@ pub struct IconWidget {
 
 impl IconWidget {
     /// Create a new icon widget, trying each icon hint until one succeeds.
-    pub fn new(icon_hints: Vec<Icon>) -> Self {
+    pub fn new(icon_hints: Vec<Icon>, pixel_size: i32) -> Self {
         let image = gtk::Image::builder()
-            .pixel_size(32)
+            .pixel_size(pixel_size)
             .valign(gtk::Align::Start)
             .build();
 
         Self::apply_first_valid_icon(&image, &icon_hints);
 
         Self { image }
+    }
+
+    /// Convenience constructor for a single named icon.
+    pub fn from_name(icon_name: &str, pixel_size: i32) -> Self {
+        Self::new(vec![Icon::Themed(Arc::from(icon_name))], pixel_size)
     }
 
     /// Try each icon hint in order until one succeeds, falling back to default.
