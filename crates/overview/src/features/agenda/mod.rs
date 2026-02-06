@@ -107,14 +107,14 @@ impl AgendaPlugin {
         self.store.emit(AgendaOp::SetQuerySince(since));
 
         // Clear previous views
-        {
-            let views = self.active_views.borrow();
-            for view in views.iter() {
-                if let Err(e) =
-                    stop_and_dispose_view(&self.dbus, &view.bus_name, &view.view_path).await
-                {
-                    debug!("[agenda] failed to stop/dispose view: {e}");
-                }
+        let views_to_stop: Vec<(String, String)> = self.active_views.borrow()
+            .iter()
+            .map(|view| (view.bus_name.clone(), view.view_path.clone()))
+            .collect();
+
+        for (bus_name, view_path) in views_to_stop {
+            if let Err(e) = stop_and_dispose_view(&self.dbus, &bus_name, &view_path).await {
+                debug!("[agenda] failed to stop/dispose view: {e}");
             }
         }
         self.active_views.borrow_mut().clear();
@@ -321,14 +321,14 @@ impl Plugin for AgendaPlugin {
                 store.emit(AgendaOp::SetSources(sources.clone()));
 
                 // Clean up old views
-                {
-                    let views = active_views.borrow();
-                    for view in views.iter() {
-                        if let Err(e) =
-                            stop_and_dispose_view(&dbus, &view.bus_name, &view.view_path).await
-                        {
-                            debug!("[agenda] refresh: failed to stop/dispose view: {e}");
-                        }
+                let views_to_stop: Vec<(String, String)> = active_views.borrow()
+                    .iter()
+                    .map(|view| (view.bus_name.clone(), view.view_path.clone()))
+                    .collect();
+
+                for (bus_name, view_path) in views_to_stop {
+                    if let Err(e) = stop_and_dispose_view(&dbus, &bus_name, &view_path).await {
+                        debug!("[agenda] refresh: failed to stop/dispose view: {e}");
                     }
                 }
                 active_views.borrow_mut().clear();

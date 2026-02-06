@@ -90,10 +90,16 @@ impl Plugin for CaffeinePlugin {
             let app_cell = app_cell.clone();
 
             glib::spawn_future_local(async move {
-                let mut backend_borrow = backend_cell.borrow_mut();
-                let Some(ref mut backend) = *backend_borrow else {
-                    error!("[caffeine] No backend available");
-                    return;
+                // Take backend out (brief borrow)
+                let mut backend = {
+                    let mut cell = backend_cell.borrow_mut();
+                    match cell.take() {
+                        Some(b) => b,
+                        None => {
+                            error!("[caffeine] No backend available");
+                            return;
+                        }
+                    }
                 };
 
                 // Get the window from the app
@@ -106,8 +112,8 @@ impl Plugin for CaffeinePlugin {
                 store.emit(CaffeineOp::SetBusy(true));
 
                 let result = match event {
-                    FeatureToggleOutput::Activate => inhibit(&dbus, backend, window.as_ref()).await,
-                    FeatureToggleOutput::Deactivate => uninhibit(&dbus, backend).await,
+                    FeatureToggleOutput::Activate => inhibit(&dbus, &mut backend, window.as_ref()).await,
+                    FeatureToggleOutput::Deactivate => uninhibit(&dbus, &mut backend).await,
                 };
 
                 match result {
@@ -120,6 +126,9 @@ impl Plugin for CaffeinePlugin {
                         store.emit(CaffeineOp::SetBusy(false));
                     }
                 }
+
+                // Put backend back (brief borrow)
+                *backend_cell.borrow_mut() = Some(backend);
             });
         });
 

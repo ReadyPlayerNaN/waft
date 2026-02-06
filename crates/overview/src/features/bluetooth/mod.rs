@@ -313,7 +313,6 @@ impl Plugin for BluetoothPlugin {
                 info!("[bluetooth] Found {} adapter(s)", adapters.len());
 
                 // Create store for each adapter
-                let mut stores = self.stores.borrow_mut();
                 for adapter in &adapters {
                     info!(
                         "[bluetooth] Adapter: {} at {} (powered: {})",
@@ -327,7 +326,8 @@ impl Plugin for BluetoothPlugin {
                     // Load paired devices
                     Self::load_devices_for_adapter(&self.dbus, &store, &adapter.path).await;
 
-                    stores.insert(adapter.path.clone(), store);
+                    // Only borrow for the insert
+                    self.stores.borrow_mut().insert(adapter.path.clone(), store);
                 }
 
                 // Start monitoring for changes

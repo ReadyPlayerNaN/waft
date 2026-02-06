@@ -105,45 +105,34 @@ Sometimes apps have workspaces. It would be useful to split notifications to gro
 
 The following clippy warnings require architectural refactoring rather than simple fixes.
 
-### 9a. `await_holding_lock` - MutexGuard held across await points
+### 9a. `await_holding_lock` - MutexGuard held across await points ✅ FIXED
 
 **Problem:** Standard `Mutex` guards cannot be held across `.await` points safely.
 
-**Locations:**
-- `plugin_registry.rs:83-96` - `init()` holds lock while calling `guard.init().await`
-- `plugin_registry.rs:118-140` - `create_elements()` holds lock across plugin initialization
-- `plugin_registry.rs:172-182` - `cleanup_all()` holds lock while calling `guard.cleanup().await`
-- `features/networkmanager/mod.rs:220+` - `create_elements()` holds store lock across async operations
+**Resolution:** All locations have been fixed:
+- `plugin_registry.rs:83-96` - ✅ Option-take pattern (already fixed)
+- `plugin_registry.rs:118-140` - ✅ Option-take pattern (already fixed)
+- `plugin_registry.rs:172-182` - ✅ Option-take pattern (already fixed)
+- `features/networkmanager/mod.rs:220+` - ✅ Extract state data before await (clone and drop lock)
 
-**Fix options:**
-1. Use `tokio::sync::Mutex` instead of `std::sync::Mutex`
-2. Restructure to release lock before await, re-acquire after
-3. Extract async work to run outside the lock scope
+**Patterns used:**
+1. **Option-take** (plugin_registry): Take value out, do async work, put it back
+2. **Extract-and-drop** (networkmanager): Clone needed data, drop lock, then await
 
-### 9b. `await_holding_refcell_ref` - RefCell borrows held across await points
+### 9b. `await_holding_refcell_ref` - RefCell borrows held across await points ✅ FIXED
 
 **Problem:** RefCell borrows should not span await points as they block other access.
 
-**Locations:**
-- `features/agenda/mod.rs:111-118` - `active_views.borrow()` held across `stop_and_dispose_view().await`
-- `features/agenda/mod.rs:323-331` - Same pattern in refresh callback
-- `features/bluetooth/mod.rs:316-334` - `stores.borrow_mut()` held across `load_devices_for_adapter().await`
-- `features/caffeine/mod.rs:93-111` - `backend_cell.borrow_mut()` held across `inhibit/uninhibit().await`
+**Resolution:** All four locations have been fixed using appropriate patterns:
+- `features/agenda/mod.rs:111-118` - ✅ Used collect-then-await pattern
+- `features/agenda/mod.rs:323-331` - ✅ Used collect-then-await pattern
+- `features/bluetooth/mod.rs:316-330` - ✅ Moved borrow to just before insert
+- `features/caffeine/mod.rs:93-111` - ✅ Used Option-take pattern
 
-**Fix pattern:** Collect data first, release borrow, then await:
-```rust
-// Instead of:
-let views = active_views.borrow();
-for view in views.iter() {
-    stop_and_dispose_view(...).await;  // BAD: borrow held across await
-}
-
-// Do:
-let views_to_stop: Vec<_> = active_views.borrow().iter().cloned().collect();
-for view in views_to_stop {
-    stop_and_dispose_view(...).await;  // OK: borrow released
-}
-```
+**Patterns used:**
+1. **Collect-then-await** (agenda): Extract needed data, release borrow, then await
+2. **Deferred borrow** (bluetooth): Only borrow for the final insert operation
+3. **Option-take** (caffeine): Take value out, do async work, put it back
 
 ### 9c. `type_complexity` - Complex callback types
 

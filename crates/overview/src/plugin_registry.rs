@@ -6,16 +6,21 @@ use log::{error, warn};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Mutex;
 
 use crate::menu_state::MenuStore;
 use crate::ui::failed_widget::FailedWidget;
+
+/// Handle to a plugin stored in the registry.
+///
+/// Uses `Option` to allow taking the plugin out during async operations,
+/// avoiding holding the `RefCell` borrow across await points.
+type PluginHandle = Rc<RefCell<Option<Box<dyn Plugin>>>>;
 
 /// Plugin registry that manages all loaded plugins.
 ///
 /// Uses `RefCell` for widget/toggle storage since all access is from the main GTK thread.
 pub struct PluginRegistry {
-    plugins: HashMap<String, Rc<Mutex<Box<dyn Plugin>>>>,
+    plugins: HashMap<String, PluginHandle>,
     menu_store: Rc<MenuStore>,
     /// Registered widgets (dynamically updated by plugins)
     widgets: RefCell<Vec<Rc<Widget>>>,
@@ -38,9 +43,9 @@ impl PluginRegistry {
     }
 
     /// Register a plugin and return a cloneable handle to it.
-    pub fn register<P: Plugin + 'static>(&mut self, plugin: P) -> Rc<Mutex<Box<dyn Plugin>>> {
+    pub fn register<P: Plugin + 'static>(&mut self, plugin: P) -> PluginHandle {
         let name = plugin.id().to_string();
-        let handle: Rc<Mutex<Box<dyn Plugin>>> = Rc::new(Mutex::new(Box::new(plugin)));
+        let handle: PluginHandle = Rc::new(RefCell::new(Some(Box::new(plugin))));
         self.plugins.insert(name, handle.clone());
         handle
     }
@@ -83,20 +88,32 @@ impl PluginRegistry {
     pub async fn init(&self) -> Result<()> {
         let mut failed_plugins = Vec::new();
 
-        for (name, plugin) in self.plugins.iter() {
-            let mut guard = match plugin.lock() {
-                Ok(g) => g,
+        for (name, plugin_cell) in self.plugins.iter() {
+            // Take the plugin out of the cell to avoid holding borrow across await
+            let mut plugin = match plugin_cell.try_borrow_mut() {
+                Ok(mut guard) => match guard.take() {
+                    Some(p) => p,
+                    None => {
+                        error!("[registry] Plugin '{}' missing during init", name);
+                        failed_plugins.push((name.clone(), "plugin missing".to_string()));
+                        continue;
+                    }
+                },
                 Err(e) => {
-                    error!("[registry] Plugin '{}' mutex poisoned during init: {}", name, e);
-                    failed_plugins.push((name.clone(), "mutex poisoned".to_string()));
+                    error!("[registry] Plugin '{}' already borrowed during init: {}", name, e);
+                    failed_plugins.push((name.clone(), "already borrowed".to_string()));
                     continue;
                 }
             };
+            // Borrow is now dropped
 
-            if let Err(e) = guard.init().await {
+            if let Err(e) = plugin.init().await {
                 error!("[registry] Failed to initialize plugin '{}': {}", name, e);
                 failed_plugins.push((name.clone(), e.to_string()));
             }
+
+            // Put the plugin back
+            plugin_cell.borrow_mut().replace(plugin);
         }
 
         if !failed_plugins.is_empty() {
@@ -121,26 +138,38 @@ impl PluginRegistry {
     ) -> Result<()> {
         let mut failed_plugins = Vec::new();
 
-        for (name, plugin) in self.plugins.iter() {
-            let mut guard = match plugin.lock() {
-                Ok(g) => g,
+        for (name, plugin_cell) in self.plugins.iter() {
+            // Take the plugin out of the cell to avoid holding borrow across await
+            let mut plugin = match plugin_cell.try_borrow_mut() {
+                Ok(mut guard) => match guard.take() {
+                    Some(p) => p,
+                    None => {
+                        error!("[registry] Plugin '{}' missing during create_elements", name);
+                        failed_plugins.push((name.clone(), "plugin missing".to_string()));
+                        continue;
+                    }
+                },
                 Err(e) => {
                     error!(
-                        "[registry] Plugin '{}' mutex poisoned during create_elements: {}",
+                        "[registry] Plugin '{}' already borrowed during create_elements: {}",
                         name, e
                     );
-                    failed_plugins.push((name.clone(), "mutex poisoned".to_string()));
+                    failed_plugins.push((name.clone(), "already borrowed".to_string()));
                     continue;
                 }
             };
+            // Borrow is now dropped
 
-            if let Err(e) = guard
+            if let Err(e) = plugin
                 .create_elements(app, self.menu_store.clone(), registrar.clone())
                 .await
             {
                 error!("[registry] Failed to create elements for plugin '{}': {}", name, e);
                 failed_plugins.push((name.clone(), e.to_string()));
             }
+
+            // Put the plugin back
+            plugin_cell.borrow_mut().replace(plugin);
         }
 
         // Register failed widget indicators for plugins that failed
@@ -168,19 +197,30 @@ impl PluginRegistry {
     /// Clean up all plugins
     #[allow(dead_code)]
     pub async fn cleanup_all(&mut self) -> Result<()> {
-        for (name, plugin) in self.plugins.iter() {
-            let mut guard = match plugin.lock() {
-                Ok(g) => g,
+        for (name, plugin_cell) in self.plugins.iter() {
+            // Take the plugin out of the cell to avoid holding borrow across await
+            let mut plugin = match plugin_cell.try_borrow_mut() {
+                Ok(mut guard) => match guard.take() {
+                    Some(p) => p,
+                    None => {
+                        eprintln!("Failed to cleanup plugin '{}': plugin missing", name);
+                        continue;
+                    }
+                },
                 Err(_) => {
-                    eprintln!("Failed to cleanup plugin '{}': mutex poisoned", name);
+                    eprintln!("Failed to cleanup plugin '{}': already borrowed", name);
                     continue;
                 }
             };
+            // Borrow is now dropped
 
-            if let Err(e) = guard.cleanup().await {
+            if let Err(e) = plugin.cleanup().await {
                 eprintln!("Failed to cleanup plugin '{}': {}", name, e);
                 // Continue cleaning up other plugins even if one fails
             }
+
+            // Put the plugin back
+            plugin_cell.borrow_mut().replace(plugin);
         }
 
         Ok(())
@@ -188,12 +228,16 @@ impl PluginRegistry {
 
     /// Notify all plugins about overlay visibility changes.
     pub fn notify_overlay_visible(&self, visible: bool) {
-        for (name, plugin) in &self.plugins {
-            match plugin.lock() {
-                Ok(guard) => guard.on_overlay_visible(visible),
+        for (name, plugin_cell) in &self.plugins {
+            match plugin_cell.try_borrow() {
+                Ok(guard) => {
+                    if let Some(plugin) = guard.as_ref() {
+                        plugin.on_overlay_visible(visible);
+                    }
+                }
                 Err(e) => {
                     warn!(
-                        "[registry] plugin '{name}' mutex poisoned in notify_overlay_visible: {e}"
+                        "[registry] plugin '{name}' already borrowed in notify_overlay_visible: {e}"
                     );
                 }
             }
@@ -202,12 +246,16 @@ impl PluginRegistry {
 
     /// Notify all plugins that the session is locking.
     pub fn notify_session_locked(&self) {
-        for (name, plugin) in &self.plugins {
-            match plugin.lock() {
-                Ok(guard) => guard.on_session_lock(),
+        for (name, plugin_cell) in &self.plugins {
+            match plugin_cell.try_borrow() {
+                Ok(guard) => {
+                    if let Some(plugin) = guard.as_ref() {
+                        plugin.on_session_lock();
+                    }
+                }
                 Err(e) => {
                     warn!(
-                        "[registry] plugin '{name}' mutex poisoned in notify_session_locked: {e}"
+                        "[registry] plugin '{name}' already borrowed in notify_session_locked: {e}"
                     );
                 }
             }
@@ -216,12 +264,16 @@ impl PluginRegistry {
 
     /// Notify all plugins that the session has unlocked.
     pub fn notify_session_unlocked(&self) {
-        for (name, plugin) in &self.plugins {
-            match plugin.lock() {
-                Ok(guard) => guard.on_session_unlock(),
+        for (name, plugin_cell) in &self.plugins {
+            match plugin_cell.try_borrow() {
+                Ok(guard) => {
+                    if let Some(plugin) = guard.as_ref() {
+                        plugin.on_session_unlock();
+                    }
+                }
                 Err(e) => {
                     warn!(
-                        "[registry] plugin '{name}' mutex poisoned in notify_session_unlocked: {e}"
+                        "[registry] plugin '{name}' already borrowed in notify_session_unlocked: {e}"
                     );
                 }
             }

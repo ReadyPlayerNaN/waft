@@ -227,10 +227,18 @@ impl Plugin for NetworkManagerPlugin {
         self.menu_store = Some(menu_store.clone());
         self.registrar = Some(registrar.clone());
 
-        let state = self.store.get_state();
+        // Extract data from state and drop the lock before any await points
+        let (ethernet_adapters, wifi_adapters, vpn_connections) = {
+            let state = self.store.get_state();
+            (
+                state.ethernet_adapters.clone(),
+                state.wifi_adapters.clone(),
+                state.vpn_connections.clone(),
+            )
+        };
 
         // Create Ethernet UIs using WiredAdapterWidget
-        for (path, adapter) in &state.ethernet_adapters {
+        for (path, adapter) in &ethernet_adapters {
             info!(
                 "Creating UI for ethernet {}: enabled={}, carrier={}, state={}, active_conn={:?}",
                 adapter.interface_name,
@@ -255,7 +263,7 @@ impl Plugin for NetworkManagerPlugin {
         }
 
         // Create WiFi UIs using WiFiAdapterWidget
-        for (path, adapter) in &state.wifi_adapters {
+        for (path, adapter) in &wifi_adapters {
             info!(
                 "Creating UI for WiFi {}: enabled={}, active_conn={:?}",
                 adapter.interface_name, adapter.enabled, adapter.active_connection
@@ -276,14 +284,14 @@ impl Plugin for NetworkManagerPlugin {
         }
 
         // Create VPN UI if there are VPN connections
-        if !state.vpn_connections.is_empty() {
+        if !vpn_connections.is_empty() {
             info!(
                 "Creating UI for {} VPN connections",
-                state.vpn_connections.len()
+                vpn_connections.len()
             );
 
             let vpn_widget = VpnWidget::new(
-                &state.vpn_connections,
+                &vpn_connections,
                 self.store.clone(),
                 self.dbus.clone(),
                 menu_store.clone(),
