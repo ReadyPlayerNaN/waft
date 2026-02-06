@@ -22,19 +22,12 @@ pub struct Display {
 
 /// Brightness plugin state.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct BrightnessState {
     pub available: bool,
     pub displays: Vec<Display>,
 }
 
-impl Default for BrightnessState {
-    fn default() -> Self {
-        Self {
-            available: false,
-            displays: Vec::new(),
-        }
-    }
-}
 
 /// Operations for updating brightness state.
 #[derive(Debug, Clone)]

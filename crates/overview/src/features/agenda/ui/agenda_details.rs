@@ -58,15 +58,11 @@ impl AgendaDetails {
             .and_then(|_| {
                 if let Some(ref desc) = event.description {
                     Some(desc.clone())
-                } else if let Some(ref alt) = event.alt_description {
-                    Some(strip_html_tags(alt))
-                } else {
-                    None
-                }
+                } else { event.alt_description.as_ref().map(|alt| strip_html_tags(alt)) }
             });
 
-        if let Some(desc) = desc_text {
-            if !desc.trim().is_empty() {
+        if let Some(desc) = desc_text
+            && !desc.trim().is_empty() {
                 let truncated = if desc.len() > 300 {
                     format!("{}…", &desc[..300])
                 } else {
@@ -93,7 +89,6 @@ impl AgendaDetails {
                 row.append(&label);
                 root.append(&row);
             }
-        }
 
         Self { root }
     }

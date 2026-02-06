@@ -104,7 +104,7 @@ impl SessionMonitor {
             .to_owned();
 
         // Try to add match rule to bus (best effort)
-        if let Ok(dbus) = zbus::fdo::DBusProxy::new(&*conn).await {
+        if let Ok(dbus) = zbus::fdo::DBusProxy::new(&conn).await {
             let _ = dbus.add_match_rule(rule.clone()).await;
         }
 

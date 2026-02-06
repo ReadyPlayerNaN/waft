@@ -206,7 +206,7 @@ impl ToastListWidget {
         {
             let mut widgets_ref = widgets.borrow_mut();
             for toast in toasts {
-                if !widgets_ref.contains_key(&toast.id) {
+                if let std::collections::hash_map::Entry::Vacant(e) = widgets_ref.entry(toast.id) {
                     let id = toast.id;
                     let on_output_clone = on_output.clone();
                     let on_output_action = on_output.clone();
@@ -253,7 +253,7 @@ impl ToastListWidget {
                         widget.pause_countdown();
                     }
 
-                    widgets_ref.insert(toast.id, widget);
+                    e.insert(widget);
                     log::debug!("[toast_list] added widget id={}", id);
                 }
             }

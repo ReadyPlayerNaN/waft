@@ -206,7 +206,7 @@ impl FeatureToggleWidget {
             {
                 let state = store.get_state();
                 let should_be_open =
-                    state.active_menu_id.as_ref() == Some(&menu_id.as_ref().unwrap());
+                    state.active_menu_id.as_ref() == Some(menu_id.as_ref().unwrap());
                 *expanded.borrow_mut() = should_be_open;
                 menu_chevron.set_expanded(should_be_open);
                 Self::update_css_classes(

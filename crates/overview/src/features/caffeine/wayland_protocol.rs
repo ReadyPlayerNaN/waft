@@ -119,13 +119,11 @@ fn get_connection() -> &'static Mutex<Option<WaylandConnection>> {
 /// Initialize the Wayland connection and bind to the idle-inhibit manager
 fn ensure_connection_initialized() -> Result<()> {
     // Check if we already have a connection
-    if let Ok(guard) = get_connection().lock() {
-        if let Some(ref conn) = *guard {
-            if conn.manager.is_alive() {
+    if let Ok(guard) = get_connection().lock()
+        && let Some(ref conn) = *guard
+            && conn.manager.is_alive() {
                 return Ok(());
             }
-        }
-    }
 
     debug!("[wayland] Initializing Wayland connection...");
 

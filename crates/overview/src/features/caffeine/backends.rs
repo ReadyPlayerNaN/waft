@@ -130,19 +130,17 @@ pub async fn probe_backends(dbus: &DbusHandle) -> Result<InhibitBackend> {
 async fn probe_wayland() -> Result<InhibitBackend> {
     // Check if we're on Wayland by looking at environment variables
     // This is called early before GTK display is initialized
-    if let Ok(session_type) = std::env::var("XDG_SESSION_TYPE") {
-        if session_type == "wayland" {
+    if let Ok(session_type) = std::env::var("XDG_SESSION_TYPE")
+        && session_type == "wayland" {
             debug!("[caffeine/backends] Wayland session detected via XDG_SESSION_TYPE");
             return Ok(InhibitBackend::Wayland);
         }
-    }
 
-    if let Ok(wayland_display) = std::env::var("WAYLAND_DISPLAY") {
-        if !wayland_display.is_empty() {
+    if let Ok(wayland_display) = std::env::var("WAYLAND_DISPLAY")
+        && !wayland_display.is_empty() {
             debug!("[caffeine/backends] Wayland session detected via WAYLAND_DISPLAY");
             return Ok(InhibitBackend::Wayland);
         }
-    }
 
     // Try to check GDK display if it's available (won't be during early init)
     if let Some(gdk_display) = gdk::Display::default() {
@@ -165,7 +163,7 @@ async fn probe_wayland() -> Result<InhibitBackend> {
 async fn probe_portal(dbus: &DbusHandle) -> Result<()> {
     let conn = dbus.connection();
     let proxy = zbus::Proxy::new(
-        &*conn,
+        &conn,
         PORTAL_DESTINATION,
         PORTAL_PATH,
         "org.freedesktop.DBus.Peer",
@@ -180,7 +178,7 @@ async fn probe_portal(dbus: &DbusHandle) -> Result<()> {
 /// Probe ScreenSaver by calling GetActive (read-only, safe)
 async fn probe_screensaver(dbus: &DbusHandle, path: &str) -> Result<()> {
     let conn = dbus.connection();
-    let proxy = zbus::Proxy::new(&*conn, SCREENSAVER_DESTINATION, path, SCREENSAVER_INTERFACE).await?;
+    let proxy = zbus::Proxy::new(&conn, SCREENSAVER_DESTINATION, path, SCREENSAVER_INTERFACE).await?;
 
     let _: (bool,) = proxy.call("GetActive", &()).await?;
     debug!("[caffeine/backends] ScreenSaver GetActive successful at {}", path);
@@ -242,12 +240,11 @@ async fn inhibit_wayland(_window: Option<&gtk::Window>) -> Result<bool> {
 async fn uninhibit_wayland() -> Result<bool> {
     use crate::features::caffeine::wayland_protocol;
 
-    if let Ok(mut state) = inhibit_state().lock() {
-        if state.wayland_inhibitor.take().is_some() {
+    if let Ok(mut state) = inhibit_state().lock()
+        && state.wayland_inhibitor.take().is_some() {
             wayland_protocol::set_inhibit_active(false)?;
             debug!("[caffeine/backends] Wayland inhibition state cleared");
         }
-    }
 
     Ok(false)
 }
@@ -255,7 +252,7 @@ async fn uninhibit_wayland() -> Result<bool> {
 /// Portal Inhibit: call org.freedesktop.portal.Inhibit.Inhibit with flag 8 (idle)
 async fn inhibit_portal(dbus: &DbusHandle) -> Result<bool> {
     let conn = dbus.connection();
-    let proxy = zbus::Proxy::new(&*conn, PORTAL_DESTINATION, PORTAL_PATH, PORTAL_INTERFACE).await?;
+    let proxy = zbus::Proxy::new(&conn, PORTAL_DESTINATION, PORTAL_PATH, PORTAL_INTERFACE).await?;
 
     // Inhibit(window_identifier: s, flags: u, options: a{sv}) -> o
     // flags: 1=logout, 2=switch, 4=suspend, 8=idle
@@ -304,7 +301,7 @@ async fn uninhibit_portal(_dbus: &DbusHandle) -> Result<bool> {
 /// ScreenSaver Inhibit: call org.freedesktop.ScreenSaver.Inhibit
 async fn inhibit_screensaver(dbus: &DbusHandle, path: &str) -> Result<bool> {
     let conn = dbus.connection();
-    let proxy = zbus::Proxy::new(&*conn, SCREENSAVER_DESTINATION, path, SCREENSAVER_INTERFACE).await?;
+    let proxy = zbus::Proxy::new(&conn, SCREENSAVER_DESTINATION, path, SCREENSAVER_INTERFACE).await?;
 
     // Inhibit(application_name: s, reason: s) -> u (cookie)
     let app_name = "waft-overview";
@@ -335,7 +332,7 @@ async fn uninhibit_screensaver(dbus: &DbusHandle, path: &str) -> Result<bool> {
     };
 
     let conn = dbus.connection();
-    let proxy = zbus::Proxy::new(&*conn, SCREENSAVER_DESTINATION, path, SCREENSAVER_INTERFACE).await?;
+    let proxy = zbus::Proxy::new(&conn, SCREENSAVER_DESTINATION, path, SCREENSAVER_INTERFACE).await?;
 
     // UnInhibit(cookie: u)
     let _: () = proxy.call("UnInhibit", &(cookie,)).await?;

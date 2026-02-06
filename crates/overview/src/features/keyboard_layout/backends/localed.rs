@@ -225,8 +225,8 @@ impl KeyboardLayoutBackend for LocaledBackend {
                     LOCALE1_INTERFACE,
                     move |_interface, changed| {
                         // Check if X11Layout changed
-                        if let Some(value) = changed.get("X11Layout") {
-                            if let Ok(layout_str) = <String>::try_from(value.clone()) {
+                        if let Some(value) = changed.get("X11Layout")
+                            && let Ok(layout_str) = <String>::try_from(value.clone()) {
                                 debug!(
                                     "[keyboard-layout:localed] Configuration changed: {}",
                                     layout_str
@@ -242,7 +242,6 @@ impl KeyboardLayoutBackend for LocaledBackend {
                                     let _ = sender.send(LayoutEvent::Changed(info));
                                 }
                             }
-                        }
                     },
                 )
                 .await;

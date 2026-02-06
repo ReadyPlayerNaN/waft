@@ -122,7 +122,7 @@ impl PresetMenuWidget {
         if presets.is_empty() {
             // Show "no presets" message
             let no_presets_label = gtk::Label::builder()
-                .label(&crate::i18n::t("sunsetr-no-presets"))
+                .label(crate::i18n::t("sunsetr-no-presets"))
                 .css_classes(["dim-label", "caption"])
                 .margin_top(8)
                 .margin_bottom(8)

@@ -153,7 +153,7 @@ fn find_url_end(s: &str) -> usize {
 
     let url = &s[..end];
     // Strip trailing punctuation that is commonly not part of URLs
-    let trimmed = url.trim_end_matches(|c: char| matches!(c, '.' | ',' | ')' | '!' | '?' | ';' | ':'));
+    let trimmed = url.trim_end_matches(['.', ',', ')', '!', '?', ';', ':']);
     if trimmed.is_empty() {
         end
     } else {

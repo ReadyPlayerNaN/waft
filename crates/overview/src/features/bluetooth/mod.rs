@@ -87,11 +87,11 @@ impl BluetoothPlugin {
                             std::collections::HashMap<String, zvariant::OwnedValue>,
                             Vec<String>,
                         )>(
-                        ) {
-                            if let Some(ref obj_path) = path {
+                        )
+                            && let Some(ref obj_path) = path {
                                 if iface == IFACE_ADAPTER1 {
-                                    if let Some(powered_val) = props.get("Powered") {
-                                        if let Ok(powered) = <bool>::try_from(powered_val.clone()) {
+                                    if let Some(powered_val) = props.get("Powered")
+                                        && let Ok(powered) = <bool>::try_from(powered_val.clone()) {
                                             let _ =
                                                 property_tx.send(PropertyChange::AdapterPowered(
                                                     obj_path.clone(),
@@ -102,10 +102,9 @@ impl BluetoothPlugin {
                                                 obj_path, powered
                                             );
                                         }
-                                    }
-                                } else if iface == IFACE_DEVICE1 {
-                                    if let Some(connected_val) = props.get("Connected") {
-                                        if let Ok(connected) =
+                                } else if iface == IFACE_DEVICE1
+                                    && let Some(connected_val) = props.get("Connected")
+                                        && let Ok(connected) =
                                             <bool>::try_from(connected_val.clone())
                                         {
                                             let _ =
@@ -118,10 +117,7 @@ impl BluetoothPlugin {
                                                 obj_path, connected
                                             );
                                         }
-                                    }
-                                }
                             }
-                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -381,8 +377,8 @@ impl Plugin for BluetoothPlugin {
                     let stores = stores_ref.borrow();
                     let uis = uis_ref.borrow();
 
-                    if let Some(store) = stores.get(&adapter_path) {
-                        if let Some(ui) = uis.get(&adapter_path) {
+                    if let Some(store) = stores.get(&adapter_path)
+                        && let Some(ui) = uis.get(&adapter_path) {
                             let state = store.get_state();
 
                             // Update toggle state
@@ -416,7 +412,6 @@ impl Plugin for BluetoothPlugin {
                                 .collect();
                             ui.device_menu.set_devices(devices);
                         }
-                    }
                 });
 
                 // Register the feature toggle

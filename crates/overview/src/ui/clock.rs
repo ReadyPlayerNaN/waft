@@ -35,13 +35,13 @@ impl ClockWidget {
             .build();
 
         let date_label = gtk::Label::builder()
-            .label(&Self::format_date(datetime))
+            .label(Self::format_date(datetime))
             .xalign(0.0)
             .css_classes(["title-3", "dim-label", "clock-date"])
             .build();
 
         let time_label = gtk::Label::builder()
-            .label(&Self::format_time(datetime))
+            .label(Self::format_time(datetime))
             .xalign(0.0)
             .css_classes(["title-1", "clock-time"])
             .build();

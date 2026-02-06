@@ -371,16 +371,14 @@ pub async fn get_connections_for_ssid(dbus: &DbusHandle, ssid: &str) -> Result<V
             .body()
             .deserialize()?;
 
-        if let Some(wireless) = settings.get("802-11-wireless") {
-            if let Some(ssid_value) = wireless.get("ssid") {
-                if let Ok(ssid_bytes) = <Vec<u8>>::try_from(ssid_value.clone()) {
+        if let Some(wireless) = settings.get("802-11-wireless")
+            && let Some(ssid_value) = wireless.get("ssid")
+                && let Ok(ssid_bytes) = <Vec<u8>>::try_from(ssid_value.clone()) {
                     let connection_ssid = String::from_utf8_lossy(&ssid_bytes);
                     if connection_ssid == ssid {
                         matching_connections.push(path_str.to_string());
                     }
                 }
-            }
-        }
     }
 
     Ok(matching_connections)
@@ -463,10 +461,10 @@ pub async fn get_vpn_connections(dbus: &DbusHandle) -> Result<Vec<VpnConnectionI
             .deserialize()?;
 
         // Check if this is a VPN connection
-        if let Some(connection) = settings.get("connection") {
-            if let Some(conn_type) = connection.get("type") {
-                if let Ok(type_str) = String::try_from(conn_type.clone()) {
-                    if type_str == "vpn" {
+        if let Some(connection) = settings.get("connection")
+            && let Some(conn_type) = connection.get("type")
+                && let Ok(type_str) = String::try_from(conn_type.clone())
+                    && type_str == "vpn" {
                         let name = connection
                             .get("id")
                             .and_then(|v| String::try_from(v.clone()).ok())
@@ -482,9 +480,6 @@ pub async fn get_vpn_connections(dbus: &DbusHandle) -> Result<Vec<VpnConnectionI
                             name,
                         });
                     }
-                }
-            }
-        }
     }
 
     Ok(vpn_connections)
@@ -702,7 +697,7 @@ where
         .member("PropertiesChanged")?
         .build();
 
-    let mut stream = zbus::MessageStream::for_match_rule(rule, &*dbus.connection(), None).await?;
+    let mut stream = zbus::MessageStream::for_match_rule(rule, &dbus.connection(), None).await?;
 
     while let Some(msg) = stream.next().await {
         if let Ok(msg) = msg {
@@ -727,8 +722,8 @@ where
                 if let Ok((interface, changed, _invalidated)) = deserialize_result {
                     // Handle ActiveConnection.State changes
                     if interface == NM_CONNECTION_ACTIVE_INTERFACE {
-                        if let Some(state_value) = changed.get("State") {
-                            if let Ok(state) = u32::try_from(state_value.clone()) {
+                        if let Some(state_value) = changed.get("State")
+                            && let Ok(state) = u32::try_from(state_value.clone()) {
                                 debug!(
                                     "ActiveConnection State changed: path={}, state={}",
                                     path, state
@@ -754,12 +749,11 @@ where
                                     callback(path, state);
                                 }
                             }
-                        }
                     }
                     // Handle VPN.Connection.VpnState changes
-                    else if interface == NM_VPN_CONNECTION_INTERFACE {
-                        if let Some(vpn_state_value) = changed.get("VpnState") {
-                            if let Ok(vpn_state) = u32::try_from(vpn_state_value.clone()) {
+                    else if interface == NM_VPN_CONNECTION_INTERFACE
+                        && let Some(vpn_state_value) = changed.get("VpnState")
+                            && let Ok(vpn_state) = u32::try_from(vpn_state_value.clone()) {
                                 debug!(
                                     "VPN.Connection VpnState changed: path={}, vpn_state={}",
                                     path, vpn_state
@@ -770,13 +764,11 @@ where
                                 let active_state = match vpn_state {
                                     5 => 2,             // Activated -> Activated
                                     6 | 7 => 4,         // Failed/Disconnected -> Deactivated
-                                    1 | 2 | 3 | 4 => 1, // Prepare/NeedAuth/Connect/IPConfig -> Activating
+                                    1..=4 => 1, // Prepare/NeedAuth/Connect/IPConfig -> Activating
                                     _ => 0,             // Unknown
                                 };
                                 callback(path, active_state);
                             }
-                        }
-                    }
                 }
             }
         }
@@ -826,7 +818,7 @@ where
         .member("DeviceAdded")?
         .build();
 
-    let mut stream = zbus::MessageStream::for_match_rule(rule, &*dbus.connection(), None).await?;
+    let mut stream = zbus::MessageStream::for_match_rule(rule, &dbus.connection(), None).await?;
 
     while let Some(msg) = stream.next().await {
         if let Ok(msg) = msg {
@@ -857,7 +849,7 @@ where
         .member("DeviceRemoved")?
         .build();
 
-    let mut stream = zbus::MessageStream::for_match_rule(rule, &*dbus.connection(), None).await?;
+    let mut stream = zbus::MessageStream::for_match_rule(rule, &dbus.connection(), None).await?;
 
     while let Some(msg) = stream.next().await {
         if let Ok(msg) = msg {
@@ -890,7 +882,7 @@ where
         .member("StateChanged")?
         .build();
 
-    let mut stream = zbus::MessageStream::for_match_rule(rule, &*dbus.connection(), None).await?;
+    let mut stream = zbus::MessageStream::for_match_rule(rule, &dbus.connection(), None).await?;
 
     while let Some(msg) = stream.next().await {
         if let Ok(msg) = msg {

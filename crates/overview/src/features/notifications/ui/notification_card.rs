@@ -87,11 +87,10 @@ impl NotificationCard {
                 // This prevents GTK CRITICAL errors when gesture handlers are still active
                 let root_for_removal = root_clone.clone();
                 gtk::glib::idle_add_local_once(move || {
-                    if let Some(parent) = root_for_removal.parent() {
-                        if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+                    if let Some(parent) = root_for_removal.parent()
+                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
                             parent_box.remove(&root_for_removal);
                         }
-                    }
                 });
             }
         });
@@ -138,8 +137,8 @@ impl NotificationCard {
             }
 
             // Check if click is on an interactive element
-            if let Some(widget) = gesture.widget() {
-                if let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT) {
+            if let Some(widget) = gesture.widget()
+                && let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT) {
                     let mut current: Option<gtk::Widget> = Some(picked);
                     while let Some(ref w) = current {
                         if w.downcast_ref::<gtk::Button>().is_some() {
@@ -148,7 +147,6 @@ impl NotificationCard {
                         current = w.parent();
                     }
                 }
-            }
 
             *hidden_clone.borrow_mut() = true;
             if let Some(ref callback) = *on_output_left.borrow() {

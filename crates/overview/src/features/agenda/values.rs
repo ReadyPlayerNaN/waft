@@ -176,14 +176,13 @@ fn extract_urls_from_text(text: &str, links: &mut Vec<MeetingLink>) {
     while let Some(pos) = text[search_from..].find("https://") {
         let abs_pos = search_from + pos;
         let url = extract_url_at(text, abs_pos);
-        if url.contains("zoom.us/") {
-            if !links.iter().any(|l| l.url == url) {
+        if url.contains("zoom.us/")
+            && !links.iter().any(|l| l.url == url) {
                 links.push(MeetingLink {
                     url,
                     provider: MeetingProvider::Zoom,
                 });
             }
-        }
         // Advance past this https:// to avoid infinite loop
         search_from = abs_pos + "https://".len();
     }
@@ -237,28 +236,28 @@ pub fn parse_iso8601_duration(s: &str) -> Result<Duration> {
             }
             'W' | 'w' => {
                 let n: i64 = buf.parse().unwrap_or(0);
-                total = total + Duration::weeks(n);
+                total += Duration::weeks(n);
                 buf.clear();
             }
             'D' | 'd' => {
                 let n: i64 = buf.parse().unwrap_or(0);
-                total = total + Duration::days(n);
+                total += Duration::days(n);
                 buf.clear();
             }
             'H' | 'h' => {
                 let n: i64 = buf.parse().unwrap_or(0);
-                total = total + Duration::hours(n);
+                total += Duration::hours(n);
                 buf.clear();
             }
             'M' | 'm' => {
                 // in_time == true
                 let n: i64 = buf.parse().unwrap_or(0);
-                total = total + Duration::minutes(n);
+                total += Duration::minutes(n);
                 buf.clear();
             }
             'S' | 's' => {
                 let n: i64 = buf.parse().unwrap_or(0);
-                total = total + Duration::seconds(n);
+                total += Duration::seconds(n);
                 buf.clear();
             }
             _ => {
@@ -882,8 +881,7 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
     }
 
     // UTC: ends with Z
-    if value.ends_with('Z') {
-        let without_z = &value[..value.len() - 1];
+    if let Some(without_z) = value.strip_suffix('Z') {
         let dt = NaiveDateTime::parse_from_str(without_z, "%Y%m%dT%H%M%S").ok()?;
         return Some(chrono::Utc.from_utc_datetime(&dt).timestamp());
     }

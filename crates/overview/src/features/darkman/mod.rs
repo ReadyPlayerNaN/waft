@@ -82,7 +82,7 @@ impl Plugin for DarkmanPlugin {
 
         let toggle = FeatureToggleWidget::new(
             FeatureToggleProps {
-                title: crate::i18n::t("darkman-title").into(),
+                title: crate::i18n::t("darkman-title"),
                 icon: "weather-clear-night-symbolic".into(),
                 details: None,
                 active: initial_active,

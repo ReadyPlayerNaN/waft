@@ -51,13 +51,13 @@ impl WeatherWidget {
             .build();
 
         let temp_label = gtk::Label::builder()
-            .label(&crate::i18n::t("weather-placeholder"))
+            .label(crate::i18n::t("weather-placeholder"))
             .xalign(0.0)
             .css_classes(["title-3", "weather-temp"])
             .build();
 
         let condition_label = gtk::Label::builder()
-            .label(&crate::i18n::t("weather-loading"))
+            .label(crate::i18n::t("weather-loading"))
             .xalign(0.0)
             .css_classes(["dim-label", "weather-condition"])
             .build();

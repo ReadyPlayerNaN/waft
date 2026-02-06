@@ -95,9 +95,9 @@ pub trait KeyboardLayoutBackend: Send + Sync {
 /// ```
 pub fn extract_abbreviation(name: &str) -> String {
     // First, try to extract from parentheses: "English (US)" → "US"
-    if let Some(start) = name.find('(') {
-        if let Some(end) = name.find(')') {
-            if start < end {
+    if let Some(start) = name.find('(')
+        && let Some(end) = name.find(')')
+            && start < end {
                 let inside = &name[start + 1..end];
                 // Check if it looks like a layout code (2-3 uppercase letters)
                 let trimmed = inside.trim();
@@ -109,8 +109,6 @@ pub fn extract_abbreviation(name: &str) -> String {
                     return trimmed.to_uppercase();
                 }
             }
-        }
-    }
 
     // Try to match language name to country code
     let name_lower = name.to_lowercase();
@@ -218,36 +216,32 @@ pub async fn detect_backend(
     dbus: Option<Arc<DbusHandle>>,
 ) -> Option<Arc<dyn KeyboardLayoutBackend>> {
     // Check for Niri compositor
-    if std::env::var("NIRI_SOCKET").is_ok() {
-        if let Some(backend) = NiriBackend::new().await {
+    if std::env::var("NIRI_SOCKET").is_ok()
+        && let Some(backend) = NiriBackend::new().await {
             info!("[keyboard-layout] Detected Niri compositor, using Niri backend");
             return Some(Arc::new(backend));
         }
-    }
 
     // Check for Sway compositor
-    if std::env::var("SWAYSOCK").is_ok() {
-        if let Some(backend) = SwayBackend::new().await {
+    if std::env::var("SWAYSOCK").is_ok()
+        && let Some(backend) = SwayBackend::new().await {
             info!("[keyboard-layout] Detected Sway compositor, using Sway backend");
             return Some(Arc::new(backend));
         }
-    }
 
     // Check for Hyprland compositor
-    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
-        if let Some(backend) = HyprlandBackend::new().await {
+    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
+        && let Some(backend) = HyprlandBackend::new().await {
             info!("[keyboard-layout] Detected Hyprland compositor, using Hyprland backend");
             return Some(Arc::new(backend));
         }
-    }
 
     // Fallback to systemd-localed via D-Bus
-    if let Some(dbus_handle) = dbus {
-        if let Some(backend) = LocaledBackend::new(dbus_handle).await {
+    if let Some(dbus_handle) = dbus
+        && let Some(backend) = LocaledBackend::new(dbus_handle).await {
             info!("[keyboard-layout] Using systemd-localed backend (D-Bus)");
             return Some(Arc::new(backend));
         }
-    }
 
     info!("[keyboard-layout] No keyboard layout backend available");
     None

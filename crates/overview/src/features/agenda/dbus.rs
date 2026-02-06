@@ -28,7 +28,7 @@ pub async fn discover_calendar_sources(dbus: &Arc<DbusHandle>) -> Result<Vec<Cal
     let conn = dbus.connection();
     let result: Vec<CalendarSource> = spawn_on_tokio(async move {
         let proxy = zbus::Proxy::new(
-            &*conn,
+            &conn,
             SOURCES_DEST,
             SOURCES_PATH,
             "org.freedesktop.DBus.ObjectManager",
@@ -45,7 +45,7 @@ pub async fn discover_calendar_sources(dbus: &Arc<DbusHandle>) -> Result<Vec<Cal
 
         let mut sources = Vec::new();
 
-        for (_path, interfaces) in &managed {
+        for interfaces in managed.values() {
             // Look for the exact Source interface (not Source.Writable, Source.OAuth2Support, etc.)
             let source_iface = interfaces.get("org.gnome.evolution.dataserver.Source");
 
@@ -112,7 +112,7 @@ pub async fn open_calendar(dbus: &Arc<DbusHandle>, source_uid: &str) -> Result<(
 
     let result: (String, String) = spawn_on_tokio(async move {
         let proxy = zbus::Proxy::new(
-            &*conn,
+            &conn,
             CALENDAR_FACTORY_DEST,
             CALENDAR_FACTORY_PATH,
             "org.gnome.evolution.dataserver.CalendarFactory",
@@ -152,7 +152,7 @@ pub async fn create_view(
 
     let view_path: String = spawn_on_tokio(async move {
         let proxy = zbus::Proxy::new(
-            &*conn,
+            &conn,
             bus.as_str(),
             path.as_str(),
             "org.gnome.evolution.dataserver.Calendar",
@@ -181,7 +181,7 @@ pub async fn start_view(dbus: &Arc<DbusHandle>, bus_name: &str, view_path: &str)
     let path = view_path.to_string();
 
     spawn_on_tokio(async move {
-        let proxy = zbus::Proxy::new(&*conn, bus.as_str(), path.as_str(), CALENDAR_VIEW_IFACE)
+        let proxy = zbus::Proxy::new(&conn, bus.as_str(), path.as_str(), CALENDAR_VIEW_IFACE)
             .await
             .context("Failed to create CalendarView proxy")?;
 
@@ -209,7 +209,7 @@ pub async fn stop_and_dispose_view(
     let path = view_path.to_string();
 
     spawn_on_tokio(async move {
-        let proxy = zbus::Proxy::new(&*conn, bus.as_str(), path.as_str(), CALENDAR_VIEW_IFACE)
+        let proxy = zbus::Proxy::new(&conn, bus.as_str(), path.as_str(), CALENDAR_VIEW_IFACE)
             .await
             .context("Failed to create CalendarView proxy for cleanup")?;
 
@@ -329,14 +329,13 @@ pub async fn listen_view_signals(
                         "ObjectsRemoved" => {
                             if let Ok((uids,)) = msg.body().deserialize::<(Vec<String>,)>() {
                                 debug!("[agenda/dbus] ObjectsRemoved: {} uid(s)", uids.len());
-                                if !uids.is_empty() {
-                                    if tx.send(ViewSignal::EventsRemoved(uids)).is_err() {
+                                if !uids.is_empty()
+                                    && tx.send(ViewSignal::EventsRemoved(uids)).is_err() {
                                         warn!(
                                             "[agenda/dbus] receiver dropped, stopping signal listener"
                                         );
                                         break;
                                     }
-                                }
                             }
                         }
                         _ => {}

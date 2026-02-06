@@ -111,12 +111,11 @@ impl WiFiAdapterWidget {
                         tokio::runtime::Runtime::new()
                             .unwrap()
                             .block_on(async move {
-                                if let Some(nm) = nm {
-                                    if let Err(e) = dbus::set_wifi_enabled_nmrs(&nm, enabled).await
+                                if let Some(nm) = nm
+                                    && let Err(e) = dbus::set_wifi_enabled_nmrs(&nm, enabled).await
                                     {
                                         error!("Failed to set WiFi enabled state: {}", e);
                                     }
-                                }
                                 let _ = tx.send(enabled);
                             });
                     });

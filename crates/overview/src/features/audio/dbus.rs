@@ -332,11 +332,10 @@ pub async fn subscribe_events(
 
     let handle = tokio::spawn(async move {
         while let Ok(Some(line)) = lines.next_line().await {
-            if let Some(event) = parse_event_line(&line) {
-                if tx.send_async(event).await.is_err() {
+            if let Some(event) = parse_event_line(&line)
+                && tx.send_async(event).await.is_err() {
                     break;
                 }
-            }
         }
         let _ = child.kill().await;
     });
@@ -372,11 +371,10 @@ fn parse_volume_percent(output: &str) -> Option<f64> {
     // pactl output looks like: "Volume: front-left: 65536 / 100% / 0.00 dB, ..."
     // We want to extract the first percentage
     for word in output.split_whitespace() {
-        if let Some(pct) = word.strip_suffix('%') {
-            if let Ok(val) = pct.parse::<f64>() {
+        if let Some(pct) = word.strip_suffix('%')
+            && let Ok(val) = pct.parse::<f64>() {
                 return Some(val / 100.0);
             }
-        }
     }
     None
 }
@@ -453,7 +451,7 @@ fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkInfo>
                      sinks: &mut Vec<SinkInfo>| {
         let port_refs: Vec<&str> = ports_lines.iter().map(|s| s.as_str()).collect();
         let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
-        let is_default = default_sink.map_or(false, |d| d == name);
+        let is_default = default_sink.is_some_and(|d| d == name);
         sinks.push(SinkInfo {
             name,
             description: desc,
@@ -600,7 +598,7 @@ fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<Sourc
         }
         let port_refs: Vec<&str> = ports_lines.iter().map(|s| s.as_str()).collect();
         let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
-        let is_default = default_source.map_or(false, |d| d == name);
+        let is_default = default_source.is_some_and(|d| d == name);
         sources.push(SourceInfo {
             name,
             description: desc,
@@ -868,13 +866,11 @@ fn compute_label(
     // 1. Try card port product name (EDID data for connected displays)
     if let (Some(dev_id), Some(port)) = (device_id, active_port) {
         let key = (dev_id.clone(), port.clone());
-        if let Some(port_info) = card_ports.get(&key) {
-            if let Some(ref product) = port_info.product_name {
-                if !product.is_empty() {
+        if let Some(port_info) = card_ports.get(&key)
+            && let Some(ref product) = port_info.product_name
+                && !product.is_empty() {
                     return product.clone();
                 }
-            }
-        }
     }
 
     // 2. Use node.nick as base, fall back to description
@@ -896,18 +892,16 @@ fn compute_label(
     let has_bt_secondary = bus.as_deref() == Some("bluetooth");
 
     // 4. Strip "HDMI / " prefix for HDMI devices (but keep "DisplayPort N")
-    if has_hdmi_secondary {
-        if let Some(stripped) = label.strip_prefix("HDMI / ") {
+    if has_hdmi_secondary
+        && let Some(stripped) = label.strip_prefix("HDMI / ") {
             label = stripped.to_string();
         }
-    }
 
     // 5. Strip "Bluetooth " prefix for Bluetooth devices
-    if has_bt_secondary {
-        if let Some(stripped) = label.strip_prefix("Bluetooth ") {
+    if has_bt_secondary
+        && let Some(stripped) = label.strip_prefix("Bluetooth ") {
             label = stripped.to_string();
         }
-    }
 
     // 6. Fall back to description if result is empty
     if label.is_empty() {

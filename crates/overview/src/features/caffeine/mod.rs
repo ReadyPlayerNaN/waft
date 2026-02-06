@@ -66,7 +66,7 @@ impl Plugin for CaffeinePlugin {
 
         let toggle = FeatureToggleWidget::new(
             FeatureToggleProps {
-                title: crate::i18n::t("caffeine-title").into(),
+                title: crate::i18n::t("caffeine-title"),
                 icon: "changes-allow-symbolic".into(),
                 details: None,
                 active: false,

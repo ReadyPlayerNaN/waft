@@ -87,7 +87,7 @@ impl EthernetMenuWidget {
             .build();
 
         let empty_label = gtk::Label::builder()
-            .label(&crate::i18n::t("network-disconnected"))
+            .label(crate::i18n::t("network-disconnected"))
             .css_classes(["dim-label", "caption"])
             .halign(gtk::Align::Start)
             .build();

@@ -89,11 +89,10 @@ impl ToastWidget {
                 // This prevents GTK CRITICAL errors when gesture handlers are still active
                 let root_for_removal = root_clone.clone();
                 gtk::glib::idle_add_local_once(move || {
-                    if let Some(parent) = root_for_removal.parent() {
-                        if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+                    if let Some(parent) = root_for_removal.parent()
+                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
                             parent_box.remove(&root_for_removal);
                         }
-                    }
                 });
             }
         });
@@ -140,8 +139,8 @@ impl ToastWidget {
             }
 
             // Check if click is on an interactive element (button) - if so, let the button handle it
-            if let Some(widget) = gesture.widget() {
-                if let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT) {
+            if let Some(widget) = gesture.widget()
+                && let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT) {
                     // Walk up the widget tree to check if click was on a Button
                     let mut current: Option<gtk::Widget> = Some(picked);
                     while let Some(ref w) = current {
@@ -151,7 +150,6 @@ impl ToastWidget {
                         current = w.parent();
                     }
                 }
-            }
 
             *hidden_clone.borrow_mut() = true;
             on_action_clone(id, "default".to_string());

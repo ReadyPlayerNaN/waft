@@ -29,7 +29,7 @@ impl DoNotDisturbToggleWidget {
     pub fn new(init: DoNotDisturbToggleInit) -> Self {
         let toggle = FeatureToggleWidget::new(
             FeatureToggleProps {
-                title: crate::i18n::t("dnd-title").into(),
+                title: crate::i18n::t("dnd-title"),
                 icon: "notifications-disabled-symbolic".into(),
                 details: None,
                 active: init.active,

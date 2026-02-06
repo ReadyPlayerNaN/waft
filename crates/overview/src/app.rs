@@ -320,8 +320,8 @@ pub async fn run() -> Result<()> {
             debug!("Created window");
 
             // Setup IPC receiver to handle commands
-            if let Ok(mut rx_slot) = ipc_rx_slot.lock() {
-                if let Some(rx) = rx_slot.take() {
+            if let Ok(mut rx_slot) = ipc_rx_slot.lock()
+                && let Some(rx) = rx_slot.take() {
                     let window = main_window.window.clone();
                     let animation = main_window.animation.clone();
                     let progress = main_window.animation_progress.clone();
@@ -386,11 +386,10 @@ pub async fn run() -> Result<()> {
                         warn!("[ipc] IPC receiver loop exited — overlay will no longer respond to IPC commands");
                     });
                 }
-            }
 
             // Setup session lock/unlock receiver
-            if let Ok(mut rx_slot) = session_rx_slot.lock() {
-                if let Some(mut rx) = rx_slot.take() {
+            if let Ok(mut rx_slot) = session_rx_slot.lock()
+                && let Some(mut rx) = rx_slot.take() {
                     let registry_for_session = registry.clone();
                     let window_for_session = main_window.window.clone();
                     let animation_for_session = main_window.animation.clone();
@@ -428,7 +427,6 @@ pub async fn run() -> Result<()> {
                         warn!("[session] Session event receiver loop exited");
                     });
                 }
-            }
 
             // Keep the main window alive by leaking it
             std::mem::forget(main_window);

@@ -273,7 +273,7 @@ impl NotificationsService {
             parse_hints(&decode_hints(hints)).map_err(|e| fdo::Error::Failed(e.to_string()))?;
 
         let notification = IngressedNotification {
-            actions: actions.into_iter().map(|s| Arc::from(s)).collect(),
+            actions: actions.into_iter().map(Arc::from).collect(),
             app_name: match app_name.is_empty() {
                 false => Some(Arc::from(app_name)),
                 _ => None,

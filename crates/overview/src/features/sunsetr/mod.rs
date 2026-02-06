@@ -68,7 +68,7 @@ impl Plugin for SunsetrPlugin {
 
         let toggle = FeatureToggleWidget::new(
             FeatureToggleProps {
-                title: crate::i18n::t("nightlight-title").into(),
+                title: crate::i18n::t("nightlight-title"),
                 icon: "night-light-symbolic".into(),
                 details: initial_state.1.clone(),
                 active: initial_state.0,

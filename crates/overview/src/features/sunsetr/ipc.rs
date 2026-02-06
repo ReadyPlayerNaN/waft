@@ -344,7 +344,7 @@ impl From<SunsetrJsonEvent> for Status {
         let period = ev
             .period
             .as_deref()
-            .or_else(|| ev.to_period.as_deref())
+            .or(ev.to_period.as_deref())
             .map(|s| s.to_string());
 
         let next_transition_text = ev.next_period.as_deref().and_then(hhmm_from_rfc3339);

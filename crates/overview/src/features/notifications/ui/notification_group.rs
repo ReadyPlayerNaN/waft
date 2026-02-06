@@ -274,11 +274,10 @@ impl NotificationGroup {
 
         // Remove cards that are no longer in the list
         for id in current_ids {
-            if !new_ids.contains(&id) {
-                if let Some(card) = self.cards.borrow_mut().remove(&id) {
+            if !new_ids.contains(&id)
+                && let Some(card) = self.cards.borrow_mut().remove(&id) {
                     card.hide();
                 }
-            }
         }
 
         // Create or update cards
@@ -286,7 +285,7 @@ impl NotificationGroup {
         for (index, notif) in visible_notifications.iter().enumerate() {
             let mut cards = self.cards.borrow_mut();
 
-            if !cards.contains_key(&notif.id) {
+            if let std::collections::hash_map::Entry::Vacant(e) = cards.entry(notif.id) {
                 // Create new card
                 let card = NotificationCard::new(
                     notif.id,
@@ -318,32 +317,30 @@ impl NotificationGroup {
                 }
 
                 card.show();
-                cards.insert(notif.id, card);
+                e.insert(card);
             } else if let Some(card) = cards.get(&notif.id) {
                 // Update existing card
                 card.update(&notif.title, &notif.description);
 
                 // Check if card needs to move between containers
                 let should_be_top = index == 0;
-                let is_in_top = card.root.parent().map_or(false, |p| {
+                let is_in_top = card.root.parent().is_some_and(|p| {
                     p.eq(&self.top_card_container.clone().upcast::<gtk::Widget>())
                 });
 
                 if should_be_top && !is_in_top {
                     // Move to top container
-                    if let Some(parent) = card.root.parent() {
-                        if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+                    if let Some(parent) = card.root.parent()
+                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
                             parent_box.remove(&card.root);
                         }
-                    }
                     self.top_card_container.prepend(&card.root);
                 } else if !should_be_top && is_in_top {
                     // Move to hidden container
-                    if let Some(parent) = card.root.parent() {
-                        if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+                    if let Some(parent) = card.root.parent()
+                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
                             parent_box.remove(&card.root);
                         }
-                    }
                     self.hidden_cards_container.append(&card.root);
                 }
             }

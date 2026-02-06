@@ -57,7 +57,7 @@ impl AgendaWidget {
             .build();
 
         let header_label = gtk::Label::builder()
-            .label(&crate::i18n::t("agenda-title"))
+            .label(crate::i18n::t("agenda-title"))
             .xalign(0.0)
             .hexpand(true)
             .css_classes(["title-3", "agenda-header"])
@@ -65,7 +65,7 @@ impl AgendaWidget {
 
         let show_past_btn = gtk::ToggleButton::builder()
             .icon_name("task-past-due-symbolic")
-            .tooltip_text(&crate::i18n::t("agenda-hide-past-tooltip"))
+            .tooltip_text(crate::i18n::t("agenda-hide-past-tooltip"))
             .css_classes(["agenda-show-past-pill"])
             .active(false)
             .build();
@@ -108,7 +108,7 @@ impl AgendaWidget {
 
         // Empty state label
         let empty_label = gtk::Label::builder()
-            .label(&crate::i18n::t("agenda-empty"))
+            .label(crate::i18n::t("agenda-empty"))
             .xalign(0.0)
             .css_classes(["dim-label", "agenda-empty"])
             .visible(false)
@@ -293,16 +293,14 @@ impl AgendaWidget {
                 }
 
                 // Insert period separator before the first event in the next period
-                if !period_separator_inserted {
-                    if let Some(nps) = next_period_start {
-                        if event.start_time >= nps {
+                if !period_separator_inserted
+                    && let Some(nps) = next_period_start
+                        && event.start_time >= nps {
                             let separator = build_period_separator(nps);
                             self.content_box.append(&separator);
                             *self.period_separator.borrow_mut() = Some(separator);
                             period_separator_inserted = true;
                         }
-                    }
-                }
 
                 self.content_box.append(&card.root);
                 has_future_events = true;

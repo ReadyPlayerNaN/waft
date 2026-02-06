@@ -71,7 +71,7 @@ impl DbusHandle {
         property: &str,
     ) -> Result<Option<String>> {
         let proxy = zbus::Proxy::new(
-            &*self.conn,
+            &self.conn,
             destination,
             path,
             "org.freedesktop.DBus.Properties",
@@ -97,7 +97,7 @@ impl DbusHandle {
         value: &str,
     ) -> Result<()> {
         let proxy = zbus::Proxy::new(
-            &*self.conn,
+            &self.conn,
             destination,
             path,
             "org.freedesktop.DBus.Properties",
@@ -123,7 +123,7 @@ impl DbusHandle {
         interface: &str,
     ) -> Result<std::collections::HashMap<String, OwnedValue>> {
         let proxy = zbus::Proxy::new(
-            &*self.conn,
+            &self.conn,
             destination,
             path,
             "org.freedesktop.DBus.Properties",
@@ -185,11 +185,10 @@ impl DbusHandle {
         T: TryFrom<OwnedValue>,
     {
         for name in property_names {
-            if let Some(v) = props.get(*name) {
-                if let Ok(value) = T::try_from(v.clone()) {
+            if let Some(v) = props.get(*name)
+                && let Ok(value) = T::try_from(v.clone()) {
                     return value;
                 }
-            }
         }
         default
     }
@@ -253,7 +252,7 @@ impl DbusHandle {
             .to_owned();
 
         // Best-effort bus-side match installation (local filtering always applied)
-        let _ = match zbus::fdo::DBusProxy::new(&*self.conn).await {
+        let _ = match zbus::fdo::DBusProxy::new(&self.conn).await {
             Ok(dbus) => dbus.add_match_rule(rule.clone()).await.is_ok(),
             Err(_) => false,
         };
@@ -296,11 +295,10 @@ impl DbusHandle {
                         .map(|m| rule_str.contains(&format!("member='{}'", m)))
                         .unwrap_or(false);
 
-                if iface_ok && member_ok {
-                    if tx.send(msg).is_err() {
+                if iface_ok && member_ok
+                    && tx.send(msg).is_err() {
                         break;
                     }
-                }
             }
             debug!("[dbus] signal listener stopped for rule: {rule_str}");
         });

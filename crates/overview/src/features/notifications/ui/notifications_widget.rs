@@ -51,7 +51,7 @@ impl NotificationsWidget {
             .build();
 
         let header_label = gtk::Label::builder()
-            .label(&crate::i18n::t("notifications-title"))
+            .label(crate::i18n::t("notifications-title"))
             .css_classes(["title-3"])
             .hexpand(true)
             .xalign(0.0)
@@ -99,7 +99,7 @@ impl NotificationsWidget {
             .build();
 
         let empty_label = gtk::Label::builder()
-            .label(&crate::i18n::t("notifications-empty"))
+            .label(crate::i18n::t("notifications-empty"))
             .css_classes(["dim-label"])
             .build();
 
@@ -210,12 +210,11 @@ impl NotificationsWidget {
 
         // Remove groups that are no longer present
         for app_id in &current_app_ids {
-            if !new_app_ids.contains(app_id) {
-                if let Some(group) = groups.borrow_mut().remove(app_id) {
+            if !new_app_ids.contains(app_id)
+                && let Some(group) = groups.borrow_mut().remove(app_id) {
                     groups_container.remove(&group.root);
                     log::debug!("[notifications_widget] Removed group: {}", app_id);
                 }
-            }
         }
 
         // Create or update groups

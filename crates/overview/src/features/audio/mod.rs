@@ -167,11 +167,10 @@ impl Plugin for AudioPlugin {
                 AudioControlOutput::VolumeChanged(volume) => {
                     glib::spawn_future_local(async move {
                         let sink = store.get_state().default_output.clone();
-                        if let Some(ref sink) = sink {
-                            if let Err(e) = set_sink_volume(sink, volume).await {
+                        if let Some(ref sink) = sink
+                            && let Err(e) = set_sink_volume(sink, volume).await {
                                 error!("[audio] Failed to set sink volume: {}", e);
                             }
-                        }
                     });
                 }
                 AudioControlOutput::ToggleMute => {
@@ -235,11 +234,10 @@ impl Plugin for AudioPlugin {
                 AudioControlOutput::VolumeChanged(volume) => {
                     glib::spawn_future_local(async move {
                         let source = store.get_state().default_input.clone();
-                        if let Some(ref source) = source {
-                            if let Err(e) = set_source_volume(source, volume).await {
+                        if let Some(ref source) = source
+                            && let Err(e) = set_source_volume(source, volume).await {
                                 error!("[audio] Failed to set source volume: {}", e);
                             }
-                        }
                     });
                 }
                 AudioControlOutput::ToggleMute => {

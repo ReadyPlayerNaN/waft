@@ -34,7 +34,7 @@ pub struct BluetoothDevice {
 
 /// Find all Bluetooth adapters via ObjectManager.GetManagedObjects.
 pub async fn find_all_adapters(conn: &DbusHandle) -> Result<Vec<BluetoothAdapter>> {
-    let proxy = zbus::Proxy::new(&*conn.connection(), BLUEZ_DEST, "/", IFACE_OBJECT_MANAGER)
+    let proxy = zbus::Proxy::new(&conn.connection(), BLUEZ_DEST, "/", IFACE_OBJECT_MANAGER)
         .await
         .context("Failed to create ObjectManager proxy")?;
 
@@ -76,7 +76,7 @@ pub async fn find_all_adapters(conn: &DbusHandle) -> Result<Vec<BluetoothAdapter
 /// Set the Powered property on an adapter.
 pub async fn set_powered(conn: Arc<DbusHandle>, adapter_path: &str, powered: bool) -> Result<()> {
     let proxy = zbus::Proxy::new(
-        &*conn.connection(),
+        &conn.connection(),
         BLUEZ_DEST,
         adapter_path,
         IFACE_PROPERTIES,
@@ -100,7 +100,7 @@ pub async fn get_paired_devices(
     conn: &DbusHandle,
     adapter_path: &str,
 ) -> Result<Vec<BluetoothDevice>> {
-    let proxy = zbus::Proxy::new(&*conn.connection(), BLUEZ_DEST, "/", IFACE_OBJECT_MANAGER)
+    let proxy = zbus::Proxy::new(&conn.connection(), BLUEZ_DEST, "/", IFACE_OBJECT_MANAGER)
         .await
         .context("Failed to create ObjectManager proxy")?;
 
@@ -161,7 +161,7 @@ pub async fn get_paired_devices(
 
 /// Connect to a Bluetooth device.
 pub async fn connect_device(conn: Arc<DbusHandle>, device_path: &str) -> Result<()> {
-    let proxy = zbus::Proxy::new(&*conn.connection(), BLUEZ_DEST, device_path, IFACE_DEVICE1)
+    let proxy = zbus::Proxy::new(&conn.connection(), BLUEZ_DEST, device_path, IFACE_DEVICE1)
         .await
         .context("Failed to create Device1 proxy")?;
 
@@ -175,7 +175,7 @@ pub async fn connect_device(conn: Arc<DbusHandle>, device_path: &str) -> Result<
 
 /// Disconnect from a Bluetooth device.
 pub async fn disconnect_device(conn: Arc<DbusHandle>, device_path: &str) -> Result<()> {
-    let proxy = zbus::Proxy::new(&*conn.connection(), BLUEZ_DEST, device_path, IFACE_DEVICE1)
+    let proxy = zbus::Proxy::new(&conn.connection(), BLUEZ_DEST, device_path, IFACE_DEVICE1)
         .await
         .context("Failed to create Device1 proxy")?;
 

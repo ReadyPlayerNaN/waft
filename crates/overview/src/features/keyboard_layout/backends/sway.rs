@@ -90,13 +90,12 @@ impl SwayBackend {
     fn extract_keyboard_info(inputs: &[SwayInput]) -> Result<(Vec<String>, usize)> {
         // Find the first keyboard with layout info
         for input in inputs {
-            if input.input_type == "keyboard" {
-                if let (Some(names), Some(index)) =
+            if input.input_type == "keyboard"
+                && let (Some(names), Some(index)) =
                     (&input.xkb_layout_names, input.xkb_active_layout_index)
                 {
                     return Ok((names.clone(), index));
                 }
-            }
         }
 
         anyhow::bail!("No keyboard with layout info found");
@@ -209,8 +208,7 @@ impl KeyboardLayoutBackend for SwayBackend {
                         // Check if this is a keyboard layout change
                         if event.change == "xkb_layout"
                             && event.input.input_type == "keyboard"
-                        {
-                            if let (Some(names), Some(index)) = (
+                            && let (Some(names), Some(index)) = (
                                 &event.input.xkb_layout_names,
                                 event.input.xkb_active_layout_index,
                             ) {
@@ -224,7 +222,6 @@ impl KeyboardLayoutBackend for SwayBackend {
                                     break;
                                 }
                             }
-                        }
                     }
                     Err(e) => {
                         debug!("[keyboard-layout:sway] Failed to parse event: {e}");
