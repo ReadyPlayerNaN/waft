@@ -17,7 +17,7 @@ use waft_core::menu_state::MenuStore;
 use waft_plugin_api::ui::feature_toggle::{
     FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget,
 };
-use waft_plugin_api::{OverviewPlugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
+use waft_plugin_api::{OverviewPlugin, PluginId, PluginResources, WidgetFeatureToggle, WidgetRegistrar};
 
 use self::dbus::DARKMAN_DESTINATION;
 use self::dbus::{get_state, set_state};
@@ -37,6 +37,7 @@ pub struct DarkmanPlugin {
     dbus: Option<Arc<DbusHandle>>,
     toggle: Rc<RefCell<Option<FeatureToggleWidget>>>,
     mode_channel: (flume::Sender<DarkmanMode>, flume::Receiver<DarkmanMode>),
+    tokio_handle: Option<tokio::runtime::Handle>,
 }
 
 impl Default for DarkmanPlugin {
@@ -46,6 +47,7 @@ impl Default for DarkmanPlugin {
             dbus: None,
             toggle: Rc::new(RefCell::new(None)),
             mode_channel: flume::unbounded(),
+            tokio_handle: None,
         }
     }
 }
@@ -63,59 +65,28 @@ impl OverviewPlugin for DarkmanPlugin {
         PluginId::from_static("plugin::darkman")
     }
 
-    async fn init(&mut self) -> Result<()> {
-        // CRITICAL: DbusHandle::connect() requires tokio runtime context.
-        // Get a handle to the tokio runtime explicitly.
-        let (init_tx, init_rx) = flume::bounded(1);
-        let mode_tx = self.mode_channel.0.clone();
+    async fn init(&mut self, resources: &PluginResources) -> Result<()> {
+        debug!("[darkman] init() called");
 
-        let handle = tokio::runtime::Handle::try_current()
-            .map_err(|e| anyhow::anyhow!("No tokio runtime available: {}", e))?;
+        // Use the session dbus connection provided by the host
+        let dbus = resources
+            .session_dbus
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("session_dbus not provided"))?
+            .clone();
+        debug!("[darkman] Received dbus connection from host");
 
-        handle.spawn(async move {
-            // Create dbus connection
-            let dbus_result = DbusHandle::connect().await;
-            let dbus = match dbus_result {
-                Ok(d) => Arc::new(d),
-                Err(e) => {
-                    let _ = init_tx.send(Err(e));
-                    return;
-                }
-            };
+        // Save the tokio handle for use in create_elements
+        self.tokio_handle = resources.tokio_handle.clone();
 
-            // Get initial state
-            let initial_mode = get_state(&dbus).await.unwrap_or(DarkmanMode::Light);
-
-            // Start monitoring
-            let mode_tx_clone = mode_tx.clone();
-            let dbus_clone = dbus.clone();
-            let monitoring_result = async move {
-                let handle_value = move |value: Option<String>| {
-                    if let Some(value) = value {
-                        let mode = DarkmanMode::from_str(&value).unwrap_or(DarkmanMode::Light);
-                        let _ = mode_tx_clone.send(mode);
-                        info!("[darkman/dbus] Mode changed to: {:?}", mode);
-                    }
-                };
-                dbus_clone
-                    .listen_for_values(DARKMAN_DESTINATION, "ModeChanged", handle_value)
-                    .await
-            }
-            .await;
-
-            if let Err(e) = monitoring_result {
-                let _ = init_tx.send(Err(e));
-                return;
-            }
-
-            let _ = init_tx.send(Ok((dbus, initial_mode)));
-        });
-
-        // Use blocking recv since we're bridging from tokio context
-        let (dbus, initial_mode) = init_rx.recv()??;
-        self.dbus = Some(dbus);
+        // Get initial state
+        debug!("[darkman] Getting initial state");
+        let initial_mode = get_state(&dbus).await?;
+        debug!("[darkman] Initial mode: {:?}", initial_mode);
         self.store.emit(DarkmanOp::SetMode(initial_mode));
 
+        self.dbus = Some(dbus);
+        debug!("[darkman] init() completed successfully");
         Ok(())
     }
 
@@ -189,6 +160,38 @@ impl OverviewPlugin for DarkmanPlugin {
                 toggle.set_busy(state.busy);
             }
         });
+
+        // Start D-Bus monitoring using the tokio runtime handle from the host
+        debug!("[darkman] Starting D-Bus monitoring");
+        let mode_tx = self.mode_channel.0.clone();
+        let dbus_for_monitor = self.dbus.clone().expect("dbus not initialized");
+        let tokio_handle = self
+            .tokio_handle
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("tokio_handle not provided"))?;
+
+        // Set up D-Bus signal monitoring with the tokio handle
+        let handle_value = move |value: Option<String>| {
+            if let Some(value) = value {
+                let mode = DarkmanMode::from_str(&value).unwrap_or(DarkmanMode::Light);
+                let _ = mode_tx.send(mode);
+                info!("[darkman/dbus] Mode changed to: {:?}", mode);
+            }
+        };
+
+        if let Err(e) = dbus_for_monitor
+            .listen_for_values_with_handle(
+                DARKMAN_DESTINATION,
+                "ModeChanged",
+                handle_value,
+                Some(tokio_handle),
+            )
+            .await
+        {
+            error!("[darkman] Failed to start D-Bus monitoring: {}", e);
+        } else {
+            debug!("[darkman] D-Bus monitoring started");
+        }
 
         // Handle mode changes from DBus monitoring
         let store_for_mode = self.store.clone();

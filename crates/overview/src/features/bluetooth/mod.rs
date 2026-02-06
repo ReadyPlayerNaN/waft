@@ -301,7 +301,7 @@ impl Plugin for BluetoothPlugin {
         PluginId::from_static("plugin::bluetooth")
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         // Find all adapters
         match find_all_adapters(&self.dbus).await {
             Ok(adapters) => {

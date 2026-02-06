@@ -151,7 +151,7 @@ impl Plugin for NotificationsPlugin {
         Ok(())
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         let mut dbus_server = NotificationsDbusServer::connect()
             .await
             .context("Failed to connect DBus notifications server")?;

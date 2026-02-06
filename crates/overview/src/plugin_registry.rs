@@ -89,11 +89,11 @@ impl PluginRegistry {
         toggles
     }
 
-    /// Initialize all plugins.
+    /// Initialize all plugins with shared resources.
     ///
     /// Plugins that fail to initialize are logged but don't prevent other plugins
     /// from loading. Returns Ok even if some plugins fail.
-    pub async fn init(&self) -> Result<()> {
+    pub async fn init(&self, resources: &super::plugin::PluginResources) -> Result<()> {
         let mut failed_plugins = Vec::new();
 
         for (name, plugin_cell) in self.plugins.iter() {
@@ -115,7 +115,7 @@ impl PluginRegistry {
             };
             // Borrow is now dropped
 
-            if let Err(e) = plugin.init().await {
+            if let Err(e) = plugin.init(resources).await {
                 error!("[registry] Failed to initialize plugin '{}': {}", name, e);
                 failed_plugins.push((name.clone(), e.to_string()));
             }

@@ -5,6 +5,6 @@
 //! backward-compatible access so existing feature plugins don't need import changes.
 
 pub use waft_plugin_api::{
-    ExpandCallback, OverviewPlugin as Plugin, PluginId, Slot, Widget, WidgetFeatureToggle,
-    WidgetRegistrar,
+    ExpandCallback, OverviewPlugin as Plugin, PluginId, PluginResources, Slot, Widget,
+    WidgetFeatureToggle, WidgetRegistrar,
 };

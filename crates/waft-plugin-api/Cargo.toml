@@ -9,6 +9,7 @@ anyhow = "1"
 gtk = { version = "0.10", package = "gtk4", features = ["v4_6"] }
 libloading = "0.8"
 log = "0.4"
+tokio = { version = "1", features = ["rt"] }
 toml = "0.8"
 uuid = { version = "1.0", features = ["v4"] }
 waft-core = { path = "../waft-core" }

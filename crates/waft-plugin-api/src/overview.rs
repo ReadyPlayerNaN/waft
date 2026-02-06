@@ -1,10 +1,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::PluginId;
+use waft_core::dbus::DbusHandle;
 use waft_core::menu_state::MenuStore;
 
 /// Trait for registering and unregistering widgets at runtime.
@@ -42,6 +44,24 @@ pub struct Widget {
     pub el: gtk::Widget,
 }
 
+/// Resources provided by the host app to plugins during initialization.
+///
+/// The host creates shared resources (like DBus connections) once and passes them
+/// to all plugins. Plugins can use what they need and ignore the rest.
+#[derive(Clone)]
+pub struct PluginResources {
+    /// Session DBus connection (for user services like darkman, etc.)
+    pub session_dbus: Option<Arc<DbusHandle>>,
+    /// System DBus connection (for system services like BlueZ, NetworkManager, UPower)
+    pub system_dbus: Option<Arc<DbusHandle>>,
+    /// Tokio runtime handle for spawning async tasks
+    ///
+    /// Dynamic plugins need this to spawn tasks that require tokio runtime
+    /// (like D-Bus signal monitoring). The host app runs with #[tokio::main],
+    /// so this handle is always available.
+    pub tokio_handle: Option<tokio::runtime::Handle>,
+}
+
 /// Callback type for expand toggle events.
 /// The callback receives the new expanded state (true = expanded).
 pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
@@ -71,7 +91,11 @@ pub trait OverviewPlugin {
         Ok(())
     }
 
-    async fn init(&mut self) -> Result<()> {
+    /// Initialize the plugin with resources provided by the host.
+    ///
+    /// Resources like DBus connections are created by the host and passed to plugins
+    /// to avoid each plugin creating its own connections. Plugins can use what they need.
+    async fn init(&mut self, _resources: &PluginResources) -> Result<()> {
         Ok(())
     }
 

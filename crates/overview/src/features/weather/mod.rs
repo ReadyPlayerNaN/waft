@@ -75,7 +75,7 @@ impl Plugin for WeatherPlugin {
         Ok(())
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         Ok(())
     }
 

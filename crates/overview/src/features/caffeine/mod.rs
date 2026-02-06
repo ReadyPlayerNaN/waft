@@ -48,7 +48,7 @@ impl Plugin for CaffeinePlugin {
         PluginId::from_static("plugin::caffeine")
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         let backend = probe_backends(&self.dbus).await?;
         info!("[caffeine] Using backend: {:?}", backend);
         *self.backend.borrow_mut() = Some(backend);

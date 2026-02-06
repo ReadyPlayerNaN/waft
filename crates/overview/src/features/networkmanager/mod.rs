@@ -63,7 +63,7 @@ impl Plugin for NetworkManagerPlugin {
         PluginId::from_static("plugin::networkmanager")
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         // Try to create nmrs NetworkManager instance
         let nm = match NetworkManager::new().await {
             Ok(nm) => {

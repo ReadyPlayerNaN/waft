@@ -15,6 +15,7 @@ use gtk::prelude::ApplicationExtManual;
 use waft_config::Config;
 use waft_plugin_api::loader;
 use crate::dbus::DbusHandle;
+use crate::plugin::PluginResources;
 use crate::features::agenda::AgendaPlugin;
 use crate::features::audio::AudioPlugin;
 use crate::features::battery::BatteryPlugin;
@@ -125,8 +126,9 @@ pub async fn run() -> Result<()> {
     // Initialize i18n system
     crate::i18n::init();
 
-    // Initialize DBus and plugin registry
-    let dbus = Arc::new(DbusHandle::connect().await?);
+    // Initialize DBus connections
+    let session_dbus = Arc::new(DbusHandle::connect().await?);
+    let system_dbus = Arc::new(DbusHandle::connect_system().await?);
 
     // Create menu store for coordinating expandable menus
     let menu_store = Rc::new(create_menu_store());
@@ -179,8 +181,7 @@ pub async fn run() -> Result<()> {
     }
 
     if config.is_plugin_enabled("plugin::bluetooth") {
-        let system_dbus = Arc::new(DbusHandle::connect_system().await?);
-        let mut plugin = BluetoothPlugin::new(system_dbus);
+        let mut plugin = BluetoothPlugin::new(system_dbus.clone());
         if let Some(settings) = config.get_plugin_settings("plugin::bluetooth") {
             plugin.configure(settings)?;
         }
@@ -188,8 +189,7 @@ pub async fn run() -> Result<()> {
     }
 
     if config.is_plugin_enabled("plugin::battery") {
-        let system_dbus = Arc::new(DbusHandle::connect_system().await?);
-        let mut plugin = BatteryPlugin::new(system_dbus);
+        let mut plugin = BatteryPlugin::new(system_dbus.clone());
         if let Some(settings) = config.get_plugin_settings("plugin::battery") {
             plugin.configure(settings)?;
         }
@@ -213,7 +213,7 @@ pub async fn run() -> Result<()> {
     }
 
     if config.is_plugin_enabled("plugin::caffeine") {
-        let mut plugin = CaffeinePlugin::new(dbus.clone());
+        let mut plugin = CaffeinePlugin::new(session_dbus.clone());
         if let Some(settings) = config.get_plugin_settings("plugin::caffeine") {
             plugin.configure(settings)?;
         }
@@ -221,7 +221,7 @@ pub async fn run() -> Result<()> {
     }
 
     if config.is_plugin_enabled("plugin::agenda") {
-        let mut plugin = AgendaPlugin::new(dbus.clone());
+        let mut plugin = AgendaPlugin::new(session_dbus.clone());
         if let Some(settings) = config.get_plugin_settings("plugin::agenda") {
             plugin.configure(settings)?;
         }
@@ -229,8 +229,7 @@ pub async fn run() -> Result<()> {
     }
 
     if config.is_plugin_enabled("plugin::networkmanager") {
-        let system_dbus = Arc::new(DbusHandle::connect_system().await?);
-        let mut plugin = NetworkManagerPlugin::new(system_dbus);
+        let mut plugin = NetworkManagerPlugin::new(system_dbus.clone());
         if let Some(settings) = config.get_plugin_settings("plugin::networkmanager") {
             plugin.configure(settings)?;
         }
@@ -269,7 +268,14 @@ pub async fn run() -> Result<()> {
         std::process::exit(1);
     }
 
-    registry.init().await?;
+    // Create plugin resources to pass to all plugins
+    let plugin_resources = PluginResources {
+        session_dbus: Some(session_dbus),
+        system_dbus: Some(system_dbus),
+        tokio_handle: Some(tokio::runtime::Handle::current()),
+    };
+
+    registry.init(&plugin_resources).await?;
     debug!("Initialized plugins {:?}", registry.len());
 
     let registry_rc = Rc::new(registry);

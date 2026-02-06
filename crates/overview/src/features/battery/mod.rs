@@ -46,7 +46,7 @@ impl Plugin for BatteryPlugin {
         PluginId::from_static("plugin::battery")
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         match get_battery_info(&self.dbus).await {
             Ok(info) => {
                 debug!(

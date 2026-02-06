@@ -212,7 +212,7 @@ impl Plugin for AgendaPlugin {
         Ok(())
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         self.store.emit(AgendaOp::SetLoading(true));
 
         // Start listening for view signals before setting up views

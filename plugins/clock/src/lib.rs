@@ -15,7 +15,7 @@ use log::{debug, error, warn};
 use serde::Deserialize;
 
 use waft_core::menu_state::MenuStore;
-use waft_plugin_api::{OverviewPlugin, PluginId, Slot, Widget, WidgetRegistrar};
+use waft_plugin_api::{OverviewPlugin, PluginId, PluginResources, Slot, Widget, WidgetRegistrar};
 
 // Export plugin entry points.
 waft_plugin_api::export_plugin_metadata!("plugin::clock", "Clock", "0.1.0");
@@ -66,7 +66,7 @@ impl OverviewPlugin for ClockPlugin {
         Ok(())
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &PluginResources) -> Result<()> {
         Ok(())
     }
 

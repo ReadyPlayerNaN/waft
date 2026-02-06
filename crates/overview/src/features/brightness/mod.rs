@@ -117,7 +117,7 @@ impl Plugin for BrightnessPlugin {
         PluginId::from_static("plugin::brightness")
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         // Discover available displays
         let displays = self.discover_displays().await;
 

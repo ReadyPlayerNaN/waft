@@ -4,7 +4,7 @@ A Wayland-native toolkit monorepo containing multiple overlay UI applications.
 
 ## waft-overview
 
-A Wayland-only overlay UI application built with Relm4 and libadwaita that provides a notification server and customizable overlay panel with feature toggles.
+A Wayland-only overlay UI application built with GTK4 and libadwaita that provides a notification server and customizable overlay panel with a plugin-based architecture.
 
 ## Features
 
@@ -73,18 +73,28 @@ waft uses an async-first architecture with clear boundaries between the main thr
 ### Core Components
 
 - **Entry point:** `crates/overview/src/main.rs` → `app::run()`
-- **App model:** `crates/overview/src/app.rs` - Relm4 `SimpleComponent` managing overlay window and plugin registry
-- **Plugin system:** `crates/overview/src/plugin.rs`, `crates/overview/src/plugin_registry.rs` - Non-`Send` plugin trait for GTK compatibility
+- **App model:** `crates/overview/src/app.rs` - Pure GTK4 app managing overlay window and plugin registry
+- **Plugin system:** `crates/waft-plugin-api/` - Plugin trait definitions and dynamic loading
+- **Plugin registry:** `crates/overview/src/plugin_registry.rs` - Non-`Send` plugin lifecycle management
+- **Shared infrastructure:** `crates/waft-core/` - Store pattern, DbusHandle, menu state
 - **Notifications:** `crates/overview/src/features/notifications/` - DBus server with reducer-based state management
-- **IPC:** `crates/overview/src/ipc/` - JSON commands over Unix socket (show/hide/toggle/ping)
+- **IPC:** `crates/ipc/` - Commands over Unix socket (show/hide/toggle/ping/stop)
 
 ### Plugin System
 
-Plugins implement the `Plugin` trait:
-- `init()` - async initialization (DBus, channels, pure Rust state only)
-- `create_elements()` / `get_widgets()` - GTK widget construction (after GTK init)
-- Widgets placed into slots: `Info`, `Controls`, `Header`
-- Manual registration in `app.rs` via `PluginRegistry`
+Plugins implement the `OverviewPlugin` trait and can be either:
+- **Dynamic plugins** (`.so` files) - Loaded at runtime from `/usr/lib/waft/plugins/` or `WAFT_PLUGIN_DIR`
+- **Static plugins** - Compiled directly into `waft-overview` (being migrated to dynamic)
+
+Plugin lifecycle:
+- `configure(settings)` - Parse plugin-specific TOML config
+- `init(resources)` - Async initialization with shared resources (DbusHandle, tokio Handle)
+- `create_elements(app, menu_store, registrar)` - GTK widget construction (after GTK init)
+- `cleanup()` - Graceful shutdown
+
+Widgets placed into slots: `Info`, `Controls`, `Header`, `Actions`
+
+**For plugin development:** See [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md)
 
 ## Testing
 
@@ -160,13 +170,19 @@ The overlay window uses Wayland layer-shell for proper integration:
 ## Dependencies
 
 - GTK4 + libadwaita for UI
-- Relm4 for component architecture
+- gtk4-layer-shell for Wayland layer-shell protocol
 - Tokio for async runtime
-- zbus (tokio feature) for DBus
+- zbus 5.0 for DBus
 - flume for executor-agnostic channels
+- libloading for dynamic plugin loading
 - For `plugin::darkman`: [darkman](https://darkman.whynothugo.nl/) running as a DBus service
 - For `plugin::sunsetr`: [sunsetr](https://github.com/just-paja/sunsetr) CLI tool
 - For `plugin::notifications`: Replaces your current notification daemon
+
+## Documentation
+
+- **Plugin Development:** [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) - How to create dynamic plugins
+- **Architecture & Rules:** [AGENTS.md](AGENTS.md) - Comprehensive development guide for AI agents and contributors
 
 ## License
 

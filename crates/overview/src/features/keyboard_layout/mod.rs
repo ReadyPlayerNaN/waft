@@ -69,7 +69,7 @@ impl Plugin for KeyboardLayoutPlugin {
         PluginId::from_static("plugin::keyboard-layout")
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         // Try to connect to D-Bus for potential localed fallback
         let dbus = DbusHandle::connect_system().await.ok().map(Arc::new);
         self.dbus_handle = dbus.clone();

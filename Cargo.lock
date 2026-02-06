@@ -2856,6 +2856,7 @@ dependencies = [
  "gtk4",
  "libloading",
  "log",
+ "tokio",
  "toml 0.8.23",
  "uuid",
  "waft-core",
@@ -2886,6 +2887,7 @@ dependencies = [
  "glib 0.21.5",
  "gtk4",
  "log",
+ "tokio",
  "waft-core",
  "waft-plugin-api",
 ]

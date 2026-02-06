@@ -106,7 +106,7 @@ impl Plugin for AudioPlugin {
         PluginId::from_static("plugin::audio")
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         // Check if audio system is available
         if !is_available().await {
             warn!("[audio] PulseAudio/PipeWire not available");

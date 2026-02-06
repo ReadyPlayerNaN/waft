@@ -69,7 +69,7 @@ The project is structured as a **Cargo workspace** with shared crates and indepe
 
 ### Core Components
 
-- **`waft-core`** — Shared infrastructure: store pattern (`PluginStore`, `StoreOp`, `StoreState`, `set_field!` macro), menu state coordination (`MenuStore`, `MenuOp`), re-exports of `waft-config` and `waft-ipc`
+- **`waft-core`** — Shared infrastructure: store pattern (`PluginStore`, `StoreOp`, `StoreState`, `set_field!` macro), menu state coordination (`MenuStore`, `MenuOp`), **DbusHandle** (zbus wrapper with `*_with_handle()` methods for dynamic plugins), re-exports of `waft-config` and `waft-ipc`
 - **`waft-plugin-api`** — Plugin trait definitions and types: `OverviewPlugin` trait, `PluginId`, `PluginMetadata`, widget types (`Widget`, `Slot`, `WidgetRegistrar`, `WidgetFeatureToggle`), plugin loader (`loader.rs`), export macros (`export_plugin_metadata!`, `export_overview_plugin!`)
 - **`waft-config`** — Configuration loading from `~/.config/waft/config.toml`
 - **`waft-ipc`** — IPC protocol over Unix socket (show/hide/toggle/ping/stop)
@@ -85,13 +85,13 @@ The application is **plugin-centric** with 14 plugins. Plugins can be either:
 | Plugin | Type | Loading | Purpose |
 |--------|------|---------|---------|
 | **clock** | Info | **Dynamic (.so)** | Current time and date with timezone support |
+| **darkman** | Toggle | **Dynamic (.so)** | Dark mode control via darkman DBus service |
 | **notifications** | Core | Static | DBus notification server, toast display, Do Not Disturb toggle |
 | **audio** | Control | Static | Volume slider, audio device selection |
 | **brightness** | Control | Static | Master brightness slider + per-display fine-tuning |
 | **networkmanager** | Control | Static | WiFi toggle, Ethernet adapter info, VPN connection toggle |
 | **bluetooth** | Control | Static | Device discovery, connection management, menu |
 | **battery** | Info | Static | Battery percentage, health, charging status |
-| **darkman** | Toggle | Static | Dark mode control via darkman DBus service |
 | **sunsetr** | Toggle | Static | Night light control via sunsetr CLI |
 | **caffeine** | Toggle | Static | Prevent sleep/screensaver |
 | **agenda** | Info | Static | Calendar/event display |
@@ -100,10 +100,15 @@ The application is **plugin-centric** with 14 plugins. Plugins can be either:
 | **systemd-actions** | Actions | Static | Shutdown, lock, logout via systemd |
 
 **Plugin Lifecycle:**
-- `configure()` - Parse plugin-specific TOML config
-- `init()` - Async initialization (DBus, channels, state setup)
-- `create_elements()` - Construct GTK widgets after GTK init
+- `configure(settings)` - Parse plugin-specific TOML config
+- `init(resources)` - Async initialization with shared resources (DbusHandle, tokio Handle) from host
+- `create_elements(app, menu_store, registrar)` - Construct GTK widgets after GTK init
 - `cleanup()` - Graceful shutdown
+
+**Plugin Resources (provided by host to all plugins):**
+- `session_dbus` - Session D-Bus connection (for user services like darkman, sunsetr)
+- `system_dbus` - System D-Bus connection (for BlueZ, NetworkManager, UPower)
+- `tokio_handle` - Tokio runtime handle for spawning async tasks (required for D-Bus signal monitoring)
 
 **Widget Slots:** `Info`, `Controls`, `Header`, `Actions`
 
@@ -111,11 +116,11 @@ The application is **plugin-centric** with 14 plugins. Plugins can be either:
 
 Plugins implement the `OverviewPlugin` trait (`#[async_trait(?Send)]`) from `waft-plugin-api`:
 - `id()` - returns `PluginId` for config matching
-- `configure()` - parse plugin-specific TOML settings
-- `init()` - async initialization (DBus, channels, pure Rust state only)
-- `create_elements()` - GTK widget construction (after GTK init)
+- `configure(&mut self, settings: &toml::Table)` - parse plugin-specific TOML settings
+- `init(&mut self, resources: &PluginResources)` - async initialization with shared resources from host (DBus connections, tokio Handle). Pure Rust state only, no GTK.
+- `create_elements(&mut self, app, menu_store, registrar)` - GTK widget construction (after GTK init)
 - `cleanup()` - graceful shutdown
-- Lifecycle hooks: `on_overlay_visible()`, `on_session_lock()`, `on_session_unlock()`
+- Lifecycle hooks: `on_overlay_visible(visible: bool)`, `on_session_lock()`, `on_session_unlock()`
 
 **Plugin Loading Order (in `app.rs`):**
 1. Dynamic plugins loaded first via `waft_plugin_api::loader::discover_plugins()`
@@ -185,18 +190,28 @@ crates/
             ├── systemd_actions/
             └── weather/
 plugins/
-└── clock/                     # Dynamic plugin: libwaft_plugin_clock.so
-    ├── Cargo.toml             # crate-type = ["cdylib"]
-    └── src/lib.rs             # Plugin + widget, self-contained
+├── clock/                     # Dynamic plugin: libwaft_plugin_clock.so
+│   ├── Cargo.toml             # crate-type = ["cdylib"]
+│   └── src/lib.rs             # Plugin + widget, self-contained
+└── darkman/                   # Dynamic plugin: libwaft_plugin_darkman.so
+    ├── Cargo.toml             # crate-type = ["cdylib"], D-Bus integration
+    └── src/
+        ├── lib.rs             # Plugin entry points, uses PluginResources
+        ├── dbus.rs            # Darkman D-Bus API
+        ├── store.rs           # Plugin state management
+        └── values.rs          # DarkmanMode enum
 ```
 
 ### Recent Development
 
 **Ecosystem Split (current work on `larger-picture` branch):**
 - Extracted `waft-core` and `waft-plugin-api` crates from monolithic overview
+- Moved `DbusHandle` to `waft-core`, shared UI widgets to `waft-plugin-api`
 - Clock plugin as first dynamic `.so` — validates the plugin loading architecture
+- Darkman plugin as second dynamic `.so` — validates D-Bus integration with tokio handle pattern
 - Dynamic plugin loader with `libloading`, `catch_unwind` safety, rustc version checking
 - Export macros for plugin entry points (`export_plugin_metadata!`, `export_overview_plugin!`)
+- **PluginResources pattern** — Host provides DbusHandle and tokio Handle to all plugins via `init(resources)`
 
 **Prior Feature Development (on `relm4` branch):**
 - Display brightness control (brightnessctl/ddcutil backends)
@@ -243,6 +258,225 @@ plugins/
 - **Operations:** `NotificationOp` enum (ingress, dismiss, retract, tick)
 - **Plugin-local state:** Each plugin owns domain state; UI composes what plugins provide
 - **Explicit state flow:** Avoid hidden couplings; expose explicit APIs or events
+
+---
+
+## Creating Dynamic Plugins
+
+Dynamic plugins are `.so` files (cdylib crates) loaded at runtime by the host application. They provide a clean separation of concerns and allow independent packaging.
+
+### Plugin Structure
+
+Create a new plugin in `plugins/your-plugin-name/`:
+
+```
+plugins/your-plugin-name/
+├── Cargo.toml
+└── src/
+    └── lib.rs
+```
+
+### Cargo.toml Configuration
+
+**CRITICAL:** Dynamic plugins MUST use `crate-type = ["cdylib"]` and include `unsafe-assume-initialized` feature for GTK:
+
+```toml
+[package]
+name = "waft-plugin-your-plugin-name"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+waft-plugin-api = { path = "../../crates/waft-plugin-api" }
+waft-core = { path = "../../crates/waft-core" }
+
+# CRITICAL: unsafe-assume-initialized is REQUIRED for dynamic plugins
+# Each .so gets its own copy of GTK's static INITIALIZED flag
+gtk = { version = "0.10", package = "gtk4", features = ["v4_6", "unsafe-assume-initialized"] }
+
+glib = "0.21"
+async-trait = "0.1"
+anyhow = "1"
+
+# Add tokio if your plugin needs async tasks (e.g., D-Bus monitoring)
+tokio = { version = "1", features = ["sync", "rt"] }
+
+# Add other dependencies as needed
+```
+
+### Plugin Implementation
+
+```rust
+use std::rc::Rc;
+use std::sync::Arc;
+
+use anyhow::Result;
+use async_trait::async_trait;
+use gtk::prelude::*;
+
+use waft_core::menu_state::MenuStore;
+use waft_plugin_api::{
+    OverviewPlugin, PluginId, PluginResources, Slot, Widget, WidgetRegistrar,
+};
+
+// Export plugin metadata (ID, name, version)
+waft_plugin_api::export_plugin_metadata!("plugin::your-plugin", "YourPlugin", "0.1.0");
+
+// Export plugin factory function
+waft_plugin_api::export_overview_plugin!(YourPlugin::new());
+
+pub struct YourPlugin {
+    // Store shared resources from host
+    dbus: Option<Arc<waft_core::dbus::DbusHandle>>,
+    tokio_handle: Option<tokio::runtime::Handle>,
+
+    // Plugin-specific state
+    // ...
+}
+
+impl Default for YourPlugin {
+    fn default() -> Self {
+        Self {
+            dbus: None,
+            tokio_handle: None,
+        }
+    }
+}
+
+impl YourPlugin {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait(?Send)]
+impl OverviewPlugin for YourPlugin {
+    fn id(&self) -> PluginId {
+        PluginId::from_static("plugin::your-plugin")
+    }
+
+    fn configure(&mut self, settings: &toml::Table) -> Result<()> {
+        // Parse plugin-specific configuration from config.toml
+        // This is called BEFORE init()
+        Ok(())
+    }
+
+    async fn init(&mut self, resources: &PluginResources) -> Result<()> {
+        // CRITICAL: Use resources provided by the host, don't create your own!
+
+        // Get D-Bus connection (already created by host in tokio context)
+        self.dbus = resources.session_dbus.clone();
+        // OR for system D-Bus:
+        // self.dbus = resources.system_dbus.clone();
+
+        // Save tokio handle for spawning async tasks later
+        self.tokio_handle = resources.tokio_handle.clone();
+
+        // Get initial state from D-Bus if needed
+        if let Some(dbus) = &self.dbus {
+            // Call async D-Bus methods here - we're in tokio context
+            // let initial_value = get_something(dbus).await?;
+        }
+
+        // ALLOWED: Pure Rust state, channels, flume setup
+        // NOT ALLOWED: GTK widget creation (do that in create_elements)
+
+        Ok(())
+    }
+
+    async fn create_elements(
+        &mut self,
+        _app: &gtk::Application,
+        _menu_store: Rc<MenuStore>,
+        registrar: Rc<dyn WidgetRegistrar>,
+    ) -> Result<()> {
+        // Create GTK widgets here (GTK is now initialized)
+        let button = gtk::Button::builder()
+            .label("Your Plugin")
+            .build();
+
+        // Set up D-Bus signal monitoring using the tokio handle
+        if let (Some(dbus), Some(handle)) = (&self.dbus, &self.tokio_handle) {
+            // Use *_with_handle() methods to pass the tokio runtime
+            dbus.listen_for_values_with_handle(
+                "org.example.Service",
+                "SignalName",
+                |value: Option<String>| {
+                    // Handle signal
+                },
+                Some(handle),
+            )
+            .await?;
+        }
+
+        // Register widgets with the registrar
+        registrar.register_widget(Rc::new(Widget {
+            id: "your-plugin:button".to_string(),
+            slot: Slot::Info,
+            weight: 100,
+            el: button.upcast::<gtk::Widget>(),
+        }));
+
+        Ok(())
+    }
+}
+```
+
+### Key Points for Plugin Authors
+
+1. **Never create DbusHandle in your plugin** - Use `resources.session_dbus` or `resources.system_dbus` provided by the host
+2. **Save `resources.tokio_handle`** if you need to spawn async tasks (especially for D-Bus signal monitoring)
+3. **Use `*_with_handle()` methods** for D-Bus operations:
+   - `listen_for_values_with_handle(interface, member, callback, Some(&handle))`
+   - `listen_signals_with_handle(match_rule, Some(&handle))`
+4. **GTK initialization** - Add `unsafe-assume-initialized` feature to gtk4 dependency
+5. **No GTK in init()** - Create all widgets in `create_elements()`, never in `init()`
+6. **Edition 2024** - Use `#[unsafe(no_mangle)]` (not `#[no_mangle]`) for exported functions (handled by export macros)
+
+### Why Tokio Handle?
+
+Dynamic plugins run in a GTK/glib async context, but D-Bus operations (via zbus) require a tokio runtime. The host app runs with `#[tokio::main]`, so it provides its runtime handle to plugins through `PluginResources`. This allows plugins to:
+
+- Spawn D-Bus signal monitoring tasks on the tokio runtime
+- Perform async D-Bus operations without "no reactor running" errors
+- Bridge between GTK (main thread) and tokio (runtime) contexts
+
+### Testing Your Plugin
+
+```bash
+# Build the plugin
+cargo build -p waft-plugin-your-plugin-name
+
+# Run waft-overview with your plugin
+WAFT_PLUGIN_DIR=./target/debug cargo run -p waft-overview
+
+# Verify .so was created and has correct symbols
+nm -D target/debug/libwaft_plugin_your_plugin_name.so | grep waft
+
+# Enable your plugin in config
+echo '[[plugins]]' >> ~/.config/waft/config.toml
+echo 'id = "plugin::your-plugin"' >> ~/.config/waft/config.toml
+```
+
+### Common Pitfalls
+
+1. ❌ **Creating DbusHandle in plugin init()** → "no reactor running" panic
+   - ✅ Use `resources.session_dbus` from the host
+
+2. ❌ **Calling `tokio::spawn()` directly** → "no reactor running" panic
+   - ✅ Use `handle.spawn()` with the tokio handle from resources
+
+3. ❌ **Forgetting `unsafe-assume-initialized`** → "GTK has not been initialized" panic
+   - ✅ Add feature to gtk4 dependency in Cargo.toml
+
+4. ❌ **Creating widgets in `init()`** → "GTK has not been initialized" crash
+   - ✅ Create all GTK widgets in `create_elements()`
+
+5. ❌ **Using `#[no_mangle]`** in edition 2024 → Compilation error
+   - ✅ Use export macros which handle this correctly
 
 ---
 

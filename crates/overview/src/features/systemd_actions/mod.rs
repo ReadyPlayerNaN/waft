@@ -94,7 +94,7 @@ impl Plugin for SystemdActionsPlugin {
         PluginId::from_static("plugin::systemd-actions")
     }
 
-    async fn init(&mut self) -> Result<()> {
+    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
         // Connect to D-Bus (system bus for login1 interface)
         let dbus = Arc::new(DbusHandle::connect_system().await?);
         self.dbus_handle = Some(dbus.clone());

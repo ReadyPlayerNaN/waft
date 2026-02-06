@@ -228,7 +228,14 @@ impl DbusHandle {
     /// Listen for DBus signals matching a match rule.
     /// Returns broadcast receiver for matched messages.
     /// Uses bus-side filtering when possible, with local filtering fallback.
-    pub async fn listen_signals(&self, match_rule: &str) -> Result<broadcast::Receiver<Message>> {
+    ///
+    /// If `tokio_handle` is provided, uses that handle to spawn the listener task.
+    /// Otherwise, uses tokio::spawn() which requires being called from a tokio runtime context.
+    pub async fn listen_signals_with_handle(
+        &self,
+        match_rule: &str,
+        tokio_handle: Option<&tokio::runtime::Handle>,
+    ) -> Result<broadcast::Receiver<Message>> {
         let (tx, rx) = broadcast::channel::<Message>(64);
 
         let rule: zbus::MatchRule<'static> = zbus::MatchRule::try_from(match_rule)
@@ -244,7 +251,7 @@ impl DbusHandle {
         let conn = self.conn.clone();
         let rule_str = match_rule.to_string();
 
-        tokio::spawn(async move {
+        let spawn_task = async move {
             let mut stream = zbus::MessageStream::from(&*conn);
 
             while let Some(next) = stream.next().await {
@@ -285,18 +292,36 @@ impl DbusHandle {
                     }
             }
             debug!("[dbus] signal listener stopped for rule: {rule_str}");
-        });
+        };
+
+        if let Some(handle) = tokio_handle {
+            handle.spawn(spawn_task);
+        } else {
+            tokio::spawn(spawn_task);
+        }
 
         Ok(rx)
     }
 
+    /// Listen for DBus signals matching a match rule (deprecated - use listen_signals_with_handle).
+    ///
+    /// This method requires being called from a tokio runtime context.
+    /// For dynamic plugins, use listen_signals_with_handle() with a tokio Handle instead.
+    pub async fn listen_signals(&self, match_rule: &str) -> Result<broadcast::Receiver<Message>> {
+        self.listen_signals_with_handle(match_rule, None).await
+    }
+
     /// Listen for signals with a single string argument.
     /// Calls callback with decoded string for each signal.
-    pub async fn listen_for_values(
+    ///
+    /// If `tokio_handle` is provided, uses that handle to spawn the listener task.
+    /// Otherwise, uses tokio::spawn() which requires being called from a tokio runtime context.
+    pub async fn listen_for_values_with_handle(
         &self,
         interface: &str,
         member: &str,
         mut on_value: impl FnMut(Option<String>) + Send + 'static,
+        tokio_handle: Option<&tokio::runtime::Handle>,
     ) -> Result<()> {
         let rule = format!(
             "type='signal',interface='{}',member='{}'",
@@ -304,9 +329,9 @@ impl DbusHandle {
             escape_match_value(member)
         );
 
-        let mut rx = self.listen_signals(&rule).await?;
+        let mut rx = self.listen_signals_with_handle(&rule, tokio_handle).await?;
 
-        tokio::spawn(async move {
+        let spawn_task = async move {
             loop {
                 match rx.recv().await {
                     Ok(msg) => on_value(decode_first_body_string(&msg)),
@@ -315,9 +340,29 @@ impl DbusHandle {
                 }
             }
             debug!("[dbus] value listener stopped");
-        });
+        };
+
+        if let Some(handle) = tokio_handle {
+            handle.spawn(spawn_task);
+        } else {
+            tokio::spawn(spawn_task);
+        }
 
         Ok(())
+    }
+
+    /// Listen for signals with a single string argument (deprecated - use listen_for_values_with_handle).
+    ///
+    /// This method requires being called from a tokio runtime context.
+    /// For dynamic plugins, use listen_for_values_with_handle() with a tokio Handle instead.
+    pub async fn listen_for_values(
+        &self,
+        interface: &str,
+        member: &str,
+        on_value: impl FnMut(Option<String>) + Send + 'static,
+    ) -> Result<()> {
+        self.listen_for_values_with_handle(interface, member, on_value, None)
+            .await
     }
 }
 
