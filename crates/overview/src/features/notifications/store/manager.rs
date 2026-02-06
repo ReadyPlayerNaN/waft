@@ -362,11 +362,12 @@ fn process_ingress_batch(state: &mut State, ops: Vec<NotificationOp>) -> bool {
     for op in ops {
         if let NotificationOp::Ingress(n) = op {
             // Handle replaces_id: remove the old notification if it exists
-            if let Some(old_id) = n.replaces_id {
-                if old_id != 0 && state.notifications.contains_key(&old_id) {
-                    log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
-                    remove_replaced_notification(state, old_id);
-                }
+            if let Some(old_id) = n.replaces_id
+                && old_id != 0
+                && state.notifications.contains_key(&old_id)
+            {
+                log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
+                remove_replaced_notification(state, old_id);
             }
 
             let notification = create_notification(&n);

@@ -280,7 +280,7 @@ impl NotificationsService {
             },
             created_at: SystemTime::now(),
             description: Arc::from(body),
-            hints: hints,
+            hints,
             icon: match icon.is_empty() {
                 false => Some(Arc::from(icon)),
                 _ => None,
@@ -300,9 +300,7 @@ impl NotificationsService {
             },
         };
 
-        let _ = self.inner.ingress_tx.send(IngressEvent::Notify {
-            notification: notification,
-        });
+        let _ = self.inner.ingress_tx.send(IngressEvent::Notify { notification });
 
         Ok(id)
     }

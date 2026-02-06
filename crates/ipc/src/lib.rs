@@ -162,7 +162,7 @@ pub fn parse_command_from_json(payload: &str) -> Result<IpcCommand, IpcError> {
         ));
     };
 
-    parse_command_word(&name).ok_or_else(|| IpcError::UnknownCommand(name))
+    parse_command_word(&name).ok_or(IpcError::UnknownCommand(name))
 }
 
 /// Map argv-style CLI args into an optional IPC command.

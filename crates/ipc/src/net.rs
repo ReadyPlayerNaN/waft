@@ -243,8 +243,8 @@ pub fn socket_display(socket: &Path) -> String {
 }
 
 /// Convenience: normalized socket path for tests/logging (no filesystem interaction).
-pub fn normalize_socket_path(socket: &PathBuf) -> PathBuf {
-    socket.clone()
+pub fn normalize_socket_path(socket: &Path) -> PathBuf {
+    socket.to_path_buf()
 }
 
 #[cfg(test)]
