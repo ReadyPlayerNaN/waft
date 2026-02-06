@@ -147,6 +147,7 @@ impl ToastListWidget {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_toasts_changed(
         toasts: &Vec<ToastStateData>,
         all_toast_ids: &std::collections::HashSet<u64>,
