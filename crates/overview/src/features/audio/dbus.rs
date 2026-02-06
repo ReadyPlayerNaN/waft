@@ -345,6 +345,7 @@ pub async fn subscribe_events(
 
 /// Audio event types from pactl subscribe.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum AudioEvent {
     SinkChange,
     SourceChange,

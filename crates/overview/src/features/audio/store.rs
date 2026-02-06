@@ -30,6 +30,7 @@ pub struct AudioState {
 
 /// Operations for the audio store.
 #[derive(Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum AudioOp {
     SetAvailable(bool),
     SetOutputVolume(f64),

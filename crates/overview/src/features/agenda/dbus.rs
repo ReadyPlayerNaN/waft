@@ -227,6 +227,7 @@ pub async fn stop_and_dispose_view(
 
 /// Message type sent from D-Bus signal listener to the main thread.
 #[derive(Clone, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum ViewSignal {
     EventsAdded(Vec<AgendaEvent>),
     EventsModified(Vec<AgendaEvent>),
