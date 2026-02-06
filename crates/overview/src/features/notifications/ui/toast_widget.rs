@@ -22,7 +22,6 @@ pub struct ToastWidget {
 }
 
 impl ToastWidget {
-    #[allow(clippy::too_many_arguments)]
     pub fn new<F, A, H>(
         id: u64,
         title: &str,

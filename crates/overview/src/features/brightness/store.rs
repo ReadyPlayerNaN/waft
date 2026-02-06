@@ -31,7 +31,6 @@ pub struct BrightnessState {
 
 /// Operations for updating brightness state.
 #[derive(Debug, Clone)]
-#[allow(clippy::enum_variant_names)]
 pub enum BrightnessOp {
     SetAvailable(bool),
     SetDisplays(Vec<Display>),

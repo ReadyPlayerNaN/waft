@@ -23,7 +23,6 @@ pub struct SunsetrState {
 
 /// Operations for the sunsetr store.
 #[derive(Clone)]
-#[allow(clippy::enum_variant_names)]
 pub enum SunsetrOp {
     SetStatus {
         active: bool,

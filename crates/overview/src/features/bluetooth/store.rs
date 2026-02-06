@@ -32,7 +32,6 @@ pub struct BluetoothState {
 
 /// Operations for the bluetooth store.
 #[derive(Clone)]
-#[allow(clippy::enum_variant_names)]
 pub enum BluetoothOp {
     SetPowered(bool),
     SetBusy(bool),

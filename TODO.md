@@ -100,3 +100,111 @@ Sometimes apps have workspaces. It would be useful to split notifications to gro
 
 - Should this be user-configurable or hardcoded?
 - Which positions should be supported initially?
+
+## 9. Clippy warnings requiring architectural changes
+
+The following clippy warnings require architectural refactoring rather than simple fixes.
+
+### 9a. `await_holding_lock` - MutexGuard held across await points
+
+**Problem:** Standard `Mutex` guards cannot be held across `.await` points safely.
+
+**Locations:**
+- `plugin_registry.rs:83-96` - `init()` holds lock while calling `guard.init().await`
+- `plugin_registry.rs:118-140` - `create_elements()` holds lock across plugin initialization
+- `plugin_registry.rs:172-182` - `cleanup_all()` holds lock while calling `guard.cleanup().await`
+- `features/networkmanager/mod.rs:220+` - `create_elements()` holds store lock across async operations
+
+**Fix options:**
+1. Use `tokio::sync::Mutex` instead of `std::sync::Mutex`
+2. Restructure to release lock before await, re-acquire after
+3. Extract async work to run outside the lock scope
+
+### 9b. `await_holding_refcell_ref` - RefCell borrows held across await points
+
+**Problem:** RefCell borrows should not span await points as they block other access.
+
+**Locations:**
+- `features/agenda/mod.rs:111-118` - `active_views.borrow()` held across `stop_and_dispose_view().await`
+- `features/agenda/mod.rs:323-331` - Same pattern in refresh callback
+- `features/bluetooth/mod.rs:316-334` - `stores.borrow_mut()` held across `load_devices_for_adapter().await`
+- `features/caffeine/mod.rs:93-111` - `backend_cell.borrow_mut()` held across `inhibit/uninhibit().await`
+
+**Fix pattern:** Collect data first, release borrow, then await:
+```rust
+// Instead of:
+let views = active_views.borrow();
+for view in views.iter() {
+    stop_and_dispose_view(...).await;  // BAD: borrow held across await
+}
+
+// Do:
+let views_to_stop: Vec<_> = active_views.borrow().iter().cloned().collect();
+for view in views_to_stop {
+    stop_and_dispose_view(...).await;  // OK: borrow released
+}
+```
+
+### 9c. `type_complexity` - Complex callback types
+
+**Problem:** Complex nested types like `Rc<RefCell<Option<Box<dyn Fn(...)>>>>` are hard to read.
+
+**Locations (53 occurrences):** Throughout UI widgets in:
+- `features/agenda/ui/agenda_card.rs`
+- `features/audio/control_widget.rs`
+- `features/audio/device_menu.rs`
+- `features/notifications/ui/` (multiple files)
+- `ui/clock.rs`, `ui/feature_toggle.rs`, `ui/main_window.rs`, `ui/slider_control.rs`
+
+**Fix:** Create type aliases for common callback patterns:
+```rust
+type Callback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
+type VoidCallback = Rc<RefCell<Option<Box<dyn Fn()>>>>;
+```
+
+### 9d. `arc_with_non_send_sync` - Arc with non-Send/Sync types
+
+**Problem:** `Arc` is for thread-safe sharing, but GTK widgets are not `Send`/`Sync`.
+
+**Locations (24 occurrences):** Throughout plugin registration in:
+- `app.rs:132, 271`
+- `features/*/mod.rs` - `registrar.register_widget(Arc::new(Widget {...}))`
+
+**Assessment:** This is actually a GTK design pattern. GTK apps are single-threaded but use `Arc` for reference counting. Options:
+1. Use `Rc` instead of `Arc` (requires ensuring single-thread access)
+2. Document as intentional design decision
+3. Make wrapper types that are `Send`/`Sync` safe
+
+### 9e. `too_many_arguments` - Functions with many parameters
+
+**Locations:**
+- `features/notifications/dbus/server.rs:226` - `notify()` has 10 args (D-Bus protocol - cannot change)
+- `features/notifications/ui/toast_list.rs:150` - `handle_toasts_changed()` has 8 args
+- `features/notifications/ui/toast_widget.rs:25` - `new()` has 9 args
+
+**Fix options:**
+1. For D-Bus: Add `#[allow]` - protocol is fixed
+2. For widgets: Create builder pattern or config struct:
+```rust
+struct ToastWidgetConfig {
+    id: u64,
+    title: String,
+    description: String,
+    icon_hints: Vec<NotificationIcon>,
+    // ... etc
+}
+```
+
+### 9f. `enum_variant_names` - Variants with common prefix/suffix
+
+**Locations:**
+- `features/agenda/dbus.rs:230` - `ViewSignal::EventsAdded/Modified/Removed`
+- `features/audio/dbus.rs:348` - `AudioEvent::SinkChange/SourceChange/etc`
+- `features/audio/store.rs:33` - `AudioOp::Set*`
+- `features/bluetooth/store.rs:35` - `BluetoothOp::Set*`
+- `features/brightness/store.rs:34` - `BrightnessOp::Set*`
+- `features/sunsetr/store.rs:26` - `SunsetrOp::Set*`
+
+**Assessment:** These are intentional naming conventions for store operations (Redux-style actions). Options:
+1. Accept as design decision with `#[allow]`
+2. Rename: `AudioOp::Available(bool)` instead of `AudioOp::SetAvailable(bool)`

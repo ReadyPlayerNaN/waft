@@ -223,7 +223,6 @@ impl NotificationsService {
     /// Behavioral notes (per user decisions / AGENTS.md):
     /// - Return DBus-generated IDs.
     /// - `replaces_id`: receiver creates new notification and removes the old one.
-    #[allow(clippy::too_many_arguments)]
     async fn notify(
         &self,
         #[zbus(header)] header: zbus::message::Header<'_>,
