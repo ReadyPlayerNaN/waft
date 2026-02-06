@@ -3,8 +3,8 @@
 //! Manages darkman state with instance-based stores.
 
 use super::values::DarkmanMode;
-use crate::set_field;
-use crate::store::{PluginStore, StoreOp, StoreState};
+use waft_core::set_field;
+use waft_core::store::{PluginStore, StoreOp, StoreState};
 
 /// State for the darkman plugin.
 #[derive(Clone, Default)]

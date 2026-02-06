@@ -7,4 +7,5 @@ members = [
     "crates/waft-core",
     "crates/waft-plugin-api",
     "plugins/clock",
+    "plugins/darkman",
 ]

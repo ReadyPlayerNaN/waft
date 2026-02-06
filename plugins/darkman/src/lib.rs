@@ -1,18 +1,23 @@
-//! Darkman plugin - dark mode toggle.
-use crate::menu_state::MenuStore;
+//! Darkman plugin — dark mode toggle.
+//!
+//! This is a dynamic plugin (.so) loaded by waft-overview at runtime.
+//! Controls the darkman service via D-Bus to switch between light and dark mode.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use log::{debug, error, info};
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc; // DbusHandle is Arc
-
 use gtk::prelude::*;
+use log::{debug, error, info};
 
-use crate::dbus::DbusHandle;
-use crate::plugin::{Plugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
-use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
+use waft_core::dbus::DbusHandle;
+use waft_core::menu_state::MenuStore;
+use waft_plugin_api::ui::feature_toggle::{
+    FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget,
+};
+use waft_plugin_api::{OverviewPlugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
 
 use self::dbus::DARKMAN_DESTINATION;
 use self::dbus::{get_state, set_state};
@@ -20,27 +25,38 @@ use self::store::{DarkmanOp, DarkmanStore, create_darkman_store};
 use self::values::DarkmanMode;
 
 mod dbus;
-pub mod store;
+mod store;
 mod values;
+
+// Export plugin entry points.
+waft_plugin_api::export_plugin_metadata!("plugin::darkman", "Darkman", "0.1.0");
+waft_plugin_api::export_overview_plugin!(DarkmanPlugin::new());
 
 pub struct DarkmanPlugin {
     store: Rc<DarkmanStore>,
-    dbus: Arc<DbusHandle>,
+    dbus: Option<Arc<DbusHandle>>,
     toggle: Rc<RefCell<Option<FeatureToggleWidget>>>,
     mode_channel: (flume::Sender<DarkmanMode>, flume::Receiver<DarkmanMode>),
 }
 
-impl DarkmanPlugin {
-    pub fn new(dbus: Arc<DbusHandle>) -> Self {
+impl Default for DarkmanPlugin {
+    fn default() -> Self {
         Self {
             store: Rc::new(create_darkman_store()),
-            dbus,
+            dbus: None,
             toggle: Rc::new(RefCell::new(None)),
             mode_channel: flume::unbounded(),
         }
     }
+}
+
+impl DarkmanPlugin {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     async fn start_monitoring(&self) -> Result<()> {
+        let dbus = self.dbus.as_ref().expect("dbus not initialized");
         let mode_tx = self.mode_channel.0.clone();
         let handle_value = move |value: Option<String>| {
             if let Some(value) = value {
@@ -49,21 +65,23 @@ impl DarkmanPlugin {
                 info!("[darkman/dbus] Mode changed to: {:?}", mode);
             }
         };
-        self.dbus
-            .listen_for_values(DARKMAN_DESTINATION, "ModeChanged", handle_value)
+        dbus.listen_for_values(DARKMAN_DESTINATION, "ModeChanged", handle_value)
             .await?;
         Ok(())
     }
 }
 
 #[async_trait(?Send)]
-impl Plugin for DarkmanPlugin {
+impl OverviewPlugin for DarkmanPlugin {
     fn id(&self) -> PluginId {
         PluginId::from_static("plugin::darkman")
     }
 
     async fn init(&mut self) -> Result<()> {
-        let initial_mode = get_state(&self.dbus).await?;
+        let dbus = Arc::new(DbusHandle::connect().await?);
+        self.dbus = Some(dbus.clone());
+
+        let initial_mode = get_state(&dbus).await?;
         self.store.emit(DarkmanOp::SetMode(initial_mode));
         self.start_monitoring().await?;
         Ok(())
@@ -82,7 +100,7 @@ impl Plugin for DarkmanPlugin {
 
         let toggle = FeatureToggleWidget::new(
             FeatureToggleProps {
-                title: crate::i18n::t("darkman-title"),
+                title: "Dark Mode".into(),
                 icon: "weather-clear-night-symbolic".into(),
                 details: None,
                 active: initial_active,
@@ -93,7 +111,7 @@ impl Plugin for DarkmanPlugin {
         );
 
         // Connect output handler
-        let dbus = self.dbus.clone();
+        let dbus = self.dbus.clone().expect("dbus not initialized");
         let store = self.store.clone();
         toggle.connect_output(move |event| {
             debug!("[darkman/ui] Received: {:?}", event);

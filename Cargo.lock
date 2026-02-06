@@ -2786,9 +2786,14 @@ dependencies = [
 name = "waft-core"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "futures-util",
  "log",
+ "tokio",
  "waft-config",
  "waft-ipc",
+ "zbus",
+ "zvariant",
 ]
 
 [[package]]
@@ -2852,6 +2857,7 @@ dependencies = [
  "libloading",
  "log",
  "toml 0.8.23",
+ "uuid",
  "waft-core",
 ]
 
@@ -2866,6 +2872,20 @@ dependencies = [
  "log",
  "serde",
  "toml 0.8.23",
+ "waft-core",
+ "waft-plugin-api",
+]
+
+[[package]]
+name = "waft-plugin-darkman"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
  "waft-core",
  "waft-plugin-api",
 ]

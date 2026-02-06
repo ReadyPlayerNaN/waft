@@ -4,7 +4,6 @@ pub mod battery;
 pub mod bluetooth;
 pub mod brightness;
 pub mod caffeine;
-pub mod darkman;
 pub mod keyboard_layout;
 pub mod networkmanager;
 pub mod notifications;

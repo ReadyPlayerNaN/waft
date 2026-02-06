@@ -1,3 +1,4 @@
+pub mod dbus;
 pub mod store;
 pub mod menu_state;
 

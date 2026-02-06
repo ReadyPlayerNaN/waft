@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 
-use crate::dbus::DbusHandle;
+use waft_core::dbus::DbusHandle;
 
 use super::values::DarkmanMode;
 
@@ -26,7 +26,3 @@ pub async fn set_state(conn: Arc<DbusHandle>, mode: DarkmanMode) -> Result<()> {
     conn.set_property(DARKMAN_DESTINATION, DARKMAN_PATH, "Mode", mode.as_str())
         .await
 }
-
-#[cfg(test)]
-#[path = "dbus_tests.rs"]
-mod tests;

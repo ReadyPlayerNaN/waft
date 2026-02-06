@@ -21,7 +21,6 @@ use crate::features::battery::BatteryPlugin;
 use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::brightness::BrightnessPlugin;
 use crate::features::caffeine::CaffeinePlugin;
-use crate::features::darkman::DarkmanPlugin;
 use crate::features::keyboard_layout::KeyboardLayoutPlugin;
 use crate::features::networkmanager::NetworkManagerPlugin;
 use crate::features::notifications::NotificationsPlugin;
@@ -155,14 +154,6 @@ pub async fn run() -> Result<()> {
     }
 
     // Load built-in static plugins
-    if config.is_plugin_enabled("plugin::darkman") {
-        let mut plugin = DarkmanPlugin::new(dbus.clone());
-        if let Some(settings) = config.get_plugin_settings("plugin::darkman") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
     if config.is_plugin_enabled("plugin::sunsetr") {
         let mut plugin = SunsetrPlugin::new();
         if let Some(settings) = config.get_plugin_settings("plugin::sunsetr") {
