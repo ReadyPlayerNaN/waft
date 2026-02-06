@@ -55,20 +55,6 @@ impl DarkmanPlugin {
         Self::default()
     }
 
-    async fn start_monitoring(&self) -> Result<()> {
-        let dbus = self.dbus.as_ref().expect("dbus not initialized");
-        let mode_tx = self.mode_channel.0.clone();
-        let handle_value = move |value: Option<String>| {
-            if let Some(value) = value {
-                let mode = DarkmanMode::from_str(&value).unwrap_or(DarkmanMode::Light);
-                let _ = mode_tx.send(mode);
-                info!("[darkman/dbus] Mode changed to: {:?}", mode);
-            }
-        };
-        dbus.listen_for_values(DARKMAN_DESTINATION, "ModeChanged", handle_value)
-            .await?;
-        Ok(())
-    }
 }
 
 #[async_trait(?Send)]
@@ -78,12 +64,54 @@ impl OverviewPlugin for DarkmanPlugin {
     }
 
     async fn init(&mut self) -> Result<()> {
-        let dbus = Arc::new(DbusHandle::connect().await?);
-        self.dbus = Some(dbus.clone());
+        // CRITICAL: DbusHandle::connect() requires tokio runtime context.
+        // Plugin init() is called from glib context, so spawn on tokio runtime.
+        let (init_tx, init_rx) = flume::bounded(1);
+        let mode_tx = self.mode_channel.0.clone();
 
-        let initial_mode = get_state(&dbus).await?;
+        tokio::spawn(async move {
+            // Create dbus connection
+            let dbus_result = DbusHandle::connect().await;
+            let dbus = match dbus_result {
+                Ok(d) => Arc::new(d),
+                Err(e) => {
+                    let _ = init_tx.send(Err(e));
+                    return;
+                }
+            };
+
+            // Get initial state
+            let initial_mode = get_state(&dbus).await.unwrap_or(DarkmanMode::Light);
+
+            // Start monitoring
+            let mode_tx_clone = mode_tx.clone();
+            let dbus_clone = dbus.clone();
+            let monitoring_result = async move {
+                let handle_value = move |value: Option<String>| {
+                    if let Some(value) = value {
+                        let mode = DarkmanMode::from_str(&value).unwrap_or(DarkmanMode::Light);
+                        let _ = mode_tx_clone.send(mode);
+                        info!("[darkman/dbus] Mode changed to: {:?}", mode);
+                    }
+                };
+                dbus_clone
+                    .listen_for_values(DARKMAN_DESTINATION, "ModeChanged", handle_value)
+                    .await
+            }
+            .await;
+
+            if let Err(e) = monitoring_result {
+                let _ = init_tx.send(Err(e));
+                return;
+            }
+
+            let _ = init_tx.send(Ok((dbus, initial_mode)));
+        });
+
+        let (dbus, initial_mode) = init_rx.recv_async().await??;
+        self.dbus = Some(dbus);
         self.store.emit(DarkmanOp::SetMode(initial_mode));
-        self.start_monitoring().await?;
+
         Ok(())
     }
 
