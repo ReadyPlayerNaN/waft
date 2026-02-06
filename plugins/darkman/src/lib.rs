@@ -65,11 +65,14 @@ impl OverviewPlugin for DarkmanPlugin {
 
     async fn init(&mut self) -> Result<()> {
         // CRITICAL: DbusHandle::connect() requires tokio runtime context.
-        // Plugin init() is called from glib context, so spawn on tokio runtime.
+        // Get a handle to the tokio runtime explicitly.
         let (init_tx, init_rx) = flume::bounded(1);
         let mode_tx = self.mode_channel.0.clone();
 
-        tokio::spawn(async move {
+        let handle = tokio::runtime::Handle::try_current()
+            .map_err(|e| anyhow::anyhow!("No tokio runtime available: {}", e))?;
+
+        handle.spawn(async move {
             // Create dbus connection
             let dbus_result = DbusHandle::connect().await;
             let dbus = match dbus_result {
