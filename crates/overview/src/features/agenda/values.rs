@@ -340,9 +340,9 @@ pub fn extract_ical_param(params: &str, key: &str) -> Option<String> {
     let start = params.find(&needle)?;
     let after_key = &params[start + needle.len()..];
 
-    if after_key.starts_with('"') {
-        let end = after_key[1..].find('"')?;
-        Some(after_key[1..1 + end].to_string())
+    if let Some(stripped) = after_key.strip_prefix('"') {
+        let end = stripped.find('"')?;
+        Some(stripped[..end].to_string())
     } else {
         let end = after_key.find(';').unwrap_or(after_key.len());
         let val = after_key[..end].trim();
@@ -475,8 +475,8 @@ pub fn parse_vevent(ical_str: &str) -> Option<AgendaEvent> {
         } else if line.starts_with("RECURRENCE-ID") {
             let (params, value) = split_ical_property(line, "RECURRENCE-ID");
             recurrence_id = parse_ical_datetime(&value, &params);
-        } else if line.starts_with("RRULE:") {
-            rrule = Some(line[6..].to_string());
+        } else if let Some(stripped) = line.strip_prefix("RRULE:") {
+            rrule = Some(stripped.to_string());
         }
     }
 
@@ -841,10 +841,10 @@ fn extract_tzid(params: &str) -> Option<String> {
     let tzid_start = params.find("TZID=")?;
     let after_key = &params[tzid_start + 5..];
 
-    if after_key.starts_with('"') {
+    if let Some(stripped) = after_key.strip_prefix('"') {
         // Quoted value: TZID="America/New_York"
-        let end = after_key[1..].find('"')?;
-        Some(after_key[1..1 + end].to_string())
+        let end = stripped.find('"')?;
+        Some(stripped[..end].to_string())
     } else {
         // Unquoted: take until next ; or end of string
         let end = after_key.find(';').unwrap_or(after_key.len());
@@ -1940,12 +1940,10 @@ END:VCALENDAR";
         // If it's after the 7th, should be next month
         let expected_month = if today.day() < 7 {
             today.month()
+        } else if today.month() == 12 {
+            1
         } else {
-            if today.month() == 12 {
-                1
-            } else {
-                today.month() + 1
-            }
+            today.month() + 1
         };
 
         assert_eq!(start_dt.month(), expected_month);
@@ -2046,12 +2044,10 @@ END:VCALENDAR";
         // Otherwise, should be next month
         let expected_month = if today.day() == 1 {
             today.month()
+        } else if today.month() == 12 {
+            1
         } else {
-            if today.month() == 12 {
-                1
-            } else {
-                today.month() + 1
-            }
+            today.month() + 1
         };
 
         assert_eq!(start_dt.month(), expected_month);

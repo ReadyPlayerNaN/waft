@@ -66,7 +66,7 @@ fn process_op(state: &mut State, op: NotificationOp) -> bool {
             true
         }
         NotificationOp::Ingress(n) => {
-            process_ingress(state, n);
+            process_ingress(state, *n);
             true
         }
         NotificationOp::NotificationDismiss(id) => {
@@ -381,7 +381,7 @@ fn process_ingress_batch(state: &mut State, ops: Vec<NotificationOp>) -> bool {
                 state.notifications.len()
             );
             reconcile_group_on_ingress(state, notif_id, group_id, app_title);
-            reconcile_toast_on_ingress(state, &n, false);
+            reconcile_toast_on_ingress(state, &*n, false);
             // Add to panel notifications (unlimited)
             state
                 .panel_notifications
@@ -912,7 +912,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
@@ -923,7 +923,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.panel_notifications.contains_key(&1));
@@ -934,7 +934,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.toasts.contains_key(&1));
@@ -945,7 +945,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
         store.emit(NotificationOp::NotificationDismiss(1));
         store.emit(NotificationOp::NotificationDismissed(1));
 
@@ -958,7 +958,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
         store.emit(NotificationOp::NotificationDismiss(1));
         store.emit(NotificationOp::NotificationDismissed(1));
 
@@ -970,9 +970,9 @@ mod tests {
     fn test_batch_ingress_adds_multiple_notifications() {
         let store = create_notification_store();
         let ops = vec![
-            NotificationOp::Ingress(make_notification(1, NotificationUrgency::Normal, false)),
-            NotificationOp::Ingress(make_notification(2, NotificationUrgency::Normal, false)),
-            NotificationOp::Ingress(make_notification(3, NotificationUrgency::Normal, false)),
+            NotificationOp::Ingress(Box::new(make_notification(1, NotificationUrgency::Normal, false))),
+            NotificationOp::Ingress(Box::new(make_notification(2, NotificationUrgency::Normal, false))),
+            NotificationOp::Ingress(Box::new(make_notification(3, NotificationUrgency::Normal, false))),
         ];
 
         store.emit(NotificationOp::Batch(ops));
@@ -992,7 +992,7 @@ mod tests {
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
         store.emit(NotificationOp::SetDnd(true));
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         // Notification should be stored
@@ -1007,7 +1007,7 @@ mod tests {
         let notif = make_notification(1, NotificationUrgency::Low, false);
 
         store.emit(NotificationOp::SetDnd(true));
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
@@ -1020,7 +1020,7 @@ mod tests {
         let notif = make_notification(1, NotificationUrgency::Critical, false);
 
         store.emit(NotificationOp::SetDnd(true));
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
@@ -1034,7 +1034,7 @@ mod tests {
         let notif = make_notification(1, NotificationUrgency::Normal, true);
 
         store.emit(NotificationOp::SetDnd(true));
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
@@ -1048,7 +1048,7 @@ mod tests {
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
         store.emit(NotificationOp::SetDnd(true));
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         // Panel should ALWAYS receive notifications regardless of DND
@@ -1093,11 +1093,11 @@ mod tests {
 
         // Push notifications 1-5
         for id in 1..=5 {
-            store.emit(NotificationOp::Ingress(make_notification(
+            store.emit(NotificationOp::Ingress(Box::new(make_notification(
                 id,
                 NotificationUrgency::Normal,
                 false,
-            )));
+            ))));
         }
 
         {
@@ -1108,11 +1108,11 @@ mod tests {
 
         // Push notifications 6-10 (these should push out 1-5)
         for id in 6..=10 {
-            store.emit(NotificationOp::Ingress(make_notification(
+            store.emit(NotificationOp::Ingress(Box::new(make_notification(
                 id,
                 NotificationUrgency::Normal,
                 false,
-            )));
+            ))));
         }
 
         let state = store.get_state();
@@ -1152,11 +1152,11 @@ mod tests {
 
         // Push notifications 1-10
         for id in 1..=10 {
-            store.emit(NotificationOp::Ingress(make_notification(
+            store.emit(NotificationOp::Ingress(Box::new(make_notification(
                 id,
                 NotificationUrgency::Normal,
                 false,
-            )));
+            ))));
         }
 
         // Verify initial state: 10 toasts
@@ -1261,11 +1261,11 @@ mod tests {
 
         // Push notifications 1-10
         for id in 1..=10 {
-            store.emit(NotificationOp::Ingress(make_notification(
+            store.emit(NotificationOp::Ingress(Box::new(make_notification(
                 id,
                 NotificationUrgency::Normal,
                 false,
-            )));
+            ))));
         }
 
         // Emit multiple ticks to let animations complete
@@ -1334,11 +1334,11 @@ mod tests {
 
         // Push notifications 1-10
         for id in 1..=10 {
-            store.emit(NotificationOp::Ingress(make_notification(
+            store.emit(NotificationOp::Ingress(Box::new(make_notification(
                 id,
                 NotificationUrgency::Normal,
                 false,
-            )));
+            ))));
         }
 
         // Emit multiple ticks to let animations complete
@@ -1430,7 +1430,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification_with_app(1, "upower", NotificationUrgency::Normal);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         // Notification should be in store and panel
@@ -1445,7 +1445,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification_with_app(1, "gnome-software", NotificationUrgency::Normal);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
@@ -1458,7 +1458,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification_with_app(1, "flameshot", NotificationUrgency::Normal);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
@@ -1475,7 +1475,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification_with_app(1, "klipper", NotificationUrgency::Normal);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
@@ -1494,7 +1494,7 @@ mod tests {
             NotificationCategory::Device(DeviceStatus::Added),
         );
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
@@ -1513,7 +1513,7 @@ mod tests {
             NotificationCategory::Network(NetworkStatus::Connected),
         );
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));
@@ -1528,7 +1528,7 @@ mod tests {
         let store = create_notification_store();
         let notif = make_notification_with_app(1, "firefox", NotificationUrgency::Normal);
 
-        store.emit(NotificationOp::Ingress(notif));
+        store.emit(NotificationOp::Ingress(Box::new(notif)));
 
         let state = store.get_state();
         assert!(state.notifications.contains_key(&1));

@@ -83,8 +83,8 @@ async fn debounce_task(
         tokio::select! {
             // Handle ingress operations (debounced with longer timeout)
             Ok(ingress_op) = ingress_rx.recv_async() => {
-                if let NotificationOp::Ingress(notification) = ingress_op {
-                    pending_ingress.insert(notification.id, NotificationOp::Ingress(notification));
+                if let NotificationOp::Ingress(ref notification) = ingress_op {
+                    pending_ingress.insert(notification.id, ingress_op);
 
                     if ingress_timer.is_none() {
                         ingress_timer = Some(Box::pin(sleep(ingress_timeout)));

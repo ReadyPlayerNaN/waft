@@ -139,7 +139,7 @@ pub enum NotificationOp {
         toast_limit: usize,
         disable_toasts: bool,
     },
-    Ingress(IngressedNotification),
+    Ingress(Box<IngressedNotification>),
     NotificationDismiss(u64),
     NotificationDismissed(u64),
     NotificationRetract(u64),
