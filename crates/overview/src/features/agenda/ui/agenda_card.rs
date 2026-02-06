@@ -2,7 +2,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gtk::prelude::*;
 
@@ -38,7 +37,7 @@ impl AgendaCard {
         event: &AgendaEvent,
         is_past: bool,
         is_ongoing: bool,
-        menu_store: &Arc<MenuStore>,
+        menu_store: &Rc<MenuStore>,
     ) -> Self {
         let mut css_classes: Vec<&str> = vec!["agenda-event-card"];
         if is_past {

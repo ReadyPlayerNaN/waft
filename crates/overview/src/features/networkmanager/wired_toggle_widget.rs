@@ -6,7 +6,6 @@ use crate::ui::feature_toggle::{
 };
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 pub type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(FeatureToggleOutput)>>>>;
 pub type ExpandCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
@@ -29,7 +28,7 @@ impl WiredToggleWidget {
         enabled: bool,
         _carrier: bool,
         device_state: u32,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) -> Self {
         let is_connected = device_state == 100;
 

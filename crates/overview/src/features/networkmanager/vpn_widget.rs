@@ -13,7 +13,7 @@ use log::{debug, error, info};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::Arc; // DbusHandle is Arc
 
 use super::dbus;
 use super::store::{NetworkOp, NetworkStore, VpnConnectionState, VpnState};
@@ -22,9 +22,9 @@ use super::vpn_toggle::VpnToggleWidget;
 
 #[derive(Clone)]
 pub struct VpnWidget {
-    store: Arc<NetworkStore>,
+    store: Rc<NetworkStore>,
     dbus: Arc<DbusHandle>,
-    menu_store: Arc<MenuStore>,
+    menu_store: Rc<MenuStore>,
     toggle: VpnToggleWidget,
     menu: VpnMenuWidget,
     // Maps connection path -> active connection path when connected
@@ -34,9 +34,9 @@ pub struct VpnWidget {
 impl VpnWidget {
     pub fn new(
         connections: &HashMap<String, VpnConnectionState>,
-        store: Arc<NetworkStore>,
+        store: Rc<NetworkStore>,
         dbus: Arc<DbusHandle>,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) -> Self {
         // Find if any VPN is connected
         let (connected_name, current_state) = Self::derive_overall_state(connections);
@@ -67,8 +67,8 @@ impl VpnWidget {
         widget
     }
 
-    pub fn widget(&self) -> Arc<WidgetFeatureToggle> {
-        Arc::new(WidgetFeatureToggle {
+    pub fn widget(&self) -> Rc<WidgetFeatureToggle> {
+        Rc::new(WidgetFeatureToggle {
             id: "networkmanager:vpn".to_string(),
             el: self.toggle.widget(),
             weight: 103, // After WiFi (102) and Wired (101)

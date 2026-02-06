@@ -8,7 +8,6 @@ use crate::ui::feature_toggle::{
 };
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use super::store::VpnState;
 
@@ -30,7 +29,7 @@ impl VpnToggleWidget {
     pub fn new(
         connected_name: Option<String>,
         state: VpnState,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) -> Self {
         let (title, details, icon, active) = Self::derive_display_state(&connected_name, &state);
 

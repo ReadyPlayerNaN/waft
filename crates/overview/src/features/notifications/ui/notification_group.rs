@@ -62,7 +62,7 @@ impl NotificationGroup {
         app_ident: Arc<str>,
         app_title: Arc<str>,
         icon_hints: Vec<NotificationIcon>,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) -> Self {
         // Generate unique ID for this menu
         let menu_id = Uuid::new_v4().to_string();

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use log::{debug, error, info};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::Arc; // DbusHandle is Arc
 
 use gtk::prelude::*;
 
@@ -72,7 +72,7 @@ impl Plugin for DarkmanPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        _menu_store: Arc<MenuStore>,
+        _menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let initial_active = {
@@ -118,7 +118,7 @@ impl Plugin for DarkmanPlugin {
         });
 
         // Register the feature toggle
-        registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
+        registrar.register_feature_toggle(Rc::new(WidgetFeatureToggle {
             id: "darkman:toggle".to_string(),
             el: toggle.root.clone().upcast::<gtk::Widget>(),
             weight: 190,

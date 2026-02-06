@@ -1,6 +1,6 @@
 //! Meeting link button widget — single button or multi-link popover.
 
-use std::sync::Arc;
+use std::rc::Rc;
 
 use gtk::prelude::*;
 use log::warn;
@@ -28,7 +28,7 @@ impl MeetingButton {
     /// - 0 links: returns `None`
     /// - 1 link: returns a direct button
     /// - 2+ links: returns a three-dot menu button with a popover
-    pub fn new(links: &[MeetingLink], menu_store: &Arc<MenuStore>) -> Option<Self> {
+    pub fn new(links: &[MeetingLink], menu_store: &Rc<MenuStore>) -> Option<Self> {
         match links.len() {
             0 => None,
             1 => {

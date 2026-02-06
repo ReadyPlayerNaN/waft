@@ -3,7 +3,6 @@
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::common::Callback;
 use crate::menu_state::{MenuOp, MenuStore};
@@ -31,7 +30,7 @@ impl ActionGroupWidget {
     /// * `icon_name` - Icon name for the menu button
     /// * `menu` - The action menu widget to display in the popover
     /// * `menu_store` - MenuStore for tracking popover state
-    pub fn new(icon_name: &str, menu: ActionMenuWidget, menu_store: Arc<MenuStore>) -> Self {
+    pub fn new(icon_name: &str, menu: ActionMenuWidget, menu_store: Rc<MenuStore>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(0)

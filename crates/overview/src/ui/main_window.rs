@@ -5,7 +5,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use adw::prelude::*;
 use gtk4_layer_shell::LayerShell;
@@ -57,7 +56,7 @@ const OVERLAY_ANIM_DURATION_MS: u32 = 200;
 /// - Only widgets no longer present are removed
 /// - Only new widgets are added
 /// - Reordering uses `reorder_child_after()` to avoid remounting
-fn sync_slot_widgets(container: &gtk::Box, new_widgets: &[Arc<Widget>]) {
+fn sync_slot_widgets(container: &gtk::Box, new_widgets: &[Rc<Widget>]) {
     // Build set of new widget IDs for quick lookup
     let new_ids: HashSet<&str> = new_widgets.iter().map(|w| w.id.as_str()).collect();
 
@@ -158,7 +157,7 @@ pub struct MainWindowWidget {
 
 impl MainWindowWidget {
     /// Create a new main window with the given registry.
-    pub fn new(app: &adw::Application, registry: &Arc<PluginRegistry>) -> Self {
+    pub fn new(app: &adw::Application, registry: &Rc<PluginRegistry>) -> Self {
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title(crate::i18n::t("app-title"))
@@ -916,8 +915,8 @@ impl MainWindowWidget {
 
     fn build_content(
         window: &adw::ApplicationWindow,
-        registry: &Arc<PluginRegistry>,
-        menu_store: Arc<MenuStore>,
+        registry: &Rc<PluginRegistry>,
+        menu_store: Rc<MenuStore>,
     ) -> (gtk::Frame, SlotContainers) {
         let top_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)

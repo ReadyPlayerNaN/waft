@@ -5,7 +5,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gtk::prelude::*;
 
@@ -73,7 +72,7 @@ pub struct AudioControlWidget {
 
 impl AudioControlWidget {
     /// Create a new audio control widget.
-    pub fn new(props: AudioControlProps, menu_store: Arc<MenuStore>) -> Self {
+    pub fn new(props: AudioControlProps, menu_store: Rc<MenuStore>) -> Self {
         // Create device menu and set initial devices
         let device_menu = AudioDeviceMenuWidget::new();
         let devices: Vec<AudioDeviceDisplay> = props

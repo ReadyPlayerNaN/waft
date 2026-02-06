@@ -170,7 +170,7 @@ impl Plugin for NotificationsPlugin {
     async fn create_elements(
         &mut self,
         app: &gtk::Application,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         // Configure the store with plugin settings
@@ -340,7 +340,7 @@ impl Plugin for NotificationsPlugin {
 
         // Register widgets
         if let Some(ref dnd_toggle) = *self.dnd_toggle.borrow() {
-            registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
+            registrar.register_feature_toggle(Rc::new(WidgetFeatureToggle {
                 id: "notifications:dnd".to_string(),
                 el: dnd_toggle.widget().clone().upcast::<gtk::Widget>(),
                 weight: 60,
@@ -350,7 +350,7 @@ impl Plugin for NotificationsPlugin {
             }));
         }
         if let Some(ref notifications_widget) = *self.notifications_widget.borrow() {
-            registrar.register_widget(Arc::new(Widget {
+            registrar.register_widget(Rc::new(Widget {
                 id: "notifications:list".to_string(),
                 slot: Slot::Info,
                 weight: 50,

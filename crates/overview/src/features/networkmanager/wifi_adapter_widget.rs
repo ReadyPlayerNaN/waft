@@ -4,7 +4,8 @@ use crate::plugin::WidgetFeatureToggle;
 use crate::ui::feature_toggle::FeatureToggleOutput;
 use log::{debug, error, info};
 use nmrs::NetworkManager;
-use std::sync::Arc;
+use std::rc::Rc;
+use std::sync::Arc; // DbusHandle is Arc
 
 use super::dbus;
 use super::store::{AccessPointState, NetworkOp, NetworkStore, WiFiAdapterState};
@@ -15,7 +16,7 @@ use super::wifi_icon::get_wifi_icon;
 #[derive(Clone)]
 pub struct WiFiAdapterWidget {
     path: String,
-    store: Arc<NetworkStore>,
+    store: Rc<NetworkStore>,
     nm: Option<NetworkManager>,
     dbus: Arc<DbusHandle>,
     toggle: WiFiToggleWidget,
@@ -35,10 +36,10 @@ impl WiFiAdapterWidget {
 
     pub fn new(
         adapter: &WiFiAdapterState,
-        store: Arc<NetworkStore>,
+        store: Rc<NetworkStore>,
         nm: Option<NetworkManager>,
         dbus: Arc<DbusHandle>,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) -> Self {
         let signal_strength = Self::get_active_signal_strength(adapter);
 
@@ -77,8 +78,8 @@ impl WiFiAdapterWidget {
         widget
     }
 
-    pub fn widget(&self) -> Arc<WidgetFeatureToggle> {
-        Arc::new(WidgetFeatureToggle {
+    pub fn widget(&self) -> Rc<WidgetFeatureToggle> {
+        Rc::new(WidgetFeatureToggle {
             id: format!("networkmanager:wifi:{}", self.path),
             el: self.toggle.widget(),
             weight: 100,

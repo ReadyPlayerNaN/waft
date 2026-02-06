@@ -8,7 +8,6 @@ use serde::Deserialize;
 use std::cell::RefCell;
 use std::process::Command;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Duration;
 
 use gtk::glib::DateTime;
@@ -59,7 +58,7 @@ impl Plugin for ClockPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        _menu_store: Arc<MenuStore>,
+        _menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let datetime = DateTime::now_local()?;
@@ -97,7 +96,7 @@ impl Plugin for ClockPlugin {
         }
 
         // Register the widget
-        registrar.register_widget(Arc::new(Widget {
+        registrar.register_widget(Rc::new(Widget {
             id: "clock:main".to_string(),
             slot: Slot::Header,
             el: clock.root.clone().upcast::<gtk::Widget>(),

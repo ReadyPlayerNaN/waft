@@ -7,7 +7,6 @@ use flume::unbounded;
 use log::{debug, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::plugin::{ExpandCallback, Plugin, PluginId, WidgetFeatureToggle, WidgetRegistrar};
 use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
@@ -51,7 +50,7 @@ impl Plugin for SunsetrPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         // Load presets initially to determine if toggle should be expandable
@@ -171,7 +170,7 @@ impl Plugin for SunsetrPlugin {
         let expand_callback: ExpandCallback = Rc::new(RefCell::new(None));
 
         // Register the feature toggle
-        registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
+        registrar.register_feature_toggle(Rc::new(WidgetFeatureToggle {
             id: "sunsetr:toggle".to_string(),
             el: toggle.widget(),
             weight: 200,

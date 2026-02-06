@@ -4,7 +4,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gtk::prelude::*;
 
@@ -42,7 +41,7 @@ pub struct BrightnessControlWidget {
 
 impl BrightnessControlWidget {
     /// Create a new brightness control widget.
-    pub fn new(props: BrightnessControlProps, menu_store: Arc<MenuStore>) -> Self {
+    pub fn new(props: BrightnessControlProps, menu_store: Rc<MenuStore>) -> Self {
         let master_value = compute_master_average(&props.displays);
         let has_multiple_displays = props.displays.len() > 1;
 

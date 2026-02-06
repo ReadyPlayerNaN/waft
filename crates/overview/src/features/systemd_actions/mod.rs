@@ -114,7 +114,7 @@ impl Plugin for SystemdActionsPlugin {
     async fn create_elements(
         &mut self,
         app: &gtk::Application,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         // Check if D-Bus client is available
@@ -199,7 +199,7 @@ impl Plugin for SystemdActionsPlugin {
         });
 
         // Register session widget in actions slot
-        registrar.register_widget(Arc::new(Widget {
+        registrar.register_widget(Rc::new(Widget {
             id: "systemd-actions:session".to_string(),
             slot: Slot::Actions,
             el: session_widget.root.upcast::<gtk::Widget>(),
@@ -207,7 +207,7 @@ impl Plugin for SystemdActionsPlugin {
         }));
 
         // Register power widget in actions slot
-        registrar.register_widget(Arc::new(Widget {
+        registrar.register_widget(Rc::new(Widget {
             id: "systemd-actions:power".to_string(),
             slot: Slot::Actions,
             el: power_widget.root.upcast::<gtk::Widget>(),

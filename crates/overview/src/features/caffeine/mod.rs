@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use log::{debug, error, info};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::Arc; // DbusHandle is Arc
 
 use gtk::prelude::*;
 
@@ -58,7 +58,7 @@ impl Plugin for CaffeinePlugin {
     async fn create_elements(
         &mut self,
         app: &gtk::Application,
-        _menu_store: Arc<MenuStore>,
+        _menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         // Store the app reference for getting window later
@@ -124,7 +124,7 @@ impl Plugin for CaffeinePlugin {
         });
 
         // Register the feature toggle
-        registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
+        registrar.register_feature_toggle(Rc::new(WidgetFeatureToggle {
             id: "caffeine:toggle".to_string(),
             el: toggle.root.clone().upcast::<gtk::Widget>(),
             weight: 65,

@@ -8,7 +8,7 @@ use log::{debug, error, info};
 use nmrs::NetworkManager;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::Arc; // DbusHandle is Arc
 
 use super::dbus;
 use super::ethernet_menu::{ConnectionDetails, EthernetMenuWidget};
@@ -18,7 +18,7 @@ use super::wired_toggle_widget::WiredToggleWidget;
 #[derive(Clone)]
 pub struct WiredAdapterWidget {
     path: String,
-    store: Arc<NetworkStore>,
+    store: Rc<NetworkStore>,
     nm: Option<NetworkManager>,
     dbus: Arc<DbusHandle>,
     toggle: WiredToggleWidget,
@@ -28,10 +28,10 @@ pub struct WiredAdapterWidget {
 impl WiredAdapterWidget {
     pub fn new(
         adapter: &EthernetAdapterState,
-        store: Arc<NetworkStore>,
+        store: Rc<NetworkStore>,
         nm: Option<NetworkManager>,
         dbus: Arc<DbusHandle>,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) -> Self {
         let toggle = WiredToggleWidget::new(
             adapter.interface_name.clone(),
@@ -58,8 +58,8 @@ impl WiredAdapterWidget {
         widget
     }
 
-    pub fn widget(&self) -> Arc<WidgetFeatureToggle> {
-        Arc::new(WidgetFeatureToggle {
+    pub fn widget(&self) -> Rc<WidgetFeatureToggle> {
+        Rc::new(WidgetFeatureToggle {
             id: format!("networkmanager:wired:{}", self.path),
             el: self.toggle.widget(),
             weight: 101,

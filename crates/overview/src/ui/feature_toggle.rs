@@ -6,7 +6,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gtk::prelude::*;
 use uuid::Uuid;
@@ -56,7 +55,7 @@ impl FeatureToggleWidget {
     ///
     /// If menu_store is provided, the widget can be made expandable.
     /// The expand button visibility is controlled by the "expandable" CSS class.
-    pub fn new(props: FeatureToggleProps, menu_store: Option<Arc<MenuStore>>) -> Self {
+    pub fn new(props: FeatureToggleProps, menu_store: Option<Rc<MenuStore>>) -> Self {
         // Generate unique ID for menu if menu_store is provided
         let menu_id = menu_store.as_ref().map(|_| Uuid::new_v4().to_string());
 

@@ -30,11 +30,11 @@ pub struct NotificationsWidget {
     groups: Rc<RefCell<HashMap<Arc<str>, NotificationGroup>>>,
     on_output: Callback<NotificationsWidgetOutput>,
     store: Rc<NotificationStore>,
-    menu_store: Arc<MenuStore>,
+    menu_store: Rc<MenuStore>,
 }
 
 impl NotificationsWidget {
-    pub fn new(store: Rc<NotificationStore>, menu_store: Arc<MenuStore>) -> Self {
+    pub fn new(store: Rc<NotificationStore>, menu_store: Rc<MenuStore>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
@@ -197,7 +197,7 @@ impl NotificationsWidget {
         groups_container: &gtk::Box,
         empty_placeholder: &gtk::Box,
         on_output: &Callback<NotificationsWidgetOutput>,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) {
         log::debug!(
             "[notifications_widget] State changed, {} groups",

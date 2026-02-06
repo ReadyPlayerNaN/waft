@@ -33,8 +33,8 @@ use wired_adapter_widget::WiredAdapterWidget;
 pub struct NetworkManagerPlugin {
     dbus: Arc<DbusHandle>,
     nm: Option<NetworkManager>,
-    store: Arc<NetworkStore>,
-    menu_store: Option<Arc<MenuStore>>,
+    store: Rc<NetworkStore>,
+    menu_store: Option<Rc<MenuStore>>,
     registrar: Option<Rc<dyn WidgetRegistrar>>,
     ethernet_uis: Rc<RefCell<HashMap<String, WiredAdapterWidget>>>,
     wifi_uis: Rc<RefCell<HashMap<String, WiFiAdapterWidget>>>,
@@ -43,7 +43,7 @@ pub struct NetworkManagerPlugin {
 
 impl NetworkManagerPlugin {
     pub fn new(dbus: Arc<DbusHandle>) -> Self {
-        let store = Arc::new(create_network_store());
+        let store = Rc::new(create_network_store());
         Self {
             dbus,
             nm: None,
@@ -220,7 +220,7 @@ impl Plugin for NetworkManagerPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         // Store registrar and menu_store for runtime use (device add/remove)

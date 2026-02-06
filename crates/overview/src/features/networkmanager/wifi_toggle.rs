@@ -6,7 +6,6 @@ use crate::ui::feature_toggle::{
 };
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use super::wifi_icon::get_wifi_icon;
 
@@ -32,7 +31,7 @@ impl WiFiToggleWidget {
         active_ssid: Option<String>,
         network_count: usize,
         signal_strength: Option<u8>,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) -> Self {
         let initial_details = if let Some(ref ssid) = active_ssid {
             Some(ssid.clone())

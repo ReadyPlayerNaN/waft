@@ -9,7 +9,6 @@ use log::debug;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::menu_state::{MenuOp, MenuStore};
 use crate::ui::main_window::trigger_window_resize;
@@ -32,7 +31,7 @@ pub struct AgendaWidget {
     /// Track period separator to avoid duplicates
     period_separator: RefCell<Option<gtk::Box>>,
     /// MenuStore for tracking popover state
-    menu_store: Arc<MenuStore>,
+    menu_store: Rc<MenuStore>,
     /// Toggle button for showing/hiding past events
     show_past_btn: gtk::ToggleButton,
     /// Revealer wrapping past events for smooth slide animation
@@ -43,7 +42,7 @@ pub struct AgendaWidget {
 
 impl AgendaWidget {
     /// Create a new agenda widget.
-    pub fn new(menu_store: Arc<MenuStore>, agenda_store: Rc<AgendaStore>) -> Self {
+    pub fn new(menu_store: Rc<MenuStore>, agenda_store: Rc<AgendaStore>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(8)

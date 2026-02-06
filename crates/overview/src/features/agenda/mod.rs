@@ -232,7 +232,7 @@ impl Plugin for AgendaPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let agenda_widget = AgendaWidget::new(menu_store, self.store.clone());
@@ -244,7 +244,7 @@ impl Plugin for AgendaPlugin {
         }
 
         // Register the widget
-        registrar.register_widget(Arc::new(Widget {
+        registrar.register_widget(Rc::new(Widget {
             id: "agenda:main".to_string(),
             slot: Slot::Info,
             el: agenda_widget.root.clone().upcast::<gtk::Widget>(),

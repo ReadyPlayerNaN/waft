@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use log::{debug, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::Arc; // DbusHandle is Arc
 
 use gtk::prelude::*;
 
@@ -70,7 +70,7 @@ impl Plugin for BatteryPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        _menu_store: Arc<MenuStore>,
+        _menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let battery_widget = BatteryWidget::new();
@@ -82,7 +82,7 @@ impl Plugin for BatteryPlugin {
         }
 
         // Register the widget
-        registrar.register_widget(Arc::new(Widget {
+        registrar.register_widget(Rc::new(Widget {
             id: "battery:main".to_string(),
             slot: Slot::Header,
             el: battery_widget.root.clone().upcast::<gtk::Widget>(),

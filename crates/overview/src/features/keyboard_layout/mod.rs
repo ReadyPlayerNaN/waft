@@ -92,7 +92,7 @@ impl Plugin for KeyboardLayoutPlugin {
     async fn create_elements(
         &mut self,
         app: &gtk::Application,
-        _menu_store: Arc<crate::menu_state::MenuStore>,
+        _menu_store: Rc<crate::menu_state::MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         // Check if backend is available
@@ -144,7 +144,7 @@ impl Plugin for KeyboardLayoutPlugin {
         });
 
         // Register widget in actions slot with weight 10 (first in actions group)
-        registrar.register_widget(Arc::new(Widget {
+        registrar.register_widget(Rc::new(Widget {
             id: "keyboard-layout:indicator".to_string(),
             slot: Slot::Actions,
             el: keyboard_widget.root.clone().into(),

@@ -4,7 +4,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gtk::prelude::*;
 use log::debug;
@@ -17,14 +16,14 @@ use crate::ui::main_window::trigger_window_resize;
 pub struct FeatureGridWidget {
     pub root: gtk::Box,
     grid: gtk::Grid,
-    menu_store: Arc<MenuStore>,
+    menu_store: Rc<MenuStore>,
     /// Current toggle IDs in order, used for diffing
     toggle_ids: Rc<RefCell<Vec<String>>>,
 }
 
 impl FeatureGridWidget {
     /// Create a new feature grid with the given toggles.
-    pub fn new(items: Vec<Arc<WidgetFeatureToggle>>, menu_store: Arc<MenuStore>) -> Self {
+    pub fn new(items: Vec<Rc<WidgetFeatureToggle>>, menu_store: Rc<MenuStore>) -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
         let grid = gtk::Grid::builder()
@@ -50,7 +49,7 @@ impl FeatureGridWidget {
     }
 
     /// Populate the grid with toggles.
-    fn populate_grid(&self, items: &[Arc<WidgetFeatureToggle>]) {
+    fn populate_grid(&self, items: &[Rc<WidgetFeatureToggle>]) {
         let cols = 2;
 
         // Track toggle IDs for diffing
@@ -168,7 +167,7 @@ impl FeatureGridWidget {
     /// Uses diffing to avoid unnecessary rebuilds:
     /// - If toggle IDs haven't changed, do nothing
     /// - If they have changed, rebuild the grid (menu state is preserved in MenuStore)
-    pub fn sync_toggles(&self, items: &[Arc<WidgetFeatureToggle>]) {
+    pub fn sync_toggles(&self, items: &[Rc<WidgetFeatureToggle>]) {
         // Check if toggle IDs have changed
         let current_ids = self.toggle_ids.borrow();
         let new_ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();

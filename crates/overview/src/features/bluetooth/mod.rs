@@ -8,7 +8,7 @@ use log::{debug, error, info, warn};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::Arc; // DbusHandle is Arc
 
 use gtk::prelude::*;
 
@@ -165,7 +165,7 @@ impl BluetoothPlugin {
         adapter: &BluetoothAdapter,
         store: Rc<BluetoothStore>,
         dbus: Arc<DbusHandle>,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) -> AdapterUI {
         let state = store.get_state();
         let connected_count = state
@@ -344,7 +344,7 @@ impl Plugin for BluetoothPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         // Get adapters again to have their info
@@ -415,7 +415,7 @@ impl Plugin for BluetoothPlugin {
                 });
 
                 // Register the feature toggle
-                registrar.register_feature_toggle(Arc::new(WidgetFeatureToggle {
+                registrar.register_feature_toggle(Rc::new(WidgetFeatureToggle {
                     id: format!("bluetooth:{}", adapter.path),
                     el: ui.toggle.widget(),
                     weight: 100,

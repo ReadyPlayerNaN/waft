@@ -10,7 +10,6 @@ use log::{debug, error};
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Duration;
 
 use gtk::prelude::*;
@@ -83,14 +82,14 @@ impl Plugin for WeatherPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        _menu_store: Arc<MenuStore>,
+        _menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let units = self.units();
         let weather_widget = WeatherWidget::new(units);
 
         // Register the widget
-        registrar.register_widget(Arc::new(Widget {
+        registrar.register_widget(Rc::new(Widget {
             id: "weather:main".to_string(),
             slot: Slot::Header,
             el: weather_widget.root.clone().upcast::<gtk::Widget>(),

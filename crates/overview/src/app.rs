@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use log::{debug, warn};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -129,7 +130,7 @@ pub async fn run() -> Result<()> {
     let dbus = Arc::new(DbusHandle::connect().await?);
 
     // Create menu store for coordinating expandable menus
-    let menu_store = Arc::new(create_menu_store());
+    let menu_store = Rc::new(create_menu_store());
 
     let mut registry = PluginRegistry::new(menu_store);
 
@@ -268,7 +269,7 @@ pub async fn run() -> Result<()> {
     registry.init().await?;
     debug!("Initialized plugins {:?}", registry.len());
 
-    let registry_arc = Arc::new(registry);
+    let registry_rc = Rc::new(registry);
 
     // Initialize session monitor for lock/unlock detection
     let session_monitor = SessionMonitor::new().await;
@@ -280,8 +281,8 @@ pub async fn run() -> Result<()> {
         .build();
 
     let ipc_rx_for_startup = ipc_rx.clone();
-    let registry_for_startup = registry_arc.clone();
-    let session_rx_for_startup = Arc::new(Mutex::new(session_rx));
+    let registry_for_startup = registry_rc.clone();
+    let session_rx_for_startup = Rc::new(RefCell::new(session_rx));
 
     app.connect_startup(move |app| {
         debug!("Started gtk app");
@@ -388,8 +389,7 @@ pub async fn run() -> Result<()> {
                 }
 
             // Setup session lock/unlock receiver
-            if let Ok(mut rx_slot) = session_rx_slot.lock()
-                && let Some(mut rx) = rx_slot.take() {
+            if let Some(mut rx) = session_rx_slot.borrow_mut().take() {
                     let registry_for_session = registry.clone();
                     let window_for_session = main_window.window.clone();
                     let animation_for_session = main_window.animation.clone();

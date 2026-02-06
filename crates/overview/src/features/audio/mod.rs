@@ -8,7 +8,6 @@ use async_trait::async_trait;
 use log::{debug, error, info, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gtk::prelude::*;
 
@@ -139,7 +138,7 @@ impl Plugin for AudioPlugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         let state = self.store.get_state();
@@ -283,7 +282,7 @@ impl Plugin for AudioPlugin {
 
         // Register widgets
         if let Some(ref control) = *self.output_control.borrow() {
-            registrar.register_widget(Arc::new(Widget {
+            registrar.register_widget(Rc::new(Widget {
                 id: "audio:output".to_string(),
                 slot: Slot::Controls,
                 el: control.root.clone().upcast::<gtk::Widget>(),
@@ -291,7 +290,7 @@ impl Plugin for AudioPlugin {
             }));
         }
         if let Some(ref control) = *self.input_control.borrow() {
-            registrar.register_widget(Arc::new(Widget {
+            registrar.register_widget(Rc::new(Widget {
                 id: "audio:input".to_string(),
                 slot: Slot::Controls,
                 el: control.root.clone().upcast::<gtk::Widget>(),

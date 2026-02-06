@@ -4,7 +4,6 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::menu_state::MenuStore;
 
@@ -16,10 +15,10 @@ use crate::menu_state::MenuStore;
 #[allow(dead_code)] // unregister methods are part of the API but not yet used
 pub trait WidgetRegistrar {
     /// Register a slot widget. Notifies subscribers of the change.
-    fn register_widget(&self, widget: Arc<Widget>);
+    fn register_widget(&self, widget: Rc<Widget>);
 
     /// Register a feature toggle. Notifies subscribers of the change.
-    fn register_feature_toggle(&self, toggle: Arc<WidgetFeatureToggle>);
+    fn register_feature_toggle(&self, toggle: Rc<WidgetFeatureToggle>);
 
     /// Unregister a slot widget by its ID. Notifies subscribers of the change.
     fn unregister_widget(&self, id: &str);
@@ -133,7 +132,7 @@ pub trait Plugin {
     async fn create_elements(
         &mut self,
         _app: &gtk::Application,
-        _menu_store: Arc<MenuStore>,
+        _menu_store: Rc<MenuStore>,
         _registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
         Ok(())

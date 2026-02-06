@@ -4,7 +4,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use glib::SignalHandlerId;
 use gtk::prelude::*;
@@ -46,7 +45,7 @@ impl SliderControlWidget {
         icon: &str,
         value: f64,
         menu_widget: Option<&impl IsA<gtk::Widget>>,
-        menu_store: Arc<MenuStore>,
+        menu_store: Rc<MenuStore>,
     ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
