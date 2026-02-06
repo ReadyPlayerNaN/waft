@@ -276,3 +276,224 @@ impl FromStr for NotificationCategory {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // NotificationUrgency ordering tests
+    #[test]
+    fn test_urgency_critical_is_greater_than_normal() {
+        assert!(NotificationUrgency::Critical > NotificationUrgency::Normal);
+    }
+
+    #[test]
+    fn test_urgency_critical_is_greater_than_low() {
+        assert!(NotificationUrgency::Critical > NotificationUrgency::Low);
+    }
+
+    #[test]
+    fn test_urgency_normal_equals_low_in_ordering() {
+        // The implementation treats Normal and Low as equal (both non-critical)
+        assert_eq!(
+            NotificationUrgency::Normal.cmp(&NotificationUrgency::Low),
+            std::cmp::Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn test_urgency_critical_equals_critical() {
+        assert_eq!(
+            NotificationUrgency::Critical.cmp(&NotificationUrgency::Critical),
+            std::cmp::Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn test_urgency_default_is_normal() {
+        assert_eq!(NotificationUrgency::default(), NotificationUrgency::Normal);
+    }
+
+    // DbusExpireTimeout tests
+    #[test]
+    fn test_dbus_timeout_negative_one_is_default() {
+        assert_eq!(DbusExpireTimeout::from_dbus_i32(-1), DbusExpireTimeout::Default);
+    }
+
+    #[test]
+    fn test_dbus_timeout_zero_is_never() {
+        assert_eq!(DbusExpireTimeout::from_dbus_i32(0), DbusExpireTimeout::Never);
+    }
+
+    #[test]
+    fn test_dbus_timeout_positive_is_millis() {
+        assert_eq!(
+            DbusExpireTimeout::from_dbus_i32(5000),
+            DbusExpireTimeout::Millis(5000)
+        );
+    }
+
+    #[test]
+    fn test_dbus_timeout_large_positive_is_millis() {
+        assert_eq!(
+            DbusExpireTimeout::from_dbus_i32(i32::MAX),
+            DbusExpireTimeout::Millis(i32::MAX as u32)
+        );
+    }
+
+    #[test]
+    fn test_dbus_timeout_nonstandard_negative_is_default() {
+        // Non-standard negative values (other than -1) should be treated as default
+        assert_eq!(DbusExpireTimeout::from_dbus_i32(-2), DbusExpireTimeout::Default);
+        assert_eq!(DbusExpireTimeout::from_dbus_i32(-100), DbusExpireTimeout::Default);
+        assert_eq!(DbusExpireTimeout::from_dbus_i32(i32::MIN), DbusExpireTimeout::Default);
+    }
+
+    // NotificationCategory parsing tests
+    #[test]
+    fn test_category_call_with_status() {
+        assert!(matches!(
+            NotificationCategory::from_str("call.incoming"),
+            Ok(NotificationCategory::Call(CallStatus::Incoming))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("call.ended"),
+            Ok(NotificationCategory::Call(CallStatus::Ended))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("call.unanswered"),
+            Ok(NotificationCategory::Call(CallStatus::Unanswered))
+        ));
+    }
+
+    #[test]
+    fn test_category_call_generic() {
+        assert!(matches!(
+            NotificationCategory::from_str("call"),
+            Ok(NotificationCategory::Call(CallStatus::Generic))
+        ));
+    }
+
+    #[test]
+    fn test_category_call_unknown_status() {
+        let result = NotificationCategory::from_str("call.custom");
+        assert!(matches!(result, Ok(NotificationCategory::Call(CallStatus::Unknown(_)))));
+    }
+
+    #[test]
+    fn test_category_device_statuses() {
+        assert!(matches!(
+            NotificationCategory::from_str("device.added"),
+            Ok(NotificationCategory::Device(DeviceStatus::Added))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("device.removed"),
+            Ok(NotificationCategory::Device(DeviceStatus::Removed))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("device.error"),
+            Ok(NotificationCategory::Device(DeviceStatus::Error))
+        ));
+    }
+
+    #[test]
+    fn test_category_email_statuses() {
+        assert!(matches!(
+            NotificationCategory::from_str("email.arrived"),
+            Ok(NotificationCategory::Email(EmailStatus::Arrived))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("email.bounced"),
+            Ok(NotificationCategory::Email(EmailStatus::Bounced))
+        ));
+    }
+
+    #[test]
+    fn test_category_im_statuses() {
+        assert!(matches!(
+            NotificationCategory::from_str("im.received"),
+            Ok(NotificationCategory::Im(ImStatus::Received))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("im.error"),
+            Ok(NotificationCategory::Im(ImStatus::Error))
+        ));
+    }
+
+    #[test]
+    fn test_category_network_statuses() {
+        assert!(matches!(
+            NotificationCategory::from_str("network.connected"),
+            Ok(NotificationCategory::Network(NetworkStatus::Connected))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("network.disconnected"),
+            Ok(NotificationCategory::Network(NetworkStatus::Disconnected))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("network.error"),
+            Ok(NotificationCategory::Network(NetworkStatus::Error))
+        ));
+    }
+
+    #[test]
+    fn test_category_presence_statuses() {
+        assert!(matches!(
+            NotificationCategory::from_str("presence.online"),
+            Ok(NotificationCategory::Presence(PresenceStatus::Online))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("presence.offline"),
+            Ok(NotificationCategory::Presence(PresenceStatus::Offline))
+        ));
+    }
+
+    #[test]
+    fn test_category_transfer_statuses() {
+        assert!(matches!(
+            NotificationCategory::from_str("transfer.complete"),
+            Ok(NotificationCategory::Transfer(TransferStatus::Complete))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("transfer.error"),
+            Ok(NotificationCategory::Transfer(TransferStatus::Error))
+        ));
+    }
+
+    #[test]
+    fn test_category_unknown() {
+        let result = NotificationCategory::from_str("completely.unknown");
+        assert!(matches!(result, Ok(NotificationCategory::Unknown(_))));
+
+        let result = NotificationCategory::from_str("gibberish");
+        assert!(matches!(result, Ok(NotificationCategory::Unknown(_))));
+    }
+
+    #[test]
+    fn test_category_generic_variants() {
+        assert!(matches!(
+            NotificationCategory::from_str("device"),
+            Ok(NotificationCategory::Device(DeviceStatus::Generic))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("email"),
+            Ok(NotificationCategory::Email(EmailStatus::Generic))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("im"),
+            Ok(NotificationCategory::Im(ImStatus::Generic))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("network"),
+            Ok(NotificationCategory::Network(NetworkStatus::Generic))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("presence"),
+            Ok(NotificationCategory::Presence(PresenceStatus::Generic))
+        ));
+        assert!(matches!(
+            NotificationCategory::from_str("transfer"),
+            Ok(NotificationCategory::Transfer(TransferStatus::Generic))
+        ));
+    }
+}

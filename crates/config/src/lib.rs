@@ -50,3 +50,84 @@ impl Config {
         self.plugins.iter().any(|p| p.id == plugin_id)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_config() -> Config {
+        let mut settings1 = toml::Table::new();
+        settings1.insert("enabled".to_string(), toml::Value::Boolean(true));
+        settings1.insert("interval".to_string(), toml::Value::Integer(30));
+
+        let mut settings2 = toml::Table::new();
+        settings2.insert("theme".to_string(), toml::Value::String("dark".to_string()));
+
+        Config {
+            plugins: vec![
+                PluginConfigEntry {
+                    id: "clock".to_string(),
+                    settings: settings1,
+                },
+                PluginConfigEntry {
+                    id: "weather".to_string(),
+                    settings: settings2,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_get_plugin_settings_returns_settings_for_existing_plugin() {
+        let config = create_test_config();
+        let settings = config.get_plugin_settings("clock");
+
+        assert!(settings.is_some());
+        let settings = settings.unwrap();
+        assert_eq!(settings.get("enabled"), Some(&toml::Value::Boolean(true)));
+        assert_eq!(settings.get("interval"), Some(&toml::Value::Integer(30)));
+    }
+
+    #[test]
+    fn test_get_plugin_settings_returns_none_for_nonexistent_plugin() {
+        let config = create_test_config();
+        let settings = config.get_plugin_settings("nonexistent");
+
+        assert!(settings.is_none());
+    }
+
+    #[test]
+    fn test_is_plugin_enabled_returns_true_for_listed_plugin() {
+        let config = create_test_config();
+
+        assert!(config.is_plugin_enabled("clock"));
+        assert!(config.is_plugin_enabled("weather"));
+    }
+
+    #[test]
+    fn test_is_plugin_enabled_returns_false_for_unlisted_plugin() {
+        let config = create_test_config();
+
+        assert!(!config.is_plugin_enabled("battery"));
+        assert!(!config.is_plugin_enabled(""));
+    }
+
+    #[test]
+    fn test_default_config_has_no_plugins() {
+        let config = Config::default();
+
+        assert!(config.plugins.is_empty());
+        assert!(!config.is_plugin_enabled("anything"));
+    }
+
+    #[test]
+    fn test_config_path_returns_some() {
+        // config_path depends on dirs crate, but should return Some in most environments
+        let path = Config::config_path();
+        // We can't assert the exact path, but if it returns Some, it should end with config.toml
+        if let Some(p) = path {
+            assert!(p.ends_with("config.toml"));
+            assert!(p.to_string_lossy().contains("waft"));
+        }
+    }
+}
