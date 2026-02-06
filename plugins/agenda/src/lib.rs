@@ -82,8 +82,9 @@ impl AgendaPlugin {
     /// Set up calendar views for all discovered sources.
     async fn setup_views(&self) -> Result<()> {
         let dbus = self.dbus.as_ref().expect("dbus not initialized");
+        let handle = self.tokio_handle.as_ref().expect("tokio_handle not initialized");
 
-        let sources = match discover_calendar_sources(dbus).await {
+        let sources = match discover_calendar_sources(dbus, handle).await {
             Ok(s) => s,
             Err(e) => {
                 warn!("[agenda] Failed to discover calendar sources: {:?}", e);
@@ -127,7 +128,7 @@ impl AgendaPlugin {
             .collect();
 
         for (bus_name, view_path) in views_to_stop {
-            if let Err(e) = stop_and_dispose_view(dbus, &bus_name, &view_path).await {
+            if let Err(e) = stop_and_dispose_view(dbus, handle, &bus_name, &view_path).await {
                 debug!("[agenda] failed to stop/dispose view: {e}");
             }
         }
@@ -142,11 +143,11 @@ impl AgendaPlugin {
 
         // Open calendars and create views
         for source in &sources {
-            match open_calendar(dbus, &source.uid).await {
+            match open_calendar(dbus, handle, &source.uid).await {
                 Ok((calendar_path, bus_name)) => {
-                    match create_view(dbus, &bus_name, &calendar_path, &query).await {
+                    match create_view(dbus, handle, &bus_name, &calendar_path, &query).await {
                         Ok(view_path) => {
-                            if let Err(e) = start_view(dbus, &bus_name, &view_path).await {
+                            if let Err(e) = start_view(dbus, handle, &bus_name, &view_path).await {
                                 warn!(
                                     "[agenda] Failed to start view for '{}': {:?}",
                                     source.display_name, e
@@ -249,6 +250,7 @@ impl OverviewPlugin for AgendaPlugin {
             &dbus,
             self.signal_channel.0.clone(),
             self.view_paths.clone(),
+            tokio_handle,
         )
         .await?;
 
@@ -319,6 +321,7 @@ impl OverviewPlugin for AgendaPlugin {
 
         // Periodic refresh: recreate views with updated time range
         let dbus = self.dbus.clone().expect("dbus not initialized");
+        let tokio_handle = self.tokio_handle.clone().expect("tokio_handle not initialized");
         let store_for_refresh = self.store.clone();
         let active_views = self.active_views.clone();
         let view_paths_for_refresh = self.view_paths.clone();
@@ -328,6 +331,7 @@ impl OverviewPlugin for AgendaPlugin {
 
         glib::timeout_add_local(Duration::from_secs(refresh_interval), move || {
             let dbus = dbus.clone();
+            let handle = tokio_handle.clone();
             let store = store_for_refresh.clone();
             let active_views = active_views.clone();
             let view_paths = view_paths_for_refresh.clone();
@@ -337,7 +341,7 @@ impl OverviewPlugin for AgendaPlugin {
                 debug!("[agenda] Periodic refresh");
                 store.emit(AgendaOp::SetLoading(true));
 
-                let sources = match discover_calendar_sources(&dbus).await {
+                let sources = match discover_calendar_sources(&dbus, &handle).await {
                     Ok(s) => s,
                     Err(e) => {
                         error!("[agenda] Refresh: failed to discover sources: {:?}", e);
@@ -355,7 +359,7 @@ impl OverviewPlugin for AgendaPlugin {
                     .collect();
 
                 for (bus_name, view_path) in views_to_stop {
-                    if let Err(e) = stop_and_dispose_view(&dbus, &bus_name, &view_path).await {
+                    if let Err(e) = stop_and_dispose_view(&dbus, &handle, &bus_name, &view_path).await {
                         debug!("[agenda] refresh: failed to stop/dispose view: {e}");
                     }
                 }
@@ -375,11 +379,11 @@ impl OverviewPlugin for AgendaPlugin {
                 store.emit(AgendaOp::SetQuerySince(since));
 
                 for source in &sources {
-                    match open_calendar(&dbus, &source.uid).await {
+                    match open_calendar(&dbus, &handle, &source.uid).await {
                         Ok((calendar_path, bus_name)) => {
-                            match create_view(&dbus, &bus_name, &calendar_path, &query).await {
+                            match create_view(&dbus, &handle, &bus_name, &calendar_path, &query).await {
                                 Ok(view_path) => {
-                                    if let Err(e) = start_view(&dbus, &bus_name, &view_path).await {
+                                    if let Err(e) = start_view(&dbus, &handle, &bus_name, &view_path).await {
                                         warn!(
                                             "[agenda] Refresh: failed to start view for '{}': {:?}",
                                             source.display_name, e

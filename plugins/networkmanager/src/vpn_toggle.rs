@@ -69,34 +69,35 @@ impl VpnToggleWidget {
         connected_name: &Option<String>,
         state: &VpnState,
     ) -> (String, String, &'static str, bool) {
+        use waft_plugin_api::i18n::t;
         match state {
             VpnState::Disconnected => (
-                "VPN".to_string(),
-                "Disconnected".to_string(),
+                t("vpn-title"),
+                t("vpn-disconnected"),
                 "network-vpn-disabled-symbolic",
                 false,
             ),
             VpnState::Connecting => (
                 connected_name
                     .clone()
-                    .unwrap_or_else(|| "VPN".to_string()),
-                "Connecting...".to_string(),
+                    .unwrap_or_else(|| t("vpn-title")),
+                t("vpn-connecting"),
                 "network-vpn-acquiring-symbolic",
                 false,
             ),
             VpnState::Connected => (
                 connected_name
                     .clone()
-                    .unwrap_or_else(|| "VPN".to_string()),
-                "Connected".to_string(),
+                    .unwrap_or_else(|| t("vpn-title")),
+                t("vpn-connected"),
                 "network-vpn-symbolic",
                 true,
             ),
             VpnState::Disconnecting => (
                 connected_name
                     .clone()
-                    .unwrap_or_else(|| "VPN".to_string()),
-                "Disconnecting...".to_string(),
+                    .unwrap_or_else(|| t("vpn-title")),
+                t("vpn-disconnecting"),
                 "network-vpn-symbolic",
                 true,
             ),

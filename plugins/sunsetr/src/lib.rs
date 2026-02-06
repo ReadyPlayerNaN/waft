@@ -100,7 +100,7 @@ impl OverviewPlugin for SunsetrPlugin {
 
         let toggle = FeatureToggleWidget::new(
             FeatureToggleProps {
-                title: "Night Light".into(),
+                title: waft_plugin_api::i18n::t("nightlight-title"),
                 icon: "night-light-symbolic".into(),
                 details: initial_state.1.clone(),
                 active: initial_state.0,

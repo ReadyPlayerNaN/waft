@@ -1,4 +1,5 @@
 pub mod common;
+pub mod i18n;
 pub mod loader;
 pub mod overview;
 pub mod ui;

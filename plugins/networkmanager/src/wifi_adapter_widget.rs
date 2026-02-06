@@ -289,7 +289,7 @@ impl WiFiAdapterWidget {
                                 if count == 1 { "" } else { "s" }
                             )));
                         } else {
-                            toggle_clone.set_details(Some("No networks found".to_string()));
+                            toggle_clone.set_details(Some(waft_plugin_api::i18n::t("wifi-no-networks")));
                         }
 
                         // End scanning - success case

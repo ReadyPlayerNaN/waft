@@ -14,15 +14,20 @@ use waft_core::dbus::DbusHandle;
 
 use super::values::{AgendaEvent, CalendarSource, parse_vevent};
 
-/// Bridge tokio and glib runtimes using flume channel.
-async fn spawn_on_tokio<F, T>(future: F) -> T
+/// Bridge tokio and glib runtimes using a dedicated thread.
+///
+/// In cdylib plugins, `tokio::spawn()` panics because the host's tokio TLS is
+/// invisible.  Instead we run the future on a short-lived thread that enters
+/// the plugin's copy of the tokio runtime via `handle.block_on()`.
+async fn spawn_on_tokio<F, T>(handle: &tokio::runtime::Handle, future: F) -> T
 where
     F: std::future::Future<Output = T> + Send + 'static,
     T: Send + 'static,
 {
     let (tx, rx) = flume::bounded(1);
-    tokio::spawn(async move {
-        let result = future.await;
+    let h = handle.clone();
+    std::thread::spawn(move || {
+        let result = h.block_on(future);
         let _ = tx.send(result);
     });
     rx.recv_async().await.expect("tokio task cancelled")
@@ -40,9 +45,9 @@ pub const CALENDAR_VIEW_IFACE: &str = "org.gnome.evolution.dataserver.CalendarVi
 /// Discover calendar sources from EDS source registry.
 ///
 /// Calls `GetManagedObjects()` and filters for sources with a `[Calendar]` group.
-pub async fn discover_calendar_sources(dbus: &Arc<DbusHandle>) -> Result<Vec<CalendarSource>> {
+pub async fn discover_calendar_sources(dbus: &Arc<DbusHandle>, handle: &tokio::runtime::Handle) -> Result<Vec<CalendarSource>> {
     let conn = dbus.connection();
-    let result: Vec<CalendarSource> = spawn_on_tokio(async move {
+    let result: Vec<CalendarSource> = spawn_on_tokio(handle, async move {
         let proxy = zbus::Proxy::new(
             &conn,
             SOURCES_DEST,
@@ -120,11 +125,11 @@ fn extract_display_name(data: &str) -> Option<String> {
 /// Open a calendar backend via the CalendarFactory.
 ///
 /// Returns `(object_path, bus_name)` for the opened calendar.
-pub async fn open_calendar(dbus: &Arc<DbusHandle>, source_uid: &str) -> Result<(String, String)> {
+pub async fn open_calendar(dbus: &Arc<DbusHandle>, handle: &tokio::runtime::Handle, source_uid: &str) -> Result<(String, String)> {
     let conn = dbus.connection();
     let uid = source_uid.to_string();
 
-    let result: (String, String) = spawn_on_tokio(async move {
+    let result: (String, String) = spawn_on_tokio(handle, async move {
         let proxy = zbus::Proxy::new(
             &conn,
             CALENDAR_FACTORY_DEST,
@@ -155,6 +160,7 @@ pub async fn open_calendar(dbus: &Arc<DbusHandle>, source_uid: &str) -> Result<(
 /// Returns the view object path.
 pub async fn create_view(
     dbus: &Arc<DbusHandle>,
+    handle: &tokio::runtime::Handle,
     bus_name: &str,
     calendar_path: &str,
     query: &str,
@@ -164,7 +170,7 @@ pub async fn create_view(
     let path = calendar_path.to_string();
     let q = query.to_string();
 
-    let view_path: String = spawn_on_tokio(async move {
+    let view_path: String = spawn_on_tokio(handle, async move {
         let proxy = zbus::Proxy::new(
             &conn,
             bus.as_str(),
@@ -189,12 +195,12 @@ pub async fn create_view(
 }
 
 /// Start a calendar view (begins delivering signals).
-pub async fn start_view(dbus: &Arc<DbusHandle>, bus_name: &str, view_path: &str) -> Result<()> {
+pub async fn start_view(dbus: &Arc<DbusHandle>, handle: &tokio::runtime::Handle, bus_name: &str, view_path: &str) -> Result<()> {
     let conn = dbus.connection();
     let bus = bus_name.to_string();
     let path = view_path.to_string();
 
-    spawn_on_tokio(async move {
+    spawn_on_tokio(handle, async move {
         let proxy = zbus::Proxy::new(&conn, bus.as_str(), path.as_str(), CALENDAR_VIEW_IFACE)
             .await
             .context("Failed to create CalendarView proxy")?;
@@ -215,6 +221,7 @@ pub async fn start_view(dbus: &Arc<DbusHandle>, bus_name: &str, view_path: &str)
 /// Stop and dispose a calendar view.
 pub async fn stop_and_dispose_view(
     dbus: &Arc<DbusHandle>,
+    handle: &tokio::runtime::Handle,
     bus_name: &str,
     view_path: &str,
 ) -> Result<()> {
@@ -222,7 +229,7 @@ pub async fn stop_and_dispose_view(
     let bus = bus_name.to_string();
     let path = view_path.to_string();
 
-    spawn_on_tokio(async move {
+    spawn_on_tokio(handle, async move {
         let proxy = zbus::Proxy::new(&conn, bus.as_str(), path.as_str(), CALENDAR_VIEW_IFACE)
             .await
             .context("Failed to create CalendarView proxy for cleanup")?;
@@ -255,12 +262,15 @@ pub async fn listen_view_signals(
     dbus: &Arc<DbusHandle>,
     tx: flume::Sender<ViewSignal>,
     view_paths: Arc<Mutex<HashSet<String>>>,
+    tokio_handle: &tokio::runtime::Handle,
 ) -> Result<()> {
     let rule = format!("type='signal',interface='{}'", CALENDAR_VIEW_IFACE);
 
     let mut rx = dbus.listen_signals(&rule).await?;
 
-    tokio::spawn(async move {
+    let h = tokio_handle.clone();
+    std::thread::spawn(move || {
+        h.block_on(async move {
         loop {
             match rx.recv().await {
                 Ok(msg) => {
@@ -363,6 +373,7 @@ pub async fn listen_view_signals(
             }
         }
         debug!("[agenda/dbus] view signal listener stopped");
+        });
     });
 
     Ok(())

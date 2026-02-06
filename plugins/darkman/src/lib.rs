@@ -109,7 +109,7 @@ impl OverviewPlugin for DarkmanPlugin {
 
         let toggle = FeatureToggleWidget::new(
             FeatureToggleProps {
-                title: "Dark Mode".into(),
+                title: waft_plugin_api::i18n::t("darkman-title"),
                 icon: "weather-clear-night-symbolic".into(),
                 details: None,
                 active: initial_active,

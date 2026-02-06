@@ -207,7 +207,7 @@ impl BluetoothPlugin {
                 title: adapter.name.clone(),
                 icon: "bluetooth-symbolic".into(),
                 details: if connected_count > 0 {
-                    Some(format!("{} connected", connected_count))
+                    Some(format!("{} {}", connected_count, waft_plugin_api::i18n::t("network-connected")))
                 } else {
                     None
                 },
@@ -479,7 +479,7 @@ impl OverviewPlugin for BluetoothPlugin {
                                 .count();
 
                             ui.toggle.set_details(if connected_count > 0 {
-                                Some(format!("{} connected", connected_count))
+                                Some(format!("{} {}", connected_count, waft_plugin_api::i18n::t("network-connected")))
                             } else {
                                 None
                             });

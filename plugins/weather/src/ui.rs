@@ -49,13 +49,13 @@ impl WeatherWidget {
             .build();
 
         let temp_label = gtk::Label::builder()
-            .label("--")
+            .label(waft_plugin_api::i18n::t("weather-placeholder"))
             .xalign(0.0)
             .css_classes(["title-3", "weather-temp"])
             .build();
 
         let condition_label = gtk::Label::builder()
-            .label("Loading...")
+            .label(waft_plugin_api::i18n::t("weather-loading"))
             .xalign(0.0)
             .css_classes(["dim-label", "weather-condition"])
             .build();
@@ -124,7 +124,7 @@ impl WeatherWidget {
 
                 // Update condition
                 self.condition_label
-                    .set_label(data.condition.description());
+                    .set_label(&data.condition.description());
             }
             WeatherState::Error(msg) => {
                 self.spinner.set_visible(false);

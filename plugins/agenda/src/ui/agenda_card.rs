@@ -61,7 +61,7 @@ impl AgendaCard {
 
         // Time label (fixed width for alignment)
         let time_text = if event.all_day {
-            "All day".to_string()
+            waft_plugin_api::i18n::t("agenda-all-day")
         } else {
             format_time_range(event.start_time, event.end_time)
         };
@@ -75,7 +75,7 @@ impl AgendaCard {
 
         // Summary label (ellipsized, takes remaining space)
         let summary_text = if event.summary.trim().is_empty() {
-            "(No title)".to_string()
+            waft_plugin_api::i18n::t("agenda-no-title")
         } else {
             event.summary.clone()
         };

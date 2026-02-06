@@ -41,15 +41,16 @@ impl BatteryState {
         }
     }
 
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
+        use waft_plugin_api::i18n::t;
         match self {
-            Self::Unknown => "Unknown",
-            Self::Charging => "Charging",
-            Self::Discharging => "Discharging",
-            Self::Empty => "Empty",
-            Self::FullyCharged => "Fully Charged",
-            Self::PendingCharge => "Pending Charge",
-            Self::PendingDischarge => "Pending Discharge",
+            Self::Unknown => t("battery-unknown"),
+            Self::Charging => t("battery-charging"),
+            Self::Discharging => t("battery-discharging"),
+            Self::Empty => t("battery-empty"),
+            Self::FullyCharged => t("battery-fully-charged"),
+            Self::PendingCharge => t("battery-pending-charge"),
+            Self::PendingDischarge => t("battery-pending-discharge"),
         }
     }
 }
@@ -57,14 +58,15 @@ impl BatteryState {
 impl BatteryInfo {
     /// Human-readable status text for the secondary label.
     pub fn status_text(&self) -> String {
+        use waft_plugin_api::i18n::t_args;
         match self.state {
             BatteryState::Discharging if self.time_to_empty > 0 => {
-                format!("{} remaining", format_time_remaining(self.time_to_empty))
+                t_args("battery-time-remaining", &[("time", &format_time_remaining(self.time_to_empty))])
             }
             BatteryState::Charging if self.time_to_full > 0 => {
-                format!("{} until full", format_time_remaining(self.time_to_full))
+                t_args("battery-time-to-full", &[("time", &format_time_remaining(self.time_to_full))])
             }
-            _ => self.state.label().to_string(),
+            _ => self.state.label(),
         }
     }
 }
@@ -74,14 +76,14 @@ impl BatteryInfo {
 /// Omits hours when 0, shows `"< 1min"` for values under 60 seconds.
 fn format_time_remaining(seconds: i64) -> String {
     if seconds <= 0 {
-        return "< 1min".to_string();
+        return waft_plugin_api::i18n::t("battery-time-less-than-minute");
     }
 
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
 
     if hours == 0 && minutes == 0 {
-        return "< 1min".to_string();
+        return waft_plugin_api::i18n::t("battery-time-less-than-minute");
     }
 
     if hours == 0 {

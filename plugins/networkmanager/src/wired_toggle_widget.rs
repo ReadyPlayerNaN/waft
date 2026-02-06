@@ -32,14 +32,15 @@ impl WiredToggleWidget {
     ) -> Self {
         let is_connected = device_state == 100;
 
+        use waft_plugin_api::i18n::t;
         let initial_details = if enabled {
             if is_connected {
-                Some("Connected".to_string())
+                Some(t("network-connected"))
             } else {
-                Some("Disconnected".to_string())
+                Some(t("network-disconnected"))
             }
         } else {
-            Some("Disabled".to_string())
+            Some(t("network-disabled"))
         };
 
         let icon = if enabled {
@@ -127,14 +128,15 @@ impl WiredToggleWidget {
     pub fn update_state(&self, enabled: bool, _carrier: bool, device_state: u32) {
         let is_connected = device_state == 100;
 
+        use waft_plugin_api::i18n::t;
         let details = if enabled {
             if is_connected {
-                Some("Connected".to_string())
+                Some(t("network-connected"))
             } else {
-                Some("Disconnected".to_string())
+                Some(t("network-disconnected"))
             }
         } else {
-            Some("Disabled".to_string())
+            Some(t("network-disabled"))
         };
 
         let icon = if enabled {

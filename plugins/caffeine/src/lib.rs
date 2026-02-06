@@ -104,7 +104,7 @@ impl OverviewPlugin for CaffeinePlugin {
 
         let toggle = FeatureToggleWidget::new(
             FeatureToggleProps {
-                title: "Keep Screen On".into(),
+                title: waft_plugin_api::i18n::t("caffeine-title"),
                 icon: "changes-allow-symbolic".into(),
                 details: None,
                 active: false,

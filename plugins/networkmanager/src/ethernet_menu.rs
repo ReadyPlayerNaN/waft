@@ -86,17 +86,18 @@ impl EthernetMenuWidget {
             .spacing(4)
             .build();
 
+        use waft_plugin_api::i18n::t;
         let empty_label = gtk::Label::builder()
-            .label("Disconnected")
+            .label(t("network-disconnected"))
             .css_classes(["dim-label", "caption"])
             .halign(gtk::Align::Start)
             .build();
 
-        let link_speed_row = DetailRow::new("Link Speed");
-        let ipv4_row = DetailRow::new("IPv4 Address");
-        let ipv6_row = DetailRow::new("IPv6 Address");
-        let subnet_row = DetailRow::new("Subnet Mask");
-        let gateway_row = DetailRow::new("Gateway");
+        let link_speed_row = DetailRow::new(&t("network-link-speed"));
+        let ipv4_row = DetailRow::new(&t("network-ipv4-address"));
+        let ipv6_row = DetailRow::new(&t("network-ipv6-address"));
+        let subnet_row = DetailRow::new(&t("network-subnet-mask"));
+        let gateway_row = DetailRow::new(&t("network-gateway"));
 
         root.append(&details_box);
         root.append(&empty_label);

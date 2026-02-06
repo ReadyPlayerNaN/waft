@@ -56,7 +56,7 @@ impl AgendaWidget {
             .build();
 
         let header_label = gtk::Label::builder()
-            .label("Upcoming Events")
+            .label(waft_plugin_api::i18n::t("agenda-title"))
             .xalign(0.0)
             .hexpand(true)
             .css_classes(["title-3", "agenda-header"])
@@ -64,7 +64,7 @@ impl AgendaWidget {
 
         let show_past_btn = gtk::ToggleButton::builder()
             .icon_name("task-past-due-symbolic")
-            .tooltip_text("Hide past events")
+            .tooltip_text(waft_plugin_api::i18n::t("agenda-hide-past-tooltip"))
             .css_classes(["agenda-show-past-pill"])
             .active(false)
             .build();
@@ -107,7 +107,7 @@ impl AgendaWidget {
 
         // Empty state label
         let empty_label = gtk::Label::builder()
-            .label("No upcoming events")
+            .label(waft_plugin_api::i18n::t("agenda-empty"))
             .xalign(0.0)
             .css_classes(["dim-label", "agenda-empty"])
             .visible(false)

@@ -146,7 +146,7 @@ impl WiFiMenuWidget {
             .build();
 
         let scan_label = gtk::Label::builder()
-            .label("Scanning for networks...")
+            .label(waft_plugin_api::i18n::t("wifi-scanning"))
             .build();
 
         loader_box.append(&scan_spinner);
@@ -164,11 +164,11 @@ impl WiFiMenuWidget {
             .build();
 
         let empty_label = gtk::Label::builder()
-            .label("No networks found")
+            .label(waft_plugin_api::i18n::t("wifi-no-networks"))
             .build();
 
         let refresh_button = gtk::Button::builder()
-            .label("Refresh")
+            .label(waft_plugin_api::i18n::t("wifi-refresh"))
             .halign(gtk::Align::Center)
             .build();
 
