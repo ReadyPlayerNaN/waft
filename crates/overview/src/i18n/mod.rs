@@ -3,7 +3,7 @@
 //! This module provides translation functions for the UI.
 
 use fluent_bundle::concurrent::FluentBundle as ConcurrentFluentBundle;
-use fluent_bundle::{FluentArgs, FluentResource, FluentValue};
+use fluent_bundle::FluentResource;
 use std::sync::OnceLock;
 use unic_langid::LanguageIdentifier;
 
@@ -37,31 +37,6 @@ pub fn t(id: &str) -> String {
             let mut errors = vec![];
             bundle
                 .format_pattern(pattern, None, &mut errors)
-                .to_string()
-        })
-        .unwrap_or_else(|| id.to_string())
-}
-
-/// Translate a message with arguments.
-///
-/// Returns the message ID if translation is not found.
-pub fn t_args(id: &str, args: &[(&str, &str)]) -> String {
-    let bundle = BUNDLE.get_or_init(|| {
-        let locale = detect_locale();
-        load_bundle(&locale)
-    });
-
-    bundle
-        .get_message(id)
-        .and_then(|msg| msg.value())
-        .map(|pattern| {
-            let mut fluent_args = FluentArgs::new();
-            for (key, value) in args {
-                fluent_args.set(*key, FluentValue::from(*value));
-            }
-            let mut errors = vec![];
-            bundle
-                .format_pattern(pattern, Some(&fluent_args), &mut errors)
                 .to_string()
         })
         .unwrap_or_else(|| id.to_string())

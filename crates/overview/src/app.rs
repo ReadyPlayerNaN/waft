@@ -16,19 +16,8 @@ use waft_config::Config;
 use waft_plugin_api::loader;
 use crate::dbus::DbusHandle;
 use crate::plugin::PluginResources;
-use crate::features::agenda::AgendaPlugin;
-use crate::features::audio::AudioPlugin;
-use crate::features::battery::BatteryPlugin;
-use crate::features::bluetooth::BluetoothPlugin;
-use crate::features::brightness::BrightnessPlugin;
-use crate::features::caffeine::CaffeinePlugin;
-use crate::features::keyboard_layout::KeyboardLayoutPlugin;
-use crate::features::networkmanager::NetworkManagerPlugin;
 use crate::features::notifications::NotificationsPlugin;
 use crate::features::session::{SessionEvent, SessionMonitor};
-use crate::features::sunsetr::SunsetrPlugin;
-use crate::features::systemd_actions::SystemdActionsPlugin;
-use crate::features::weather::WeatherPlugin;
 use waft_ipc::net as ipc_net;
 use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
 use crate::menu_state::create_menu_store;
@@ -156,13 +145,7 @@ pub async fn run() -> Result<()> {
     }
 
     // Load built-in static plugins
-    if config.is_plugin_enabled("plugin::sunsetr") {
-        let mut plugin = SunsetrPlugin::new();
-        if let Some(settings) = config.get_plugin_settings("plugin::sunsetr") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
+    // Note: sunsetr is now a dynamic plugin loaded from .so file
 
     if config.is_plugin_enabled("plugin::notifications") {
         let mut plugin = NotificationsPlugin::new();
@@ -172,85 +155,8 @@ pub async fn run() -> Result<()> {
         registry.register(plugin);
     }
 
-    if config.is_plugin_enabled("plugin::weather") {
-        let mut plugin = WeatherPlugin::new();
-        if let Some(settings) = config.get_plugin_settings("plugin::weather") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    if config.is_plugin_enabled("plugin::bluetooth") {
-        let mut plugin = BluetoothPlugin::new(system_dbus.clone());
-        if let Some(settings) = config.get_plugin_settings("plugin::bluetooth") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    if config.is_plugin_enabled("plugin::battery") {
-        let mut plugin = BatteryPlugin::new(system_dbus.clone());
-        if let Some(settings) = config.get_plugin_settings("plugin::battery") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    if config.is_plugin_enabled("plugin::audio") {
-        let mut plugin = AudioPlugin::new();
-        if let Some(settings) = config.get_plugin_settings("plugin::audio") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    if config.is_plugin_enabled("plugin::brightness") {
-        let mut plugin = BrightnessPlugin::new();
-        if let Some(settings) = config.get_plugin_settings("plugin::brightness") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    if config.is_plugin_enabled("plugin::caffeine") {
-        let mut plugin = CaffeinePlugin::new(session_dbus.clone());
-        if let Some(settings) = config.get_plugin_settings("plugin::caffeine") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    if config.is_plugin_enabled("plugin::agenda") {
-        let mut plugin = AgendaPlugin::new(session_dbus.clone());
-        if let Some(settings) = config.get_plugin_settings("plugin::agenda") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    if config.is_plugin_enabled("plugin::networkmanager") {
-        let mut plugin = NetworkManagerPlugin::new(system_dbus.clone());
-        if let Some(settings) = config.get_plugin_settings("plugin::networkmanager") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    if config.is_plugin_enabled("plugin::keyboard-layout") {
-        let mut plugin = KeyboardLayoutPlugin::new();
-        if let Some(settings) = config.get_plugin_settings("plugin::keyboard-layout") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    if config.is_plugin_enabled("plugin::systemd-actions") {
-        let mut plugin = SystemdActionsPlugin::new();
-        if let Some(settings) = config.get_plugin_settings("plugin::systemd-actions") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
+    // Note: weather, battery, audio, brightness, agenda, systemd-actions, bluetooth,
+    // caffeine, networkmanager, keyboard-layout are now dynamic plugins loaded from .so files
 
     // Refuse to start without any plugins
     if registry.is_empty() {

@@ -179,7 +179,10 @@ impl DbusHandle {
 
     /// Listen for PropertiesChanged signals on a specific interface.
     /// Calls callback with interface name and changed properties HashMap.
-    pub async fn listen_properties_changed(
+    ///
+    /// If `tokio_handle` is provided, uses that handle to spawn the listener task.
+    /// Otherwise, uses tokio::spawn() which requires being called from a tokio runtime context.
+    pub async fn listen_properties_changed_with_handle(
         &self,
         destination: &str,
         path: &str,
@@ -187,6 +190,7 @@ impl DbusHandle {
         mut on_change: impl FnMut(String, std::collections::HashMap<String, OwnedValue>)
         + Send
         + 'static,
+        tokio_handle: Option<&tokio::runtime::Handle>,
     ) -> Result<()> {
         let rule = format!(
             "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='{}',sender='{}'",
@@ -194,10 +198,10 @@ impl DbusHandle {
             escape_match_value(destination)
         );
 
-        let mut rx = self.listen_signals(&rule).await?;
+        let mut rx = self.listen_signals_with_handle(&rule, tokio_handle).await?;
         let filter_interface = interface.to_string();
 
-        tokio::spawn(async move {
+        let spawn_task = async move {
             loop {
                 match rx.recv().await {
                     Ok(msg) => {
@@ -220,9 +224,36 @@ impl DbusHandle {
                 }
             }
             debug!("[dbus] properties changed listener stopped");
-        });
+        };
+
+        if let Some(handle) = tokio_handle {
+            // Use std::thread + block_on instead of handle.spawn() so that
+            // the plugin's copy of tokio has full runtime context on this
+            // thread. This prevents panics when zbus proxies are dropped
+            // (their Drop impl calls tokio::spawn internally).
+            let handle = handle.clone();
+            std::thread::spawn(move || handle.block_on(spawn_task));
+        } else {
+            tokio::spawn(spawn_task);
+        }
 
         Ok(())
+    }
+
+    /// Listen for PropertiesChanged signals on a specific interface (deprecated - use listen_properties_changed_with_handle).
+    /// Calls callback with interface name and changed properties HashMap.
+    ///
+    /// For dynamic plugins, use listen_properties_changed_with_handle() with a tokio Handle instead.
+    pub async fn listen_properties_changed(
+        &self,
+        destination: &str,
+        path: &str,
+        interface: &str,
+        on_change: impl FnMut(String, std::collections::HashMap<String, OwnedValue>)
+        + Send
+        + 'static,
+    ) -> Result<()> {
+        self.listen_properties_changed_with_handle(destination, path, interface, on_change, None).await
     }
 
     /// Listen for DBus signals matching a match rule.
@@ -242,11 +273,27 @@ impl DbusHandle {
             .with_context(|| format!("Invalid DBus match rule: {match_rule}"))?
             .to_owned();
 
-        // Best-effort bus-side match installation (local filtering always applied)
-        let _ = match zbus::fdo::DBusProxy::new(&self.conn).await {
-            Ok(dbus) => dbus.add_match_rule(rule.clone()).await.is_ok(),
-            Err(_) => false,
-        };
+        // Best-effort bus-side match installation (local filtering always applied).
+        // For cdylib plugins, use a direct method call instead of DBusProxy::new
+        // because DBusProxy::new spawns a PropertiesCache task that panics in
+        // cdylib context (plugin's tokio TLS is empty on host worker threads).
+        if tokio_handle.is_some() {
+            let _ = self
+                .conn
+                .call_method(
+                    Some("org.freedesktop.DBus"),
+                    "/org/freedesktop/DBus",
+                    Some("org.freedesktop.DBus"),
+                    "AddMatch",
+                    &(match_rule,),
+                )
+                .await;
+        } else {
+            let _ = match zbus::fdo::DBusProxy::new(&self.conn).await {
+                Ok(dbus) => dbus.add_match_rule(rule.clone()).await.is_ok(),
+                Err(_) => false,
+            };
+        }
 
         let conn = self.conn.clone();
         let rule_str = match_rule.to_string();
@@ -295,7 +342,8 @@ impl DbusHandle {
         };
 
         if let Some(handle) = tokio_handle {
-            handle.spawn(spawn_task);
+            let handle = handle.clone();
+            std::thread::spawn(move || handle.block_on(spawn_task));
         } else {
             tokio::spawn(spawn_task);
         }
@@ -343,7 +391,8 @@ impl DbusHandle {
         };
 
         if let Some(handle) = tokio_handle {
-            handle.spawn(spawn_task);
+            let handle = handle.clone();
+            std::thread::spawn(move || handle.block_on(spawn_task));
         } else {
             tokio::spawn(spawn_task);
         }

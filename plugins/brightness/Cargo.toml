@@ -1,0 +1,19 @@
+[package]
+name = "waft-plugin-brightness"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+waft-plugin-api = { path = "../../crates/waft-plugin-api" }
+waft-core = { path = "../../crates/waft-core" }
+gtk = { version = "0.10", package = "gtk4", features = ["v4_6", "unsafe-assume-initialized"] }
+glib = "0.21"
+async-trait = "0.1"
+anyhow = "1"
+log = "0.4"
+tokio = { version = "1", features = ["sync", "rt", "process"] }
+uuid = { version = "1", features = ["v4"] }
+flume = "0.12"

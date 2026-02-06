@@ -7,7 +7,6 @@ mod i18n;
 mod menu_state;
 mod plugin;
 mod plugin_registry;
-mod runtime;
 pub mod store;
 mod ui;
 

@@ -76,8 +76,13 @@ impl OverviewPlugin for DarkmanPlugin {
             .clone();
         debug!("[darkman] Received dbus connection from host");
 
-        // Save the tokio handle for use in create_elements
-        self.tokio_handle = resources.tokio_handle.clone();
+        // Save the tokio handle and enter runtime context for this plugin's copy of tokio
+        let tokio_handle = resources
+            .tokio_handle
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("tokio_handle not provided"))?;
+        let _guard = tokio_handle.enter();
+        self.tokio_handle = Some(tokio_handle.clone());
 
         // Get initial state
         debug!("[darkman] Getting initial state");
@@ -96,6 +101,7 @@ impl OverviewPlugin for DarkmanPlugin {
         _menu_store: Rc<MenuStore>,
         registrar: Rc<dyn WidgetRegistrar>,
     ) -> Result<()> {
+        let _guard = self.tokio_handle.as_ref().map(|h| h.enter());
         let initial_active = {
             let state = self.store.get_state();
             DarkmanMode::is_active(state.mode)
@@ -116,25 +122,45 @@ impl OverviewPlugin for DarkmanPlugin {
         // Connect output handler
         let dbus = self.dbus.clone().expect("dbus not initialized");
         let store = self.store.clone();
+        let tokio_handle = self
+            .tokio_handle
+            .clone()
+            .expect("tokio_handle not initialized");
         toggle.connect_output(move |event| {
             debug!("[darkman/ui] Received: {:?}", event);
             let dbus = dbus.clone();
             let store = store.clone();
+            let handle = tokio_handle.clone();
 
             glib::spawn_future_local(async move {
-                // Set busy state
                 store.emit(DarkmanOp::SetBusy(true));
 
-                let result = match event {
-                    FeatureToggleOutput::Activate => set_state(dbus, DarkmanMode::Dark).await,
-                    FeatureToggleOutput::Deactivate => set_state(dbus, DarkmanMode::Light).await,
+                let mode = match event {
+                    FeatureToggleOutput::Activate => DarkmanMode::Dark,
+                    FeatureToggleOutput::Deactivate => DarkmanMode::Light,
                 };
 
-                if let Err(err) = result {
-                    error!("Failed to set darkman state: {}", err);
-                    // Reset busy state on error
-                    store.emit(DarkmanOp::SetBusy(false));
+                // Route D-Bus call through std::thread + block_on to avoid
+                // cdylib tokio TLS issues (plugin's tokio has no context on GTK main thread)
+                let (tx, rx) = flume::bounded(1);
+                let h = handle.clone();
+                std::thread::spawn(move || {
+                    let result = h.block_on(set_state(dbus, mode));
+                    let _ = tx.send(result);
+                });
+
+                match rx.recv_async().await {
+                    Ok(Ok(())) => {
+                        debug!("[darkman/ui] Mode set successfully");
+                    }
+                    Ok(Err(err)) => {
+                        error!("[darkman/ui] Failed to set darkman state: {}", err);
+                    }
+                    Err(err) => {
+                        error!("[darkman/ui] D-Bus call task failed: {}", err);
+                    }
                 }
+                store.emit(DarkmanOp::SetBusy(false));
             });
         });
 

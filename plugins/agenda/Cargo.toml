@@ -1,0 +1,27 @@
+[package]
+name = "waft-plugin-agenda"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+waft-plugin-api = { path = "../../crates/waft-plugin-api" }
+waft-core = { path = "../../crates/waft-core" }
+gtk = { version = "0.10", package = "gtk4", features = ["v4_6", "unsafe-assume-initialized"] }
+glib = "0.21"
+gio = "0.20"
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+log = "0.4"
+tokio = { version = "1", features = ["sync", "rt"] }
+flume = "0.12"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+zbus = "5"
+zvariant = "5"
+ical = "0.11"

@@ -1303,6 +1303,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ical"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b7cab7543a8b7729a19e2c04309f902861293dcdae6558dfbeb634454d279f6"
+dependencies = [
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "icu_collections"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1946,7 +1955,9 @@ dependencies = [
  "base64",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "h2",
  "http",
  "http-body",
@@ -2848,6 +2859,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-plugin-agenda"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "flume",
+ "gio 0.20.12",
+ "glib 0.21.5",
+ "gtk4",
+ "ical",
+ "log",
+ "serde",
+ "tokio",
+ "toml 0.8.23",
+ "uuid",
+ "waft-core",
+ "waft-plugin-api",
+ "zbus",
+ "zvariant",
+]
+
+[[package]]
 name = "waft-plugin-api"
 version = "0.1.0"
 dependencies = [
@@ -2860,6 +2895,88 @@ dependencies = [
  "toml 0.8.23",
  "uuid",
  "waft-core",
+]
+
+[[package]]
+name = "waft-plugin-audio"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "tokio",
+ "uuid",
+ "waft-core",
+ "waft-plugin-api",
+]
+
+[[package]]
+name = "waft-plugin-battery"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "tokio",
+ "waft-core",
+ "waft-plugin-api",
+]
+
+[[package]]
+name = "waft-plugin-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "tokio",
+ "waft-core",
+ "waft-plugin-api",
+ "zbus",
+ "zvariant",
+]
+
+[[package]]
+name = "waft-plugin-brightness"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "tokio",
+ "uuid",
+ "waft-core",
+ "waft-plugin-api",
+]
+
+[[package]]
+name = "waft-plugin-caffeine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "tokio",
+ "waft-core",
+ "waft-plugin-api",
+ "wayland-client",
+ "wayland-protocols",
+ "zbus",
 ]
 
 [[package]]
@@ -2888,6 +3005,94 @@ dependencies = [
  "gtk4",
  "log",
  "tokio",
+ "waft-core",
+ "waft-plugin-api",
+]
+
+[[package]]
+name = "waft-plugin-keyboard-layout"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "waft-core",
+ "waft-plugin-api",
+ "zbus",
+]
+
+[[package]]
+name = "waft-plugin-networkmanager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "futures-util",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "nmrs",
+ "tokio",
+ "waft-core",
+ "waft-plugin-api",
+ "zbus",
+ "zvariant",
+]
+
+[[package]]
+name = "waft-plugin-sunsetr"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "waft-core",
+ "waft-plugin-api",
+]
+
+[[package]]
+name = "waft-plugin-systemd-actions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "tokio",
+ "uuid",
+ "waft-core",
+ "waft-plugin-api",
+]
+
+[[package]]
+name = "waft-plugin-weather"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "log",
+ "reqwest",
+ "serde",
+ "tokio",
+ "toml 0.8.23",
  "waft-core",
  "waft-plugin-api",
 ]
