@@ -103,9 +103,8 @@ fn test_resolve_lowercase_fallback() {
     let result = resolve_themed_icon("Dialog-Information");
 
     // In GTK environments with standard icons, this should resolve via lowercase fallback
-    if result.is_some() {
+    if let Some(resolved) = result {
         // Should resolve to lowercase variant
-        let resolved = result.unwrap();
         assert!(resolved.to_lowercase() == resolved || resolved.ends_with("-symbolic"));
     }
 }
@@ -117,8 +116,7 @@ fn test_resolve_lowercase_symbolic_fallback() {
     let result = resolve_themed_icon("DIALOG-INFORMATION");
 
     // In GTK environments, this should eventually resolve via lowercase or lowercase-symbolic
-    if result.is_some() {
-        let resolved = result.unwrap();
+    if let Some(resolved) = result {
         // Should be lowercase and possibly symbolic
         assert_eq!(resolved, resolved.to_lowercase());
     }

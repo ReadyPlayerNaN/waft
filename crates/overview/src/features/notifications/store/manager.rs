@@ -381,7 +381,7 @@ fn process_ingress_batch(state: &mut State, ops: Vec<NotificationOp>) -> bool {
                 state.notifications.len()
             );
             reconcile_group_on_ingress(state, notif_id, group_id, app_title);
-            reconcile_toast_on_ingress(state, &*n, false);
+            reconcile_toast_on_ingress(state, &n, false);
             // Add to panel notifications (unlimited)
             state
                 .panel_notifications
