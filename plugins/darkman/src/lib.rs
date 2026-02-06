@@ -111,7 +111,8 @@ impl OverviewPlugin for DarkmanPlugin {
             let _ = init_tx.send(Ok((dbus, initial_mode)));
         });
 
-        let (dbus, initial_mode) = init_rx.recv_async().await??;
+        // Use blocking recv since we're bridging from tokio context
+        let (dbus, initial_mode) = init_rx.recv()??;
         self.dbus = Some(dbus);
         self.store.emit(DarkmanOp::SetMode(initial_mode));
 
