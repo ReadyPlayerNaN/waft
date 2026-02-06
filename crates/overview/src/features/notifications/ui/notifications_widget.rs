@@ -9,6 +9,8 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
+use crate::ui::icon::IconWidget;
+
 use super::notification_group::{NotificationData, NotificationGroup, NotificationGroupOutput};
 use crate::common::Callback;
 use crate::features::notifications::store::{ItemLifecycle, NotificationStore};
@@ -93,18 +95,15 @@ impl NotificationsWidget {
             .css_classes(["empty-placeholder"])
             .build();
 
-        let empty_icon = gtk::Image::builder()
-            .icon_name("notifications-disabled-symbolic")
-            .pixel_size(48)
-            .css_classes(["dim-label"])
-            .build();
+        let empty_icon = IconWidget::from_name("notifications-disabled-symbolic", 48);
+        empty_icon.widget().add_css_class("dim-label");
 
         let empty_label = gtk::Label::builder()
             .label(crate::i18n::t("notifications-empty"))
             .css_classes(["dim-label"])
             .build();
 
-        empty_placeholder.append(&empty_icon);
+        empty_placeholder.append(empty_icon.widget());
         empty_placeholder.append(&empty_label);
         groups_container.append(&empty_placeholder);
 

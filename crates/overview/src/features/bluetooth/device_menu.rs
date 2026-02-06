@@ -5,12 +5,14 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use glib::SignalHandlerId;
 use gtk::prelude::*;
 
 use super::store::DeviceConnectionState;
 use crate::common::Callback;
+use crate::ui::icon::{Icon, IconWidget};
 use crate::ui::menu_item::MenuItemWidget;
 
 /// Output events from the device menu.
@@ -45,7 +47,13 @@ impl DeviceRow {
             .build();
 
         // Device icon
-        let icon_image = gtk::Image::builder().icon_name(icon).pixel_size(20).build();
+        let icon_widget = IconWidget::new(
+            vec![
+                Icon::Themed(Arc::from(icon)),
+                Icon::Themed(Arc::from("bluetooth-symbolic")),
+            ],
+            16,
+        );
 
         // Device name
         let name_label = gtk::Label::builder()
@@ -66,7 +74,7 @@ impl DeviceRow {
             .css_classes(["device-switch"])
             .build();
 
-        content.append(&icon_image);
+        content.append(icon_widget.widget());
         content.append(&name_label);
         content.append(&spinner);
         content.append(&switch);

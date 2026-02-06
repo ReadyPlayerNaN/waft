@@ -63,6 +63,7 @@ pub fn resolve_themed_icon(name: &str) -> Option<String> {
 }
 
 /// Pure GTK4 icon widget — displays themed icons or textures.
+#[derive(Clone)]
 pub struct IconWidget {
     image: gtk::Image,
 }
@@ -72,7 +73,7 @@ impl IconWidget {
     pub fn new(icon_hints: Vec<Icon>, pixel_size: i32) -> Self {
         let image = gtk::Image::builder()
             .pixel_size(pixel_size)
-            .valign(gtk::Align::Start)
+            .valign(gtk::Align::Center)
             .build();
 
         Self::apply_first_valid_icon(&image, &icon_hints);
@@ -129,6 +130,18 @@ impl IconWidget {
     /// Get a reference to the image widget.
     pub fn widget(&self) -> &gtk::Image {
         &self.image
+    }
+
+    /// Update the icon to a new set of hints.
+    /// Tries each hint in order, falling back to default if all fail.
+    pub fn update_icon(&self, icon_hints: Vec<Icon>) {
+        Self::apply_first_valid_icon(&self.image, &icon_hints);
+    }
+
+    /// Update the icon to a single named icon.
+    /// Convenience method for updating to a themed icon name.
+    pub fn set_icon(&self, icon_name: &str) {
+        self.update_icon(vec![Icon::Themed(Arc::from(icon_name))]);
     }
 }
 

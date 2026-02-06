@@ -58,6 +58,7 @@ pub struct AudioControlProps {
     pub muted: bool,
     pub devices: Vec<AudioDevice>,
     pub default_device: Option<String>,
+    pub input: bool,
 }
 
 /// Combined audio control widget with slider and expandable device menu.
@@ -67,6 +68,7 @@ pub struct AudioControlWidget {
     device_menu: AudioDeviceMenuWidget,
     muted: Rc<RefCell<bool>>,
     icon_name: Rc<RefCell<String>>,
+    input: bool,
     on_output: Callback<AudioControlOutput>,
 }
 
@@ -75,10 +77,17 @@ impl AudioControlWidget {
     pub fn new(props: AudioControlProps, menu_store: Rc<MenuStore>) -> Self {
         // Create device menu and set initial devices
         let device_menu = AudioDeviceMenuWidget::new();
+        let input = props.input;
         let devices: Vec<AudioDeviceDisplay> = props
             .devices
             .iter()
-            .map(|d| AudioDeviceDisplay::from((d, props.default_device.as_ref() == Some(&d.id))))
+            .map(|d| {
+                AudioDeviceDisplay::from((
+                    d,
+                    props.default_device.as_ref() == Some(&d.id),
+                    input,
+                ))
+            })
             .collect();
         device_menu.set_devices(devices);
 
@@ -133,6 +142,7 @@ impl AudioControlWidget {
             device_menu,
             muted,
             icon_name,
+            input,
             on_output,
         }
     }
@@ -166,9 +176,10 @@ impl AudioControlWidget {
 
     /// Update the device list.
     pub fn set_devices(&self, devices: Vec<AudioDevice>, default_device: Option<&str>) {
+        let input = self.input;
         let display_devices: Vec<AudioDeviceDisplay> = devices
             .iter()
-            .map(|d| AudioDeviceDisplay::from((d, default_device == Some(&d.id))))
+            .map(|d| AudioDeviceDisplay::from((d, default_device == Some(&d.id), input)))
             .collect();
         self.device_menu.set_devices(display_devices);
     }

@@ -11,6 +11,7 @@ use gtk::prelude::*;
 
 use super::store::{Display, DisplayType};
 use crate::common::Callback;
+use crate::ui::icon::IconWidget;
 
 /// Output events from the display menu.
 #[derive(Debug, Clone)]
@@ -41,11 +42,8 @@ impl DisplayRow {
             DisplayType::External => "video-display-symbolic",
         };
 
-        let icon = gtk::Image::builder()
-            .icon_name(icon_name)
-            .pixel_size(16)
-            .css_classes(["brightness-display-icon"])
-            .build();
+        let icon = IconWidget::from_name(icon_name, 16);
+        icon.widget().add_css_class("brightness-display-icon");
 
         // Slider
         let adjustment =
@@ -68,7 +66,7 @@ impl DisplayRow {
             .css_classes(["brightness-display-label"])
             .build();
 
-        root.append(&icon);
+        root.append(icon.widget());
         root.append(&scale);
         root.append(&label);
 

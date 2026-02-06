@@ -154,6 +154,7 @@ impl Plugin for AudioPlugin {
                 muted: state.output_muted,
                 devices: state.output_devices.clone(),
                 default_device: state.default_output.clone(),
+                input: false,
             },
             menu_store.clone(),
         );
@@ -221,6 +222,7 @@ impl Plugin for AudioPlugin {
                 muted: state.input_muted,
                 devices: state.input_devices.clone(),
                 default_device: state.default_input.clone(),
+                input: true,
             },
             menu_store,
         );

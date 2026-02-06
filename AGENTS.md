@@ -235,6 +235,33 @@ This rule applies to:
 - File names (`foo.rs`)
 - Directory names (`src/features/foo/`)
 
+**Boolean field naming: State, not question**
+
+Boolean fields should be named as states/properties, not as questions. Reserve the "is_/has_/can_" prefix for functions/methods that return booleans.
+
+```rust
+// BAD - sounds like a function/question
+pub struct AudioDevice {
+    pub is_input: bool,    // Reads like "is input?"
+    pub is_default: bool,  // Reads like "is default?"
+}
+
+// GOOD - state/property naming
+pub struct AudioDevice {
+    pub input: bool,       // "input" answers "Is input?" → true/false
+    pub default: bool,     // "default" answers "Is default?" → true/false
+}
+
+// Functions/methods can use "is_" prefix
+impl AudioDevice {
+    pub fn is_input(&self) -> bool {  // OK - function asking question
+        self.input
+    }
+}
+```
+
+Rationale: Boolean fields are answers to questions, not questions themselves. The "is_/has_" prefix suggests a method that returns a boolean. Use simple, direct property names for boolean fields.
+
 ### Icon Usage Rule
 
 **FORBIDDEN: Using `gtk::Image` directly for icons**

@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 use super::dbus::SystemAction;
 use crate::common::Callback;
+use crate::ui::icon::IconWidget;
 use crate::ui::menu_item::MenuItemWidget;
 
 /// Output events from the action menu.
@@ -104,7 +105,7 @@ impl ActionMenuWidget {
             .spacing(12)
             .build();
 
-        let icon = gtk::Image::builder().icon_name(icon_name).build();
+        let icon_widget = IconWidget::from_name(icon_name, 20);
 
         let label = gtk::Label::builder()
             .label(label_text)
@@ -112,7 +113,7 @@ impl ActionMenuWidget {
             .hexpand(true)
             .build();
 
-        item_box.append(&icon);
+        item_box.append(icon_widget.widget());
         item_box.append(&label);
 
         // Create menu item with click handler

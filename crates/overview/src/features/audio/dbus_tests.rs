@@ -102,6 +102,15 @@ fn test_compute_primary_icon_sink_defaults_to_speakers() {
 }
 
 #[test]
+fn test_compute_primary_icon_sink_avoids_double_symbolic_suffix() {
+    let icon_name = Some("audio-headphones-symbolic".to_string());
+    assert_eq!(
+        compute_primary_icon_sink(&icon_name),
+        "audio-headphones-symbolic"
+    );
+}
+
+#[test]
 fn test_compute_primary_icon_source_uses_icon_name() {
     let icon_name = Some("audio-headset".to_string());
     assert_eq!(
@@ -115,6 +124,15 @@ fn test_compute_primary_icon_source_defaults_to_microphone() {
     assert_eq!(
         compute_primary_icon_source(&None),
         "audio-input-microphone-symbolic"
+    );
+}
+
+#[test]
+fn test_compute_primary_icon_source_avoids_double_symbolic_suffix() {
+    let icon_name = Some("audio-headset-symbolic".to_string());
+    assert_eq!(
+        compute_primary_icon_source(&icon_name),
+        "audio-headset-symbolic"
     );
 }
 

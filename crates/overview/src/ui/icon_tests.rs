@@ -131,3 +131,31 @@ fn test_resolve_no_match() {
     // OR if GTK display is not available
     assert!(result.is_none());
 }
+
+#[test]
+#[ignore = "requires GTK display connection"]
+fn test_icon_widget_from_name() {
+    let widget = IconWidget::from_name("dialog-information-symbolic", 24);
+    assert_eq!(widget.widget().pixel_size(), 24);
+}
+
+#[test]
+#[ignore = "requires GTK display connection"]
+fn test_icon_widget_set_icon() {
+    let widget = IconWidget::from_name("dialog-information-symbolic", 24);
+    // This should not panic
+    widget.set_icon("dialog-warning-symbolic");
+    assert_eq!(widget.widget().pixel_size(), 24);
+}
+
+#[test]
+#[ignore = "requires GTK display connection"]
+fn test_icon_widget_update_icon_with_hints() {
+    let widget = IconWidget::from_name("dialog-information-symbolic", 24);
+    // Update with multiple hints
+    widget.update_icon(vec![
+        Icon::Themed(Arc::from("non-existent-icon")),
+        Icon::Themed(Arc::from("dialog-warning-symbolic")),
+    ]);
+    assert_eq!(widget.widget().pixel_size(), 24);
+}

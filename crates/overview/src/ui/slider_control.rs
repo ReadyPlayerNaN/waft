@@ -9,6 +9,7 @@ use glib::SignalHandlerId;
 use gtk::prelude::*;
 use uuid::Uuid;
 
+use super::icon::IconWidget;
 use super::main_window::trigger_window_resize;
 use super::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use crate::common::Callback;
@@ -25,7 +26,7 @@ pub enum SliderControlOutput {
 pub struct SliderControlWidget {
     pub root: gtk::Box,
     slider_row: gtk::Box,
-    icon_image: gtk::Image,
+    icon_image: IconWidget,
     scale: gtk::Scale,
     _menu_revealer: Option<gtk::Revealer>,
     value: Rc<RefCell<f64>>,
@@ -65,9 +66,9 @@ impl SliderControlWidget {
         // Icon button
         let icon_button = gtk::Button::builder().css_classes(["slider-icon"]).build();
 
-        let icon_image = gtk::Image::builder().icon_name(icon).pixel_size(24).build();
+        let icon_image = IconWidget::from_name(icon, 24);
 
-        icon_button.set_child(Some(&icon_image));
+        icon_button.set_child(Some(icon_image.widget()));
 
         // Scale
         let adjustment = gtk::Adjustment::new(value * 100.0, 0.0, 100.0, 1.0, 5.0, 0.0);
@@ -229,7 +230,7 @@ impl SliderControlWidget {
 
     /// Update the icon image.
     pub fn set_icon(&self, icon: &str) {
-        self.icon_image.set_icon_name(Some(icon));
+        self.icon_image.set_icon(icon);
     }
 
     /// Access the slider row for adding domain-specific CSS classes.

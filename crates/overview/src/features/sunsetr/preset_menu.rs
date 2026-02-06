@@ -8,6 +8,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 
 use crate::common::Callback;
+use crate::ui::icon::IconWidget;
 
 /// A single preset menu item with an optional checkmark.
 #[derive(Clone)]
@@ -24,11 +25,8 @@ impl PresetMenuItem {
             .build();
 
         // Icon on left
-        let icon = gtk::Image::builder()
-            .icon_name("preferences-system-symbolic")
-            .pixel_size(16)
-            .build();
-        hbox.append(&icon);
+        let icon = IconWidget::from_name("preferences-system-symbolic", 16);
+        hbox.append(icon.widget());
 
         // Label in middle
         let label_widget = gtk::Label::builder()

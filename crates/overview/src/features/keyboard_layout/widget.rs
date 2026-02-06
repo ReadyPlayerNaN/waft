@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::backends::KeyboardLayoutBackend;
+use crate::ui::icon::IconWidget;
 
 /// Keyboard layout indicator and switcher widget.
 ///
@@ -18,7 +19,7 @@ pub struct KeyboardLayoutWidget {
     pub root: gtk::Button,
     pub label: gtk::Label,
     #[allow(dead_code)] // Icon is displayed in UI, field keeps it alive
-    icon: gtk::Image,
+    icon: IconWidget,
     backend: Arc<Mutex<Option<Arc<dyn KeyboardLayoutBackend>>>>,
 }
 
@@ -45,10 +46,8 @@ impl KeyboardLayoutWidget {
             .build();
 
         // Create keyboard icon
-        let icon = gtk::Image::builder()
-            .icon_name("input-keyboard-symbolic")
-            .css_classes(["keyboard-layout-icon"])
-            .build();
+        let icon = IconWidget::from_name("input-keyboard-symbolic", 16);
+        icon.widget().add_css_class("keyboard-layout-icon");
 
         // Create label
         let label = gtk::Label::builder()
@@ -56,7 +55,7 @@ impl KeyboardLayoutWidget {
             .label("??") // Fallback label
             .build();
 
-        content_box.append(&icon);
+        content_box.append(icon.widget());
         content_box.append(&label);
         root.set_child(Some(&content_box));
 

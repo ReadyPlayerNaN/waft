@@ -5,11 +5,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gtk::prelude::*;
 
 use super::store::AudioDevice;
 use crate::common::Callback;
+use crate::ui::icon::{Icon, IconWidget};
 
 /// Output events from the device menu.
 #[derive(Debug, Clone)]
@@ -25,16 +27,18 @@ pub struct AudioDeviceDisplay {
     pub icon: String,
     pub secondary_icon: Option<String>,
     pub is_default: bool,
+    pub input: bool,
 }
 
-impl From<(&AudioDevice, bool)> for AudioDeviceDisplay {
-    fn from((device, is_default): (&AudioDevice, bool)) -> Self {
+impl From<(&AudioDevice, bool, bool)> for AudioDeviceDisplay {
+    fn from((device, is_default, input): (&AudioDevice, bool, bool)) -> Self {
         Self {
             id: device.id.clone(),
             name: device.name.clone(),
             icon: device.icon.clone(),
             secondary_icon: device.secondary_icon.clone(),
             is_default,
+            input,
         }
     }
 }
@@ -57,12 +61,19 @@ impl DeviceRow {
             .spacing(12)
             .build();
 
-        // Device icon
-        let icon_image = gtk::Image::builder()
-            .icon_name(&device.icon)
-            .pixel_size(20)
-            .css_classes(["audio-device-icon"])
-            .build();
+        // Device icon with fallback
+        let fallback_icon = if device.input {
+            "audio-input-microphone-symbolic"
+        } else {
+            "audio-speakers-symbolic"
+        };
+
+        let icon_hints = vec![
+            Icon::Themed(Arc::from(device.icon.as_str())),
+            Icon::Themed(Arc::from(fallback_icon)),
+        ];
+        let icon_widget = IconWidget::new(icon_hints, 16);
+        icon_widget.widget().add_css_class("audio-device-icon");
 
         // Device name
         let name_label = gtk::Label::builder()
@@ -79,16 +90,13 @@ impl DeviceRow {
             .css_classes(["audio-device-check"])
             .build();
 
-        content.append(&icon_image);
+        content.append(icon_widget.widget());
 
         // Secondary icon (e.g., HDMI/Bluetooth indicator)
         if let Some(ref secondary) = device.secondary_icon {
-            let secondary_image = gtk::Image::builder()
-                .icon_name(secondary)
-                .pixel_size(16)
-                .css_classes(["audio-device-secondary-icon"])
-                .build();
-            content.append(&secondary_image);
+            let secondary_icon_widget = IconWidget::from_name(secondary, 16);
+            secondary_icon_widget.widget().add_css_class("audio-device-secondary-icon");
+            content.append(secondary_icon_widget.widget());
         }
 
         content.append(&name_label);

@@ -5,11 +5,12 @@
 use gtk::prelude::*;
 
 use crate::features::battery::values::BatteryInfo;
+use crate::ui::icon::IconWidget;
 
 /// Pure GTK4 battery widget — mirrors the weather widget layout.
 pub struct BatteryWidget {
     pub root: gtk::Box,
-    icon: gtk::Image,
+    icon: IconWidget,
     percentage_label: gtk::Label,
     status_label: gtk::Label,
 }
@@ -25,11 +26,8 @@ impl BatteryWidget {
             .build();
 
         // Battery icon
-        let icon = gtk::Image::builder()
-            .icon_name("battery-symbolic")
-            .pixel_size(32)
-            .css_classes(["battery-icon"])
-            .build();
+        let icon = IconWidget::from_name("battery-symbolic", 32);
+        icon.widget().add_css_class("battery-icon");
 
         // Percentage and status labels
         let labels_box = gtk::Box::builder()
@@ -58,7 +56,7 @@ impl BatteryWidget {
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
             .build();
-        content_box.append(&icon);
+        content_box.append(icon.widget());
         content_box.append(&labels_box);
 
         root.append(&content_box);
@@ -81,7 +79,7 @@ impl BatteryWidget {
 
         // Update icon
         if !info.icon_name.is_empty() {
-            self.icon.set_icon_name(Some(&info.icon_name));
+            self.icon.set_icon(&info.icon_name);
         }
 
         // Update percentage text

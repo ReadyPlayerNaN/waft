@@ -13,6 +13,7 @@ use gtk::prelude::*;
 
 use super::store::VpnState;
 use crate::common::Callback;
+use crate::ui::icon::IconWidget;
 use crate::ui::menu_item::MenuItemWidget;
 
 /// Output events from the VPN menu.
@@ -43,10 +44,7 @@ impl VpnRow {
             .build();
 
         // VPN icon
-        let icon_image = gtk::Image::builder()
-            .icon_name("network-vpn-symbolic")
-            .pixel_size(20)
-            .build();
+        let icon_image = IconWidget::from_name("network-vpn-symbolic", 16);
 
         // VPN name
         let name_label = gtk::Label::builder()
@@ -67,7 +65,7 @@ impl VpnRow {
             .css_classes(["vpn-switch"])
             .build();
 
-        content.append(&icon_image);
+        content.append(icon_image.widget());
         content.append(&name_label);
         content.append(&spinner);
         content.append(&switch);

@@ -13,6 +13,7 @@ use uuid::Uuid;
 use super::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use crate::common::Callback;
 use crate::menu_state::{MenuOp, MenuStore};
+use crate::ui::icon::IconWidget;
 
 /// Properties for initializing a feature toggle.
 #[derive(Debug, Clone)]
@@ -37,7 +38,7 @@ pub enum FeatureToggleOutput {
 pub struct FeatureToggleWidget {
     pub root: gtk::Box,
     expand_revealer: gtk::Revealer,
-    icon_image: gtk::Image,
+    icon_widget: IconWidget,
     title_label: gtk::Label,
     details_label: gtk::Label,
     details_revealer: gtk::Revealer,
@@ -79,11 +80,8 @@ impl FeatureToggleWidget {
             .valign(gtk::Align::Center)
             .build();
 
-        let icon_image = gtk::Image::builder()
-            .icon_name(&props.icon)
-            .pixel_size(24)
-            .height_request(24)
-            .build();
+        let icon_widget = IconWidget::from_name(&props.icon, 24);
+        icon_widget.widget().set_height_request(24);
 
         let text_content = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -114,7 +112,7 @@ impl FeatureToggleWidget {
         text_content.append(&title_label);
         text_content.append(&details_revealer);
 
-        main_content.append(&icon_image);
+        main_content.append(icon_widget.widget());
         main_content.append(&text_content);
 
         main_button.set_child(Some(&main_content));
@@ -221,7 +219,7 @@ impl FeatureToggleWidget {
         Self {
             root,
             expand_revealer,
-            icon_image,
+            icon_widget,
             title_label,
             details_label,
             details_revealer,
@@ -300,7 +298,7 @@ impl FeatureToggleWidget {
     /// Update the icon.
     #[allow(dead_code)]
     pub fn set_icon(&self, icon: &str) {
-        self.icon_image.set_icon_name(Some(icon));
+        self.icon_widget.set_icon(icon);
     }
 
     /// Update the title text.

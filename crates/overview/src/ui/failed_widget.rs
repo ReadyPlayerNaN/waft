@@ -2,6 +2,8 @@
 
 use gtk::prelude::*;
 
+use crate::ui::icon::IconWidget;
+
 /// A widget that indicates a plugin failed to load.
 ///
 /// Displays a small error indicator that can be placed in any slot
@@ -24,10 +26,8 @@ impl FailedWidget {
             .tooltip_text(format!("{}: {}", plugin_id, error_message))
             .build();
 
-        let icon = gtk::Image::builder()
-            .icon_name("dialog-error-symbolic")
-            .css_classes(["failed-widget-icon"])
-            .build();
+        let icon = IconWidget::from_name("dialog-error-symbolic", 16);
+        icon.widget().add_css_class("failed-widget-icon");
 
         let label = gtk::Label::builder()
             .label(plugin_id)
@@ -35,7 +35,7 @@ impl FailedWidget {
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .build();
 
-        root.append(&icon);
+        root.append(icon.widget());
         root.append(&label);
 
         Self { root }

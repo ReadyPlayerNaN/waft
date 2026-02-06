@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 use super::wifi_icon::get_wifi_icon;
 use crate::common::Callback;
+use crate::ui::icon::IconWidget;
 use crate::ui::menu_item::MenuItemWidget;
 
 #[derive(Debug, Clone)]
@@ -40,10 +41,7 @@ impl NetworkRow {
         // Signal strength icon
         let signal_icon = get_wifi_icon(Some(strength), true, true);
 
-        let icon_image = gtk::Image::builder()
-            .icon_name(signal_icon)
-            .pixel_size(20)
-            .build();
+        let icon_image = IconWidget::from_name(signal_icon, 16);
 
         // SSID label
         let ssid_label = gtk::Label::builder()
@@ -54,10 +52,7 @@ impl NetworkRow {
 
         // Security icon
         let security_icon = if secure {
-            let lock_icon = gtk::Image::builder()
-                .icon_name("channel-secure-symbolic")
-                .pixel_size(16)
-                .build();
+            let lock_icon = IconWidget::from_name("channel-secure-symbolic", 16);
             Some(lock_icon)
         } else {
             None
@@ -69,10 +64,10 @@ impl NetworkRow {
             .visible(is_connecting)
             .build();
 
-        content.append(&icon_image);
+        content.append(icon_image.widget());
         content.append(&ssid_label);
         if let Some(ref lock) = security_icon {
-            content.append(lock);
+            content.append(lock.widget());
         }
         content.append(&spinner);
 

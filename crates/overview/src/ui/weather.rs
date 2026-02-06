@@ -5,6 +5,7 @@
 use gtk::prelude::*;
 
 use crate::features::weather::values::{TemperatureUnit, WeatherData};
+use crate::ui::icon::IconWidget;
 
 /// State of the weather widget.
 #[derive(Debug, Clone)]
@@ -18,7 +19,7 @@ pub enum WeatherState {
 /// Pure GTK4 weather widget - displays weather icon, temperature, and condition.
 pub struct WeatherWidget {
     pub root: gtk::Box,
-    icon: gtk::Image,
+    icon: IconWidget,
     temp_label: gtk::Label,
     condition_label: gtk::Label,
     spinner: gtk::Spinner,
@@ -37,11 +38,8 @@ impl WeatherWidget {
             .build();
 
         // Weather icon
-        let icon = gtk::Image::builder()
-            .icon_name("weather-clear-symbolic")
-            .pixel_size(32)
-            .css_classes(["weather-icon"])
-            .build();
+        let icon = IconWidget::from_name("weather-clear-symbolic", 32);
+        icon.widget().add_css_class("weather-icon");
 
         // Temperature and condition labels
         let labels_box = gtk::Box::builder()
@@ -70,7 +68,7 @@ impl WeatherWidget {
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
             .build();
-        content_box.append(&icon);
+        content_box.append(icon.widget());
         content_box.append(&labels_box);
 
         // Loading spinner
@@ -118,8 +116,7 @@ impl WeatherWidget {
                 self.error_label.set_visible(false);
 
                 // Update icon
-                self.icon
-                    .set_icon_name(Some(data.condition.icon_name(data.is_day)));
+                self.icon.set_icon(data.condition.icon_name(data.is_day));
 
                 // Update temperature
                 let temp_text = format!("{:.0}\u{00B0}{}", data.temperature, self.units.symbol());

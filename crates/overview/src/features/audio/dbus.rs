@@ -829,7 +829,13 @@ fn parse_card_ports(output: &str) -> CardPortMap {
 /// Compute the primary icon for a sink.
 fn compute_primary_icon_sink(icon_name: &Option<String>) -> String {
     match icon_name {
-        Some(name) if !name.is_empty() => format!("{}-symbolic", name),
+        Some(name) if !name.is_empty() => {
+            if name.ends_with("-symbolic") {
+                name.clone()
+            } else {
+                format!("{}-symbolic", name)
+            }
+        }
         _ => "audio-speakers-symbolic".to_string(),
     }
 }
@@ -837,7 +843,13 @@ fn compute_primary_icon_sink(icon_name: &Option<String>) -> String {
 /// Compute the primary icon for a source.
 fn compute_primary_icon_source(icon_name: &Option<String>) -> String {
     match icon_name {
-        Some(name) if !name.is_empty() => format!("{}-symbolic", name),
+        Some(name) if !name.is_empty() => {
+            if name.ends_with("-symbolic") {
+                name.clone()
+            } else {
+                format!("{}-symbolic", name)
+            }
+        }
         _ => "audio-input-microphone-symbolic".to_string(),
     }
 }
