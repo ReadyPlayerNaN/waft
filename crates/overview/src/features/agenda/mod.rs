@@ -269,10 +269,10 @@ impl Plugin for AgendaPlugin {
         glib::spawn_future_local(async move {
             while let Ok(signal) = signal_rx.recv_async().await {
                 match signal {
-                    ViewSignal::EventsAdded(events) => {
+                    ViewSignal::Added(events) => {
                         store_for_signals.emit(AgendaOp::UpsertEvents(events));
                     }
-                    ViewSignal::EventsModified(events) => {
+                    ViewSignal::Modified(events) => {
                         // When an event is modified (e.g. time changed), we need to remove
                         // old occurrences first. Otherwise, if the start_time changed, the
                         // occurrence_key changes and we end up with duplicate entries.
@@ -281,7 +281,7 @@ impl Plugin for AgendaPlugin {
                         store_for_signals.emit(AgendaOp::RemoveEvents(uids));
                         store_for_signals.emit(AgendaOp::UpsertEvents(events));
                     }
-                    ViewSignal::EventsRemoved(uids) => {
+                    ViewSignal::Removed(uids) => {
                         store_for_signals.emit(AgendaOp::RemoveEvents(uids));
                     }
                 }

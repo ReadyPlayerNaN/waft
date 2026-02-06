@@ -23,7 +23,7 @@ fn test_parse_event_line_sink_change() {
     let line = "Event 'change' on sink #0";
     assert!(matches!(
         parse_event_line(line),
-        Some(AudioEvent::SinkChange)
+        Some(AudioEvent::Sink)
     ));
 }
 
@@ -32,7 +32,7 @@ fn test_parse_event_line_source_change() {
     let line = "Event 'change' on source #1";
     assert!(matches!(
         parse_event_line(line),
-        Some(AudioEvent::SourceChange)
+        Some(AudioEvent::Source)
     ));
 }
 
@@ -41,7 +41,7 @@ fn test_parse_event_line_server_change() {
     let line = "Event 'change' on server";
     assert!(matches!(
         parse_event_line(line),
-        Some(AudioEvent::ServerChange)
+        Some(AudioEvent::Server)
     ));
 }
 
@@ -50,7 +50,7 @@ fn test_parse_event_line_card_change() {
     let line = "Event 'change' on card #2";
     assert!(matches!(
         parse_event_line(line),
-        Some(AudioEvent::CardChange)
+        Some(AudioEvent::Card)
     ));
 }
 

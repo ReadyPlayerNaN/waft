@@ -56,16 +56,16 @@ impl AudioPlugin {
                 .iter()
                 .map(|s| AudioDevice::from_sink(s, &card_ports))
                 .collect();
-            self.store.emit(AudioOp::SetOutputDevices(devices));
+            self.store.emit(AudioOp::OutputDevices(devices));
 
             // Set default output
             if let Some(ref default) = default_sink {
-                self.store.emit(AudioOp::SetDefaultOutput(default.clone()));
+                self.store.emit(AudioOp::DefaultOutput(default.clone()));
 
                 // Get volume for default sink
                 if let Ok((volume, muted)) = get_sink_volume(default).await {
-                    self.store.emit(AudioOp::SetOutputVolume(volume));
-                    self.store.emit(AudioOp::SetOutputMuted(muted));
+                    self.store.emit(AudioOp::OutputVolume(volume));
+                    self.store.emit(AudioOp::OutputMuted(muted));
                 }
             }
         }
@@ -76,16 +76,16 @@ impl AudioPlugin {
                 .iter()
                 .map(|s| AudioDevice::from_source(s, &card_ports))
                 .collect();
-            self.store.emit(AudioOp::SetInputDevices(devices));
+            self.store.emit(AudioOp::InputDevices(devices));
 
             // Set default input
             if let Some(ref default) = default_source {
-                self.store.emit(AudioOp::SetDefaultInput(default.clone()));
+                self.store.emit(AudioOp::DefaultInput(default.clone()));
 
                 // Get volume for default source
                 if let Ok((volume, muted)) = get_source_volume(default).await {
-                    self.store.emit(AudioOp::SetInputVolume(volume));
-                    self.store.emit(AudioOp::SetInputMuted(muted));
+                    self.store.emit(AudioOp::InputVolume(volume));
+                    self.store.emit(AudioOp::InputMuted(muted));
                 }
             }
         }
@@ -113,7 +113,7 @@ impl Plugin for AudioPlugin {
             return Ok(());
         }
 
-        self.store.emit(AudioOp::SetAvailable(true));
+        self.store.emit(AudioOp::Available(true));
         info!("[audio] Audio system is available");
 
         // Load initial state
@@ -184,7 +184,7 @@ impl Plugin for AudioPlugin {
                                     error!("[audio] Failed to set sink mute: {}", e);
                                 }
                                 _ => {
-                                    store.emit(AudioOp::SetOutputMuted(new_muted));
+                                    store.emit(AudioOp::OutputMuted(new_muted));
                                 }
                             }
                         }
@@ -197,12 +197,12 @@ impl Plugin for AudioPlugin {
                                 error!("[audio] Failed to set default sink: {}", e);
                             }
                             _ => {
-                                store.emit(AudioOp::SetDefaultOutput(device_id.clone()));
+                                store.emit(AudioOp::DefaultOutput(device_id.clone()));
 
                                 // Update volume for new default
                                 if let Ok((volume, muted)) = get_sink_volume(&device_id).await {
-                                    store.emit(AudioOp::SetOutputVolume(volume));
-                                    store.emit(AudioOp::SetOutputMuted(muted));
+                                    store.emit(AudioOp::OutputVolume(volume));
+                                    store.emit(AudioOp::OutputMuted(muted));
                                 }
                             }
                         }
@@ -251,7 +251,7 @@ impl Plugin for AudioPlugin {
                                     error!("[audio] Failed to set source mute: {}", e);
                                 }
                                 _ => {
-                                    store.emit(AudioOp::SetInputMuted(new_muted));
+                                    store.emit(AudioOp::InputMuted(new_muted));
                                 }
                             }
                         }
@@ -264,12 +264,12 @@ impl Plugin for AudioPlugin {
                                 error!("[audio] Failed to set default source: {}", e);
                             }
                             _ => {
-                                store.emit(AudioOp::SetDefaultInput(device_id.clone()));
+                                store.emit(AudioOp::DefaultInput(device_id.clone()));
 
                                 // Update volume for new default
                                 if let Ok((volume, muted)) = get_source_volume(&device_id).await {
-                                    store.emit(AudioOp::SetInputVolume(volume));
-                                    store.emit(AudioOp::SetInputMuted(muted));
+                                    store.emit(AudioOp::InputVolume(volume));
+                                    store.emit(AudioOp::InputMuted(muted));
                                 }
                             }
                         }
@@ -338,14 +338,14 @@ impl Plugin for AudioPlugin {
                 let card_ports = get_card_port_info().await.unwrap_or_default();
 
                 match event {
-                    AudioEvent::SinkChange | AudioEvent::ServerChange => {
+                    AudioEvent::Sink | AudioEvent::Server => {
                         // Reload sink state
                         if let Ok(default) = get_default_sink().await {
-                            store_for_events.emit(AudioOp::SetDefaultOutput(default.clone()));
+                            store_for_events.emit(AudioOp::DefaultOutput(default.clone()));
 
                             if let Ok((volume, muted)) = get_sink_volume(&default).await {
-                                store_for_events.emit(AudioOp::SetOutputVolume(volume));
-                                store_for_events.emit(AudioOp::SetOutputMuted(muted));
+                                store_for_events.emit(AudioOp::OutputVolume(volume));
+                                store_for_events.emit(AudioOp::OutputMuted(muted));
                             }
                         }
 
@@ -354,17 +354,17 @@ impl Plugin for AudioPlugin {
                                 .iter()
                                 .map(|s| AudioDevice::from_sink(s, &card_ports))
                                 .collect();
-                            store_for_events.emit(AudioOp::SetOutputDevices(devices));
+                            store_for_events.emit(AudioOp::OutputDevices(devices));
                         }
                     }
-                    AudioEvent::SourceChange => {
+                    AudioEvent::Source => {
                         // Reload source state
                         if let Ok(default) = get_default_source().await {
-                            store_for_events.emit(AudioOp::SetDefaultInput(default.clone()));
+                            store_for_events.emit(AudioOp::DefaultInput(default.clone()));
 
                             if let Ok((volume, muted)) = get_source_volume(&default).await {
-                                store_for_events.emit(AudioOp::SetInputVolume(volume));
-                                store_for_events.emit(AudioOp::SetInputMuted(muted));
+                                store_for_events.emit(AudioOp::InputVolume(volume));
+                                store_for_events.emit(AudioOp::InputMuted(muted));
                             }
                         }
 
@@ -373,17 +373,17 @@ impl Plugin for AudioPlugin {
                                 .iter()
                                 .map(|s| AudioDevice::from_source(s, &card_ports))
                                 .collect();
-                            store_for_events.emit(AudioOp::SetInputDevices(devices));
+                            store_for_events.emit(AudioOp::InputDevices(devices));
                         }
                     }
-                    AudioEvent::CardChange => {
+                    AudioEvent::Card => {
                         // Card change might affect available devices
                         if let Ok(sinks) = get_sinks().await {
                             let devices: Vec<AudioDevice> = sinks
                                 .iter()
                                 .map(|s| AudioDevice::from_sink(s, &card_ports))
                                 .collect();
-                            store_for_events.emit(AudioOp::SetOutputDevices(devices));
+                            store_for_events.emit(AudioOp::OutputDevices(devices));
                         }
 
                         if let Ok(sources) = get_sources().await {
@@ -391,7 +391,7 @@ impl Plugin for AudioPlugin {
                                 .iter()
                                 .map(|s| AudioDevice::from_source(s, &card_ports))
                                 .collect();
-                            store_for_events.emit(AudioOp::SetInputDevices(devices));
+                            store_for_events.emit(AudioOp::InputDevices(devices));
                         }
                     }
                 }

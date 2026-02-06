@@ -31,15 +31,15 @@ pub struct AudioState {
 /// Operations for the audio store.
 #[derive(Clone)]
 pub enum AudioOp {
-    SetAvailable(bool),
-    SetOutputVolume(f64),
-    SetOutputMuted(bool),
-    SetOutputDevices(Vec<AudioDevice>),
-    SetDefaultOutput(String),
-    SetInputVolume(f64),
-    SetInputMuted(bool),
-    SetInputDevices(Vec<AudioDevice>),
-    SetDefaultInput(String),
+    Available(bool),
+    OutputVolume(f64),
+    OutputMuted(bool),
+    OutputDevices(Vec<AudioDevice>),
+    DefaultOutput(String),
+    InputVolume(f64),
+    InputMuted(bool),
+    InputDevices(Vec<AudioDevice>),
+    DefaultInput(String),
 }
 
 impl StoreOp for AudioOp {}
@@ -55,8 +55,8 @@ pub type AudioStore = PluginStore<AudioOp, AudioState>;
 /// Create a new audio store instance.
 pub fn create_audio_store() -> AudioStore {
     PluginStore::new(|state: &mut AudioState, op: AudioOp| match op {
-        AudioOp::SetAvailable(available) => set_field!(state.available, available),
-        AudioOp::SetOutputVolume(volume) => {
+        AudioOp::Available(available) => set_field!(state.available, available),
+        AudioOp::OutputVolume(volume) => {
             let volume = volume.clamp(0.0, 1.0);
             if (state.output_volume - volume).abs() > f64::EPSILON {
                 state.output_volume = volume;
@@ -65,13 +65,13 @@ pub fn create_audio_store() -> AudioStore {
                 false
             }
         }
-        AudioOp::SetOutputMuted(muted) => set_field!(state.output_muted, muted),
-        AudioOp::SetOutputDevices(devices) => set_field!(state.output_devices, devices),
-        AudioOp::SetDefaultOutput(id) => {
+        AudioOp::OutputMuted(muted) => set_field!(state.output_muted, muted),
+        AudioOp::OutputDevices(devices) => set_field!(state.output_devices, devices),
+        AudioOp::DefaultOutput(id) => {
             let new_val = Some(id);
             set_field!(state.default_output, new_val)
         }
-        AudioOp::SetInputVolume(volume) => {
+        AudioOp::InputVolume(volume) => {
             let volume = volume.clamp(0.0, 1.0);
             if (state.input_volume - volume).abs() > f64::EPSILON {
                 state.input_volume = volume;
@@ -80,9 +80,9 @@ pub fn create_audio_store() -> AudioStore {
                 false
             }
         }
-        AudioOp::SetInputMuted(muted) => set_field!(state.input_muted, muted),
-        AudioOp::SetInputDevices(devices) => set_field!(state.input_devices, devices),
-        AudioOp::SetDefaultInput(id) => {
+        AudioOp::InputMuted(muted) => set_field!(state.input_muted, muted),
+        AudioOp::InputDevices(devices) => set_field!(state.input_devices, devices),
+        AudioOp::DefaultInput(id) => {
             let new_val = Some(id);
             set_field!(state.default_input, new_val)
         }
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn test_set_available() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetAvailable(true));
+        store.emit(AudioOp::Available(true));
 
         let state = store.get_state();
         assert!(state.available);
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn test_set_output_volume_normal_range() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetOutputVolume(0.5));
+        store.emit(AudioOp::OutputVolume(0.5));
 
         let state = store.get_state();
         assert!((state.output_volume - 0.5).abs() < f64::EPSILON);
@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn test_set_output_volume_clamps_above_one() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetOutputVolume(1.5));
+        store.emit(AudioOp::OutputVolume(1.5));
 
         let state = store.get_state();
         assert!((state.output_volume - 1.0).abs() < f64::EPSILON);
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn test_set_output_volume_clamps_below_zero() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetOutputVolume(-0.5));
+        store.emit(AudioOp::OutputVolume(-0.5));
 
         let state = store.get_state();
         assert!((state.output_volume - 0.0).abs() < f64::EPSILON);
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn test_set_input_volume_clamps_above_one() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetInputVolume(2.0));
+        store.emit(AudioOp::InputVolume(2.0));
 
         let state = store.get_state();
         assert!((state.input_volume - 1.0).abs() < f64::EPSILON);
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_set_input_volume_clamps_below_zero() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetInputVolume(-1.0));
+        store.emit(AudioOp::InputVolume(-1.0));
 
         let state = store.get_state();
         assert!((state.input_volume - 0.0).abs() < f64::EPSILON);
@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn test_set_output_muted() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetOutputMuted(true));
+        store.emit(AudioOp::OutputMuted(true));
 
         let state = store.get_state();
         assert!(state.output_muted);
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn test_set_input_muted() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetInputMuted(true));
+        store.emit(AudioOp::InputMuted(true));
 
         let state = store.get_state();
         assert!(state.input_muted);
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_set_default_output() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetDefaultOutput("sink-1".to_string()));
+        store.emit(AudioOp::DefaultOutput("sink-1".to_string()));
 
         let state = store.get_state();
         assert_eq!(state.default_output, Some("sink-1".to_string()));
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn test_set_default_input() {
         let store = create_audio_store();
-        store.emit(AudioOp::SetDefaultInput("source-1".to_string()));
+        store.emit(AudioOp::DefaultInput("source-1".to_string()));
 
         let state = store.get_state();
         assert_eq!(state.default_input, Some("source-1".to_string()));
@@ -226,7 +226,7 @@ mod tests {
                 secondary_icon: Some("bluetooth".to_string()),
             },
         ];
-        store.emit(AudioOp::SetOutputDevices(devices.clone()));
+        store.emit(AudioOp::OutputDevices(devices.clone()));
 
         let state = store.get_state();
         assert_eq!(state.output_devices.len(), 2);
@@ -243,7 +243,7 @@ mod tests {
             icon: "audio-input-microphone".to_string(),
             secondary_icon: None,
         }];
-        store.emit(AudioOp::SetInputDevices(devices));
+        store.emit(AudioOp::InputDevices(devices));
 
         let state = store.get_state();
         assert_eq!(state.input_devices.len(), 1);
@@ -255,10 +255,10 @@ mod tests {
         let store = create_audio_store();
 
         // Exact boundaries
-        store.emit(AudioOp::SetOutputVolume(0.0));
+        store.emit(AudioOp::OutputVolume(0.0));
         assert!((store.get_state().output_volume - 0.0).abs() < f64::EPSILON);
 
-        store.emit(AudioOp::SetOutputVolume(1.0));
+        store.emit(AudioOp::OutputVolume(1.0));
         assert!((store.get_state().output_volume - 1.0).abs() < f64::EPSILON);
     }
 
@@ -266,10 +266,10 @@ mod tests {
     fn test_multiple_operations_in_sequence() {
         let store = create_audio_store();
 
-        store.emit(AudioOp::SetAvailable(true));
-        store.emit(AudioOp::SetOutputVolume(0.75));
-        store.emit(AudioOp::SetOutputMuted(true));
-        store.emit(AudioOp::SetDefaultOutput("speakers".to_string()));
+        store.emit(AudioOp::Available(true));
+        store.emit(AudioOp::OutputVolume(0.75));
+        store.emit(AudioOp::OutputMuted(true));
+        store.emit(AudioOp::DefaultOutput("speakers".to_string()));
 
         let state = store.get_state();
         assert!(state.available);

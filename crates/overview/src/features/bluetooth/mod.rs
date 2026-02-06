@@ -150,7 +150,7 @@ impl BluetoothPlugin {
                     })
                     .collect();
 
-                store.emit(BluetoothOp::SetDevices(device_states));
+                store.emit(BluetoothOp::Devices(device_states));
             }
             Err(e) => {
                 warn!(
@@ -218,14 +218,14 @@ impl BluetoothPlugin {
 
             match event {
                 DeviceMenuOutput::Connect(path) => {
-                    store.emit(BluetoothOp::SetDeviceConnection(
+                    store.emit(BluetoothOp::DeviceConnection(
                         path.clone(),
                         DeviceConnectionState::Connecting,
                     ));
                     glib::spawn_future_local(async move {
                         if let Err(e) = connect_device(dbus, &path).await {
                             error!("[bluetooth] Failed to connect device: {}", e);
-                            store.emit(BluetoothOp::SetDeviceConnection(
+                            store.emit(BluetoothOp::DeviceConnection(
                                 path,
                                 DeviceConnectionState::Disconnected,
                             ));
@@ -233,14 +233,14 @@ impl BluetoothPlugin {
                     });
                 }
                 DeviceMenuOutput::Disconnect(path) => {
-                    store.emit(BluetoothOp::SetDeviceConnection(
+                    store.emit(BluetoothOp::DeviceConnection(
                         path.clone(),
                         DeviceConnectionState::Disconnecting,
                     ));
                     glib::spawn_future_local(async move {
                         if let Err(e) = disconnect_device(dbus, &path).await {
                             error!("[bluetooth] Failed to disconnect device: {}", e);
-                            store.emit(BluetoothOp::SetDeviceConnection(
+                            store.emit(BluetoothOp::DeviceConnection(
                                 path,
                                 DeviceConnectionState::Connected,
                             ));
@@ -265,12 +265,12 @@ impl BluetoothPlugin {
             match event {
                 FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
                     let powered = matches!(event, FeatureToggleOutput::Activate);
-                    store.emit(BluetoothOp::SetBusy(true));
+                    store.emit(BluetoothOp::Busy(true));
 
                     glib::spawn_future_local(async move {
                         if let Err(err) = set_powered(dbus, &adapter_path, powered).await {
                             error!("Failed to set bluetooth state: {}", err);
-                            store.emit(BluetoothOp::SetBusy(false));
+                            store.emit(BluetoothOp::Busy(false));
                         }
                     });
                 }
@@ -320,8 +320,8 @@ impl Plugin for BluetoothPlugin {
                     );
 
                     let store = Rc::new(create_bluetooth_store());
-                    store.emit(BluetoothOp::SetAvailable(true));
-                    store.emit(BluetoothOp::SetPowered(adapter.powered));
+                    store.emit(BluetoothOp::Available(true));
+                    store.emit(BluetoothOp::Powered(adapter.powered));
 
                     // Load paired devices
                     Self::load_devices_for_adapter(&self.dbus, &store, &adapter.path).await;
@@ -439,8 +439,8 @@ impl Plugin for BluetoothPlugin {
                 match change {
                     PropertyChange::AdapterPowered(path, powered) => {
                         if let Some(store) = stores.get(&path) {
-                            store.emit(BluetoothOp::SetPowered(powered));
-                            store.emit(BluetoothOp::SetBusy(false));
+                            store.emit(BluetoothOp::Powered(powered));
+                            store.emit(BluetoothOp::Busy(false));
                         }
                     }
                     PropertyChange::DeviceConnected(device_path, connected) => {
@@ -452,7 +452,7 @@ impl Plugin for BluetoothPlugin {
                                 } else {
                                     DeviceConnectionState::Disconnected
                                 };
-                                store.emit(BluetoothOp::SetDeviceConnection(
+                                store.emit(BluetoothOp::DeviceConnection(
                                     device_path.clone(),
                                     connection,
                                 ));

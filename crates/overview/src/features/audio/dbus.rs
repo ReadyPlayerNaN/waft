@@ -346,22 +346,22 @@ pub async fn subscribe_events(
 /// Audio event types from pactl subscribe.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AudioEvent {
-    SinkChange,
-    SourceChange,
-    ServerChange,
-    CardChange,
+    Sink,
+    Source,
+    Server,
+    Card,
 }
 
 fn parse_event_line(line: &str) -> Option<AudioEvent> {
     let lower = line.to_lowercase();
     if lower.contains("sink") && !lower.contains("sink-input") {
-        Some(AudioEvent::SinkChange)
+        Some(AudioEvent::Sink)
     } else if lower.contains("source") && !lower.contains("source-output") {
-        Some(AudioEvent::SourceChange)
+        Some(AudioEvent::Source)
     } else if lower.contains("server") {
-        Some(AudioEvent::ServerChange)
+        Some(AudioEvent::Server)
     } else if lower.contains("card") {
-        Some(AudioEvent::CardChange)
+        Some(AudioEvent::Card)
     } else {
         None
     }

@@ -130,8 +130,8 @@ impl Plugin for BrightnessPlugin {
             "[brightness] Found {} controllable displays",
             displays.len()
         );
-        self.store.emit(BrightnessOp::SetAvailable(true));
-        self.store.emit(BrightnessOp::SetDisplays(displays));
+        self.store.emit(BrightnessOp::Available(true));
+        self.store.emit(BrightnessOp::Displays(displays));
 
         Ok(())
     }
@@ -168,7 +168,7 @@ impl Plugin for BrightnessPlugin {
                     brightness,
                 } => {
                     // Update store
-                    store_for_output.emit(BrightnessOp::SetBrightness {
+                    store_for_output.emit(BrightnessOp::Brightness {
                         display_id: display_id.clone(),
                         brightness,
                     });

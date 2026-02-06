@@ -58,7 +58,7 @@ impl Plugin for SunsetrPlugin {
             Ok(presets) => !presets.is_empty(),
             Err(_) => false,
         };
-        self.store.emit(SunsetrOp::SetHasPresets(has_presets));
+        self.store.emit(SunsetrOp::HasPresets(has_presets));
 
         let initial_state = {
             let state = self.store.get_state();
@@ -135,7 +135,7 @@ impl Plugin for SunsetrPlugin {
             while let Ok((presets, active_preset)) = preset_rx.recv_async().await {
                 // Update has_presets flag in store
                 let has_presets = !presets.is_empty();
-                store_for_presets.emit(SunsetrOp::SetHasPresets(has_presets));
+                store_for_presets.emit(SunsetrOp::HasPresets(has_presets));
 
                 // Update preset menu
                 if let Some(ref menu) = *preset_menu_for_rx.borrow() {
@@ -231,18 +231,18 @@ impl Plugin for SunsetrPlugin {
                 debug!("[sunsetr/ipc] Received event: {:?}", event);
                 match event {
                     SunsetrIpcEvents::Status(status) => {
-                        store_for_ipc.emit(SunsetrOp::SetStatus {
+                        store_for_ipc.emit(SunsetrOp::Status {
                             active: status.active,
                             period: status.period,
                             next_transition: status.next_transition_text,
                         });
-                        store_for_ipc.emit(SunsetrOp::SetBusy(false));
+                        store_for_ipc.emit(SunsetrOp::Busy(false));
                     }
                     SunsetrIpcEvents::Busy(busy) => {
-                        store_for_ipc.emit(SunsetrOp::SetBusy(busy));
+                        store_for_ipc.emit(SunsetrOp::Busy(busy));
                     }
                     SunsetrIpcEvents::ActivePreset(preset) => {
-                        store_for_ipc.emit(SunsetrOp::SetActivePreset(preset));
+                        store_for_ipc.emit(SunsetrOp::ActivePreset(preset));
                     }
                     SunsetrIpcEvents::Error(_error) => {
                         // Errors are logged by the IPC module

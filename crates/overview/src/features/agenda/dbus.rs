@@ -229,9 +229,9 @@ pub async fn stop_and_dispose_view(
 /// Message type sent from D-Bus signal listener to the main thread.
 #[derive(Clone, Debug)]
 pub enum ViewSignal {
-    EventsAdded(Vec<AgendaEvent>),
-    EventsModified(Vec<AgendaEvent>),
-    EventsRemoved(Vec<String>),
+    Added(Vec<AgendaEvent>),
+    Modified(Vec<AgendaEvent>),
+    Removed(Vec<String>),
 }
 
 /// Listen for CalendarView signals and forward parsed events via a flume channel.
@@ -307,9 +307,9 @@ pub async fn listen_view_signals(
 
                                     if !events.is_empty() {
                                         let signal = if member == "ObjectsAdded" {
-                                            ViewSignal::EventsAdded(events)
+                                            ViewSignal::Added(events)
                                         } else {
-                                            ViewSignal::EventsModified(events)
+                                            ViewSignal::Modified(events)
                                         };
                                         if tx.send(signal).is_err() {
                                             warn!(
@@ -331,7 +331,7 @@ pub async fn listen_view_signals(
                             if let Ok((uids,)) = msg.body().deserialize::<(Vec<String>,)>() {
                                 debug!("[agenda/dbus] ObjectsRemoved: {} uid(s)", uids.len());
                                 if !uids.is_empty()
-                                    && tx.send(ViewSignal::EventsRemoved(uids)).is_err() {
+                                    && tx.send(ViewSignal::Removed(uids)).is_err() {
                                         warn!(
                                             "[agenda/dbus] receiver dropped, stopping signal listener"
                                         );

@@ -32,9 +32,9 @@ pub struct BrightnessState {
 /// Operations for updating brightness state.
 #[derive(Debug, Clone)]
 pub enum BrightnessOp {
-    SetAvailable(bool),
-    SetDisplays(Vec<Display>),
-    SetBrightness { display_id: String, brightness: f64 },
+    Available(bool),
+    Displays(Vec<Display>),
+    Brightness { display_id: String, brightness: f64 },
 }
 
 /// Brightness state store.
@@ -61,13 +61,13 @@ impl BrightnessStore {
         {
             let mut state = self.state.borrow_mut();
             match op {
-                BrightnessOp::SetAvailable(available) => {
+                BrightnessOp::Available(available) => {
                     state.available = available;
                 }
-                BrightnessOp::SetDisplays(displays) => {
+                BrightnessOp::Displays(displays) => {
                     state.displays = displays;
                 }
-                BrightnessOp::SetBrightness {
+                BrightnessOp::Brightness {
                     display_id,
                     brightness,
                 } => {
