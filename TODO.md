@@ -105,35 +105,6 @@ Sometimes apps have workspaces. It would be useful to split notifications to gro
 
 The following clippy warnings require architectural refactoring rather than simple fixes.
 
-### 9a. `await_holding_lock` - MutexGuard held across await points ✅ FIXED
-
-**Problem:** Standard `Mutex` guards cannot be held across `.await` points safely.
-
-**Resolution:** All locations have been fixed:
-- `plugin_registry.rs:83-96` - ✅ Option-take pattern (already fixed)
-- `plugin_registry.rs:118-140` - ✅ Option-take pattern (already fixed)
-- `plugin_registry.rs:172-182` - ✅ Option-take pattern (already fixed)
-- `features/networkmanager/mod.rs:220+` - ✅ Extract state data before await (clone and drop lock)
-
-**Patterns used:**
-1. **Option-take** (plugin_registry): Take value out, do async work, put it back
-2. **Extract-and-drop** (networkmanager): Clone needed data, drop lock, then await
-
-### 9b. `await_holding_refcell_ref` - RefCell borrows held across await points ✅ FIXED
-
-**Problem:** RefCell borrows should not span await points as they block other access.
-
-**Resolution:** All four locations have been fixed using appropriate patterns:
-- `features/agenda/mod.rs:111-118` - ✅ Used collect-then-await pattern
-- `features/agenda/mod.rs:323-331` - ✅ Used collect-then-await pattern
-- `features/bluetooth/mod.rs:316-330` - ✅ Moved borrow to just before insert
-- `features/caffeine/mod.rs:93-111` - ✅ Used Option-take pattern
-
-**Patterns used:**
-1. **Collect-then-await** (agenda): Extract needed data, release borrow, then await
-2. **Deferred borrow** (bluetooth): Only borrow for the final insert operation
-3. **Option-take** (caffeine): Take value out, do async work, put it back
-
 ### 9c. `type_complexity` - Complex callback types
 
 **Problem:** Complex nested types like `Rc<RefCell<Option<Box<dyn Fn(...)>>>>` are hard to read.
@@ -164,26 +135,7 @@ type VoidCallback = Rc<RefCell<Option<Box<dyn Fn()>>>>;
 2. Document as intentional design decision
 3. Make wrapper types that are `Send`/`Sync` safe
 
-### 9e. `too_many_arguments` - Functions with many parameters ✓ RESOLVED
-
-**Resolution:**
-All three warnings have been fixed:
-
-1. **D-Bus server** (`features/notifications/dbus/server.rs:226`):
-   - Added `#[allow(clippy::too_many_arguments)]` attribute
-   - Rationale: Protocol signature mandated by freedesktop.org D-Bus specification
-
-2. **ToastWidget** (`features/notifications/ui/toast_widget.rs:25`):
-   - Created `ToastWidgetConfig` struct to group data parameters (6 fields)
-   - Reduced signature from 9 parameters to 4 (config + 3 callbacks)
-   - Separates data (config) from behavior (callbacks)
-
-3. **Toast list handler** (`features/notifications/ui/toast_list.rs:150`):
-   - Created `ToastChangeContext` struct to group widget state (5 fields)
-   - Reduced signature from 8 parameters to 4 (data + context + flag)
-   - Groups related widget resources into cohesive context object
-
-### 9f. `enum_variant_names` - Variants with common prefix/suffix
+### 9e. `enum_variant_names` - Variants with common prefix/suffix
 
 **Locations:**
 - `features/agenda/dbus.rs:230` - `ViewSignal::EventsAdded/Modified/Removed`
