@@ -1,3 +1,25 @@
+## Syncthing plugin
+
+Provides overlay feature toggle, that enables/disables syncthing
+
+## Notification sounds
+
+Play a sound when a notification pops up
+Configure sounds=disabled/enabled
+Configure sound based on urgency
+Configure sound based on notification matching
+Sounds are off in Do Not Disturb mode
+
+## Agenda widget flickers on refresh
+
+It is a massive flicker, it resizes entire overlay window
+
+## Tethering
+
+Add to networkmanager plugin?
+
+Whenever tethering device is detected, display it as a feature toggle
+
 ## Auxiliary notification group splits
 
 Sometimes apps have workspaces. It would be useful to split notifications to groups per app workspace. We should investigate if there is a generic way to achieve this. Good example is Slack. Running multiple workspaces seems to be prefixing the notification title with `[{workspace_name}]` and that could be used to group notifications more productively. The Workspace name (if detected) MUST appear in thenotification group header. Optionally we can even load the workspace icon and display it in the notification group header as a secondary icon to provide more visual hints.
@@ -6,7 +28,6 @@ Sometimes apps have workspaces. It would be useful to split notifications to gro
 
 **Needs developer clarification:**
 
-- Tether plugin? - What functionality is needed? Mobile hotspot detection/control?
 - SNI - What is SNI in this context? Server Name Indication? Social Network Integration? Please specify requirements.
 
 ## 3. NetworkManager plugin enhancements
@@ -100,4 +121,3 @@ Sometimes apps have workspaces. It would be useful to split notifications to gro
 
 - Should this be user-configurable or hardcoded?
 - Which positions should be supported initially?
-
