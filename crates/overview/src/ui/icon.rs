@@ -19,7 +19,11 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub fn from_str(str: &Arc<str>) -> Self {
+    /// Parse an icon from a string reference.
+    ///
+    /// If the string contains path-like characters (`/`, `.`, `~`),
+    /// it's treated as a file path. Otherwise, it's treated as a themed icon name.
+    pub fn parse(str: &Arc<str>) -> Self {
         let s: &str = str.trim();
         if s.contains('/') || s.starts_with('.') || s.starts_with('~') {
             Self::FilePath(Arc::new(PathBuf::from(s)))

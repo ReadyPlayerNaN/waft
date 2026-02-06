@@ -7,11 +7,14 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
+/// Type alias for the click callback handler.
+type ClickCallback = Rc<RefCell<Option<Box<dyn Fn()>>>>;
+
 /// A generic menu item widget that wraps child content with click handling.
 pub struct MenuItemWidget {
     pub root: gtk::Button,
     #[allow(dead_code)]
-    on_click: Rc<RefCell<Option<Box<dyn Fn()>>>>,
+    on_click: ClickCallback,
 }
 
 impl MenuItemWidget {
@@ -30,8 +33,7 @@ impl MenuItemWidget {
 
         root.set_child(Some(child));
 
-        let on_click_rc: Rc<RefCell<Option<Box<dyn Fn()>>>> =
-            Rc::new(RefCell::new(Some(Box::new(on_click))));
+        let on_click_rc: ClickCallback = Rc::new(RefCell::new(Some(Box::new(on_click))));
 
         // Connect click handler
         let on_click_ref = on_click_rc.clone();

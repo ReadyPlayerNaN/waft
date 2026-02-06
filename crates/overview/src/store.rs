@@ -76,6 +76,9 @@ pub trait StoreState: Default {
 /// Background threads should send operations via channels to the main thread,
 /// which then calls `emit()`. This ensures subscribers (which may capture
 /// GTK widgets) are only called from the main thread.
+/// Type alias for the store operation processor function.
+type StoreProcessor<Op, State> = Box<dyn Fn(&mut State, Op) -> bool>;
+
 pub struct PluginStore<Op, State>
 where
     Op: StoreOp,
@@ -83,7 +86,7 @@ where
 {
     state: RwLock<State>,
     subscribers: RefCell<Vec<Rc<dyn Fn()>>>,
-    processor: Box<dyn Fn(&mut State, Op) -> bool>,
+    processor: StoreProcessor<Op, State>,
 }
 
 impl<Op, State> PluginStore<Op, State>

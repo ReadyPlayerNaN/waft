@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_absolute_path_detection() {
-    let icon = Icon::from_str(&Arc::from("/usr/share/icons/test.png"));
+    let icon = Icon::parse(&Arc::from("/usr/share/icons/test.png"));
     match icon {
         Icon::FilePath(path) => {
             assert_eq!(path.as_ref(), &PathBuf::from("/usr/share/icons/test.png"));
@@ -15,7 +15,7 @@ fn test_absolute_path_detection() {
 
 #[test]
 fn test_relative_path_with_dot() {
-    let icon = Icon::from_str(&Arc::from("./icons/test.png"));
+    let icon = Icon::parse(&Arc::from("./icons/test.png"));
     match icon {
         Icon::FilePath(path) => {
             assert_eq!(path.as_ref(), &PathBuf::from("./icons/test.png"));
@@ -26,7 +26,7 @@ fn test_relative_path_with_dot() {
 
 #[test]
 fn test_home_directory_path() {
-    let icon = Icon::from_str(&Arc::from("~/icons/test.png"));
+    let icon = Icon::parse(&Arc::from("~/icons/test.png"));
     match icon {
         Icon::FilePath(path) => {
             assert_eq!(path.as_ref(), &PathBuf::from("~/icons/test.png"));
@@ -38,7 +38,7 @@ fn test_home_directory_path() {
 #[test]
 fn test_themed_icon_name() {
     let icon_name = Arc::from("dialog-information");
-    let icon = Icon::from_str(&icon_name);
+    let icon = Icon::parse(&icon_name);
     match icon {
         Icon::Themed(name) => {
             assert_eq!(name.as_ref(), "dialog-information");
@@ -49,7 +49,7 @@ fn test_themed_icon_name() {
 
 #[test]
 fn test_whitespace_trimming_themed() {
-    let icon = Icon::from_str(&Arc::from("  dialog-information  "));
+    let icon = Icon::parse(&Arc::from("  dialog-information  "));
     match icon {
         Icon::Themed(name) => {
             assert_eq!(name.as_ref(), "dialog-information");
@@ -60,7 +60,7 @@ fn test_whitespace_trimming_themed() {
 
 #[test]
 fn test_whitespace_trimming_filepath() {
-    let icon = Icon::from_str(&Arc::from("  /usr/share/icons/test.png  "));
+    let icon = Icon::parse(&Arc::from("  /usr/share/icons/test.png  "));
     match icon {
         Icon::FilePath(path) => {
             assert_eq!(path.as_ref(), &PathBuf::from("/usr/share/icons/test.png"));

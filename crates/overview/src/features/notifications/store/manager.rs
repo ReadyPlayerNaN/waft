@@ -639,13 +639,11 @@ fn derive_app_ident(notification: &IngressedNotification) -> Option<AppIdent> {
             ident: normalize_app_ident(app_ident),
             title: Some(app_ident.clone()),
         })
-    } else if let Some(desktop) = desktop {
-        Some(AppIdent {
+    } else {
+        desktop.as_ref().map(|desktop| AppIdent {
             ident: normalize_app_ident(desktop),
             title: Some(desktop.clone()),
         })
-    } else {
-        None
     }
 }
 
@@ -658,10 +656,10 @@ fn derive_toast_ttl(notification: &IngressedNotification) -> Option<u64> {
     }
 
     // Explicit TTL > 0: use it (already in milliseconds from DBus)
-    if let Some(ttl) = notification.ttl {
-        if ttl > 0 {
-            return Some(ttl);
-        }
+    if let Some(ttl) = notification.ttl
+        && ttl > 0
+    {
+        return Some(ttl);
     }
     // ttl=0 means "never expire" (from expire_timeout=-1 in DBus)
     // ttl=None means "use server default"
@@ -677,8 +675,7 @@ pub fn derive_actions(notification: &IngressedNotification) -> Vec<NotificationA
     let actions = &notification.actions;
     let mut out = Vec::new();
     let mut it = actions.iter();
-    loop {
-        let Some(key) = it.next() else { break };
+    while let Some(key) = it.next() {
         let Some(label) = it.next() else { break };
         out.push(NotificationAction {
             key: key.clone(),
@@ -712,18 +709,18 @@ pub fn derive_icon_hints(notification: &IngressedNotification) -> Vec<Notificati
     }
     // image-path hint can be a file path OR an icon name per freedesktop spec
     if let Some(path) = &notification.hints.image_path {
-        out.push(NotificationIcon::from_str(path));
+        out.push(NotificationIcon::parse(path));
     }
     if let Some(specific) = &notification.icon {
-        out.push(NotificationIcon::from_str(specific));
+        out.push(NotificationIcon::parse(specific));
     }
 
     if let Some(de) = &notification.hints.desktop_entry {
         let trimmed = de.trim();
         if !trimmed.is_empty() {
             let without_suffix = trimmed.strip_suffix(".desktop").unwrap_or(trimmed);
-            out.push(NotificationIcon::from_str(&Arc::from(without_suffix)));
-            out.push(NotificationIcon::from_str(&Arc::from(normalize_icon_name(
+            out.push(NotificationIcon::parse(&Arc::from(without_suffix)));
+            out.push(NotificationIcon::parse(&Arc::from(normalize_icon_name(
                 without_suffix,
             ))));
         }
