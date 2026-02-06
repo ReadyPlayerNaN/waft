@@ -245,7 +245,7 @@ impl Plugin for NotificationsPlugin {
             while let Ok(event) = server_receiver.recv_async().await {
                 match event {
                     IngressEvent::Notify { notification } => {
-                        let _ = db_server.send(NotificationOp::Ingress(Box::new(notification)));
+                        let _ = db_server.send(NotificationOp::Ingress(notification));
                     }
 
                     IngressEvent::CloseNotification { id } => {

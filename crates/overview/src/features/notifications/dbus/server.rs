@@ -300,7 +300,7 @@ impl NotificationsService {
             },
         };
 
-        let _ = self.inner.ingress_tx.send(IngressEvent::Notify { notification });
+        let _ = self.inner.ingress_tx.send(IngressEvent::Notify { notification: Box::new(notification) });
 
         Ok(id)
     }
@@ -329,19 +329,14 @@ async fn outbound_signal_loop(
         }
     };
 
-    loop {
-        match outbound_rx.recv_async().await {
-            Ok(ev) => {
-                match ev {
-                    OutboundEvent::ActionInvoked { id, action_key } => {
-                        NotificationsService::emit_action_invoked(&emitter, id, &action_key).await;
-                    }
-                    OutboundEvent::NotificationClosed { id, reason } => {
-                        NotificationsService::emit_notification_closed(&emitter, id, reason).await;
-                    }
-                };
+    while let Ok(ev) = outbound_rx.recv_async().await {
+        match ev {
+            OutboundEvent::ActionInvoked { id, action_key } => {
+                NotificationsService::emit_action_invoked(&emitter, id, &action_key).await;
             }
-            Err(_) => break,
+            OutboundEvent::NotificationClosed { id, reason } => {
+                NotificationsService::emit_notification_closed(&emitter, id, reason).await;
+            }
         }
     }
     Ok(())

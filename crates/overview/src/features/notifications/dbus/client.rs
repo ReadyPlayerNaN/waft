@@ -50,7 +50,7 @@ pub mod close_reasons {
 #[derive(Clone, Debug)]
 pub enum IngressEvent {
     CloseNotification { id: u32 },
-    Notify { notification: IngressedNotification },
+    Notify { notification: Box<IngressedNotification> },
 }
 
 /// Outbound events from UI/controller -> DBus server.
