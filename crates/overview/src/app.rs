@@ -144,10 +144,10 @@ pub async fn run() -> Result<()> {
             continue;
         }
         if let Some(mut plugin) = loaded.create_overview_plugin() {
-            if let Some(settings) = config.get_plugin_settings(&plugin_id) {
-                if let Err(e) = plugin.configure(settings) {
-                    warn!("Failed to configure dynamic plugin {}: {}", plugin_id, e);
-                }
+            if let Some(settings) = config.get_plugin_settings(&plugin_id)
+                && let Err(e) = plugin.configure(settings)
+            {
+                warn!("Failed to configure dynamic plugin {}: {}", plugin_id, e);
             }
             debug!("Registered dynamic plugin: {}", plugin_id);
             registry.register_boxed(plugin);

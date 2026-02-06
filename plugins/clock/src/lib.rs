@@ -39,12 +39,18 @@ pub struct ClockPlugin {
     config: ClockConfig,
 }
 
-impl ClockPlugin {
-    pub fn new() -> Self {
+impl Default for ClockPlugin {
+    fn default() -> Self {
         Self {
             widget: Rc::new(RefCell::new(None)),
             config: ClockConfig::default(),
         }
+    }
+}
+
+impl ClockPlugin {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
