@@ -290,11 +290,10 @@ async fn set_ddc_brightness(display_num: u32, value: f64) -> Result<()> {
 /// Convert a backlight device name to a human-readable name.
 fn humanize_backlight_name(device_name: &str) -> String {
     // Common patterns: intel_backlight, amdgpu_bl0, nvidia_0, etc.
-    if device_name.contains("intel") {
-        "Built-in Display".to_string()
-    } else if device_name.contains("amdgpu") {
-        "Built-in Display".to_string()
-    } else if device_name.contains("nvidia") {
+    if device_name.contains("intel")
+        || device_name.contains("amdgpu")
+        || device_name.contains("nvidia")
+    {
         "Built-in Display".to_string()
     } else {
         // Fallback: capitalize and clean up

@@ -27,7 +27,7 @@ impl WiredToggleWidget {
     pub fn new(
         interface_name: String,
         enabled: bool,
-        carrier: bool,
+        _carrier: bool,
         device_state: u32,
         menu_store: Arc<MenuStore>,
     ) -> Self {
@@ -36,8 +36,6 @@ impl WiredToggleWidget {
         let initial_details = if enabled {
             if is_connected {
                 Some(crate::i18n::t("network-connected"))
-            } else if carrier {
-                Some(crate::i18n::t("network-disconnected"))
             } else {
                 Some(crate::i18n::t("network-disconnected"))
             }
@@ -48,8 +46,6 @@ impl WiredToggleWidget {
         let icon = if enabled {
             if is_connected {
                 "network-wired-symbolic"
-            } else if carrier {
-                "network-wired-disconnected-symbolic"
             } else {
                 "network-wired-disconnected-symbolic"
             }
@@ -129,14 +125,12 @@ impl WiredToggleWidget {
         self.inner.toggle.set_details(details);
     }
 
-    pub fn update_state(&self, enabled: bool, carrier: bool, device_state: u32) {
+    pub fn update_state(&self, enabled: bool, _carrier: bool, device_state: u32) {
         let is_connected = device_state == 100;
 
         let details = if enabled {
             if is_connected {
                 Some(crate::i18n::t("network-connected"))
-            } else if carrier {
-                Some(crate::i18n::t("network-disconnected"))
             } else {
                 Some(crate::i18n::t("network-disconnected"))
             }
@@ -147,8 +141,6 @@ impl WiredToggleWidget {
         let icon = if enabled {
             if is_connected {
                 "network-wired-symbolic"
-            } else if carrier {
-                "network-wired-disconnected-symbolic"
             } else {
                 "network-wired-disconnected-symbolic"
             }
