@@ -10,6 +10,7 @@ use std::sync::Arc;
 use gtk::prelude::*;
 
 use super::toast_widget::ToastWidget;
+use crate::common::Callback;
 use crate::features::notifications::store::{ItemLifecycle, NotificationOp, NotificationStore};
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 
@@ -39,7 +40,7 @@ pub struct ToastListWidget {
     pub root: gtk::Box,
     container: gtk::Box,
     widgets: Rc<RefCell<HashMap<u64, ToastWidget>>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>>,
+    on_output: Callback<ToastListOutput>,
     hover_count: Rc<RefCell<u32>>,
     store: Rc<NotificationStore>,
 }
@@ -63,8 +64,7 @@ impl ToastListWidget {
         container.set_visible(false);
 
         let widgets: Rc<RefCell<HashMap<u64, ToastWidget>>> = Rc::new(RefCell::new(HashMap::new()));
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<ToastListOutput> = Rc::new(RefCell::new(None));
         let hover_count: Rc<RefCell<u32>> = Rc::new(RefCell::new(0));
 
         let widget = Self {
@@ -152,7 +152,7 @@ impl ToastListWidget {
         all_toast_ids: &std::collections::HashSet<u64>,
         widgets: &Rc<RefCell<HashMap<u64, ToastWidget>>>,
         container: &gtk::Box,
-        on_output: &Rc<RefCell<Option<Box<dyn Fn(ToastListOutput)>>>>,
+        on_output: &Callback<ToastListOutput>,
         hover_count: &Rc<RefCell<u32>>,
         hover_paused: bool,
         store: &Rc<NotificationStore>,

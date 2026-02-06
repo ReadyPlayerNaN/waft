@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::dbus::SystemAction;
+use crate::common::Callback;
 use crate::ui::menu_item::MenuItemWidget;
 
 /// Output events from the action menu.
@@ -16,7 +17,7 @@ pub enum ActionMenuOutput {
 /// A vertical menu of system action items.
 pub struct ActionMenuWidget {
     pub root: gtk::Box,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(ActionMenuOutput)>>>>,
+    on_output: Callback<ActionMenuOutput>,
 }
 
 impl ActionMenuWidget {
@@ -28,8 +29,7 @@ impl ActionMenuWidget {
             .css_classes(["system-action-menu"])
             .build();
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(ActionMenuOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<ActionMenuOutput> = Rc::new(RefCell::new(None));
 
         // Lock Session action
         let lock_item = Self::create_menu_item(
@@ -60,8 +60,7 @@ impl ActionMenuWidget {
             .css_classes(["system-action-menu"])
             .build();
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(ActionMenuOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<ActionMenuOutput> = Rc::new(RefCell::new(None));
 
         // Reboot action
         let reboot_item = Self::create_menu_item(
@@ -98,7 +97,7 @@ impl ActionMenuWidget {
         icon_name: &str,
         label_text: &str,
         action: SystemAction,
-        on_output: Rc<RefCell<Option<Box<dyn Fn(ActionMenuOutput)>>>>,
+        on_output: Callback<ActionMenuOutput>,
     ) -> gtk::Widget {
         let item_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)

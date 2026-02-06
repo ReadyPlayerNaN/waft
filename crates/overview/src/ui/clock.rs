@@ -9,6 +9,8 @@ use gtk::glib::{DateTime, GString};
 use gtk::prelude::*;
 use log::warn;
 
+use crate::common::Callback;
+
 /// Output events from the clock widget.
 #[derive(Debug, Clone)]
 pub enum ClockOutput {
@@ -20,7 +22,7 @@ pub struct ClockWidget {
     pub root: gtk::Button,
     date_label: gtk::Label,
     time_label: gtk::Label,
-    on_click: Rc<RefCell<Option<Box<dyn Fn(ClockOutput)>>>>,
+    on_click: Callback<ClockOutput>,
 }
 
 impl ClockWidget {
@@ -50,7 +52,7 @@ impl ClockWidget {
         content.append(&time_label);
         root.set_child(Some(&content));
 
-        let on_click: Rc<RefCell<Option<Box<dyn Fn(ClockOutput)>>>> = Rc::new(RefCell::new(None));
+        let on_click: Callback<ClockOutput> = Rc::new(RefCell::new(None));
 
         // Connect click handler
         let on_click_ref = on_click.clone();

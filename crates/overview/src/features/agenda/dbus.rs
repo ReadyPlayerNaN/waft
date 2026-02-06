@@ -15,6 +15,9 @@ use crate::runtime::spawn_on_tokio;
 
 use super::values::{AgendaEvent, CalendarSource, parse_vevent};
 
+/// Type alias for D-Bus ObjectManager's GetManagedObjects() return value.
+type ManagedObjects = HashMap<zvariant::OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
+
 const SOURCES_DEST: &str = "org.gnome.evolution.dataserver.Sources5";
 const SOURCES_PATH: &str = "/org/gnome/evolution/dataserver/SourceManager";
 const CALENDAR_FACTORY_DEST: &str = "org.gnome.evolution.dataserver.Calendar8";
@@ -36,9 +39,7 @@ pub async fn discover_calendar_sources(dbus: &Arc<DbusHandle>) -> Result<Vec<Cal
         .await
         .context("Failed to create ObjectManager proxy")?;
 
-        let (managed,): (
-            HashMap<zvariant::OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>,
-        ) = proxy
+        let (managed,): (ManagedObjects,) = proxy
             .call("GetManagedObjects", &())
             .await
             .context("Failed to call GetManagedObjects on EDS SourceManager")?;

@@ -12,6 +12,7 @@ use gtk::prelude::*;
 use uuid::Uuid;
 
 use super::menu_chevron::{MenuChevronProps, MenuChevronWidget};
+use crate::common::Callback;
 use crate::menu_state::{MenuOp, MenuStore};
 
 /// Properties for initializing a feature toggle.
@@ -45,8 +46,8 @@ pub struct FeatureToggleWidget {
     busy: Rc<RefCell<bool>>,
     expandable: Rc<RefCell<bool>>,
     expanded: Rc<RefCell<bool>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(FeatureToggleOutput)>>>>,
-    on_expand: Rc<RefCell<Option<Box<dyn Fn(bool)>>>>,
+    on_output: Callback<FeatureToggleOutput>,
+    on_expand: Callback<bool>,
     pub menu_id: Option<String>,
 }
 
@@ -142,9 +143,8 @@ impl FeatureToggleWidget {
         let busy = Rc::new(RefCell::new(props.busy));
         let expandable = Rc::new(RefCell::new(props.expandable));
         let expanded = Rc::new(RefCell::new(false));
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(FeatureToggleOutput)>>>> =
-            Rc::new(RefCell::new(None));
-        let on_expand: Rc<RefCell<Option<Box<dyn Fn(bool)>>>> = Rc::new(RefCell::new(None));
+        let on_output: Callback<FeatureToggleOutput> = Rc::new(RefCell::new(None));
+        let on_expand: Callback<bool> = Rc::new(RefCell::new(None));
 
         // Update CSS classes based on initial state
         Self::update_css_classes(&root, props.active, props.busy, props.expandable, false);

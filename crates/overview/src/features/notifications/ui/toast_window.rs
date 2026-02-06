@@ -9,6 +9,7 @@ use gtk::prelude::*;
 use gtk4_layer_shell::LayerShell;
 
 use super::toast_list::{ToastListOutput, ToastListWidget};
+use crate::common::Callback;
 use crate::features::notifications::store::NotificationStore;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +46,7 @@ pub struct ToastWindowWidget {
     pub window: gtk::Window,
     #[allow(dead_code)]
     toast_list: ToastListWidget,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(ToastWindowOutput)>>>>,
+    on_output: Callback<ToastWindowOutput>,
 }
 
 impl ToastWindowWidget {
@@ -63,8 +64,7 @@ impl ToastWindowWidget {
         // Configure layer shell
         Self::configure_layer_shell(&window, hpos, vpos);
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(ToastWindowOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<ToastWindowOutput> = Rc::new(RefCell::new(None));
 
         let toast_list = ToastListWidget::new(store);
 

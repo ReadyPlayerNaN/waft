@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::common::Callback;
 use crate::menu_state::{MenuOp, MenuStore};
 
 use super::action_menu::{ActionMenuOutput, ActionMenuWidget};
@@ -20,7 +21,7 @@ pub enum ActionGroupOutput {
 pub struct ActionGroupWidget {
     pub root: gtk::Box,
     _menu_button: gtk::MenuButton,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(ActionGroupOutput)>>>>,
+    on_output: Callback<ActionGroupOutput>,
 }
 
 impl ActionGroupWidget {
@@ -37,8 +38,7 @@ impl ActionGroupWidget {
             .css_classes(["system-action-group"])
             .build();
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(ActionGroupOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<ActionGroupOutput> = Rc::new(RefCell::new(None));
 
         // Create popover with menu content
         let popover = gtk::Popover::builder().child(&menu.root).build();

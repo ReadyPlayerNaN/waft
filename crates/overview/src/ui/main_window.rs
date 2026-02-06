@@ -11,6 +11,7 @@ use adw::prelude::*;
 use gtk4_layer_shell::LayerShell;
 use log::debug;
 
+use crate::common::VoidCallback;
 use crate::menu_state::MenuStore;
 use crate::plugin::{Slot, Widget};
 use crate::plugin_registry::PluginRegistry;
@@ -151,8 +152,8 @@ pub struct MainWindowWidget {
     pub animation: adw::TimedAnimation,
     pub animation_progress: Rc<Cell<f64>>,
     pub animating_hide: Rc<Cell<bool>>,
-    on_stop: Rc<RefCell<Option<Box<dyn Fn()>>>>,
-    on_hide_complete: Rc<RefCell<Option<Box<dyn Fn()>>>>,
+    on_stop: VoidCallback,
+    on_hide_complete: VoidCallback,
 }
 
 impl MainWindowWidget {
@@ -205,8 +206,8 @@ impl MainWindowWidget {
         // Start in hidden state (fully transparent)
         clip.set_opacity(0.0);
 
-        let on_stop: Rc<RefCell<Option<Box<dyn Fn()>>>> = Rc::new(RefCell::new(None));
-        let on_hide_complete: Rc<RefCell<Option<Box<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let on_stop: VoidCallback = Rc::new(RefCell::new(None));
+        let on_hide_complete: VoidCallback = Rc::new(RefCell::new(None));
         let animating_hide = Rc::new(Cell::new(false));
         let animation_progress = Rc::new(Cell::new(0.0_f64));
 

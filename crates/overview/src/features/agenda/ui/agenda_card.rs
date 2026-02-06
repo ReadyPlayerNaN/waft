@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
+use crate::common::Callback;
 use crate::features::agenda::values::{AgendaEvent, extract_meeting_links};
 use crate::menu_state::MenuStore;
 use crate::ui::main_window::trigger_window_resize;
@@ -28,7 +29,7 @@ pub struct AgendaCard {
     menu_chevron: Option<MenuChevronWidget>,
     revealer: Option<gtk::Revealer>,
     is_past: bool,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(AgendaCardOutput)>>>>,
+    on_output: Callback<AgendaCardOutput>,
     menu_id: String,
 }
 
@@ -98,8 +99,7 @@ impl AgendaCard {
         }
 
         let menu_id = format!("agenda-detail:{}", event.occurrence_key());
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(AgendaCardOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<AgendaCardOutput> = Rc::new(RefCell::new(None));
 
         let mut menu_chevron_out = None;
         let mut revealer_out = None;

@@ -8,6 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use crate::common::Callback;
+
 /// Output events from the countdown bar.
 #[derive(Debug, Clone)]
 pub enum CountdownBarOutput {
@@ -23,7 +25,7 @@ pub struct CountdownBarWidget {
     /// Tracks if the timer completed naturally (so we don't try to remove an already-removed source)
     timer_completed: Rc<Cell<bool>>,
     timer_source: Rc<RefCell<Option<glib::SourceId>>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(CountdownBarOutput)>>>>,
+    on_output: Callback<CountdownBarOutput>,
 }
 
 impl CountdownBarWidget {

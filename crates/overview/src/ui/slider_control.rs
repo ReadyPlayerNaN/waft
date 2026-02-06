@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::main_window::trigger_window_resize;
 use super::menu_chevron::{MenuChevronProps, MenuChevronWidget};
+use crate::common::Callback;
 use crate::menu_state::{MenuOp, MenuStore};
 
 /// Output events from the slider control widget.
@@ -31,7 +32,7 @@ pub struct SliderControlWidget {
     value: Rc<RefCell<f64>>,
     _expanded: Rc<RefCell<bool>>,
     scale_handler_id: SignalHandlerId,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(SliderControlOutput)>>>>,
+    on_output: Callback<SliderControlOutput>,
 }
 
 impl SliderControlWidget {
@@ -86,8 +87,7 @@ impl SliderControlWidget {
 
         let value_rc = Rc::new(RefCell::new(value));
         let expanded = Rc::new(RefCell::new(false));
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(SliderControlOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<SliderControlOutput> = Rc::new(RefCell::new(None));
 
         // Generate unique ID for this menu
         let menu_id = Uuid::new_v4().to_string();

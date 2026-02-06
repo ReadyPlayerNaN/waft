@@ -11,6 +11,7 @@ use gtk::prelude::*;
 use uuid::Uuid;
 
 use super::notification_card::{NotificationCard, NotificationCardOutput};
+use crate::common::Callback;
 use crate::features::notifications::store::ItemLifecycle;
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 use crate::menu_state::{MenuOp, MenuStore};
@@ -52,7 +53,7 @@ pub struct NotificationGroup {
     hidden_cards_container: gtk::Box,
     cards: Rc<RefCell<HashMap<u64, NotificationCard>>>,
     expanded: Rc<RefCell<bool>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationGroupOutput)>>>>,
+    on_output: Callback<NotificationGroupOutput>,
     menu_id: String,
 }
 
@@ -147,8 +148,7 @@ impl NotificationGroup {
         let cards: Rc<RefCell<HashMap<u64, NotificationCard>>> =
             Rc::new(RefCell::new(HashMap::new()));
         let expanded = Rc::new(RefCell::new(false));
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationGroupOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<NotificationGroupOutput> = Rc::new(RefCell::new(None));
 
         // Clear all click handler
         let cards_clone = cards.clone();

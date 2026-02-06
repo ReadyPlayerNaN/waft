@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::wifi_icon::get_wifi_icon;
+use crate::common::Callback;
 use crate::ui::menu_item::MenuItemWidget;
 
 #[derive(Debug, Clone)]
@@ -27,7 +28,7 @@ impl NetworkRow {
         secure: bool,
         is_active: bool,
         is_connecting: bool,
-        on_output: Rc<RefCell<Option<Box<dyn Fn(WiFiMenuOutput)>>>>,
+        on_output: Callback<WiFiMenuOutput>,
     ) -> Self {
         // Build content structure
         let content = gtk::Box::builder()
@@ -115,7 +116,7 @@ struct WiFiMenuWidgetInner {
     refresh_button: gtk::Button,
     network_rows: RefCell<HashMap<String, NetworkRow>>,
     active_ssid: RefCell<Option<String>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(WiFiMenuOutput)>>>>,
+    on_output: Callback<WiFiMenuOutput>,
 }
 
 impl WiFiMenuWidget {
@@ -183,8 +184,7 @@ impl WiFiMenuWidget {
         root.append(&networks_box);
         root.append(&empty_state_box);
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(WiFiMenuOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<WiFiMenuOutput> = Rc::new(RefCell::new(None));
 
         // Connect refresh button handler
         let on_output_for_refresh = on_output.clone();

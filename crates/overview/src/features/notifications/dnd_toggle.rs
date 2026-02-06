@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::common::Callback;
 use crate::ui::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 /// Output events from the DnD toggle.
@@ -21,7 +22,7 @@ pub struct DoNotDisturbToggleInit {
 /// Do Not Disturb toggle using pure GTK4 FeatureToggleWidget.
 pub struct DoNotDisturbToggleWidget {
     toggle: FeatureToggleWidget,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(DoNotDisturbToggleOutput)>>>>,
+    on_output: Callback<DoNotDisturbToggleOutput>,
 }
 
 impl DoNotDisturbToggleWidget {
@@ -39,8 +40,7 @@ impl DoNotDisturbToggleWidget {
             None, // No menu support
         );
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(DoNotDisturbToggleOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<DoNotDisturbToggleOutput> = Rc::new(RefCell::new(None));
 
         // Connect toggle output to our output
         let on_output_ref = on_output.clone();

@@ -10,6 +10,7 @@ use gtk::prelude::*;
 
 use super::display_menu::{DisplayMenuOutput, DisplayMenuWidget};
 use super::store::{Display, compute_master_average, compute_proportional_scaling};
+use crate::common::Callback;
 use crate::menu_state::MenuStore;
 use crate::ui::slider_control::{SliderControlOutput, SliderControlWidget};
 
@@ -36,7 +37,7 @@ pub struct BrightnessControlWidget {
     display_menu: Option<DisplayMenuWidget>,
     displays: Rc<RefCell<Vec<Display>>>,
     master_value: Rc<RefCell<f64>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(BrightnessControlOutput)>>>>,
+    on_output: Callback<BrightnessControlOutput>,
 }
 
 impl BrightnessControlWidget {
@@ -73,8 +74,7 @@ impl BrightnessControlWidget {
 
         let displays = Rc::new(RefCell::new(props.displays));
         let master_value_rc = Rc::new(RefCell::new(master_value));
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(BrightnessControlOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<BrightnessControlOutput> = Rc::new(RefCell::new(None));
 
         // Connect slider outputs
         let on_output_ref = on_output.clone();

@@ -8,6 +8,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 
 use super::notification_layout::{NotificationLayoutConfig, NotificationLayoutParts};
+use crate::common::Callback;
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 use crate::ui::main_window::trigger_window_resize;
 
@@ -24,7 +25,7 @@ pub struct NotificationCard {
     pub root: gtk::Box,
     revealer: gtk::Revealer,
     layout: NotificationLayoutParts,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationCardOutput)>>>>,
+    on_output: Callback<NotificationCardOutput>,
     hidden: Rc<RefCell<bool>>,
 }
 
@@ -47,8 +48,7 @@ impl NotificationCard {
             .build();
         revealer.add_css_class("notification-card-revealer");
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationCardOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<NotificationCardOutput> = Rc::new(RefCell::new(None));
 
         // Build shared layout
         let on_output_action = on_output.clone();

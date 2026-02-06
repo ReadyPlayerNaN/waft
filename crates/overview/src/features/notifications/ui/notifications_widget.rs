@@ -10,6 +10,7 @@ use std::sync::Arc;
 use gtk::prelude::*;
 
 use super::notification_group::{NotificationData, NotificationGroup, NotificationGroupOutput};
+use crate::common::Callback;
 use crate::features::notifications::store::{ItemLifecycle, NotificationStore};
 use crate::menu_state::MenuStore;
 
@@ -27,7 +28,7 @@ pub struct NotificationsWidget {
     groups_container: gtk::Box,
     empty_placeholder: gtk::Box,
     groups: Rc<RefCell<HashMap<Arc<str>, NotificationGroup>>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationsWidgetOutput)>>>>,
+    on_output: Callback<NotificationsWidgetOutput>,
     store: Rc<NotificationStore>,
     menu_store: Arc<MenuStore>,
 }
@@ -109,8 +110,7 @@ impl NotificationsWidget {
 
         let groups: Rc<RefCell<HashMap<Arc<str>, NotificationGroup>>> =
             Rc::new(RefCell::new(HashMap::new()));
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationsWidgetOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<NotificationsWidgetOutput> = Rc::new(RefCell::new(None));
 
         let widget = Self {
             root,
@@ -196,7 +196,7 @@ impl NotificationsWidget {
         groups: &Rc<RefCell<HashMap<Arc<str>, NotificationGroup>>>,
         groups_container: &gtk::Box,
         empty_placeholder: &gtk::Box,
-        on_output: &Rc<RefCell<Option<Box<dyn Fn(NotificationsWidgetOutput)>>>>,
+        on_output: &Callback<NotificationsWidgetOutput>,
         menu_store: Arc<MenuStore>,
     ) {
         log::debug!(

@@ -7,6 +7,8 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
+use crate::common::Callback;
+
 /// A single preset menu item with an optional checkmark.
 #[derive(Clone)]
 struct PresetMenuItem {
@@ -75,7 +77,7 @@ pub enum PresetMenuOutput {
 pub struct PresetMenuWidget {
     pub root: gtk::Box,
     items_container: gtk::Box,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(PresetMenuOutput)>>>>,
+    on_output: Callback<PresetMenuOutput>,
     menu_items: RefCell<Vec<(Option<String>, PresetMenuItem)>>, // (preset_name, item) - None for "Default"
 }
 
@@ -93,8 +95,7 @@ impl PresetMenuWidget {
 
         root.append(&items_container);
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(PresetMenuOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<PresetMenuOutput> = Rc::new(RefCell::new(None));
 
         Self {
             root,

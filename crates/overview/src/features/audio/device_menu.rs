@@ -9,6 +9,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 
 use super::store::AudioDevice;
+use crate::common::Callback;
 
 /// Output events from the device menu.
 #[derive(Debug, Clone)]
@@ -46,10 +47,7 @@ struct DeviceRow {
 }
 
 impl DeviceRow {
-    fn new(
-        device: &AudioDeviceDisplay,
-        on_output: Rc<RefCell<Option<Box<dyn Fn(AudioDeviceMenuOutput)>>>>,
-    ) -> Self {
+    fn new(device: &AudioDeviceDisplay, on_output: Callback<AudioDeviceMenuOutput>) -> Self {
         let root = gtk::Button::builder()
             .css_classes(["audio-device-row"])
             .build();
@@ -138,7 +136,7 @@ impl DeviceRow {
 pub struct AudioDeviceMenuWidget {
     pub root: gtk::Box,
     rows: Rc<RefCell<HashMap<String, DeviceRow>>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(AudioDeviceMenuOutput)>>>>,
+    on_output: Callback<AudioDeviceMenuOutput>,
 }
 
 impl AudioDeviceMenuWidget {

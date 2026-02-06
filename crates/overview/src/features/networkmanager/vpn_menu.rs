@@ -12,6 +12,7 @@ use glib::SignalHandlerId;
 use gtk::prelude::*;
 
 use super::store::VpnState;
+use crate::common::Callback;
 use crate::ui::menu_item::MenuItemWidget;
 
 /// Output events from the VPN menu.
@@ -33,12 +34,7 @@ struct VpnRow {
 }
 
 impl VpnRow {
-    fn new(
-        path: String,
-        name: &str,
-        state: VpnState,
-        on_output: Rc<RefCell<Option<Box<dyn Fn(VpnMenuOutput)>>>>,
-    ) -> Self {
+    fn new(path: String, name: &str, state: VpnState, on_output: Callback<VpnMenuOutput>) -> Self {
         // Build content structure
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -165,7 +161,7 @@ impl VpnRow {
 pub struct VpnMenuWidget {
     pub root: gtk::Box,
     rows: Rc<RefCell<HashMap<String, VpnRow>>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(VpnMenuOutput)>>>>,
+    on_output: Callback<VpnMenuOutput>,
 }
 
 impl VpnMenuWidget {

@@ -10,6 +10,7 @@ use glib::SignalHandlerId;
 use gtk::prelude::*;
 
 use super::store::DeviceConnectionState;
+use crate::common::Callback;
 use crate::ui::menu_item::MenuItemWidget;
 
 /// Output events from the device menu.
@@ -34,7 +35,7 @@ impl DeviceRow {
         name: &str,
         icon: &str,
         connection: DeviceConnectionState,
-        on_output: Rc<RefCell<Option<Box<dyn Fn(DeviceMenuOutput)>>>>,
+        on_output: Callback<DeviceMenuOutput>,
     ) -> Self {
         // Build content structure
         let content = gtk::Box::builder()
@@ -163,7 +164,7 @@ impl DeviceRow {
 pub struct DeviceMenuWidget {
     pub root: gtk::Box,
     rows: Rc<RefCell<HashMap<String, DeviceRow>>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(DeviceMenuOutput)>>>>,
+    on_output: Callback<DeviceMenuOutput>,
 }
 
 impl DeviceMenuWidget {

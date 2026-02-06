@@ -11,6 +11,7 @@ use gtk::prelude::*;
 
 use super::device_menu::{AudioDeviceDisplay, AudioDeviceMenuOutput, AudioDeviceMenuWidget};
 use super::store::AudioDevice;
+use crate::common::Callback;
 use crate::menu_state::MenuStore;
 use crate::ui::icon::resolve_themed_icon;
 use crate::ui::slider_control::{SliderControlOutput, SliderControlWidget};
@@ -67,7 +68,7 @@ pub struct AudioControlWidget {
     device_menu: AudioDeviceMenuWidget,
     muted: Rc<RefCell<bool>>,
     icon_name: Rc<RefCell<String>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(AudioControlOutput)>>>>,
+    on_output: Callback<AudioControlOutput>,
 }
 
 impl AudioControlWidget {
@@ -92,8 +93,7 @@ impl AudioControlWidget {
 
         let muted = Rc::new(RefCell::new(props.muted));
         let icon_name = Rc::new(RefCell::new(props.icon.clone()));
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(AudioControlOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: Callback<AudioControlOutput> = Rc::new(RefCell::new(None));
 
         // Apply initial muted state
         if props.muted {

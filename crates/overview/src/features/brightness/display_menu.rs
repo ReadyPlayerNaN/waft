@@ -10,6 +10,7 @@ use glib::SignalHandlerId;
 use gtk::prelude::*;
 
 use super::store::{Display, DisplayType};
+use crate::common::Callback;
 
 /// Output events from the display menu.
 #[derive(Debug, Clone)]
@@ -27,10 +28,7 @@ struct DisplayRow {
 }
 
 impl DisplayRow {
-    fn new(
-        display: &Display,
-        on_output: Rc<RefCell<Option<Box<dyn Fn(DisplayMenuOutput)>>>>,
-    ) -> Self {
+    fn new(display: &Display, on_output: Callback<DisplayMenuOutput>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
@@ -116,7 +114,7 @@ impl DisplayRow {
 pub struct DisplayMenuWidget {
     pub root: gtk::Box,
     rows: Rc<RefCell<HashMap<String, DisplayRow>>>,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(DisplayMenuOutput)>>>>,
+    on_output: Callback<DisplayMenuOutput>,
 }
 
 impl DisplayMenuWidget {
