@@ -10,6 +10,16 @@ use gtk::prelude::*;
 use super::notification_layout::{NotificationLayoutConfig, NotificationLayoutParts};
 use crate::features::notifications::types::{NotificationAction, NotificationIcon};
 
+/// Configuration for creating a toast widget.
+pub struct ToastWidgetConfig {
+    pub id: u64,
+    pub title: String,
+    pub description: String,
+    pub icon_hints: Vec<NotificationIcon>,
+    pub actions: Vec<NotificationAction>,
+    pub toast_ttl: Option<u64>,
+}
+
 /// Pure GTK4 toast widget - no Relm4 factory abstractions.
 /// Manages its own revealer for animations and provides direct control over lifecycle.
 pub struct ToastWidget {
@@ -23,12 +33,7 @@ pub struct ToastWidget {
 
 impl ToastWidget {
     pub fn new<F, A, H>(
-        id: u64,
-        title: &str,
-        description: &str,
-        icon_hints: Vec<NotificationIcon>,
-        actions: Vec<NotificationAction>,
-        toast_ttl: Option<u64>,
+        config: ToastWidgetConfig,
         on_close: F,
         on_action: A,
         on_hover_change: H,
@@ -38,6 +43,8 @@ impl ToastWidget {
         A: Fn(u64, String) + 'static,
         H: Fn(bool) + Clone + 'static,
     {
+        let id = config.id;
+
         // Root container
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -54,14 +61,14 @@ impl ToastWidget {
         let on_action_for_layout = on_action.clone();
         let layout = NotificationLayoutParts::build(
             NotificationLayoutConfig {
-                id,
-                title: title.to_string(),
-                description: description.to_string(),
-                icon_hints,
-                actions,
+                id: config.id,
+                title: config.title,
+                description: config.description,
+                icon_hints: config.icon_hints,
+                actions: config.actions,
                 css_classes: vec!["toast", "card", "notification-card"],
                 show_close_button: true,
-                toast_ttl,
+                toast_ttl: config.toast_ttl,
             },
             move |action_id, action_key| {
                 on_action_for_layout(action_id, action_key);

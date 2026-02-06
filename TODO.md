@@ -164,25 +164,24 @@ type VoidCallback = Rc<RefCell<Option<Box<dyn Fn()>>>>;
 2. Document as intentional design decision
 3. Make wrapper types that are `Send`/`Sync` safe
 
-### 9e. `too_many_arguments` - Functions with many parameters
+### 9e. `too_many_arguments` - Functions with many parameters ✓ RESOLVED
 
-**Locations:**
-- `features/notifications/dbus/server.rs:226` - `notify()` has 10 args (D-Bus protocol - cannot change)
-- `features/notifications/ui/toast_list.rs:150` - `handle_toasts_changed()` has 8 args
-- `features/notifications/ui/toast_widget.rs:25` - `new()` has 9 args
+**Resolution:**
+All three warnings have been fixed:
 
-**Fix options:**
-1. For D-Bus: Add `#[allow]` - protocol is fixed
-2. For widgets: Create builder pattern or config struct:
-```rust
-struct ToastWidgetConfig {
-    id: u64,
-    title: String,
-    description: String,
-    icon_hints: Vec<NotificationIcon>,
-    // ... etc
-}
-```
+1. **D-Bus server** (`features/notifications/dbus/server.rs:226`):
+   - Added `#[allow(clippy::too_many_arguments)]` attribute
+   - Rationale: Protocol signature mandated by freedesktop.org D-Bus specification
+
+2. **ToastWidget** (`features/notifications/ui/toast_widget.rs:25`):
+   - Created `ToastWidgetConfig` struct to group data parameters (6 fields)
+   - Reduced signature from 9 parameters to 4 (config + 3 callbacks)
+   - Separates data (config) from behavior (callbacks)
+
+3. **Toast list handler** (`features/notifications/ui/toast_list.rs:150`):
+   - Created `ToastChangeContext` struct to group widget state (5 fields)
+   - Reduced signature from 8 parameters to 4 (data + context + flag)
+   - Groups related widget resources into cohesive context object
 
 ### 9f. `enum_variant_names` - Variants with common prefix/suffix
 

@@ -35,6 +35,16 @@ pub struct ToastStateData {
     pub toast_ttl: Option<u64>,
 }
 
+/// Context for handling toast state changes.
+/// Groups together all the widget state needed for toast management.
+struct ToastChangeContext<'a> {
+    widgets: &'a Rc<RefCell<HashMap<u64, ToastWidget>>>,
+    container: &'a gtk::Box,
+    on_output: &'a Callback<ToastListOutput>,
+    hover_count: &'a Rc<RefCell<u32>>,
+    store: &'a Rc<NotificationStore>,
+}
+
 /// Pure GTK4 toast list widget.
 pub struct ToastListWidget {
     pub root: gtk::Box,
@@ -137,12 +147,14 @@ impl ToastListWidget {
             Self::handle_toasts_changed(
                 &toasts,
                 &all_toast_ids,
-                &widgets,
-                &container,
-                &on_output,
-                &hover_count,
+                &ToastChangeContext {
+                    widgets: &widgets,
+                    container: &container,
+                    on_output: &on_output,
+                    hover_count: &hover_count,
+                    store: &store_for_hover,
+                },
                 hover_paused,
-                &store_for_hover,
             );
         });
     }
@@ -150,12 +162,8 @@ impl ToastListWidget {
     fn handle_toasts_changed(
         toasts: &Vec<ToastStateData>,
         all_toast_ids: &std::collections::HashSet<u64>,
-        widgets: &Rc<RefCell<HashMap<u64, ToastWidget>>>,
-        container: &gtk::Box,
-        on_output: &Callback<ToastListOutput>,
-        hover_count: &Rc<RefCell<u32>>,
+        ctx: &ToastChangeContext,
         hover_paused: bool,
-        store: &Rc<NotificationStore>,
     ) {
         log::debug!("[toast_list] ToastsChanged received count={}", toasts.len());
 
@@ -164,7 +172,7 @@ impl ToastListWidget {
 
         // Clean up orphaned widgets (those that have removed themselves from the container)
         {
-            let mut widgets_ref = widgets.borrow_mut();
+            let mut widgets_ref = ctx.widgets.borrow_mut();
             let orphaned: Vec<u64> = widgets_ref
                 .iter()
                 .filter(|(_, w)| w.root.parent().is_none())
@@ -179,7 +187,7 @@ impl ToastListWidget {
 
         // Handle widgets that are not currently visible
         {
-            let widgets_ref = widgets.borrow();
+            let widgets_ref = ctx.widgets.borrow();
             for (id, widget) in widgets_ref.iter() {
                 if !visible_ids.contains(id) && !widget.is_hidden() {
                     if all_toast_ids.contains(id) {
@@ -197,30 +205,32 @@ impl ToastListWidget {
 
         // Update container visibility based on whether we have any visible widgets
         {
-            let widgets_ref = widgets.borrow();
+            let widgets_ref = ctx.widgets.borrow();
             let has_visible = widgets_ref.values().any(|w| w.root.parent().is_some());
-            container.set_visible(has_visible || !toasts.is_empty());
+            ctx.container.set_visible(has_visible || !toasts.is_empty());
         }
 
         // Add new widgets
         {
-            let mut widgets_ref = widgets.borrow_mut();
+            let mut widgets_ref = ctx.widgets.borrow_mut();
             for toast in toasts {
                 if let std::collections::hash_map::Entry::Vacant(e) = widgets_ref.entry(toast.id) {
                     let id = toast.id;
-                    let on_output_clone = on_output.clone();
-                    let on_output_action = on_output.clone();
-                    let hover_count_clone = hover_count.clone();
-                    let widgets_for_hover = widgets.clone();
-                    let store_for_hover = store.clone();
+                    let on_output_clone = ctx.on_output.clone();
+                    let on_output_action = ctx.on_output.clone();
+                    let hover_count_clone = ctx.hover_count.clone();
+                    let widgets_for_hover = ctx.widgets.clone();
+                    let store_for_hover = ctx.store.clone();
 
                     let widget = ToastWidget::new(
-                        toast.id,
-                        &toast.title,
-                        &toast.description,
-                        toast.icon_hints.clone(),
-                        toast.actions.clone(),
-                        toast.toast_ttl,
+                        super::toast_widget::ToastWidgetConfig {
+                            id: toast.id,
+                            title: toast.title.to_string(),
+                            description: toast.description.to_string(),
+                            icon_hints: toast.icon_hints.clone(),
+                            actions: toast.actions.clone(),
+                            toast_ttl: toast.toast_ttl,
+                        },
                         move |close_id| {
                             if let Some(ref callback) = *on_output_clone.borrow() {
                                 callback(ToastListOutput::CardClose(close_id));
@@ -242,8 +252,8 @@ impl ToastListWidget {
                     );
 
                     // Show container and add widget (prepend for newest on top)
-                    container.set_visible(true);
-                    container.prepend(&widget.root);
+                    ctx.container.set_visible(true);
+                    ctx.container.prepend(&widget.root);
 
                     // Animate in
                     widget.show();
@@ -261,7 +271,7 @@ impl ToastListWidget {
 
         // Update visibility of existing widgets based on lifecycle
         {
-            let widgets_ref = widgets.borrow();
+            let widgets_ref = ctx.widgets.borrow();
             for toast in toasts {
                 if let Some(widget) = widgets_ref.get(&toast.id) {
                     let should_show = !toast.lifecycle.is_hidden();
@@ -276,7 +286,7 @@ impl ToastListWidget {
 
         log::debug!(
             "[toast_list] ToastsChanged done, {} widgets total",
-            widgets.borrow().len()
+            ctx.widgets.borrow().len()
         );
     }
 
