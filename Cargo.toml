@@ -4,4 +4,7 @@ members = [
     "crates/config",
     "crates/ipc",
     "crates/overview",
+    "crates/waft-core",
+    "crates/waft-plugin-api",
+    "plugins/clock",
 ]

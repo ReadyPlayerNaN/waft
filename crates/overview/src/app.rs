@@ -13,6 +13,7 @@ use adw::prelude::*;
 use gtk::prelude::ApplicationExtManual;
 
 use waft_config::Config;
+use waft_plugin_api::loader;
 use crate::dbus::DbusHandle;
 use crate::features::agenda::AgendaPlugin;
 use crate::features::audio::AudioPlugin;
@@ -20,7 +21,6 @@ use crate::features::battery::BatteryPlugin;
 use crate::features::bluetooth::BluetoothPlugin;
 use crate::features::brightness::BrightnessPlugin;
 use crate::features::caffeine::CaffeinePlugin;
-use crate::features::clock::ClockPlugin;
 use crate::features::darkman::DarkmanPlugin;
 use crate::features::keyboard_layout::KeyboardLayoutPlugin;
 use crate::features::networkmanager::NetworkManagerPlugin;
@@ -134,15 +134,27 @@ pub async fn run() -> Result<()> {
 
     let mut registry = PluginRegistry::new(menu_store);
 
-    // Only load plugins that are explicitly enabled in config
-    if config.is_plugin_enabled("plugin::clock") {
-        let mut plugin = ClockPlugin::new();
-        if let Some(settings) = config.get_plugin_settings("plugin::clock") {
-            plugin.configure(settings)?;
+    // Load dynamic plugins from .so files
+    let plugin_dir = loader::plugin_dir();
+    let loaded_plugins = loader::discover_plugins(&plugin_dir);
+    for loaded in &loaded_plugins {
+        let plugin_id = loaded.metadata.id.as_str().to_string();
+        if !config.is_plugin_enabled(&plugin_id) {
+            debug!("Skipping disabled dynamic plugin: {}", plugin_id);
+            continue;
         }
-        registry.register(plugin);
+        if let Some(mut plugin) = loaded.create_overview_plugin() {
+            if let Some(settings) = config.get_plugin_settings(&plugin_id) {
+                if let Err(e) = plugin.configure(settings) {
+                    warn!("Failed to configure dynamic plugin {}: {}", plugin_id, e);
+                }
+            }
+            debug!("Registered dynamic plugin: {}", plugin_id);
+            registry.register_boxed(plugin);
+        }
     }
 
+    // Load built-in static plugins
     if config.is_plugin_enabled("plugin::darkman") {
         let mut plugin = DarkmanPlugin::new(dbus.clone());
         if let Some(settings) = config.get_plugin_settings("plugin::darkman") {

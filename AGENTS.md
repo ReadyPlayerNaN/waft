@@ -9,10 +9,16 @@ Before implementing changes, ask for clarification on DBus ownership, threading 
 ## Build & Test Commands
 
 ```bash
-cargo build          # Build the project
-cargo test           # Run all tests
-cargo test --lib     # Run library unit tests only
-cargo test notifications_store_reduce  # Run specific test module
+cargo build --workspace        # Build all crates and plugins
+cargo test --workspace         # Run all tests across workspace
+cargo test -p waft-core        # Run tests for a specific crate
+cargo test notifications_store # Run specific test module
+
+# Run with dynamic plugins from build output
+WAFT_PLUGIN_DIR=./target/debug cargo run
+
+# Verify .so symbols
+nm -D target/debug/libwaft_plugin_clock.so | grep waft
 ```
 
 ---
@@ -48,44 +54,50 @@ When implementing features:
 
 ## Architecture Overview
 
-**sacrebleui** is a Wayland-only overlay UI application using Rust, GTK4, libadwaita, and Relm4. It acts as a notification server (owns `org.freedesktop.Notifications` on DBus) and provides an extensible overlay panel with feature toggles and a plugin-based architecture.
+**Waft** (formerly sacrebleui) is a Wayland-only overlay UI application using Rust, GTK4, and libadwaita. It acts as a notification server (owns `org.freedesktop.Notifications` on DBus) and provides an extensible overlay panel with feature toggles and a plugin-based architecture.
+
+The project is structured as a **Cargo workspace** with shared crates and independently packageable dynamic plugins (`.so` files loaded at runtime via `libloading`).
 
 ### Technology Stack
 
-- **Framework:** Relm4 (declarative GTK4 component architecture)
-- **UI:** libadwaita (modern GTK4 library), gtk4-layer-shell (Wayland layer-shell protocol)
+- **UI:** GTK4, libadwaita (modern GTK4 library), gtk4-layer-shell (Wayland layer-shell protocol)
 - **Async:** Tokio (multi-threaded runtime), flume (executor-agnostic channels)
 - **System:** zbus 5.0 (DBus), nmrs 2.0 (NetworkManager bindings)
-- **Config:** TOML (`~/.config/sacrebleui/config.toml`)
+- **Plugin loading:** libloading (dynamic `.so` loading)
+- **Config:** TOML (`~/.config/waft/config.toml`)
 - **Localization:** Fluent (internationalization support)
 
 ### Core Components
 
-- **Entry point:** `src/main.rs` → Tokio entrypoint → `app::run()`
-- **App model:** `src/app.rs` - Relm4 `SimpleComponent`, manages overlay window (layer-shell), plugin registry, IPC server, async orchestration
-- **Plugin system:** `src/plugin.rs`, `src/plugin_registry.rs` - `#[async_trait(?Send)]` plugin trait for GTK compatibility
-- **Notifications:** `src/features/notifications/` - DBus server implementation, reducer-based state management, toast UI
-- **IPC:** `src/ipc/` - JSON command server over Unix socket (show/hide/toggle/ping)
-- **UI Components:** `src/ui/` - Layer-shell window, feature grid, toggles, sliders, menus, icons, clock, battery, weather
-- **Features (plugins):** `src/features/` - 11 pluggable features including audio, brightness, WiFi, Bluetooth, VPN, battery, clock, etc.
+- **`waft-core`** — Shared infrastructure: store pattern (`PluginStore`, `StoreOp`, `StoreState`, `set_field!` macro), menu state coordination (`MenuStore`, `MenuOp`), re-exports of `waft-config` and `waft-ipc`
+- **`waft-plugin-api`** — Plugin trait definitions and types: `OverviewPlugin` trait, `PluginId`, `PluginMetadata`, widget types (`Widget`, `Slot`, `WidgetRegistrar`, `WidgetFeatureToggle`), plugin loader (`loader.rs`), export macros (`export_plugin_metadata!`, `export_overview_plugin!`)
+- **`waft-config`** — Configuration loading from `~/.config/waft/config.toml`
+- **`waft-ipc`** — IPC protocol over Unix socket (show/hide/toggle/ping/stop)
+- **`waft-overview`** — Main GTK4 overlay application binary. Loads dynamic plugins from `.so` files, manages the layer-shell window, plugin registry, IPC server
+- **`plugins/clock`** — First dynamic plugin (cdylib). Independently compiled `.so` loaded at runtime
 
 ### Plugin Architecture
 
-The application is **plugin-centric** with 11 plugins:
+The application is **plugin-centric** with 14 plugins. Plugins can be either:
+- **Dynamic plugins** — `.so` files loaded at runtime from `/usr/lib/waft/plugins/` (or `WAFT_PLUGIN_DIR`)
+- **Static plugins** — compiled directly into `waft-overview` (being migrated to dynamic)
 
-| Plugin | Type | Purpose |
-|--------|------|---------|
-| **notifications** | Core | DBus notification server, toast display, Do Not Disturb toggle |
-| **audio** | Control | Volume slider, audio device selection |
-| **brightness** | Control | Master brightness slider + per-display fine-tuning |
-| **networkmanager** | Control | WiFi toggle, Ethernet adapter info, VPN connection toggle |
-| **bluetooth** | Control | Device discovery, connection management, menu |
-| **battery** | Info | Battery percentage, health, charging status |
-| **clock** | Info | Current time and date with timezone support |
-| **darkman** | Toggle | Dark mode control via darkman DBus service |
-| **sunsetr** | Toggle | Night light control via sunsetr CLI |
-| **agenda** | Info | Calendar/event display |
-| **weather** | Info | Weather information via HTTP API |
+| Plugin | Type | Loading | Purpose |
+|--------|------|---------|---------|
+| **clock** | Info | **Dynamic (.so)** | Current time and date with timezone support |
+| **notifications** | Core | Static | DBus notification server, toast display, Do Not Disturb toggle |
+| **audio** | Control | Static | Volume slider, audio device selection |
+| **brightness** | Control | Static | Master brightness slider + per-display fine-tuning |
+| **networkmanager** | Control | Static | WiFi toggle, Ethernet adapter info, VPN connection toggle |
+| **bluetooth** | Control | Static | Device discovery, connection management, menu |
+| **battery** | Info | Static | Battery percentage, health, charging status |
+| **darkman** | Toggle | Static | Dark mode control via darkman DBus service |
+| **sunsetr** | Toggle | Static | Night light control via sunsetr CLI |
+| **caffeine** | Toggle | Static | Prevent sleep/screensaver |
+| **agenda** | Info | Static | Calendar/event display |
+| **weather** | Info | Static | Weather information via HTTP API |
+| **keyboard-layout** | Info | Static | Display and switch input methods |
+| **systemd-actions** | Actions | Static | Shutdown, lock, logout via systemd |
 
 **Plugin Lifecycle:**
 - `configure()` - Parse plugin-specific TOML config
@@ -93,84 +105,108 @@ The application is **plugin-centric** with 11 plugins:
 - `create_elements()` - Construct GTK widgets after GTK init
 - `cleanup()` - Graceful shutdown
 
-**Widget Slots:** `Info`, `Controls`, `Header`
+**Widget Slots:** `Info`, `Controls`, `Header`, `Actions`
 
 ### Plugin System Implementation
 
-Plugins implement the `Plugin` trait (`#[async_trait(?Send)]`):
+Plugins implement the `OverviewPlugin` trait (`#[async_trait(?Send)]`) from `waft-plugin-api`:
+- `id()` - returns `PluginId` for config matching
+- `configure()` - parse plugin-specific TOML settings
 - `init()` - async initialization (DBus, channels, pure Rust state only)
-- `create_elements()` / `get_widgets()` - GTK widget construction (after GTK init)
-- Widgets placed into slots: `Info`, `Controls`, `Header`
-- Registration is manual in `app.rs` via `PluginRegistry`
-- Registry stores plugins behind `Arc<Mutex<Box<dyn Plugin>>>`
-- Dynamic widget registration via `WidgetRegistrar` trait
+- `create_elements()` - GTK widget construction (after GTK init)
+- `cleanup()` - graceful shutdown
+- Lifecycle hooks: `on_overlay_visible()`, `on_session_lock()`, `on_session_unlock()`
 
-**Documentation requirement:** When adding or modifying plugin configuration options, always update the plugin's README.md file (`src/features/<plugin>/README.md`) to document the new/changed options.
+**Plugin Loading Order (in `app.rs`):**
+1. Dynamic plugins loaded first via `waft_plugin_api::loader::discover_plugins()`
+2. Static plugins loaded next (will be migrated to dynamic over time)
+3. All plugins registered into `PluginRegistry` (via `register()` or `register_boxed()`)
+
+**Dynamic Plugin Entry Points (exported from `.so`):**
+- `waft_plugin_metadata() -> PluginMetadata` — plugin identity and version
+- `waft_create_overview_plugin() -> *mut dyn OverviewPlugin` — factory function
+
+**Export Macros (from `waft-plugin-api`):**
+```rust
+waft_plugin_api::export_plugin_metadata!("plugin::clock", "Clock", "0.1.0");
+waft_plugin_api::export_overview_plugin!(ClockPlugin::new());
+```
+
+**Documentation requirement:** When adding or modifying plugin configuration options, always update the plugin's README.md file.
 
 ### Directory Structure
 
 ```
-src/
-├── main.rs                 # Tokio entrypoint
-├── app.rs                  # Main GTK application, plugin orchestration
-├── lib.rs                  # Public library API for tests
-├── plugin.rs               # Plugin trait (#[async_trait(?Send)])
-├── plugin_registry.rs      # Plugin registration and discovery
-├── config.rs               # TOML configuration loading
-├── dbus.rs                 # Generic DBus handle for plugins
-├── menu_state.rs           # Menu expansion/collapse state
-├── store.rs                # Global state store
-├── ipc/                    # Unix socket IPC command server
-├── i18n/                   # Fluent localization (Internationalization)
-├── runtime.rs              # Async runtime helpers
-├── ui/                     # Core UI components
-│   ├── main_window.rs      # Layer-shell overlay window
-│   ├── feature_grid.rs     # Grid layout for feature toggles
-│   ├── feature_toggle.rs   # Generic toggle widget
-│   ├── feature_toggle_expandable.rs  # Toggle with expandable menu
-│   ├── slider_control.rs   # Slider with menu extraction
-│   ├── menu_item.rs        # Reusable menu item component
-│   ├── menu_chevron.rs     # Chevron icon for menus
-│   ├── icon.rs             # Theme icon resolution
-│   ├── battery.rs          # Battery status display
-│   ├── clock.rs            # Clock display
-│   ├── weather.rs          # Weather display
-│   └── style.rs            # CSS styling
-└── features/               # Plugin implementations (11 total)
-    ├── agenda/             # Calendar/agenda plugin
-    ├── audio/              # Audio control (volume, device selection)
-    ├── battery/            # Battery status and health
-    ├── bluetooth/          # Bluetooth device management
-    ├── brightness/         # Display brightness control (NEW)
-    ├── clock/              # Time and date display
-    ├── darkman/            # Dark mode toggle
-    ├── networkmanager/     # WiFi, Ethernet, VPN management
-    ├── notifications/      # Desktop notification handling (core)
-    ├── session/            # Session lock detection
-    ├── sunsetr/            # Night light control
-    └── weather/            # Weather information
+Cargo.toml                     # Workspace root
+crates/
+├── config/                    # waft-config: TOML config loading
+│   └── src/lib.rs
+├── ipc/                       # waft-ipc: Unix socket IPC protocol
+│   └── src/
+│       ├── lib.rs             # Command parsing, socket path
+│       └── net.rs             # Async client/server
+├── waft-core/                 # Shared infrastructure
+│   └── src/
+│       ├── lib.rs             # Re-exports config, ipc
+│       ├── store.rs           # PluginStore, StoreOp, StoreState, set_field!
+│       ├── menu_state.rs      # MenuStore, MenuOp, create_menu_store()
+│       └── menu_state_tests.rs
+├── waft-plugin-api/           # Plugin API for all apps
+│   └── src/
+│       ├── lib.rs             # PluginId, PluginMetadata, export macros
+│       ├── overview.rs        # OverviewPlugin trait, Widget, Slot, WidgetRegistrar
+│       └── loader.rs          # Dynamic .so discovery and loading
+└── overview/                  # waft-overview: main GTK4 overlay binary
+    └── src/
+        ├── main.rs            # Tokio entrypoint
+        ├── app.rs             # Plugin loading (dynamic + static), IPC, window
+        ├── plugin.rs          # Re-exports from waft-plugin-api
+        ├── plugin_registry.rs # Plugin lifecycle management
+        ├── store.rs           # Re-exports from waft-core
+        ├── menu_state.rs      # Re-exports from waft-core
+        ├── dbus.rs            # DBus handle (zbus)
+        ├── common.rs          # Callback<T>, ConnectionState
+        ├── runtime.rs         # Async runtime helpers
+        ├── i18n/              # Fluent localization
+        ├── ui/                # UI components (main_window, feature_grid, etc.)
+        └── features/          # Static plugins (13, being migrated to dynamic)
+            ├── agenda/
+            ├── audio/
+            ├── battery/
+            ├── bluetooth/
+            ├── brightness/
+            ├── caffeine/
+            ├── darkman/
+            ├── keyboard_layout/
+            ├── networkmanager/
+            ├── notifications/
+            ├── session/        # Session lock detection (not a user plugin)
+            ├── sunsetr/
+            ├── systemd_actions/
+            └── weather/
+plugins/
+└── clock/                     # Dynamic plugin: libwaft_plugin_clock.so
+    ├── Cargo.toml             # crate-type = ["cdylib"]
+    └── src/lib.rs             # Plugin + widget, self-contained
 ```
 
-### Recent Development (Last 25 Commits)
+### Recent Development
 
-**Feature Development:**
-- **a8faa48** - Display brightness control (brightnessctl/ddcutil backends, master + per-display)
-- **b968f72** - VPN connection toggle with menu widget
-- **877bb9c** - Wired network adapter info display fix
-- **e973f36** - Dynamic widget registration at runtime
-- **5fdc658** - Unified menu item design across all plugins
-- **413ebc4** - Major refactor: Migrated from custom D-Bus to nmrs crate (450 LOC reduction)
-- **a06c14d** - WiFi and Ethernet adapter management
-- **f44004a** - i18n support with Fluent localization
+**Ecosystem Split (current work on `larger-picture` branch):**
+- Extracted `waft-core` and `waft-plugin-api` crates from monolithic overview
+- Clock plugin as first dynamic `.so` — validates the plugin loading architecture
+- Dynamic plugin loader with `libloading`, `catch_unwind` safety, rustc version checking
+- Export macros for plugin entry points (`export_plugin_metadata!`, `export_overview_plugin!`)
 
-**Infrastructure & Testing:**
-- **1902c07** - Expanded DBus test coverage
-- **5d8e13f** - Icon resolution test suite
-- **d89dfa9** - Initialized OpenSpec for specification-driven development
+**Prior Feature Development (on `relm4` branch):**
+- Display brightness control (brightnessctl/ddcutil backends)
+- VPN connection toggle, WiFi/Ethernet management via nmrs
+- Unified menu item design across all plugins
+- i18n support with Fluent localization
+- OpenSpec specification-driven development workflow
 
-**Current Branch:** `network` (feature development)
 **Main Branch:** `relm4` (integration target)
-**Branch Status:** Clean (all work committed)
+**Active Branch:** `larger-picture` (ecosystem split)
 
 ### Key Architectural Patterns
 
@@ -202,8 +238,8 @@ src/
 
 ### State Management
 
-- **Notifications store:** `AsyncReducible` reducer pattern in `src/features/notifications/store.rs`
-- **Domain types:** `src/features/notifications/types.rs`
+- **Notifications store:** `AsyncReducible` reducer pattern in `crates/overview/src/features/notifications/store.rs`
+- **Domain types:** `crates/overview/src/features/notifications/types.rs`
 - **Operations:** `NotificationOp` enum (ingress, dismiss, retract, tick)
 - **Plugin-local state:** Each plugin owns domain state; UI composes what plugins provide
 - **Explicit state flow:** Avoid hidden couplings; expose explicit APIs or events
@@ -294,6 +330,12 @@ Plugins are initialized **before** GTK. Creating widgets in `init()` will crash 
 
 Construct widgets lazily in `create_elements()` or `get_widgets()`.
 
+**CRITICAL for cdylib plugins:** Dynamic `.so` plugins MUST use `gtk4` feature `unsafe-assume-initialized`. Each `.so` gets its own copy of gtk4's `static INITIALIZED: AtomicBool` — the host app sets it to `true` via `gtk::init()` but the plugin's copy stays `false`, causing "GTK has not been initialized" panics. The `unsafe-assume-initialized` feature skips this Rust-side check (zero-cost compile-time flag). This is safe because GTK is actually initialized by the host — it's only the Rust-side assertion that fails due to cdylib symbol isolation. Example in Cargo.toml:
+
+```toml
+gtk = { version = "0.10", package = "gtk4", features = ["v4_6", "unsafe-assume-initialized"] }
+```
+
 ### Threading Model
 
 - GTK widgets are **not** `Send`/`Sync` - live on main thread only
@@ -356,16 +398,16 @@ This section defines domain-specific terms used throughout the codebase. Underst
 
 ### UI Components
 
-- **Feature Toggle** - A UI component widget (in `src/ui/feature_toggle.rs`) that displays a toggleable tile with icon, title, status text, and optional expandable menu. Used by plugins to present controls (WiFi, Bluetooth, DND, etc.).
-- **Toast** - A temporary popup notification that appears on screen and auto-dismisses after a timeout. Part of the notifications plugin (`src/features/notifications/ui/toast_widget.rs`).
-- **Notification Card** - A persistent notification item displayed in the notification center panel. Unlike toasts, cards remain until explicitly dismissed (`src/features/notifications/ui/notification_card.rs`).
+- **Feature Toggle** - A UI component widget (in `crates/overview/src/ui/feature_toggle.rs`) that displays a toggleable tile with icon, title, status text, and optional expandable menu. Used by plugins to present controls (WiFi, Bluetooth, DND, etc.).
+- **Toast** - A temporary popup notification that appears on screen and auto-dismisses after a timeout. Part of the notifications plugin (`crates/overview/src/features/notifications/ui/toast_widget.rs`).
+- **Notification Card** - A persistent notification item displayed in the notification center panel. Unlike toasts, cards remain until explicitly dismissed (`crates/overview/src/features/notifications/ui/notification_card.rs`).
 - **Revealer** - GTK4 widget (`gtk::Revealer`) used extensively for smooth show/hide animations with slide transitions. Controls visibility with `set_reveal_child()`.
-- **Menu Chevron** - Small arrow icon widget (`src/ui/menu_chevron.rs`) that rotates to indicate expandable menu state (open/closed).
-- **Slider Control** - Volume or brightness control widget (`src/ui/slider_control.rs`) combining a slider with an expandable menu.
+- **Menu Chevron** - Small arrow icon widget (`crates/overview/src/ui/menu_chevron.rs`) that rotates to indicate expandable menu state (open/closed).
+- **Slider Control** - Volume or brightness control widget (`crates/overview/src/ui/slider_control.rs`) combining a slider with an expandable menu.
 
 ### Architecture Terms
 
-- **Plugin** - A self-contained feature module implementing the `Plugin` trait. Examples: notifications, audio, WiFi, brightness. Plugins provide widgets and handle domain logic.
+- **Plugin** - A self-contained feature module implementing the `OverviewPlugin` trait (re-exported as `Plugin` in overview). Can be static (compiled into binary) or dynamic (`.so` loaded at runtime). Examples: notifications, audio, WiFi, brightness, clock. Plugins provide widgets and handle domain logic.
 - **Widget Registrar** - Dynamic registration pattern allowing plugins to add/remove widgets from the UI at runtime without rebuilding the entire tree.
 - **Feature Spec** - Declarative data structure (`FeatureSpec`) describing a feature toggle's state (active, open, status text). Separates UI state from plugin logic.
 - **Overlay** - The main layer-shell window that appears on top of other applications. Displays the feature grid and notification toasts.
@@ -445,7 +487,22 @@ Plugin hooks: `on_overlay_shown()`, `on_overlay_hidden()`
 
 ## Migration Status
 
-Currently on `relm4` branch, migrating from legacy GTK to Relm4. See `relm4-migration/` for step-by-step tracker. Each step must leave the app buildable with tests passing.
+### Ecosystem Split (Active)
+
+Splitting monolithic `waft-overview` into independently packageable Arch Linux packages. See plan file for full details.
+
+**Completed:**
+- **Phase 1** — Extracted shared foundations: `waft-core` (store, menu_state) and `waft-plugin-api` (OverviewPlugin trait, PluginId, PluginMetadata, loader, export macros)
+- **Phase 2** — Proof of concept: `clock` plugin extracted as first dynamic `.so` (cdylib), loaded at runtime via `libloading`
+
+**Next:**
+- **Phase 3** — Extract remaining 13 plugins to dynamic `.so` files (darkman → notifications, simplest first)
+- **Phase 4** — `waft` CLI binary (IPC client)
+- **Phase 5** — Arch Linux split packaging (PKGBUILD)
+- **Phase 6+** — New apps (`waft-settings`, `waft-palette`, etc.)
+
+**Main Branch:** `relm4` (integration target)
+**Current Branch:** `larger-picture` (ecosystem split work)
 
 ---
 
@@ -654,14 +711,10 @@ let handle = match self.field.as_ref() {
 
 ### Planned Features
 
-From TODO.md:
-- **WiFi plugin** - Separate WiFi-specific management (distinct from NetworkManager integration)
-- **Caffeine plugin** - Prevent sleep/screensaver (systemd inhibitor)
-- **Keyboard layout plugin** - Display and switch input methods
-- **SNI (Status Notifier Items) support** - Systray compatibility
-- **Action plugins** - Shutdown, lock, logout via systemd
-- **Settings integration** - Preferences UI within overlay
-- **Error handling strategy** - Unified "Failed to load widgets" recovery
+- **Ecosystem split Phase 3-6** — Extract remaining 13 static plugins to dynamic `.so`, CLI binary, Arch packaging
+- **SNI (Status Notifier Items) support** — Systray compatibility
+- **Settings app (`waft-settings`)** — Standalone preferences/control center
+- **Error handling strategy** — Unified "Failed to load widgets" recovery
 
 ### Known Limitations
 
@@ -672,7 +725,7 @@ From TODO.md:
 
 ### Configuration
 
-Default config location: `~/.config/sacrebleui/config.toml`
+Default config location: `~/.config/waft/config.toml`
 
 ```toml
 [[plugins]]
@@ -689,4 +742,4 @@ id = "plugin::networkmanager"
 # VPN and network settings
 ```
 
-See individual plugin README.md files in `src/features/<plugin>/` for plugin-specific configuration options.
+See individual plugin README.md files in `crates/overview/src/features/<plugin>/` (static) or `plugins/<plugin>/` (dynamic) for plugin-specific configuration options.

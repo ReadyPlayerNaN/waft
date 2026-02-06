@@ -42,4 +42,6 @@ fluent-bundle = "0.15"
 unic-langid = "0.9"
 sys-locale = "0.3"
 waft-config = { path = "../config" }
+waft-core = { path = "../waft-core" }
 waft-ipc = { path = "../ipc" }
+waft-plugin-api = { path = "../waft-plugin-api" }

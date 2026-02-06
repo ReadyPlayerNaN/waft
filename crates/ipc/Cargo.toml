@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1", features = ["net", "io-util", "sync"] }
+tokio = { version = "1", features = ["net", "io-util", "sync", "rt"] }
 log = "0.4"

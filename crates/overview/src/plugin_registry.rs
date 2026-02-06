@@ -50,6 +50,14 @@ impl PluginRegistry {
         handle
     }
 
+    /// Register a pre-boxed plugin (e.g. from a dynamically loaded .so).
+    pub fn register_boxed(&mut self, plugin: Box<dyn Plugin>) -> PluginHandle {
+        let name = plugin.id().to_string();
+        let handle: PluginHandle = Rc::new(RefCell::new(Some(plugin)));
+        self.plugins.insert(name, handle.clone());
+        handle
+    }
+
     /// Get all widget elements for a given slot, sorted by weight (heavier goes lower).
     ///
     /// This returns the registered widgets filtered by slot and sorted by weight.

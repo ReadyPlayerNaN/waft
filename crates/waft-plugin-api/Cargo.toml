@@ -1,0 +1,13 @@
+[package]
+name = "waft-plugin-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gtk = { version = "0.10", package = "gtk4", features = ["v4_6"] }
+async-trait = "0.1"
+anyhow = "1"
+toml = "0.8"
+libloading = "0.8"
+log = "0.4"
+waft-core = { path = "../waft-core" }

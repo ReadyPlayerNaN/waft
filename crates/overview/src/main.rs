@@ -11,6 +11,10 @@ mod runtime;
 pub mod store;
 mod ui;
 
+// Re-export the set_field! macro from waft-core so feature plugins
+// can continue to use `use crate::set_field;`.
+pub use waft_core::set_field;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
