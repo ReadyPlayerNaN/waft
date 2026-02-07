@@ -10,10 +10,6 @@ Configure sound based on urgency
 Configure sound based on notification matching
 Sounds are off in Do Not Disturb mode
 
-## Agenda widget flickers on refresh
-
-It is a massive flicker, it resizes entire overlay window
-
 ## Tethering
 
 Add to networkmanager plugin?

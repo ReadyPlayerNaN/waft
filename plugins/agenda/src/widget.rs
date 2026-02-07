@@ -232,23 +232,36 @@ impl AgendaWidget {
         let now = chrono::Local::now().timestamp();
         let next_period_start = state.next_period_start;
 
-        // Clear old state
-        self.now_divider.take();
-        self.period_separator.take();
-        while let Some(child) = self.content_box.first_child() {
-            self.content_box.remove(&child);
-        }
-        while let Some(child) = self.past_box.first_child() {
-            self.past_box.remove(&child);
-        }
+        // Build set of desired event keys for diffing
+        let desired_keys: std::collections::HashSet<String> = events
+            .iter()
+            .map(|e| e.occurrence_key())
+            .collect();
 
         let mut current_cards = self.event_cards.borrow_mut();
-        current_cards.clear();
 
+        // Remove cards for events that are no longer in the state
+        let mut keys_to_remove = Vec::new();
+        for (key, card) in current_cards.iter() {
+            if !desired_keys.contains(key) {
+                card.root.unparent();
+                keys_to_remove.push(key.clone());
+            }
+        }
+        for key in keys_to_remove {
+            current_cards.remove(&key);
+        }
+
+        // Track state for dividers/separators
         let mut has_past_events = false;
         let mut has_future_events = false;
-        let mut now_divider_inserted = false;
-        let mut period_separator_inserted = false;
+        let mut now_divider_needed = false;
+        let mut period_separator_needed = false;
+        let mut period_separator_position: Option<usize> = None;
+
+        // Process events to determine which exist, which need creation, and ordering
+        let mut past_cards_ordered = Vec::new();
+        let mut future_cards_ordered = Vec::new();
 
         for event in &events {
             let is_past = event.end_time <= now;
@@ -267,51 +280,159 @@ impl AgendaWidget {
             );
 
             let event_key = event.occurrence_key();
-            let card = AgendaCard::new(event, is_past, is_ongoing, &self.menu_store);
-
-            let menu_store_ref = self.menu_store.clone();
-            card.connect_output(move |output| match output {
-                AgendaCardOutput::ToggleExpand(menu_id) => {
-                    menu_store_ref.emit(MenuOp::OpenMenu(menu_id));
-                }
-            });
 
             if is_past {
-                self.past_box.append(&card.root);
                 has_past_events = true;
+                past_cards_ordered.push((event_key, event, is_past, is_ongoing));
             } else {
-                // Insert "now" divider into past_box before the first future event
-                if !now_divider_inserted && has_past_events {
-                    let divider = gtk::Separator::builder()
-                        .orientation(gtk::Orientation::Horizontal)
-                        .css_classes(["agenda-divider-now"])
-                        .build();
-                    self.past_box.append(&divider);
-                    *self.now_divider.borrow_mut() = Some(divider);
-                    now_divider_inserted = true;
-                }
+                has_future_events = true;
 
-                // Insert period separator before the first event in the next period
-                if !period_separator_inserted
+                // Check if we need period separator before this event
+                if period_separator_position.is_none()
                     && let Some(nps) = next_period_start
                         && event.start_time >= nps {
-                            let separator = build_period_separator(nps);
-                            self.content_box.append(&separator);
-                            *self.period_separator.borrow_mut() = Some(separator);
-                            period_separator_inserted = true;
+                            period_separator_needed = true;
+                            period_separator_position = Some(future_cards_ordered.len());
                         }
 
-                self.content_box.append(&card.root);
-                has_future_events = true;
+                future_cards_ordered.push((event_key, event, is_past, is_ongoing));
             }
-
-            current_cards.insert(event_key, card);
         }
 
-        // Add the past revealer at the top of content_box (before future cards)
+        // Determine if we need the now divider
+        if has_past_events && has_future_events {
+            now_divider_needed = true;
+        }
+
+        // Update or create past event cards and reorder them in past_box
+        let mut prev_widget: Option<gtk::Widget> = None;
+        for (event_key, event, is_past, is_ongoing) in &past_cards_ordered {
+            let card = if let Some(existing_card) = current_cards.get_mut(event_key) {
+                // Update existing card in place
+                existing_card.update_past_state(*is_past, *is_ongoing);
+                existing_card
+            } else {
+                // Create new card
+                let new_card = AgendaCard::new(event, *is_past, *is_ongoing, &self.menu_store);
+                let menu_store_ref = self.menu_store.clone();
+                new_card.connect_output(move |output| match output {
+                    AgendaCardOutput::ToggleExpand(menu_id) => {
+                        menu_store_ref.emit(MenuOp::OpenMenu(menu_id));
+                    }
+                });
+                self.past_box.append(&new_card.root);
+                current_cards.insert(event_key.clone(), new_card);
+                current_cards.get_mut(event_key).unwrap()
+            };
+
+            // Reorder the card if needed
+            if let Some(ref prev) = prev_widget {
+                self.past_box.reorder_child_after(&card.root, Some(prev));
+            } else {
+                // First card - ensure it's at the top
+                self.past_box.reorder_child_after(&card.root, None::<&gtk::Widget>);
+            }
+
+            prev_widget = Some(card.root.clone().upcast());
+        }
+
+        // Update or create/remove the now divider
+        let mut now_divider = self.now_divider.borrow_mut();
+        if now_divider_needed {
+            if now_divider.is_none() {
+                let divider = gtk::Separator::builder()
+                    .orientation(gtk::Orientation::Horizontal)
+                    .css_classes(["agenda-divider-now"])
+                    .build();
+                self.past_box.append(&divider);
+                *now_divider = Some(divider);
+            }
+            // Reorder divider to be after all past events
+            if let Some(ref div) = *now_divider
+                && let Some(ref prev) = prev_widget {
+                    self.past_box.reorder_child_after(div, Some(prev));
+                }
+        } else {
+            if let Some(ref div) = *now_divider {
+                div.unparent();
+            }
+            *now_divider = None;
+        }
+
+        // Update or create future event cards and reorder them in content_box
+        // Need to account for past_revealer being first, and optional period_separator
+        let past_revealer_in_box = self.past_revealer.parent().is_some();
+        let mut prev_widget: Option<gtk::Widget> = if past_revealer_in_box {
+            Some(self.past_revealer.clone().upcast())
+        } else {
+            None
+        };
+
+        for (idx, (event_key, event, is_past, is_ongoing)) in future_cards_ordered.iter().enumerate() {
+            // Insert period separator before this card if needed
+            if let Some(sep_pos) = period_separator_position
+                && idx == sep_pos {
+                    let mut period_separator = self.period_separator.borrow_mut();
+                    if period_separator.is_none() {
+                        let separator = build_period_separator(next_period_start.unwrap());
+                        self.content_box.append(&separator);
+                        *period_separator = Some(separator);
+                    }
+                    if let Some(ref sep) = *period_separator {
+                        if let Some(ref prev) = prev_widget {
+                            self.content_box.reorder_child_after(sep, Some(prev));
+                        } else {
+                            self.content_box.reorder_child_after(sep, None::<&gtk::Widget>);
+                        }
+                        prev_widget = Some(sep.clone().upcast());
+                    }
+                }
+
+            let card = if let Some(existing_card) = current_cards.get_mut(event_key) {
+                // Update existing card in place
+                existing_card.update_past_state(*is_past, *is_ongoing);
+                existing_card
+            } else {
+                // Create new card
+                let new_card = AgendaCard::new(event, *is_past, *is_ongoing, &self.menu_store);
+                let menu_store_ref = self.menu_store.clone();
+                new_card.connect_output(move |output| match output {
+                    AgendaCardOutput::ToggleExpand(menu_id) => {
+                        menu_store_ref.emit(MenuOp::OpenMenu(menu_id));
+                    }
+                });
+                self.content_box.append(&new_card.root);
+                current_cards.insert(event_key.clone(), new_card);
+                current_cards.get_mut(event_key).unwrap()
+            };
+
+            // Reorder the card if needed
+            if let Some(ref prev) = prev_widget {
+                self.content_box.reorder_child_after(&card.root, Some(prev));
+            } else {
+                self.content_box.reorder_child_after(&card.root, None::<&gtk::Widget>);
+            }
+
+            prev_widget = Some(card.root.clone().upcast());
+        }
+
+        // Remove period separator if no longer needed
+        if !period_separator_needed {
+            let mut period_separator = self.period_separator.borrow_mut();
+            if let Some(ref sep) = *period_separator {
+                sep.unparent();
+            }
+            *period_separator = None;
+        }
+
+        // Add or remove the past revealer from content_box
         if has_past_events {
-            self.content_box.prepend(&self.past_revealer);
+            if !past_revealer_in_box {
+                self.content_box.prepend(&self.past_revealer);
+            }
             self.past_revealer.set_reveal_child(state.show_past);
+        } else if past_revealer_in_box {
+            self.past_revealer.unparent();
         }
 
         // If no future events and past is already collapsed, show empty immediately.

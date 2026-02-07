@@ -28,6 +28,7 @@ pub struct AgendaCard {
     menu_chevron: Option<MenuChevronWidget>,
     revealer: Option<gtk::Revealer>,
     is_past: bool,
+    is_ongoing: bool,
     on_output: Callback<AgendaCardOutput>,
     menu_id: String,
 }
@@ -161,6 +162,7 @@ impl AgendaCard {
             menu_chevron: menu_chevron_out,
             revealer: revealer_out,
             is_past,
+            is_ongoing,
             on_output,
             menu_id,
         }
@@ -192,6 +194,28 @@ impl AgendaCard {
                 self.root.remove_css_class("agenda-event-past");
             } else {
                 self.root.add_css_class("agenda-event-past");
+            }
+        }
+    }
+
+    /// Update the past state of this card without rebuilding.
+    /// This allows changing dimming when an event transitions from future to past.
+    pub fn update_past_state(&mut self, is_past: bool, is_ongoing: bool) {
+        if self.is_past != is_past || self.is_ongoing != is_ongoing {
+            self.is_past = is_past;
+            self.is_ongoing = is_ongoing;
+
+            // Update CSS classes
+            if is_past {
+                self.root.add_css_class("agenda-event-past");
+                self.root.remove_css_class("agenda-event-ongoing");
+            } else {
+                self.root.remove_css_class("agenda-event-past");
+                if is_ongoing {
+                    self.root.add_css_class("agenda-event-ongoing");
+                } else {
+                    self.root.remove_css_class("agenda-event-ongoing");
+                }
             }
         }
     }

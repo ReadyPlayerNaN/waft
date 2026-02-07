@@ -1938,7 +1938,7 @@ END:VCALENDAR";
 
         // If it's the 7th or earlier in the month, should be this month
         // If it's after the 7th, should be next month
-        let expected_month = if today.day() < 7 {
+        let expected_month = if today.day() <= 7 {
             today.month()
         } else if today.month() == 12 {
             1
