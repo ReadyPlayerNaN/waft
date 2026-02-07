@@ -3128,6 +3128,7 @@ dependencies = [
  "libadwaita",
  "log",
  "serde",
+ "serde_json",
  "uuid",
  "waft-core",
 ]

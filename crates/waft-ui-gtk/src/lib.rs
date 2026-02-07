@@ -2,5 +2,6 @@
 //
 // This library converts declarative Widget descriptions into actual GTK widgets.
 
+pub mod types;
 pub mod utils;
 pub mod widgets;
