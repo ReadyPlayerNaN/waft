@@ -3121,6 +3121,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-ui-gtk"
+version = "0.1.0"
+dependencies = [
+ "gtk4",
+ "libadwaita",
+ "log",
+ "serde",
+ "uuid",
+ "waft-core",
+]
+
+[[package]]
 name = "want"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
