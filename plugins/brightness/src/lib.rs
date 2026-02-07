@@ -30,7 +30,7 @@ mod slider_control;
 pub mod store;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::brightness", "Brightness", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::brightness", "Brightness", "0.1.0");
 waft_plugin_api::export_overview_plugin!(BrightnessPlugin::new());
 
 pub struct BrightnessPlugin {
@@ -121,7 +121,7 @@ fn discovered_to_display(d: DiscoveredDisplay) -> Display {
 #[async_trait(?Send)]
 impl OverviewPlugin for BrightnessPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::brightness")
+        PluginId::from_static("waft::brightness")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

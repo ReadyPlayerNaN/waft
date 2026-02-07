@@ -1,4 +1,7 @@
 //! Notifications plugin - DBus notification handling and display.
+//!
+//! This is a dynamic plugin (.so) loaded by waft-overview at runtime.
+//! It implements a freedesktop.org-compliant notification daemon.
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -11,17 +14,11 @@ use std::time::Duration;
 
 use gtk::prelude::*;
 
-use crate::features::notifications::store::{
-    NotificationOp, NotificationStore, create_notification_store,
+use waft_plugin_api::{
+    OverviewPlugin, PluginId, PluginResources, Slot, Widget, WidgetFeatureToggle,
+    WidgetRegistrar,
 };
-use crate::features::notifications::ui::notifications_widget::{
-    NotificationsWidget, NotificationsWidgetOutput,
-};
-use crate::features::notifications::ui::toast_window::{
-    HPos, ToastWindowOutput, ToastWindowWidget, VPos,
-};
-use crate::menu_state::MenuStore;
-use crate::plugin::{Plugin, PluginId, Slot, Widget, WidgetFeatureToggle, WidgetRegistrar};
+use waft_core::menu_state::MenuStore;
 
 use self::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
 use self::dbus::server::NotificationsDbusServer;
@@ -29,13 +26,21 @@ use self::debounce::NotificationDebouncer;
 use self::dnd_toggle::{
     DoNotDisturbToggleInit, DoNotDisturbToggleOutput, DoNotDisturbToggleWidget,
 };
+use self::store::{NotificationOp, NotificationStore, create_notification_store};
+use self::ui::notifications_widget::{NotificationsWidget, NotificationsWidgetOutput};
+use self::ui::toast_window::{HPos, ToastWindowOutput, ToastWindowWidget, VPos};
 
 pub mod dbus;
 mod debounce;
 mod dnd_toggle;
+mod runtime_bridge;
 pub mod store;
 pub mod types;
 pub mod ui;
+
+// Export plugin entry points
+waft_plugin_api::export_plugin_metadata!("waft::notifications", "Notifications", "0.1.0");
+waft_plugin_api::export_overview_plugin!(NotificationsPlugin::new());
 
 fn default_toast_limit() -> u32 {
     3
@@ -72,6 +77,12 @@ pub struct NotificationsPlugin {
     toast: Option<ToastWindowWidget>,
     debouncer: Option<NotificationDebouncer>,
     session_locked: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Default for NotificationsPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NotificationsPlugin {
@@ -140,7 +151,7 @@ impl NotificationsPlugin {
 }
 
 #[async_trait(?Send)]
-impl Plugin for NotificationsPlugin {
+impl OverviewPlugin for NotificationsPlugin {
     fn id(&self) -> PluginId {
         PluginId::from_static("waft::notifications")
     }
@@ -151,16 +162,29 @@ impl Plugin for NotificationsPlugin {
         Ok(())
     }
 
-    async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
-        let mut dbus_server = NotificationsDbusServer::connect()
-            .await
-            .context("Failed to connect DBus notifications server")?;
+    async fn init(&mut self, resources: &PluginResources) -> Result<()> {
+        // Initialize runtime bridge with tokio handle from host
+        let tokio_handle = resources
+            .tokio_handle
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("tokio_handle not provided"))?;
+        runtime_bridge::init_tokio_handle(tokio_handle.clone());
 
-        info!("Starting notifications dbus server");
-        dbus_server
-            .start(self.server_channel.clone(), self.client_receiver.clone())
-            .await
-            .context("Failed to start DBus notifications server")?;
+        // Create and start D-Bus server on plugin-local runtime
+        let server_channel = self.server_channel.clone();
+        let client_receiver = self.client_receiver.clone();
+
+        let dbus_server = runtime_bridge::spawn_on_tokio(async move {
+            info!("Starting notifications dbus server");
+            let mut server = NotificationsDbusServer::connect().await
+                .context("Failed to connect DBus notifications server")?;
+
+            server.start(server_channel, client_receiver).await
+                .context("Failed to start DBus notifications server")?;
+
+            Ok::<_, anyhow::Error>(server)
+        })
+        .await?;
 
         self.dbus_server = Some(dbus_server);
 

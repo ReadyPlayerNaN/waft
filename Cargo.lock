@@ -3047,6 +3047,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-plugin-notifications"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "gtk4-layer-shell",
+ "indexmap",
+ "libadwaita",
+ "log",
+ "serde",
+ "tokio",
+ "toml 0.8.23",
+ "uuid",
+ "waft-core",
+ "waft-plugin-api",
+ "zbus",
+ "zvariant",
+]
+
+[[package]]
 name = "waft-plugin-sunsetr"
 version = "0.1.0"
 dependencies = [

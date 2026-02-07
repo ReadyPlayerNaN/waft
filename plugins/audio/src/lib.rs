@@ -30,7 +30,7 @@ mod slider_control;
 pub mod store;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::audio", "Audio", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::audio", "Audio", "0.1.0");
 waft_plugin_api::export_overview_plugin!(AudioPlugin::new());
 
 pub struct AudioPlugin {
@@ -111,7 +111,7 @@ impl AudioPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for AudioPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::audio")
+        PluginId::from_static("waft::audio")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

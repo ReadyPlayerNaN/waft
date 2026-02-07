@@ -42,14 +42,6 @@ impl PluginRegistry {
         }
     }
 
-    /// Register a plugin and return a cloneable handle to it.
-    pub fn register<P: Plugin + 'static>(&mut self, plugin: P) -> PluginHandle {
-        let name = plugin.id().to_string();
-        let handle: PluginHandle = Rc::new(RefCell::new(Some(Box::new(plugin))));
-        self.plugins.insert(name, handle.clone());
-        handle
-    }
-
     /// Register a pre-boxed plugin (e.g. from a dynamically loaded .so).
     pub fn register_boxed(&mut self, plugin: Box<dyn Plugin>) -> PluginHandle {
         let name = plugin.id().to_string();

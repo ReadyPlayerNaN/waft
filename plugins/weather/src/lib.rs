@@ -25,7 +25,7 @@ mod ui;
 mod values;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::weather", "Weather", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::weather", "Weather", "0.1.0");
 waft_plugin_api::export_overview_plugin!(WeatherPlugin::new());
 
 /// Configuration for the weather plugin.
@@ -82,7 +82,7 @@ impl WeatherPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for WeatherPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::weather")
+        PluginId::from_static("waft::weather")
     }
 
     fn configure(&mut self, settings: &toml::Table) -> Result<()> {

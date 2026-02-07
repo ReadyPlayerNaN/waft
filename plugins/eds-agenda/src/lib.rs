@@ -35,7 +35,7 @@ pub mod values;
 mod widget;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::agenda", "Agenda", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::eds-agenda", "Agenda", "0.1.0");
 waft_plugin_api::export_overview_plugin!(AgendaPlugin::new());
 
 /// Holds an active calendar view session for cleanup.
@@ -197,7 +197,7 @@ impl AgendaPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for AgendaPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::agenda")
+        PluginId::from_static("waft::eds-agenda")
     }
 
     fn configure(&mut self, settings: &toml::Table) -> Result<()> {

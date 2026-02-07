@@ -36,7 +36,7 @@ mod device_menu;
 mod store;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::bluetooth", "Bluetooth", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::blueman", "Bluetooth", "0.1.0");
 waft_plugin_api::export_overview_plugin!(BluetoothPlugin::new());
 
 /// State for a single adapter's UI components.
@@ -354,7 +354,7 @@ impl BluetoothPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for BluetoothPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::bluetooth")
+        PluginId::from_static("waft::blueman")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

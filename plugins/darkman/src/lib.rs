@@ -29,7 +29,7 @@ mod store;
 mod values;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::darkman", "Darkman", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::darkman", "Darkman", "0.1.0");
 waft_plugin_api::export_overview_plugin!(DarkmanPlugin::new());
 
 pub struct DarkmanPlugin {
@@ -62,7 +62,7 @@ impl DarkmanPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for DarkmanPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::darkman")
+        PluginId::from_static("waft::darkman")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

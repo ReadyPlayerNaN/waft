@@ -8,9 +8,9 @@ members = [
     "crates/plugin-api",
     "plugins/clock",
     "plugins/darkman",
-    "plugins/agenda",
+    "plugins/eds-agenda",
     "plugins/battery",
-    "plugins/bluetooth",
+    "plugins/blueman",
     "plugins/brightness",
     "plugins/caffeine",
     "plugins/sunsetr",
@@ -19,4 +19,5 @@ members = [
     "plugins/keyboard-layout",
     "plugins/networkmanager",
     "plugins/audio",
+    "plugins/notifications",
 ]

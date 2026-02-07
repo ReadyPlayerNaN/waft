@@ -27,7 +27,7 @@ mod store;
 mod values;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::sunsetr", "Sunsetr", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::sunsetr", "Sunsetr", "0.1.0");
 waft_plugin_api::export_overview_plugin!(SunsetrPlugin::new());
 
 pub struct SunsetrPlugin {
@@ -57,7 +57,7 @@ impl SunsetrPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for SunsetrPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::sunsetr")
+        PluginId::from_static("waft::sunsetr")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

@@ -37,7 +37,7 @@ use backends::{detect_backend, KeyboardLayoutBackend, LayoutEvent};
 use widget::KeyboardLayoutWidget;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::keyboard-layout", "Keyboard Layout", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::keyboard-layout", "Keyboard Layout", "0.1.0");
 waft_plugin_api::export_overview_plugin!(KeyboardLayoutPlugin::new());
 
 /// Keyboard layout plugin for viewing and switching keyboard layouts.
@@ -80,7 +80,7 @@ impl KeyboardLayoutPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for KeyboardLayoutPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::keyboard-layout")
+        PluginId::from_static("waft::keyboard-layout")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

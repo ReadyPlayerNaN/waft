@@ -26,7 +26,7 @@ mod ui;
 mod values;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::battery", "Battery", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::battery", "Battery", "0.1.0");
 waft_plugin_api::export_overview_plugin!(BatteryPlugin::new());
 
 pub struct BatteryPlugin {
@@ -58,7 +58,7 @@ impl BatteryPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for BatteryPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::battery")
+        PluginId::from_static("waft::battery")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

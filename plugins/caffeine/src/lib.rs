@@ -27,7 +27,7 @@ mod store;
 mod wayland_protocol;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::caffeine", "Caffeine", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::caffeine", "Caffeine", "0.1.0");
 waft_plugin_api::export_overview_plugin!(CaffeinePlugin::new());
 
 pub struct CaffeinePlugin {
@@ -61,7 +61,7 @@ impl CaffeinePlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for CaffeinePlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::caffeine")
+        PluginId::from_static("waft::caffeine")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

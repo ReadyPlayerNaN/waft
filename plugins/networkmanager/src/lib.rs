@@ -37,7 +37,7 @@ use wifi_adapter_widget::WiFiAdapterWidget;
 use wired_adapter_widget::WiredAdapterWidget;
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::networkmanager", "NetworkManager", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::networkmanager", "NetworkManager", "0.1.0");
 waft_plugin_api::export_overview_plugin!(NetworkManagerPlugin::new());
 
 pub struct NetworkManagerPlugin {
@@ -78,7 +78,7 @@ impl NetworkManagerPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for NetworkManagerPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::networkmanager")
+        PluginId::from_static("waft::networkmanager")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

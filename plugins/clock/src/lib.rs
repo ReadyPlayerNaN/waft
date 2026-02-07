@@ -18,7 +18,7 @@ use waft_core::menu_state::MenuStore;
 use waft_plugin_api::{OverviewPlugin, PluginId, PluginResources, Slot, Widget, WidgetRegistrar};
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::clock", "Clock", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::clock", "Clock", "0.1.0");
 waft_plugin_api::export_overview_plugin!(ClockPlugin::new());
 
 // ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ impl ClockPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for ClockPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::clock")
+        PluginId::from_static("waft::clock")
     }
 
     fn configure(&mut self, settings: &toml::Table) -> Result<()> {

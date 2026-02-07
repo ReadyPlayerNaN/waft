@@ -31,7 +31,7 @@ use dbus::SystemdDbusClient;
 use widget::{ActionGroupOutput, ActionGroupWidget};
 
 // Export plugin entry points.
-waft_plugin_api::export_plugin_metadata!("plugin::systemd-actions", "Systemd Actions", "0.1.0");
+waft_plugin_api::export_plugin_metadata!("waft::systemd-actions", "Systemd Actions", "0.1.0");
 waft_plugin_api::export_overview_plugin!(SystemdActionsPlugin::new());
 
 /// Systemd actions plugin for system power and session management.
@@ -107,7 +107,7 @@ impl SystemdActionsPlugin {
 #[async_trait(?Send)]
 impl OverviewPlugin for SystemdActionsPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::systemd-actions")
+        PluginId::from_static("waft::systemd-actions")
     }
 
     async fn init(&mut self, resources: &PluginResources) -> Result<()> {

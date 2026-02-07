@@ -12,18 +12,16 @@ use std::thread;
 use adw::prelude::*;
 use gtk::prelude::ApplicationExtManual;
 
-use waft_config::Config;
-use waft_plugin_api::loader;
 use crate::dbus::DbusHandle;
-use crate::plugin::PluginResources;
-use crate::features::notifications::NotificationsPlugin;
 use crate::features::session::{SessionEvent, SessionMonitor};
-use waft_ipc::net as ipc_net;
-use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
 use crate::menu_state::create_menu_store;
-use crate::plugin::Plugin;
+use crate::plugin::PluginResources;
 use crate::plugin_registry::PluginRegistry;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
+use waft_config::Config;
+use waft_ipc::net as ipc_net;
+use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
+use waft_plugin_api::loader;
 
 /// Run the overlay host app (pure GTK4 entrypoint from `main.rs`).
 pub async fn run() -> Result<()> {
@@ -144,19 +142,9 @@ pub async fn run() -> Result<()> {
         }
     }
 
-    // Load built-in static plugins
-    // Note: sunsetr is now a dynamic plugin loaded from .so file
-
-    if config.is_plugin_enabled("plugin::notifications") {
-        let mut plugin = NotificationsPlugin::new();
-        if let Some(settings) = config.get_plugin_settings("plugin::notifications") {
-            plugin.configure(settings)?;
-        }
-        registry.register(plugin);
-    }
-
-    // Note: weather, battery, audio, brightness, agenda, systemd-actions, bluetooth,
-    // caffeine, networkmanager, keyboard-layout are now dynamic plugins loaded from .so files
+    // All plugins are loaded dynamically from .so files
+    // (clock, darkman, notifications, sunsetr, weather, battery, audio, brightness,
+    // agenda, systemd-actions, blueman, caffeine, networkmanager, keyboard-layout)
 
     // Refuse to start without any plugins
     if registry.is_empty() {
@@ -166,7 +154,7 @@ pub async fn run() -> Result<()> {
         eprintln!("Example:");
         eprintln!();
         eprintln!("  [[plugins]]");
-        eprintln!("  id = \"plugin::notifications\"");
+        eprintln!("  id = \"waft::notifications\"");
         eprintln!();
         eprintln!(
             "Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::brightness, plugin::agenda, plugin::networkmanager"

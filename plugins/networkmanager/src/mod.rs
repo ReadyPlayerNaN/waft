@@ -60,7 +60,7 @@ impl NetworkManagerPlugin {
 #[async_trait(?Send)]
 impl Plugin for NetworkManagerPlugin {
     fn id(&self) -> PluginId {
-        PluginId::from_static("plugin::networkmanager")
+        PluginId::from_static("waft::networkmanager")
     }
 
     async fn init(&mut self, _resources: &super::super::plugin::PluginResources) -> Result<()> {
