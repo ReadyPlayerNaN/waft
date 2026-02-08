@@ -330,6 +330,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap"
+version = "4.5.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6899ea499e3fb9305a65d5ebf6e3d2248c5fab291f300ad0a704fbe142eae31a"
+dependencies = [
+ "clap_builder",
+ "clap_derive",
+]
+
+[[package]]
+name = "clap_builder"
+version = "4.5.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b12c8b680195a62a8364d16b8447b01b6c2c8f9aaf68bee653be34d4245e238"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "clap_lex",
+ "strsim",
+]
+
+[[package]]
+name = "clap_derive"
+version = "4.5.55"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a92793da1a46a5f2a02a6f4c46c6496b28c43638adea8306fcb0caa1634f24e5"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "clap_lex"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
+
+[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -764,6 +804,31 @@ dependencies = [
  "libc",
  "pango-sys",
  "pkg-config",
+ "system-deps",
+]
+
+[[package]]
+name = "gdk4-x11"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd10920274b392ff87d5b51932bebe24e428f9a2c0e1540b9d9be92a497f265a"
+dependencies = [
+ "gdk4",
+ "gdk4-x11-sys",
+ "gio 0.21.5",
+ "glib 0.21.5",
+ "libc",
+]
+
+[[package]]
+name = "gdk4-x11-sys"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8885d7dbeb194e6be61f0c62403200ad0c2f1da6930f816214eaf7124e0287bd"
+dependencies = [
+ "gdk4-sys",
+ "glib-sys 0.21.5",
+ "libc",
  "system-deps",
 ]
 
@@ -2290,6 +2355,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "strsim"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3281,6 +3352,20 @@ checksum = "312e32e551d92129218ea9a2452120f4aabc03529ef03e4d0d82fb2780608598"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "widget-docs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cairo-rs",
+ "clap",
+ "gdk4-x11",
+ "gtk4",
+ "libadwaita",
+ "waft-core",
+ "waft-ui-gtk",
 ]
 
 [[package]]
