@@ -4,10 +4,19 @@
 //! descriptions and creates fresh GTK widgets. It coordinates with the MenuStore
 //! to ensure only one expandable menu is open at a time.
 
-use crate::types::{Action, Widget};
-use gtk::prelude::*;
+use waft_ipc::widget::{Action, Widget};
+use crate::widgets::container::render_container;
+use crate::widgets::feature_toggle::render_feature_toggle;
+use crate::widgets::menu_row::render_menu_row;
+use crate::widgets::primitives::{
+    render_button, render_checkmark, render_label, render_spinner, render_switch,
+};
+use crate::widgets::slider::render_slider;
 use std::rc::Rc;
 use waft_core::menu_state::MenuStore;
+
+#[cfg(test)]
+use gtk::prelude::*;
 
 /// Type alias for the action callback function.
 ///
@@ -95,61 +104,98 @@ impl WidgetRenderer {
     #[allow(unused_variables)] // widget_id will be used in Task 4-10
     pub fn render(&self, widget: &Widget, widget_id: &str) -> gtk::Widget {
         match widget {
-            Widget::FeatureToggle { .. } => {
-                // TODO: Task 10 - Implement FeatureToggle renderer
-                // Menu ID pattern: format!("{}_menu", widget_id)
-                unimplemented!("FeatureToggle renderer - Task 10")
-            }
+            Widget::FeatureToggle {
+                title,
+                icon,
+                details,
+                active,
+                busy,
+                expandable,
+                expanded_content,
+                on_toggle,
+            } => render_feature_toggle(
+                self,
+                &self.action_callback,
+                &self.menu_store,
+                title,
+                icon,
+                details,
+                *active,
+                *busy,
+                *expandable,
+                expanded_content,
+                on_toggle,
+                widget_id,
+            ),
 
-            Widget::Slider { .. } => {
-                // TODO: Task 9 - Implement Slider renderer
-                // Menu ID pattern: format!("{}_menu", widget_id)
-                unimplemented!("Slider renderer - Task 9")
-            }
+            Widget::Slider {
+                icon,
+                value,
+                muted,
+                expandable,
+                expanded_content,
+                on_value_change,
+                on_icon_click,
+            } => render_slider(
+                self,
+                &self.action_callback,
+                &self.menu_store,
+                icon,
+                *value,
+                *muted,
+                *expandable,
+                expanded_content,
+                on_value_change,
+                on_icon_click,
+                widget_id,
+            ),
 
-            Widget::Container { .. } => {
-                // TODO: Task 4 - Implement Container renderer
-                // Recursively render children using this renderer
-                unimplemented!("Container renderer - Task 4")
-            }
+            Widget::Container {
+                orientation,
+                spacing,
+                css_classes,
+                children,
+            } => render_container(self, orientation, *spacing, css_classes, children, widget_id),
 
-            Widget::MenuRow { .. } => {
-                // TODO: Task 8 - Implement MenuRow renderer
-                unimplemented!("MenuRow renderer - Task 8")
-            }
+            Widget::MenuRow {
+                icon,
+                label,
+                sublabel,
+                trailing,
+                sensitive,
+                on_click,
+            } => render_menu_row(
+                self,
+                &self.action_callback,
+                icon,
+                label,
+                sublabel,
+                trailing,
+                *sensitive,
+                on_click,
+                widget_id,
+            ),
 
-            Widget::Switch { .. } => {
-                // TODO: Task 5 - Implement Switch renderer (primitive widget)
-                unimplemented!("Switch renderer - Task 5")
-            }
+            Widget::Switch {
+                active,
+                sensitive,
+                on_toggle,
+            } => render_switch(&self.action_callback, *active, *sensitive, on_toggle, widget_id),
 
-            Widget::Spinner { .. } => {
-                // TODO: Task 5 - Implement Spinner renderer (primitive widget)
-                unimplemented!("Spinner renderer - Task 5")
-            }
+            Widget::Spinner { spinning } => render_spinner(*spinning),
 
-            Widget::Checkmark { .. } => {
-                // TODO: Task 5 - Implement Checkmark renderer (primitive widget)
-                unimplemented!("Checkmark renderer - Task 5")
-            }
+            Widget::Checkmark { visible } => render_checkmark(*visible),
 
-            Widget::Button { .. } => {
-                // TODO: Task 5 - Implement Button renderer (primitive widget)
-                unimplemented!("Button renderer - Task 5")
-            }
+            Widget::Button {
+                label,
+                icon,
+                on_click,
+            } => render_button(&self.action_callback, label, icon, on_click, widget_id),
 
             Widget::Label {
                 text,
                 css_classes,
-            } => {
-                // TODO: Task 5 - Implement Label renderer (primitive widget)
-                // For now, provide a minimal implementation for testing
-                let label = gtk::Label::new(Some(text));
-                for class in css_classes {
-                    label.add_css_class(class);
-                }
-                label.upcast()
-            }
+            } => render_label(text, css_classes),
         }
     }
 

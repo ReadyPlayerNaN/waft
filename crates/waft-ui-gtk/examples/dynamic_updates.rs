@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use waft_core::menu_state::create_menu_store;
 use waft_ui_gtk::renderer::{ActionCallback, WidgetRenderer};
-use waft_ui_gtk::types::{Action, ActionParams, Orientation, Widget};
+use waft_ipc::widget::{Action, ActionParams, Orientation, Widget};
 
 /// State for the dynamic test application
 struct AppState {

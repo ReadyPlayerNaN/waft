@@ -2883,6 +2883,8 @@ name = "waft-ipc"
 version = "0.1.0"
 dependencies = [
  "log",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
@@ -3202,6 +3204,7 @@ dependencies = [
  "serde_json",
  "uuid",
  "waft-core",
+ "waft-ipc",
 ]
 
 [[package]]
