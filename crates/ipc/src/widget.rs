@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// The primary widget enum representing all supported widget types
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum Widget {
     /// A toggleable feature card with optional expanded content
     FeatureToggle {
@@ -79,14 +79,14 @@ pub enum Widget {
 }
 
 /// Represents a user action with parameters
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Action {
     pub id: String,
     pub params: ActionParams,
 }
 
 /// Parameters for an action
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ActionParams {
     None,
     Value(f64),
@@ -95,14 +95,14 @@ pub enum ActionParams {
 }
 
 /// Layout orientation for containers
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum Orientation {
     Horizontal,
     Vertical,
 }
 
 /// UI slot where a widget should be placed
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum Slot {
     FeatureToggles,
     Controls,
@@ -110,7 +110,7 @@ pub enum Slot {
 }
 
 /// A named widget with placement metadata
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct NamedWidget {
     pub id: String,
     pub slot: Slot,

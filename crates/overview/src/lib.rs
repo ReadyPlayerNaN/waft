@@ -7,7 +7,14 @@
 
 pub mod common;
 pub mod menu_state;
+pub mod plugin_manager;
 pub mod store;
+
+// Re-export key plugin manager types
+pub use plugin_manager::{
+    ActionRouter, ClientError, PluginClient, PluginManager, PluginManagerConfig, PluginUpdate,
+    RouterError, WidgetDiff, WidgetRegistry,
+};
 
 pub mod ui {
     #[path = "icon.rs"]

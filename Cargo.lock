@@ -2907,6 +2907,7 @@ dependencies = [
  "gtk4-layer-shell",
  "indexmap",
  "libadwaita",
+ "libc",
  "log",
  "nmrs",
  "once_cell",
@@ -3140,6 +3141,20 @@ dependencies = [
  "waft-plugin-api",
  "zbus",
  "zvariant",
+]
+
+[[package]]
+name = "waft-plugin-sdk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "env_logger",
+ "libc",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "waft-ipc",
 ]
 
 [[package]]
