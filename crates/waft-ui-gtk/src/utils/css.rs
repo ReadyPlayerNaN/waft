@@ -5,8 +5,9 @@ use gtk::prelude::*;
 /// Apply multiple CSS classes to a widget
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// use waft_ui_gtk::utils::css::apply_css_classes;
+/// gtk::init().unwrap();
 /// let label = gtk::Label::new(Some("Hello"));
 /// apply_css_classes(&label, &vec!["dim-label".to_string(), "small".to_string()]);
 /// ```
@@ -19,8 +20,9 @@ pub fn apply_css_classes(widget: &impl IsA<gtk::Widget>, classes: &[String]) {
 /// Add a single CSS class to a widget
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// use waft_ui_gtk::utils::css::add_class;
+/// gtk::init().unwrap();
 /// let label = gtk::Label::new(Some("Hello"));
 /// add_class(&label, "bold");
 /// ```
@@ -31,8 +33,9 @@ pub fn add_class(widget: &impl IsA<gtk::Widget>, class: &str) {
 /// Remove a single CSS class from a widget
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// use waft_ui_gtk::utils::css::remove_class;
+/// gtk::init().unwrap();
 /// let label = gtk::Label::new(Some("Hello"));
 /// remove_class(&label, "bold");
 /// ```
@@ -45,8 +48,9 @@ pub fn remove_class(widget: &impl IsA<gtk::Widget>, class: &str) {
 /// If `condition` is true, the class is added. If false, it is removed.
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// use waft_ui_gtk::utils::css::toggle_class;
+/// gtk::init().unwrap();
 /// let label = gtk::Label::new(Some("Hello"));
 /// toggle_class(&label, "active", true);  // adds "active"
 /// toggle_class(&label, "active", false); // removes "active"
@@ -72,11 +76,19 @@ mod tests {
         });
     }
 
-    // Note: GTK widget tests require running on the main thread.
-    // Run with: cargo test -p waft-ui-gtk -- --ignored --test-threads=1
+    // NOTE: GTK widget tests require the main thread to run.
+    // Rust's test harness spawns tests on worker threads, which causes GTK to panic.
+    // These tests are marked #[ignore] and should be run manually with:
+    //   cargo test -p waft-ui-gtk -- --ignored --test-threads=1
+    //
+    // This runs tests sequentially and increases (but doesn't guarantee) the chance
+    // they'll run on the main thread. This is a known limitation of GTK + Rust testing.
+    //
+    // For CI/CD, consider using a custom test harness or integration tests with
+    // explicit main thread control.
 
     #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
     fn test_apply_css_classes() {
         init_gtk();
         let label = gtk::Label::new(Some("Test"));
@@ -90,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
     fn test_apply_css_classes_empty() {
         init_gtk();
         let label = gtk::Label::new(Some("Test"));
@@ -102,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
     fn test_add_class() {
         init_gtk();
         let label = gtk::Label::new(Some("Test"));
@@ -113,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
     fn test_remove_class() {
         init_gtk();
         let label = gtk::Label::new(Some("Test"));
@@ -126,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
     fn test_remove_class_nonexistent() {
         init_gtk();
         let label = gtk::Label::new(Some("Test"));
@@ -137,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
     fn test_toggle_class_true() {
         init_gtk();
         let label = gtk::Label::new(Some("Test"));
@@ -148,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
     fn test_toggle_class_false() {
         init_gtk();
         let label = gtk::Label::new(Some("Test"));
@@ -161,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
     fn test_toggle_class_multiple_toggles() {
         init_gtk();
         let label = gtk::Label::new(Some("Test"));
@@ -177,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
     fn test_works_with_different_widget_types() {
         init_gtk();
 
