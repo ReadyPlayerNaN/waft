@@ -355,6 +355,14 @@ pub async fn run() -> Result<()> {
             if let Ok(mut rx_slot) = daemon_updates_rx_slot.lock()
                 && let Some(mut rx) = rx_slot.take() {
                     let registrar_for_daemon = Rc::new(crate::plugin_registry::RegistrarHandle::new(registry.clone()));
+                    let menu_store_for_daemon = registry.menu_store().clone();
+
+                    // TODO: Implement proper action routing to daemon plugins
+                    // For now, use a no-op callback until action routing is fully implemented
+                    let action_callback: waft_ui_gtk::renderer::ActionCallback =
+                        Rc::new(|widget_id, action| {
+                            warn!("[daemon] Action from widget {}: {:?} (routing not yet implemented)", widget_id, action);
+                        });
 
                     glib::spawn_future_local(async move {
                         while let Some(update) = rx.recv().await {
@@ -363,7 +371,7 @@ pub async fn run() -> Result<()> {
                                     debug!("[daemon] Received full update with {} widgets", widgets.len());
 
                                     // Convert daemon widgets to GTK widgets and register them
-                                    let gtk_widgets = convert_daemon_widgets(&widgets);
+                                    let gtk_widgets = convert_daemon_widgets(&widgets, &menu_store_for_daemon, &action_callback);
                                     for widget in gtk_widgets {
                                         registrar_for_daemon.register_widget(widget);
                                     }

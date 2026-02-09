@@ -412,7 +412,16 @@ version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44c45a9d03d6676652bcb5e724c7e988de1acad23a711b5217ab9cbecbec2225"
 dependencies = [
- "dirs-sys",
+ "dirs-sys 0.4.1",
+]
+
+[[package]]
+name = "dirs"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
+dependencies = [
+ "dirs-sys 0.5.0",
 ]
 
 [[package]]
@@ -423,8 +432,20 @@ checksum = "520f05a5cbd335fae5a99ff7a6ab8627577660ee5cfd6a94a6a929b52ff0321c"
 dependencies = [
  "libc",
  "option-ext",
- "redox_users",
+ "redox_users 0.4.6",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
+dependencies = [
+ "libc",
+ "option-ext",
+ "redox_users 0.5.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2015,6 +2036,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_users"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
+dependencies = [
+ "getrandom 0.2.17",
+ "libredox",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "regex"
 version = "1.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2892,7 +2924,7 @@ checksum = "03c2856837ef78f57382f06b2b8563a2f512f7185d732608fd9176cb3b8edf0e"
 name = "waft-config"
 version = "0.1.0"
 dependencies = [
- "dirs",
+ "dirs 5.0.1",
  "serde",
  "toml 0.8.23",
 ]
@@ -2930,7 +2962,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "chrono-tz",
- "dirs",
+ "dirs 5.0.1",
  "env_logger",
  "flume",
  "futures-util",
@@ -2955,6 +2987,7 @@ dependencies = [
  "waft-core",
  "waft-ipc",
  "waft-plugin-api",
+ "waft-ui-gtk",
  "wayland-client",
  "wayland-protocols",
  "wayland-sys",
@@ -3093,7 +3126,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "dirs",
+ "dirs 5.0.1",
  "env_logger",
  "glib 0.21.5",
  "gtk4",
@@ -3113,13 +3146,23 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "dirs 6.0.0",
+ "env_logger",
  "flume",
+ "futures-util",
  "glib 0.21.5",
  "gtk4",
+ "libc",
  "log",
+ "serde",
  "tokio",
+ "toml 0.8.23",
  "waft-core",
+ "waft-ipc",
+ "waft-overview",
  "waft-plugin-api",
+ "waft-plugin-sdk",
+ "zbus",
 ]
 
 [[package]]
