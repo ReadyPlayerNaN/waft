@@ -84,16 +84,13 @@ impl Default for PluginManagerConfig {
 ///
 /// ```no_run
 /// use waft_overview::plugin_manager::{PluginManager, PluginManagerConfig};
-/// use std::sync::Arc;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let (manager, mut updates) = PluginManager::new(PluginManagerConfig::default());
-/// let manager = Arc::new(manager);
+/// let (mut manager, mut updates) = PluginManager::new(PluginManagerConfig::default());
 ///
 /// // Spawn background task to manage plugins
-/// let manager_clone = manager.clone();
 /// tokio::spawn(async move {
-///     manager_clone.run().await;
+///     manager.run().await;
 /// });
 ///
 /// // Handle updates in UI thread

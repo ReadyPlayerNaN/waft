@@ -146,11 +146,13 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
                     }
                 }
                 Err(e) => {
-                    // Check if it's a clean disconnect
-                    if e.to_string().contains("UnexpectedEof")
-                        || e.to_string().contains("connection")
+                    // Check if it's a clean disconnect or expected connection issue
+                    let err_str = e.to_string();
+                    if err_str.contains("UnexpectedEof")
+                        || err_str.contains("early eof")
+                        || err_str.contains("connection")
                     {
-                        log::debug!("Client disconnected");
+                        log::debug!("Client disconnected: {}", err_str);
                         break;
                     } else {
                         log::error!("Failed to read message: {}", e);
@@ -236,6 +238,12 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
 
     /// Get the socket path for this plugin.
     fn socket_path(plugin_name: &str) -> Result<PathBuf, ServerError> {
+        // Allow override via environment variable (for testing)
+        if let Ok(custom_path) = std::env::var("WAFT_PLUGIN_SOCKET_PATH") {
+            log::debug!("Using custom socket path from WAFT_PLUGIN_SOCKET_PATH: {}", custom_path);
+            return Ok(PathBuf::from(custom_path));
+        }
+
         // Get runtime directory from environment
         let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
             // Fallback: /run/user/{uid}
@@ -296,6 +304,37 @@ mod tests {
             ServerError::Json(_) => {}
             _ => panic!("Expected Json variant"),
         }
+    }
+
+    #[test]
+    fn test_socket_path_from_env_override() {
+        // Set custom socket path via env var
+        unsafe {
+            std::env::set_var("WAFT_PLUGIN_SOCKET_PATH", "/tmp/custom-test.sock");
+        }
+
+        let path = PluginServer::<crate::testing::TestPlugin>::socket_path("test-plugin").unwrap();
+        assert_eq!(path, PathBuf::from("/tmp/custom-test.sock"));
+
+        // Clean up
+        unsafe {
+            std::env::remove_var("WAFT_PLUGIN_SOCKET_PATH");
+        }
+    }
+
+    #[test]
+    fn test_socket_path_default_behavior() {
+        // Ensure env var is not set
+        unsafe {
+            std::env::remove_var("WAFT_PLUGIN_SOCKET_PATH");
+        }
+
+        let path = PluginServer::<crate::testing::TestPlugin>::socket_path("test-plugin").unwrap();
+
+        // Should contain the plugin name
+        assert!(path.to_string_lossy().contains("test-plugin.sock"));
+        // Should contain waft/plugins directory
+        assert!(path.to_string_lossy().contains("waft/plugins"));
     }
 
     #[test]

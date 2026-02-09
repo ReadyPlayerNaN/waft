@@ -1,0 +1,12 @@
+[Unit]
+Description=Waft Clock Plugin Daemon
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/waft-clock-daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

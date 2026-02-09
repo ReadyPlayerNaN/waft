@@ -104,8 +104,10 @@ pub enum Orientation {
 /// UI slot where a widget should be placed
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum Slot {
+    Info,
     FeatureToggles,
     Controls,
+    Header,
     Actions,
 }
 

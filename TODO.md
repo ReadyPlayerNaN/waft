@@ -117,3 +117,7 @@ Sometimes apps have workspaces. It would be useful to split notifications to gro
 
 - Should this be user-configurable or hardcoded?
 - Which positions should be supported initially?
+
+## Simplify clock plugin
+
+It does not need external ping

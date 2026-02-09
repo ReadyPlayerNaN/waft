@@ -12,16 +12,19 @@ use std::thread;
 use adw::prelude::*;
 use gtk::prelude::ApplicationExtManual;
 
+use crate::daemon_widget_converter::convert_daemon_widgets;
 use crate::dbus::DbusHandle;
 use crate::features::session::{SessionEvent, SessionMonitor};
 use crate::menu_state::create_menu_store;
 use crate::plugin::PluginResources;
+use crate::plugin_manager::{PluginManager, PluginManagerConfig, PluginUpdate};
 use crate::plugin_registry::PluginRegistry;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
 use waft_config::Config;
 use waft_ipc::net as ipc_net;
 use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
 use waft_plugin_api::loader;
+use waft_plugin_api::WidgetRegistrar;
 
 /// Run the overlay host app (pure GTK4 entrypoint from `main.rs`).
 pub async fn run() -> Result<()> {
@@ -146,6 +149,21 @@ pub async fn run() -> Result<()> {
     // (clock, darkman, notifications, sunsetr, weather, battery, audio, brightness,
     // agenda, systemd-actions, blueman, caffeine, networkmanager, keyboard-layout)
 
+    // Create plugin manager for daemon-based plugins
+    let (plugin_manager, daemon_updates_rx) =
+        PluginManager::new(PluginManagerConfig::default());
+
+    // Wrap receivers before spawning task
+    let daemon_updates_rx = Arc::new(Mutex::new(Some(daemon_updates_rx)));
+
+    // Spawn daemon manager in background tokio task
+    let tokio_handle = tokio::runtime::Handle::current();
+    tokio_handle.spawn(async move {
+        // Take ownership of plugin_manager (can't be mut in closure signature)
+        let mut manager = plugin_manager;
+        manager.run().await;
+    });
+
     // Refuse to start without any plugins
     if registry.is_empty() {
         eprintln!("error: no plugins enabled");
@@ -184,6 +202,7 @@ pub async fn run() -> Result<()> {
         .build();
 
     let ipc_rx_for_startup = ipc_rx.clone();
+    let daemon_updates_rx_for_startup = daemon_updates_rx.clone();
     let registry_for_startup = registry_rc.clone();
     let session_rx_for_startup = Rc::new(RefCell::new(session_rx));
 
@@ -192,6 +211,7 @@ pub async fn run() -> Result<()> {
 
         let registry = registry_for_startup.clone();
         let ipc_rx_slot = ipc_rx_for_startup.clone();
+        let daemon_updates_rx_slot = daemon_updates_rx_for_startup.clone();
         let session_rx_slot = session_rx_for_startup.clone();
         let app = app.clone();
 
@@ -328,6 +348,43 @@ pub async fn run() -> Result<()> {
                             }
                         }
                         warn!("[session] Session event receiver loop exited");
+                    });
+                }
+
+            // Setup daemon widget updates receiver
+            if let Ok(mut rx_slot) = daemon_updates_rx_slot.lock()
+                && let Some(mut rx) = rx_slot.take() {
+                    let registrar_for_daemon = Rc::new(crate::plugin_registry::RegistrarHandle::new(registry.clone()));
+
+                    glib::spawn_future_local(async move {
+                        while let Some(update) = rx.recv().await {
+                            match update {
+                                PluginUpdate::FullUpdate { widgets } => {
+                                    debug!("[daemon] Received full update with {} widgets", widgets.len());
+
+                                    // Convert daemon widgets to GTK widgets and register them
+                                    let gtk_widgets = convert_daemon_widgets(&widgets);
+                                    for widget in gtk_widgets {
+                                        registrar_for_daemon.register_widget(widget);
+                                    }
+                                }
+                                PluginUpdate::IncrementalUpdate { diffs } => {
+                                    debug!("[daemon] Received incremental update with {} diffs", diffs.len());
+                                    // TODO: Handle incremental updates more efficiently
+                                    // For now, log them
+                                }
+                                PluginUpdate::PluginConnected { plugin_id } => {
+                                    debug!("[daemon] Plugin connected: {}", plugin_id);
+                                }
+                                PluginUpdate::PluginDisconnected { plugin_id } => {
+                                    debug!("[daemon] Plugin disconnected: {}", plugin_id);
+                                }
+                                PluginUpdate::Error { plugin_id, error } => {
+                                    warn!("[daemon] Plugin error from {}: {}", plugin_id, error);
+                                }
+                            }
+                        }
+                        warn!("[daemon] Daemon updates receiver loop exited");
                     });
                 }
 

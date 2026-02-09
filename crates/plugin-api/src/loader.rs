@@ -74,11 +74,55 @@ impl LoadedPlugin {
     }
 }
 
-/// Get the plugin directory, checking the env var first, then falling back to the default.
+/// Get the plugin directory, checking the env var first, then development paths, then the default.
+///
+/// Priority:
+/// 1. WAFT_PLUGIN_DIR environment variable
+/// 2. ./target/debug (if it exists and contains .so files - for development)
+/// 3. ./target/release (if it exists and contains .so files - for development)
+/// 4. /usr/lib/waft/plugins (production default)
 pub fn plugin_dir() -> PathBuf {
-    std::env::var(PLUGIN_DIR_ENV)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(DEFAULT_PLUGIN_DIR))
+    // 1. Check environment variable first
+    if let Ok(dir) = std::env::var(PLUGIN_DIR_ENV) {
+        return PathBuf::from(dir);
+    }
+
+    // 2. Check for development debug build
+    let debug_dir = PathBuf::from("./target/debug");
+    if is_plugin_dir(&debug_dir) {
+        debug!("Using development plugin directory: {}", debug_dir.display());
+        return debug_dir;
+    }
+
+    // 3. Check for development release build
+    let release_dir = PathBuf::from("./target/release");
+    if is_plugin_dir(&release_dir) {
+        debug!("Using development plugin directory: {}", release_dir.display());
+        return release_dir;
+    }
+
+    // 4. Fall back to production default
+    PathBuf::from(DEFAULT_PLUGIN_DIR)
+}
+
+/// Check if a directory exists and contains waft plugin .so files.
+fn is_plugin_dir(dir: &Path) -> bool {
+    if !dir.is_dir() {
+        return false;
+    }
+
+    // Check if directory contains at least one libwaft_plugin_*.so file
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if name.starts_with("libwaft_plugin_") && name.ends_with(".so") {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 /// Discover and load all plugin .so files from the given directory.

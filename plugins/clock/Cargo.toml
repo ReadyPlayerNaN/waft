@@ -6,7 +6,12 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib"]
 
+[[bin]]
+name = "waft-clock-daemon"
+path = "bin/waft-clock-daemon.rs"
+
 [dependencies]
+# .so plugin dependencies
 waft-plugin-api = { path = "../../crates/plugin-api" }
 waft-core = { path = "../../crates/core" }
 gtk = { version = "0.10", package = "gtk4", features = ["v4_6", "unsafe-assume-initialized"] }
@@ -16,3 +21,11 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 log = "0.4"
+
+# Daemon binary dependencies
+waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
+waft-ipc = { path = "../../crates/ipc" }
+chrono = "0.4"
+tokio = { version = "1", features = ["full"] }
+env_logger = "0.11"
+dirs = "5.0"

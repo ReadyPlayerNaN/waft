@@ -123,11 +123,32 @@ impl PluginDaemon for TestPlugin {
     }
 }
 
+/// Generate a unique socket path for testing.
+///
+/// Uses thread ID and timestamp to ensure uniqueness across parallel tests.
+/// Socket is placed in /tmp for easy cleanup.
+pub fn unique_test_socket_path(prefix: &str) -> PathBuf {
+    let thread_id = std::thread::current().id();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+
+    PathBuf::from(format!("/tmp/waft-test-{}-{:?}-{}.sock", prefix, thread_id, timestamp))
+}
+
 /// Get the socket path for a test plugin.
 ///
 /// Returns the path where the plugin socket should be created:
 /// `{XDG_RUNTIME_DIR}/waft/plugins/{name}.sock`
+///
+/// Can be overridden with `WAFT_PLUGIN_SOCKET_PATH` environment variable.
 pub fn test_socket_path(plugin_name: &str) -> PathBuf {
+    // Check for custom path override
+    if let Ok(custom_path) = std::env::var("WAFT_PLUGIN_SOCKET_PATH") {
+        return PathBuf::from(custom_path);
+    }
+
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
         let uid = unsafe { libc::getuid() };
         format!("/run/user/{}", uid)
@@ -284,8 +305,46 @@ mod tests {
 
     #[test]
     fn test_socket_path_generation() {
+        // Ensure env var is not set
+        unsafe {
+            std::env::remove_var("WAFT_PLUGIN_SOCKET_PATH");
+        }
+
         let path = test_socket_path("test-plugin");
         assert!(path.to_string_lossy().contains("waft/plugins/test-plugin.sock"));
+    }
+
+    #[test]
+    fn test_socket_path_env_override() {
+        // Set custom socket path via env var
+        unsafe {
+            std::env::set_var("WAFT_PLUGIN_SOCKET_PATH", "/tmp/custom-override.sock");
+        }
+
+        let path = test_socket_path("test-plugin");
+        assert_eq!(path, PathBuf::from("/tmp/custom-override.sock"));
+
+        // Clean up
+        unsafe {
+            std::env::remove_var("WAFT_PLUGIN_SOCKET_PATH");
+        }
+    }
+
+    #[test]
+    fn test_unique_test_socket_path() {
+        let path1 = unique_test_socket_path("plugin1");
+        let path2 = unique_test_socket_path("plugin2");
+
+        // Paths should be different
+        assert_ne!(path1, path2);
+
+        // Both should be in /tmp
+        assert!(path1.starts_with("/tmp"));
+        assert!(path2.starts_with("/tmp"));
+
+        // Should contain the prefix
+        assert!(path1.to_string_lossy().contains("plugin1"));
+        assert!(path2.to_string_lossy().contains("plugin2"));
     }
 
     #[tokio::test]

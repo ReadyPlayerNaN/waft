@@ -1,11 +1,13 @@
 use anyhow::Result;
 mod app;
 mod common;
+mod daemon_widget_converter;
 mod dbus;
 mod features;
 mod i18n;
 mod menu_state;
 mod plugin;
+mod plugin_manager;
 mod plugin_registry;
 pub mod store;
 mod ui;
