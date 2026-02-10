@@ -3,21 +3,19 @@
 //! This module provides the main application entry point and window management.
 
 use anyhow::Result;
-use log::{debug, warn};
-use std::cell::RefCell;
+use log::{debug, info, warn};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use adw::prelude::*;
-use gtk::prelude::ApplicationExtManual;
 
-use crate::daemon_widget_converter::convert_daemon_widgets;
+use crate::daemon_widget_reconciler::DaemonWidgetReconciler;
 use crate::dbus::DbusHandle;
-use crate::features::session::{SessionEvent, SessionMonitor};
+use crate::features::session::SessionEvent;
 use crate::menu_state::create_menu_store;
 use crate::plugin::PluginResources;
-use crate::plugin_manager::{PluginManager, PluginManagerConfig, PluginUpdate};
+use crate::plugin_manager::{PluginManager, PluginManagerConfig, PluginUpdate, SharedRouter};
 use crate::plugin_registry::PluginRegistry;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
 use waft_config::Config;
@@ -26,8 +24,12 @@ use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
 use waft_plugin_api::loader;
 use waft_plugin_api::WidgetRegistrar;
 
-/// Run the overlay host app (pure GTK4 entrypoint from `main.rs`).
-pub async fn run() -> Result<()> {
+/// Set up the overlay host app and return the GTK Application.
+///
+/// All async work (D-Bus connections, plugin init, daemon spawning) happens here
+/// inside `Runtime::block_on()`. The caller then runs `app.run()` on the main
+/// thread *outside* block_on so tokio worker threads stay healthy.
+pub async fn setup() -> Result<adw::Application> {
     // CLI/IPC policy:
     // - `waft-overview` (no args): start UI + become server; if already running => exit non-zero
     // - `waft-overview toggle|show|hide`: IPC client command and exit
@@ -86,6 +88,7 @@ pub async fn run() -> Result<()> {
             };
 
             let on_command = move |cmd: IpcCommand| {
+                eprintln!("[ipc] received command: {:?}", cmd);
                 // Convert IPC command to window input
                 let input = match cmd {
                     IpcCommand::Show => MainWindowInput::ShowOverlay,
@@ -95,8 +98,10 @@ pub async fn run() -> Result<()> {
                     IpcCommand::Ping => return,
                 };
 
-                if let Err(e) = ipc_tx.send_blocking(input) {
-                    eprintln!("[ipc] failed to forward command to UI: {e}");
+                eprintln!("[ipc] sending to channel...");
+                match ipc_tx.try_send(input) {
+                    Ok(()) => eprintln!("[ipc] successfully sent to UI thread"),
+                    Err(e) => eprintln!("[ipc] failed to forward command to UI: {e}"),
                 }
             };
 
@@ -149,12 +154,22 @@ pub async fn run() -> Result<()> {
     // (clock, darkman, notifications, sunsetr, weather, battery, audio, brightness,
     // agenda, systemd-actions, blueman, caffeine, networkmanager, keyboard-layout)
 
+    // Spawn daemon plugin processes
+    use crate::daemon_spawner::{DaemonSpawner, DaemonSpawnerConfig};
+    let mut daemon_spawner = DaemonSpawner::new(DaemonSpawnerConfig::default());
+    daemon_spawner.spawn_all_daemons();
+    info!("Spawned {} daemon processes", daemon_spawner.spawned_count());
+
+    // Give daemons a moment to create their sockets
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
     // Create plugin manager for daemon-based plugins
-    let (plugin_manager, daemon_updates_rx) =
+    let (plugin_manager, daemon_updates_rx, daemon_router) =
         PluginManager::new(PluginManagerConfig::default());
 
-    // Wrap receivers before spawning task
+    // Wrap receiver before spawning task
     let daemon_updates_rx = Arc::new(Mutex::new(Some(daemon_updates_rx)));
+    let daemon_router: Arc<std::sync::Mutex<_>> = daemon_router;
 
     // Spawn daemon manager in background tokio task
     let tokio_handle = tokio::runtime::Handle::current();
@@ -192,9 +207,25 @@ pub async fn run() -> Result<()> {
 
     let registry_rc = Rc::new(registry);
 
-    // Initialize session monitor for lock/unlock detection
-    let session_monitor = SessionMonitor::new().await;
-    let session_rx = session_monitor.as_ref().map(|m| m.subscribe());
+    // Spawn session monitor in background — avoid blocking startup on system D-Bus
+    let (session_event_tx, session_event_rx) = async_channel::unbounded::<SessionEvent>();
+    tokio::spawn(async move {
+        use crate::features::session::SessionMonitor;
+        if let Some(monitor) = SessionMonitor::new().await {
+            let mut rx = monitor.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        if session_event_tx.send(event).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        }
+    });
 
     // Create the application
     let app = adw::Application::builder()
@@ -203,8 +234,9 @@ pub async fn run() -> Result<()> {
 
     let ipc_rx_for_startup = ipc_rx.clone();
     let daemon_updates_rx_for_startup = daemon_updates_rx.clone();
+    let daemon_router_for_startup = daemon_router.clone();
     let registry_for_startup = registry_rc.clone();
-    let session_rx_for_startup = Rc::new(RefCell::new(session_rx));
+    let session_event_rx_for_startup = session_event_rx;
 
     app.connect_startup(move |app| {
         debug!("Started gtk app");
@@ -212,7 +244,8 @@ pub async fn run() -> Result<()> {
         let registry = registry_for_startup.clone();
         let ipc_rx_slot = ipc_rx_for_startup.clone();
         let daemon_updates_rx_slot = daemon_updates_rx_for_startup.clone();
-        let session_rx_slot = session_rx_for_startup.clone();
+        let daemon_router_slot = daemon_router_for_startup.clone();
+        let session_event_rx = session_event_rx_for_startup.clone();
         let app = app.clone();
 
         // Block the startup signal until async work completes
@@ -222,10 +255,8 @@ pub async fn run() -> Result<()> {
             // Apply CSS before creating any windows so they get correct styling
             MainWindowWidget::apply_css();
 
-            let registrar = Rc::new(crate::plugin_registry::RegistrarHandle::new(registry.clone()));
-            let _ = registry.create_elements(gtk_app, registrar).await;
-
-            // Create the main window
+            // Create the main window BEFORE creating plugin elements
+            // This allows IPC commands to be processed even while plugins are still initializing
             let main_window = MainWindowWidget::new(&app, &registry);
 
             // Connect stop handler
@@ -241,9 +272,8 @@ pub async fn run() -> Result<()> {
                 registry_for_hide.notify_overlay_visible(false);
             });
 
-            debug!("Created window");
-
-            // Setup IPC receiver to handle commands
+            // Setup IPC receiver BEFORE plugin widget creation
+            // This ensures toggle commands are processed immediately, even if plugins are slow to init
             if let Ok(mut rx_slot) = ipc_rx_slot.lock()
                 && let Some(rx) = rx_slot.take() {
                     let window = main_window.window.clone();
@@ -311,45 +341,35 @@ pub async fn run() -> Result<()> {
                     });
                 }
 
-            // Setup session lock/unlock receiver
-            if let Some(mut rx) = session_rx_slot.borrow_mut().take() {
-                    let registry_for_session = registry.clone();
-                    let window_for_session = main_window.window.clone();
-                    let animation_for_session = main_window.animation.clone();
-                    let progress_for_session = main_window.animation_progress.clone();
-                    let animating_hide_for_session = main_window.animating_hide.clone();
+            // Setup session lock/unlock receiver (from background tokio task)
+            {
+                let registry_for_session = registry.clone();
+                let window_for_session = main_window.window.clone();
+                let animation_for_session = main_window.animation.clone();
+                let progress_for_session = main_window.animation_progress.clone();
+                let animating_hide_for_session = main_window.animating_hide.clone();
 
-                    glib::spawn_future_local(async move {
-                        loop {
-                            match rx.recv().await {
-                                Ok(event) => {
-                                    match event {
-                                        SessionEvent::Lock => {
-                                            debug!("[app] Session lock detected");
-                                            // Stop animation and hide window
-                                            animation_for_session.pause();
-                                            animating_hide_for_session.set(false);
-                                            window_for_session.set_visible(false);
-                                            // Notify all plugins
-                                            registry_for_session.notify_session_locked();
-                                        }
-                                        SessionEvent::Unlock => {
-                                            debug!("[app] Session unlock detected");
-                                            // Reset animation state
-                                            progress_for_session.set(0.0);
-                                            animating_hide_for_session.set(false);
-                                            // Notify all plugins
-                                            registry_for_session.notify_session_unlocked();
-                                        }
-                                    }
-                                }
-                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                glib::spawn_future_local(async move {
+                    while let Ok(event) = session_event_rx.recv().await {
+                        match event {
+                            SessionEvent::Lock => {
+                                debug!("[app] Session lock detected");
+                                animation_for_session.pause();
+                                animating_hide_for_session.set(false);
+                                window_for_session.set_visible(false);
+                                registry_for_session.notify_session_locked();
+                            }
+                            SessionEvent::Unlock => {
+                                debug!("[app] Session unlock detected");
+                                progress_for_session.set(0.0);
+                                animating_hide_for_session.set(false);
+                                registry_for_session.notify_session_unlocked();
                             }
                         }
-                        warn!("[session] Session event receiver loop exited");
-                    });
-                }
+                    }
+                    warn!("[session] Session event receiver loop exited");
+                });
+            }
 
             // Setup daemon widget updates receiver
             if let Ok(mut rx_slot) = daemon_updates_rx_slot.lock()
@@ -357,29 +377,49 @@ pub async fn run() -> Result<()> {
                     let registrar_for_daemon = Rc::new(crate::plugin_registry::RegistrarHandle::new(registry.clone()));
                     let menu_store_for_daemon = registry.menu_store().clone();
 
-                    // TODO: Implement proper action routing to daemon plugins
-                    // For now, use a no-op callback until action routing is fully implemented
+                    // Action callback that routes actions directly to plugin clients
+                    // via the shared router — no cross-runtime hop needed.
+                    let router_for_actions = daemon_router_slot.clone();
                     let action_callback: waft_ui_gtk::renderer::ActionCallback =
-                        Rc::new(|widget_id, action| {
-                            warn!("[daemon] Action from widget {}: {:?} (routing not yet implemented)", widget_id, action);
+                        Rc::new(move |widget_id, action| {
+                            debug!("[daemon] Action from widget {}: {:?}", widget_id, action);
+                            if let Ok(router) = router_for_actions.lock() {
+                                if let Err(e) = router.route_action(
+                                    widget_id.to_string(),
+                                    action.clone(),
+                                ) {
+                                    warn!("[daemon] Failed to route action: {}", e);
+                                }
+                            } else {
+                                warn!("[daemon] Failed to lock action router");
+                            }
                         });
 
                     glib::spawn_future_local(async move {
+                        let mut reconciler = DaemonWidgetReconciler::new(
+                            menu_store_for_daemon,
+                            action_callback,
+                        );
+
                         while let Some(update) = rx.recv().await {
                             match update {
                                 PluginUpdate::FullUpdate { widgets } => {
-                                    debug!("[daemon] Received full update with {} widgets", widgets.len());
-
-                                    // Convert daemon widgets to GTK widgets and register them
-                                    let gtk_widgets = convert_daemon_widgets(&widgets, &menu_store_for_daemon, &action_callback);
-                                    for widget in gtk_widgets {
-                                        registrar_for_daemon.register_widget(widget);
+                                    let result = reconciler.reconcile(&widgets);
+                                    if result.changed || result.updated_in_place > 0 {
+                                        debug!(
+                                            "[daemon] Reconciled {} widgets: {} added, {} removed, {} updated in-place",
+                                            widgets.len(),
+                                            result.added.len(),
+                                            result.removed.len(),
+                                            result.updated_in_place,
+                                        );
                                     }
-                                }
-                                PluginUpdate::IncrementalUpdate { diffs } => {
-                                    debug!("[daemon] Received incremental update with {} diffs", diffs.len());
-                                    // TODO: Handle incremental updates more efficiently
-                                    // For now, log them
+                                    for id in &result.removed {
+                                        registrar_for_daemon.unregister_item(id);
+                                    }
+                                    for item in result.added {
+                                        registrar_for_daemon.register_item(item);
+                                    }
                                 }
                                 PluginUpdate::PluginConnected { plugin_id } => {
                                     debug!("[daemon] Plugin connected: {}", plugin_id);
@@ -396,6 +436,13 @@ pub async fn run() -> Result<()> {
                     });
                 }
 
+            // Create plugin elements AFTER IPC receiver is set up
+            // This allows the overlay to respond to toggle commands even while plugins are initializing
+            debug!("Creating plugin elements...");
+            let registrar = Rc::new(crate::plugin_registry::RegistrarHandle::new(registry.clone()));
+            let _ = registry.create_elements(gtk_app, registrar).await;
+            debug!("Plugin elements created");
+
             // Keep the main window alive by leaking it
             std::mem::forget(main_window);
         });
@@ -405,8 +452,5 @@ pub async fn run() -> Result<()> {
     // on first launch — visibility is controlled via IPC commands.
     app.connect_activate(|_| {});
 
-    debug!("Running main loop");
-    app.run();
-    debug!("Finished main loop");
-    Ok(())
+    Ok(app)
 }

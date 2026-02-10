@@ -1,0 +1,33 @@
+<Overview>
+  <Header>
+    <Box>
+      <Widget id="clock:main" />
+      <Widget id="battery:main" />
+      <Widget id="weather:main" />
+    </Box>
+    <Box halign="end">
+      <Widget id="keyboard-layout:indicator" />
+      <Widget id="systemd-actions:*" />
+    </Box>
+  </Header>
+  <Divider />
+  <TwoColumns>
+    <Box>
+      <Widget id="agenda:main" />
+      <Widget id="notifications:list" />
+    </Box>
+    <Box>
+      <Widget id="audio:*" />
+      <Widget id="brightness:*" />
+      <FeatureToggleGrid>
+        <Widget id="notifications:dnd" />
+        <Widget id="caffeine:toggle" />
+        <Widget id="darkman:toggle" />
+        <Widget id="sunsetr:toggle" />
+        <Widget id="bluetooth:*" />
+        <Widget id="networkmanager:*" />
+      </FeatureToggleGrid>
+      <Unmatched />
+    </Box>
+  </TwoColumns>
+</Overview>

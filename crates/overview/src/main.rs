@@ -1,10 +1,14 @@
 use anyhow::Result;
+use gtk::prelude::ApplicationExtManual;
+use log::debug;
 mod app;
 mod common;
-mod daemon_widget_converter;
+mod daemon_spawner;
+mod daemon_widget_reconciler;
 mod dbus;
 mod features;
 mod i18n;
+mod layout;
 mod menu_state;
 mod plugin;
 mod plugin_manager;
@@ -16,8 +20,20 @@ mod ui;
 // can continue to use `use crate::set_field;`.
 pub use waft_core::set_field;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     env_logger::init();
-    app::run().await
+
+    // Create tokio runtime — its worker threads are independent of main thread
+    let rt = tokio::runtime::Runtime::new()?;
+
+    // Phase 1: async setup (block_on returns once setup completes)
+    let gtk_app = rt.block_on(app::setup())?;
+
+    // Phase 2: GTK main loop on main thread.
+    // Tokio workers keep running independently — no I/O driver starvation.
+    debug!("Running main loop");
+    gtk_app.run();
+    debug!("Finished main loop");
+
+    Ok(())
 }

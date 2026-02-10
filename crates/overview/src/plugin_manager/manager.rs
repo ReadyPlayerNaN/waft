@@ -1,184 +1,184 @@
-//! Plugin manager that orchestrates IPC-based plugin communication
+//! Plugin manager that orchestrates event-driven IPC-based plugin communication
 //!
 //! This module provides the main PluginManager that coordinates all IPC components:
 //! - Plugin discovery (scanning for .sock files)
 //! - Client connections (PluginClient for each daemon)
 //! - Widget registry (tracking widget state)
 //! - Action routing (sending user actions to plugins)
-//! - Diff calculation (minimizing GTK updates)
+//!
+//! **No polling**: Plugins push updates via their WidgetNotifier, and the manager
+//! receives them event-driven via a merged channel.
 
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+
 use tokio::sync::mpsc;
-use tokio::time::interval;
-use waft_ipc::{Action, NamedWidget};
+use waft_ipc::{NamedWidget, PluginMessage};
 
-use super::client::{ClientError, PluginClient};
-use super::diff::{diff_widgets, WidgetDiff};
+use super::client::{InternalMessage, PluginClient};
 use super::discovery::{discover_plugins, PluginInfo};
 use super::registry::WidgetRegistry;
-use super::router::{ActionRouter, RouterError};
+use super::router::ActionRouter;
+
+/// Shared action router handle that can be used from any thread (including GTK).
+///
+/// Actions are routed directly to plugin clients without going through the
+/// PluginManager's event loop, avoiding cross-runtime latency issues.
+pub type SharedRouter = Arc<Mutex<ActionRouter>>;
 
 /// Update event sent from PluginManager to the UI
 #[derive(Debug, Clone)]
 pub enum PluginUpdate {
     /// Full widget set from all plugins (sent on initial load)
-    FullUpdate {
-        widgets: Vec<NamedWidget>,
-    },
-
-    /// Incremental widget changes (sent on plugin updates)
-    IncrementalUpdate {
-        diffs: Vec<WidgetDiff>,
-    },
+    FullUpdate { widgets: Vec<NamedWidget> },
 
     /// A plugin connected
-    PluginConnected {
-        plugin_id: String,
-    },
+    PluginConnected { plugin_id: String },
 
     /// A plugin disconnected
-    PluginDisconnected {
-        plugin_id: String,
-    },
+    PluginDisconnected { plugin_id: String },
 
     /// An error occurred
-    Error {
-        plugin_id: String,
-        error: String,
-    },
+    Error { plugin_id: String, error: String },
 }
 
 /// Configuration for PluginManager behavior
-#[derive(Debug, Clone)]
-pub struct PluginManagerConfig {
-    /// How often to poll plugins for widget updates (default: 2 seconds)
-    pub poll_interval: Duration,
+#[derive(Debug, Clone, Default)]
+pub struct PluginManagerConfig {}
 
-    /// How often to attempt reconnection to disconnected plugins (default: 5 seconds)
-    pub reconnect_interval: Duration,
-
-    /// Whether to automatically reconnect to plugins (default: true)
-    pub auto_reconnect: bool,
-}
-
-impl Default for PluginManagerConfig {
-    fn default() -> Self {
-        Self {
-            poll_interval: Duration::from_secs(2),
-            reconnect_interval: Duration::from_secs(5),
-            auto_reconnect: true,
-        }
-    }
-}
-
-/// Main coordinator for IPC-based plugin system
+/// Main coordinator for event-driven IPC-based plugin system
 ///
 /// The PluginManager orchestrates:
 /// 1. **Discovery**: Scans for plugin sockets and connects clients
-/// 2. **Polling**: Periodically requests widgets from each plugin
+/// 2. **Event loop**: Receives pushed widget updates from daemons
 /// 3. **Registry**: Maintains current widget state for all plugins
-/// 4. **Diffing**: Computes minimal widget changes for efficient GTK updates
-/// 5. **Routing**: Routes user actions back to the appropriate plugin
-///
-/// # Example
-///
-/// ```no_run
-/// use waft_overview::plugin_manager::{PluginManager, PluginManagerConfig};
-///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let (mut manager, mut updates) = PluginManager::new(PluginManagerConfig::default());
-///
-/// // Spawn background task to manage plugins
-/// tokio::spawn(async move {
-///     manager.run().await;
-/// });
-///
-/// // Handle updates in UI thread
-/// while let Some(update) = updates.recv().await {
-///     match update {
-///         waft_overview::plugin_manager::PluginUpdate::FullUpdate { widgets } => {
-///             println!("Received {} widgets", widgets.len());
-///         }
-///         _ => {}
-///     }
-/// }
-/// # Ok(())
-/// # }
-/// ```
+/// 4. **Routing**: Maintains the shared router for direct action dispatch
 pub struct PluginManager {
-    config: PluginManagerConfig,
     registry: WidgetRegistry,
-    router: ActionRouter,
+    router: SharedRouter,
     update_tx: mpsc::UnboundedSender<PluginUpdate>,
+    /// Merged channel for all plugin messages and disconnections
+    merged_tx: mpsc::UnboundedSender<InternalMessage>,
+    merged_rx: mpsc::UnboundedReceiver<InternalMessage>,
 }
 
 impl PluginManager {
     /// Create a new PluginManager
     ///
-    /// Returns a tuple of (PluginManager, update receiver). The receiver should
-    /// be used to listen for widget updates and send them to the UI.
-    pub fn new(config: PluginManagerConfig) -> (Self, mpsc::UnboundedReceiver<PluginUpdate>) {
+    /// Returns a tuple of (PluginManager, update receiver, shared action router).
+    /// The shared router can be used from any thread to route actions directly
+    /// to plugin clients, bypassing the PluginManager's event loop.
+    pub fn new(
+        _config: PluginManagerConfig,
+    ) -> (
+        Self,
+        mpsc::UnboundedReceiver<PluginUpdate>,
+        SharedRouter,
+    ) {
         let (update_tx, update_rx) = mpsc::unbounded_channel();
+        let (merged_tx, merged_rx) = mpsc::unbounded_channel();
+        let router = Arc::new(Mutex::new(ActionRouter::new()));
 
         let manager = Self {
-            config,
             registry: WidgetRegistry::new(),
-            router: ActionRouter::new(),
+            router: router.clone(),
             update_tx,
+            merged_tx,
+            merged_rx,
         };
 
-        (manager, update_rx)
+        (manager, update_rx, router)
     }
 
-    /// Run the plugin manager (blocks until shutdown)
+    /// Run the plugin manager event loop (blocks until shutdown)
     ///
-    /// This method should be called from a background tokio task. It will:
-    /// 1. Discover available plugins
-    /// 2. Connect to each plugin
-    /// 3. Request initial widget state
-    /// 4. Poll for updates on an interval
-    /// 5. Attempt reconnection to disconnected plugins
+    /// This is fully event-driven: plugin messages arrive via merged channel
+    /// (pushed by daemons). Actions are routed directly via the SharedRouter
+    /// from the GTK thread, bypassing this event loop.
     pub async fn run(&mut self) {
-        log::info!("[plugin-manager] Starting plugin manager");
+        log::info!("[plugin-manager] Starting plugin manager (event-driven)");
 
-        // Initial discovery and connection
+        // One-time discovery and connection at startup
         self.discover_and_connect().await;
 
         // Send initial full widget state to UI
         self.send_full_update();
 
-        // Set up polling intervals
-        let mut poll_timer = interval(self.config.poll_interval);
-        let mut reconnect_timer = interval(self.config.reconnect_interval);
-
-        loop {
-            tokio::select! {
-                _ = poll_timer.tick() => {
-                    self.poll_all_plugins().await;
+        while let Some(internal) = self.merged_rx.recv().await {
+            match internal {
+                InternalMessage::Plugin { plugin_id, msg } => {
+                    self.handle_plugin_message(&plugin_id, msg);
                 }
-
-                _ = reconnect_timer.tick() => {
-                    if self.config.auto_reconnect {
-                        self.reconnect_disconnected_plugins().await;
-                    }
+                InternalMessage::Disconnected { plugin_id } => {
+                    self.handle_disconnection(&plugin_id);
                 }
             }
         }
     }
 
-    /// Trigger an action on a widget
-    ///
-    /// This method should be called from the UI when a user interacts with a widget.
-    /// It routes the action to the appropriate plugin via the ActionRouter.
-    pub async fn trigger_action(
-        &mut self,
-        widget_id: String,
-        action: Action,
-    ) -> Result<(), RouterError> {
-        self.router.route_action(widget_id, action).await
+    /// Handle an incoming plugin message (SetWidgets, UpdateWidget, RemoveWidget)
+    fn handle_plugin_message(&mut self, plugin_id: &str, msg: PluginMessage) {
+        match msg {
+            PluginMessage::SetWidgets { widgets } => {
+                log::debug!(
+                    "[plugin-manager] Received {} widgets from {}",
+                    widgets.len(),
+                    plugin_id
+                );
+
+                // Update registry
+                self.registry.set_widgets(plugin_id, widgets.clone());
+
+                // Update router mappings
+                if let Ok(mut router) = self.router.lock() {
+                    let widget_ids: Vec<String> = widgets.iter().map(|w| w.id.clone()).collect();
+                    router.map_widgets(plugin_id, &widget_ids);
+                }
+
+                // Send full update to UI so daemon widgets get rendered
+                self.send_full_update();
+            }
+            PluginMessage::UpdateWidget { id, widget } => {
+                log::debug!(
+                    "[plugin-manager] UpdateWidget {} from {}",
+                    id,
+                    plugin_id
+                );
+                self.registry.update_widget(plugin_id, &id, widget);
+                self.send_full_update();
+            }
+            PluginMessage::RemoveWidget { id } => {
+                log::debug!(
+                    "[plugin-manager] RemoveWidget {} from {}",
+                    id,
+                    plugin_id
+                );
+                self.registry.remove_widget(plugin_id, &id);
+                if let Ok(mut router) = self.router.lock() {
+                    router.unmap_widget(&id);
+                }
+                self.send_full_update();
+            }
+        }
     }
 
-    /// Get all current widgets (for initial UI rendering)
+    /// Handle a plugin disconnection
+    fn handle_disconnection(&mut self, plugin_id: &str) {
+        log::info!("[plugin-manager] Plugin disconnected: {}", plugin_id);
+
+        if let Ok(mut router) = self.router.lock() {
+            router.unregister_client(plugin_id);
+        }
+        self.registry.remove_plugin(plugin_id);
+
+        let _ = self.update_tx.send(PluginUpdate::PluginDisconnected {
+            plugin_id: plugin_id.to_string(),
+        });
+
+        // Send updated widgets to UI
+        self.send_full_update();
+    }
+
+    /// Get all current widgets
     pub fn get_all_widgets(&self) -> Vec<NamedWidget> {
         self.registry.get_all_widgets()
     }
@@ -204,26 +204,34 @@ impl PluginManager {
             socket_path
         );
 
-        match PluginClient::connect(plugin_id.clone(), socket_path).await {
+        match PluginClient::connect(
+            plugin_id.clone(),
+            socket_path,
+            self.merged_tx.clone(),
+        )
+        .await
+        {
             Ok(client) => {
                 log::info!("[plugin-manager] Connected to plugin: {}", plugin_id);
 
-                // Request initial widgets
-                if let Err(e) = self.request_plugin_widgets(&plugin_id, &client).await {
+                // Request initial widgets (response will arrive via merged channel)
+                if let Err(e) = client.send_get_widgets() {
                     log::warn!(
-                        "[plugin-manager] Failed to get initial widgets from {}: {}",
+                        "[plugin-manager] Failed to request initial widgets from {}: {}",
                         plugin_id,
                         e
                     );
-                } else {
-                    // Register client in router
-                    self.router.register_client(plugin_id.clone(), client);
-
-                    // Notify UI
-                    let _ = self.update_tx.send(PluginUpdate::PluginConnected {
-                        plugin_id: plugin_id.clone(),
-                    });
                 }
+
+                // Register client in shared router
+                if let Ok(mut router) = self.router.lock() {
+                    router.register_client(plugin_id.clone(), client);
+                }
+
+                // Notify UI
+                let _ = self.update_tx.send(PluginUpdate::PluginConnected {
+                    plugin_id: plugin_id.clone(),
+                });
             }
             Err(e) => {
                 log::warn!("[plugin-manager] Failed to connect to {}: {}", plugin_id, e);
@@ -235,90 +243,20 @@ impl PluginManager {
         }
     }
 
-    /// Request widgets from a plugin and update registry
-    async fn request_plugin_widgets(
-        &mut self,
-        plugin_id: &str,
-        client: &PluginClient,
-    ) -> Result<(), ClientError> {
-        // Clone client to avoid borrow checker issues
-        let mut client = PluginClient::connect(
-            client.plugin_name().to_string(),
-            client.socket_path().clone(),
-        )
-        .await?;
-
-        let widgets = client.request_widgets().await?;
-
-        log::debug!(
-            "[plugin-manager] Received {} widgets from {}",
-            widgets.len(),
-            plugin_id
-        );
-
-        // Update registry
-        self.registry.set_widgets(plugin_id, widgets.clone());
-
-        // Update router mappings
-        let widget_ids: Vec<String> = widgets.iter().map(|w| w.id.clone()).collect();
-        self.router.map_widgets(plugin_id, &widget_ids);
-
-        Ok(())
-    }
-
-    /// Poll all connected plugins for widget updates
-    async fn poll_all_plugins(&mut self) {
-        let plugin_ids: Vec<String> = self.router.plugin_ids().iter().map(|s| s.to_string()).collect();
-
-        for plugin_id in plugin_ids {
-            // Try to get client (we need mutable access)
-            // Note: In a real implementation, we'd need to handle this more carefully
-            // For now, we'll skip the actual polling and just log
-            log::debug!("[plugin-manager] Would poll plugin: {}", plugin_id);
-
-            // TODO: Implement actual polling once we can safely access mutable clients
-            // This requires restructuring to avoid borrow conflicts with ActionRouter
-        }
-    }
-
-    /// Attempt to reconnect to disconnected plugins
-    async fn reconnect_disconnected_plugins(&mut self) {
-        // Discover plugins again
-        let plugins = discover_plugins();
-
-        for plugin_info in plugins {
-            let plugin_id = &plugin_info.name;
-
-            // Check if we're not already connected
-            if !self.router.has_client(plugin_id) {
-                log::debug!("[plugin-manager] Attempting to reconnect to {}", plugin_id);
-                self.connect_plugin(plugin_info).await;
-            }
-        }
-    }
-
     /// Send full widget update to UI
     fn send_full_update(&self) {
         let widgets = self.registry.get_all_widgets();
-        log::debug!("[plugin-manager] Sending full update with {} widgets", widgets.len());
+        log::debug!(
+            "[plugin-manager] Sending full update with {} widgets",
+            widgets.len()
+        );
 
         let _ = self.update_tx.send(PluginUpdate::FullUpdate { widgets });
     }
 
-    /// Send incremental widget update to UI
-    #[allow(dead_code)]
-    fn send_incremental_update(&self, old_widgets: Vec<NamedWidget>, new_widgets: Vec<NamedWidget>) {
-        let diffs = diff_widgets(&old_widgets, &new_widgets);
-
-        if !diffs.is_empty() {
-            log::debug!("[plugin-manager] Sending incremental update with {} diffs", diffs.len());
-            let _ = self.update_tx.send(PluginUpdate::IncrementalUpdate { diffs });
-        }
-    }
-
     /// Get the number of connected plugins
     pub fn connected_plugin_count(&self) -> usize {
-        self.router.client_count()
+        self.router.lock().map(|r| r.client_count()).unwrap_or(0)
     }
 
     /// Get the total number of widgets
@@ -334,7 +272,7 @@ mod tests {
     #[test]
     fn test_plugin_manager_creation() {
         let config = PluginManagerConfig::default();
-        let (manager, _rx) = PluginManager::new(config);
+        let (manager, _rx, _tx) = PluginManager::new(config);
 
         assert_eq!(manager.connected_plugin_count(), 0);
         assert_eq!(manager.widget_count(), 0);
@@ -342,16 +280,13 @@ mod tests {
 
     #[test]
     fn test_config_defaults() {
-        let config = PluginManagerConfig::default();
-        assert_eq!(config.poll_interval, Duration::from_secs(2));
-        assert_eq!(config.reconnect_interval, Duration::from_secs(5));
-        assert!(config.auto_reconnect);
+        let _config = PluginManagerConfig::default();
     }
 
     #[test]
     fn test_get_all_widgets_empty() {
         let config = PluginManagerConfig::default();
-        let (manager, _rx) = PluginManager::new(config);
+        let (manager, _rx, _tx) = PluginManager::new(config);
 
         let widgets = manager.get_all_widgets();
         assert!(widgets.is_empty());

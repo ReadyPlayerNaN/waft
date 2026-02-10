@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use waft_ipc::widget::{NamedWidget, Slot, Widget};
+use waft_ipc::widget::{NamedWidget, Widget};
 
 /// Thread-safe registry for managing widgets from multiple plugins
 ///
 /// Tracks widgets by plugin_id and widget_id, supporting add/update/remove operations.
-/// Widgets are grouped by Slot (FeatureToggles, Controls, Actions) and sorted by weight.
+/// Widgets are sorted by weight within each plugin.
 ///
 /// This registry is thread-safe and can be cloned cheaply (uses Arc internally).
 #[derive(Clone)]
@@ -74,15 +74,14 @@ impl WidgetRegistry {
         widgets.remove(plugin_id);
     }
 
-    /// Returns all widgets for a specific slot, sorted by weight (ascending)
+    /// Returns all widgets from all plugins, sorted by weight (ascending)
     ///
     /// Lower weight values appear first in the list.
-    pub fn get_widgets_by_slot(&self, slot: Slot) -> Vec<NamedWidget> {
+    pub fn get_all_widgets_sorted(&self) -> Vec<NamedWidget> {
         let widgets = self.widgets.read().unwrap();
         let mut result: Vec<NamedWidget> = widgets
             .values()
             .flat_map(|plugin_widgets| plugin_widgets.values())
-            .filter(|widget| matches_slot(&widget.slot, &slot))
             .cloned()
             .collect();
 
@@ -119,25 +118,14 @@ impl Default for WidgetRegistry {
     }
 }
 
-/// Helper function to match slot equality
-fn matches_slot(a: &Slot, b: &Slot) -> bool {
-    matches!(
-        (a, b),
-        (Slot::FeatureToggles, Slot::FeatureToggles)
-            | (Slot::Controls, Slot::Controls)
-            | (Slot::Actions, Slot::Actions)
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use waft_ipc::widget::{Action, ActionParams, Orientation};
 
-    fn create_test_widget(id: &str, slot: Slot, weight: u32) -> NamedWidget {
+    fn create_test_widget(id: &str, weight: u32) -> NamedWidget {
         NamedWidget {
             id: id.to_string(),
-            slot,
             weight,
             widget: Widget::Label {
                 text: format!("Widget {}", id),
@@ -177,8 +165,8 @@ mod tests {
         let registry = WidgetRegistry::new();
 
         let widgets = vec![
-            create_test_widget("widget1", Slot::FeatureToggles, 10),
-            create_test_widget("widget2", Slot::Controls, 20),
+            create_test_widget("widget1", 10),
+            create_test_widget("widget2", 20),
         ];
 
         registry.set_widgets("audio", widgets);
@@ -192,12 +180,12 @@ mod tests {
         let registry = WidgetRegistry::new();
 
         let widgets1 = vec![
-            create_test_widget("widget1", Slot::FeatureToggles, 10),
-            create_test_widget("widget2", Slot::Controls, 20),
+            create_test_widget("widget1", 10),
+            create_test_widget("widget2", 20),
         ];
         registry.set_widgets("audio", widgets1);
 
-        let widgets2 = vec![create_test_widget("widget3", Slot::Actions, 30)];
+        let widgets2 = vec![create_test_widget("widget3", 30)];
         registry.set_widgets("audio", widgets2);
 
         let all_widgets = registry.get_all_widgets();
@@ -208,7 +196,7 @@ mod tests {
     #[test]
     fn test_update_widget() {
         let registry = WidgetRegistry::new();
-        let widgets = vec![create_test_widget("widget1", Slot::FeatureToggles, 10)];
+        let widgets = vec![create_test_widget("widget1", 10)];
         registry.set_widgets("audio", widgets);
 
         let new_widget = Widget::Button {
@@ -252,7 +240,7 @@ mod tests {
     #[test]
     fn test_update_widget_preserves_metadata() {
         let registry = WidgetRegistry::new();
-        let widgets = vec![create_test_widget("widget1", Slot::FeatureToggles, 42)];
+        let widgets = vec![create_test_widget("widget1", 42)];
         registry.set_widgets("audio", widgets);
 
         let new_widget = Widget::Label {
@@ -264,15 +252,14 @@ mod tests {
 
         let all_widgets = registry.get_all_widgets();
         assert_eq!(all_widgets[0].weight, 42);
-        assert!(matches!(all_widgets[0].slot, Slot::FeatureToggles));
     }
 
     #[test]
     fn test_remove_widget() {
         let registry = WidgetRegistry::new();
         let widgets = vec![
-            create_test_widget("widget1", Slot::FeatureToggles, 10),
-            create_test_widget("widget2", Slot::Controls, 20),
+            create_test_widget("widget1", 10),
+            create_test_widget("widget2", 20),
         ];
         registry.set_widgets("audio", widgets);
 
@@ -298,8 +285,8 @@ mod tests {
     fn test_remove_plugin() {
         let registry = WidgetRegistry::new();
         let widgets = vec![
-            create_test_widget("widget1", Slot::FeatureToggles, 10),
-            create_test_widget("widget2", Slot::Controls, 20),
+            create_test_widget("widget1", 10),
+            create_test_widget("widget2", 20),
         ];
         registry.set_widgets("audio", widgets);
 
@@ -310,74 +297,45 @@ mod tests {
     }
 
     #[test]
-    fn test_get_widgets_by_slot() {
+    fn test_get_all_widgets_sorted_by_weight() {
         let registry = WidgetRegistry::new();
 
         let widgets = vec![
-            create_test_widget("ft1", Slot::FeatureToggles, 10),
-            create_test_widget("ft2", Slot::FeatureToggles, 5),
-            create_test_widget("ctrl1", Slot::Controls, 20),
-            create_test_widget("act1", Slot::Actions, 30),
+            create_test_widget("w3", 300),
+            create_test_widget("w1", 100),
+            create_test_widget("w2", 200),
         ];
         registry.set_widgets("audio", widgets);
 
-        let feature_toggles = registry.get_widgets_by_slot(Slot::FeatureToggles);
-        assert_eq!(feature_toggles.len(), 2);
-        assert_eq!(feature_toggles[0].id, "ft2"); // weight 5
-        assert_eq!(feature_toggles[1].id, "ft1"); // weight 10
-
-        let controls = registry.get_widgets_by_slot(Slot::Controls);
-        assert_eq!(controls.len(), 1);
-        assert_eq!(controls[0].id, "ctrl1");
-
-        let actions = registry.get_widgets_by_slot(Slot::Actions);
-        assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0].id, "act1");
+        let sorted = registry.get_all_widgets_sorted();
+        assert_eq!(sorted.len(), 3);
+        assert_eq!(sorted[0].id, "w1"); // weight 100
+        assert_eq!(sorted[1].id, "w2"); // weight 200
+        assert_eq!(sorted[2].id, "w3"); // weight 300
     }
 
     #[test]
-    fn test_get_widgets_by_slot_sorted_by_weight() {
-        let registry = WidgetRegistry::new();
-
-        let widgets = vec![
-            create_test_widget("w3", Slot::Controls, 300),
-            create_test_widget("w1", Slot::Controls, 100),
-            create_test_widget("w2", Slot::Controls, 200),
-        ];
-        registry.set_widgets("audio", widgets);
-
-        let controls = registry.get_widgets_by_slot(Slot::Controls);
-        assert_eq!(controls.len(), 3);
-        assert_eq!(controls[0].id, "w1"); // weight 100
-        assert_eq!(controls[1].id, "w2"); // weight 200
-        assert_eq!(controls[2].id, "w3"); // weight 300
-    }
-
-    #[test]
-    fn test_get_widgets_by_slot_from_multiple_plugins() {
+    fn test_get_widgets_from_multiple_plugins() {
         let registry = WidgetRegistry::new();
 
         let audio_widgets = vec![
-            create_test_widget("audio:1", Slot::Controls, 50),
-            create_test_widget("audio:2", Slot::FeatureToggles, 100),
+            create_test_widget("audio:1", 50),
+            create_test_widget("audio:2", 100),
         ];
         registry.set_widgets("audio", audio_widgets);
 
         let battery_widgets = vec![
-            create_test_widget("battery:1", Slot::Controls, 25),
-            create_test_widget("battery:2", Slot::FeatureToggles, 150),
+            create_test_widget("battery:1", 25),
+            create_test_widget("battery:2", 150),
         ];
         registry.set_widgets("battery", battery_widgets);
 
-        let controls = registry.get_widgets_by_slot(Slot::Controls);
-        assert_eq!(controls.len(), 2);
-        assert_eq!(controls[0].id, "battery:1"); // weight 25
-        assert_eq!(controls[1].id, "audio:1"); // weight 50
-
-        let feature_toggles = registry.get_widgets_by_slot(Slot::FeatureToggles);
-        assert_eq!(feature_toggles.len(), 2);
-        assert_eq!(feature_toggles[0].id, "audio:2"); // weight 100
-        assert_eq!(feature_toggles[1].id, "battery:2"); // weight 150
+        let sorted = registry.get_all_widgets_sorted();
+        assert_eq!(sorted.len(), 4);
+        assert_eq!(sorted[0].id, "battery:1"); // weight 25
+        assert_eq!(sorted[1].id, "audio:1"); // weight 50
+        assert_eq!(sorted[2].id, "audio:2"); // weight 100
+        assert_eq!(sorted[3].id, "battery:2"); // weight 150
     }
 
     #[test]
@@ -385,12 +343,12 @@ mod tests {
         let registry = WidgetRegistry::new();
 
         let audio_widgets = vec![
-            create_test_widget("audio:1", Slot::Controls, 10),
-            create_test_widget("audio:2", Slot::FeatureToggles, 20),
+            create_test_widget("audio:1", 10),
+            create_test_widget("audio:2", 20),
         ];
         registry.set_widgets("audio", audio_widgets);
 
-        let battery_widgets = vec![create_test_widget("battery:1", Slot::Actions, 30)];
+        let battery_widgets = vec![create_test_widget("battery:1", 30)];
         registry.set_widgets("battery", battery_widgets);
 
         let all_widgets = registry.get_all_widgets();
@@ -404,23 +362,12 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_slot_returns_empty_vec() {
-        let registry = WidgetRegistry::new();
-        let widgets = vec![create_test_widget("widget1", Slot::FeatureToggles, 10)];
-        registry.set_widgets("audio", widgets);
-
-        let controls = registry.get_widgets_by_slot(Slot::Controls);
-        assert!(controls.is_empty());
-    }
-
-    #[test]
     fn test_complex_widget_types() {
         let registry = WidgetRegistry::new();
 
         let widgets = vec![
             NamedWidget {
                 id: "toggle1".to_string(),
-                slot: Slot::FeatureToggles,
                 weight: 10,
                 widget: Widget::FeatureToggle {
                     title: "Bluetooth".to_string(),
@@ -436,7 +383,8 @@ mod tests {
                         children: vec![Widget::Label {
                             text: "Device 1".to_string(),
                             css_classes: vec![],
-                        }],
+                        }
+                        .into()],
                     })),
                     on_toggle: Action {
                         id: "toggle_bluetooth".to_string(),
@@ -446,7 +394,6 @@ mod tests {
             },
             NamedWidget {
                 id: "slider1".to_string(),
-                slot: Slot::Controls,
                 weight: 20,
                 widget: Widget::Slider {
                     icon: "volume-high".to_string(),
@@ -468,9 +415,10 @@ mod tests {
 
         registry.set_widgets("audio", widgets);
 
-        let feature_toggles = registry.get_widgets_by_slot(Slot::FeatureToggles);
-        assert_eq!(feature_toggles.len(), 1);
-        match &feature_toggles[0].widget {
+        let sorted = registry.get_all_widgets_sorted();
+        assert_eq!(sorted.len(), 2);
+
+        match &sorted[0].widget {
             Widget::FeatureToggle { title, active, .. } => {
                 assert_eq!(title, "Bluetooth");
                 assert!(*active);
@@ -478,9 +426,7 @@ mod tests {
             _ => panic!("Expected FeatureToggle"),
         }
 
-        let controls = registry.get_widgets_by_slot(Slot::Controls);
-        assert_eq!(controls.len(), 1);
-        match &controls[0].widget {
+        match &sorted[1].widget {
             Widget::Slider { value, muted, .. } => {
                 assert_eq!(*value, 0.75);
                 assert!(!muted);
@@ -504,12 +450,12 @@ mod tests {
 
         let handle = thread::spawn(move || {
             registry_clone.set_widgets("audio", vec![
-                create_test_widget("audio:volume", Slot::Controls, 10),
+                create_test_widget("audio:volume", 10),
             ]);
         });
 
         registry.set_widgets("battery", vec![
-            create_test_widget("battery:status", Slot::FeatureToggles, 20),
+            create_test_widget("battery:status", 20),
         ]);
 
         handle.join().unwrap();
@@ -524,7 +470,7 @@ mod tests {
         let registry_clone = registry.clone();
 
         registry.set_widgets("audio", vec![
-            create_test_widget("audio:volume", Slot::Controls, 10),
+            create_test_widget("audio:volume", 10),
         ]);
 
         // Clone should see the same data

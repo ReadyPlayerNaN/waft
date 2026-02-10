@@ -12,8 +12,8 @@ pub mod store;
 
 // Re-export key plugin manager types
 pub use plugin_manager::{
-    ActionRouter, ClientError, PluginClient, PluginManager, PluginManagerConfig, PluginUpdate,
-    RouterError, WidgetDiff, WidgetRegistry,
+    ActionRouter, ClientError, InternalMessage, PluginClient, PluginManager, PluginManagerConfig,
+    PluginUpdate, RouterError, WidgetRegistry,
 };
 
 pub mod ui {

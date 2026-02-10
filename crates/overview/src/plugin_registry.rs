@@ -10,6 +10,36 @@ use std::rc::Rc;
 use crate::menu_state::MenuStore;
 use crate::ui::failed_widget::FailedWidget;
 
+/// Unified wrapper for all widget types in the registry.
+#[derive(Clone)]
+pub enum SlotItem {
+    Widget(Rc<Widget>),
+    Toggle(Rc<WidgetFeatureToggle>),
+}
+
+impl SlotItem {
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Widget(w) => &w.id,
+            Self::Toggle(t) => &t.id,
+        }
+    }
+
+    pub fn weight(&self) -> i32 {
+        match self {
+            Self::Widget(w) => w.weight,
+            Self::Toggle(t) => t.weight,
+        }
+    }
+
+    pub fn el(&self) -> &gtk::Widget {
+        match self {
+            Self::Widget(w) => &w.el,
+            Self::Toggle(t) => &t.el,
+        }
+    }
+}
+
 /// Handle to a plugin stored in the registry.
 ///
 /// Uses `Option` to allow taking the plugin out during async operations,
@@ -22,11 +52,9 @@ type PluginHandle = Rc<RefCell<Option<Box<dyn Plugin>>>>;
 pub struct PluginRegistry {
     plugins: HashMap<String, PluginHandle>,
     menu_store: Rc<MenuStore>,
-    /// Registered widgets (dynamically updated by plugins)
-    widgets: RefCell<Vec<Rc<Widget>>>,
-    /// Registered feature toggles (dynamically updated by plugins)
-    toggles: RefCell<Vec<Rc<WidgetFeatureToggle>>>,
-    /// Subscribers notified when widgets or toggles change
+    /// All registered items (widgets and toggles), keyed by ID
+    items: RefCell<HashMap<String, SlotItem>>,
+    /// Subscribers notified when items change
     subscribers: RefCell<Vec<Rc<dyn Fn()>>>,
 }
 
@@ -36,8 +64,7 @@ impl PluginRegistry {
         Self {
             plugins: HashMap::new(),
             menu_store,
-            widgets: RefCell::new(Vec::new()),
-            toggles: RefCell::new(Vec::new()),
+            items: RefCell::new(HashMap::new()),
             subscribers: RefCell::new(Vec::new()),
         }
     }
@@ -50,24 +77,49 @@ impl PluginRegistry {
         handle
     }
 
+    /// Register a unified SlotItem (widget or toggle) by its ID.
+    pub fn register_item(&self, item: SlotItem) {
+        let id = item.id().to_string();
+        self.items.borrow_mut().insert(id, item);
+        self.notify_subscribers();
+    }
+
+    /// Unregister an item by its ID.
+    pub fn unregister_item(&self, id: &str) {
+        self.items.borrow_mut().remove(id);
+        self.notify_subscribers();
+    }
+
+    /// Return all items sorted by weight.
+    pub fn all_items(&self) -> Vec<SlotItem> {
+        let items = self.items.borrow();
+        let mut result: Vec<SlotItem> = items.values().cloned().collect();
+        result.sort_by_key(|item| item.weight());
+        result
+    }
+
     /// Get all widget elements for a given slot, sorted by weight (heavier goes lower).
     ///
     /// This returns the registered widgets filtered by slot and sorted by weight.
     pub fn get_widgets_for_slot(&self, slot: Slot) -> Vec<Rc<Widget>> {
         let mut widgets: Vec<Rc<Widget>> = self
-            .widgets
+            .items
             .borrow()
-            .iter()
-            .filter(|w| {
-                matches!(
-                    (&w.slot, &slot),
-                    (Slot::Info, Slot::Info)
-                        | (Slot::Controls, Slot::Controls)
-                        | (Slot::Header, Slot::Header)
-                        | (Slot::Actions, Slot::Actions)
-                )
+            .values()
+            .filter_map(|item| {
+                if let SlotItem::Widget(w) = item {
+                    if matches!(
+                        (&w.slot, &slot),
+                        (Slot::Info, Slot::Info)
+                            | (Slot::Controls, Slot::Controls)
+                            | (Slot::Header, Slot::Header)
+                            | (Slot::Actions, Slot::Actions)
+                    ) {
+                        return Some(w.clone());
+                    }
+                }
+                None
             })
-            .cloned()
             .collect();
         widgets.sort_by_key(|w| w.weight);
         widgets
@@ -75,8 +127,18 @@ impl PluginRegistry {
 
     /// Get all feature toggles, sorted by weight
     pub fn get_all_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
-        let mut toggles: Vec<Rc<WidgetFeatureToggle>> =
-            self.toggles.borrow().iter().cloned().collect();
+        let mut toggles: Vec<Rc<WidgetFeatureToggle>> = self
+            .items
+            .borrow()
+            .values()
+            .filter_map(|item| {
+                if let SlotItem::Toggle(t) = item {
+                    Some(t.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
         toggles.sort_by_key(|w| w.weight);
         toggles
     }
@@ -314,23 +376,19 @@ impl PluginRegistry {
 
 impl WidgetRegistrar for PluginRegistry {
     fn register_widget(&self, widget: Rc<Widget>) {
-        self.widgets.borrow_mut().push(widget);
-        self.notify_subscribers();
+        self.register_item(SlotItem::Widget(widget));
     }
 
     fn register_feature_toggle(&self, toggle: Rc<WidgetFeatureToggle>) {
-        self.toggles.borrow_mut().push(toggle);
-        self.notify_subscribers();
+        self.register_item(SlotItem::Toggle(toggle));
     }
 
     fn unregister_widget(&self, id: &str) {
-        self.widgets.borrow_mut().retain(|w| w.id != id);
-        self.notify_subscribers();
+        self.unregister_item(id);
     }
 
     fn unregister_feature_toggle(&self, id: &str) {
-        self.toggles.borrow_mut().retain(|t| t.id != id);
-        self.notify_subscribers();
+        self.unregister_item(id);
     }
 }
 
@@ -347,6 +405,14 @@ pub struct RegistrarHandle {
 impl RegistrarHandle {
     pub fn new(registry: Rc<PluginRegistry>) -> Self {
         Self { registry }
+    }
+
+    pub fn register_item(&self, item: SlotItem) {
+        self.registry.register_item(item);
+    }
+
+    pub fn unregister_item(&self, id: &str) {
+        self.registry.unregister_item(id);
     }
 }
 

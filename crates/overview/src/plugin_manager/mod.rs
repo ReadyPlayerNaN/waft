@@ -4,15 +4,13 @@
 //! located in the runtime directory.
 
 mod client;
-mod diff;
 mod discovery;
 mod manager;
 mod registry;
 mod router;
 
-pub use client::{ClientError, PluginClient};
-pub use diff::{diff_widgets, WidgetDiff};
+pub use client::{ClientError, InternalMessage, PluginClient};
 pub use discovery::{discover_plugins, PluginInfo};
-pub use manager::{PluginManager, PluginManagerConfig, PluginUpdate};
+pub use manager::{PluginManager, PluginManagerConfig, PluginUpdate, SharedRouter};
 pub use registry::WidgetRegistry;
 pub use router::{ActionRouter, RouterError};

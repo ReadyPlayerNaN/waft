@@ -1,39 +1,13 @@
 //! Action routing for mapping widget actions to plugin clients
 //!
 //! The ActionRouter maintains a mapping from widget IDs to plugin IDs and routes
-//! user actions (button clicks, slider changes, etc.) to the correct plugin daemon.
-//!
-//! # Example
-//!
-//! ```no_run
-//! use waft_overview::ActionRouter;
-//! use waft_ipc::{Action, ActionParams};
-//!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let mut router = ActionRouter::new();
-//!
-//! // When a plugin connects, register its client
-//! // let client = PluginClient::connect("audio".to_string(), socket_path).await?;
-//! // router.register_client("audio".to_string(), client);
-//!
-//! // When a plugin sends widgets, map them to the plugin
-//! let widget_ids = vec!["volume".to_string(), "mute".to_string()];
-//! router.map_widgets("audio", &widget_ids);
-//!
-//! // When a user clicks a button or moves a slider, route the action
-//! let action = Action {
-//!     id: "set_volume".to_string(),
-//!     params: ActionParams::Value(0.75),
-//! };
-//! router.route_action("volume".to_string(), action).await?;
-//! # Ok(())
-//! # }
-//! ```
+//! user actions (button clicks, slider changes, etc.) to the correct plugin daemon
+//! via channel-based communication.
 
 use std::collections::HashMap;
 use waft_ipc::Action;
 
-use super::client::{ClientError, PluginClient};
+use super::client::ClientError;
 
 /// Errors that can occur during action routing
 #[derive(Debug)]
@@ -73,20 +47,17 @@ impl From<ClientError> for RouterError {
     }
 }
 
-/// Routes widget actions to the appropriate plugin clients
+/// Routes widget actions to the appropriate plugin clients via channels.
 ///
 /// The router maintains two key mappings:
 /// 1. widget_id -> plugin_id: to find which plugin owns a widget
 /// 2. plugin_id -> PluginClient: to send messages to the plugin
-///
-/// When a user interacts with a widget (clicks a button, moves a slider, etc.),
-/// the router looks up the owning plugin and sends the TriggerAction message.
 pub struct ActionRouter {
     /// Maps widget_id -> plugin_id
     widget_to_plugin: HashMap<String, String>,
 
     /// Maps plugin_id -> PluginClient
-    clients: HashMap<String, PluginClient>,
+    clients: HashMap<String, super::client::PluginClient>,
 }
 
 impl ActionRouter {
@@ -99,37 +70,24 @@ impl ActionRouter {
     }
 
     /// Register a plugin client
-    ///
-    /// This adds the client to the routing table so actions can be sent to it.
-    pub fn register_client(&mut self, plugin_id: String, client: PluginClient) {
+    pub fn register_client(&mut self, plugin_id: String, client: super::client::PluginClient) {
         log::debug!("[action-router] registered plugin: {}", plugin_id);
         self.clients.insert(plugin_id, client);
     }
 
     /// Unregister a plugin client
-    ///
-    /// This removes the client from the routing table. Any widgets from this
-    /// plugin will become unreachable until the plugin reconnects.
     pub fn unregister_client(&mut self, plugin_id: &str) {
         log::debug!("[action-router] unregistered plugin: {}", plugin_id);
         self.clients.remove(plugin_id);
-
-        // Remove all widget mappings for this plugin
         self.widget_to_plugin.retain(|_, p| p != plugin_id);
     }
 
     /// Map a widget to its owning plugin
-    ///
-    /// This updates the routing table to associate a widget ID with a plugin ID.
-    /// If the widget was previously owned by a different plugin, the mapping is updated.
     pub fn map_widget(&mut self, widget_id: String, plugin_id: String) {
         self.widget_to_plugin.insert(widget_id, plugin_id);
     }
 
-    /// Map multiple widgets to a plugin (convenience method)
-    ///
-    /// This is typically called when a plugin sends a SetWidgets message with
-    /// its full widget set.
+    /// Map multiple widgets to a plugin
     pub fn map_widgets(&mut self, plugin_id: &str, widget_ids: &[String]) {
         for widget_id in widget_ids {
             self.widget_to_plugin
@@ -142,17 +100,9 @@ impl ActionRouter {
         self.widget_to_plugin.remove(widget_id);
     }
 
-    /// Route an action to the appropriate plugin
-    ///
-    /// This looks up the plugin that owns the widget and sends a TriggerAction message.
-    ///
-    /// # Errors
-    ///
-    /// Returns `RouterError::WidgetNotFound` if the widget ID is not in the routing table.
-    /// Returns `RouterError::PluginNotConnected` if the plugin client is not registered.
-    /// Returns `RouterError::ClientError` if sending the message fails.
-    pub async fn route_action(
-        &mut self,
+    /// Route an action to the appropriate plugin (sync — sends via channel)
+    pub fn route_action(
+        &self,
         widget_id: String,
         action: Action,
     ) -> Result<(), RouterError> {
@@ -162,35 +112,17 @@ impl ActionRouter {
             action
         );
 
-        // Look up which plugin owns this widget
         let plugin_id = self
             .widget_to_plugin
             .get(&widget_id)
             .ok_or_else(|| RouterError::WidgetNotFound(widget_id.clone()))?;
 
-        log::debug!(
-            "[action-router] widget {} belongs to plugin {}",
-            widget_id,
-            plugin_id
-        );
-
-        // Get the client for this plugin
         let client = self
             .clients
-            .get_mut(plugin_id)
+            .get(plugin_id)
             .ok_or_else(|| RouterError::PluginNotConnected(plugin_id.clone()))?;
 
-        // Check if client is still connected
-        if !client.is_connected() {
-            log::warn!(
-                "[action-router] plugin {} is disconnected, cannot route action",
-                plugin_id
-            );
-            return Err(RouterError::PluginNotConnected(plugin_id.clone()));
-        }
-
-        // Send the action to the plugin
-        client.trigger_action(widget_id, action).await?;
+        client.send_action(widget_id, action)?;
 
         log::debug!("[action-router] action routed successfully");
         Ok(())

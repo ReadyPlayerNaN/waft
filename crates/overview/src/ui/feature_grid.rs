@@ -65,6 +65,9 @@ impl FeatureGridWidget {
             // Attach toggles (set widget_name to ID for identification)
             for (col, item) in pair.iter().enumerate() {
                 item.el.set_widget_name(&item.id);
+                if item.el.parent().is_some() {
+                    item.el.unparent();
+                }
                 self.grid.attach(&item.el, col as i32, grid_row, 1, 1);
             }
 
@@ -94,6 +97,9 @@ impl FeatureGridWidget {
                             .orientation(gtk::Orientation::Vertical)
                             .css_classes(["feature-grid-menu-row"])
                             .build();
+                        if menu.parent().is_some() {
+                            menu.unparent();
+                        }
                         menu_box.append(&menu);
 
                         let menu_revealer = gtk::Revealer::builder()
@@ -164,25 +170,12 @@ impl FeatureGridWidget {
 
     /// Synchronize the grid with a new list of toggles.
     ///
-    /// Uses diffing to avoid unnecessary rebuilds:
-    /// - If toggle IDs haven't changed, do nothing
-    /// - If they have changed, rebuild the grid (menu state is preserved in MenuStore)
+    /// Always rebuilds the grid because daemon plugins provide new GTK widget
+    /// objects with updated state on each sync. The grid is small (4-8 toggles)
+    /// so rebuilding is trivial. Menu state is preserved in MenuStore.
     pub fn sync_toggles(&self, items: &[Rc<WidgetFeatureToggle>]) {
-        // Check if toggle IDs have changed
-        let current_ids = self.toggle_ids.borrow();
-        let new_ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
-
-        let ids_match = current_ids.len() == new_ids.len()
-            && current_ids.iter().zip(new_ids.iter()).all(|(a, b)| a == *b);
-
-        if ids_match {
-            debug!("[feature_grid] Toggle IDs unchanged, skipping sync");
-            return;
-        }
-        drop(current_ids);
-
         debug!(
-            "[feature_grid] Toggle IDs changed, rebuilding grid ({} -> {} toggles)",
+            "[feature_grid] Rebuilding grid ({} -> {} toggles)",
             self.toggle_ids.borrow().len(),
             items.len()
         );

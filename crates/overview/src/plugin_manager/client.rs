@@ -1,21 +1,23 @@
 //! Plugin socket client for communicating with plugin daemons
 //!
-//! This module provides a client for connecting to plugin daemons via Unix domain
-//! sockets and exchanging IPC messages using the waft-ipc protocol.
+//! This module provides an event-driven client for connecting to plugin daemons
+//! via Unix domain sockets. The write path uses a dedicated OS thread with
+//! `std::sync::mpsc` so that sends from the GTK main thread wake immediately
+//! via OS condvar, bypassing the tokio scheduler entirely. The read path stays
+//! tokio-based since incoming I/O events wake it naturally.
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
+use tokio::sync::mpsc;
 use tokio::time::timeout;
 use waft_ipc::transport::{write_framed, TransportError};
-use waft_ipc::{Action, NamedWidget, OverviewMessage, PluginMessage};
+use waft_ipc::{Action, OverviewMessage, PluginMessage};
 
 /// Default timeout for socket operations (5 seconds)
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Maximum number of reconnection attempts
-const MAX_RECONNECT_ATTEMPTS: usize = 3;
 
 /// Errors that can occur during plugin client operations
 #[derive(Debug)]
@@ -37,6 +39,9 @@ pub enum ClientError {
 
     /// Plugin socket does not exist
     SocketNotFound,
+
+    /// Send channel closed
+    SendFailed,
 }
 
 impl std::fmt::Display for ClientError {
@@ -48,6 +53,7 @@ impl std::fmt::Display for ClientError {
             ClientError::Disconnected => write!(f, "plugin disconnected"),
             ClientError::InvalidResponse(msg) => write!(f, "invalid response: {}", msg),
             ClientError::SocketNotFound => write!(f, "socket not found"),
+            ClientError::SendFailed => write!(f, "send channel closed"),
         }
     }
 }
@@ -78,49 +84,120 @@ impl From<std::io::Error> for ClientError {
     }
 }
 
-/// Client for communicating with a plugin daemon via Unix socket
+/// Message from a plugin client's background read task
+#[derive(Debug)]
+pub enum InternalMessage {
+    /// A plugin sent a message
+    Plugin {
+        plugin_id: String,
+        msg: PluginMessage,
+    },
+    /// A plugin disconnected
+    Disconnected { plugin_id: String },
+}
+
+/// Event-driven client for communicating with a plugin daemon via Unix socket.
+///
+/// The write path uses a dedicated OS thread (`std::sync::mpsc`) so that sends
+/// from the GTK main thread wake the writer immediately via OS condvar. The read
+/// path stays tokio-based since incoming I/O events wake it naturally.
 pub struct PluginClient {
-    stream: UnixStream,
+    write_tx: std::sync::mpsc::Sender<OverviewMessage>,
     plugin_name: String,
     socket_path: PathBuf,
-    timeout_duration: Duration,
 }
 
 impl PluginClient {
-    /// Connect to a plugin daemon socket
+    /// Connect to a plugin daemon socket.
     ///
-    /// # Arguments
-    ///
-    /// * `plugin_name` - Name of the plugin (for logging/debugging)
-    /// * `socket_path` - Path to the Unix domain socket
-    ///
-    /// # Errors
-    ///
-    /// Returns `ClientError::SocketNotFound` if the socket doesn't exist.
-    /// Returns `ClientError::ConnectionFailed` if connection fails.
-    pub async fn connect(plugin_name: String, socket_path: PathBuf) -> Result<Self, ClientError> {
-        // Check if socket exists before attempting connection
+    /// Spawns a background read task that forwards incoming messages into `merged_tx`,
+    /// and a dedicated OS writer thread for immediate action delivery.
+    pub async fn connect(
+        plugin_name: String,
+        socket_path: PathBuf,
+        merged_tx: mpsc::UnboundedSender<InternalMessage>,
+    ) -> Result<Self, ClientError> {
         if !socket_path.exists() {
             return Err(ClientError::SocketNotFound);
         }
 
-        // Attempt to connect with timeout
+        // Connect with tokio for async timeout support
         let stream = timeout(DEFAULT_TIMEOUT, UnixStream::connect(&socket_path))
             .await
             .map_err(|_| ClientError::Timeout)?
             .map_err(ClientError::ConnectionFailed)?;
 
+        // Convert to std for splitting into independent read/write handles
+        let std_stream = stream
+            .into_std()
+            .map_err(ClientError::ConnectionFailed)?;
+        let read_std = std_stream
+            .try_clone()
+            .map_err(ClientError::ConnectionFailed)?;
+
+        // Read handle: convert back to tokio for async reading (sets O_NONBLOCK)
+        let read_stream = UnixStream::from_std(read_std)
+            .map_err(ClientError::ConnectionFailed)?;
+
+        // Write handle: stays as std, used by dedicated OS thread
+        // Set non-blocking so writes don't hang if buffer is somehow full
+        std_stream
+            .set_nonblocking(true)
+            .map_err(ClientError::ConnectionFailed)?;
+        let mut write_stream = std_stream;
+
+        // Spawn writer OS thread: wakes immediately via condvar when GTK thread sends
+        let (write_tx, write_rx) = std::sync::mpsc::channel::<OverviewMessage>();
+        let writer_plugin_name = plugin_name.clone();
+        std::thread::Builder::new()
+            .name(format!("{}-writer", plugin_name))
+            .spawn(move || {
+                while let Ok(msg) = write_rx.recv() {
+                    let mut buffer = Vec::new();
+                    if write_framed(&mut buffer, &msg).is_err() {
+                        break;
+                    }
+                    if write_with_poll(&mut write_stream, &buffer).is_err() {
+                        log::warn!("[{}] write failed, stopping writer", writer_plugin_name);
+                        break;
+                    }
+                }
+                log::debug!("[{}] writer thread exiting", writer_plugin_name);
+            })
+            .map_err(|e| ClientError::ConnectionFailed(e))?;
+
+        // Spawn read task: forwards incoming messages to merged channel
+        let plugin_id_for_read = plugin_name.clone();
+        tokio::spawn(async move {
+            let mut read_stream = read_stream;
+            loop {
+                match read_plugin_message(&mut read_stream).await {
+                    Ok(msg) => {
+                        if merged_tx
+                            .send(InternalMessage::Plugin {
+                                plugin_id: plugin_id_for_read.clone(),
+                                msg,
+                            })
+                            .is_err()
+                        {
+                            break; // merged channel closed
+                        }
+                    }
+                    Err(_) => {
+                        let _ = merged_tx.send(InternalMessage::Disconnected {
+                            plugin_id: plugin_id_for_read.clone(),
+                        });
+                        break;
+                    }
+                }
+            }
+        });
+
         Ok(Self {
-            stream,
+            write_tx,
             plugin_name,
             socket_path,
-            timeout_duration: DEFAULT_TIMEOUT,
         })
-    }
-
-    /// Set custom timeout duration for socket operations
-    pub fn set_timeout(&mut self, duration: Duration) {
-        self.timeout_duration = duration;
     }
 
     /// Get the plugin name
@@ -133,165 +210,77 @@ impl PluginClient {
         &self.socket_path
     }
 
-    /// Send a message to the plugin daemon
-    ///
-    /// # Errors
-    ///
-    /// Returns `ClientError::Timeout` if the operation times out.
-    /// Returns `ClientError::Transport` if serialization or I/O fails.
-    pub async fn send_message(&mut self, message: OverviewMessage) -> Result<(), ClientError> {
-        let send_future = async {
-            // Use standard library Read/Write traits via temporary buffer
-            let mut buffer = Vec::new();
-            write_framed(&mut buffer, &message)?;
-            self.stream.write_all(&buffer).await?;
-            self.stream.flush().await?;
-            Ok::<(), ClientError>(())
-        };
-
-        timeout(self.timeout_duration, send_future)
-            .await
-            .map_err(|_| ClientError::Timeout)?
+    /// Send a GetWidgets request. Response arrives via the merged channel.
+    pub fn send_get_widgets(&self) -> Result<(), ClientError> {
+        self.write_tx
+            .send(OverviewMessage::GetWidgets)
+            .map_err(|_| ClientError::SendFailed)
     }
 
-    /// Receive a message from the plugin daemon
-    ///
-    /// # Errors
-    ///
-    /// Returns `ClientError::Timeout` if the operation times out.
-    /// Returns `ClientError::Transport` if deserialization or I/O fails.
-    /// Returns `ClientError::Disconnected` if the connection is closed.
-    pub async fn receive_message(&mut self) -> Result<PluginMessage, ClientError> {
-        let receive_future = async {
-            // Read framed message using AsyncRead
-            let mut buffer = Vec::new();
-
-            // Read 4-byte length prefix
-            let mut len_bytes = [0u8; 4];
-            self.stream.read_exact(&mut len_bytes).await?;
-            let len = u32::from_be_bytes(len_bytes) as usize;
-
-            // Read payload
-            buffer.resize(len, 0);
-            self.stream.read_exact(&mut buffer).await?;
-
-            // Deserialize
-            let message: PluginMessage = serde_json::from_slice(&buffer)
-                .map_err(|e| ClientError::Transport(TransportError::Serialization(e)))?;
-
-            Ok::<PluginMessage, ClientError>(message)
-        };
-
-        timeout(self.timeout_duration, receive_future)
-            .await
-            .map_err(|_| ClientError::Timeout)?
+    /// Send a TriggerAction request. Response arrives via the merged channel.
+    pub fn send_action(&self, widget_id: String, action: Action) -> Result<(), ClientError> {
+        self.write_tx
+            .send(OverviewMessage::TriggerAction { widget_id, action })
+            .map_err(|_| ClientError::SendFailed)
     }
+}
 
-    /// Request widgets from the plugin daemon
-    ///
-    /// This is a convenience method that sends `GetWidgets` and expects a `SetWidgets` response.
-    ///
-    /// # Errors
-    ///
-    /// Returns `ClientError::InvalidResponse` if the plugin doesn't respond with `SetWidgets`.
-    pub async fn request_widgets(&mut self) -> Result<Vec<NamedWidget>, ClientError> {
-        self.send_message(OverviewMessage::GetWidgets).await?;
+/// Write a buffer to a non-blocking socket, using `libc::poll` to wait for
+/// writability if the kernel buffer is full. For typical IPC messages (~100-200
+/// bytes) this always succeeds on the first `write` call since the Unix socket
+/// kernel buffer is 128KB+.
+fn write_with_poll(stream: &mut std::os::unix::net::UnixStream, buf: &[u8]) -> std::io::Result<()> {
+    use std::os::unix::io::AsRawFd;
 
-        let response = self.receive_message().await?;
-
-        match response {
-            PluginMessage::SetWidgets { widgets } => Ok(widgets),
-            PluginMessage::UpdateWidget { .. } => {
-                Err(ClientError::InvalidResponse(
-                    "expected SetWidgets, got UpdateWidget".to_string()
-                ))
-            }
-            PluginMessage::RemoveWidget { .. } => {
-                Err(ClientError::InvalidResponse(
-                    "expected SetWidgets, got RemoveWidget".to_string()
-                ))
-            }
-        }
-    }
-
-    /// Trigger an action on a specific widget
-    ///
-    /// This sends a `TriggerAction` message to the plugin. The plugin may respond with
-    /// widget updates (UpdateWidget/SetWidgets) or remove notifications (RemoveWidget).
-    ///
-    /// # Arguments
-    ///
-    /// * `widget_id` - ID of the widget to trigger the action on
-    /// * `action` - The action to trigger
-    pub async fn trigger_action(
-        &mut self,
-        widget_id: String,
-        action: Action,
-    ) -> Result<(), ClientError> {
-        self.send_message(OverviewMessage::TriggerAction { widget_id, action })
-            .await
-    }
-
-    /// Attempt to reconnect to the plugin socket
-    ///
-    /// This will attempt to reconnect up to `MAX_RECONNECT_ATTEMPTS` times with
-    /// exponential backoff.
-    ///
-    /// # Errors
-    ///
-    /// Returns the last connection error if all attempts fail.
-    pub async fn reconnect(&mut self) -> Result<(), ClientError> {
-        let mut attempt = 0;
-        let mut last_error = None;
-
-        while attempt < MAX_RECONNECT_ATTEMPTS {
-            attempt += 1;
-
-            // Exponential backoff: 100ms, 200ms, 400ms
-            let backoff = Duration::from_millis(100 * (1 << (attempt - 1)));
-            tokio::time::sleep(backoff).await;
-
-            match UnixStream::connect(&self.socket_path).await {
-                Ok(stream) => {
-                    self.stream = stream;
-                    log::info!(
-                        "[plugin-client] reconnected to {} (attempt {}/{})",
-                        self.plugin_name,
-                        attempt,
-                        MAX_RECONNECT_ATTEMPTS
-                    );
-                    return Ok(());
+    let mut written = 0;
+    while written < buf.len() {
+        match stream.write(&buf[written..]) {
+            Ok(n) => written += n,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // Wait for socket to become writable
+                let mut pollfd = libc::pollfd {
+                    fd: stream.as_raw_fd(),
+                    events: libc::POLLOUT,
+                    revents: 0,
+                };
+                // Safety: single pollfd, valid fd, bounded timeout
+                let ret = unsafe { libc::poll(&mut pollfd, 1, 5000) };
+                if ret < 0 {
+                    return Err(std::io::Error::last_os_error());
                 }
-                Err(e) => {
-                    log::debug!(
-                        "[plugin-client] reconnection attempt {}/{} failed for {}: {}",
-                        attempt,
-                        MAX_RECONNECT_ATTEMPTS,
-                        self.plugin_name,
-                        e
-                    );
-                    last_error = Some(e);
+                if ret == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "poll timeout waiting for socket writability",
+                    ));
                 }
             }
+            Err(e) => return Err(e),
         }
+    }
+    stream.flush()
+}
 
-        Err(ClientError::ConnectionFailed(
-            last_error.unwrap_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::Other, "reconnection failed")
-            })
-        ))
+/// Read a framed PluginMessage from an async reader.
+async fn read_plugin_message(
+    reader: &mut (impl AsyncReadExt + Unpin),
+) -> Result<PluginMessage, ClientError> {
+    let mut len_bytes = [0u8; 4];
+    reader.read_exact(&mut len_bytes).await?;
+    let len = u32::from_be_bytes(len_bytes) as usize;
+
+    const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
+    if len > MAX_FRAME_SIZE {
+        return Err(ClientError::Transport(TransportError::FrameTooLarge(len)));
     }
 
-    /// Check if the connection is still alive by trying to peek at the socket
-    pub fn is_connected(&self) -> bool {
-        self.stream.peer_addr().is_ok()
-    }
+    let mut payload = vec![0u8; len];
+    reader.read_exact(&mut payload).await?;
 
-    /// Gracefully close the connection
-    pub async fn close(mut self) -> Result<(), ClientError> {
-        self.stream.shutdown().await?;
-        Ok(())
-    }
+    let msg: PluginMessage = serde_json::from_slice(&payload)
+        .map_err(|e| ClientError::Transport(TransportError::Serialization(e)))?;
+
+    Ok(msg)
 }
 
 #[cfg(test)]
@@ -312,6 +301,9 @@ mod tests {
 
         let err = ClientError::InvalidResponse("test".to_string());
         assert!(err.to_string().contains("invalid response"));
+
+        let err = ClientError::SendFailed;
+        assert_eq!(err.to_string(), "send channel closed");
     }
 
     #[test]
@@ -336,26 +328,14 @@ mod tests {
     #[tokio::test]
     async fn test_connect_nonexistent_socket() {
         let socket_path = PathBuf::from("/tmp/nonexistent_plugin.sock");
-        let result = PluginClient::connect("test".to_string(), socket_path).await;
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let result = PluginClient::connect("test".to_string(), socket_path, tx).await;
 
         assert!(matches!(result, Err(ClientError::SocketNotFound)));
     }
 
     #[test]
-    fn test_client_getters() {
-        // We can't easily create a real client without a server, but we can test
-        // the basic structure would work with mock data in integration tests
-        let plugin_name = "test-plugin";
-        let socket_path = PathBuf::from("/tmp/test.sock");
-
-        // These values would be used by a real client
-        assert_eq!(plugin_name, "test-plugin");
-        assert_eq!(socket_path, PathBuf::from("/tmp/test.sock"));
-    }
-
-    #[test]
     fn test_timeout_constants() {
         assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(5));
-        assert_eq!(MAX_RECONNECT_ATTEMPTS, 3);
     }
 }

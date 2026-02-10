@@ -3,7 +3,6 @@
 //! The main overlay window that hosts the application UI.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -11,10 +10,10 @@ use gtk4_layer_shell::LayerShell;
 use log::debug;
 
 use crate::common::VoidCallback;
+use crate::layout::parser::{load_layout, parse_layout, DEFAULT_LAYOUT};
+use crate::layout::renderer::{render_layout, RenderedLayout};
 use crate::menu_state::MenuStore;
-use crate::plugin::{Slot, Widget};
 use crate::plugin_registry::PluginRegistry;
-use crate::ui::feature_grid::FeatureGridWidget;
 
 const OVERLAY_WIDTH_PX: i32 = 920;
 
@@ -49,81 +48,6 @@ const OVERLAY_CORNER_RADIUS_PX: i32 = 8;
 const OVERLAY_SLIDE_OFFSET_PX: f64 = 20.0;
 const OVERLAY_ANIM_DURATION_MS: u32 = 200;
 
-/// Synchronize a GTK container's children with a new list of widgets.
-///
-/// Uses diffing to avoid unnecessary remounting:
-/// - Widgets present in both old and new lists are kept in place
-/// - Only widgets no longer present are removed
-/// - Only new widgets are added
-/// - Reordering uses `reorder_child_after()` to avoid remounting
-fn sync_slot_widgets(container: &gtk::Box, new_widgets: &[Rc<Widget>]) {
-    // Build set of new widget IDs for quick lookup
-    let new_ids: HashSet<&str> = new_widgets.iter().map(|w| w.id.as_str()).collect();
-
-    // Build map of current children by widget name (which stores the ID)
-    let mut current_children: Vec<(String, gtk::Widget)> = Vec::new();
-    let mut child = container.first_child();
-    while let Some(widget) = child {
-        let id = widget.widget_name().to_string();
-        let next = widget.next_sibling();
-        current_children.push((id, widget));
-        child = next;
-    }
-
-    // Remove widgets that are no longer in the new list
-    for (id, widget) in &current_children {
-        if !new_ids.contains(id.as_str()) {
-            container.remove(widget);
-            debug!("[sync_slot] Removed widget: {}", id);
-        }
-    }
-
-    // Build set of current IDs (after removal)
-    let current_ids: HashSet<String> = current_children
-        .iter()
-        .filter(|(id, _)| new_ids.contains(id.as_str()))
-        .map(|(id, _)| id.clone())
-        .collect();
-
-    // Add new widgets and reorder
-    let mut prev_widget: Option<gtk::Widget> = None;
-    for new_widget in new_widgets {
-        let id = &new_widget.id;
-
-        if current_ids.contains(id) {
-            // Widget exists - get reference from container
-            let mut child = container.first_child();
-            while let Some(widget) = child {
-                if widget.widget_name() == id.as_str() {
-                    // Reorder if needed
-                    if let Some(ref prev) = prev_widget {
-                        if widget.prev_sibling().as_ref() != Some(prev) {
-                            container.reorder_child_after(&widget, Some(prev));
-                            debug!("[sync_slot] Reordered widget: {}", id);
-                        }
-                    } else if widget.prev_sibling().is_some() {
-                        // Should be first, but isn't
-                        container.reorder_child_after(&widget, None::<&gtk::Widget>);
-                        debug!("[sync_slot] Moved widget to first: {}", id);
-                    }
-                    prev_widget = Some(widget);
-                    break;
-                }
-                child = widget.next_sibling();
-            }
-        } else {
-            // New widget - set widget name to ID for future diffing and append
-            new_widget.el.set_widget_name(id);
-            if let Some(ref prev) = prev_widget {
-                container.insert_child_after(&new_widget.el, Some(prev));
-            } else {
-                container.prepend(&new_widget.el);
-            }
-            prev_widget = Some(new_widget.el.clone());
-            debug!("[sync_slot] Added new widget: {}", id);
-        }
-    }
-}
 
 /// Input messages for the main window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,15 +58,6 @@ pub enum MainWindowInput {
     ToggleOverlay,
     StopApp,
     RequestHide,
-}
-
-/// References to the slot containers for dynamic widget synchronization.
-struct SlotContainers {
-    header_box: gtk::Box,
-    actions_box: gtk::Box,
-    info_col: gtk::Box,
-    controls_col: gtk::Box,
-    feature_grid: FeatureGridWidget,
 }
 
 /// Pure GTK4 main window.
@@ -172,34 +87,19 @@ impl MainWindowWidget {
         // Configure layer shell
         Self::configure_layer_shell(&window);
 
-        // Build content
+        // Build content from declarative layout
         let menu_store = registry.menu_store();
-        let (clip, containers) = Self::build_content(&window, registry, menu_store.clone());
+        let (clip, rendered) = Self::build_content(&window, registry, menu_store.clone());
 
-        // Subscribe to widget changes for dynamic updates
-        let header_box = containers.header_box.clone();
-        let actions_box = containers.actions_box.clone();
-        let info_col = containers.info_col.clone();
-        let controls_col = containers.controls_col.clone();
-        let feature_grid = Rc::new(containers.feature_grid);
+        // Subscribe to widget changes — layout bindings handle routing
+        let layout = Rc::new(rendered);
         let registry_for_sync = registry.clone();
-        registry.subscribe_widgets(move || {
-            debug!("[main_window] Widget change detected, syncing slots");
-            let header_widgets = registry_for_sync.get_widgets_for_slot(Slot::Header);
-            let actions_widgets = registry_for_sync.get_widgets_for_slot(Slot::Actions);
-            let info_widgets = registry_for_sync.get_widgets_for_slot(Slot::Info);
-            let controls_widgets = registry_for_sync.get_widgets_for_slot(Slot::Controls);
-
-            sync_slot_widgets(&header_box, &header_widgets);
-            sync_slot_widgets(&actions_box, &actions_widgets);
-            sync_slot_widgets(&info_col, &info_widgets);
-            sync_slot_widgets(&controls_col, &controls_widgets);
-
-            // Sync feature toggles
-            let toggles = registry_for_sync.get_all_feature_toggles();
-            feature_grid.sync_toggles(&toggles);
-
-            trigger_window_resize();
+        registry.subscribe_widgets({
+            let layout = layout.clone();
+            move || {
+                debug!("[main_window] Widget change detected, syncing layout");
+                layout.sync(&registry_for_sync);
+            }
         });
 
         // Start in hidden state (fully transparent)
@@ -915,102 +815,14 @@ impl MainWindowWidget {
 
     fn build_content(
         window: &adw::ApplicationWindow,
-        registry: &Rc<PluginRegistry>,
+        _registry: &Rc<PluginRegistry>,
         menu_store: Rc<MenuStore>,
-    ) -> (gtk::Frame, SlotContainers) {
-        let top_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(16)
-            .build();
-        top_box.set_hexpand(true);
-
-        let top_box_divider = gtk::Separator::new(gtk::Orientation::Horizontal);
-        top_box_divider.set_hexpand(true);
-
-        let left_col = gtk::Box::builder()
-            .hexpand(true)
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(12)
-            .width_request(480)
-            .build();
-
-        let right_col = gtk::Box::builder()
-            .hexpand(true)
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(12)
-            .width_request(480)
-            .build();
-
-        // Add header widgets (set widget_name to ID for diffing)
-        let header_widgets = registry.get_widgets_for_slot(Slot::Header);
-        for w in &header_widgets {
-            w.el.set_widget_name(&w.id);
-            top_box.append(&w.el);
-        }
-        debug!("Appended header widgets {:?}", header_widgets.len());
-
-        // Create actions box (right-aligned in header)
-        let actions_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(8)
-            .halign(gtk::Align::End)
-            .hexpand(true)
-            .vexpand(false)
-            .valign(gtk::Align::Start)
-            .build();
-
-        // Add actions widgets (set widget_name to ID for diffing)
-        let actions_widgets = registry.get_widgets_for_slot(Slot::Actions);
-        for w in &actions_widgets {
-            w.el.set_widget_name(&w.id);
-            actions_box.append(&w.el);
-        }
-        debug!("Appended actions widgets {:?}", actions_widgets.len());
-
-        top_box.append(&actions_box);
-
-        // Add info widgets (set widget_name to ID for diffing)
-        let info_widgets = registry.get_widgets_for_slot(Slot::Info);
-        for w in &info_widgets {
-            w.el.set_widget_name(&w.id);
-            left_col.append(&w.el);
-        }
-        debug!("Appended info widgets {:?}", info_widgets.len());
-
-        // Add controls widgets (set widget_name to ID for diffing)
-        let controls_widgets = registry.get_widgets_for_slot(Slot::Controls);
-        for w in &controls_widgets {
-            w.el.set_widget_name(&w.id);
-            right_col.append(&w.el);
-        }
-        debug!("Appended controls widgets {:?}", controls_widgets.len());
-
-        // Add feature toggles grid
-        let toggles = registry.get_all_feature_toggles();
-        let grid = FeatureGridWidget::new(toggles, menu_store);
-        right_col.append(grid.widget());
-        debug!("Appended feature toggles widgets");
-
-        let main_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        main_vbox.set_margin_start(0);
-        main_vbox.set_margin_end(0);
-        main_vbox.set_margin_top(0);
-        main_vbox.set_margin_bottom(0);
-
-        main_vbox.append(&top_box);
-        main_vbox.append(&top_box_divider);
-
-        let content_row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
-        content_row.set_hexpand(true);
-
-        let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        spacer.set_hexpand(true);
-
-        content_row.append(&left_col);
-        content_row.append(&spacer);
-        content_row.append(&right_col);
-
-        main_vbox.append(&content_row);
+    ) -> (gtk::Frame, RenderedLayout) {
+        let layout_tree = load_layout().unwrap_or_else(|e| {
+            log::warn!("Failed to load layout: {}, using default", e);
+            parse_layout(DEFAULT_LAYOUT).expect("Default layout must be valid")
+        });
+        let rendered = render_layout(&layout_tree, &menu_store);
 
         // Calculate max height based on monitor size
         let max_height = match gtk::gdk::Display::default() {
@@ -1019,7 +831,6 @@ impl MainWindowWidget {
                     Some(monitor) => {
                         if let Some(monitor) = monitor.downcast_ref::<gtk::gdk::Monitor>() {
                             let geometry = monitor.geometry();
-                            // Max height = screen height - top margin - bottom margin - some padding
                             geometry.height()
                                 - OVERLAY_TOP_OFFSET_PX
                                 - OVERLAY_BOTTOM_OFFSET_PX
@@ -1045,7 +856,7 @@ impl MainWindowWidget {
         scroller.set_propagate_natural_width(true);
         scroller.set_max_content_height(max_height);
         scroller.set_hexpand(true);
-        scroller.set_child(Some(&main_vbox));
+        scroller.set_child(Some(&rendered.root));
 
         let clip = gtk::Frame::new(None);
         clip.add_css_class("relm4-overlay-surface");
@@ -1055,14 +866,6 @@ impl MainWindowWidget {
 
         window.set_content(Some(&clip));
 
-        let containers = SlotContainers {
-            header_box: top_box,
-            actions_box,
-            info_col: left_col,
-            controls_col: right_col,
-            feature_grid: grid,
-        };
-
-        (clip, containers)
+        (clip, rendered)
     }
 }
