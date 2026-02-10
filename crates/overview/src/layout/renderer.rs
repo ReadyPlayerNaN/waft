@@ -90,6 +90,40 @@ pub fn render_layout(tree: &LayoutNode, menu_store: &Rc<MenuStore>) -> RenderedL
     }
 }
 
+fn render_layout_box(
+    orientation: gtk::Orientation,
+    halign: &Option<String>,
+    children: &[LayoutNode],
+    menu_store: &Rc<MenuStore>,
+    bindings: &mut Vec<WidgetBinding>,
+    unmatched: &mut Option<Box<dyn WidgetCompositor>>,
+) -> gtk::Widget {
+    let container = gtk::Box::new(orientation, 12);
+
+    if let Some(align_str) = halign {
+        let align = match align_str.as_str() {
+            "start" => gtk::Align::Start,
+            "end" => gtk::Align::End,
+            "center" => gtk::Align::Center,
+            "fill" => gtk::Align::Fill,
+            _ => gtk::Align::Fill,
+        };
+        container.set_halign(align);
+
+        // When halign is "end", also set hexpand so it pushes to the right
+        if align_str == "end" {
+            container.set_hexpand(true);
+            container.set_valign(gtk::Align::Start);
+        }
+    }
+
+    for child in children {
+        let widget = render_node(child, menu_store, bindings, unmatched);
+        container.append(&widget);
+    }
+    container.upcast()
+}
+
 fn render_node(
     node: &LayoutNode,
     menu_store: &Rc<MenuStore>,
@@ -154,30 +188,15 @@ fn render_node(
         }
 
         LayoutNode::Box { halign, children } => {
-            let vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
+            render_layout_box(gtk::Orientation::Vertical, halign, children, menu_store, bindings, unmatched)
+        }
 
-            if let Some(align_str) = halign {
-                let align = match align_str.as_str() {
-                    "start" => gtk::Align::Start,
-                    "end" => gtk::Align::End,
-                    "center" => gtk::Align::Center,
-                    "fill" => gtk::Align::Fill,
-                    _ => gtk::Align::Fill,
-                };
-                vbox.set_halign(align);
+        LayoutNode::Row { halign, children } => {
+            render_layout_box(gtk::Orientation::Horizontal, halign, children, menu_store, bindings, unmatched)
+        }
 
-                // When halign is "end", also set hexpand so it pushes to the right
-                if align_str == "end" {
-                    vbox.set_hexpand(true);
-                    vbox.set_valign(gtk::Align::Start);
-                }
-            }
-
-            for child in children {
-                let widget = render_node(child, menu_store, bindings, unmatched);
-                vbox.append(&widget);
-            }
-            vbox.upcast()
+        LayoutNode::Col { halign, children } => {
+            render_layout_box(gtk::Orientation::Vertical, halign, children, menu_store, bindings, unmatched)
         }
 
         LayoutNode::Divider => {

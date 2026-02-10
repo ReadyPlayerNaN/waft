@@ -1,22 +1,22 @@
 <Overview>
   <Header>
-    <Box>
+    <Row>
       <Widget id="clock:main" />
       <Widget id="battery:main" />
       <Widget id="weather:main" />
-    </Box>
-    <Box halign="end">
+    </Row>
+    <Row halign="end">
       <Widget id="keyboard-layout:indicator" />
       <Widget id="systemd-actions:*" />
-    </Box>
+    </Row>
   </Header>
   <Divider />
   <TwoColumns>
-    <Box>
+    <Col>
       <Widget id="agenda:main" />
       <Widget id="notifications:list" />
-    </Box>
-    <Box>
+    </Col>
+    <Col>
       <Widget id="audio:*" />
       <Widget id="brightness:*" />
       <FeatureToggleGrid>
@@ -28,6 +28,6 @@
         <Widget id="networkmanager:*" />
       </FeatureToggleGrid>
       <Unmatched />
-    </Box>
+    </Col>
   </TwoColumns>
 </Overview>

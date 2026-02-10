@@ -36,6 +36,14 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
             halign: node.attribute("halign").map(|s| s.to_string()),
             children: parse_children(node)?,
         }),
+        "Row" => Ok(LayoutNode::Row {
+            halign: node.attribute("halign").map(|s| s.to_string()),
+            children: parse_children(node)?,
+        }),
+        "Col" => Ok(LayoutNode::Col {
+            halign: node.attribute("halign").map(|s| s.to_string()),
+            children: parse_children(node)?,
+        }),
         "Divider" => Ok(LayoutNode::Divider),
         "FeatureToggleGrid" => Ok(LayoutNode::FeatureToggleGrid {
             children: parse_children(node)?,
@@ -110,6 +118,20 @@ mod tests {
                 assert!(matches!(&children[0], LayoutNode::Header { .. }));
                 assert!(matches!(&children[1], LayoutNode::Divider));
                 assert!(matches!(&children[2], LayoutNode::TwoColumns { .. }));
+
+                // Header should contain Rows
+                if let LayoutNode::Header { children: header_children } = &children[0] {
+                    assert_eq!(header_children.len(), 2);
+                    assert!(matches!(&header_children[0], LayoutNode::Row { .. }));
+                    assert!(matches!(&header_children[1], LayoutNode::Row { halign: Some(_), .. }));
+                }
+
+                // TwoColumns should contain Cols
+                if let LayoutNode::TwoColumns { children: col_children } = &children[2] {
+                    assert_eq!(col_children.len(), 2);
+                    assert!(matches!(&col_children[0], LayoutNode::Col { .. }));
+                    assert!(matches!(&col_children[1], LayoutNode::Col { .. }));
+                }
             }
             _ => panic!("root should be Overview"),
         }
@@ -158,6 +180,60 @@ mod tests {
                         assert!(halign.is_none());
                     }
                     _ => panic!("expected Box"),
+                }
+            }
+            _ => panic!("root should be Overview"),
+        }
+    }
+
+    #[test]
+    fn parse_row() {
+        let xml = r#"<Overview><Row><Widget id="a:b" /><Widget id="c:d" /></Row></Overview>"#;
+        let root = parse_layout(xml).expect("should parse");
+        match root {
+            LayoutNode::Overview { children } => {
+                match &children[0] {
+                    LayoutNode::Row { halign, children } => {
+                        assert!(halign.is_none());
+                        assert_eq!(children.len(), 2);
+                    }
+                    _ => panic!("expected Row"),
+                }
+            }
+            _ => panic!("root should be Overview"),
+        }
+    }
+
+    #[test]
+    fn parse_row_with_halign() {
+        let xml = r#"<Overview><Row halign="end"><Widget id="a:b" /></Row></Overview>"#;
+        let root = parse_layout(xml).expect("should parse");
+        match root {
+            LayoutNode::Overview { children } => {
+                match &children[0] {
+                    LayoutNode::Row { halign, children } => {
+                        assert_eq!(halign.as_deref(), Some("end"));
+                        assert_eq!(children.len(), 1);
+                    }
+                    _ => panic!("expected Row"),
+                }
+            }
+            _ => panic!("root should be Overview"),
+        }
+    }
+
+    #[test]
+    fn parse_col() {
+        let xml = r#"<Overview><Col><Widget id="a:b" /><Widget id="c:d" /></Col></Overview>"#;
+        let root = parse_layout(xml).expect("should parse");
+        match root {
+            LayoutNode::Overview { children } => {
+                match &children[0] {
+                    LayoutNode::Col { halign, children } => {
+                        assert!(halign.is_none());
+                        assert_eq!(children.len(), 2);
+                    }
+                    _ => panic!("expected Col"),
                 }
             }
             _ => panic!("root should be Overview"),
