@@ -11,6 +11,7 @@ use crate::widgets::menu_row::render_menu_row;
 use crate::widgets::primitives::{
     render_button, render_checkmark, render_label, render_spinner, render_switch,
 };
+use crate::widgets::info_card::render_info_card;
 use crate::widgets::slider::render_slider;
 use std::rc::Rc;
 use waft_core::menu_state::MenuStore;
@@ -196,6 +197,12 @@ impl WidgetRenderer {
                 text,
                 css_classes,
             } => render_label(text, css_classes),
+
+            Widget::InfoCard {
+                icon,
+                title,
+                description,
+            } => render_info_card(icon, title, description),
         }
     }
 

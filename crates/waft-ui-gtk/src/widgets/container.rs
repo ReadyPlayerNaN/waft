@@ -2,7 +2,7 @@
 
 use crate::renderer::WidgetRenderer;
 use crate::utils::css::apply_css_classes;
-use waft_ipc::widget::{Orientation, Widget};
+use waft_ipc::widget::{Node, Orientation};
 use gtk::prelude::*;
 
 /// Render a Container widget as a gtk::Box with children
@@ -31,7 +31,7 @@ pub fn render_container(
     orientation: &Orientation,
     spacing: u32,
     css_classes: &[String],
-    children: &[Widget],
+    children: &[Node],
     widget_id: &str,
 ) -> gtk::Widget {
     // Map our Orientation enum to GTK's orientation
@@ -47,9 +47,15 @@ pub fn render_container(
     apply_css_classes(&container, css_classes);
 
     // Recursively render and append each child
-    for (index, child) in children.iter().enumerate() {
-        let child_id = format!("{}:child{}", widget_id, index);
-        let gtk_child = renderer.render(child, &child_id);
+    for (index, node) in children.iter().enumerate() {
+        let child_id = match &node.key {
+            Some(key) => format!("{}:{}", widget_id, key),
+            None => format!("{}:child{}", widget_id, index),
+        };
+        let gtk_child = renderer.render(&node.widget, &child_id);
+        if let Some(ref key) = node.key {
+            gtk_child.set_widget_name(key);
+        }
         container.append(&gtk_child);
     }
 
@@ -61,7 +67,7 @@ pub fn render_container(
 mod tests {
     use super::*;
     use crate::renderer::ActionCallback;
-    use crate::types::{Action, ActionParams, Widget};
+    use crate::types::{Action, ActionParams, Node, Widget};
     use std::rc::Rc;
     use waft_core::menu_state::create_menu_store;
 
@@ -160,19 +166,22 @@ mod tests {
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback);
 
-        let children = vec![
+        let children: Vec<Node> = vec![
             Widget::Label {
                 text: "Header".to_string(),
                 css_classes: vec!["bold".to_string()],
-            },
+            }
+            .into(),
             Widget::Label {
                 text: "Body".to_string(),
                 css_classes: vec![],
-            },
+            }
+            .into(),
             Widget::Label {
                 text: "Footer".to_string(),
                 css_classes: vec![],
-            },
+            }
+            .into(),
         ];
 
         let gtk_widget = render_container(
@@ -218,28 +227,32 @@ mod tests {
         //        ├─ Label: "Inner Left"
         //        └─ Label: "Inner Right"
 
-        let inner_children = vec![
+        let inner_children: Vec<Node> = vec![
             Widget::Label {
                 text: "Inner Left".to_string(),
                 css_classes: vec![],
-            },
+            }
+            .into(),
             Widget::Label {
                 text: "Inner Right".to_string(),
                 css_classes: vec![],
-            },
+            }
+            .into(),
         ];
 
-        let outer_children = vec![
+        let outer_children: Vec<Node> = vec![
             Widget::Label {
                 text: "Outer Label".to_string(),
                 css_classes: vec![],
-            },
+            }
+            .into(),
             Widget::Container {
                 orientation: Orientation::Horizontal,
                 spacing: 4,
                 css_classes: vec!["inner-box".to_string()],
                 children: inner_children,
-            },
+            }
+            .into(),
         ];
 
         let gtk_widget = render_container(
@@ -302,7 +315,7 @@ mod tests {
         let renderer = WidgetRenderer::new(menu_store, callback);
 
         // Create container with Button children (which will trigger actions)
-        let children = vec![
+        let children: Vec<Node> = vec![
             Widget::Button {
                 label: Some("Button 1".to_string()),
                 icon: None,
@@ -310,7 +323,8 @@ mod tests {
                     id: "click1".to_string(),
                     params: ActionParams::None,
                 },
-            },
+            }
+            .into(),
             Widget::Button {
                 label: Some("Button 2".to_string()),
                 icon: None,
@@ -318,7 +332,8 @@ mod tests {
                     id: "click2".to_string(),
                     params: ActionParams::None,
                 },
-            },
+            }
+            .into(),
         ];
 
         // Note: This test verifies the ID pattern is correct, but doesn't actually

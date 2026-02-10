@@ -57,7 +57,8 @@ fn test_render_nested_containers() {
             Widget::Label {
                 text: "Header".to_string(),
                 css_classes: vec!["header".to_string()],
-            },
+            }
+            .into(),
             Widget::Container {
                 orientation: Orientation::Horizontal,
                 spacing: 6,
@@ -66,17 +67,21 @@ fn test_render_nested_containers() {
                     Widget::Label {
                         text: "Left".to_string(),
                         css_classes: vec![],
-                    },
+                    }
+                    .into(),
                     Widget::Label {
                         text: "Right".to_string(),
                         css_classes: vec![],
-                    },
+                    }
+                    .into(),
                 ],
-            },
+            }
+            .into(),
             Widget::Label {
                 text: "Footer".to_string(),
                 css_classes: vec!["footer".to_string()],
-            },
+            }
+            .into(),
         ],
     };
 
@@ -119,7 +124,8 @@ fn test_render_feature_toggle_with_expanded_content() {
                         id: "select_device".to_string(),
                         params: ActionParams::String("headphones".to_string()),
                     }),
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("device-speaker".to_string()),
                     label: "Speaker".to_string(),
@@ -127,7 +133,8 @@ fn test_render_feature_toggle_with_expanded_content() {
                     trailing: None,
                     sensitive: true,
                     on_click: None,
-                },
+                }
+                .into(),
             ],
         })),
         on_toggle: Action {
@@ -166,7 +173,8 @@ fn test_render_slider_with_expanded_content() {
                     trailing: None,
                     sensitive: true,
                     on_click: None,
-                },
+                }
+                .into(),
             ],
         })),
         on_value_change: Action {
@@ -638,7 +646,8 @@ fn test_real_world_audio_control_widget() {
                                 id: "select_output".to_string(),
                                 params: ActionParams::String("headphones".to_string()),
                             }),
-                        },
+                        }
+                        .into(),
                         Widget::MenuRow {
                             icon: Some("audio-speakers".to_string()),
                             label: "Speakers".to_string(),
@@ -649,7 +658,8 @@ fn test_real_world_audio_control_widget() {
                                 id: "select_output".to_string(),
                                 params: ActionParams::String("speakers".to_string()),
                             }),
-                        },
+                        }
+                        .into(),
                     ],
                 })),
                 on_value_change: Action {
@@ -660,7 +670,8 @@ fn test_real_world_audio_control_widget() {
                     id: "toggle_mute".to_string(),
                     params: ActionParams::None,
                 },
-            },
+            }
+            .into(),
             // Microphone slider
             Widget::Slider {
                 icon: "microphone-sensitivity-high".to_string(),
@@ -676,7 +687,8 @@ fn test_real_world_audio_control_widget() {
                     id: "toggle_mic_mute".to_string(),
                     params: ActionParams::None,
                 },
-            },
+            }
+            .into(),
         ],
     };
 
@@ -719,7 +731,8 @@ fn test_real_world_network_settings_widget() {
                             trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                             sensitive: true,
                             on_click: None,
-                        },
+                        }
+                        .into(),
                         Widget::MenuRow {
                             icon: Some("network-wireless-signal-good".to_string()),
                             label: "OfficeWiFi".to_string(),
@@ -730,7 +743,8 @@ fn test_real_world_network_settings_widget() {
                                 id: "connect_network".to_string(),
                                 params: ActionParams::String("OfficeWiFi".to_string()),
                             }),
-                        },
+                        }
+                        .into(),
                         Widget::MenuRow {
                             icon: Some("network-wireless-signal-weak".to_string()),
                             label: "Public WiFi".to_string(),
@@ -741,14 +755,16 @@ fn test_real_world_network_settings_widget() {
                                 id: "connect_network".to_string(),
                                 params: ActionParams::String("Public WiFi".to_string()),
                             }),
-                        },
+                        }
+                        .into(),
                     ],
                 })),
                 on_toggle: Action {
                     id: "toggle_wifi".to_string(),
                     params: ActionParams::None,
                 },
-            },
+            }
+            .into(),
             // Bluetooth feature toggle
             Widget::FeatureToggle {
                 title: "Bluetooth".to_string(),
@@ -762,7 +778,8 @@ fn test_real_world_network_settings_widget() {
                     id: "toggle_bluetooth".to_string(),
                     params: ActionParams::None,
                 },
-            },
+            }
+            .into(),
         ],
     };
 

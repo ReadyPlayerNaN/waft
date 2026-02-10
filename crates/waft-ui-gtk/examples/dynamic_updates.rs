@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use waft_core::menu_state::create_menu_store;
 use waft_ui_gtk::renderer::{ActionCallback, WidgetRenderer};
-use waft_ipc::widget::{Action, ActionParams, Orientation, Widget};
+use waft_ipc::widget::{Action, ActionParams, Node, Orientation, Widget};
 
 /// State for the dynamic test application
 struct AppState {
@@ -310,19 +310,22 @@ impl AppState {
             container.append(&renderer.render(&header, "header"));
 
             // Create device list
-            let mut children = Vec::new();
+            let mut children: Vec<Node> = Vec::new();
             for i in 1..=device_count {
-                children.push(Widget::MenuRow {
-                    icon: Some(format!("device-{}", i % 4)),
-                    label: format!("Device {}", i),
-                    sublabel: Some("Connected".to_string()),
-                    trailing: Some(Box::new(Widget::Checkmark { visible: true })),
-                    sensitive: true,
-                    on_click: Some(Action {
-                        id: "select_device".to_string(),
-                        params: ActionParams::String(format!("device_{}", i)),
-                    }),
-                });
+                children.push(
+                    Widget::MenuRow {
+                        icon: Some(format!("device-{}", i % 4)),
+                        label: format!("Device {}", i),
+                        sublabel: Some("Connected".to_string()),
+                        trailing: Some(Box::new(Widget::Checkmark { visible: true })),
+                        sensitive: true,
+                        on_click: Some(Action {
+                            id: "select_device".to_string(),
+                            params: ActionParams::String(format!("device_{}", i)),
+                        }),
+                    }
+                    .into(),
+                );
             }
 
             let device_container = Widget::Container {

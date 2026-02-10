@@ -95,7 +95,8 @@ fn main() {
                         id: "select_bt_device".to_string(),
                         params: ActionParams::String("headphones".to_string()),
                     }),
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("audio-speakers".to_string()),
                     label: "Bluetooth Speaker".to_string(),
@@ -106,7 +107,8 @@ fn main() {
                         id: "select_bt_device".to_string(),
                         params: ActionParams::String("speaker".to_string()),
                     }),
-                },
+                }
+                .into(),
             ],
         })),
         on_toggle: Action {
@@ -179,7 +181,8 @@ fn main() {
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
                     on_click: None,
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("audio-headphones".to_string()),
                     label: "Headphones".to_string(),
@@ -190,7 +193,8 @@ fn main() {
                         id: "switch_audio_output".to_string(),
                         params: ActionParams::String("headphones".to_string()),
                     }),
-                },
+                }
+                .into(),
             ],
         })),
         on_value_change: Action {
@@ -276,7 +280,8 @@ fn main() {
                     id: "open_wifi_settings".to_string(),
                     params: ActionParams::None,
                 }),
-            },
+            }
+            .into(),
             // Row with spinner (loading state)
             Widget::MenuRow {
                 icon: Some("network-cellular".to_string()),
@@ -285,7 +290,8 @@ fn main() {
                 trailing: Some(Box::new(Widget::Spinner { spinning: true })),
                 sensitive: false,
                 on_click: None,
-            },
+            }
+            .into(),
             // Row with checkmark
             Widget::MenuRow {
                 icon: Some("network-vpn".to_string()),
@@ -297,7 +303,8 @@ fn main() {
                     id: "disconnect_vpn".to_string(),
                     params: ActionParams::None,
                 }),
-            },
+            }
+            .into(),
             // Minimal row (no icon, no sublabel, no trailing)
             Widget::MenuRow {
                 icon: None,
@@ -309,7 +316,8 @@ fn main() {
                     id: "open_advanced_settings".to_string(),
                     params: ActionParams::None,
                 }),
-            },
+            }
+            .into(),
         ],
     };
     main_box.append(&renderer.render(&menu_container, "menu_rows"));
@@ -336,11 +344,13 @@ fn main() {
             Widget::Label {
                 text: "Simple Label".to_string(),
                 css_classes: vec![],
-            },
+            }
+            .into(),
             Widget::Label {
                 text: "Styled Label".to_string(),
                 css_classes: vec!["title-4".to_string(), "accent".to_string()],
-            },
+            }
+            .into(),
             // Button examples in horizontal container
             Widget::Container {
                 orientation: Orientation::Horizontal,
@@ -354,7 +364,8 @@ fn main() {
                             id: "text_button_click".to_string(),
                             params: ActionParams::None,
                         },
-                    },
+                    }
+                    .into(),
                     Widget::Button {
                         label: None,
                         icon: Some("document-edit".to_string()),
@@ -362,7 +373,8 @@ fn main() {
                             id: "icon_button_click".to_string(),
                             params: ActionParams::None,
                         },
-                    },
+                    }
+                    .into(),
                     Widget::Button {
                         label: Some("Mixed".to_string()),
                         icon: Some("emblem-ok".to_string()),
@@ -370,9 +382,11 @@ fn main() {
                             id: "mixed_button_click".to_string(),
                             params: ActionParams::None,
                         },
-                    },
+                    }
+                    .into(),
                 ],
-            },
+            }
+            .into(),
             // Switch, Spinner, Checkmark in horizontal container
             Widget::Container {
                 orientation: Orientation::Horizontal,
@@ -382,7 +396,8 @@ fn main() {
                     Widget::Label {
                         text: "Switch:".to_string(),
                         css_classes: vec![],
-                    },
+                    }
+                    .into(),
                     Widget::Switch {
                         active: true,
                         sensitive: true,
@@ -390,19 +405,23 @@ fn main() {
                             id: "toggle_switch".to_string(),
                             params: ActionParams::None,
                         },
-                    },
+                    }
+                    .into(),
                     Widget::Label {
                         text: "Spinner:".to_string(),
                         css_classes: vec![],
-                    },
-                    Widget::Spinner { spinning: true },
+                    }
+                    .into(),
+                    Widget::Spinner { spinning: true }.into(),
                     Widget::Label {
                         text: "Checkmark:".to_string(),
                         css_classes: vec![],
-                    },
-                    Widget::Checkmark { visible: true },
+                    }
+                    .into(),
+                    Widget::Checkmark { visible: true }.into(),
                 ],
-            },
+            }
+            .into(),
         ],
     };
     main_box.append(&renderer.render(&primitives_container, "primitives"));
@@ -428,7 +447,8 @@ fn main() {
             Widget::Label {
                 text: "Audio Settings".to_string(),
                 css_classes: vec!["title-4".to_string()],
-            },
+            }
+            .into(),
             Widget::Container {
                 orientation: Orientation::Horizontal,
                 spacing: 8,
@@ -441,7 +461,8 @@ fn main() {
                             id: "reset_audio".to_string(),
                             params: ActionParams::None,
                         },
-                    },
+                    }
+                    .into(),
                     Widget::Button {
                         label: Some("Apply".to_string()),
                         icon: Some("emblem-ok".to_string()),
@@ -449,9 +470,11 @@ fn main() {
                             id: "apply_audio".to_string(),
                             params: ActionParams::None,
                         },
-                    },
+                    }
+                    .into(),
                 ],
-            },
+            }
+            .into(),
         ],
     };
     main_box.append(&renderer.render(&complex_widget, "complex"));

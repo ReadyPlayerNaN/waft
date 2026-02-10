@@ -96,7 +96,8 @@ fn main() {
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
                     on_click: None,
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("audio-speakers".to_string()),
                     label: "Speaker".to_string(),
@@ -104,7 +105,8 @@ fn main() {
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
                     on_click: None,
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("input-keyboard".to_string()),
                     label: "Keyboard".to_string(),
@@ -112,7 +114,8 @@ fn main() {
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
                     on_click: None,
-                },
+                }
+                .into(),
             ],
         })),
         on_toggle: Action {
@@ -145,7 +148,8 @@ fn main() {
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
                     on_click: None,
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("network-wireless-signal-good".to_string()),
                     label: "OfficeWiFi".to_string(),
@@ -156,7 +160,8 @@ fn main() {
                         id: "connect_network".to_string(),
                         params: ActionParams::String("OfficeWiFi".to_string()),
                     }),
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("network-wireless-signal-weak".to_string()),
                     label: "Public WiFi".to_string(),
@@ -167,7 +172,8 @@ fn main() {
                         id: "connect_network".to_string(),
                         params: ActionParams::String("Public WiFi".to_string()),
                     }),
-                },
+                }
+                .into(),
             ],
         })),
         on_toggle: Action {
@@ -200,7 +206,8 @@ fn main() {
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
                     on_click: None,
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("network-vpn".to_string()),
                     label: "Home VPN".to_string(),
@@ -211,7 +218,8 @@ fn main() {
                         id: "connect_vpn".to_string(),
                         params: ActionParams::String("home".to_string()),
                     }),
-                },
+                }
+                .into(),
             ],
         })),
         on_toggle: Action {
@@ -245,7 +253,8 @@ fn main() {
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
                     on_click: None,
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("audio-headphones".to_string()),
                     label: "Headphones".to_string(),
@@ -256,7 +265,8 @@ fn main() {
                         id: "switch_output".to_string(),
                         params: ActionParams::String("headphones".to_string()),
                     }),
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("audio-card".to_string()),
                     label: "HDMI Audio".to_string(),
@@ -267,7 +277,8 @@ fn main() {
                         id: "switch_output".to_string(),
                         params: ActionParams::String("hdmi".to_string()),
                     }),
-                },
+                }
+                .into(),
             ],
         })),
         on_value_change: Action {
@@ -305,7 +316,8 @@ fn main() {
                         id: "set_brightness_preset".to_string(),
                         params: ActionParams::Value(1.0),
                     }),
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("weather-few-clouds".to_string()),
                     label: "Medium (60%)".to_string(),
@@ -316,7 +328,8 @@ fn main() {
                         id: "set_brightness_preset".to_string(),
                         params: ActionParams::Value(0.6),
                     }),
-                },
+                }
+                .into(),
                 Widget::MenuRow {
                     icon: Some("weather-clear-night".to_string()),
                     label: "Dim (30%)".to_string(),
@@ -327,7 +340,8 @@ fn main() {
                         id: "set_brightness_preset".to_string(),
                         params: ActionParams::Value(0.3),
                     }),
-                },
+                }
+                .into(),
             ],
         })),
         on_value_change: Action {

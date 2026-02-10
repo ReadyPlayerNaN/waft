@@ -1,37 +1,270 @@
-//! Slider widget renderer - converts Slider descriptions to GTK scale with menu
+//! Stateful Slider widget — icon button, horizontal scale, and optional expand button.
+//!
+//! Provides `set_value()`, `set_muted()`, `set_icon()`, `set_expandable()` for
+//! in-place property updates without recreating the GTK tree.
 
 use crate::renderer::{ActionCallback, WidgetRenderer};
 use crate::utils::icon::IconWidget;
-use waft_ipc::widget::{Action, ActionParams};
 use crate::utils::menu_state::{is_menu_open, menu_id_for_widget, toggle_menu};
+use gtk::glib;
 use gtk::prelude::*;
+use std::cell::RefCell;
 use std::rc::Rc;
 use waft_core::menu_state::MenuStore;
+use waft_core::{Callback, VoidCallback};
+use waft_ipc::widget::{Action, ActionParams};
 
-/// Render a Slider widget with icon, scale, and optional expanded content
+/// Properties for initializing a slider.
+#[derive(Debug, Clone)]
+pub struct SliderProps {
+    pub icon: String,
+    pub value: f64,
+    pub muted: bool,
+    pub expandable: bool,
+}
+
+/// Stateful GTK slider widget with icon button, scale, and optional expand button.
+#[derive(Clone)]
+pub struct SliderWidget {
+    pub(crate) root: gtk::Box,
+    icon_widget: IconWidget,
+    icon_button: gtk::Button,
+    scale: gtk::Scale,
+    expand_revealer: gtk::Revealer,
+    base_icon: Rc<RefCell<String>>,
+    value: Rc<RefCell<f64>>,
+    muted: Rc<RefCell<bool>>,
+    expandable: Rc<RefCell<bool>>,
+    on_value_change: Callback<f64>,
+    on_icon_click: VoidCallback,
+    scale_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>>,
+    pub menu_id: Option<String>,
+}
+
+impl SliderWidget {
+    pub fn new(props: SliderProps, menu_store: Option<Rc<MenuStore>>) -> Self {
+        let menu_id = menu_store.as_ref().map(|_| uuid::Uuid::new_v4().to_string());
+
+        // Main vertical container
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
+        // Top horizontal box with controls
+        let controls_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+
+        // Icon button
+        let icon_button = gtk::Button::new();
+        icon_button.add_css_class("flat");
+        icon_button.add_css_class("circular");
+
+        let icon_name = muted_icon_name(&props.icon, props.muted);
+        let icon_widget = IconWidget::from_name(&icon_name, 24);
+        icon_button.set_child(Some(icon_widget.widget()));
+
+        // Scale (slider)
+        let adjustment = gtk::Adjustment::new(
+            props.value * 100.0,
+            0.0,
+            100.0,
+            1.0,
+            10.0,
+            0.0,
+        );
+
+        let scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&adjustment));
+        scale.set_draw_value(false);
+        scale.set_hexpand(true);
+
+        controls_box.append(&icon_button);
+        controls_box.append(&scale);
+
+        // Expand button in revealer
+        let expand_revealer = gtk::Revealer::builder()
+            .transition_type(gtk::RevealerTransitionType::SlideLeft)
+            .transition_duration(200)
+            .reveal_child(props.expandable)
+            .build();
+
+        if let Some(ref store) = menu_store {
+            let expand_button = gtk::Button::new();
+            expand_button.add_css_class("flat");
+            expand_button.add_css_class("circular");
+
+            let mid = menu_id.clone().unwrap();
+            let is_open = is_menu_open(store, &mid);
+            let chevron_icon = if is_open { "pan-up-symbolic" } else { "pan-down-symbolic" };
+            let chevron_widget = IconWidget::from_name(chevron_icon, 16);
+            expand_button.set_child(Some(chevron_widget.widget()));
+
+            let store_clone = store.clone();
+            let mid_clone = mid.clone();
+            expand_button.connect_clicked(move |_| {
+                toggle_menu(&store_clone, &mid_clone);
+            });
+
+            expand_revealer.set_child(Some(&expand_button));
+        }
+
+        controls_box.append(&expand_revealer);
+        root.append(&controls_box);
+
+        if props.muted {
+            root.add_css_class("slider-row-muted");
+        }
+
+        let base_icon = Rc::new(RefCell::new(props.icon));
+        let value = Rc::new(RefCell::new(props.value));
+        let muted = Rc::new(RefCell::new(props.muted));
+        let expandable = Rc::new(RefCell::new(props.expandable));
+        let on_value_change: Callback<f64> = Rc::new(RefCell::new(None));
+        let on_icon_click: VoidCallback = Rc::new(RefCell::new(None));
+
+        // Connect icon button click
+        let on_icon_click_ref = on_icon_click.clone();
+        icon_button.connect_clicked(move |_| {
+            if let Some(ref callback) = *on_icon_click_ref.borrow() {
+                callback();
+            }
+        });
+
+        // Connect scale value change — store handler ID so set_value() can block it
+        let on_value_change_ref = on_value_change.clone();
+        let handler_id = scale.connect_value_changed(move |s| {
+            let v = s.value() / 100.0;
+            if let Some(ref callback) = *on_value_change_ref.borrow() {
+                callback(v);
+            }
+        });
+        let scale_handler_id = Rc::new(RefCell::new(Some(handler_id)));
+
+        Self {
+            root,
+            icon_widget,
+            icon_button,
+            scale,
+            expand_revealer,
+            base_icon,
+            value,
+            muted,
+            expandable,
+            on_value_change,
+            on_icon_click,
+            scale_handler_id,
+            menu_id,
+        }
+    }
+
+    /// Set the callback for value changes.
+    pub fn connect_value_change<F>(&self, callback: F)
+    where
+        F: Fn(f64) + 'static,
+    {
+        *self.on_value_change.borrow_mut() = Some(Box::new(callback));
+    }
+
+    /// Set the callback for icon button clicks.
+    pub fn connect_icon_click<F>(&self, callback: F)
+    where
+        F: Fn() + 'static,
+    {
+        *self.on_icon_click.borrow_mut() = Some(Box::new(callback));
+    }
+
+    /// Update the scale value, blocking the signal handler to prevent feedback loops.
+    pub fn set_value(&self, v: f64) {
+        *self.value.borrow_mut() = v;
+        if let Some(ref handler_id) = *self.scale_handler_id.borrow() {
+            self.scale.block_signal(handler_id);
+            self.scale.set_value(v * 100.0);
+            self.scale.unblock_signal(handler_id);
+        }
+    }
+
+    /// Update the muted state — toggles CSS class and icon suffix.
+    pub fn set_muted(&self, m: bool) {
+        *self.muted.borrow_mut() = m;
+        if m {
+            self.root.add_css_class("slider-row-muted");
+        } else {
+            self.root.remove_css_class("slider-row-muted");
+        }
+        let base = self.base_icon.borrow().clone();
+        let name = muted_icon_name(&base, m);
+        self.icon_widget.set_icon(&name);
+    }
+
+    /// Update the base icon name.
+    pub fn set_icon(&self, icon: &str) {
+        *self.base_icon.borrow_mut() = icon.to_string();
+        let m = *self.muted.borrow();
+        let name = muted_icon_name(icon, m);
+        self.icon_widget.set_icon(&name);
+    }
+
+    /// Update the expandable state.
+    pub fn set_expandable(&self, expandable: bool) {
+        *self.expandable.borrow_mut() = expandable;
+        self.expand_revealer.set_reveal_child(expandable);
+    }
+
+    /// Get a reference to the root widget.
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast::<gtk::Widget>()
+    }
+}
+
+impl crate::reconcile::Reconcilable for SliderWidget {
+    fn try_reconcile(
+        &self,
+        old_desc: &waft_ipc::Widget,
+        new_desc: &waft_ipc::Widget,
+    ) -> crate::reconcile::ReconcileOutcome {
+        use crate::reconcile::ReconcileOutcome;
+        match (old_desc, new_desc) {
+            (
+                waft_ipc::Widget::Slider {
+                    on_value_change: old_vc,
+                    on_icon_click: old_ic,
+                    ..
+                },
+                waft_ipc::Widget::Slider {
+                    icon,
+                    value,
+                    muted,
+                    expandable,
+                    on_value_change: new_vc,
+                    on_icon_click: new_ic,
+                    ..
+                },
+            ) => {
+                if old_vc != new_vc || old_ic != new_ic {
+                    return ReconcileOutcome::Recreate;
+                }
+                self.set_value(*value);
+                self.set_muted(*muted);
+                self.set_icon(icon);
+                self.set_expandable(*expandable);
+                ReconcileOutcome::Updated
+            }
+            _ => ReconcileOutcome::Recreate,
+        }
+    }
+}
+
+/// Compute the icon name, appending "-muted" when muted.
+fn muted_icon_name(base: &str, muted: bool) -> String {
+    if muted {
+        format!("{}-muted", base.trim_end_matches("-symbolic"))
+    } else {
+        base.to_string()
+    }
+}
+
+/// Render a Slider widget from the IPC protocol using SliderWidget.
 ///
-/// Structure:
-/// Box(Vertical) → [Box(H) with [Icon button, Scale, Expand button], Revealer with content]
-///
-/// # Parameters
-///
-/// - `renderer`: The WidgetRenderer instance for recursive rendering
-/// - `callback`: The action callback for handling actions
-/// - `menu_store`: The MenuStore for coordinating expanded menus
-/// - `icon`: Themed icon name for the icon button
-/// - `value`: Current value (0.0-1.0)
-/// - `muted`: Whether the slider is muted (affects icon and CSS)
-/// - `expandable`: Whether to show expand button
-/// - `expanded_content`: Optional widget shown in revealer when expanded
-/// - `on_value_change`: Action triggered when scale value changes
-/// - `on_icon_click`: Action triggered when icon button is clicked
-/// - `widget_id`: Unique identifier for this slider
-///
-/// # Returns
-///
-/// A gtk::Box containing the slider layout, upcast to gtk::Widget
+/// This bridges the daemon widget protocol to the stateful SliderWidget,
+/// ensuring daemon plugins and cdylib plugins use the same rendering.
 #[allow(clippy::too_many_arguments)]
-pub fn render_slider(
+pub(crate) fn render_slider(
     renderer: &WidgetRenderer,
     callback: &ActionCallback,
     menu_store: &Rc<MenuStore>,
@@ -44,122 +277,56 @@ pub fn render_slider(
     on_icon_click: &Action,
     widget_id: &str,
 ) -> gtk::Widget {
-    // Main vertical container
-    let main_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-
-    // Top horizontal box with controls
-    let controls_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-
-    // Icon button
-    let icon_button = gtk::Button::new();
-    icon_button.add_css_class("flat");
-    icon_button.add_css_class("circular");
-
-    // Determine icon based on muted state
-    let icon_name = if muted {
-        // For volume-like sliders, muted typically means mute icon
-        // This matches the audio plugin behavior
-        format!("{}-muted", icon.trim_end_matches("-symbolic"))
-    } else {
-        icon.to_string()
-    };
-
-    let icon_widget = IconWidget::from_name(&icon_name, 24);
-    icon_button.set_child(Some(icon_widget.widget()));
-
-    // Connect icon button click
-    let widget_id_clone = widget_id.to_string();
-    let on_icon_click = on_icon_click.clone();
-    let callback_clone = callback.clone();
-    icon_button.connect_clicked(move |_| {
-        callback_clone(widget_id_clone.clone(), on_icon_click.clone());
-    });
-
-    controls_box.append(&icon_button);
-
-    // Scale (slider)
-    let adjustment = gtk::Adjustment::new(
-        value * 100.0, // Current value (0-100)
-        0.0,           // Min
-        100.0,         // Max
-        1.0,           // Step increment
-        10.0,          // Page increment
-        0.0,           // Page size
+    let slider = SliderWidget::new(
+        SliderProps {
+            icon: icon.to_string(),
+            value,
+            muted,
+            expandable,
+        },
+        Some(menu_store.clone()),
     );
 
-    let scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&adjustment));
-    scale.set_draw_value(false);
-    scale.set_hexpand(true);
-
-    // Connect scale value change
-    let widget_id_clone = widget_id.to_string();
-    let on_value_change = on_value_change.clone();
-    let callback_clone = callback.clone();
-    scale.connect_value_changed(move |scale| {
-        let value = scale.value() / 100.0; // Convert 0-100 back to 0.0-1.0
-        let mut action = on_value_change.clone();
-        action.params = ActionParams::Value(value);
-        callback_clone(widget_id_clone.clone(), action);
+    // Wire up action callbacks
+    let cb = callback.clone();
+    let wid = widget_id.to_string();
+    let action = on_value_change.clone();
+    slider.connect_value_change(move |v| {
+        let mut a = action.clone();
+        a.params = ActionParams::Value(v);
+        cb(wid.clone(), a);
     });
 
-    controls_box.append(&scale);
+    let cb = callback.clone();
+    let wid = widget_id.to_string();
+    let action = on_icon_click.clone();
+    slider.connect_icon_click(move || {
+        cb(wid.clone(), action.clone());
+    });
 
-    // Expand button (if expandable)
-    if expandable {
-        let expand_button = gtk::Button::new();
-        expand_button.add_css_class("flat");
-        expand_button.add_css_class("circular");
-
-        // Chevron icon (down if menu open, up if closed)
-        let menu_id = menu_id_for_widget(widget_id);
-        let is_open = is_menu_open(menu_store, &menu_id);
-        let chevron_icon = if is_open {
-            "pan-up-symbolic"
-        } else {
-            "pan-down-symbolic"
-        };
-        let chevron_widget = IconWidget::from_name(chevron_icon, 16);
-        expand_button.set_child(Some(chevron_widget.widget()));
-
-        // Connect expand button click
-        let menu_store_clone = menu_store.clone();
-        let menu_id_clone = menu_id.clone();
-        expand_button.connect_clicked(move |_| {
-            toggle_menu(&menu_store_clone, &menu_id_clone);
-        });
-
-        controls_box.append(&expand_button);
-    }
-
-    main_box.append(&controls_box);
-
-    // Apply muted CSS class if muted
-    if muted {
-        main_box.add_css_class("slider-row-muted");
-    }
-
-    // Revealer for expanded content
+    // Revealer for expanded content (created outside the SliderWidget because it
+    // needs the WidgetRenderer for recursive rendering)
     if expandable {
         if let Some(content) = expanded_content {
             let revealer = gtk::Revealer::new();
             revealer.set_transition_type(gtk::RevealerTransitionType::SlideDown);
             revealer.set_transition_duration(200);
 
-            // Render expanded content recursively
             let content_id = format!("{}:expanded", widget_id);
             let gtk_content = renderer.render(content, &content_id);
             revealer.set_child(Some(&gtk_content));
 
-            // Set revealer state based on menu store
-            let menu_id = menu_id_for_widget(widget_id);
-            let is_open = is_menu_open(menu_store, &menu_id);
+            let mid = menu_id_for_widget(widget_id);
+            let is_open = is_menu_open(menu_store, &mid);
             revealer.set_reveal_child(is_open);
 
-            main_box.append(&revealer);
+            // Append revealer to the root box
+            let root: gtk::Box = slider.root.clone();
+            root.append(&revealer);
         }
     }
 
-    main_box.upcast()
+    slider.widget()
 }
 
 #[cfg(test)]
@@ -169,7 +336,6 @@ mod tests {
     use std::cell::RefCell;
     use waft_core::menu_state::create_menu_store;
 
-    // Helper to ensure GTK is initialized only once for all tests
     fn init_gtk() {
         use std::sync::Once;
         static INIT: Once = Once::new();
@@ -286,7 +452,6 @@ mod tests {
         );
 
         assert!(widget.is::<gtk::Box>());
-        // Revealer should exist and be collapsed by default
     }
 
     #[test]
@@ -336,10 +501,8 @@ mod tests {
         let icon_button = controls_box.first_child().unwrap();
         let icon_button: gtk::Button = icon_button.downcast().unwrap();
 
-        // Simulate icon button click
         icon_button.emit_clicked();
 
-        // Verify callback was invoked
         let actions = captured_actions.borrow();
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].0, "test_slider");
@@ -363,52 +526,122 @@ mod tests {
             params: ActionParams::None,
         };
 
-        // Test minimum value
         let widget_min = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "icon",
-            0.0,
-            false,
-            false,
-            &None,
-            &on_value_change,
-            &on_icon_click,
-            "slider_min",
+            &renderer, &callback, &menu_store, "icon", 0.0, false, false,
+            &None, &on_value_change, &on_icon_click, "slider_min",
         );
         assert!(widget_min.is::<gtk::Box>());
 
-        // Test maximum value
         let widget_max = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "icon",
-            1.0,
-            false,
-            false,
-            &None,
-            &on_value_change,
-            &on_icon_click,
-            "slider_max",
+            &renderer, &callback, &menu_store, "icon", 1.0, false, false,
+            &None, &on_value_change, &on_icon_click, "slider_max",
         );
         assert!(widget_max.is::<gtk::Box>());
 
-        // Test mid value
         let widget_mid = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "icon",
-            0.5,
-            false,
-            false,
-            &None,
-            &on_value_change,
-            &on_icon_click,
-            "slider_mid",
+            &renderer, &callback, &menu_store, "icon", 0.5, false, false,
+            &None, &on_value_change, &on_icon_click, "slider_mid",
         );
         assert!(widget_mid.is::<gtk::Box>());
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_slider_widget_set_value() {
+        init_gtk();
+        let menu_store = Rc::new(create_menu_store());
+
+        let slider = SliderWidget::new(
+            SliderProps {
+                icon: "audio-volume-high-symbolic".to_string(),
+                value: 0.5,
+                muted: false,
+                expandable: false,
+            },
+            Some(menu_store),
+        );
+
+        // set_value should not trigger the callback
+        let called = Rc::new(RefCell::new(false));
+        let called_clone = called.clone();
+        slider.connect_value_change(move |_| {
+            *called_clone.borrow_mut() = true;
+        });
+
+        slider.set_value(0.75);
+        assert!(!*called.borrow(), "set_value should block the signal handler");
+        assert!((slider.scale.value() - 75.0).abs() < 0.01);
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_slider_widget_set_muted() {
+        init_gtk();
+        let menu_store = Rc::new(create_menu_store());
+
+        let slider = SliderWidget::new(
+            SliderProps {
+                icon: "audio-volume-high-symbolic".to_string(),
+                value: 0.5,
+                muted: false,
+                expandable: false,
+            },
+            Some(menu_store),
+        );
+
+        assert!(!slider.root.has_css_class("slider-row-muted"));
+        slider.set_muted(true);
+        assert!(slider.root.has_css_class("slider-row-muted"));
+        slider.set_muted(false);
+        assert!(!slider.root.has_css_class("slider-row-muted"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_slider_widget_set_icon() {
+        init_gtk();
+        let menu_store = Rc::new(create_menu_store());
+
+        let slider = SliderWidget::new(
+            SliderProps {
+                icon: "audio-volume-high-symbolic".to_string(),
+                value: 0.5,
+                muted: false,
+                expandable: false,
+            },
+            Some(menu_store),
+        );
+
+        slider.set_icon("brightness-display-symbolic");
+        assert_eq!(*slider.base_icon.borrow(), "brightness-display-symbolic");
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_slider_widget_set_expandable() {
+        init_gtk();
+        let menu_store = Rc::new(create_menu_store());
+
+        let slider = SliderWidget::new(
+            SliderProps {
+                icon: "icon".to_string(),
+                value: 0.5,
+                muted: false,
+                expandable: false,
+            },
+            Some(menu_store),
+        );
+
+        assert!(!slider.expand_revealer.reveals_child());
+        slider.set_expandable(true);
+        assert!(slider.expand_revealer.reveals_child());
+    }
+
+    #[test]
+    fn test_muted_icon_name() {
+        assert_eq!(muted_icon_name("audio-volume-high-symbolic", false), "audio-volume-high-symbolic");
+        assert_eq!(muted_icon_name("audio-volume-high-symbolic", true), "audio-volume-high-muted");
+        assert_eq!(muted_icon_name("microphone", false), "microphone");
+        assert_eq!(muted_icon_name("microphone", true), "microphone-muted");
     }
 }
