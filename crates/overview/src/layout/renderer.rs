@@ -7,7 +7,7 @@ use gtk::prelude::*;
 use log::debug;
 
 use crate::layout::compositor::{
-    FeatureToggleGridCompositor, StackCompositor, WidgetCompositor,
+    FeatureToggleGridCompositor, FragmentCompositor, WidgetCompositor,
 };
 use crate::layout::model::LayoutNode;
 use crate::layout::parser::glob_match;
@@ -236,7 +236,7 @@ fn render_node(
         }
 
         LayoutNode::Widget { id } => {
-            let compositor = StackCompositor::new();
+            let compositor = FragmentCompositor::new();
             let widget = compositor.widget().clone();
 
             debug!("[renderer] Widget placeholder for pattern: {}", id);
@@ -250,7 +250,7 @@ fn render_node(
         }
 
         LayoutNode::Unmatched => {
-            let compositor = StackCompositor::new();
+            let compositor = FragmentCompositor::new();
             let widget = compositor.widget().clone();
 
             debug!("[renderer] Unmatched catch-all");
