@@ -233,10 +233,9 @@ impl BatteryDaemon {
             info.icon_name.clone()
         };
 
-        MenuRowBuilder::new(format!("{:.0}%", info.percentage))
+        InfoCardBuilder::new(format!("{:.0}%", info.percentage))
             .icon(icon)
-            .sublabel(info.status_text())
-            .sensitive(false)
+            .description(info.status_text())
             .build()
     }
 }
