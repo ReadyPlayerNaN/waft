@@ -1,0 +1,9 @@
+[package]
+name = "waft-i18n"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fluent-bundle = "0.15"
+sys-locale = "0.3"
+unic-langid = "0.9"
