@@ -3,6 +3,8 @@ name = "waft-plugin-bluetooth"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+
 [[bin]]
 name = "waft-blueman-daemon"
 path = "bin/waft-blueman-daemon.rs"
