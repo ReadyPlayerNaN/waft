@@ -10,7 +10,9 @@
 //! ```
 
 use anyhow::{Context, Result};
+use futures_util::StreamExt;
 use serde::Deserialize;
+use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin_sdk::*;
 use zbus::Connection;
 
@@ -57,11 +59,15 @@ impl Default for DarkmanMode {
 #[serde(default)]
 struct DarkmanConfig {}
 
-/// Darkman daemon state
+/// Darkman daemon state.
+///
+/// The `mode` field is shared with the D-Bus signal monitoring task via
+/// `Arc<StdMutex>` so external changes (e.g. `darkman toggle`) update
+/// the daemon's state immediately.
 struct DarkmanDaemon {
     #[allow(dead_code)]
     config: DarkmanConfig,
-    mode: DarkmanMode,
+    mode: Arc<StdMutex<DarkmanMode>>,
     busy: bool,
     conn: Connection,
 }
@@ -82,7 +88,7 @@ impl DarkmanDaemon {
 
         Ok(Self {
             config,
-            mode,
+            mode: Arc::new(StdMutex::new(mode)),
             busy: false,
             conn,
         })
@@ -172,42 +178,22 @@ impl DarkmanDaemon {
         Ok(())
     }
 
+    fn current_mode(&self) -> DarkmanMode {
+        *self.mode.lock().unwrap()
+    }
+
+    fn shared_mode(&self) -> Arc<StdMutex<DarkmanMode>> {
+        self.mode.clone()
+    }
+
     fn build_toggle_widget(&self) -> Widget {
         FeatureToggleBuilder::new("Dark Mode")
             .icon("weather-clear-night-symbolic")
-            .active(self.mode.is_active())
+            .active(self.current_mode().is_active())
             .busy(self.busy)
             .on_toggle("toggle")
             .build()
     }
-
-    /// Start monitoring D-Bus signals for mode changes
-    async fn start_monitoring(&mut self) -> Result<()> {
-        log::info!("Starting D-Bus monitoring for darkman mode changes");
-
-        // Create a match rule for ModeChanged signal
-        let rule = zbus::MatchRule::builder()
-            .msg_type(zbus::message::Type::Signal)
-            .sender(DARKMAN_DESTINATION)?
-            .path(DARKMAN_PATH)?
-            .interface(DARKMAN_INTERFACE)?
-            .member("ModeChanged")?
-            .build();
-
-        // Add match rule using DBusProxy
-        let dbus_proxy = zbus::fdo::DBusProxy::new(&self.conn)
-            .await
-            .context("Failed to create DBus proxy")?;
-
-        dbus_proxy
-            .add_match_rule(rule)
-            .await
-            .context("Failed to add match rule")?;
-
-        log::info!("D-Bus monitoring started successfully");
-        Ok(())
-    }
-
 }
 
 #[async_trait::async_trait]
@@ -215,7 +201,6 @@ impl PluginDaemon for DarkmanDaemon {
     fn get_widgets(&self) -> Vec<NamedWidget> {
         vec![NamedWidget {
             id: "darkman:toggle".to_string(),
-            slot: Slot::FeatureToggles,
             weight: 190,
             widget: self.build_toggle_widget(),
         }]
@@ -231,7 +216,8 @@ impl PluginDaemon for DarkmanDaemon {
             self.busy = true;
 
             // Toggle the mode
-            let new_mode = match self.mode {
+            let current = self.current_mode();
+            let new_mode = match current {
                 DarkmanMode::Dark => DarkmanMode::Light,
                 DarkmanMode::Light => DarkmanMode::Dark,
             };
@@ -243,13 +229,65 @@ impl PluginDaemon for DarkmanDaemon {
                 return Err(e.into());
             }
 
-            // Update local state
-            self.mode = new_mode;
+            // Update shared state
+            *self.mode.lock().unwrap() = new_mode;
             self.busy = false;
             log::debug!("Mode toggled to: {:?}", new_mode);
         }
         Ok(())
     }
+}
+
+/// Listen for `ModeChanged` D-Bus signals from darkman and update shared state.
+async fn monitor_mode_signals(
+    conn: Connection,
+    mode: Arc<StdMutex<DarkmanMode>>,
+    notifier: WidgetNotifier,
+) -> Result<()> {
+    // Subscribe to ModeChanged signal
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(DARKMAN_DESTINATION)?
+        .path(DARKMAN_PATH)?
+        .interface(DARKMAN_INTERFACE)?
+        .member("ModeChanged")?
+        .build();
+
+    let dbus_proxy = zbus::fdo::DBusProxy::new(&conn)
+        .await
+        .context("Failed to create DBus proxy")?;
+
+    dbus_proxy
+        .add_match_rule(rule)
+        .await
+        .context("Failed to add match rule")?;
+
+    log::info!("Listening for darkman ModeChanged signals");
+
+    let mut stream = zbus::MessageStream::from(&conn);
+    while let Some(msg) = stream.next().await {
+        let msg = match msg {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("D-Bus stream error: {}", e);
+                continue;
+            }
+        };
+
+        let header = msg.header();
+        if header.member().map(|m| m.as_str()) == Some("ModeChanged")
+            && header.interface().map(|i| i.as_str()) == Some(DARKMAN_INTERFACE)
+        {
+            if let Ok(new_mode_str) = msg.body().deserialize::<String>() {
+                let new_mode = DarkmanMode::from_str(&new_mode_str).unwrap_or_default();
+                log::info!("Darkman mode changed externally: {:?}", new_mode);
+                *mode.lock().unwrap() = new_mode;
+                notifier.notify();
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -260,30 +298,23 @@ async fn main() -> Result<()> {
     log::info!("Starting darkman daemon...");
 
     // Create daemon
-    let mut daemon = DarkmanDaemon::new().await?;
+    let daemon = DarkmanDaemon::new().await?;
 
-    // Start monitoring D-Bus signals
-    if let Err(e) = daemon.start_monitoring().await {
-        log::warn!("Failed to start D-Bus monitoring: {}", e);
-        log::warn!("Daemon will still work but won't auto-update on external changes");
-    }
+    // Grab shared handles before daemon is moved into the server
+    let shared_mode = daemon.shared_mode();
+    let monitor_conn = daemon.conn.clone();
 
-    // Spawn background task to periodically update mode
-    let conn = daemon.conn.clone();
+    // Create server and notifier
+    let (server, notifier) = PluginServer::new("darkman-daemon", daemon);
+
+    // Listen for D-Bus ModeChanged signals (instant, no polling)
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            if let Ok(mode) = DarkmanDaemon::get_mode(&conn).await {
-                log::trace!("Periodic mode check: {:?}", mode);
-            }
+        if let Err(e) = monitor_mode_signals(monitor_conn, shared_mode, notifier).await {
+            log::error!("D-Bus signal monitoring failed: {}", e);
         }
     });
 
-    // Create and run server
-    let server = PluginServer::new("darkman-daemon", daemon);
-
-    // Run server (widget updates happen on each GetWidgets call)
+    // Run server
     server.run().await?;
 
     Ok(())

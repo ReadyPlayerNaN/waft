@@ -9,9 +9,11 @@
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::time::Duration;
-use tokio::time::sleep;
+use tokio::sync::mpsc;
+use tokio::time::{sleep, timeout};
 
-use waft_ipc::{Action, ActionParams, Slot, Widget};
+use waft_ipc::{Action, ActionParams, PluginMessage, Widget};
+use waft_overview::plugin_manager::{InternalMessage, PluginClient};
 
 /// Initialize test logging
 fn init_test_logging() {
@@ -116,19 +118,30 @@ async fn test_darkman_daemon_discovery() {
     sleep(Duration::from_millis(200)).await;
 
     // Connect to darkman daemon
-    use waft_overview::PluginClient;
-    let mut client = PluginClient::connect(daemon.plugin_id.clone(), daemon.socket_path.clone())
-        .await
-        .expect("Failed to connect to darkman daemon");
+    let (merged_tx, mut merged_rx) = mpsc::unbounded_channel();
+    let client =
+        PluginClient::connect(daemon.plugin_id.clone(), daemon.socket_path.clone(), merged_tx)
+            .await
+            .expect("Failed to connect to darkman daemon");
 
     // Request widgets
-    let widgets = client
-        .request_widgets()
+    client.send_get_widgets().expect("Failed to send GetWidgets");
+
+    let msg = timeout(Duration::from_secs(5), merged_rx.recv())
         .await
-        .expect("Failed to get darkman widgets");
+        .expect("Timeout")
+        .expect("Channel closed");
+
+    let widgets = match msg {
+        InternalMessage::Plugin {
+            msg: PluginMessage::SetWidgets { widgets },
+            ..
+        } => widgets,
+        other => panic!("Expected SetWidgets, got: {:?}", other),
+    };
 
     assert!(!widgets.is_empty(), "Darkman should have widgets");
-    println!("✅ Darkman daemon discovery successful");
+    println!("Darkman daemon discovery successful");
 
     // Find the darkman toggle widget
     let toggle_widget = widgets
@@ -136,9 +149,7 @@ async fn test_darkman_daemon_discovery() {
         .find(|w| w.id == "darkman:toggle")
         .expect("Should have darkman:toggle widget");
 
-    assert_eq!(toggle_widget.slot, Slot::FeatureToggles);
     assert_eq!(toggle_widget.weight, 190);
-    println!("✅ Darkman widget in correct slot (FeatureToggles) with weight 190");
 
     // Verify widget structure
     match &toggle_widget.widget {
@@ -151,10 +162,9 @@ async fn test_darkman_daemon_discovery() {
         } => {
             assert_eq!(title, "Dark Mode");
             assert_eq!(icon, "weather-clear-night-symbolic");
-            // active state depends on system darkman state, so we just check it's a boolean
             assert!(!busy, "Should not be busy initially");
 
-            println!("✅ Darkman toggle widget structure verified");
+            println!("Darkman toggle widget structure verified");
             println!("   - Title: {}", title);
             println!("   - Icon: {}", icon);
             println!("   - Active: {}", active);
@@ -178,16 +188,27 @@ async fn test_darkman_daemon_toggle_action() {
     sleep(Duration::from_millis(200)).await;
 
     // Connect to darkman daemon
-    use waft_overview::PluginClient;
-    let mut client = PluginClient::connect(daemon.plugin_id.clone(), daemon.socket_path.clone())
-        .await
-        .expect("Failed to connect to darkman daemon");
+    let (merged_tx, mut merged_rx) = mpsc::unbounded_channel();
+    let client =
+        PluginClient::connect(daemon.plugin_id.clone(), daemon.socket_path.clone(), merged_tx)
+            .await
+            .expect("Failed to connect to darkman daemon");
 
     // Get initial widgets
-    let widgets = client
-        .request_widgets()
+    client.send_get_widgets().expect("Failed to send GetWidgets");
+
+    let msg = timeout(Duration::from_secs(5), merged_rx.recv())
         .await
-        .expect("Failed to get widgets");
+        .expect("Timeout")
+        .expect("Channel closed");
+
+    let widgets = match msg {
+        InternalMessage::Plugin {
+            msg: PluginMessage::SetWidgets { widgets },
+            ..
+        } => widgets,
+        other => panic!("Expected SetWidgets, got: {:?}", other),
+    };
 
     let toggle_widget = widgets
         .iter()
@@ -199,7 +220,10 @@ async fn test_darkman_daemon_toggle_action() {
         _ => panic!("Expected FeatureToggle"),
     };
 
-    println!("✅ Initial darkman state: {}", if initial_active { "Dark" } else { "Light" });
+    println!(
+        "Initial darkman state: {}",
+        if initial_active { "Dark" } else { "Light" }
+    );
 
     // Trigger toggle action
     let action = Action {
@@ -207,41 +231,52 @@ async fn test_darkman_daemon_toggle_action() {
         params: ActionParams::None,
     };
 
-    let result = client
-        .trigger_action("darkman:toggle".to_string(), action)
-        .await;
+    let result = client.send_action("darkman:toggle".to_string(), action);
 
-    // Action may fail if darkman service is not running - that's OK for the test
-    // We're testing the daemon's ability to handle the action, not darkman itself
     match result {
         Ok(_) => {
-            println!("✅ Toggle action succeeded");
+            println!("Toggle action sent");
 
-            // Request widgets again to verify state changed
-            let widgets_after = client
-                .request_widgets()
+            // Wait for updated widgets (server pushes SetWidgets after action)
+            let msg = timeout(Duration::from_secs(5), merged_rx.recv())
                 .await
-                .expect("Failed to get widgets after toggle");
+                .expect("Timeout")
+                .expect("Channel closed");
 
-            let toggle_after = widgets_after
-                .iter()
-                .find(|w| w.id == "darkman:toggle")
-                .expect("Should have darkman:toggle widget");
+            match msg {
+                InternalMessage::Plugin {
+                    msg: PluginMessage::SetWidgets { widgets },
+                    ..
+                } => {
+                    let toggle_after = widgets
+                        .iter()
+                        .find(|w| w.id == "darkman:toggle")
+                        .expect("Should have darkman:toggle widget");
 
-            match &toggle_after.widget {
-                Widget::FeatureToggle { active, .. } => {
-                    assert_ne!(*active, initial_active, "State should have changed after toggle");
-                    println!("✅ State changed from {} to {}",
-                        if initial_active { "Dark" } else { "Light" },
-                        if *active { "Dark" } else { "Light" }
-                    );
+                    match &toggle_after.widget {
+                        Widget::FeatureToggle { active, .. } => {
+                            assert_ne!(
+                                *active, initial_active,
+                                "State should have changed after toggle"
+                            );
+                            println!(
+                                "State changed from {} to {}",
+                                if initial_active { "Dark" } else { "Light" },
+                                if *active { "Dark" } else { "Light" }
+                            );
+                        }
+                        _ => panic!("Expected FeatureToggle"),
+                    }
                 }
-                _ => panic!("Expected FeatureToggle"),
+                other => panic!("Expected SetWidgets after action, got: {:?}", other),
             }
         }
         Err(e) => {
-            println!("⚠️  Toggle action failed (darkman service may not be running): {}", e);
-            println!("✅ Daemon handled action request gracefully");
+            println!(
+                "Toggle action failed (darkman service may not be running): {}",
+                e
+            );
+            println!("Daemon handled action request gracefully");
         }
     }
 }
@@ -261,16 +296,27 @@ async fn test_darkman_daemon_widget_format() {
     sleep(Duration::from_millis(200)).await;
 
     // Connect to darkman daemon
-    use waft_overview::PluginClient;
-    let mut client = PluginClient::connect(daemon.plugin_id.clone(), daemon.socket_path.clone())
-        .await
-        .expect("Failed to connect to darkman daemon");
+    let (merged_tx, mut merged_rx) = mpsc::unbounded_channel();
+    let client =
+        PluginClient::connect(daemon.plugin_id.clone(), daemon.socket_path.clone(), merged_tx)
+            .await
+            .expect("Failed to connect to darkman daemon");
 
     // Request widgets
-    let widgets = client
-        .request_widgets()
+    client.send_get_widgets().expect("Failed to send GetWidgets");
+
+    let msg = timeout(Duration::from_secs(5), merged_rx.recv())
         .await
-        .expect("Failed to get widgets");
+        .expect("Timeout")
+        .expect("Channel closed");
+
+    let widgets = match msg {
+        InternalMessage::Plugin {
+            msg: PluginMessage::SetWidgets { widgets },
+            ..
+        } => widgets,
+        other => panic!("Expected SetWidgets, got: {:?}", other),
+    };
 
     assert_eq!(widgets.len(), 1, "Darkman should have exactly one widget");
 
@@ -278,7 +324,6 @@ async fn test_darkman_daemon_widget_format() {
 
     // Verify all widget metadata
     assert_eq!(widget.id, "darkman:toggle");
-    assert_eq!(widget.slot, Slot::FeatureToggles);
     assert_eq!(widget.weight, 190);
 
     // Verify widget content
@@ -295,7 +340,7 @@ async fn test_darkman_daemon_widget_format() {
         } => {
             assert_eq!(title, "Dark Mode");
             assert_eq!(icon, "weather-clear-night-symbolic");
-            assert_eq!(details, &None, "Should have no details");
+            assert_eq!(*details, None, "Should have no details");
             assert!(matches!(active, true | false), "Active should be boolean");
             assert!(!busy, "Should not be busy");
             assert!(!expandable, "Should not be expandable");
@@ -306,7 +351,7 @@ async fn test_darkman_daemon_widget_format() {
                 "Toggle action should have no params"
             );
 
-            println!("✅ All widget properties verified correctly");
+            println!("All widget properties verified correctly");
         }
         _ => panic!("Expected FeatureToggle widget"),
     }
