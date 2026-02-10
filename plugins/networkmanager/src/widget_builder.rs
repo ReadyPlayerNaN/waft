@@ -123,8 +123,7 @@ fn build_wired_widget(adapter: &EthernetAdapterState) -> NamedWidget {
             .icon(icon)
             .active(adapter.is_connected())
             .details(details)
-            .on_toggle(format!("toggle_wired:{}", adapter.path))
-            .expandable(true);
+            .on_toggle(format!("toggle_wired:{}", adapter.path));
 
     NamedWidget {
         id: format!("networkmanager:wired:{}", adapter.path),
@@ -251,4 +250,139 @@ fn derive_vpn_state(connections: &[VpnConnectionInfo]) -> (Option<String>, VpnSt
         }
     }
     (None, VpnState::Disconnected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use waft_plugin_sdk::Widget;
+
+    fn make_ethernet_adapter(path: &str, interface_name: &str, device_state: u32) -> EthernetAdapterState {
+        EthernetAdapterState {
+            path: path.to_string(),
+            interface_name: interface_name.to_string(),
+            device_state,
+        }
+    }
+
+    #[test]
+    fn wired_widget_toggle_action_includes_device_path() {
+        let adapter = make_ethernet_adapter("/org/freedesktop/NetworkManager/Devices/3", "enp0s31f6", 100);
+        let named = build_wired_widget(&adapter);
+
+        match &named.widget {
+            Widget::FeatureToggle { on_toggle, .. } => {
+                assert_eq!(
+                    on_toggle.id,
+                    "toggle_wired:/org/freedesktop/NetworkManager/Devices/3"
+                );
+            }
+            other => panic!("Expected FeatureToggle, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn wired_widget_not_expandable() {
+        let adapter = make_ethernet_adapter("/org/freedesktop/NetworkManager/Devices/3", "enp0s31f6", 100);
+        let named = build_wired_widget(&adapter);
+
+        match &named.widget {
+            Widget::FeatureToggle {
+                expandable,
+                expanded_content,
+                ..
+            } => {
+                assert!(!expandable, "Wired widget should not be expandable");
+                assert!(
+                    expanded_content.is_none(),
+                    "Wired widget should have no expanded content"
+                );
+            }
+            other => panic!("Expected FeatureToggle, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn wired_widget_connected_state() {
+        let adapter = make_ethernet_adapter("/org/freedesktop/NetworkManager/Devices/3", "eth0", 100);
+        let named = build_wired_widget(&adapter);
+
+        match &named.widget {
+            Widget::FeatureToggle {
+                active,
+                icon,
+                details,
+                ..
+            } => {
+                assert!(active, "Connected adapter should be active");
+                assert_eq!(*icon, "network-wired-symbolic");
+                assert_eq!(details.as_deref(), Some("Connected"));
+            }
+            other => panic!("Expected FeatureToggle, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn wired_widget_disconnected_state() {
+        // device_state 30 = disconnected but enabled
+        let adapter = make_ethernet_adapter("/org/freedesktop/NetworkManager/Devices/3", "eth0", 30);
+        let named = build_wired_widget(&adapter);
+
+        match &named.widget {
+            Widget::FeatureToggle {
+                active,
+                icon,
+                details,
+                ..
+            } => {
+                assert!(!active, "Disconnected adapter should not be active");
+                assert_eq!(*icon, "network-wired-disconnected-symbolic");
+                assert_eq!(details.as_deref(), Some("Disconnected"));
+            }
+            other => panic!("Expected FeatureToggle, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn wired_widget_disabled_state() {
+        // device_state 10 = unmanaged/disabled (below 20 threshold)
+        let adapter = make_ethernet_adapter("/org/freedesktop/NetworkManager/Devices/3", "eth0", 10);
+        let named = build_wired_widget(&adapter);
+
+        match &named.widget {
+            Widget::FeatureToggle {
+                active,
+                icon,
+                details,
+                ..
+            } => {
+                assert!(!active, "Disabled adapter should not be active");
+                assert_eq!(*icon, "network-wired-offline-symbolic");
+                assert_eq!(details.as_deref(), Some("Disabled"));
+            }
+            other => panic!("Expected FeatureToggle, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn wired_widget_id_contains_device_path() {
+        let adapter = make_ethernet_adapter("/org/freedesktop/NetworkManager/Devices/5", "enp0s31f6", 100);
+        let named = build_wired_widget(&adapter);
+
+        assert_eq!(named.id, "networkmanager:wired:/org/freedesktop/NetworkManager/Devices/5");
+        assert_eq!(named.weight, 101);
+    }
+
+    #[test]
+    fn wired_widget_title_includes_interface_name() {
+        let adapter = make_ethernet_adapter("/dev/3", "enp0s31f6", 100);
+        let named = build_wired_widget(&adapter);
+
+        match &named.widget {
+            Widget::FeatureToggle { title, .. } => {
+                assert_eq!(*title, "Wired (enp0s31f6)");
+            }
+            other => panic!("Expected FeatureToggle, got {:?}", other),
+        }
+    }
 }

@@ -113,14 +113,13 @@ impl ActionRouter {
         );
 
         let plugin_id = self
-            .widget_to_plugin
-            .get(&widget_id)
+            .resolve_plugin(&widget_id)
             .ok_or_else(|| RouterError::WidgetNotFound(widget_id.clone()))?;
 
         let client = self
             .clients
             .get(plugin_id)
-            .ok_or_else(|| RouterError::PluginNotConnected(plugin_id.clone()))?;
+            .ok_or_else(|| RouterError::PluginNotConnected(plugin_id.to_string()))?;
 
         client.send_action(widget_id, action)?;
 
@@ -130,7 +129,27 @@ impl ActionRouter {
 
     /// Get the plugin ID that owns a widget
     pub fn get_plugin_for_widget(&self, widget_id: &str) -> Option<&str> {
-        self.widget_to_plugin.get(widget_id).map(|s| s.as_str())
+        self.resolve_plugin(widget_id)
+    }
+
+    /// Resolve a widget ID to a plugin ID, walking up the ancestor chain.
+    ///
+    /// If `widget_id` is not directly mapped, progressively strips the last
+    /// `:segment` until a parent mapping is found. This handles synthesized
+    /// child IDs like `audio:input:expanded:child0` resolving to the
+    /// `audio:input` mapping.
+    fn resolve_plugin(&self, widget_id: &str) -> Option<&str> {
+        if let Some(plugin_id) = self.widget_to_plugin.get(widget_id) {
+            return Some(plugin_id.as_str());
+        }
+        let mut id = widget_id;
+        while let Some(pos) = id.rfind(':') {
+            id = &id[..pos];
+            if let Some(plugin_id) = self.widget_to_plugin.get(id) {
+                return Some(plugin_id.as_str());
+            }
+        }
+        None
     }
 
     /// Check if a plugin client is registered
@@ -246,5 +265,62 @@ mod tests {
         let router = ActionRouter::default();
         assert_eq!(router.client_count(), 0);
         assert_eq!(router.widget_count(), 0);
+    }
+
+    #[test]
+    fn test_resolve_plugin_exact_match() {
+        let mut router = ActionRouter::new();
+        router.map_widget("audio:output".to_string(), "audio".to_string());
+
+        assert_eq!(router.get_plugin_for_widget("audio:output"), Some("audio"));
+    }
+
+    #[test]
+    fn test_resolve_plugin_ancestor_one_level() {
+        let mut router = ActionRouter::new();
+        router.map_widget("audio:output".to_string(), "audio".to_string());
+
+        assert_eq!(
+            router.get_plugin_for_widget("audio:output:expanded"),
+            Some("audio")
+        );
+    }
+
+    #[test]
+    fn test_resolve_plugin_ancestor_multiple_levels() {
+        let mut router = ActionRouter::new();
+        router.map_widget("audio:input".to_string(), "audio".to_string());
+
+        assert_eq!(
+            router.get_plugin_for_widget("audio:input:expanded:child0"),
+            Some("audio")
+        );
+        assert_eq!(
+            router.get_plugin_for_widget("audio:input:expanded:child0:trailing"),
+            Some("audio")
+        );
+    }
+
+    #[test]
+    fn test_resolve_plugin_no_match() {
+        let mut router = ActionRouter::new();
+        router.map_widget("audio:output".to_string(), "audio".to_string());
+
+        assert_eq!(router.get_plugin_for_widget("bluetooth:toggle"), None);
+    }
+
+    #[test]
+    fn test_resolve_plugin_prefers_exact() {
+        let mut router = ActionRouter::new();
+        router.map_widget("audio:output".to_string(), "audio".to_string());
+        router.map_widget(
+            "audio:output:expanded".to_string(),
+            "audio-expanded".to_string(),
+        );
+
+        assert_eq!(
+            router.get_plugin_for_widget("audio:output:expanded"),
+            Some("audio-expanded")
+        );
     }
 }

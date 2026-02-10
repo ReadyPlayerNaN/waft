@@ -3,9 +3,9 @@
 //! Provides `set_value()`, `set_muted()`, `set_icon()`, `set_expandable()` for
 //! in-place property updates without recreating the GTK tree.
 
+use crate::menu_state::{is_menu_open, menu_id_for_widget, toggle_menu};
 use crate::renderer::{ActionCallback, WidgetRenderer};
 use crate::widgets::icon::IconWidget;
-use crate::menu_state::{is_menu_open, menu_id_for_widget, toggle_menu};
 use gtk::glib;
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -49,7 +49,10 @@ pub struct SliderWidget {
 impl SliderWidget {
     pub fn new(props: SliderProps, menu_store: Option<Rc<MenuStore>>) -> Self {
         let menu_id = menu_store.as_ref().map(|_| {
-            props.menu_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+            props
+                .menu_id
+                .clone()
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
         });
 
         // Main vertical container
@@ -63,19 +66,11 @@ impl SliderWidget {
         icon_button.add_css_class("flat");
         icon_button.add_css_class("circular");
 
-        let icon_name = muted_icon_name(&props.icon, props.muted);
-        let icon_widget = IconWidget::from_name(&icon_name, 24);
+        let icon_widget = IconWidget::from_name(&props.icon, 24);
         icon_button.set_child(Some(icon_widget.widget()));
 
         // Scale (slider)
-        let adjustment = gtk::Adjustment::new(
-            props.value * 100.0,
-            0.0,
-            100.0,
-            1.0,
-            10.0,
-            0.0,
-        );
+        let adjustment = gtk::Adjustment::new(props.value * 100.0, 0.0, 100.0, 1.0, 10.0, 0.0);
 
         let scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&adjustment));
         scale.set_draw_value(false);
@@ -98,7 +93,11 @@ impl SliderWidget {
 
             let mid = menu_id.clone().unwrap();
             let is_open = is_menu_open(store, &mid);
-            let chevron_icon = if is_open { "pan-up-symbolic" } else { "pan-down-symbolic" };
+            let chevron_icon = if is_open {
+                "pan-up-symbolic"
+            } else {
+                "pan-down-symbolic"
+            };
             let chevron_widget = IconWidget::from_name(chevron_icon, 16);
             expand_button.set_child(Some(chevron_widget.widget()));
 
@@ -194,17 +193,12 @@ impl SliderWidget {
         } else {
             self.root.remove_css_class("slider-row-muted");
         }
-        let base = self.base_icon.borrow().clone();
-        let name = muted_icon_name(&base, m);
-        self.icon_widget.set_icon(&name);
     }
 
     /// Update the base icon name.
     pub fn set_icon(&self, icon: &str) {
         *self.base_icon.borrow_mut() = icon.to_string();
-        let m = *self.muted.borrow();
-        let name = muted_icon_name(icon, m);
-        self.icon_widget.set_icon(&name);
+        self.icon_widget.set_icon(&icon);
     }
 
     /// Update the expandable state.
@@ -231,6 +225,7 @@ impl crate::reconcile::Reconcilable for SliderWidget {
                 waft_ipc::Widget::Slider {
                     on_value_change: old_vc,
                     on_icon_click: old_ic,
+                    expanded_content: old_ec,
                     ..
                 },
                 waft_ipc::Widget::Slider {
@@ -240,10 +235,10 @@ impl crate::reconcile::Reconcilable for SliderWidget {
                     expandable,
                     on_value_change: new_vc,
                     on_icon_click: new_ic,
-                    ..
+                    expanded_content: new_ec,
                 },
             ) => {
-                if old_vc != new_vc || old_ic != new_ic {
+                if old_vc != new_vc || old_ic != new_ic || old_ec != new_ec {
                     return ReconcileOutcome::Recreate;
                 }
                 self.set_value(*value);
@@ -254,15 +249,6 @@ impl crate::reconcile::Reconcilable for SliderWidget {
             }
             _ => ReconcileOutcome::Recreate,
         }
-    }
-}
-
-/// Compute the icon name, appending "-muted" when muted.
-fn muted_icon_name(base: &str, muted: bool) -> String {
-    if muted {
-        format!("{}-muted", base.trim_end_matches("-symbolic"))
-    } else {
-        base.to_string()
     }
 }
 
@@ -545,20 +531,47 @@ mod tests {
         };
 
         let widget_min = render_slider(
-            &renderer, &callback, &menu_store, "icon", 0.0, false, false,
-            &None, &on_value_change, &on_icon_click, "slider_min",
+            &renderer,
+            &callback,
+            &menu_store,
+            "icon",
+            0.0,
+            false,
+            false,
+            &None,
+            &on_value_change,
+            &on_icon_click,
+            "slider_min",
         );
         assert!(widget_min.is::<gtk::Box>());
 
         let widget_max = render_slider(
-            &renderer, &callback, &menu_store, "icon", 1.0, false, false,
-            &None, &on_value_change, &on_icon_click, "slider_max",
+            &renderer,
+            &callback,
+            &menu_store,
+            "icon",
+            1.0,
+            false,
+            false,
+            &None,
+            &on_value_change,
+            &on_icon_click,
+            "slider_max",
         );
         assert!(widget_max.is::<gtk::Box>());
 
         let widget_mid = render_slider(
-            &renderer, &callback, &menu_store, "icon", 0.5, false, false,
-            &None, &on_value_change, &on_icon_click, "slider_mid",
+            &renderer,
+            &callback,
+            &menu_store,
+            "icon",
+            0.5,
+            false,
+            false,
+            &None,
+            &on_value_change,
+            &on_icon_click,
+            "slider_mid",
         );
         assert!(widget_mid.is::<gtk::Box>());
     }
@@ -588,7 +601,10 @@ mod tests {
         });
 
         slider.set_value(0.75);
-        assert!(!*called.borrow(), "set_value should block the signal handler");
+        assert!(
+            !*called.borrow(),
+            "set_value should block the signal handler"
+        );
         assert!((slider.scale.value() - 75.0).abs() < 0.01);
     }
 
@@ -657,13 +673,5 @@ mod tests {
         assert!(!slider.expand_revealer.reveals_child());
         slider.set_expandable(true);
         assert!(slider.expand_revealer.reveals_child());
-    }
-
-    #[test]
-    fn test_muted_icon_name() {
-        assert_eq!(muted_icon_name("audio-volume-high-symbolic", false), "audio-volume-high-symbolic");
-        assert_eq!(muted_icon_name("audio-volume-high-symbolic", true), "audio-volume-high-muted");
-        assert_eq!(muted_icon_name("microphone", false), "microphone");
-        assert_eq!(muted_icon_name("microphone", true), "microphone-muted");
     }
 }

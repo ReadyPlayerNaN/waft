@@ -31,6 +31,8 @@ pub struct ReconciledWidget {
     pub gtk_widget: gtk::Widget,
     pub kind: WidgetKind,
     pub menu_id: Option<String>,
+    /// Rendered expanded_content menu widget (for FeatureToggle).
+    pub menu: Option<gtk::Widget>,
     pub id: String,
     pub weight: u32,
 }
@@ -53,6 +55,8 @@ struct CachedEntry {
     gtk_widget: gtk::Widget,
     kind: WidgetKind,
     menu_id: Option<String>,
+    /// Rendered expanded_content menu widget (for FeatureToggle).
+    menu: Option<gtk::Widget>,
     typed: Option<Box<dyn Reconcilable>>,
 }
 
@@ -120,6 +124,7 @@ impl WidgetReconciler {
                 gtk_widget: entry.gtk_widget.clone(),
                 kind: entry.kind,
                 menu_id: entry.menu_id.clone(),
+                menu: entry.menu.clone(),
                 id: new_widget.id.clone(),
                 weight: new_widget.weight,
             });
@@ -153,8 +158,8 @@ impl WidgetReconciler {
                 active,
                 busy,
                 expandable,
+                expanded_content,
                 on_toggle,
-                ..
             } => {
                 use crate::menu_state::menu_id_for_widget;
                 let toggle = FeatureToggleWidget::new(
@@ -184,6 +189,22 @@ impl WidgetReconciler {
                     cb(wid.clone(), a);
                 });
 
+                // Render expanded_content as a menu widget for FeatureGridWidget
+                let menu = if *expandable {
+                    if let Some(content) = expanded_content {
+                        let renderer = WidgetRenderer::new(
+                            self.menu_store.clone(),
+                            self.action_callback.clone(),
+                        );
+                        let content_id = format!("{}:expanded", named_widget.id);
+                        Some(renderer.render(content, &content_id))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
                 let gtk_widget = toggle.widget();
                 let menu_id = toggle.menu_id.clone();
 
@@ -192,6 +213,7 @@ impl WidgetReconciler {
                     gtk_widget,
                     kind: WidgetKind::FeatureToggle,
                     menu_id,
+                    menu,
                     typed: Some(Box::new(toggle)),
                 }
             }
@@ -276,6 +298,7 @@ impl WidgetReconciler {
                     gtk_widget,
                     kind: WidgetKind::Slider,
                     menu_id,
+                    menu: None,
                     typed: Some(Box::new(slider)),
                 }
             }
@@ -303,6 +326,7 @@ impl WidgetReconciler {
                     gtk_widget,
                     kind: WidgetKind::InfoCard,
                     menu_id: None,
+                    menu: None,
                     typed: Some(Box::new(card)),
                 }
             }
@@ -327,6 +351,7 @@ impl WidgetReconciler {
                     gtk_widget,
                     kind: WidgetKind::Generic,
                     menu_id: None,
+                    menu: None,
                     typed: Some(Box::new(scb)),
                 }
             }
@@ -340,6 +365,7 @@ impl WidgetReconciler {
                     gtk_widget,
                     kind: WidgetKind::Generic,
                     menu_id: None,
+                    menu: None,
                     typed: None,
                 }
             }

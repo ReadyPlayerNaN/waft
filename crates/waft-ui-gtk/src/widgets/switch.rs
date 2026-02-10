@@ -18,6 +18,7 @@ pub fn render_switch(
     let switch = gtk::Switch::new();
     switch.set_active(active);
     switch.set_sensitive(sensitive);
+    switch.set_valign(gtk::Align::Center);
 
     // Clone necessary data for the closure
     let widget_id = widget_id.to_string();

@@ -42,7 +42,7 @@ impl DaemonWidgetReconciler {
                     id: rw.id,
                     weight: rw.weight as i32,
                     el: rw.gtk_widget,
-                    menu: None,
+                    menu: rw.menu,
                     on_expand_toggled: None,
                     menu_id: rw.menu_id,
                 })),

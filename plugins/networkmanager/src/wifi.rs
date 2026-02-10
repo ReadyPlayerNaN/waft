@@ -172,16 +172,68 @@ pub async fn set_wifi_enabled_dbus(conn: &Connection, enabled: bool) -> Result<(
     Ok(())
 }
 
-/// Connect wired via raw D-Bus (ActivateConnection with "/" for auto-activate).
-pub async fn connect_wired_dbus(conn: &Connection) -> Result<()> {
-    let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
+/// Connect wired via raw D-Bus.
+///
+/// Reads the device's AvailableConnections property and activates the first one.
+/// This mirrors what `nmcli device connect` does internally, and is more reliable
+/// than `ActivateConnection("/", device, "/")` which may fail after a Disconnect.
+pub async fn connect_wired_dbus(conn: &Connection, device_path: &str) -> Result<()> {
+    use zbus::zvariant::ObjectPath;
+
+    // Read AvailableConnections property directly (ao = array of object paths)
+    let props_proxy = zbus::Proxy::new(
+        conn,
+        NM_SERVICE,
+        device_path,
+        "org.freedesktop.DBus.Properties",
+    )
+    .await
+    .context("Failed to create Properties proxy")?;
+
+    let (raw_value,): (OwnedValue,) = props_proxy
+        .call(
+            "Get",
+            &(NM_DEVICE_INTERFACE, "AvailableConnections"),
+        )
+        .await
+        .context("Failed to get AvailableConnections property")?;
+
+    let available: Vec<OwnedObjectPath> = Vec::try_from(raw_value)
+        .unwrap_or_default();
+
+    let connection_path: ObjectPath = if let Some(first) = available.first() {
+        log::debug!(
+            "[nm] Using connection profile {} for device {}",
+            first.as_str(),
+            device_path
+        );
+        ObjectPath::try_from(first.as_str())
+            .unwrap_or(ObjectPath::from_static_str_unchecked("/"))
+    } else {
+        log::debug!("[nm] No available connections for {}, using auto-detect", device_path);
+        ObjectPath::from_static_str_unchecked("/")
+    };
+
+    let device_obj = ObjectPath::try_from(device_path)
+        .with_context(|| format!("Invalid device path: {}", device_path))?;
+    let no_specific = ObjectPath::from_static_str_unchecked("/");
+
+    let nm_proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
         .await
         .context("Failed to create NM proxy")?;
 
-    let _: (OwnedObjectPath,) = proxy
-        .call("ActivateConnection", &("/", "/", "/"))
+    let _: (OwnedObjectPath,) = nm_proxy
+        .call(
+            "ActivateConnection",
+            &(&connection_path, &device_obj, &no_specific),
+        )
         .await
-        .context("Failed to auto-activate wired connection")?;
+        .with_context(|| {
+            format!(
+                "Failed to activate wired connection {} on {}",
+                connection_path, device_path
+            )
+        })?;
 
     Ok(())
 }

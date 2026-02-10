@@ -321,8 +321,8 @@ impl NetworkManagerDaemon {
                 return Err(e.into());
             }
         } else {
-            info!("[nm] Connecting wired");
-            if let Err(e) = connect_wired_dbus(&self.conn).await {
+            info!("[nm] Connecting wired: {}", device_path);
+            if let Err(e) = connect_wired_dbus(&self.conn, device_path).await {
                 error!("[nm] Failed to connect wired: {}", e);
                 return Err(e.into());
             }

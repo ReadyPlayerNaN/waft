@@ -58,7 +58,12 @@ impl AudioDaemon {
         // Check if audio system is available
         if !pactl::is_available().await {
             warn!("[audio] PulseAudio/PipeWire not available");
-            return Ok((Self { state: state.clone() }, state));
+            return Ok((
+                Self {
+                    state: state.clone(),
+                },
+                state,
+            ));
         }
 
         {
@@ -72,7 +77,12 @@ impl AudioDaemon {
             warn!("[audio] Failed to load initial state: {}", e);
         }
 
-        Ok((Self { state: state.clone() }, state))
+        Ok((
+            Self {
+                state: state.clone(),
+            },
+            state,
+        ))
     }
 
     fn get_state(&self) -> AudioState {
@@ -152,9 +162,9 @@ fn output_icon(state: &AudioState) -> String {
 /// Compute the input volume icon based on volume level and mute state.
 fn input_icon(state: &AudioState) -> String {
     if state.input_muted {
-        "microphone-sensitivity-muted-symbolic".to_string()
+        "microphone-disabled-symbolic".to_string()
     } else if state.input_volume < 0.01 {
-        "microphone-sensitivity-muted-symbolic".to_string()
+        "audio-input-microphone-symbolic".to_string()
     } else if state.input_volume < 0.34 {
         "microphone-sensitivity-low-symbolic".to_string()
     } else if state.input_volume < 0.67 {
@@ -171,7 +181,7 @@ fn build_output_device_menu(state: &AudioState) -> Widget {
     for device in &state.output_devices {
         let is_default = state.default_output.as_deref() == Some(&device.id);
         let row = MenuRowBuilder::new(&device.name)
-            .icon(&device.icon)
+            .icon("audio-speakers-symbolic")
             .on_click(format!("select_output:{}", device.id));
 
         let row = if is_default {
@@ -180,7 +190,7 @@ fn build_output_device_menu(state: &AudioState) -> Widget {
             row
         };
 
-        builder = builder.child(row.build());
+        builder = builder.keyed_child(&device.id, row.build());
     }
 
     builder.build()
@@ -193,7 +203,7 @@ fn build_input_device_menu(state: &AudioState) -> Widget {
     for device in &state.input_devices {
         let is_default = state.default_input.as_deref() == Some(&device.id);
         let row = MenuRowBuilder::new(&device.name)
-            .icon(&device.icon)
+            .icon("audio-input-microphone-symbolic")
             .on_click(format!("select_input:{}", device.id));
 
         let row = if is_default {
@@ -202,7 +212,7 @@ fn build_input_device_menu(state: &AudioState) -> Widget {
             row
         };
 
-        builder = builder.child(row.build());
+        builder = builder.keyed_child(&device.id, row.build());
     }
 
     builder.build()
