@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-crate-type = ["cdylib"]
+
+[[bin]]
+name = "waft-audio-daemon"
+path = "bin/waft-audio-daemon.rs"
 
 [dependencies]
-waft-plugin-api = { path = "../../crates/plugin-api" }
-waft-core = { path = "../../crates/core" }
-gtk = { version = "0.10", package = "gtk4", features = ["v4_6", "unsafe-assume-initialized"] }
-glib = "0.21"
+waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
+waft-ipc = { path = "../../crates/ipc" }
 async-trait = "0.1"
 anyhow = "1"
-flume = "0.12"
 log = "0.4"
-tokio = { version = "1", features = ["sync", "rt", "process", "io-util"] }
-uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["full"] }
+env_logger = "0.11"

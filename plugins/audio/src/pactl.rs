@@ -1,39 +1,19 @@
-//! PulseAudio/PipeWire D-Bus helpers.
+//! PulseAudio/PipeWire pactl command helpers.
 //!
-//! Interacts with PulseAudio or PipeWire-Pulse on the session bus.
-//!
-//! Note: PulseAudio's native DBus module may not be enabled by default.
-//! This implementation uses the `pactl` command as a reliable fallback
-//! that works with both PulseAudio and PipeWire.
+//! Interacts with PulseAudio or PipeWire-Pulse via the `pactl` command.
+//! This works reliably with both PulseAudio and PipeWire.
 
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
 use std::process::Stdio;
 
-use super::store::AudioDevice;
-
-/// Run a one-shot `pactl` command via a blocking thread.
-///
-/// Uses std::process::Command on a background thread to avoid needing
-/// tokio's IO reactor (which is in the host's copy of tokio, not the plugin's).
-async fn run_pactl(args: &[&str]) -> Result<std::process::Output> {
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    let (tx, rx) = flume::bounded(1);
-
-    std::thread::spawn(move || {
-        let result = std::process::Command::new("pactl")
-            .args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .context("Failed to execute pactl");
-        let _ = tx.send(result);
-    });
-
-    rx.recv_async()
-        .await
-        .context("Failed to receive response from pactl thread")?
+/// Represents an audio device (output or input).
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioDevice {
+    pub id: String,
+    pub name: String,
+    pub icon: String,
+    pub secondary_icon: Option<String>,
 }
 
 /// Card port information parsed from `pactl list cards`.
@@ -77,6 +57,27 @@ pub struct SourceInfo {
     pub device_id: Option<String>,
     pub active_port: Option<String>,
     pub active_port_available: Option<bool>,
+}
+
+/// Audio event types from pactl subscribe.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AudioEvent {
+    Sink,
+    Source,
+    Server,
+    Card,
+}
+
+/// Run a one-shot `pactl` command via tokio process.
+async fn run_pactl(args: &[&str]) -> Result<std::process::Output> {
+    tokio::process::Command::new("pactl")
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .context("Failed to execute pactl")
 }
 
 /// Get card port info from `pactl list cards`.
@@ -321,10 +322,12 @@ pub async fn is_available() -> bool {
 }
 
 /// Subscribe to PulseAudio events.
-/// Spawns a background thread that reads events and sends them to the channel.
-pub fn subscribe_events(
-    tx: flume::Sender<AudioEvent>,
-) -> Result<()> {
+///
+/// Spawns a background thread that reads events from `pactl subscribe`
+/// and sends them via a tokio mpsc channel.
+pub fn subscribe_events() -> Result<tokio::sync::mpsc::Receiver<AudioEvent>> {
+    let (tx, rx) = tokio::sync::mpsc::channel(32);
+
     let mut child = std::process::Command::new("pactl")
         .args(["subscribe"])
         .stdin(Stdio::null())
@@ -341,10 +344,11 @@ pub fn subscribe_events(
         for line in reader.lines() {
             match line {
                 Ok(line) => {
-                    if let Some(event) = parse_event_line(&line)
-                        && tx.send(event).is_err() {
+                    if let Some(event) = parse_event_line(&line) {
+                        if tx.blocking_send(event).is_err() {
                             break;
                         }
+                    }
                 }
                 Err(_) => break,
             }
@@ -352,19 +356,10 @@ pub fn subscribe_events(
         let _ = child.kill();
     });
 
-    Ok(())
+    Ok(rx)
 }
 
-/// Audio event types from pactl subscribe.
-#[derive(Debug, Clone, PartialEq)]
-pub enum AudioEvent {
-    Sink,
-    Source,
-    Server,
-    Card,
-}
-
-fn parse_event_line(line: &str) -> Option<AudioEvent> {
+pub fn parse_event_line(line: &str) -> Option<AudioEvent> {
     let lower = line.to_lowercase();
     if lower.contains("sink") && !lower.contains("sink-input") {
         Some(AudioEvent::Sink)
@@ -379,20 +374,21 @@ fn parse_event_line(line: &str) -> Option<AudioEvent> {
     }
 }
 
-fn parse_volume_percent(output: &str) -> Option<f64> {
+pub fn parse_volume_percent(output: &str) -> Option<f64> {
     // pactl output looks like: "Volume: front-left: 65536 / 100% / 0.00 dB, ..."
     // We want to extract the first percentage
     for word in output.split_whitespace() {
         if let Some(pct) = word.strip_suffix('%')
-            && let Ok(val) = pct.parse::<f64>() {
-                return Some(val / 100.0);
-            }
+            && let Ok(val) = pct.parse::<f64>()
+        {
+            return Some(val / 100.0);
+        }
     }
     None
 }
 
 /// Parse a property line like `key = "value"` into (key, value).
-fn parse_property_line(line: &str) -> Option<(&str, &str)> {
+pub fn parse_property_line(line: &str) -> Option<(&str, &str)> {
     let trimmed = line.trim();
     let (key, rest) = trimmed.split_once('=')?;
     let key = key.trim();
@@ -436,7 +432,7 @@ enum ParseSection {
     Ports,
 }
 
-fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkInfo>> {
+pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkInfo>> {
     let mut sinks = Vec::new();
     let mut current_name: Option<String> = None;
     let mut current_desc: Option<String> = None;
@@ -580,7 +576,7 @@ fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkInfo>
     Ok(sinks)
 }
 
-fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<SourceInfo>> {
+pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<SourceInfo>> {
     let mut sources = Vec::new();
     let mut current_name: Option<String> = None;
     let mut current_desc: Option<String> = None;
@@ -726,7 +722,7 @@ fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<Sourc
 }
 
 /// Parse `pactl list cards` output to extract port-level product names.
-fn parse_card_ports(output: &str) -> CardPortMap {
+pub fn parse_card_ports(output: &str) -> CardPortMap {
     let mut map = CardPortMap::new();
     let mut current_card_id: Option<String> = None;
     let mut in_ports = false;
@@ -839,7 +835,7 @@ fn parse_card_ports(output: &str) -> CardPortMap {
 }
 
 /// Compute the primary icon for a sink.
-fn compute_primary_icon_sink(icon_name: &Option<String>) -> String {
+pub fn compute_primary_icon_sink(icon_name: &Option<String>) -> String {
     match icon_name {
         Some(name) if !name.is_empty() => {
             if name.ends_with("-symbolic") {
@@ -853,7 +849,7 @@ fn compute_primary_icon_sink(icon_name: &Option<String>) -> String {
 }
 
 /// Compute the primary icon for a source.
-fn compute_primary_icon_source(icon_name: &Option<String>) -> String {
+pub fn compute_primary_icon_source(icon_name: &Option<String>) -> String {
     match icon_name {
         Some(name) if !name.is_empty() => {
             if name.ends_with("-symbolic") {
@@ -867,7 +863,7 @@ fn compute_primary_icon_source(icon_name: &Option<String>) -> String {
 }
 
 /// Compute the secondary icon based on device properties.
-fn compute_secondary_icon(icon_name: &Option<String>, bus: &Option<String>) -> Option<String> {
+pub fn compute_secondary_icon(icon_name: &Option<String>, bus: &Option<String>) -> Option<String> {
     if icon_name.as_deref() == Some("video-display") {
         Some("video-joined-displays-symbolic".to_string())
     } else if bus.as_deref() == Some("bluetooth") {
@@ -878,7 +874,7 @@ fn compute_secondary_icon(icon_name: &Option<String>, bus: &Option<String>) -> O
 }
 
 /// Compute the display label for a device.
-fn compute_label(
+pub fn compute_label(
     description: &str,
     node_nick: &Option<String>,
     device_id: &Option<String>,
@@ -892,9 +888,10 @@ fn compute_label(
         let key = (dev_id.clone(), port.clone());
         if let Some(port_info) = card_ports.get(&key)
             && let Some(ref product) = port_info.product_name
-                && !product.is_empty() {
-                    return product.clone();
-                }
+            && !product.is_empty()
+        {
+            return product.clone();
+        }
     }
 
     // 2. Use node.nick as base, fall back to description
@@ -916,16 +913,18 @@ fn compute_label(
     let has_bt_secondary = bus.as_deref() == Some("bluetooth");
 
     // 4. Strip "HDMI / " prefix for HDMI devices (but keep "DisplayPort N")
-    if has_hdmi_secondary
-        && let Some(stripped) = label.strip_prefix("HDMI / ") {
+    if has_hdmi_secondary {
+        if let Some(stripped) = label.strip_prefix("HDMI / ") {
             label = stripped.to_string();
         }
+    }
 
     // 5. Strip "Bluetooth " prefix for Bluetooth devices
-    if has_bt_secondary
-        && let Some(stripped) = label.strip_prefix("Bluetooth ") {
+    if has_bt_secondary {
+        if let Some(stripped) = label.strip_prefix("Bluetooth ") {
             label = stripped.to_string();
         }
+    }
 
     // 6. Fall back to description if result is empty
     if label.is_empty() {
@@ -981,6 +980,12 @@ impl AudioDevice {
     }
 }
 
+/// Compute the muted variant of an icon name.
+pub fn muted_icon(base: &str) -> String {
+    let stem = base.trim_end_matches("-symbolic");
+    format!("{stem}-muted-symbolic")
+}
+
 #[cfg(test)]
-#[path = "dbus_tests.rs"]
+#[path = "pactl_tests.rs"]
 mod tests;

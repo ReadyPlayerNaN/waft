@@ -163,20 +163,66 @@ fn test_compute_secondary_icon_none_for_regular_device() {
     assert_eq!(compute_secondary_icon(&icon_name, &bus), None);
 }
 
-// Integration tests for pactl command execution would require:
-// - A running PulseAudio/PipeWire instance
-// - Mock pactl command or test doubles
-// - Asynchronous test harness
-//
-// Future work: Add integration tests using test doubles or mock pactl output.
-//
-// Test scenarios to add:
-// - get_card_port_info() parses pactl list cards output correctly
-// - get_sinks() filters out unavailable ports
-// - get_sources() filters out monitor devices
-// - set_sink_volume() clamps volume to 0.0-1.0 range
-// - set_default_sink() executes pactl command correctly
-// - subscribe_events() parses event stream correctly
-// - parse_sinks() handles multi-line pactl output
-// - parse_sources() extracts all device properties
-// - parse_card_ports() extracts product names from EDID data
+#[test]
+fn test_muted_icon_appends_muted() {
+    assert_eq!(
+        muted_icon("audio-volume-high-symbolic"),
+        "audio-volume-high-muted-symbolic"
+    );
+}
+
+#[test]
+fn test_muted_icon_without_symbolic_suffix() {
+    assert_eq!(
+        muted_icon("audio-speakers"),
+        "audio-speakers-muted-symbolic"
+    );
+}
+
+#[test]
+fn test_audio_device_from_sink() {
+    let card_ports = CardPortMap::new();
+    let sink = SinkInfo {
+        name: "alsa_output.pci-0000_00_1f.3.analog-stereo".to_string(),
+        description: "Built-in Audio Analog Stereo".to_string(),
+        volume_percent: 0.75,
+        muted: false,
+        is_default: true,
+        icon_name: Some("audio-card".to_string()),
+        bus: Some("pci".to_string()),
+        node_nick: Some("Speakers".to_string()),
+        device_id: None,
+        active_port: None,
+        active_port_available: None,
+    };
+
+    let device = AudioDevice::from_sink(&sink, &card_ports);
+    assert_eq!(device.id, "alsa_output.pci-0000_00_1f.3.analog-stereo");
+    assert_eq!(device.name, "Speakers");
+    assert_eq!(device.icon, "audio-card-symbolic");
+    assert_eq!(device.secondary_icon, None);
+}
+
+#[test]
+fn test_audio_device_from_source() {
+    let card_ports = CardPortMap::new();
+    let source = SourceInfo {
+        name: "alsa_input.pci-0000_00_1f.3.analog-stereo".to_string(),
+        description: "Built-in Audio Analog Stereo".to_string(),
+        volume_percent: 0.5,
+        muted: false,
+        is_default: true,
+        icon_name: None,
+        bus: None,
+        node_nick: None,
+        device_id: None,
+        active_port: None,
+        active_port_available: None,
+    };
+
+    let device = AudioDevice::from_source(&source, &card_ports);
+    assert_eq!(device.id, "alsa_input.pci-0000_00_1f.3.analog-stereo");
+    assert_eq!(device.name, "Built-in Audio Analog Stereo");
+    assert_eq!(device.icon, "audio-input-microphone-symbolic");
+    assert_eq!(device.secondary_icon, None);
+}
