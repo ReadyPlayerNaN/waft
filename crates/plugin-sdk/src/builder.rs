@@ -17,7 +17,7 @@
 //!     .build();
 //! ```
 
-use waft_ipc::widget::{Action, ActionParams, Orientation, Widget};
+use waft_ipc::widget::{Action, ActionParams, Node, Orientation, Widget};
 
 /// Builder for FeatureToggle widgets (most commonly used).
 ///
@@ -370,7 +370,7 @@ pub struct ContainerBuilder {
     orientation: Orientation,
     spacing: u32,
     css_classes: Vec<String>,
-    children: Vec<Widget>,
+    children: Vec<Node>,
 }
 
 impl ContainerBuilder {
@@ -409,13 +409,19 @@ impl ContainerBuilder {
 
     /// Add a child widget to the container.
     pub fn child(mut self, widget: Widget) -> Self {
-        self.children.push(widget);
+        self.children.push(Node::from(widget));
+        self
+    }
+
+    /// Add a keyed child widget to the container.
+    pub fn keyed_child(mut self, key: impl Into<String>, widget: Widget) -> Self {
+        self.children.push(Node::keyed(key, widget));
         self
     }
 
     /// Add multiple child widgets to the container.
     pub fn children(mut self, widgets: Vec<Widget>) -> Self {
-        self.children.extend(widgets);
+        self.children.extend(widgets.into_iter().map(Node::from));
         self
     }
 
@@ -638,6 +644,61 @@ impl LabelBuilder {
         Widget::Label {
             text: self.text,
             css_classes: self.css_classes,
+        }
+    }
+}
+
+/// Builder for InfoCard widgets (display-only).
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::InfoCardBuilder;
+///
+/// let card = InfoCardBuilder::new("Sunny")
+///     .icon("weather-clear-symbolic")
+///     .description("25°C, clear skies")
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct InfoCardBuilder {
+    icon: String,
+    title: String,
+    description: Option<String>,
+}
+
+impl InfoCardBuilder {
+    /// Create a new InfoCard builder with the given title.
+    ///
+    /// # Defaults
+    /// - icon: "emblem-system-symbolic"
+    /// - description: None
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            icon: "emblem-system-symbolic".into(),
+            title: title.into(),
+            description: None,
+        }
+    }
+
+    /// Set the icon name (themed icon or path).
+    pub fn icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = icon.into();
+        self
+    }
+
+    /// Set the description text shown below the title.
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Build the InfoCard widget.
+    pub fn build(self) -> Widget {
+        Widget::InfoCard {
+            icon: self.icon,
+            title: self.title,
+            description: self.description,
         }
     }
 }
@@ -952,6 +1013,45 @@ mod tests {
                 assert_eq!(css_classes, vec!["title", "bold"]);
             }
             _ => panic!("Expected Label"),
+        }
+    }
+
+    #[test]
+    fn test_info_card_builder_minimal() {
+        let widget = InfoCardBuilder::new("Status").build();
+
+        match widget {
+            Widget::InfoCard {
+                icon,
+                title,
+                description,
+            } => {
+                assert_eq!(title, "Status");
+                assert_eq!(icon, "emblem-system-symbolic");
+                assert!(description.is_none());
+            }
+            _ => panic!("Expected InfoCard"),
+        }
+    }
+
+    #[test]
+    fn test_info_card_builder_full() {
+        let widget = InfoCardBuilder::new("Sunny")
+            .icon("weather-clear-symbolic")
+            .description("25°C, clear skies")
+            .build();
+
+        match widget {
+            Widget::InfoCard {
+                icon,
+                title,
+                description,
+            } => {
+                assert_eq!(icon, "weather-clear-symbolic");
+                assert_eq!(title, "Sunny");
+                assert_eq!(description, Some("25°C, clear skies".to_string()));
+            }
+            _ => panic!("Expected InfoCard"),
         }
     }
 

@@ -21,7 +21,6 @@ impl PluginDaemon for SimplePlugin {
     fn get_widgets(&self) -> Vec<NamedWidget> {
         vec![NamedWidget {
             id: "simple:toggle".into(),
-            slot: Slot::FeatureToggles,
             weight: 100,
             widget: Widget::FeatureToggle {
                 title: "Simple Plugin".into(),
@@ -75,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let daemon = SimplePlugin::new();
 
     // Create and run server
-    let server = PluginServer::new("simple", daemon);
+    let (server, _notifier) = PluginServer::new("simple", daemon);
     server.run().await?;
 
     Ok(())

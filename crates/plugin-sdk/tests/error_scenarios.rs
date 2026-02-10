@@ -3,7 +3,7 @@
 //! These tests verify that the plugin server correctly handles various error conditions
 //! and continues operating even when clients misbehave or network issues occur.
 
-use waft_ipc::widget::{Action, ActionParams, NamedWidget, Slot, Widget};
+use waft_ipc::widget::{Action, ActionParams, NamedWidget, Widget};
 use waft_plugin_sdk::{PluginDaemon, PluginServer};
 
 /// Test daemon that can simulate various error conditions
@@ -77,7 +77,6 @@ fn test_daemon_with_widgets() {
     // Verify that widgets are returned correctly
     let test_widgets = vec![NamedWidget {
         id: "test:widget1".to_string(),
-        slot: Slot::Controls,
         weight: 100,
         widget: Widget::Label {
             text: "Test".to_string(),
@@ -142,7 +141,7 @@ async fn test_multiple_sequential_actions() {
 fn test_server_construction() {
     // Verify that server can be constructed with a daemon
     let daemon = ErrorTestDaemon::new();
-    let _server = PluginServer::new("test-plugin", daemon);
+    let (_server, _notifier) = PluginServer::new("test-plugin", daemon);
     // If we get here without panic, construction succeeded
 }
 
@@ -159,7 +158,7 @@ fn test_server_with_different_plugin_names() {
 
     for name in test_names {
         let daemon = ErrorTestDaemon::new();
-        let _server = PluginServer::new(name, daemon);
+        let (_server, _notifier) = PluginServer::new(name, daemon);
         // If we get here without panic, construction succeeded
     }
 }
@@ -169,7 +168,6 @@ fn test_server_with_different_plugin_names() {
 async fn test_widget_state_updates() {
     let initial_widgets = vec![NamedWidget {
         id: "test:toggle".to_string(),
-        slot: Slot::FeatureToggles,
         weight: 100,
         widget: Widget::Switch {
             active: false,

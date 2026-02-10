@@ -85,11 +85,10 @@ impl Default for TestPlugin {
 #[async_trait::async_trait]
 impl PluginDaemon for TestPlugin {
     fn get_widgets(&self) -> Vec<NamedWidget> {
-        use waft_ipc::{ActionParams, Slot, Widget};
+        use waft_ipc::{ActionParams, Widget};
 
         vec![NamedWidget {
             id: "test:toggle".into(),
-            slot: Slot::FeatureToggles,
             weight: 100,
             widget: Widget::FeatureToggle {
                 title: "Test Plugin".into(),
@@ -225,7 +224,7 @@ where
     let plugin_name = plugin_name.to_string();
 
     let handle = tokio::spawn(async move {
-        let server = PluginServer::new(plugin_name, daemon);
+        let (server, _notifier) = PluginServer::new(plugin_name, daemon);
         if let Err(e) = server.run().await {
             log::error!("Test plugin server error: {}", e);
         }
@@ -237,13 +236,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use waft_ipc::{ActionParams, Slot, Widget};
+    use waft_ipc::{ActionParams, Widget};
 
     #[test]
     fn test_mock_daemon_creation() {
         let widgets = vec![NamedWidget {
             id: "test".into(),
-            slot: Slot::Controls,
             weight: 10,
             widget: Widget::Label {
                 text: "Test".into(),
@@ -367,7 +365,6 @@ mod tests {
 
         let widgets = vec![NamedWidget {
             id: "widget1".into(),
-            slot: Slot::Actions,
             weight: 20,
             widget: Widget::Label {
                 text: "New".into(),

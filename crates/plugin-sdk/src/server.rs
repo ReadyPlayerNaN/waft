@@ -1,13 +1,15 @@
 //! Plugin socket server implementation.
 //!
 //! Handles Unix socket creation, client connections, and message routing.
+//! Supports push-based widget updates via WidgetNotifier.
 
 use crate::daemon::PluginDaemon;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::Mutex;
+use tokio::net::unix::OwnedWriteHalf;
+use tokio::net::UnixListener;
+use tokio::sync::{watch, Mutex};
 use waft_ipc::{OverviewMessage, PluginMessage};
 
 /// Server errors.
@@ -54,25 +56,57 @@ impl From<String> for ServerError {
     }
 }
 
+/// Notifier that daemons use to signal that widgets have changed.
+///
+/// When `notify()` is called, all connected clients receive a fresh
+/// `SetWidgets` message with the current widget state.
+#[derive(Clone)]
+pub struct WidgetNotifier {
+    tx: watch::Sender<u64>,
+}
+
+impl WidgetNotifier {
+    fn new() -> (Self, watch::Receiver<u64>) {
+        let (tx, rx) = watch::channel(0u64);
+        (Self { tx }, rx)
+    }
+
+    /// Signal that widget state has changed.
+    ///
+    /// All connected clients will receive updated widgets.
+    pub fn notify(&self) {
+        let cur = *self.tx.borrow();
+        let _ = self.tx.send(cur.wrapping_add(1));
+    }
+}
+
 /// Plugin server that manages socket connections and message handling.
 pub struct PluginServer<D: PluginDaemon> {
     plugin_name: String,
     daemon: D,
+    notifier_rx: watch::Receiver<u64>,
 }
 
 impl<D: PluginDaemon + 'static> PluginServer<D> {
     /// Create a new plugin server.
-    pub fn new(plugin_name: impl Into<String>, daemon: D) -> Self {
-        Self {
+    ///
+    /// Returns `(server, notifier)`. The daemon calls `notifier.notify()`
+    /// whenever its state changes, triggering a push to all connected clients.
+    pub fn new(plugin_name: impl Into<String>, daemon: D) -> (Self, WidgetNotifier) {
+        let (notifier, notifier_rx) = WidgetNotifier::new();
+        let server = Self {
             plugin_name: plugin_name.into(),
             daemon,
-        }
+            notifier_rx,
+        };
+        (server, notifier)
     }
 
     /// Run the plugin server.
     ///
     /// Creates Unix socket at `/run/user/{uid}/waft/plugins/{name}.sock`,
     /// accepts connections from overview, and handles message send/receive loop.
+    /// Pushes widget updates to all connected clients when the notifier fires.
     pub async fn run(self) -> Result<(), ServerError> {
         let plugin_name = self.plugin_name.clone();
         log::info!("Plugin server started: {}", plugin_name);
@@ -97,8 +131,49 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
         let listener = UnixListener::bind(&socket_path)?;
         log::info!("Listening on: {}", socket_path.display());
 
-        // Wrap daemon in Arc<Mutex<>> for sharing between async tasks
+        // Shared state
         let daemon = Arc::new(Mutex::new(self.daemon));
+        let clients: Arc<Mutex<Vec<OwnedWriteHalf>>> = Arc::new(Mutex::new(Vec::new()));
+
+        // Spawn push task: watches notifier and sends SetWidgets to all clients
+        {
+            let daemon = daemon.clone();
+            let clients = clients.clone();
+            let mut notifier_rx = self.notifier_rx;
+
+            tokio::spawn(async move {
+                loop {
+                    // Wait for notification (skip the initial value)
+                    if notifier_rx.changed().await.is_err() {
+                        // Sender dropped, server is shutting down
+                        break;
+                    }
+
+                    // Get fresh widgets
+                    let widgets = {
+                        let daemon = daemon.lock().await;
+                        daemon.get_widgets()
+                    };
+
+                    let msg = PluginMessage::SetWidgets { widgets };
+
+                    // Send to all connected clients, removing dead ones
+                    let mut clients_guard = clients.lock().await;
+                    let mut i = 0;
+                    while i < clients_guard.len() {
+                        match write_message_to_half(&mut clients_guard[i], &msg).await {
+                            Ok(()) => {
+                                i += 1;
+                            }
+                            Err(_) => {
+                                log::debug!("Removing disconnected client during push");
+                                clients_guard.swap_remove(i);
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         // Accept connections loop
         loop {
@@ -106,12 +181,28 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
                 Ok((stream, _addr)) => {
                     log::debug!("Client connected");
                     let daemon = daemon.clone();
-                    let plugin_name = plugin_name.clone();
+                    let clients = clients.clone();
 
-                    // Spawn task to handle this client
+                    // Split the stream
+                    let (read_half, write_half) = stream.into_split();
+
+                    // Register write half for push notifications
+                    clients.lock().await.push(write_half);
+
+                    // Spawn read task for this client
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_client(stream, daemon, &plugin_name).await {
-                            log::error!("Client handler error: {}", e);
+                        if let Err(e) =
+                            Self::handle_client_reads(read_half, daemon, clients).await
+                        {
+                            let err_str = e.to_string();
+                            if err_str.contains("UnexpectedEof")
+                                || err_str.contains("early eof")
+                                || err_str.contains("connection")
+                            {
+                                log::debug!("Client disconnected: {}", err_str);
+                            } else {
+                                log::error!("Client handler error: {}", e);
+                            }
                         }
                     });
                 }
@@ -122,125 +213,87 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
         }
     }
 
-    /// Handle a single client connection.
-    async fn handle_client(
-        mut stream: UnixStream,
+    /// Handle reads from a single client connection.
+    ///
+    /// Processes GetWidgets and TriggerAction messages. After handling an action,
+    /// pushes updated widgets to ALL connected clients (state may have changed).
+    async fn handle_client_reads(
+        mut read_half: tokio::net::unix::OwnedReadHalf,
         daemon: Arc<Mutex<D>>,
-        _plugin_name: &str,
+        clients: Arc<Mutex<Vec<OwnedWriteHalf>>>,
     ) -> Result<(), ServerError> {
-        log::debug!("Handling client connection");
+        log::debug!("Handling client reads");
 
         loop {
             // Read message from client
-            match Self::read_message(&mut stream).await {
-                Ok(msg) => {
-                    log::debug!("Received message: {:?}", msg);
+            let msg = read_message_from_half(&mut read_half).await?;
+            log::debug!("Received message: {:?}", msg);
 
-                    // Handle message and get response
-                    let response = Self::handle_message(msg, daemon.clone()).await?;
+            match msg {
+                OverviewMessage::GetWidgets => {
+                    let widgets = {
+                        let daemon = daemon.lock().await;
+                        daemon.get_widgets()
+                    };
+                    let response = PluginMessage::SetWidgets { widgets };
 
-                    // Send response
-                    if let Some(response_msg) = response {
-                        log::debug!("Sending response: {:?}", response_msg);
-                        Self::write_message(&mut stream, &response_msg).await?;
+                    // Send response to THIS client (find the matching write half)
+                    // Since we can't easily match read/write halves, broadcast to all
+                    let mut clients_guard = clients.lock().await;
+                    let mut i = 0;
+                    while i < clients_guard.len() {
+                        match write_message_to_half(&mut clients_guard[i], &response).await {
+                            Ok(()) => i += 1,
+                            Err(_) => {
+                                clients_guard.swap_remove(i);
+                            }
+                        }
                     }
                 }
-                Err(e) => {
-                    // Check if it's a clean disconnect or expected connection issue
-                    let err_str = e.to_string();
-                    if err_str.contains("UnexpectedEof")
-                        || err_str.contains("early eof")
-                        || err_str.contains("connection")
+                OverviewMessage::TriggerAction { widget_id, action } => {
+                    log::debug!(
+                        "Handling TriggerAction: widget={}, action={:?}",
+                        widget_id,
+                        action
+                    );
+
                     {
-                        log::debug!("Client disconnected: {}", err_str);
-                        break;
-                    } else {
-                        log::error!("Failed to read message: {}", e);
-                        return Err(e);
+                        let mut daemon = daemon.lock().await;
+                        if let Err(e) = daemon.handle_action(widget_id, action).await {
+                            log::error!("Action handler error: {}", e);
+                        }
+                    }
+
+                    // After action, push updated widgets to all clients
+                    let widgets = {
+                        let daemon = daemon.lock().await;
+                        daemon.get_widgets()
+                    };
+                    let response = PluginMessage::SetWidgets { widgets };
+
+                    let mut clients_guard = clients.lock().await;
+                    let mut i = 0;
+                    while i < clients_guard.len() {
+                        match write_message_to_half(&mut clients_guard[i], &response).await {
+                            Ok(()) => i += 1,
+                            Err(_) => {
+                                clients_guard.swap_remove(i);
+                            }
+                        }
                     }
                 }
             }
         }
-
-        Ok(())
-    }
-
-    /// Handle an overview message and return optional response.
-    async fn handle_message(
-        msg: OverviewMessage,
-        daemon: Arc<Mutex<D>>,
-    ) -> Result<Option<PluginMessage>, ServerError> {
-        match msg {
-            OverviewMessage::GetWidgets => {
-                log::debug!("Handling GetWidgets");
-                let daemon = daemon.lock().await;
-                let widgets = daemon.get_widgets();
-                Ok(Some(PluginMessage::SetWidgets { widgets }))
-            }
-            OverviewMessage::TriggerAction { widget_id, action } => {
-                log::debug!("Handling TriggerAction: widget={}, action={:?}", widget_id, action);
-                let mut daemon = daemon.lock().await;
-
-                // Handle action and convert error
-                if let Err(e) = daemon.handle_action(widget_id, action).await {
-                    return Err(ServerError::Other(format!("Action handler error: {}", e)));
-                }
-
-                // Send updated widgets after action
-                let widgets = daemon.get_widgets();
-                Ok(Some(PluginMessage::SetWidgets { widgets }))
-            }
-        }
-    }
-
-    /// Read a framed message from the stream (async version of transport::read_framed).
-    async fn read_message(
-        stream: &mut UnixStream,
-    ) -> Result<OverviewMessage, ServerError> {
-        // Read 4-byte length prefix (big-endian)
-        let mut len_bytes = [0u8; 4];
-        stream.read_exact(&mut len_bytes).await?;
-        let len = u32::from_be_bytes(len_bytes) as usize;
-
-        // Check size limit (10MB)
-        const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
-        if len > MAX_FRAME_SIZE {
-            return Err(ServerError::FrameTooLarge(len));
-        }
-
-        // Read payload
-        let mut payload = vec![0u8; len];
-        stream.read_exact(&mut payload).await?;
-
-        // Deserialize from JSON
-        let msg = serde_json::from_slice(&payload)?;
-        Ok(msg)
-    }
-
-    /// Write a framed message to the stream (async version of transport::write_framed).
-    async fn write_message(
-        stream: &mut UnixStream,
-        msg: &PluginMessage,
-    ) -> Result<(), ServerError> {
-        // Serialize to JSON
-        let payload = serde_json::to_vec(msg)?;
-        let len = payload.len();
-
-        // Write length prefix (big-endian u32)
-        let len_bytes = (len as u32).to_be_bytes();
-        stream.write_all(&len_bytes).await?;
-
-        // Write payload
-        stream.write_all(&payload).await?;
-
-        Ok(())
     }
 
     /// Get the socket path for this plugin.
-    fn socket_path(plugin_name: &str) -> Result<PathBuf, ServerError> {
+    pub(crate) fn socket_path(plugin_name: &str) -> Result<PathBuf, ServerError> {
         // Allow override via environment variable (for testing)
         if let Ok(custom_path) = std::env::var("WAFT_PLUGIN_SOCKET_PATH") {
-            log::debug!("Using custom socket path from WAFT_PLUGIN_SOCKET_PATH: {}", custom_path);
+            log::debug!(
+                "Using custom socket path from WAFT_PLUGIN_SOCKET_PATH: {}",
+                custom_path
+            );
             return Ok(PathBuf::from(custom_path));
         }
 
@@ -261,13 +314,46 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
     }
 }
 
+/// Read a framed message from an OwnedReadHalf.
+async fn read_message_from_half(
+    read_half: &mut tokio::net::unix::OwnedReadHalf,
+) -> Result<OverviewMessage, ServerError> {
+    let mut len_bytes = [0u8; 4];
+    read_half.read_exact(&mut len_bytes).await?;
+    let len = u32::from_be_bytes(len_bytes) as usize;
+
+    const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
+    if len > MAX_FRAME_SIZE {
+        return Err(ServerError::FrameTooLarge(len));
+    }
+
+    let mut payload = vec![0u8; len];
+    read_half.read_exact(&mut payload).await?;
+
+    let msg = serde_json::from_slice(&payload)?;
+    Ok(msg)
+}
+
+/// Write a framed message to an OwnedWriteHalf.
+async fn write_message_to_half(
+    write_half: &mut OwnedWriteHalf,
+    msg: &PluginMessage,
+) -> Result<(), ServerError> {
+    let payload = serde_json::to_vec(msg)?;
+    let len_bytes = (payload.len() as u32).to_be_bytes();
+    write_half.write_all(&len_bytes).await?;
+    write_half.write_all(&payload).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_server_error_display() {
-        let io_err = ServerError::Io(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "test"));
+        let io_err =
+            ServerError::Io(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "test"));
         assert!(io_err.to_string().contains("I/O error"));
 
         let json_err = ServerError::Json(serde_json::Error::io(std::io::Error::new(
@@ -297,7 +383,8 @@ mod tests {
 
     #[test]
     fn test_server_error_from_json_error() {
-        let json_err = serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let json_err =
+            serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
         let server_err: ServerError = json_err.into();
 
         match server_err {
@@ -308,15 +395,14 @@ mod tests {
 
     #[test]
     fn test_socket_path_from_env_override() {
-        // Set custom socket path via env var
         unsafe {
             std::env::set_var("WAFT_PLUGIN_SOCKET_PATH", "/tmp/custom-test.sock");
         }
 
-        let path = PluginServer::<crate::testing::TestPlugin>::socket_path("test-plugin").unwrap();
+        let path =
+            PluginServer::<crate::testing::TestPlugin>::socket_path("test-plugin").unwrap();
         assert_eq!(path, PathBuf::from("/tmp/custom-test.sock"));
 
-        // Clean up
         unsafe {
             std::env::remove_var("WAFT_PLUGIN_SOCKET_PATH");
         }
@@ -324,16 +410,14 @@ mod tests {
 
     #[test]
     fn test_socket_path_default_behavior() {
-        // Ensure env var is not set
         unsafe {
             std::env::remove_var("WAFT_PLUGIN_SOCKET_PATH");
         }
 
-        let path = PluginServer::<crate::testing::TestPlugin>::socket_path("test-plugin").unwrap();
+        let path =
+            PluginServer::<crate::testing::TestPlugin>::socket_path("test-plugin").unwrap();
 
-        // Should contain the plugin name
         assert!(path.to_string_lossy().contains("test-plugin.sock"));
-        // Should contain waft/plugins directory
         assert!(path.to_string_lossy().contains("waft/plugins"));
     }
 
@@ -350,8 +434,9 @@ mod tests {
 
     #[test]
     fn test_socket_path_from_env() {
-        // Set XDG_RUNTIME_DIR temporarily
-        unsafe { std::env::set_var("XDG_RUNTIME_DIR", "/custom/runtime") };
+        unsafe {
+            std::env::set_var("XDG_RUNTIME_DIR", "/custom/runtime");
+        }
 
         let path = PluginServer::<TestDaemon>::socket_path("test-plugin").unwrap();
         assert_eq!(
@@ -359,18 +444,23 @@ mod tests {
             PathBuf::from("/custom/runtime/waft/plugins/test-plugin.sock")
         );
 
-        // Clean up
-        unsafe { std::env::remove_var("XDG_RUNTIME_DIR") };
+        unsafe {
+            std::env::remove_var("XDG_RUNTIME_DIR");
+        }
     }
 
     #[test]
     fn test_socket_path_fallback() {
-        // Remove XDG_RUNTIME_DIR to test fallback
-        unsafe { std::env::remove_var("XDG_RUNTIME_DIR") };
+        unsafe {
+            std::env::remove_var("XDG_RUNTIME_DIR");
+        }
 
         let path = PluginServer::<TestDaemon>::socket_path("test-plugin").unwrap();
         let uid = unsafe { libc::getuid() };
-        let expected = PathBuf::from(format!("/run/user/{}/waft/plugins/test-plugin.sock", uid));
+        let expected = PathBuf::from(format!(
+            "/run/user/{}/waft/plugins/test-plugin.sock",
+            uid
+        ));
         assert_eq!(path, expected);
     }
 
@@ -379,6 +469,25 @@ mod tests {
         let path = PluginServer::<TestDaemon>::socket_path("my-plugin-123").unwrap();
         assert!(path.ends_with("my-plugin-123.sock"));
         assert!(path.to_string_lossy().contains("waft/plugins"));
+    }
+
+    #[test]
+    fn test_widget_notifier() {
+        let (notifier, mut rx) = WidgetNotifier::new();
+
+        // Initial value
+        assert_eq!(*rx.borrow(), 0);
+
+        // After notify
+        notifier.notify();
+        assert!(rx.has_changed().unwrap());
+        rx.mark_changed(); // reset
+        assert_eq!(*rx.borrow_and_update(), 1);
+
+        // Multiple notifications
+        notifier.notify();
+        notifier.notify();
+        assert_eq!(*rx.borrow_and_update(), 3);
     }
 
     // Test daemon for unit tests

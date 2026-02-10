@@ -28,7 +28,6 @@
 //!         vec![
 //!             NamedWidget {
 //!                 id: "my_plugin:toggle".into(),
-//!                 slot: Slot::FeatureToggles,
 //!                 weight: 100,
 //!                 widget: Widget::FeatureToggle {
 //!                     title: "My Feature".into(),
@@ -67,11 +66,11 @@ pub mod builder;
 pub mod testing;
 
 pub use daemon::PluginDaemon;
-pub use server::PluginServer;
+pub use server::{PluginServer, WidgetNotifier};
 pub use builder::*;
 
 // Re-export common types from waft-ipc
 pub use waft_ipc::widget::{
-    Action, ActionParams, NamedWidget, Orientation, Slot, Widget, WidgetSet,
+    Action, ActionParams, NamedWidget, Node, Orientation, Widget, WidgetSet,
 };
 pub use waft_ipc::message::{OverviewMessage, PluginMessage, PROTOCOL_VERSION};
