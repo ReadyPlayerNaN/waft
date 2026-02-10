@@ -51,7 +51,7 @@ impl SystemdActionsDaemon {
     }
 
     fn build_session_widget(&self) -> Widget {
-        ContainerBuilder::new(Orientation::Vertical)
+        ColBuilder::new()
             .spacing(4)
             .child(
                 MenuRowBuilder::new("Lock Session")
@@ -69,7 +69,7 @@ impl SystemdActionsDaemon {
     }
 
     fn build_power_widget(&self) -> Widget {
-        ContainerBuilder::new(Orientation::Vertical)
+        ColBuilder::new()
             .spacing(4)
             .child(
                 MenuRowBuilder::new("Reboot")

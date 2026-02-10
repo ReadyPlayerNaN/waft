@@ -420,7 +420,7 @@ impl BrightnessDaemon {
                 let master = compute_master_average(&self.displays);
 
                 let mut per_display_container =
-                    ContainerBuilder::new(Orientation::Vertical).spacing(4);
+                    ColBuilder::new().spacing(4);
                 for d in &self.displays {
                     let slider = SliderBuilder::new(d.brightness)
                         .icon(icon_for_display_type(d.display_type))

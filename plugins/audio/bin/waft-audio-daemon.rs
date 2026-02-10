@@ -166,7 +166,7 @@ fn input_icon(state: &AudioState) -> String {
 
 /// Build the device menu for output devices.
 fn build_output_device_menu(state: &AudioState) -> Widget {
-    let mut builder = ContainerBuilder::new(Orientation::Vertical).spacing(2);
+    let mut builder = ColBuilder::new().spacing(2);
 
     for device in &state.output_devices {
         let is_default = state.default_output.as_deref() == Some(&device.id);
@@ -188,7 +188,7 @@ fn build_output_device_menu(state: &AudioState) -> Widget {
 
 /// Build the device menu for input devices.
 fn build_input_device_menu(state: &AudioState) -> Widget {
-    let mut builder = ContainerBuilder::new(Orientation::Vertical).spacing(2);
+    let mut builder = ColBuilder::new().spacing(2);
 
     for device in &state.input_devices {
         let is_default = state.default_input.as_deref() == Some(&device.id);
