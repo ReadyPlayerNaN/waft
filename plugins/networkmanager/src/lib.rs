@@ -1,6 +1,15 @@
-//! NetworkManager plugin shared helpers.
+//! NetworkManager plugin library.
 //!
-//! Provides reusable utility functions for the networkmanager daemon.
+//! Domain modules for WiFi, VPN, Ethernet network management via D-Bus.
+
+pub mod dbus_property;
+pub mod device_discovery;
+pub mod signal_monitor;
+pub mod state;
+pub mod vpn;
+pub mod widget_builder;
+pub mod wifi;
+pub mod wifi_scan;
 
 /// Check if a network interface name is a virtual interface.
 pub fn is_virtual_interface(name: &str) -> bool {
