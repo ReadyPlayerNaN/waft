@@ -71,6 +71,6 @@ pub use builder::*;
 
 // Re-export common types from waft-ipc
 pub use waft_ipc::widget::{
-    Action, ActionParams, NamedWidget, Node, Orientation, Widget, WidgetSet,
+    Action, ActionParams, NamedWidget, Node, StatusOption, Widget, WidgetSet,
 };
 pub use waft_ipc::message::{OverviewMessage, PluginMessage, PROTOCOL_VERSION};

@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use waft_core::menu_state::create_menu_store;
 use waft_ui_gtk::renderer::{ActionCallback, WidgetRenderer};
-use waft_ui_gtk::types::{Action, ActionParams, Orientation, Widget};
+use waft_ui_gtk::types::{Action, ActionParams, Widget};
 
 #[cfg(test)]
 use gtk::prelude::*;
@@ -49,8 +49,7 @@ fn test_render_nested_containers() {
     init_gtk();
     let (renderer, _actions) = create_test_renderer();
 
-    let widget = Widget::Container {
-        orientation: Orientation::Vertical,
+    let widget = Widget::Col {
         spacing: 12,
         css_classes: vec!["outer".to_string()],
         children: vec![
@@ -59,8 +58,7 @@ fn test_render_nested_containers() {
                 css_classes: vec!["header".to_string()],
             }
             .into(),
-            Widget::Container {
-                orientation: Orientation::Horizontal,
+            Widget::Row {
                 spacing: 6,
                 css_classes: vec!["inner".to_string()],
                 children: vec![
@@ -109,8 +107,7 @@ fn test_render_feature_toggle_with_expanded_content() {
         active: true,
         busy: false,
         expandable: true,
-        expanded_content: Some(Box::new(Widget::Container {
-            orientation: Orientation::Vertical,
+        expanded_content: Some(Box::new(Widget::Col {
             spacing: 4,
             css_classes: vec!["devices-list".to_string()],
             children: vec![
@@ -161,8 +158,7 @@ fn test_render_slider_with_expanded_content() {
         value: 0.75,
         muted: false,
         expandable: true,
-        expanded_content: Some(Box::new(Widget::Container {
-            orientation: Orientation::Vertical,
+        expanded_content: Some(Box::new(Widget::Col {
             spacing: 4,
             css_classes: vec![],
             children: vec![
@@ -349,8 +345,7 @@ fn test_render_empty_container() {
     init_gtk();
     let (renderer, _actions) = create_test_renderer();
 
-    let widget = Widget::Container {
-        orientation: Orientation::Vertical,
+    let widget = Widget::Col {
         spacing: 0,
         css_classes: vec![],
         children: vec![],
@@ -489,8 +484,7 @@ fn test_css_classes_applied_correctly() {
     init_gtk();
     let (renderer, _actions) = create_test_renderer();
 
-    let widget = Widget::Container {
-        orientation: Orientation::Vertical,
+    let widget = Widget::Col {
         spacing: 8,
         css_classes: vec![
             "menu-section".to_string(),
@@ -620,8 +614,7 @@ fn test_real_world_audio_control_widget() {
     let (renderer, _actions) = create_test_renderer();
 
     // Realistic audio control widget tree
-    let widget = Widget::Container {
-        orientation: Orientation::Vertical,
+    let widget = Widget::Col {
         spacing: 8,
         css_classes: vec!["audio-section".to_string()],
         children: vec![
@@ -631,8 +624,7 @@ fn test_real_world_audio_control_widget() {
                 value: 0.65,
                 muted: false,
                 expandable: true,
-                expanded_content: Some(Box::new(Widget::Container {
-                    orientation: Orientation::Vertical,
+                expanded_content: Some(Box::new(Widget::Col {
                     spacing: 0,
                     css_classes: vec!["device-list".to_string()],
                     children: vec![
@@ -706,8 +698,7 @@ fn test_real_world_network_settings_widget() {
     let (renderer, _actions) = create_test_renderer();
 
     // Realistic network settings widget tree
-    let widget = Widget::Container {
-        orientation: Orientation::Vertical,
+    let widget = Widget::Col {
         spacing: 12,
         css_classes: vec!["network-section".to_string()],
         children: vec![
@@ -719,8 +710,7 @@ fn test_real_world_network_settings_widget() {
                 active: true,
                 busy: false,
                 expandable: true,
-                expanded_content: Some(Box::new(Widget::Container {
-                    orientation: Orientation::Vertical,
+                expanded_content: Some(Box::new(Widget::Col {
                     spacing: 0,
                     css_classes: vec!["wifi-networks".to_string()],
                     children: vec![

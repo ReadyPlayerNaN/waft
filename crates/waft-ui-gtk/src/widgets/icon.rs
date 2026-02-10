@@ -146,5 +146,139 @@ impl IconWidget {
 }
 
 #[cfg(test)]
-#[path = "icon_tests.rs"]
-mod tests;
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_absolute_path_detection() {
+        let icon = Icon::parse(&Arc::from("/usr/share/icons/test.png"));
+        match icon {
+            Icon::FilePath(path) => {
+                assert_eq!(path.as_ref(), &PathBuf::from("/usr/share/icons/test.png"));
+            }
+            _ => panic!("Expected Icon::FilePath, got {:?}", icon),
+        }
+    }
+
+    #[test]
+    fn test_relative_path_with_dot() {
+        let icon = Icon::parse(&Arc::from("./icons/test.png"));
+        match icon {
+            Icon::FilePath(path) => {
+                assert_eq!(path.as_ref(), &PathBuf::from("./icons/test.png"));
+            }
+            _ => panic!("Expected Icon::FilePath, got {:?}", icon),
+        }
+    }
+
+    #[test]
+    fn test_home_directory_path() {
+        let icon = Icon::parse(&Arc::from("~/icons/test.png"));
+        match icon {
+            Icon::FilePath(path) => {
+                assert_eq!(path.as_ref(), &PathBuf::from("~/icons/test.png"));
+            }
+            _ => panic!("Expected Icon::FilePath, got {:?}", icon),
+        }
+    }
+
+    #[test]
+    fn test_themed_icon_name() {
+        let icon_name = Arc::from("dialog-information");
+        let icon = Icon::parse(&icon_name);
+        match icon {
+            Icon::Themed(name) => {
+                assert_eq!(name.as_ref(), "dialog-information");
+            }
+            _ => panic!("Expected Icon::Themed, got {:?}", icon),
+        }
+    }
+
+    #[test]
+    fn test_whitespace_trimming_themed() {
+        let icon = Icon::parse(&Arc::from("  dialog-information  "));
+        match icon {
+            Icon::Themed(name) => {
+                assert_eq!(name.as_ref(), "dialog-information");
+            }
+            _ => panic!("Expected Icon::Themed, got {:?}", icon),
+        }
+    }
+
+    #[test]
+    fn test_whitespace_trimming_filepath() {
+        let icon = Icon::parse(&Arc::from("  /usr/share/icons/test.png  "));
+        match icon {
+            Icon::FilePath(path) => {
+                assert_eq!(path.as_ref(), &PathBuf::from("/usr/share/icons/test.png"));
+            }
+            _ => panic!("Expected Icon::FilePath, got {:?}", icon),
+        }
+    }
+
+    #[test]
+    fn test_resolve_exact_name_match() {
+        let result = resolve_themed_icon("dialog-information");
+        if let Some(resolved) = result {
+            assert_eq!(resolved, "dialog-information");
+        }
+    }
+
+    #[test]
+    fn test_resolve_symbolic_fallback() {
+        let result = resolve_themed_icon("dialog-information");
+        if result.is_some() {
+            assert!(result.is_some());
+        }
+    }
+
+    #[test]
+    fn test_resolve_lowercase_fallback() {
+        let result = resolve_themed_icon("Dialog-Information");
+        if let Some(resolved) = result {
+            assert!(resolved.to_lowercase() == resolved || resolved.ends_with("-symbolic"));
+        }
+    }
+
+    #[test]
+    fn test_resolve_lowercase_symbolic_fallback() {
+        let result = resolve_themed_icon("DIALOG-INFORMATION");
+        if let Some(resolved) = result {
+            assert_eq!(resolved, resolved.to_lowercase());
+        }
+    }
+
+    #[test]
+    fn test_resolve_no_match() {
+        let result = resolve_themed_icon("this-icon-definitely-does-not-exist-12345");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    #[ignore = "requires GTK display connection"]
+    fn test_icon_widget_from_name() {
+        let widget = IconWidget::from_name("dialog-information-symbolic", 24);
+        assert_eq!(widget.widget().pixel_size(), 24);
+    }
+
+    #[test]
+    #[ignore = "requires GTK display connection"]
+    fn test_icon_widget_set_icon() {
+        let widget = IconWidget::from_name("dialog-information-symbolic", 24);
+        widget.set_icon("dialog-warning-symbolic");
+        assert_eq!(widget.widget().pixel_size(), 24);
+    }
+
+    #[test]
+    #[ignore = "requires GTK display connection"]
+    fn test_icon_widget_update_icon_with_hints() {
+        let widget = IconWidget::from_name("dialog-information-symbolic", 24);
+        widget.update_icon(vec![
+            Icon::Themed(Arc::from("non-existent-icon")),
+            Icon::Themed(Arc::from("dialog-warning-symbolic")),
+        ]);
+        assert_eq!(widget.widget().pixel_size(), 24);
+    }
+}

@@ -4,8 +4,8 @@
 //! in-place property updates without recreating the GTK tree.
 
 use crate::renderer::{ActionCallback, WidgetRenderer};
-use crate::utils::icon::IconWidget;
-use crate::utils::menu_state::{is_menu_open, menu_id_for_widget, toggle_menu};
+use crate::widgets::icon::IconWidget;
+use crate::menu_state::{is_menu_open, menu_id_for_widget, toggle_menu};
 use gtk::glib;
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -21,6 +21,11 @@ pub struct SliderProps {
     pub value: f64,
     pub muted: bool,
     pub expandable: bool,
+    /// Optional deterministic menu ID. When provided, the slider uses this
+    /// instead of generating a random UUID. Callers should use
+    /// `menu_id_for_widget(widget_id)` to produce a stable ID that
+    /// matches the content revealer created by the reconciler/renderer.
+    pub menu_id: Option<String>,
 }
 
 /// Stateful GTK slider widget with icon button, scale, and optional expand button.
@@ -43,7 +48,9 @@ pub struct SliderWidget {
 
 impl SliderWidget {
     pub fn new(props: SliderProps, menu_store: Option<Rc<MenuStore>>) -> Self {
-        let menu_id = menu_store.as_ref().map(|_| uuid::Uuid::new_v4().to_string());
+        let menu_id = menu_store.as_ref().map(|_| {
+            props.menu_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+        });
 
         // Main vertical container
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -277,12 +284,14 @@ pub(crate) fn render_slider(
     on_icon_click: &Action,
     widget_id: &str,
 ) -> gtk::Widget {
+    let mid = menu_id_for_widget(widget_id);
     let slider = SliderWidget::new(
         SliderProps {
             icon: icon.to_string(),
             value,
             muted,
             expandable,
+            menu_id: Some(mid.clone()),
         },
         Some(menu_store.clone()),
     );
@@ -316,9 +325,18 @@ pub(crate) fn render_slider(
             let gtk_content = renderer.render(content, &content_id);
             revealer.set_child(Some(&gtk_content));
 
-            let mid = menu_id_for_widget(widget_id);
             let is_open = is_menu_open(menu_store, &mid);
             revealer.set_reveal_child(is_open);
+
+            // Subscribe to MenuStore so the revealer reacts to expand button clicks
+            let store_clone = menu_store.clone();
+            let mid_clone = mid.clone();
+            let revealer_clone = revealer.clone();
+            menu_store.subscribe(move || {
+                let state = store_clone.get_state();
+                let should_be_open = state.active_menu_id.as_deref() == Some(mid_clone.as_str());
+                revealer_clone.set_reveal_child(should_be_open);
+            });
 
             // Append revealer to the root box
             let root: gtk::Box = slider.root.clone();
@@ -557,6 +575,7 @@ mod tests {
                 value: 0.5,
                 muted: false,
                 expandable: false,
+                menu_id: None,
             },
             Some(menu_store),
         );
@@ -585,6 +604,7 @@ mod tests {
                 value: 0.5,
                 muted: false,
                 expandable: false,
+                menu_id: None,
             },
             Some(menu_store),
         );
@@ -608,6 +628,7 @@ mod tests {
                 value: 0.5,
                 muted: false,
                 expandable: false,
+                menu_id: None,
             },
             Some(menu_store),
         );
@@ -628,6 +649,7 @@ mod tests {
                 value: 0.5,
                 muted: false,
                 expandable: false,
+                menu_id: None,
             },
             Some(menu_store),
         );

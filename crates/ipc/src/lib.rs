@@ -32,4 +32,6 @@ pub use command::{
 pub use message::{OverviewMessage, PluginMessage, PROTOCOL_VERSION};
 
 // Re-export widget module items at crate root
-pub use widget::{Action, ActionParams, NamedWidget, Node, Orientation, Widget, WidgetSet};
+pub use widget::{
+    Action, ActionParams, NamedWidget, Node, StatusOption, Widget, WidgetSet,
+};

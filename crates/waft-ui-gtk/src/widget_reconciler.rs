@@ -14,6 +14,7 @@ use crate::renderer::{ActionCallback, WidgetRenderer};
 use crate::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 use crate::widgets::info_card::InfoCardWidget;
 use crate::widgets::slider::{SliderProps, SliderWidget};
+use crate::widgets::status_cycle_button::StatusCycleButtonWidget;
 
 /// What kind of widget was created — the overview uses this to decide
 /// which `SlotItem` variant to build.
@@ -155,6 +156,7 @@ impl WidgetReconciler {
                 on_toggle,
                 ..
             } => {
+                use crate::menu_state::menu_id_for_widget;
                 let toggle = FeatureToggleWidget::new(
                     FeatureToggleProps {
                         title: title.clone(),
@@ -163,6 +165,7 @@ impl WidgetReconciler {
                         active: *active,
                         busy: *busy,
                         expandable: *expandable,
+                        menu_id: Some(menu_id_for_widget(&named_widget.id)),
                     },
                     Some(self.menu_store.clone()),
                 );
@@ -170,8 +173,15 @@ impl WidgetReconciler {
                 let cb = self.action_callback.clone();
                 let wid = named_widget.id.clone();
                 let action = on_toggle.clone();
-                toggle.connect_output(move |_output| {
-                    cb(wid.clone(), action.clone());
+                toggle.connect_output(move |output| {
+                    use crate::widgets::feature_toggle::FeatureToggleOutput;
+                    use waft_ipc::widget::ActionParams;
+                    let mut a = action.clone();
+                    a.params = match output {
+                        FeatureToggleOutput::Activate => ActionParams::Value(1.0),
+                        FeatureToggleOutput::Deactivate => ActionParams::Value(0.0),
+                    };
+                    cb(wid.clone(), a);
                 });
 
                 let gtk_widget = toggle.widget();
@@ -194,12 +204,15 @@ impl WidgetReconciler {
                 on_icon_click,
                 expanded_content,
             } => {
+                use crate::menu_state::menu_id_for_widget;
+                let det_menu_id = menu_id_for_widget(&named_widget.id);
                 let slider = SliderWidget::new(
                     SliderProps {
                         icon: icon.clone(),
                         value: *value,
                         muted: *muted,
                         expandable: *expandable,
+                        menu_id: Some(det_menu_id.clone()),
                     },
                     Some(self.menu_store.clone()),
                 );
@@ -237,10 +250,19 @@ impl WidgetReconciler {
                         let gtk_content = renderer.render(content, &content_id);
                         revealer.set_child(Some(&gtk_content));
 
-                        use crate::utils::menu_state::{is_menu_open, menu_id_for_widget};
-                        let mid = menu_id_for_widget(&named_widget.id);
-                        let is_open = is_menu_open(&self.menu_store, &mid);
+                        use crate::menu_state::is_menu_open;
+                        let is_open = is_menu_open(&self.menu_store, &det_menu_id);
                         revealer.set_reveal_child(is_open);
+
+                        // Subscribe to MenuStore so the revealer reacts to expand button clicks
+                        let store_clone = self.menu_store.clone();
+                        let mid_clone = det_menu_id.clone();
+                        let revealer_clone = revealer.clone();
+                        self.menu_store.subscribe(move || {
+                            let state = store_clone.get_state();
+                            let should_be_open = state.active_menu_id.as_deref() == Some(mid_clone.as_str());
+                            revealer_clone.set_reveal_child(should_be_open);
+                        });
 
                         slider.root.append(&revealer);
                     }
@@ -261,8 +283,19 @@ impl WidgetReconciler {
                 icon,
                 title,
                 description,
+                on_click,
             } => {
-                let card = InfoCardWidget::new(icon, title, description.as_deref());
+                let card = match on_click {
+                    Some(action) => InfoCardWidget::new_clickable(
+                        icon,
+                        title,
+                        description.as_deref(),
+                        &self.action_callback,
+                        action,
+                        &named_widget.id,
+                    ),
+                    None => InfoCardWidget::new(icon, title, description.as_deref()),
+                };
                 let gtk_widget = card.widget();
 
                 CachedEntry {
@@ -271,6 +304,30 @@ impl WidgetReconciler {
                     kind: WidgetKind::InfoCard,
                     menu_id: None,
                     typed: Some(Box::new(card)),
+                }
+            }
+            IpcWidget::StatusCycleButton {
+                value,
+                icon,
+                options,
+                on_cycle,
+            } => {
+                let scb = StatusCycleButtonWidget::new(
+                    value,
+                    icon,
+                    options,
+                    &self.action_callback,
+                    on_cycle,
+                    &named_widget.id,
+                );
+                let gtk_widget = scb.widget();
+
+                CachedEntry {
+                    widget_desc: named_widget.clone(),
+                    gtk_widget,
+                    kind: WidgetKind::Generic,
+                    menu_id: None,
+                    typed: Some(Box::new(scb)),
                 }
             }
             _ => {
@@ -611,5 +668,39 @@ mod tests {
 
         assert!(!result.changed);
         assert_eq!(result.updated_in_place, 1);
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_slider_menu_id_is_deterministic() {
+        init_gtk();
+        let mut rec = make_reconciler();
+
+        let widgets = vec![make_slider("audio_output", 0.5, false)];
+        let result = rec.reconcile(&widgets);
+
+        assert_eq!(result.added.len(), 1);
+        assert_eq!(
+            result.added[0].menu_id.as_deref(),
+            Some("audio_output_menu"),
+            "Slider menu_id should be deterministic based on widget ID"
+        );
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_toggle_menu_id_is_deterministic() {
+        init_gtk();
+        let mut rec = make_reconciler();
+
+        let widgets = vec![make_toggle("bluetooth_toggle", false)];
+        let result = rec.reconcile(&widgets);
+
+        assert_eq!(result.added.len(), 1);
+        assert_eq!(
+            result.added[0].menu_id.as_deref(),
+            Some("bluetooth_toggle_menu"),
+            "FeatureToggle menu_id should be deterministic based on widget ID"
+        );
     }
 }

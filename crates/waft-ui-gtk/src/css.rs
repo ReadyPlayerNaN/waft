@@ -6,7 +6,7 @@ use gtk::prelude::*;
 ///
 /// # Example
 /// ```no_run
-/// use waft_ui_gtk::utils::css::apply_css_classes;
+/// use waft_ui_gtk::css::apply_css_classes;
 /// gtk::init().unwrap();
 /// let label = gtk::Label::new(Some("Hello"));
 /// apply_css_classes(&label, &vec!["dim-label".to_string(), "small".to_string()]);
@@ -21,7 +21,7 @@ pub fn apply_css_classes(widget: &impl IsA<gtk::Widget>, classes: &[String]) {
 ///
 /// # Example
 /// ```no_run
-/// use waft_ui_gtk::utils::css::add_class;
+/// use waft_ui_gtk::css::add_class;
 /// gtk::init().unwrap();
 /// let label = gtk::Label::new(Some("Hello"));
 /// add_class(&label, "bold");
@@ -34,7 +34,7 @@ pub fn add_class(widget: &impl IsA<gtk::Widget>, class: &str) {
 ///
 /// # Example
 /// ```no_run
-/// use waft_ui_gtk::utils::css::remove_class;
+/// use waft_ui_gtk::css::remove_class;
 /// gtk::init().unwrap();
 /// let label = gtk::Label::new(Some("Hello"));
 /// remove_class(&label, "bold");
@@ -49,7 +49,7 @@ pub fn remove_class(widget: &impl IsA<gtk::Widget>, class: &str) {
 ///
 /// # Example
 /// ```no_run
-/// use waft_ui_gtk::utils::css::toggle_class;
+/// use waft_ui_gtk::css::toggle_class;
 /// gtk::init().unwrap();
 /// let label = gtk::Label::new(Some("Hello"));
 /// toggle_class(&label, "active", true);  // adds "active"

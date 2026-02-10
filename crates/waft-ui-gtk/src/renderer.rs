@@ -5,14 +5,21 @@
 //! to ensure only one expandable menu is open at a time.
 
 use waft_ipc::widget::{Action, Widget};
-use crate::widgets::container::render_container;
+use crate::widgets::button::render_button;
+use crate::widgets::checkmark::render_checkmark;
+use crate::widgets::col::render_col;
 use crate::widgets::feature_toggle::render_feature_toggle;
-use crate::widgets::menu_row::render_menu_row;
-use crate::widgets::primitives::{
-    render_button, render_checkmark, render_label, render_spinner, render_switch,
-};
+use crate::widgets::icon_list::render_icon_list;
 use crate::widgets::info_card::render_info_card;
+use crate::widgets::label::render_label;
+use crate::widgets::list_button::render_list_button;
+use crate::widgets::list_row::render_list_row;
+use crate::widgets::menu_row::render_menu_row;
+use crate::widgets::row::render_row;
 use crate::widgets::slider::render_slider;
+use crate::widgets::spinner::render_spinner;
+use crate::widgets::status_cycle_button::render_status_cycle_button;
+use crate::widgets::switch::render_switch;
 use std::rc::Rc;
 use waft_core::menu_state::MenuStore;
 
@@ -151,12 +158,17 @@ impl WidgetRenderer {
                 widget_id,
             ),
 
-            Widget::Container {
-                orientation,
+            Widget::Row {
                 spacing,
                 css_classes,
                 children,
-            } => render_container(self, orientation, *spacing, css_classes, children, widget_id),
+            } => render_row(self, *spacing, css_classes, children, widget_id),
+
+            Widget::Col {
+                spacing,
+                css_classes,
+                children,
+            } => render_col(self, *spacing, css_classes, children, widget_id),
 
             Widget::MenuRow {
                 icon,
@@ -198,11 +210,37 @@ impl WidgetRenderer {
                 css_classes,
             } => render_label(text, css_classes),
 
+            Widget::StatusCycleButton {
+                value,
+                icon,
+                options,
+                on_cycle,
+            } => render_status_cycle_button(&self.action_callback, value, icon, options, on_cycle, widget_id),
+
             Widget::InfoCard {
                 icon,
                 title,
                 description,
-            } => render_info_card(icon, title, description),
+                on_click,
+            } => render_info_card(&self.action_callback, icon, title, description, on_click, widget_id),
+
+            Widget::ListRow {
+                children,
+                css_classes,
+            } => render_list_row(self, children, css_classes, widget_id),
+
+            Widget::IconList {
+                icon,
+                icon_size,
+                children,
+            } => render_icon_list(self, icon, *icon_size, children, widget_id),
+
+            Widget::ListButton {
+                label,
+                icon,
+                css_classes,
+                on_click,
+            } => render_list_button(&self.action_callback, label, icon, css_classes, on_click, widget_id),
         }
     }
 

@@ -1,27 +1,78 @@
 //! Pure GTK4 InfoCard widget.
 //!
-//! A display-only card with icon, title, and optional description.
+//! A card with icon, title, optional description, and optional click action.
 //! Layout: `[Icon 32x32] [Title (bold) / Description (dim)]`
+//! When on_click is Some, the card is wrapped in a flat button.
 
 use gtk::prelude::*;
 
 use crate::reconcile::{ReconcileOutcome, Reconcilable};
-use crate::utils::icon::IconWidget;
+use crate::renderer::ActionCallback;
+use crate::widgets::icon::IconWidget;
+use waft_ipc::widget::Action;
 use waft_ipc::Widget as IpcWidget;
 
-/// Pure GTK4 info card widget — display-only, no actions.
+/// Pure GTK4 info card widget.
 #[derive(Clone)]
 pub struct InfoCardWidget {
-    root: gtk::Box,
+    root: gtk::Widget,
     icon_widget: IconWidget,
     title_label: gtk::Label,
     description_label: gtk::Label,
+    clickable: bool,
 }
 
 impl InfoCardWidget {
     /// Create a new info card widget.
     pub fn new(icon: &str, title: &str, description: Option<&str>) -> Self {
-        let root = gtk::Box::builder()
+        let (root, icon_widget, title_label, description_label) =
+            Self::build_content(icon, title, description, false);
+
+        Self {
+            root,
+            icon_widget,
+            title_label,
+            description_label,
+            clickable: false,
+        }
+    }
+
+    /// Create a new clickable info card widget.
+    pub fn new_clickable(
+        icon: &str,
+        title: &str,
+        description: Option<&str>,
+        callback: &ActionCallback,
+        on_click: &Action,
+        widget_id: &str,
+    ) -> Self {
+        let (root, icon_widget, title_label, description_label) =
+            Self::build_content(icon, title, description, true);
+
+        let cb = callback.clone();
+        let wid = widget_id.to_string();
+        let action = on_click.clone();
+        let button: gtk::Button = root.clone().downcast().unwrap();
+        button.connect_clicked(move |_| {
+            cb(wid.clone(), action.clone());
+        });
+
+        Self {
+            root,
+            icon_widget,
+            title_label,
+            description_label,
+            clickable: true,
+        }
+    }
+
+    fn build_content(
+        icon: &str,
+        title: &str,
+        description: Option<&str>,
+        clickable: bool,
+    ) -> (gtk::Widget, IconWidget, gtk::Label, gtk::Label) {
+        let content_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
             .build();
@@ -51,15 +102,20 @@ impl InfoCardWidget {
         labels_box.append(&title_label);
         labels_box.append(&description_label);
 
-        root.append(icon_widget.widget());
-        root.append(&labels_box);
+        content_box.append(icon_widget.widget());
+        content_box.append(&labels_box);
 
-        Self {
-            root,
-            icon_widget,
-            title_label,
-            description_label,
-        }
+        let root: gtk::Widget = if clickable {
+            let button = gtk::Button::builder()
+                .css_classes(["flat", "info-card"])
+                .child(&content_box)
+                .build();
+            button.upcast()
+        } else {
+            content_box.upcast()
+        };
+
+        (root, icon_widget, title_label, description_label)
     }
 
     /// Update the icon.
@@ -88,7 +144,7 @@ impl InfoCardWidget {
 
     /// Get a reference to the root widget.
     pub fn widget(&self) -> gtk::Widget {
-        self.root.clone().upcast::<gtk::Widget>()
+        self.root.clone()
     }
 }
 
@@ -96,13 +152,23 @@ impl Reconcilable for InfoCardWidget {
     fn try_reconcile(&self, old_desc: &IpcWidget, new_desc: &IpcWidget) -> ReconcileOutcome {
         match (old_desc, new_desc) {
             (
-                IpcWidget::InfoCard { .. },
+                IpcWidget::InfoCard {
+                    on_click: old_click,
+                    ..
+                },
                 IpcWidget::InfoCard {
                     icon,
                     title,
                     description,
+                    on_click: new_click,
                 },
             ) => {
+                // Recreate if clickability changes (Some vs None) or action changes
+                let old_clickable = old_click.is_some();
+                let new_clickable = new_click.is_some();
+                if old_clickable != new_clickable || old_click != new_click {
+                    return ReconcileOutcome::Recreate;
+                }
                 self.set_icon(icon);
                 self.set_title(title);
                 self.set_description(description.as_deref());
@@ -115,10 +181,28 @@ impl Reconcilable for InfoCardWidget {
 
 /// Render an InfoCard widget from the IPC protocol.
 pub(crate) fn render_info_card(
+    callback: &ActionCallback,
     icon: &str,
     title: &str,
     description: &Option<String>,
+    on_click: &Option<Action>,
+    widget_id: &str,
 ) -> gtk::Widget {
-    let card = InfoCardWidget::new(icon, title, description.as_deref());
-    card.widget()
+    match on_click {
+        Some(action) => {
+            let card = InfoCardWidget::new_clickable(
+                icon,
+                title,
+                description.as_deref(),
+                callback,
+                action,
+                widget_id,
+            );
+            card.widget()
+        }
+        None => {
+            let card = InfoCardWidget::new(icon, title, description.as_deref());
+            card.widget()
+        }
+    }
 }

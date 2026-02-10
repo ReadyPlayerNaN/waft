@@ -17,7 +17,7 @@
 //!     .build();
 //! ```
 
-use waft_ipc::widget::{Action, ActionParams, Node, Orientation, Widget};
+use waft_ipc::widget::{Action, ActionParams, Node, StatusOption, Widget};
 
 /// Builder for FeatureToggle widgets (most commonly used).
 ///
@@ -351,91 +351,6 @@ impl MenuRowBuilder {
     }
 }
 
-/// Builder for Container widgets.
-///
-/// # Example
-///
-/// ```rust
-/// use waft_plugin_sdk::builder::{ContainerBuilder, LabelBuilder};
-/// use waft_ipc::widget::Orientation;
-///
-/// let container = ContainerBuilder::new(Orientation::Vertical)
-///     .spacing(12)
-///     .css_class("menu-section")
-///     .child(LabelBuilder::new("Item 1").build())
-///     .build();
-/// ```
-#[derive(Debug, Clone)]
-pub struct ContainerBuilder {
-    orientation: Orientation,
-    spacing: u32,
-    css_classes: Vec<String>,
-    children: Vec<Node>,
-}
-
-impl ContainerBuilder {
-    /// Create a new Container builder with the given orientation.
-    ///
-    /// # Defaults
-    /// - spacing: 0
-    /// - css_classes: empty
-    /// - children: empty
-    pub fn new(orientation: Orientation) -> Self {
-        Self {
-            orientation,
-            spacing: 0,
-            css_classes: Vec::new(),
-            children: Vec::new(),
-        }
-    }
-
-    /// Set the spacing between children in pixels.
-    pub fn spacing(mut self, spacing: u32) -> Self {
-        self.spacing = spacing;
-        self
-    }
-
-    /// Add a CSS class to the container.
-    pub fn css_class(mut self, class: impl Into<String>) -> Self {
-        self.css_classes.push(class.into());
-        self
-    }
-
-    /// Add multiple CSS classes to the container.
-    pub fn css_classes(mut self, classes: Vec<String>) -> Self {
-        self.css_classes.extend(classes);
-        self
-    }
-
-    /// Add a child widget to the container.
-    pub fn child(mut self, widget: Widget) -> Self {
-        self.children.push(Node::from(widget));
-        self
-    }
-
-    /// Add a keyed child widget to the container.
-    pub fn keyed_child(mut self, key: impl Into<String>, widget: Widget) -> Self {
-        self.children.push(Node::keyed(key, widget));
-        self
-    }
-
-    /// Add multiple child widgets to the container.
-    pub fn children(mut self, widgets: Vec<Widget>) -> Self {
-        self.children.extend(widgets.into_iter().map(Node::from));
-        self
-    }
-
-    /// Build the Container widget.
-    pub fn build(self) -> Widget {
-        Widget::Container {
-            orientation: self.orientation,
-            spacing: self.spacing,
-            css_classes: self.css_classes,
-            children: self.children,
-        }
-    }
-}
-
 /// Builder for Switch widgets.
 ///
 /// # Example
@@ -665,6 +580,7 @@ pub struct InfoCardBuilder {
     icon: String,
     title: String,
     description: Option<String>,
+    on_click: Option<Action>,
 }
 
 impl InfoCardBuilder {
@@ -673,11 +589,13 @@ impl InfoCardBuilder {
     /// # Defaults
     /// - icon: "emblem-system-symbolic"
     /// - description: None
+    /// - on_click: None
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             icon: "emblem-system-symbolic".into(),
             title: title.into(),
             description: None,
+            on_click: None,
         }
     }
 
@@ -693,12 +611,451 @@ impl InfoCardBuilder {
         self
     }
 
+    /// Set the click action for the card.
+    pub fn on_click(mut self, action_id: impl Into<String>) -> Self {
+        self.on_click = Some(Action {
+            id: action_id.into(),
+            params: ActionParams::None,
+        });
+        self
+    }
+
     /// Build the InfoCard widget.
     pub fn build(self) -> Widget {
         Widget::InfoCard {
             icon: self.icon,
             title: self.title,
             description: self.description,
+            on_click: self.on_click,
+        }
+    }
+}
+
+/// Builder for Row widgets (horizontal layout).
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::{RowBuilder, LabelBuilder};
+///
+/// let row = RowBuilder::new()
+///     .spacing(8)
+///     .child(LabelBuilder::new("Left").build())
+///     .child(LabelBuilder::new("Right").build())
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct RowBuilder {
+    spacing: u32,
+    css_classes: Vec<String>,
+    children: Vec<Node>,
+}
+
+impl RowBuilder {
+    /// Create a new Row builder.
+    pub fn new() -> Self {
+        Self {
+            spacing: 0,
+            css_classes: Vec::new(),
+            children: Vec::new(),
+        }
+    }
+
+    /// Set spacing between children.
+    pub fn spacing(mut self, spacing: u32) -> Self {
+        self.spacing = spacing;
+        self
+    }
+
+    /// Add a CSS class.
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    /// Add a child widget.
+    pub fn child(mut self, widget: Widget) -> Self {
+        self.children.push(Node::from(widget));
+        self
+    }
+
+    /// Add a keyed child widget.
+    pub fn keyed_child(mut self, key: impl Into<String>, widget: Widget) -> Self {
+        self.children.push(Node::keyed(key, widget));
+        self
+    }
+
+    /// Add multiple child widgets.
+    pub fn children(mut self, widgets: Vec<Widget>) -> Self {
+        self.children.extend(widgets.into_iter().map(Node::from));
+        self
+    }
+
+    /// Build the Row widget.
+    pub fn build(self) -> Widget {
+        Widget::Row {
+            spacing: self.spacing,
+            css_classes: self.css_classes,
+            children: self.children,
+        }
+    }
+}
+
+impl Default for RowBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Builder for Col widgets (vertical layout).
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::{ColBuilder, LabelBuilder};
+///
+/// let col = ColBuilder::new()
+///     .spacing(4)
+///     .child(LabelBuilder::new("Top").build())
+///     .child(LabelBuilder::new("Bottom").build())
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct ColBuilder {
+    spacing: u32,
+    css_classes: Vec<String>,
+    children: Vec<Node>,
+}
+
+impl ColBuilder {
+    /// Create a new Col builder.
+    pub fn new() -> Self {
+        Self {
+            spacing: 0,
+            css_classes: Vec::new(),
+            children: Vec::new(),
+        }
+    }
+
+    /// Set spacing between children.
+    pub fn spacing(mut self, spacing: u32) -> Self {
+        self.spacing = spacing;
+        self
+    }
+
+    /// Add a CSS class.
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    /// Add a child widget.
+    pub fn child(mut self, widget: Widget) -> Self {
+        self.children.push(Node::from(widget));
+        self
+    }
+
+    /// Add a keyed child widget.
+    pub fn keyed_child(mut self, key: impl Into<String>, widget: Widget) -> Self {
+        self.children.push(Node::keyed(key, widget));
+        self
+    }
+
+    /// Add multiple child widgets.
+    pub fn children(mut self, widgets: Vec<Widget>) -> Self {
+        self.children.extend(widgets.into_iter().map(Node::from));
+        self
+    }
+
+    /// Build the Col widget.
+    pub fn build(self) -> Widget {
+        Widget::Col {
+            spacing: self.spacing,
+            css_classes: self.css_classes,
+            children: self.children,
+        }
+    }
+}
+
+impl Default for ColBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Builder for StatusCycleButton widgets.
+///
+/// A button that cycles through a list of options, displaying the current
+/// option's label and icon.
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::StatusCycleButtonBuilder;
+/// use waft_ipc::widget::StatusOption;
+///
+/// let button = StatusCycleButtonBuilder::new("set_mode")
+///     .icon("preferences-system-symbolic")
+///     .option("auto", "Auto")
+///     .option("manual", "Manual")
+///     .value("auto")
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct StatusCycleButtonBuilder {
+    value: String,
+    icon: String,
+    options: Vec<StatusOption>,
+    on_cycle: Action,
+}
+
+impl StatusCycleButtonBuilder {
+    /// Create a new StatusCycleButton builder with the given action ID.
+    pub fn new(action_id: impl Into<String>) -> Self {
+        Self {
+            value: String::new(),
+            icon: "emblem-system-symbolic".into(),
+            options: Vec::new(),
+            on_cycle: Action {
+                id: action_id.into(),
+                params: ActionParams::None,
+            },
+        }
+    }
+
+    /// Set the current value (should match one of the option IDs).
+    pub fn value(mut self, value: impl Into<String>) -> Self {
+        self.value = value.into();
+        self
+    }
+
+    /// Set the icon name.
+    pub fn icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = icon.into();
+        self
+    }
+
+    /// Add an option with ID and display label.
+    pub fn option(mut self, id: impl Into<String>, label: impl Into<String>) -> Self {
+        self.options.push(StatusOption {
+            id: id.into(),
+            label: label.into(),
+        });
+        self
+    }
+
+    /// Set all options at once.
+    pub fn options(mut self, options: Vec<StatusOption>) -> Self {
+        self.options = options;
+        self
+    }
+
+    /// Build the StatusCycleButton widget.
+    pub fn build(self) -> Widget {
+        Widget::StatusCycleButton {
+            value: self.value,
+            icon: self.icon,
+            options: self.options,
+            on_cycle: self.on_cycle,
+        }
+    }
+}
+
+/// Builder for ListRow widgets (horizontal row of children with CSS classes).
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::{ListRowBuilder, LabelBuilder};
+///
+/// let row = ListRowBuilder::new()
+///     .css_class("event-row")
+///     .child(LabelBuilder::new("Event").build())
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct ListRowBuilder {
+    children: Vec<Node>,
+    css_classes: Vec<String>,
+}
+
+impl ListRowBuilder {
+    /// Create a new ListRow builder.
+    pub fn new() -> Self {
+        Self {
+            children: Vec::new(),
+            css_classes: Vec::new(),
+        }
+    }
+
+    /// Add a child widget.
+    pub fn child(mut self, widget: Widget) -> Self {
+        self.children.push(Node::from(widget));
+        self
+    }
+
+    /// Add a keyed child widget.
+    pub fn keyed_child(mut self, key: impl Into<String>, widget: Widget) -> Self {
+        self.children.push(Node::keyed(key, widget));
+        self
+    }
+
+    /// Add a CSS class.
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    /// Build the ListRow widget.
+    pub fn build(self) -> Widget {
+        Widget::ListRow {
+            children: self.children,
+            css_classes: self.css_classes,
+        }
+    }
+}
+
+impl Default for ListRowBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Builder for IconList widgets (icon + vertical list of children).
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::{IconListBuilder, LabelBuilder};
+///
+/// let list = IconListBuilder::new("calendar-symbolic")
+///     .icon_size(24)
+///     .child(LabelBuilder::new("Meeting at 10am").build())
+///     .child(LabelBuilder::new("Lunch at noon").build())
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct IconListBuilder {
+    icon: String,
+    icon_size: i32,
+    children: Vec<Node>,
+}
+
+impl IconListBuilder {
+    /// Create a new IconList builder with the given icon name.
+    ///
+    /// # Defaults
+    /// - icon_size: 16
+    /// - children: empty
+    pub fn new(icon: impl Into<String>) -> Self {
+        Self {
+            icon: icon.into(),
+            icon_size: 16,
+            children: Vec::new(),
+        }
+    }
+
+    /// Set the icon size in pixels.
+    pub fn icon_size(mut self, size: i32) -> Self {
+        self.icon_size = size;
+        self
+    }
+
+    /// Add a child widget.
+    pub fn child(mut self, widget: Widget) -> Self {
+        self.children.push(Node::from(widget));
+        self
+    }
+
+    /// Add a keyed child widget.
+    pub fn keyed_child(mut self, key: impl Into<String>, widget: Widget) -> Self {
+        self.children.push(Node::keyed(key, widget));
+        self
+    }
+
+    /// Build the IconList widget.
+    pub fn build(self) -> Widget {
+        Widget::IconList {
+            icon: self.icon,
+            icon_size: self.icon_size,
+            children: self.children,
+        }
+    }
+}
+
+/// Builder for ListButton widgets (flat button for use in lists).
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::ListButtonBuilder;
+///
+/// let button = ListButtonBuilder::new("Open Calendar")
+///     .icon("x-office-calendar-symbolic")
+///     .on_click("open_calendar")
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct ListButtonBuilder {
+    label: String,
+    icon: Option<String>,
+    css_classes: Vec<String>,
+    on_click: Action,
+}
+
+impl ListButtonBuilder {
+    /// Create a new ListButton builder with the given label.
+    ///
+    /// # Defaults
+    /// - icon: None
+    /// - css_classes: empty
+    /// - on_click: Action with id "click" and no params
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            icon: None,
+            css_classes: Vec::new(),
+            on_click: Action {
+                id: "click".into(),
+                params: ActionParams::None,
+            },
+        }
+    }
+
+    /// Set the icon name.
+    pub fn icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    /// Add a CSS class.
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    /// Set the click action by ID.
+    pub fn on_click(mut self, action_id: impl Into<String>) -> Self {
+        self.on_click = Action {
+            id: action_id.into(),
+            params: ActionParams::None,
+        };
+        self
+    }
+
+    /// Set the full click action.
+    pub fn on_click_action(mut self, action: Action) -> Self {
+        self.on_click = action;
+        self
+    }
+
+    /// Build the ListButton widget.
+    pub fn build(self) -> Widget {
+        Widget::ListButton {
+            label: self.label,
+            icon: self.icon,
+            css_classes: self.css_classes,
+            on_click: self.on_click,
         }
     }
 }
@@ -891,55 +1248,6 @@ mod tests {
     }
 
     #[test]
-    fn test_container_builder_minimal() {
-        let widget = ContainerBuilder::new(Orientation::Vertical).build();
-
-        match widget {
-            Widget::Container {
-                orientation,
-                spacing,
-                css_classes,
-                children,
-            } => {
-                matches!(orientation, Orientation::Vertical);
-                assert_eq!(spacing, 0);
-                assert!(css_classes.is_empty());
-                assert!(children.is_empty());
-            }
-            _ => panic!("Expected Container"),
-        }
-    }
-
-    #[test]
-    fn test_container_builder_full() {
-        let child1 = LabelBuilder::new("Child 1").build();
-        let child2 = LabelBuilder::new("Child 2").build();
-
-        let widget = ContainerBuilder::new(Orientation::Horizontal)
-            .spacing(12)
-            .css_class("menu-section")
-            .css_class("primary")
-            .child(child1)
-            .child(child2)
-            .build();
-
-        match widget {
-            Widget::Container {
-                orientation,
-                spacing,
-                css_classes,
-                children,
-            } => {
-                matches!(orientation, Orientation::Horizontal);
-                assert_eq!(spacing, 12);
-                assert_eq!(css_classes.len(), 2);
-                assert_eq!(children.len(), 2);
-            }
-            _ => panic!("Expected Container"),
-        }
-    }
-
-    #[test]
     fn test_switch_builder() {
         let widget = SwitchBuilder::new()
             .active(true)
@@ -1025,10 +1333,12 @@ mod tests {
                 icon,
                 title,
                 description,
+                on_click,
             } => {
                 assert_eq!(title, "Status");
                 assert_eq!(icon, "emblem-system-symbolic");
                 assert!(description.is_none());
+                assert!(on_click.is_none());
             }
             _ => panic!("Expected InfoCard"),
         }
@@ -1046,6 +1356,7 @@ mod tests {
                 icon,
                 title,
                 description,
+                ..
             } => {
                 assert_eq!(icon, "weather-clear-symbolic");
                 assert_eq!(title, "Sunny");
@@ -1056,9 +1367,25 @@ mod tests {
     }
 
     #[test]
+    fn test_info_card_builder_clickable() {
+        let widget = InfoCardBuilder::new("Click me")
+            .icon("go-next-symbolic")
+            .on_click("open_details")
+            .build();
+
+        match widget {
+            Widget::InfoCard { on_click, .. } => {
+                assert!(on_click.is_some());
+                assert_eq!(on_click.unwrap().id, "open_details");
+            }
+            _ => panic!("Expected InfoCard"),
+        }
+    }
+
+    #[test]
     fn test_nested_builder_usage() {
         // Demonstrate building a complex nested structure
-        let expanded_menu = ContainerBuilder::new(Orientation::Vertical)
+        let expanded_menu = ColBuilder::new()
             .spacing(4)
             .child(
                 MenuRowBuilder::new("Device 1")
@@ -1093,13 +1420,116 @@ mod tests {
                 assert!(expanded_content.is_some());
 
                 match *expanded_content.unwrap() {
-                    Widget::Container { children, .. } => {
+                    Widget::Col { children, .. } => {
                         assert_eq!(children.len(), 2);
                     }
-                    _ => panic!("Expected Container"),
+                    _ => panic!("Expected Col"),
                 }
             }
             _ => panic!("Expected FeatureToggle"),
+        }
+    }
+
+    #[test]
+    fn test_list_row_builder() {
+        let widget = ListRowBuilder::new()
+            .css_class("event-row")
+            .child(LabelBuilder::new("Left").build())
+            .child(LabelBuilder::new("Right").build())
+            .build();
+
+        match widget {
+            Widget::ListRow {
+                children,
+                css_classes,
+            } => {
+                assert_eq!(children.len(), 2);
+                assert_eq!(css_classes, vec!["event-row"]);
+            }
+            _ => panic!("Expected ListRow"),
+        }
+    }
+
+    #[test]
+    fn test_icon_list_builder() {
+        let widget = IconListBuilder::new("calendar-symbolic")
+            .icon_size(24)
+            .child(LabelBuilder::new("Event 1").build())
+            .child(LabelBuilder::new("Event 2").build())
+            .build();
+
+        match widget {
+            Widget::IconList {
+                icon,
+                icon_size,
+                children,
+            } => {
+                assert_eq!(icon, "calendar-symbolic");
+                assert_eq!(icon_size, 24);
+                assert_eq!(children.len(), 2);
+            }
+            _ => panic!("Expected IconList"),
+        }
+    }
+
+    #[test]
+    fn test_icon_list_builder_defaults() {
+        let widget = IconListBuilder::new("test-icon").build();
+
+        match widget {
+            Widget::IconList {
+                icon_size,
+                children,
+                ..
+            } => {
+                assert_eq!(icon_size, 16);
+                assert!(children.is_empty());
+            }
+            _ => panic!("Expected IconList"),
+        }
+    }
+
+    #[test]
+    fn test_list_button_builder() {
+        let widget = ListButtonBuilder::new("Open Calendar")
+            .icon("x-office-calendar-symbolic")
+            .css_class("suggested-action")
+            .on_click("open_calendar")
+            .build();
+
+        match widget {
+            Widget::ListButton {
+                label,
+                icon,
+                css_classes,
+                on_click,
+            } => {
+                assert_eq!(label, "Open Calendar");
+                assert_eq!(icon, Some("x-office-calendar-symbolic".to_string()));
+                assert_eq!(css_classes, vec!["suggested-action"]);
+                assert_eq!(on_click.id, "open_calendar");
+            }
+            _ => panic!("Expected ListButton"),
+        }
+    }
+
+    #[test]
+    fn test_list_button_builder_minimal() {
+        let widget = ListButtonBuilder::new("Click me").build();
+
+        match widget {
+            Widget::ListButton {
+                label,
+                icon,
+                css_classes,
+                on_click,
+            } => {
+                assert_eq!(label, "Click me");
+                assert!(icon.is_none());
+                assert!(css_classes.is_empty());
+                assert_eq!(on_click.id, "click");
+            }
+            _ => panic!("Expected ListButton"),
         }
     }
 }

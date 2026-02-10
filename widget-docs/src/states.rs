@@ -1,4 +1,4 @@
-use waft_ui_gtk::types::{Action, ActionParams, Orientation, Widget};
+use waft_ui_gtk::types::{Action, ActionParams, Widget};
 
 /// Represents a single state of a widget to document
 pub struct WidgetState {
@@ -22,7 +22,7 @@ impl WidgetStates {
             Self::feature_toggle(),
             Self::slider(),
             Self::menu_row(),
-            Self::container(),
+            Self::col_and_row(),
             Self::switch(),
             Self::spinner(),
             Self::checkmark(),
@@ -125,8 +125,7 @@ impl WidgetStates {
                         active: true,
                         busy: false,
                         expandable: true,
-                        expanded_content: Some(Box::new(Widget::Container {
-                            orientation: Orientation::Vertical,
+                        expanded_content: Some(Box::new(Widget::Col {
                             spacing: 4,
                             css_classes: vec![],
                             children: vec![
@@ -154,8 +153,7 @@ impl WidgetStates {
                         active: true,
                         busy: false,
                         expandable: true,
-                        expanded_content: Some(Box::new(Widget::Container {
-                            orientation: Orientation::Vertical,
+                        expanded_content: Some(Box::new(Widget::Col {
                             spacing: 4,
                             css_classes: vec![],
                             children: vec![
@@ -226,8 +224,7 @@ impl WidgetStates {
                         value: 0.75,
                         muted: false,
                         expandable: true,
-                        expanded_content: Some(Box::new(Widget::Container {
-                            orientation: Orientation::Vertical,
+                        expanded_content: Some(Box::new(Widget::Col {
                             spacing: 4,
                             css_classes: vec![],
                             children: vec![
@@ -353,17 +350,16 @@ impl WidgetStates {
         }
     }
 
-    fn container() -> Self {
+    fn col_and_row() -> Self {
         Self {
-            name: "container".to_string(),
-            description: "A layout container for organizing child widgets".to_string(),
+            name: "col-and-row".to_string(),
+            description: "Layout containers for organizing child widgets".to_string(),
             states: vec![
                 WidgetState {
-                    name: "Vertical".to_string(),
-                    filename: "vertical".to_string(),
+                    name: "Col (Vertical)".to_string(),
+                    filename: "col".to_string(),
                     description: "Vertical layout with spacing".to_string(),
-                    widget: Widget::Container {
-                        orientation: Orientation::Vertical,
+                    widget: Widget::Col {
                         spacing: 8,
                         css_classes: vec![],
                         children: vec![
@@ -383,11 +379,10 @@ impl WidgetStates {
                     },
                 },
                 WidgetState {
-                    name: "Horizontal".to_string(),
-                    filename: "horizontal".to_string(),
+                    name: "Row (Horizontal)".to_string(),
+                    filename: "row".to_string(),
                     description: "Horizontal layout with spacing".to_string(),
-                    widget: Widget::Container {
-                        orientation: Orientation::Horizontal,
+                    widget: Widget::Row {
                         spacing: 12,
                         css_classes: vec![],
                         children: vec![

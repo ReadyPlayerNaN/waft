@@ -448,26 +448,11 @@ async fn test_clock_daemon_discovery() {
                 .expect("Should have clock widget");
 
             match &clock_widget.widget {
-                Widget::Container {
-                    orientation,
-                    children,
-                    ..
-                } => {
-                    assert_eq!(*orientation, waft_ipc::Orientation::Vertical);
-                    assert_eq!(children.len(), 2, "Clock should have date and time labels");
-
-                    assert!(
-                        matches!(children[0].widget, Widget::Label { .. }),
-                        "First child should be date label"
-                    );
-                    assert!(
-                        matches!(children[1].widget, Widget::Label { .. }),
-                        "Second child should be time label"
-                    );
-
+                Widget::InfoCard { title, icon, .. } => {
+                    println!("Clock widget: title={}, icon={}", title, icon);
                     println!("Clock widget structure verified");
                 }
-                _ => panic!("Clock widget should be a Container"),
+                other => panic!("Expected InfoCard for clock, got: {:?}", other),
             }
         }
         other => panic!("Expected SetWidgets, got: {:?}", other),

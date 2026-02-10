@@ -1,7 +1,7 @@
 //! MenuRow widget renderer - converts MenuRow descriptions to GTK button with layout
 
 use crate::renderer::{ActionCallback, WidgetRenderer};
-use crate::utils::icon::IconWidget;
+use crate::widgets::icon::IconWidget;
 use waft_ipc::widget::{Action, Widget};
 use gtk::prelude::*;
 

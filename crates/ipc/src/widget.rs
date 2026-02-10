@@ -33,14 +33,6 @@ pub enum Widget {
         on_icon_click: Action,
     },
 
-    /// A layout container for organizing child widgets
-    Container {
-        orientation: Orientation,
-        spacing: u32,
-        css_classes: Vec<String>,
-        children: Vec<Node>,
-    },
-
     /// A menu row with icon, labels, and optional trailing widget
     MenuRow {
         icon: Option<String>,
@@ -77,12 +69,64 @@ pub enum Widget {
         css_classes: Vec<String>,
     },
 
-    /// A display-only card with icon, title, and optional description
+    /// A horizontal layout container (shorthand for Container with Horizontal orientation)
+    Row {
+        spacing: u32,
+        css_classes: Vec<String>,
+        children: Vec<Node>,
+    },
+
+    /// A vertical layout container (shorthand for Container with Vertical orientation)
+    Col {
+        spacing: u32,
+        css_classes: Vec<String>,
+        children: Vec<Node>,
+    },
+
+    /// A button that cycles through a list of options
+    StatusCycleButton {
+        value: String,
+        icon: String,
+        options: Vec<StatusOption>,
+        on_cycle: Action,
+    },
+
+    /// A horizontal row of child widgets with CSS classes
+    ListRow {
+        children: Vec<Node>,
+        css_classes: Vec<String>,
+    },
+
+    /// A list with a leading icon and child widgets
+    IconList {
+        icon: String,
+        icon_size: i32,
+        children: Vec<Node>,
+    },
+
+    /// A button styled for use in lists
+    ListButton {
+        label: String,
+        icon: Option<String>,
+        css_classes: Vec<String>,
+        on_click: Action,
+    },
+
+    /// A card with icon, title, optional description, and optional click action
     InfoCard {
         icon: String,
         title: String,
         description: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        on_click: Option<Action>,
     },
+}
+
+/// An option for StatusCycleButton
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct StatusOption {
+    pub id: String,
+    pub label: String,
 }
 
 /// Represents a user action with parameters
@@ -127,13 +171,6 @@ impl From<Widget> for Node {
     fn from(widget: Widget) -> Self {
         Node { key: None, widget }
     }
-}
-
-/// Layout orientation for containers
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum Orientation {
-    Horizontal,
-    Vertical,
 }
 
 /// A named widget with placement metadata.
@@ -298,9 +335,8 @@ mod tests {
     }
 
     #[test]
-    fn test_widget_container_serialization() {
-        let widget = Widget::Container {
-            orientation: Orientation::Vertical,
+    fn test_widget_col_serialization() {
+        let widget = Widget::Col {
             spacing: 8,
             css_classes: vec!["menu-container".to_string()],
             children: vec![
@@ -321,13 +357,13 @@ mod tests {
         let deserialized: Widget = serde_json::from_str(&json).unwrap();
 
         match deserialized {
-            Widget::Container {
+            Widget::Col {
                 spacing, children, ..
             } => {
                 assert_eq!(spacing, 8);
                 assert_eq!(children.len(), 2);
             }
-            _ => panic!("Expected Widget::Container"),
+            _ => panic!("Expected Widget::Col"),
         }
     }
 
@@ -454,8 +490,7 @@ mod tests {
             active: false,
             busy: false,
             expandable: true,
-            expanded_content: Some(Box::new(Widget::Container {
-                orientation: Orientation::Vertical,
+            expanded_content: Some(Box::new(Widget::Col {
                 spacing: 4,
                 css_classes: vec![],
                 children: vec![
@@ -501,10 +536,10 @@ mod tests {
             } => {
                 assert!(expanded_content.is_some());
                 match *expanded_content.unwrap() {
-                    Widget::Container { children, .. } => {
+                    Widget::Col { children, .. } => {
                         assert_eq!(children.len(), 2);
                     }
-                    _ => panic!("Expected Container in expanded_content"),
+                    _ => panic!("Expected Col in expanded_content"),
                 }
             }
             _ => panic!("Expected FeatureToggle"),
@@ -572,6 +607,7 @@ mod tests {
             icon: "weather-clear-symbolic".to_string(),
             title: "Sunny".to_string(),
             description: Some("25°C, clear skies".to_string()),
+            on_click: None,
         };
 
         let json = serde_json::to_string(&widget).unwrap();
@@ -582,6 +618,7 @@ mod tests {
                 icon,
                 title,
                 description,
+                ..
             } => {
                 assert_eq!(icon, "weather-clear-symbolic");
                 assert_eq!(title, "Sunny");
@@ -597,6 +634,7 @@ mod tests {
             icon: "battery-full-symbolic".to_string(),
             title: "Battery Full".to_string(),
             description: None,
+            on_click: None,
         };
 
         let json = serde_json::to_string(&widget).unwrap();
@@ -611,18 +649,6 @@ mod tests {
             }
             _ => panic!("Expected Widget::InfoCard"),
         }
-    }
-
-    #[test]
-    fn test_orientation_values() {
-        let horizontal = Orientation::Horizontal;
-        let vertical = Orientation::Vertical;
-
-        let h_json = serde_json::to_string(&horizontal).unwrap();
-        let v_json = serde_json::to_string(&vertical).unwrap();
-
-        let _: Orientation = serde_json::from_str(&h_json).unwrap();
-        let _: Orientation = serde_json::from_str(&v_json).unwrap();
     }
 
 }

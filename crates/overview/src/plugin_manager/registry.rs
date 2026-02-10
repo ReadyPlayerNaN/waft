@@ -121,7 +121,7 @@ impl Default for WidgetRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use waft_ipc::widget::{Action, ActionParams, Orientation};
+    use waft_ipc::widget::{Action, ActionParams};
 
     fn create_test_widget(id: &str, weight: u32) -> NamedWidget {
         NamedWidget {
@@ -376,8 +376,7 @@ mod tests {
                     active: true,
                     busy: false,
                     expandable: true,
-                    expanded_content: Some(Box::new(Widget::Container {
-                        orientation: Orientation::Vertical,
+                    expanded_content: Some(Box::new(Widget::Col {
                         spacing: 8,
                         css_classes: vec![],
                         children: vec![Widget::Label {

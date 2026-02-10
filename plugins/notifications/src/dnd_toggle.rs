@@ -36,6 +36,7 @@ impl DoNotDisturbToggleWidget {
                 active: init.active,
                 busy: init.busy,
                 expandable: false,
+                menu_id: None,
             },
             None, // No menu support
         );

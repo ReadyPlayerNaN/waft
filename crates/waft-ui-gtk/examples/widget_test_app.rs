@@ -9,7 +9,7 @@ use adw::prelude::*;
 use std::rc::Rc;
 use waft_core::menu_state::create_menu_store;
 use waft_ui_gtk::renderer::{ActionCallback, WidgetRenderer};
-use waft_ipc::widget::{Action, ActionParams, Orientation, Widget};
+use waft_ipc::widget::{Action, ActionParams, Widget};
 
 fn main() {
     // Initialize GTK and libadwaita
@@ -80,8 +80,7 @@ fn main() {
         active: true,
         busy: false,
         expandable: true,
-        expanded_content: Some(Box::new(Widget::Container {
-            orientation: Orientation::Vertical,
+        expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,
             css_classes: vec!["menu-container".to_string()],
             children: vec![
@@ -169,8 +168,7 @@ fn main() {
         value: 0.65,
         muted: false,
         expandable: true,
-        expanded_content: Some(Box::new(Widget::Container {
-            orientation: Orientation::Vertical,
+        expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,
             css_classes: vec!["menu-container".to_string()],
             children: vec![
@@ -257,8 +255,7 @@ fn main() {
     menu_label.set_halign(gtk::Align::Start);
     main_box.append(&menu_label);
 
-    let menu_container = Widget::Container {
-        orientation: Orientation::Vertical,
+    let menu_container = Widget::Col {
         spacing: 0,
         css_classes: vec!["menu-container".to_string()],
         children: vec![
@@ -335,8 +332,7 @@ fn main() {
     primitives_label.set_halign(gtk::Align::Start);
     main_box.append(&primitives_label);
 
-    let primitives_container = Widget::Container {
-        orientation: Orientation::Vertical,
+    let primitives_container = Widget::Col {
         spacing: 8,
         css_classes: vec![],
         children: vec![
@@ -352,8 +348,7 @@ fn main() {
             }
             .into(),
             // Button examples in horizontal container
-            Widget::Container {
-                orientation: Orientation::Horizontal,
+            Widget::Row {
                 spacing: 8,
                 css_classes: vec![],
                 children: vec![
@@ -388,8 +383,7 @@ fn main() {
             }
             .into(),
             // Switch, Spinner, Checkmark in horizontal container
-            Widget::Container {
-                orientation: Orientation::Horizontal,
+            Widget::Row {
                 spacing: 16,
                 css_classes: vec![],
                 children: vec![
@@ -439,8 +433,7 @@ fn main() {
     complex_label.set_halign(gtk::Align::Start);
     main_box.append(&complex_label);
 
-    let complex_widget = Widget::Container {
-        orientation: Orientation::Vertical,
+    let complex_widget = Widget::Col {
         spacing: 8,
         css_classes: vec!["card".to_string()],
         children: vec![
@@ -449,8 +442,7 @@ fn main() {
                 css_classes: vec!["title-4".to_string()],
             }
             .into(),
-            Widget::Container {
-                orientation: Orientation::Horizontal,
+            Widget::Row {
                 spacing: 8,
                 css_classes: vec![],
                 children: vec![

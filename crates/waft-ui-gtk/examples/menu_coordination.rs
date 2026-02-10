@@ -9,7 +9,7 @@ use adw::prelude::*;
 use std::rc::Rc;
 use waft_core::menu_state::{create_menu_store, MenuOp};
 use waft_ui_gtk::renderer::{ActionCallback, WidgetRenderer};
-use waft_ipc::widget::{Action, ActionParams, Orientation, Widget};
+use waft_ipc::widget::{Action, ActionParams, Widget};
 
 fn main() {
     // Initialize GTK and libadwaita
@@ -84,8 +84,7 @@ fn main() {
         active: true,
         busy: false,
         expandable: true,
-        expanded_content: Some(Box::new(Widget::Container {
-            orientation: Orientation::Vertical,
+        expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,
             css_classes: vec!["menu-container".to_string()],
             children: vec![
@@ -136,8 +135,7 @@ fn main() {
         active: true,
         busy: false,
         expandable: true,
-        expanded_content: Some(Box::new(Widget::Container {
-            orientation: Orientation::Vertical,
+        expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,
             css_classes: vec!["menu-container".to_string()],
             children: vec![
@@ -194,8 +192,7 @@ fn main() {
         active: true,
         busy: false,
         expandable: true,
-        expanded_content: Some(Box::new(Widget::Container {
-            orientation: Orientation::Vertical,
+        expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,
             css_classes: vec!["menu-container".to_string()],
             children: vec![
@@ -241,8 +238,7 @@ fn main() {
         value: 0.65,
         muted: false,
         expandable: true,
-        expanded_content: Some(Box::new(Widget::Container {
-            orientation: Orientation::Vertical,
+        expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,
             css_classes: vec!["menu-container".to_string()],
             children: vec![
@@ -301,8 +297,7 @@ fn main() {
         value: 0.8,
         muted: false,
         expandable: true,
-        expanded_content: Some(Box::new(Widget::Container {
-            orientation: Orientation::Vertical,
+        expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,
             css_classes: vec!["menu-container".to_string()],
             children: vec![

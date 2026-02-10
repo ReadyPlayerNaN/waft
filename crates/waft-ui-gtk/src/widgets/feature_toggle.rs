@@ -12,11 +12,11 @@ use uuid::Uuid;
 
 use crate::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use waft_core::Callback;
-use crate::utils::icon::IconWidget;
+use crate::widgets::icon::IconWidget;
 use waft_core::menu_state::{MenuOp, MenuStore};
 
 use crate::renderer::ActionCallback;
-use crate::utils::menu_state::menu_id_for_widget;
+use crate::menu_state::menu_id_for_widget;
 use waft_ipc::widget::Action;
 
 // Note: render_feature_toggle and related types below are pub(crate) to avoid
@@ -31,6 +31,11 @@ pub struct FeatureToggleProps {
     pub expandable: bool,
     pub icon: String,
     pub title: String,
+    /// Optional deterministic menu ID. When provided, the toggle uses this
+    /// instead of generating a random UUID. Callers should use
+    /// `menu_id_for_widget(widget_id)` to produce a stable ID that
+    /// matches any external content revealer.
+    pub menu_id: Option<String>,
 }
 
 /// Output events from the feature toggle.
@@ -64,8 +69,10 @@ impl FeatureToggleWidget {
     /// If menu_store is provided, the widget can be made expandable.
     /// The expand button visibility is controlled by the "expandable" CSS class.
     pub fn new(props: FeatureToggleProps, menu_store: Option<Rc<MenuStore>>) -> Self {
-        // Generate unique ID for menu if menu_store is provided
-        let menu_id = menu_store.as_ref().map(|_| Uuid::new_v4().to_string());
+        // Use provided deterministic menu ID, or fall back to random UUID
+        let menu_id = menu_store.as_ref().map(|_| {
+            props.menu_id.clone().unwrap_or_else(|| Uuid::new_v4().to_string())
+        });
 
         // Root container: horizontal box containing main button + expand button
         let root = gtk::Box::builder()
@@ -418,6 +425,7 @@ pub(crate) fn render_feature_toggle(
             active,
             busy,
             expandable,
+            menu_id: Some(menu_id_for_widget(widget_id)),
         },
         Some(menu_store.clone()),
     );
@@ -426,13 +434,15 @@ pub(crate) fn render_feature_toggle(
     let cb = callback.clone();
     let wid = widget_id.to_string();
     let action = on_toggle.clone();
-    toggle.connect_output(move |_output| {
-        cb(wid.clone(), action.clone());
+    toggle.connect_output(move |output| {
+        use waft_ipc::widget::ActionParams;
+        let mut a = action.clone();
+        a.params = match output {
+            FeatureToggleOutput::Activate => ActionParams::Value(1.0),
+            FeatureToggleOutput::Deactivate => ActionParams::Value(0.0),
+        };
+        cb(wid.clone(), a);
     });
-
-    // Use deterministic menu ID for daemon widget coordination
-    // Store the mapping so the grid/parent can find the menu
-    let _menu_id = menu_id_for_widget(widget_id);
 
     toggle.widget()
 }
