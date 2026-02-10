@@ -52,17 +52,17 @@ impl WeatherCondition {
 
     /// Get a human-readable description of this condition.
     pub fn description(&self) -> String {
-        use waft_plugin_api::i18n::t;
+        let i18n = crate::i18n::i18n();
         match self {
-            Self::Clear => t("weather-clear"),
-            Self::PartlyCloudy => t("weather-partly-cloudy"),
-            Self::Cloudy => t("weather-cloudy"),
-            Self::Fog => t("weather-fog"),
-            Self::Drizzle => t("weather-drizzle"),
-            Self::Rain => t("weather-rain"),
-            Self::FreezingRain => t("weather-freezing-rain"),
-            Self::Snow => t("weather-snow"),
-            Self::Thunderstorm => t("weather-thunderstorm"),
+            Self::Clear => i18n.t("weather-clear"),
+            Self::PartlyCloudy => i18n.t("weather-partly-cloudy"),
+            Self::Cloudy => i18n.t("weather-cloudy"),
+            Self::Fog => i18n.t("weather-fog"),
+            Self::Drizzle => i18n.t("weather-drizzle"),
+            Self::Rain => i18n.t("weather-rain"),
+            Self::FreezingRain => i18n.t("weather-freezing-rain"),
+            Self::Snow => i18n.t("weather-snow"),
+            Self::Thunderstorm => i18n.t("weather-thunderstorm"),
         }
     }
 }

@@ -20,47 +20,30 @@ struct ApiResponse {
 }
 
 /// Fetch current weather data from Open-Meteo API.
-///
-/// Uses reqwest::blocking on a background thread to avoid needing tokio's IO
-/// reactor (which is in the host's copy of tokio, not the plugin's cdylib copy).
 pub async fn fetch_weather(
     lat: f64,
     lon: f64,
     units: TemperatureUnit,
-    _tokio_handle: &tokio::runtime::Handle,
 ) -> Result<WeatherData> {
     let url = format!(
         "{}?latitude={}&longitude={}&current=temperature_2m,weather_code,is_day&temperature_unit={}",
-        API_BASE,
-        lat,
-        lon,
-        units.api_value()
+        API_BASE, lat, lon, units.api_value()
     );
 
-    let (tx, rx) = flume::bounded(1);
-
-    std::thread::spawn(move || {
-        let result = (|| {
-            let response = reqwest::blocking::get(&url)
-                .context("Failed to fetch weather data")?;
-
-            let api_response: ApiResponse = response
-                .json()
-                .context("Failed to parse weather response")?;
-
-            let current = api_response.current;
-
-            Ok(WeatherData {
-                temperature: current.temperature_2m,
-                condition: WeatherCondition::from_wmo_code(current.weather_code),
-                is_day: current.is_day != 0,
-            })
-        })();
-
-        let _ = tx.send(result);
-    });
-
-    rx.recv_async()
+    let response = reqwest::get(&url)
         .await
-        .context("Failed to receive response from weather thread")?
+        .context("Failed to fetch weather data")?;
+
+    let api_response: ApiResponse = response
+        .json()
+        .await
+        .context("Failed to parse weather response")?;
+
+    let current = api_response.current;
+
+    Ok(WeatherData {
+        temperature: current.temperature_2m,
+        condition: WeatherCondition::from_wmo_code(current.weather_code),
+        is_day: current.is_day != 0,
+    })
 }

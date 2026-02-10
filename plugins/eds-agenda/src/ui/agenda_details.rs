@@ -64,7 +64,8 @@ impl AgendaDetails {
         if let Some(desc) = desc_text
             && !desc.trim().is_empty() {
                 let truncated = if desc.len() > 300 {
-                    format!("{}…", &desc[..300])
+                    let end = desc.floor_char_boundary(300);
+                    format!("{}…", &desc[..end])
                 } else {
                     desc
                 };

@@ -4,18 +4,22 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "waft-weather-daemon"
+path = "bin/waft-weather-daemon.rs"
 
 [dependencies]
-waft-plugin-api = { path = "../../crates/plugin-api" }
-waft-core = { path = "../../crates/core" }
-gtk = { version = "0.10", package = "gtk4", features = ["v4_6", "unsafe-assume-initialized"] }
-glib = "0.21"
+waft-i18n = { path = "../../crates/i18n" }
+waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
+waft-ipc = { path = "../../crates/ipc" }
 async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+env_logger = "0.11"
+dirs = "5.0"
 anyhow = "1"
-flume = "0.12"
-log = "0.4"
 serde = { version = "1", features = ["derive"] }
-reqwest = { version = "0.12", features = ["json", "blocking"] }
-tokio = { version = "1", features = ["sync", "rt"] }
+reqwest = { version = "0.12", features = ["json"] }
 toml = "0.8"
+log = "0.4"
