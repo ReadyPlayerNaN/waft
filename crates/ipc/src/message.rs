@@ -47,7 +47,7 @@ pub enum PluginMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widget::{ActionParams, Slot};
+    use crate::widget::ActionParams;
 
     #[test]
     fn test_overview_message_get_widgets_serialization() {
@@ -89,7 +89,6 @@ mod tests {
             widgets: vec![
                 NamedWidget {
                     id: "widget1".to_string(),
-                    slot: Slot::Controls,
                     weight: 10,
                     widget: Widget::Label {
                         text: "Test".to_string(),

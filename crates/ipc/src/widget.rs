@@ -38,7 +38,7 @@ pub enum Widget {
         orientation: Orientation,
         spacing: u32,
         css_classes: Vec<String>,
-        children: Vec<Widget>,
+        children: Vec<Node>,
     },
 
     /// A menu row with icon, labels, and optional trailing widget
@@ -76,6 +76,13 @@ pub enum Widget {
         text: String,
         css_classes: Vec<String>,
     },
+
+    /// A display-only card with icon, title, and optional description
+    InfoCard {
+        icon: String,
+        title: String,
+        description: Option<String>,
+    },
 }
 
 /// Represents a user action with parameters
@@ -94,6 +101,34 @@ pub enum ActionParams {
     Map(HashMap<String, serde_json::Value>),
 }
 
+/// A widget tree node with an optional key for reconciliation.
+///
+/// Wraps a `Widget` with an optional string key, similar to React keys.
+/// Keys enable the GTK reconciler to match children across updates and
+/// update widgets in-place instead of recreating them.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Node {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub key: Option<String>,
+    pub widget: Widget,
+}
+
+impl Node {
+    /// Create a keyed node.
+    pub fn keyed(key: impl Into<String>, widget: Widget) -> Self {
+        Node {
+            key: Some(key.into()),
+            widget,
+        }
+    }
+}
+
+impl From<Widget> for Node {
+    fn from(widget: Widget) -> Self {
+        Node { key: None, widget }
+    }
+}
+
 /// Layout orientation for containers
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum Orientation {
@@ -101,21 +136,13 @@ pub enum Orientation {
     Vertical,
 }
 
-/// UI slot where a widget should be placed
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum Slot {
-    Info,
-    FeatureToggles,
-    Controls,
-    Header,
-    Actions,
-}
-
-/// A named widget with placement metadata
+/// A named widget with placement metadata.
+///
+/// The layout XML decides where widgets appear based on their `id`.
+/// The `weight` field controls ordering within a layout slot.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct NamedWidget {
     pub id: String,
-    pub slot: Slot,
     pub weight: u32,
     pub widget: Widget,
 }
@@ -280,11 +307,13 @@ mod tests {
                 Widget::Label {
                     text: "Header".to_string(),
                     css_classes: vec![],
-                },
+                }
+                .into(),
                 Widget::Label {
                     text: "Footer".to_string(),
                     css_classes: vec![],
-                },
+                }
+                .into(),
             ],
         };
 
@@ -367,7 +396,6 @@ mod tests {
     fn test_named_widget_serialization() {
         let named_widget = NamedWidget {
             id: "bluetooth:adapter0".to_string(),
-            slot: Slot::FeatureToggles,
             weight: 100,
             widget: Widget::Label {
                 text: "Test".to_string(),
@@ -380,10 +408,6 @@ mod tests {
 
         assert_eq!(deserialized.id, "bluetooth:adapter0");
         assert_eq!(deserialized.weight, 100);
-        match deserialized.slot {
-            Slot::FeatureToggles => {}
-            _ => panic!("Expected Slot::FeatureToggles"),
-        }
     }
 
     #[test]
@@ -392,7 +416,6 @@ mod tests {
             widgets: vec![
                 NamedWidget {
                     id: "widget1".to_string(),
-                    slot: Slot::Controls,
                     weight: 10,
                     widget: Widget::Label {
                         text: "Label 1".to_string(),
@@ -401,7 +424,6 @@ mod tests {
                 },
                 NamedWidget {
                     id: "widget2".to_string(),
-                    slot: Slot::Actions,
                     weight: 20,
                     widget: Widget::Button {
                         label: Some("Button".to_string()),
@@ -444,7 +466,8 @@ mod tests {
                         trailing: None,
                         sensitive: true,
                         on_click: None,
-                    },
+                    }
+                    .into(),
                     Widget::MenuRow {
                         icon: None,
                         label: "Child 2".to_string(),
@@ -459,7 +482,8 @@ mod tests {
                         })),
                         sensitive: true,
                         on_click: None,
-                    },
+                    }
+                    .into(),
                 ],
             })),
             on_toggle: Action {
@@ -488,6 +512,108 @@ mod tests {
     }
 
     #[test]
+    fn test_node_from_widget() {
+        let widget = Widget::Label {
+            text: "test".to_string(),
+            css_classes: vec![],
+        };
+        let node = Node::from(widget.clone());
+        assert_eq!(node.key, None);
+        assert_eq!(node.widget, widget);
+    }
+
+    #[test]
+    fn test_node_keyed() {
+        let widget = Widget::Label {
+            text: "test".to_string(),
+            css_classes: vec![],
+        };
+        let node = Node::keyed("my-key", widget.clone());
+        assert_eq!(node.key, Some("my-key".to_string()));
+        assert_eq!(node.widget, widget);
+    }
+
+    #[test]
+    fn test_node_serialization_without_key() {
+        let node = Node::from(Widget::Label {
+            text: "test".to_string(),
+            css_classes: vec![],
+        });
+
+        let json = serde_json::to_string(&node).unwrap();
+        // Key should be omitted when None
+        assert!(!json.contains("\"key\""));
+
+        let deserialized: Node = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.key, None);
+    }
+
+    #[test]
+    fn test_node_serialization_with_key() {
+        let node = Node::keyed(
+            "device-1",
+            Widget::Label {
+                text: "test".to_string(),
+                css_classes: vec![],
+            },
+        );
+
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("\"key\""));
+        assert!(json.contains("device-1"));
+
+        let deserialized: Node = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.key, Some("device-1".to_string()));
+    }
+
+    #[test]
+    fn test_widget_info_card_serialization() {
+        let widget = Widget::InfoCard {
+            icon: "weather-clear-symbolic".to_string(),
+            title: "Sunny".to_string(),
+            description: Some("25°C, clear skies".to_string()),
+        };
+
+        let json = serde_json::to_string(&widget).unwrap();
+        let deserialized: Widget = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            Widget::InfoCard {
+                icon,
+                title,
+                description,
+            } => {
+                assert_eq!(icon, "weather-clear-symbolic");
+                assert_eq!(title, "Sunny");
+                assert_eq!(description, Some("25°C, clear skies".to_string()));
+            }
+            _ => panic!("Expected Widget::InfoCard"),
+        }
+    }
+
+    #[test]
+    fn test_widget_info_card_no_description() {
+        let widget = Widget::InfoCard {
+            icon: "battery-full-symbolic".to_string(),
+            title: "Battery Full".to_string(),
+            description: None,
+        };
+
+        let json = serde_json::to_string(&widget).unwrap();
+        let deserialized: Widget = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            Widget::InfoCard {
+                title, description, ..
+            } => {
+                assert_eq!(title, "Battery Full");
+                assert!(description.is_none());
+            }
+            _ => panic!("Expected Widget::InfoCard"),
+        }
+    }
+
+    #[test]
     fn test_orientation_values() {
         let horizontal = Orientation::Horizontal;
         let vertical = Orientation::Vertical;
@@ -499,13 +625,4 @@ mod tests {
         let _: Orientation = serde_json::from_str(&v_json).unwrap();
     }
 
-    #[test]
-    fn test_slot_values() {
-        let slots = vec![Slot::FeatureToggles, Slot::Controls, Slot::Actions];
-
-        for slot in slots {
-            let json = serde_json::to_string(&slot).unwrap();
-            let _: Slot = serde_json::from_str(&json).unwrap();
-        }
-    }
 }
