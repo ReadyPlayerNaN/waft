@@ -22,7 +22,7 @@ use flume::Sender;
 use log::info;
 use std::sync::Arc;
 
-use waft_core::dbus::DbusHandle;
+use zbus::Connection;
 
 pub use hyprland::HyprlandBackend;
 pub use localed::LocaledBackend;
@@ -89,6 +89,7 @@ pub trait KeyboardLayoutBackend: Send + Sync {
 /// # Examples
 ///
 /// ```
+/// use waft_plugin_keyboard_layout::backends::extract_abbreviation;
 /// assert_eq!(extract_abbreviation("English (US)"), "US");
 /// assert_eq!(extract_abbreviation("Czech (QWERTY)"), "CZ");
 /// assert_eq!(extract_abbreviation("us"), "US");
@@ -213,7 +214,7 @@ fn language_to_country_code(language: &str) -> Option<&'static str> {
 ///
 /// Returns `None` if no backend is available.
 pub async fn detect_backend(
-    dbus: Option<Arc<DbusHandle>>,
+    conn: Option<Connection>,
 ) -> Option<Arc<dyn KeyboardLayoutBackend>> {
     // Check for Niri compositor
     if std::env::var("NIRI_SOCKET").is_ok()
@@ -237,8 +238,8 @@ pub async fn detect_backend(
         }
 
     // Fallback to systemd-localed via D-Bus
-    if let Some(dbus_handle) = dbus
-        && let Some(backend) = LocaledBackend::new(dbus_handle).await {
+    if let Some(connection) = conn
+        && let Some(backend) = LocaledBackend::new(connection).await {
             info!("[keyboard-layout] Using systemd-localed backend (D-Bus)");
             return Some(Arc::new(backend));
         }
