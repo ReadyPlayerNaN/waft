@@ -22,9 +22,15 @@ use zbus::Connection;
 /// Keyboard layout daemon state.
 struct KeyboardLayoutDaemon {
     backend: Arc<dyn KeyboardLayoutBackend>,
-    /// Current layout abbreviation shared with the event monitor task.
+    /// Current layout and available layouts, shared with the event monitor task.
     /// Updated by both handle_action (user switches) and the external event monitor.
-    current_layout: Arc<StdMutex<String>>,
+    layout_state: Arc<StdMutex<LayoutState>>,
+}
+
+/// Shared layout state.
+struct LayoutState {
+    current: String,
+    available: Vec<String>,
 }
 
 impl KeyboardLayoutDaemon {
@@ -52,19 +58,32 @@ impl KeyboardLayoutDaemon {
 
         Ok(Self {
             backend,
-            current_layout: Arc::new(StdMutex::new(info.current)),
+            layout_state: Arc::new(StdMutex::new(LayoutState {
+                current: info.current,
+                available: info.available,
+            })),
         })
     }
 
-    fn shared_layout(&self) -> Arc<StdMutex<String>> {
-        self.current_layout.clone()
+    fn shared_state(&self) -> Arc<StdMutex<LayoutState>> {
+        self.layout_state.clone()
     }
 
     fn build_widget(&self) -> Widget {
-        let layout = self.current_layout.lock().unwrap().clone();
-        MenuRowBuilder::new(&layout)
+        let state = self.layout_state.lock().unwrap();
+        StatusCycleButtonBuilder::new("cycle_layout")
             .icon("input-keyboard-symbolic")
-            .on_click("cycle_next")
+            .value(&state.current)
+            .options(
+                state
+                    .available
+                    .iter()
+                    .map(|l| StatusOption {
+                        id: l.clone(),
+                        label: l.clone(),
+                    })
+                    .collect(),
+            )
             .build()
     }
 }
@@ -85,22 +104,20 @@ impl PluginDaemon for KeyboardLayoutDaemon {
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match action.id.as_str() {
-            "cycle_next" => {
-                log::debug!("Cycling to next keyboard layout");
+            "cycle_layout" => {
+                // StatusCycleButton sends the next layout ID via ActionParams::String
+                if let ActionParams::String(ref target) = action.params {
+                    log::debug!("Switching to layout: {}", target);
+                } else {
+                    log::debug!("Cycling to next keyboard layout");
+                }
                 self.backend.switch_next().await?;
 
-                // Query new layout
+                // Query new layout and update shared state
                 let info = self.backend.get_layout_info().await?;
-                *self.current_layout.lock().unwrap() = info.current.clone();
-                log::info!("Switched to layout: {}", info.current);
-            }
-            "cycle_prev" => {
-                log::debug!("Cycling to previous keyboard layout");
-                self.backend.switch_prev().await?;
-
-                // Query new layout
-                let info = self.backend.get_layout_info().await?;
-                *self.current_layout.lock().unwrap() = info.current.clone();
+                let mut state = self.layout_state.lock().unwrap();
+                state.current = info.current.clone();
+                state.available = info.available;
                 log::info!("Switched to layout: {}", info.current);
             }
             other => {
@@ -122,7 +139,7 @@ async fn main() -> Result<()> {
     let daemon = KeyboardLayoutDaemon::new().await?;
 
     // Grab shared handles before daemon is moved into the server
-    let shared_layout = daemon.shared_layout();
+    let shared_state = daemon.shared_state();
 
     // Set up event subscription for layout changes from external sources
     let (event_tx, event_rx) = flume::unbounded::<LayoutEvent>();
@@ -137,7 +154,10 @@ async fn main() -> Result<()> {
             match event {
                 LayoutEvent::Changed(info) => {
                     log::info!("External layout change detected: {}", info.current);
-                    *shared_layout.lock().unwrap() = info.current;
+                    let mut state = shared_state.lock().unwrap();
+                    state.current = info.current;
+                    state.available = info.available;
+                    drop(state);
                     notifier.notify();
                 }
                 LayoutEvent::Error(e) => {
