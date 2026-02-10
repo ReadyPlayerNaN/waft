@@ -314,6 +314,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "pure-rust-locales",
  "serde",
  "wasm-bindgen",
  "windows-link",
@@ -1992,6 +1993,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pure-rust-locales"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "869675ad2d7541aea90c6d88c81f46a7f4ea9af8cd0395d38f11a95126998a0d"
+
+[[package]]
 name = "quick-xml"
 version = "0.38.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2084,9 +2091,7 @@ dependencies = [
  "base64",
  "bytes",
  "encoding_rs",
- "futures-channel",
  "futures-core",
- "futures-util",
  "h2",
  "http",
  "http-body",
@@ -2130,6 +2135,12 @@ dependencies = [
  "untrusted",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "rustc-hash"
@@ -2944,6 +2955,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-i18n"
+version = "0.1.0"
+dependencies = [
+ "fluent-bundle",
+ "sys-locale",
+ "unic-langid",
+]
+
+[[package]]
 name = "waft-ipc"
 version = "0.1.0"
 dependencies = [
@@ -2977,6 +2997,7 @@ dependencies = [
  "nmrs",
  "once_cell",
  "reqwest",
+ "roxmltree",
  "serde",
  "serde_json",
  "tokio",
@@ -3025,16 +3046,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "fluent-bundle",
  "gtk4",
  "libloading",
  "log",
- "sys-locale",
  "tokio",
  "toml 0.8.23",
- "unic-langid",
  "uuid",
  "waft-core",
+ "waft-i18n",
+ "waft-ui-gtk",
 ]
 
 [[package]]
@@ -3043,14 +3063,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "flume",
- "glib 0.21.5",
- "gtk4",
+ "env_logger",
  "log",
  "tokio",
- "uuid",
- "waft-core",
- "waft-plugin-api",
+ "waft-ipc",
+ "waft-plugin-sdk",
 ]
 
 [[package]]
@@ -3059,13 +3076,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "flume",
- "glib 0.21.5",
- "gtk4",
+ "env_logger",
+ "futures-util",
  "log",
  "tokio",
- "waft-core",
- "waft-plugin-api",
+ "waft-ipc",
+ "waft-plugin-sdk",
+ "zbus",
 ]
 
 [[package]]
@@ -3074,15 +3091,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "flume",
- "glib 0.21.5",
- "gtk4",
+ "env_logger",
+ "futures-util",
  "log",
  "tokio",
- "waft-core",
- "waft-plugin-api",
+ "waft-ipc",
+ "waft-plugin-sdk",
  "zbus",
- "zvariant",
 ]
 
 [[package]]
@@ -3091,14 +3106,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "flume",
- "glib 0.21.5",
- "gtk4",
+ "env_logger",
  "log",
  "tokio",
- "uuid",
- "waft-core",
- "waft-plugin-api",
+ "waft-ipc",
+ "waft-plugin-sdk",
 ]
 
 [[package]]
@@ -3107,15 +3119,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "flume",
- "glib 0.21.5",
- "gtk4",
+ "env_logger",
  "log",
  "tokio",
- "waft-core",
- "waft-plugin-api",
- "wayland-client",
- "wayland-protocols",
+ "waft-ipc",
+ "waft-plugin-sdk",
  "zbus",
 ]
 
@@ -3128,15 +3136,12 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "env_logger",
- "glib 0.21.5",
- "gtk4",
  "log",
  "serde",
  "tokio",
  "toml 0.8.23",
- "waft-core",
+ "waft-i18n",
  "waft-ipc",
- "waft-plugin-api",
  "waft-plugin-sdk",
 ]
 
@@ -3148,19 +3153,14 @@ dependencies = [
  "async-trait",
  "dirs 6.0.0",
  "env_logger",
- "flume",
  "futures-util",
- "glib 0.21.5",
- "gtk4",
  "libc",
  "log",
  "serde",
  "tokio",
  "toml 0.8.23",
- "waft-core",
  "waft-ipc",
  "waft-overview",
- "waft-plugin-api",
  "waft-plugin-sdk",
  "zbus",
 ]
@@ -3171,15 +3171,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "env_logger",
  "flume",
- "glib 0.21.5",
- "gtk4",
+ "futures-util",
  "log",
  "serde",
  "serde_json",
  "tokio",
- "waft-core",
- "waft-plugin-api",
+ "waft-ipc",
+ "waft-plugin-sdk",
  "zbus",
 ]
 
@@ -3189,17 +3189,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "flume",
+ "env_logger",
  "futures-util",
- "glib 0.21.5",
- "gtk4",
  "log",
  "nmrs",
  "tokio",
- "waft-core",
- "waft-plugin-api",
+ "waft-ipc",
+ "waft-plugin-sdk",
  "zbus",
- "zvariant",
 ]
 
 [[package]]
@@ -3262,14 +3259,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "flume",
- "glib 0.21.5",
- "gtk4",
+ "env_logger",
  "log",
  "tokio",
- "uuid",
- "waft-core",
- "waft-plugin-api",
+ "waft-ipc",
+ "waft-plugin-sdk",
+ "zbus",
 ]
 
 [[package]]
@@ -3278,16 +3273,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "flume",
- "glib 0.21.5",
- "gtk4",
+ "dirs 5.0.1",
+ "env_logger",
  "log",
  "reqwest",
  "serde",
  "tokio",
  "toml 0.8.23",
- "waft-core",
- "waft-plugin-api",
+ "waft-i18n",
+ "waft-ipc",
+ "waft-plugin-sdk",
 ]
 
 [[package]]
