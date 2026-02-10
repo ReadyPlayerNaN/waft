@@ -150,9 +150,8 @@ pub async fn setup() -> Result<adw::Application> {
         }
     }
 
-    // All plugins are loaded dynamically from .so files
-    // (clock, darkman, notifications, sunsetr, weather, battery, audio, brightness,
-    // agenda, systemd-actions, blueman, caffeine, networkmanager, keyboard-layout)
+    // Legacy cdylib plugins loaded from .so files
+    // (notifications, eds-agenda)
 
     // Spawn daemon plugin processes
     use crate::daemon_spawner::{DaemonSpawner, DaemonSpawnerConfig};
