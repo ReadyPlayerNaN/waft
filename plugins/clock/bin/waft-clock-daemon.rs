@@ -96,45 +96,13 @@ impl ClockDaemon {
         let time_text = Self::format_time();
         let date_text = Self::format_date(self.locale);
 
-        // If on_click is configured, make it a clickable MenuRow
+        let mut builder = InfoCardBuilder::new(&time_text)
+            .icon("appointment-symbolic")
+            .description(&date_text);
         if !self.config.on_click.is_empty() {
-            Widget::MenuRow {
-                icon: Some("appointment-symbolic".to_string()),
-                label: time_text,
-                sublabel: Some(date_text),
-                trailing: None,
-                sensitive: true,
-                on_click: Some(Action {
-                    id: "click".to_string(),
-                    params: ActionParams::None,
-                }),
-            }
-        } else {
-            // Non-clickable version: just show as container
-            let date_label = Widget::Label {
-                text: date_text,
-                css_classes: vec![
-                    "title-3".to_string(),
-                    "dim-label".to_string(),
-                    "clock-date".to_string(),
-                ],
-            };
-
-            let time_label = Widget::Label {
-                text: time_text,
-                css_classes: vec![
-                    "title-1".to_string(),
-                    "clock-time".to_string(),
-                ],
-            };
-
-            Widget::Container {
-                orientation: Orientation::Vertical,
-                spacing: 2,
-                css_classes: vec!["clock-container".to_string()],
-                children: vec![date_label.into(), time_label.into()],
-            }
+            builder = builder.on_click("click");
         }
+        builder.build()
     }
 }
 
