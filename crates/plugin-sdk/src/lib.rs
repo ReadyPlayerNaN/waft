@@ -65,10 +65,12 @@ pub mod daemon;
 pub mod builder;
 pub mod testing;
 pub mod config;
+pub mod dbus_monitor;
 
 pub use daemon::PluginDaemon;
 pub use server::{PluginServer, WidgetNotifier, plugin_socket_path};
 pub use builder::*;
+pub use dbus_monitor::{monitor_signal, monitor_signal_async, SignalMonitorConfig};
 
 // Re-export common types from waft-ipc
 pub use waft_ipc::widget::{

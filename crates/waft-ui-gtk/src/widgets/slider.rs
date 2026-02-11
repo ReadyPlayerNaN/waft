@@ -113,9 +113,7 @@ impl SliderWidget {
         controls_box.append(&expand_revealer);
         root.append(&controls_box);
 
-        if props.muted {
-            root.add_css_class("slider-row-muted");
-        }
+        crate::css::toggle_class(&root, "slider-row-muted", props.muted);
 
         let base_icon = Rc::new(RefCell::new(props.icon));
         let value = Rc::new(RefCell::new(props.value));
@@ -188,11 +186,7 @@ impl SliderWidget {
     /// Update the muted state — toggles CSS class and icon suffix.
     pub fn set_muted(&self, m: bool) {
         *self.muted.borrow_mut() = m;
-        if m {
-            self.root.add_css_class("slider-row-muted");
-        } else {
-            self.root.remove_css_class("slider-row-muted");
-        }
+        crate::css::toggle_class(&self.root, "slider-row-muted", m);
     }
 
     /// Update the base icon name.

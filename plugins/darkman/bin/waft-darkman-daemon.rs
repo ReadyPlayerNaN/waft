@@ -10,9 +10,9 @@
 //! ```
 
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
 use serde::Deserialize;
 use std::sync::{Arc, Mutex as StdMutex};
+use waft_plugin_sdk::dbus_monitor::{monitor_signal, SignalMonitorConfig};
 use waft_plugin_sdk::*;
 use zbus::Connection;
 
@@ -215,50 +215,21 @@ async fn monitor_mode_signals(
     mode: Arc<StdMutex<DarkmanMode>>,
     notifier: WidgetNotifier,
 ) -> Result<()> {
-    // Subscribe to ModeChanged signal
-    let rule = zbus::MatchRule::builder()
-        .msg_type(zbus::message::Type::Signal)
-        .sender(DARKMAN_DESTINATION)?
-        .path(DARKMAN_PATH)?
-        .interface(DARKMAN_INTERFACE)?
-        .member("ModeChanged")?
-        .build();
+    let config = SignalMonitorConfig::builder()
+        .sender(DARKMAN_DESTINATION)
+        .path(DARKMAN_PATH)
+        .interface(DARKMAN_INTERFACE)
+        .member("ModeChanged")
+        .build()?;
 
-    let dbus_proxy = zbus::fdo::DBusProxy::new(&conn)
-        .await
-        .context("Failed to create DBus proxy")?;
-
-    dbus_proxy
-        .add_match_rule(rule)
-        .await
-        .context("Failed to add match rule")?;
-
-    log::info!("Listening for darkman ModeChanged signals");
-
-    let mut stream = zbus::MessageStream::from(&conn);
-    while let Some(msg) = stream.next().await {
-        let msg = match msg {
-            Ok(m) => m,
-            Err(e) => {
-                log::warn!("D-Bus stream error: {}", e);
-                continue;
-            }
-        };
-
-        let header = msg.header();
-        if header.member().map(|m| m.as_str()) == Some("ModeChanged")
-            && header.interface().map(|i| i.as_str()) == Some(DARKMAN_INTERFACE)
-        {
-            if let Ok(new_mode_str) = msg.body().deserialize::<String>() {
-                let new_mode = DarkmanMode::from_str(&new_mode_str).unwrap_or_default();
-                log::info!("Darkman mode changed externally: {:?}", new_mode);
-                *mode.lock().unwrap() = new_mode;
-                notifier.notify();
-            }
-        }
-    }
-
-    Ok(())
+    monitor_signal(conn, config, mode, notifier, |msg, mode_state| {
+        let new_mode_str: String = msg.body().deserialize()?;
+        let new_mode = DarkmanMode::from_str(&new_mode_str).unwrap_or_default();
+        log::info!("Darkman mode changed externally: {:?}", new_mode);
+        *mode_state = new_mode;
+        Ok(true)
+    })
+    .await
 }
 
 #[tokio::main]

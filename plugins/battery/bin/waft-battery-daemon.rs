@@ -6,8 +6,8 @@
 //! signals arrive (no polling).
 
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
 use std::sync::{Arc, Mutex as StdMutex};
+use waft_plugin_sdk::dbus_monitor::{monitor_signal_async, SignalMonitorConfig};
 use waft_plugin_sdk::*;
 use zbus::Connection;
 
@@ -276,67 +276,40 @@ async fn monitor_battery_signals(
     info: Arc<StdMutex<BatteryInfo>>,
     notifier: WidgetNotifier,
 ) -> Result<()> {
-    let rule = zbus::MatchRule::builder()
-        .msg_type(zbus::message::Type::Signal)
-        .sender("org.freedesktop.DBus")?
-        .path(DISPLAY_DEVICE_PATH)?
-        .interface("org.freedesktop.DBus.Properties")?
-        .member("PropertiesChanged")?
-        .build();
+    let config = SignalMonitorConfig::builder()
+        .sender("org.freedesktop.DBus")
+        .path(DISPLAY_DEVICE_PATH)
+        .interface("org.freedesktop.DBus.Properties")
+        .member("PropertiesChanged")
+        .build()?;
 
-    let dbus_proxy = zbus::fdo::DBusProxy::new(&conn)
-        .await
-        .context("Failed to create DBus proxy")?;
+    // Clone conn for use inside async handler
+    let conn_for_handler = conn.clone();
 
-    dbus_proxy
-        .add_match_rule(rule)
-        .await
-        .context("Failed to add match rule")?;
+    monitor_signal_async(conn, config, info, notifier, move |msg, _state| {
+        // Deserialize the message body before entering the async block
+        let iface_check = msg.body().deserialize::<(String,)>();
 
-    log::info!("Listening for UPower PropertiesChanged signals on DisplayDevice");
-
-    let mut stream = zbus::MessageStream::from(&conn);
-    while let Some(msg) = stream.next().await {
-        let msg = match msg {
-            Ok(m) => m,
-            Err(e) => {
-                log::warn!("D-Bus stream error: {}", e);
-                continue;
-            }
-        };
-
-        let header = msg.header();
-        if header.member().map(|m| m.as_str()) == Some("PropertiesChanged")
-            && header.interface().map(|i| i.as_str())
-                == Some("org.freedesktop.DBus.Properties")
-        {
-            // Check that the first argument (interface name) matches the device interface
-            if let Ok((iface_name,)) = msg.body().deserialize::<(String,)>() {
-                if iface_name != IFACE_DEVICE {
-                    continue;
-                }
+        let conn = conn_for_handler.clone();
+        Box::pin(async move {
+            let (iface_name,) = iface_check?;
+            if iface_name != IFACE_DEVICE {
+                return Ok(None); // Skip this signal
             }
 
             // Re-read all properties for consistency
-            match get_battery_info(&conn).await {
-                Ok(new_info) => {
-                    log::info!(
-                        "Battery updated: present={}, {:.0}%, {:?}",
-                        new_info.present,
-                        new_info.percentage,
-                        new_info.state
-                    );
-                    *info.lock().unwrap() = new_info;
-                    notifier.notify();
-                }
-                Err(e) => {
-                    log::warn!("Failed to re-read battery info after signal: {e}");
-                }
-            }
-        }
-    }
+            let new_info = get_battery_info(&conn).await?;
 
-    Ok(())
+            log::info!(
+                "Battery updated: present={}, {:.0}%, {:?}",
+                new_info.present,
+                new_info.percentage,
+                new_info.state
+            );
+            Ok(Some(new_info))
+        })
+    })
+    .await
 }
 
 // ---------------------------------------------------------------------------

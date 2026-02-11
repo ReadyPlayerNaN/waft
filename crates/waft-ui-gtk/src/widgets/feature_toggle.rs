@@ -331,30 +331,16 @@ impl FeatureToggleWidget {
         expandable: bool,
         expanded: bool,
     ) {
-        // Remove all state classes first
-        container.remove_css_class("active");
-        container.remove_css_class("busy");
-        container.remove_css_class("expandable");
-        container.remove_css_class("expanded");
-
-        // Add base class
-        if !container.has_css_class("feature-toggle") {
-            container.add_css_class("feature-toggle");
-        }
-
-        // Add state classes
-        if active {
-            container.add_css_class("active");
-        }
-        if busy {
-            container.add_css_class("busy");
-        }
-        if expandable {
-            container.add_css_class("expandable");
-        }
-        if expanded {
-            container.add_css_class("expanded");
-        }
+        crate::css::apply_state_classes(
+            container,
+            Some("feature-toggle"),
+            &[
+                ("active", active),
+                ("busy", busy),
+                ("expandable", expandable),
+                ("expanded", expanded),
+            ],
+        );
     }
 }
 

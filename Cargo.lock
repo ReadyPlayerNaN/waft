@@ -3226,9 +3226,11 @@ dependencies = [
 name = "waft-plugin-sdk"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "dirs 6.0.0",
  "env_logger",
+ "futures-util",
  "libc",
  "log",
  "serde",
@@ -3236,6 +3238,7 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "waft-ipc",
+ "zbus",
 ]
 
 [[package]]

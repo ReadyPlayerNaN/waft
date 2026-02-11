@@ -63,6 +63,134 @@ pub fn toggle_class(widget: &impl IsA<gtk::Widget>, class: &str, condition: bool
     }
 }
 
+/// Builder for efficiently managing state-based CSS classes.
+///
+/// Allows batching multiple conditional class updates into a single operation.
+/// This is particularly useful for widgets with multiple state flags (active, busy,
+/// expanded, etc.) that need to be updated atomically.
+///
+/// # Example
+/// ```no_run
+/// use waft_ui_gtk::css::CssStateBuilder;
+/// gtk::init().unwrap();
+/// let button = gtk::Button::new();
+///
+/// CssStateBuilder::new(&button)
+///     .base("feature-toggle")
+///     .state("active", true)
+///     .state("busy", false)
+///     .state("expanded", true)
+///     .apply();
+/// ```
+pub struct CssStateBuilder<'a, W: IsA<gtk::Widget>> {
+    widget: &'a W,
+    base_class: Option<&'a str>,
+    states: Vec<(&'a str, bool)>,
+}
+
+impl<'a, W: IsA<gtk::Widget>> CssStateBuilder<'a, W> {
+    /// Create a new CssStateBuilder for a widget.
+    pub fn new(widget: &'a W) -> Self {
+        Self {
+            widget,
+            base_class: None,
+            states: Vec::new(),
+        }
+    }
+
+    /// Set the base CSS class that should always be present.
+    ///
+    /// This class will be ensured to exist after applying state changes.
+    pub fn base(mut self, class: &'a str) -> Self {
+        self.base_class = Some(class);
+        self
+    }
+
+    /// Add a conditional state class.
+    ///
+    /// The class will be added if `condition` is true, removed if false.
+    pub fn state(mut self, class: &'a str, condition: bool) -> Self {
+        self.states.push((class, condition));
+        self
+    }
+
+    /// Apply all CSS class changes to the widget.
+    ///
+    /// This removes all state classes first, then adds back only those with
+    /// true conditions. This ensures clean state transitions without leftover classes.
+    pub fn apply(self) {
+        // Remove all state classes first
+        for (class, _) in &self.states {
+            self.widget.remove_css_class(class);
+        }
+
+        // Ensure base class exists
+        if let Some(base) = self.base_class {
+            if !self.widget.has_css_class(base) {
+                self.widget.add_css_class(base);
+            }
+        }
+
+        // Add back only active state classes
+        for (class, condition) in self.states {
+            if condition {
+                self.widget.add_css_class(class);
+            }
+        }
+    }
+}
+
+/// Apply state-based CSS classes in a single operation.
+///
+/// This is a convenience function that removes all specified state classes first,
+/// ensures the base class exists, then adds back only the active states.
+///
+/// # Arguments
+/// * `widget` - The widget to update
+/// * `base_class` - Optional base class that should always be present
+/// * `state_classes` - Slice of (class_name, condition) tuples
+///
+/// # Example
+/// ```no_run
+/// use waft_ui_gtk::css::apply_state_classes;
+/// gtk::init().unwrap();
+/// let button = gtk::Button::new();
+///
+/// apply_state_classes(
+///     &button,
+///     Some("feature-toggle"),
+///     &[
+///         ("active", true),
+///         ("busy", false),
+///         ("expanded", true),
+///     ],
+/// );
+/// ```
+pub fn apply_state_classes(
+    widget: &impl IsA<gtk::Widget>,
+    base_class: Option<&str>,
+    state_classes: &[(&str, bool)],
+) {
+    // Remove all state classes first
+    for (class, _) in state_classes {
+        widget.remove_css_class(class);
+    }
+
+    // Ensure base class exists
+    if let Some(base) = base_class {
+        if !widget.has_css_class(base) {
+            widget.add_css_class(base);
+        }
+    }
+
+    // Add back only active state classes
+    for (class, condition) in state_classes {
+        if *condition {
+            widget.add_css_class(class);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,5 +327,172 @@ mod tests {
         let container = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         add_class(&container, "test-class");
         assert!(container.has_css_class("test-class"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
+    fn test_css_state_builder_basic() {
+        init_gtk_for_tests();
+        let button = gtk::Button::new();
+
+        CssStateBuilder::new(&button)
+            .base("feature-toggle")
+            .state("active", true)
+            .state("busy", false)
+            .apply();
+
+        assert!(button.has_css_class("feature-toggle"));
+        assert!(button.has_css_class("active"));
+        assert!(!button.has_css_class("busy"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
+    fn test_css_state_builder_removes_old_classes() {
+        init_gtk_for_tests();
+        let button = gtk::Button::new();
+
+        // Set initial state
+        button.add_css_class("active");
+        button.add_css_class("busy");
+
+        // Update state - should remove "busy"
+        CssStateBuilder::new(&button)
+            .base("feature-toggle")
+            .state("active", true)
+            .state("busy", false)
+            .apply();
+
+        assert!(button.has_css_class("active"));
+        assert!(!button.has_css_class("busy"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
+    fn test_css_state_builder_all_states_false() {
+        init_gtk_for_tests();
+        let button = gtk::Button::new();
+
+        // Add some classes first
+        button.add_css_class("active");
+        button.add_css_class("busy");
+        button.add_css_class("expanded");
+
+        // Turn everything off
+        CssStateBuilder::new(&button)
+            .base("feature-toggle")
+            .state("active", false)
+            .state("busy", false)
+            .state("expanded", false)
+            .apply();
+
+        assert!(button.has_css_class("feature-toggle"));
+        assert!(!button.has_css_class("active"));
+        assert!(!button.has_css_class("busy"));
+        assert!(!button.has_css_class("expanded"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
+    fn test_css_state_builder_no_base_class() {
+        init_gtk_for_tests();
+        let button = gtk::Button::new();
+
+        CssStateBuilder::new(&button)
+            .state("active", true)
+            .state("busy", false)
+            .apply();
+
+        assert!(button.has_css_class("active"));
+        assert!(!button.has_css_class("busy"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
+    fn test_css_state_builder_preserves_base_class() {
+        init_gtk_for_tests();
+        let button = gtk::Button::new();
+
+        // Base class already exists
+        button.add_css_class("feature-toggle");
+
+        CssStateBuilder::new(&button)
+            .base("feature-toggle")
+            .state("active", true)
+            .apply();
+
+        // Should still have base class
+        assert!(button.has_css_class("feature-toggle"));
+        assert!(button.has_css_class("active"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
+    fn test_apply_state_classes_basic() {
+        init_gtk_for_tests();
+        let button = gtk::Button::new();
+
+        apply_state_classes(
+            &button,
+            Some("feature-toggle"),
+            &[("active", true), ("busy", false), ("expanded", true)],
+        );
+
+        assert!(button.has_css_class("feature-toggle"));
+        assert!(button.has_css_class("active"));
+        assert!(!button.has_css_class("busy"));
+        assert!(button.has_css_class("expanded"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
+    fn test_apply_state_classes_clean_transition() {
+        init_gtk_for_tests();
+        let button = gtk::Button::new();
+
+        // Set initial state
+        apply_state_classes(
+            &button,
+            Some("feature-toggle"),
+            &[("active", true), ("busy", true), ("expanded", false)],
+        );
+
+        assert!(button.has_css_class("active"));
+        assert!(button.has_css_class("busy"));
+        assert!(!button.has_css_class("expanded"));
+
+        // Update state - should cleanly transition
+        apply_state_classes(
+            &button,
+            Some("feature-toggle"),
+            &[("active", false), ("busy", false), ("expanded", true)],
+        );
+
+        assert!(!button.has_css_class("active"));
+        assert!(!button.has_css_class("busy"));
+        assert!(button.has_css_class("expanded"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
+    fn test_apply_state_classes_no_base() {
+        init_gtk_for_tests();
+        let button = gtk::Button::new();
+
+        apply_state_classes(&button, None, &[("active", true)]);
+
+        assert!(button.has_css_class("active"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with: cargo test -- --ignored --test-threads=1"]
+    fn test_apply_state_classes_empty_states() {
+        init_gtk_for_tests();
+        let button = gtk::Button::new();
+
+        // Should not panic with empty states
+        apply_state_classes(&button, Some("base"), &[]);
+
+        assert!(button.has_css_class("base"));
     }
 }
