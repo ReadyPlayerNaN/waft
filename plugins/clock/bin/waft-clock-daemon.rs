@@ -48,38 +48,8 @@ impl ClockDaemon {
     }
 
     fn load_config() -> Result<ClockConfig> {
-        // Load config from ~/.config/waft/config.toml
-        let config_path = dirs::config_dir()
-            .context("No config directory")?
-            .join("waft/config.toml");
-
-        if !config_path.exists() {
-            log::debug!("Config file not found, using defaults");
-            return Ok(ClockConfig::default());
-        }
-
-        let content = std::fs::read_to_string(&config_path)
-            .context("Failed to read config file")?;
-
-        let root: toml::Table = toml::from_str(&content)
-            .context("Failed to parse config file")?;
-
-        // Find clock-daemon plugin config
-        if let Some(plugins) = root.get("plugins").and_then(|v| v.as_array()) {
-            for plugin in plugins {
-                if let Some(table) = plugin.as_table() {
-                    if let Some(id) = table.get("id").and_then(|v| v.as_str()) {
-                        if id == "waft::clock-daemon" || id == "clock-daemon" {
-                            return toml::Value::Table(table.clone())
-                                .try_into()
-                                .context("Failed to parse clock config");
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(ClockConfig::default())
+        waft_plugin_sdk::config::load_plugin_config("clock-daemon")
+            .context("Failed to load clock config")
     }
 
     fn format_date(locale: Locale) -> String {
@@ -151,7 +121,7 @@ impl PluginDaemon for ClockDaemon {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    waft_plugin_sdk::init_daemon_logger("info");
 
     log::info!("Starting clock daemon...");
 

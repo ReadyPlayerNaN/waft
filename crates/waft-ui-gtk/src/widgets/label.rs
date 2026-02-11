@@ -15,20 +15,12 @@ pub fn render_label(text: &str, css_classes: &[String]) -> gtk::Widget {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Helper to ensure GTK is initialized only once for all tests
-    fn init_gtk() {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            gtk::init().expect("Failed to initialize GTK");
-        });
-    }
+    use crate::test_utils::init_gtk_for_tests;
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_label_basic() {
-        init_gtk();
+        init_gtk_for_tests();
         let widget = render_label("Hello World", &[]);
 
         assert!(widget.is::<gtk::Label>());
@@ -39,7 +31,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_label_with_css_classes() {
-        init_gtk();
+        init_gtk_for_tests();
         let classes = vec!["bold".to_string(), "accent".to_string()];
         let widget = render_label("Styled Label", &classes);
 
@@ -52,7 +44,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_label_empty_text() {
-        init_gtk();
+        init_gtk_for_tests();
         let widget = render_label("", &[]);
 
         let label: gtk::Label = widget.downcast().unwrap();

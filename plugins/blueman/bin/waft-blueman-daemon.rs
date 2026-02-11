@@ -243,7 +243,7 @@ impl PluginDaemon for BluemanDaemon {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    waft_plugin_sdk::init_daemon_logger("info");
 
     info!("Starting blueman daemon...");
 

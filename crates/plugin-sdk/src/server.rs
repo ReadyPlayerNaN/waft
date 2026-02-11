@@ -286,32 +286,54 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
         }
     }
 
-    /// Get the socket path for this plugin.
+    /// Get the socket path for this plugin (internal helper).
     pub(crate) fn socket_path(plugin_name: &str) -> Result<PathBuf, ServerError> {
-        // Allow override via environment variable (for testing)
-        if let Ok(custom_path) = std::env::var("WAFT_PLUGIN_SOCKET_PATH") {
-            log::debug!(
-                "Using custom socket path from WAFT_PLUGIN_SOCKET_PATH: {}",
-                custom_path
-            );
-            return Ok(PathBuf::from(custom_path));
-        }
-
-        // Get runtime directory from environment
-        let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
-            // Fallback: /run/user/{uid}
-            let uid = unsafe { libc::getuid() };
-            format!("/run/user/{}", uid)
-        });
-
-        // Build socket path: {runtime_dir}/waft/plugins/{plugin_name}.sock
-        let mut path = PathBuf::from(runtime_dir);
-        path.push("waft");
-        path.push("plugins");
-        path.push(format!("{}.sock", plugin_name));
-
-        Ok(path)
+        Ok(plugin_socket_path(plugin_name))
     }
+}
+
+/// Get the Unix socket path for a plugin daemon.
+///
+/// Returns the path where a plugin socket should be created:
+/// `{XDG_RUNTIME_DIR}/waft/plugins/{plugin_name}.sock`
+///
+/// Fallback runtime directory: `/run/user/{uid}`
+///
+/// Can be overridden with `WAFT_PLUGIN_SOCKET_PATH` environment variable
+/// (useful for testing).
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::plugin_socket_path;
+///
+/// let path = plugin_socket_path("clock-daemon");
+/// // Returns: /run/user/1000/waft/plugins/clock-daemon.sock
+/// ```
+pub fn plugin_socket_path(plugin_name: &str) -> PathBuf {
+    // Allow override via environment variable (for testing)
+    if let Ok(custom_path) = std::env::var("WAFT_PLUGIN_SOCKET_PATH") {
+        log::debug!(
+            "Using custom socket path from WAFT_PLUGIN_SOCKET_PATH: {}",
+            custom_path
+        );
+        return PathBuf::from(custom_path);
+    }
+
+    // Get runtime directory from environment
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
+        // Fallback: /run/user/{uid}
+        let uid = unsafe { libc::getuid() };
+        format!("/run/user/{}", uid)
+    });
+
+    // Build socket path: {runtime_dir}/waft/plugins/{plugin_name}.sock
+    let mut path = PathBuf::from(runtime_dir);
+    path.push("waft");
+    path.push("plugins");
+    path.push(format!("{}.sock", plugin_name));
+
+    path
 }
 
 /// Read a framed message from an OwnedReadHalf.

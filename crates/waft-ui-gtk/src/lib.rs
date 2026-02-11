@@ -9,3 +9,6 @@ pub mod renderer;
 pub mod types;
 pub mod widget_reconciler;
 pub mod widgets;
+
+#[cfg(test)]
+pub mod test_utils;

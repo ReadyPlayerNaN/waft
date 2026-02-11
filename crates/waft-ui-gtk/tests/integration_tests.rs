@@ -15,7 +15,7 @@ use waft_ui_gtk::types::{Action, ActionParams, Widget};
 use gtk::prelude::*;
 
 // Helper to ensure GTK is initialized for widget tests
-fn init_gtk() {
+fn init_gtk_for_tests() {
     use std::sync::Once;
     static INIT: Once = Once::new();
     INIT.call_once(|| {
@@ -46,7 +46,7 @@ fn create_test_renderer() -> (WidgetRenderer, Rc<RefCell<Vec<(String, Action)>>>
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_nested_containers() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::Col {
@@ -97,7 +97,7 @@ fn test_render_nested_containers() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_feature_toggle_with_expanded_content() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::FeatureToggle {
@@ -150,7 +150,7 @@ fn test_render_feature_toggle_with_expanded_content() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_slider_with_expanded_content() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::Slider {
@@ -197,7 +197,7 @@ fn test_render_slider_with_expanded_content() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_menu_row_with_all_elements() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::MenuRow {
@@ -230,7 +230,7 @@ fn test_render_menu_row_with_all_elements() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_menu_row_minimal() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::MenuRow {
@@ -252,7 +252,7 @@ fn test_render_menu_row_minimal() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_menu_row_with_spinner() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::MenuRow {
@@ -278,7 +278,7 @@ fn test_render_menu_row_with_spinner() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_all_primitives() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     // Switch
@@ -342,7 +342,7 @@ fn test_render_all_primitives() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_empty_container() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::Col {
@@ -361,7 +361,7 @@ fn test_render_empty_container() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_feature_toggle_without_expanded_content() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::FeatureToggle {
@@ -385,7 +385,7 @@ fn test_render_feature_toggle_without_expanded_content() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_render_slider_without_expanded_content() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::Slider {
@@ -415,7 +415,7 @@ fn test_render_slider_without_expanded_content() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_multiple_renders_same_widget() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::Label {
@@ -441,7 +441,7 @@ fn test_multiple_renders_same_widget() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_renderer_stateless_updates() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     // First render with active = false
@@ -481,7 +481,7 @@ fn test_renderer_stateless_updates() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_css_classes_applied_correctly() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::Col {
@@ -505,7 +505,7 @@ fn test_css_classes_applied_correctly() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_label_with_multiple_css_classes() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     let widget = Widget::Label {
@@ -533,7 +533,7 @@ fn test_label_with_multiple_css_classes() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_action_callback_via_switch_widget() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, actions) = create_test_renderer();
 
     // Render a switch widget (which will connect action callback)
@@ -565,7 +565,7 @@ fn test_action_callback_via_switch_widget() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_multiple_action_callbacks_via_widgets() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, actions) = create_test_renderer();
 
     // Render multiple interactive widgets
@@ -610,7 +610,7 @@ fn test_multiple_action_callbacks_via_widgets() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_real_world_audio_control_widget() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     // Realistic audio control widget tree
@@ -694,7 +694,7 @@ fn test_real_world_audio_control_widget() {
 #[test]
 #[ignore = "Requires GTK main thread - run with --test-threads=1"]
 fn test_real_world_network_settings_widget() {
-    init_gtk();
+    init_gtk_for_tests();
     let (renderer, _actions) = create_test_renderer();
 
     // Realistic network settings widget tree

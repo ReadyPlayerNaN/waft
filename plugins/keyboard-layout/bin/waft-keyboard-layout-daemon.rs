@@ -131,7 +131,7 @@ impl PluginDaemon for KeyboardLayoutDaemon {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    waft_plugin_sdk::init_daemon_logger("info");
 
     log::info!("Starting keyboard layout daemon...");
 

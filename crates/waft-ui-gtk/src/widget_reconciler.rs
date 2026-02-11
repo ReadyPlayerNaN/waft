@@ -376,6 +376,7 @@ impl WidgetReconciler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::init_gtk_for_tests;
     use waft_ipc::{Action, ActionParams, Widget as IpcWidget};
     use waft_core::menu_state::create_menu_store;
 
@@ -459,14 +460,6 @@ mod tests {
         }
     }
 
-    fn init_gtk() {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            gtk::init().expect("Failed to initialize GTK");
-        });
-    }
-
     fn make_reconciler() -> WidgetReconciler {
         let menu_store = Rc::new(create_menu_store());
         let action_callback: ActionCallback = Rc::new(|_id, _action| {});
@@ -476,7 +469,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_first_reconcile_adds_all() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         let widgets = vec![make_label("w1", "Hello"), make_label("w2", "World")];
@@ -491,7 +484,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_identical_widgets_no_change() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         let widgets = vec![make_label("w1", "Hello")];
@@ -507,7 +500,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_label_change_recreates() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         let widgets = vec![make_label("w1", "Old")];
@@ -526,7 +519,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_widget_removal() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         let widgets = vec![make_label("w1", "A"), make_label("w2", "B")];
@@ -544,7 +537,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_widget_addition() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         let widgets = vec![make_label("w1", "A")];
@@ -561,7 +554,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_feature_toggle_produces_correct_kind() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         let widgets = vec![make_toggle("t1", false)];
@@ -574,7 +567,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_toggle_active_change_updates_in_place() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         rec.reconcile(&vec![make_toggle("t1", false)]);
@@ -589,7 +582,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_toggle_busy_and_details_update_in_place() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         rec.reconcile(&vec![make_toggle_full("t1", true, false, None, "act", 100)]);
@@ -604,7 +597,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_toggle_action_change_recreates() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         rec.reconcile(&vec![make_toggle_full("t1", true, false, None, "old_action", 100)]);
@@ -621,7 +614,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_toggle_weight_change_recreates() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         rec.reconcile(&vec![make_toggle_full("t1", true, false, None, "act", 100)]);
@@ -636,7 +629,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_mixed_in_place_and_structural() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         rec.reconcile(&vec![
@@ -658,7 +651,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_slider_produces_correct_kind() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         let widgets = vec![make_slider("s1", 0.5, false)];
@@ -671,7 +664,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_slider_value_change_updates_in_place() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         rec.reconcile(&vec![make_slider("s1", 0.5, false)]);
@@ -686,7 +679,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_slider_muted_change_updates_in_place() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         rec.reconcile(&vec![make_slider("s1", 0.5, false)]);
@@ -699,7 +692,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_slider_menu_id_is_deterministic() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         let widgets = vec![make_slider("audio_output", 0.5, false)];
@@ -716,7 +709,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_toggle_menu_id_is_deterministic() {
-        init_gtk();
+        init_gtk_for_tests();
         let mut rec = make_reconciler();
 
         let widgets = vec![make_toggle("bluetooth_toggle", false)];

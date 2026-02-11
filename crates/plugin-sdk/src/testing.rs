@@ -142,22 +142,10 @@ pub fn unique_test_socket_path(prefix: &str) -> PathBuf {
 /// `{XDG_RUNTIME_DIR}/waft/plugins/{name}.sock`
 ///
 /// Can be overridden with `WAFT_PLUGIN_SOCKET_PATH` environment variable.
+///
+/// This is a convenience re-export of [`crate::plugin_socket_path`] for use in tests.
 pub fn test_socket_path(plugin_name: &str) -> PathBuf {
-    // Check for custom path override
-    if let Ok(custom_path) = std::env::var("WAFT_PLUGIN_SOCKET_PATH") {
-        return PathBuf::from(custom_path);
-    }
-
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
-        let uid = unsafe { libc::getuid() };
-        format!("/run/user/{}", uid)
-    });
-
-    let mut path = PathBuf::from(runtime_dir);
-    path.push("waft");
-    path.push("plugins");
-    path.push(format!("{}.sock", plugin_name));
-    path
+    crate::plugin_socket_path(plugin_name)
 }
 
 /// Wait for a socket file to exist.

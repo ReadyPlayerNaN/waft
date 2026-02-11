@@ -34,23 +34,16 @@ pub fn render_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::init_gtk_for_tests;
     use crate::renderer::ActionCallback;
     use crate::types::Widget;
     use std::rc::Rc;
     use waft_core::menu_state::create_menu_store;
 
-    fn init_gtk() {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            gtk::init().expect("Failed to initialize GTK");
-        });
-    }
-
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_row_empty() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback);
@@ -65,7 +58,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_row_with_children() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback);
@@ -96,7 +89,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_row_with_css() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback);

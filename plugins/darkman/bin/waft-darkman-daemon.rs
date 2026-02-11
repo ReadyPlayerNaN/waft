@@ -95,37 +95,8 @@ impl DarkmanDaemon {
     }
 
     fn load_config() -> Result<DarkmanConfig> {
-        // Load config from ~/.config/waft/config.toml
-        let config_path = dirs::config_dir()
-            .context("No config directory")?
-            .join("waft/config.toml");
-
-        if !config_path.exists() {
-            log::debug!("Config file not found, using defaults");
-            return Ok(DarkmanConfig::default());
-        }
-
-        let content =
-            std::fs::read_to_string(&config_path).context("Failed to read config file")?;
-
-        let root: toml::Table = toml::from_str(&content).context("Failed to parse config file")?;
-
-        // Find darkman-daemon plugin config
-        if let Some(plugins) = root.get("plugins").and_then(|v| v.as_array()) {
-            for plugin in plugins {
-                if let Some(table) = plugin.as_table() {
-                    if let Some(id) = table.get("id").and_then(|v| v.as_str()) {
-                        if id == "waft::darkman-daemon" || id == "darkman-daemon" {
-                            return toml::Value::Table(table.clone())
-                                .try_into()
-                                .context("Failed to parse darkman config");
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(DarkmanConfig::default())
+        waft_plugin_sdk::config::load_plugin_config("darkman-daemon")
+            .context("Failed to load darkman config")
     }
 
     /// Get darkman mode via D-Bus property
@@ -293,7 +264,7 @@ async fn monitor_mode_signals(
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    waft_plugin_sdk::init_daemon_logger("info");
 
     log::info!("Starting darkman daemon...");
 

@@ -93,24 +93,16 @@ pub fn render_menu_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::init_gtk_for_tests;
     use crate::types::{ActionParams, Widget};
     use std::cell::RefCell;
     use std::rc::Rc;
     use waft_core::menu_state::create_menu_store;
 
-    // Helper to ensure GTK is initialized only once for all tests
-    fn init_gtk() {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            gtk::init().expect("Failed to initialize GTK");
-        });
-    }
-
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_minimal() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback.clone());
@@ -135,7 +127,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_with_icon() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback.clone());
@@ -165,7 +157,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_with_sublabel() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback.clone());
@@ -190,7 +182,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_insensitive() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback.clone());
@@ -214,7 +206,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_with_switch_trailing() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback.clone());
@@ -252,7 +244,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_with_checkmark_trailing() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback.clone());
@@ -277,7 +269,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_with_spinner_trailing() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback.clone());
@@ -302,7 +294,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_with_click_action() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
 
         let captured_actions: Rc<RefCell<Vec<(String, Action)>>> =
@@ -349,7 +341,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_no_click_action() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
 
         let captured_actions: Rc<RefCell<Vec<(String, Action)>>> =
@@ -389,7 +381,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_menu_row_full_featured() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback.clone());

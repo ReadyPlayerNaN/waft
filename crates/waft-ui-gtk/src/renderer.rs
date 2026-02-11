@@ -261,18 +261,11 @@ impl WidgetRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::init_gtk_for_tests;
     use crate::types::{ActionParams, Widget};
     use waft_core::menu_state::create_menu_store;
 
     // Helper to ensure GTK is initialized for widget tests
-    fn init_gtk() {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            gtk::init().expect("Failed to initialize GTK");
-        });
-    }
-
     #[test]
     fn test_renderer_creation() {
         let menu_store = Rc::new(create_menu_store());
@@ -289,7 +282,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_label_basic() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback);
@@ -311,7 +304,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_label_with_css_classes() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback);
@@ -361,7 +354,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_renderer_is_stateless() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = WidgetRenderer::new(menu_store, callback);

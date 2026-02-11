@@ -450,23 +450,15 @@ pub(crate) fn render_feature_toggle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::init_gtk_for_tests;
     use crate::types::ActionParams;
     use std::cell::RefCell;
     use waft_core::menu_state::create_menu_store;
 
-    // Helper to ensure GTK is initialized only once for all tests
-    fn init_gtk() {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            gtk::init().expect("Failed to initialize GTK");
-        });
-    }
-
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_feature_toggle_inactive() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = crate::renderer::WidgetRenderer::new(menu_store.clone(), callback.clone());
@@ -501,7 +493,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_feature_toggle_active() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = crate::renderer::WidgetRenderer::new(menu_store.clone(), callback.clone());
@@ -533,7 +525,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_feature_toggle_busy() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = crate::renderer::WidgetRenderer::new(menu_store.clone(), callback.clone());
@@ -565,7 +557,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_feature_toggle_with_details() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = crate::renderer::WidgetRenderer::new(menu_store.clone(), callback.clone());
@@ -596,7 +588,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_feature_toggle_expandable() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = crate::renderer::WidgetRenderer::new(menu_store.clone(), callback.clone());
@@ -629,7 +621,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_feature_toggle_active_expandable() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = crate::renderer::WidgetRenderer::new(menu_store.clone(), callback.clone());
@@ -663,7 +655,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_feature_toggle_callback() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
 
         let captured_actions: Rc<RefCell<Vec<(String, Action)>>> =
@@ -715,7 +707,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_feature_toggle_all_states() {
-        init_gtk();
+        init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
         let renderer = crate::renderer::WidgetRenderer::new(menu_store.clone(), callback.clone());

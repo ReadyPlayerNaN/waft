@@ -64,9 +64,10 @@ pub mod server;
 pub mod daemon;
 pub mod builder;
 pub mod testing;
+pub mod config;
 
 pub use daemon::PluginDaemon;
-pub use server::{PluginServer, WidgetNotifier};
+pub use server::{PluginServer, WidgetNotifier, plugin_socket_path};
 pub use builder::*;
 
 // Re-export common types from waft-ipc
@@ -74,3 +75,25 @@ pub use waft_ipc::widget::{
     Action, ActionParams, NamedWidget, Node, StatusOption, Widget, WidgetSet,
 };
 pub use waft_ipc::message::{OverviewMessage, PluginMessage, PROTOCOL_VERSION};
+
+/// Initialize env_logger for daemon plugins.
+///
+/// This helper provides consistent logging setup across all daemon plugins.
+/// The log level defaults to the provided `default_level`, but can be overridden
+/// via the `RUST_LOG` environment variable.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use waft_plugin_sdk::init_daemon_logger;
+///
+/// fn main() {
+///     init_daemon_logger("info");
+///     // ... rest of daemon initialization
+/// }
+/// ```
+pub fn init_daemon_logger(default_level: &str) {
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or(default_level)
+    ).init();
+}

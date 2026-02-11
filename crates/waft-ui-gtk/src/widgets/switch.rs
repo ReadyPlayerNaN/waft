@@ -39,22 +39,14 @@ pub fn render_switch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::init_gtk_for_tests;
     use crate::types::ActionParams;
     use std::rc::Rc;
-
-    // Helper to ensure GTK is initialized only once for all tests
-    fn init_gtk() {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            gtk::init().expect("Failed to initialize GTK");
-        });
-    }
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_switch_basic() {
-        init_gtk();
+        init_gtk_for_tests();
         let callback: ActionCallback = Rc::new(|_id, _action| {});
 
         let action = Action {
@@ -73,7 +65,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_switch_inactive_insensitive() {
-        init_gtk();
+        init_gtk_for_tests();
         let callback: ActionCallback = Rc::new(|_id, _action| {});
 
         let action = Action {

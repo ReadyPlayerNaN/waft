@@ -3227,12 +3227,14 @@ name = "waft-plugin-sdk"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "dirs 6.0.0",
  "env_logger",
  "libc",
  "log",
  "serde",
  "serde_json",
  "tokio",
+ "toml 0.8.23",
  "waft-ipc",
 ]
 

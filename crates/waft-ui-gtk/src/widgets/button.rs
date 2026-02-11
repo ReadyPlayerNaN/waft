@@ -43,23 +43,15 @@ pub fn render_button(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::init_gtk_for_tests;
     use crate::types::ActionParams;
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    // Helper to ensure GTK is initialized only once for all tests
-    fn init_gtk() {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            gtk::init().expect("Failed to initialize GTK");
-        });
-    }
-
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_button_with_label() {
-        init_gtk();
+        init_gtk_for_tests();
         let callback: ActionCallback = Rc::new(|_id, _action| {});
 
         let action = Action {
@@ -83,7 +75,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_button_with_icon() {
-        init_gtk();
+        init_gtk_for_tests();
         let callback: ActionCallback = Rc::new(|_id, _action| {});
 
         let action = Action {
@@ -111,7 +103,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_button_callback() {
-        init_gtk();
+        init_gtk_for_tests();
 
         let captured_actions: Rc<RefCell<Vec<(String, Action)>>> =
             Rc::new(RefCell::new(Vec::new()));

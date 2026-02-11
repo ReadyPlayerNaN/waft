@@ -16,20 +16,12 @@ pub fn render_spinner(spinning: bool) -> gtk::Widget {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Helper to ensure GTK is initialized only once for all tests
-    fn init_gtk() {
-        use std::sync::Once;
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            gtk::init().expect("Failed to initialize GTK");
-        });
-    }
+    use crate::test_utils::init_gtk_for_tests;
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_spinner_spinning() {
-        init_gtk();
+        init_gtk_for_tests();
         let widget = render_spinner(true);
 
         assert!(widget.is::<gtk::Spinner>());
@@ -40,7 +32,7 @@ mod tests {
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
     fn test_render_spinner_not_spinning() {
-        init_gtk();
+        init_gtk_for_tests();
         let widget = render_spinner(false);
 
         let spinner: gtk::Spinner = widget.downcast().unwrap();
