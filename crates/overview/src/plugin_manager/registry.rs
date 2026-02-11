@@ -397,7 +397,7 @@ mod tests {
                 widget: Widget::Slider {
                     icon: "volume-high".to_string(),
                     value: 0.75,
-                    muted: false,
+                    disabled: false,
                     expandable: false,
                     expanded_content: None,
                     on_value_change: Action {
@@ -426,9 +426,9 @@ mod tests {
         }
 
         match &sorted[1].widget {
-            Widget::Slider { value, muted, .. } => {
+            Widget::Slider { value, disabled, .. } => {
                 assert_eq!(*value, 0.75);
-                assert!(!muted);
+                assert!(!disabled);
             }
             _ => panic!("Expected Slider"),
         }

@@ -139,7 +139,7 @@ impl WidgetRenderer {
             Widget::Slider {
                 icon,
                 value,
-                muted,
+                disabled,
                 expandable,
                 expanded_content,
                 on_value_change,
@@ -150,7 +150,7 @@ impl WidgetRenderer {
                 &self.menu_store,
                 icon,
                 *value,
-                *muted,
+                *disabled,
                 *expandable,
                 expanded_content,
                 on_value_change,

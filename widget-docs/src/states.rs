@@ -194,7 +194,7 @@ impl WidgetStates {
                     widget: Widget::Slider {
                         icon: "audio-volume-high-symbolic".to_string(),
                         value: 0.65,
-                        muted: false,
+                        disabled: false,
                         expandable: false,
                         expanded_content: None,
                         on_value_change: dummy_action(),
@@ -202,13 +202,13 @@ impl WidgetStates {
                     },
                 },
                 WidgetState {
-                    name: "Muted".to_string(),
-                    filename: "muted".to_string(),
-                    description: "Muted state (icon changes semantically)".to_string(),
+                    name: "Disabled".to_string(),
+                    filename: "disabled".to_string(),
+                    description: "Disabled state (dims the slider row)".to_string(),
                     widget: Widget::Slider {
                         icon: "audio-volume-muted-symbolic".to_string(),
                         value: 0.0,
-                        muted: true,
+                        disabled: true,
                         expandable: false,
                         expanded_content: None,
                         on_value_change: dummy_action(),
@@ -222,7 +222,7 @@ impl WidgetStates {
                     widget: Widget::Slider {
                         icon: "audio-volume-high-symbolic".to_string(),
                         value: 0.75,
-                        muted: false,
+                        disabled: false,
                         expandable: true,
                         expanded_content: Some(Box::new(Widget::Col {
                             spacing: 4,

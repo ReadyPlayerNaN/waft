@@ -236,7 +236,7 @@ fn main() {
     let volume_widget = Widget::Slider {
         icon: "audio-volume-high".to_string(),
         value: 0.65,
-        muted: false,
+        disabled: false,
         expandable: true,
         expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,
@@ -295,7 +295,7 @@ fn main() {
     let brightness_widget = Widget::Slider {
         icon: "display-brightness".to_string(),
         value: 0.8,
-        muted: false,
+        disabled: false,
         expandable: true,
         expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,

@@ -219,7 +219,7 @@ impl AppState {
                     Widget::Slider {
                         icon: "audio-volume-high".to_string(),
                         value: slider_value,
-                        muted: false,
+                        disabled: false,
                         expandable: false,
                         expanded_content: None,
                         on_value_change: Action {
@@ -387,7 +387,7 @@ impl AppState {
                     Widget::Slider {
                         icon: "emblem-synchronizing".to_string(),
                         value: (counter as f64 % 100.0) / 100.0,
-                        muted: false,
+                        disabled: false,
                         expandable: false,
                         expanded_content: None,
                         on_value_change: Action {

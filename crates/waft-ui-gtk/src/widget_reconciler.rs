@@ -284,7 +284,7 @@ impl WidgetReconciler {
             IpcWidget::Slider {
                 icon,
                 value,
-                muted,
+                disabled,
                 expandable,
                 on_value_change,
                 on_icon_click,
@@ -296,7 +296,7 @@ impl WidgetReconciler {
                     SliderProps {
                         icon: icon.clone(),
                         value: *value,
-                        muted: *muted,
+                        disabled: *disabled,
                         expandable: *expandable,
                         menu_id: Some(det_menu_id.clone()),
                     },
@@ -502,14 +502,14 @@ mod tests {
         }
     }
 
-    fn make_slider(id: &str, value: f64, muted: bool) -> NamedWidget {
+    fn make_slider(id: &str, value: f64, disabled: bool) -> NamedWidget {
         NamedWidget {
             id: id.to_string(),
             weight: 50,
             widget: IpcWidget::Slider {
                 icon: "audio-volume-high-symbolic".to_string(),
                 value,
-                muted,
+                disabled,
                 expandable: false,
                 expanded_content: None,
                 on_value_change: Action {
@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_slider_muted_change_updates_in_place() {
+    fn test_slider_disabled_change_updates_in_place() {
         init_gtk_for_tests();
         let mut rec = make_reconciler();
 

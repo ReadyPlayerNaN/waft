@@ -653,11 +653,11 @@ impl MainWindowWidget {
                 background-color: alpha(@window_fg_color, 0.1);
             }}
 
-            .slider-row.muted {{
+            .slider-row.disabled {{
                 opacity: 0.7;
             }}
 
-            .slider-row.muted .slider-icon {{
+            .slider-row.disabled .slider-icon {{
                 opacity: 0.5;
             }}
 

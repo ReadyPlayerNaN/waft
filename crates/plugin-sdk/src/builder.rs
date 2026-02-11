@@ -153,7 +153,7 @@ impl FeatureToggleBuilder {
 pub struct SliderBuilder {
     icon: String,
     value: f64,
-    muted: bool,
+    disabled: bool,
     expandable: bool,
     expanded_content: Option<Box<Widget>>,
     on_value_change: Action,
@@ -165,7 +165,7 @@ impl SliderBuilder {
     ///
     /// # Defaults
     /// - icon: "emblem-system-symbolic"
-    /// - muted: false
+    /// - disabled: false
     /// - expandable: false
     /// - on_value_change: Action with id "value_change" and Value param
     /// - on_icon_click: Action with id "icon_click" and no params
@@ -173,7 +173,7 @@ impl SliderBuilder {
         Self {
             icon: "emblem-system-symbolic".into(),
             value: value.clamp(0.0, 1.0),
-            muted: false,
+            disabled: false,
             expandable: false,
             expanded_content: None,
             on_value_change: Action {
@@ -193,9 +193,9 @@ impl SliderBuilder {
         self
     }
 
-    /// Set the muted state (semantic state, renderer picks icon).
-    pub fn muted(mut self, muted: bool) -> Self {
-        self.muted = muted;
+    /// Set the disabled state (dims the slider row).
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 
@@ -247,7 +247,7 @@ impl SliderBuilder {
         Widget::Slider {
             icon: self.icon,
             value: self.value,
-            muted: self.muted,
+            disabled: self.disabled,
             expandable: self.expandable,
             expanded_content: self.expanded_content,
             on_value_change: self.on_value_change,
@@ -1142,12 +1142,12 @@ mod tests {
         match widget {
             Widget::Slider {
                 value,
-                muted,
+                disabled,
                 expandable,
                 ..
             } => {
                 assert_eq!(value, 0.5);
-                assert!(!muted);
+                assert!(!disabled);
                 assert!(!expandable);
             }
             _ => panic!("Expected Slider"),
@@ -1158,7 +1158,7 @@ mod tests {
     fn test_slider_builder_full() {
         let widget = SliderBuilder::new(0.75)
             .icon("audio-volume-high-symbolic")
-            .muted(false)
+            .disabled(false)
             .on_value_change("set_volume")
             .on_icon_click("toggle_mute")
             .build();

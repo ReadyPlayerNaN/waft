@@ -26,7 +26,7 @@ pub enum Widget {
     Slider {
         icon: String,
         value: f64,
-        muted: bool, // Semantic state, renderer picks icon
+        disabled: bool,
         expandable: bool,
         expanded_content: Option<Box<Widget>>,
         on_value_change: Action,
@@ -309,7 +309,7 @@ mod tests {
         let widget = Widget::Slider {
             icon: "volume-high".to_string(),
             value: 0.65,
-            muted: false,
+            disabled: false,
             expandable: false,
             expanded_content: None,
             on_value_change: Action {
@@ -326,9 +326,9 @@ mod tests {
         let deserialized: Widget = serde_json::from_str(&json).unwrap();
 
         match deserialized {
-            Widget::Slider { value, muted, .. } => {
+            Widget::Slider { value, disabled, .. } => {
                 assert_eq!(value, 0.65);
-                assert!(!muted);
+                assert!(!disabled);
             }
             _ => panic!("Expected Widget::Slider"),
         }

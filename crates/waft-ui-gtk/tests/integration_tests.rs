@@ -156,7 +156,7 @@ fn test_render_slider_with_expanded_content() {
     let widget = Widget::Slider {
         icon: "volume-high".to_string(),
         value: 0.75,
-        muted: false,
+        disabled: false,
         expandable: true,
         expanded_content: Some(Box::new(Widget::Col {
             spacing: 4,
@@ -391,7 +391,7 @@ fn test_render_slider_without_expanded_content() {
     let widget = Widget::Slider {
         icon: "brightness".to_string(),
         value: 0.5,
-        muted: false,
+        disabled: false,
         expandable: false,
         expanded_content: None,
         on_value_change: Action {
@@ -622,7 +622,7 @@ fn test_real_world_audio_control_widget() {
             Widget::Slider {
                 icon: "volume-high".to_string(),
                 value: 0.65,
-                muted: false,
+                disabled: false,
                 expandable: true,
                 expanded_content: Some(Box::new(Widget::Col {
                     spacing: 0,
@@ -668,7 +668,7 @@ fn test_real_world_audio_control_widget() {
             Widget::Slider {
                 icon: "microphone-sensitivity-high".to_string(),
                 value: 0.8,
-                muted: false,
+                disabled: false,
                 expandable: false,
                 expanded_content: None,
                 on_value_change: Action {

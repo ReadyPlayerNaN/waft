@@ -166,7 +166,7 @@ fn main() {
     let volume_widget = Widget::Slider {
         icon: "audio-volume-high".to_string(),
         value: 0.65,
-        muted: false,
+        disabled: false,
         expandable: true,
         expanded_content: Some(Box::new(Widget::Col {
             spacing: 0,
@@ -210,7 +210,7 @@ fn main() {
     let brightness_widget = Widget::Slider {
         icon: "display-brightness".to_string(),
         value: 0.8,
-        muted: false,
+        disabled: false,
         expandable: false,
         expanded_content: None,
         on_value_change: Action {
@@ -224,11 +224,11 @@ fn main() {
     };
     main_box.append(&renderer.render(&brightness_widget, "brightness"));
 
-    // Microphone slider (muted state)
+    // Microphone slider (disabled state)
     let mic_widget = Widget::Slider {
         icon: "microphone-sensitivity-muted".to_string(),
         value: 0.5,
-        muted: true,
+        disabled: true,
         expandable: false,
         expanded_content: None,
         on_value_change: Action {

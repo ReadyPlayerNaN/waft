@@ -1,11 +1,12 @@
 //! Stateful Slider widget — icon button, horizontal scale, and optional expand button.
 //!
-//! Provides `set_value()`, `set_muted()`, `set_icon()`, `set_expandable()` for
+//! Provides `set_value()`, `set_disabled()`, `set_icon()`, `set_expandable()` for
 //! in-place property updates without recreating the GTK tree.
 
 use crate::menu_state::{is_menu_open, menu_id_for_widget, toggle_menu};
 use crate::renderer::{ActionCallback, WidgetRenderer};
 use crate::widgets::icon::IconWidget;
+use crate::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use gtk::glib;
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -19,7 +20,7 @@ use waft_ipc::widget::{Action, ActionParams};
 pub struct SliderProps {
     pub icon: String,
     pub value: f64,
-    pub muted: bool,
+    pub disabled: bool,
     pub expandable: bool,
     /// Optional deterministic menu ID. When provided, the slider uses this
     /// instead of generating a random UUID. Callers should use
@@ -36,13 +37,15 @@ pub struct SliderWidget {
     icon_button: gtk::Button,
     scale: gtk::Scale,
     expand_revealer: gtk::Revealer,
-    base_icon: Rc<RefCell<String>>,
+    icon: Rc<RefCell<String>>,
     value: Rc<RefCell<f64>>,
-    muted: Rc<RefCell<bool>>,
+    disabled: Rc<RefCell<bool>>,
     expandable: Rc<RefCell<bool>>,
     on_value_change: Callback<f64>,
     on_icon_click: VoidCallback,
     scale_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>>,
+    last_user_change: Rc<RefCell<Option<std::time::Instant>>>,
+    is_dragging: Rc<RefCell<bool>>,
     pub menu_id: Option<String>,
 }
 
@@ -57,14 +60,14 @@ impl SliderWidget {
 
         // Main vertical container
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        root.add_css_class("slider-row");
 
         // Top horizontal box with controls
         let controls_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
 
         // Icon button
         let icon_button = gtk::Button::new();
-        icon_button.add_css_class("flat");
-        icon_button.add_css_class("circular");
+        icon_button.add_css_class("slider-icon");
 
         let icon_widget = IconWidget::from_name(&props.icon, 24);
         icon_button.set_child(Some(icon_widget.widget()));
@@ -75,6 +78,7 @@ impl SliderWidget {
         let scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&adjustment));
         scale.set_draw_value(false);
         scale.set_hexpand(true);
+        scale.add_css_class("slider-scale");
 
         controls_box.append(&icon_button);
         controls_box.append(&scale);
@@ -88,23 +92,27 @@ impl SliderWidget {
 
         if let Some(ref store) = menu_store {
             let expand_button = gtk::Button::new();
-            expand_button.add_css_class("flat");
-            expand_button.add_css_class("circular");
+            expand_button.add_css_class("slider-expand");
 
             let mid = menu_id.clone().unwrap();
             let is_open = is_menu_open(store, &mid);
-            let chevron_icon = if is_open {
-                "pan-up-symbolic"
-            } else {
-                "pan-down-symbolic"
-            };
-            let chevron_widget = IconWidget::from_name(chevron_icon, 16);
-            expand_button.set_child(Some(chevron_widget.widget()));
+            let menu_chevron = MenuChevronWidget::new(MenuChevronProps { expanded: is_open });
+            expand_button.set_child(menu_chevron.widget());
 
             let store_clone = store.clone();
             let mid_clone = mid.clone();
             expand_button.connect_clicked(move |_| {
                 toggle_menu(&store_clone, &mid_clone);
+            });
+
+            // Subscribe to MenuStore so chevron updates when menu opens/closes
+            let store_sub = store.clone();
+            let mid_sub = mid.clone();
+            let chevron_sub = menu_chevron.clone();
+            store.subscribe(move || {
+                let state = store_sub.get_state();
+                let should_be_open = state.active_menu_id.as_deref() == Some(mid_sub.as_str());
+                chevron_sub.set_expanded(should_be_open);
             });
 
             expand_revealer.set_child(Some(&expand_button));
@@ -113,11 +121,11 @@ impl SliderWidget {
         controls_box.append(&expand_revealer);
         root.append(&controls_box);
 
-        crate::css::toggle_class(&root, "slider-row-muted", props.muted);
+        crate::css::toggle_class(&root, "disabled", props.disabled);
 
-        let base_icon = Rc::new(RefCell::new(props.icon));
+        let icon = Rc::new(RefCell::new(props.icon));
         let value = Rc::new(RefCell::new(props.value));
-        let muted = Rc::new(RefCell::new(props.muted));
+        let disabled = Rc::new(RefCell::new(props.disabled));
         let expandable = Rc::new(RefCell::new(props.expandable));
         let on_value_change: Callback<f64> = Rc::new(RefCell::new(None));
         let on_icon_click: VoidCallback = Rc::new(RefCell::new(None));
@@ -131,14 +139,33 @@ impl SliderWidget {
         });
 
         // Connect scale value change — store handler ID so set_value() can block it
+        let last_user_change: Rc<RefCell<Option<std::time::Instant>>> =
+            Rc::new(RefCell::new(None));
+        let is_dragging = Rc::new(RefCell::new(false));
         let on_value_change_ref = on_value_change.clone();
+        let last_user_change_ref = last_user_change.clone();
+        let is_dragging_ref = is_dragging.clone();
         let handler_id = scale.connect_value_changed(move |s| {
             let v = s.value() / 100.0;
+            *last_user_change_ref.borrow_mut() = Some(std::time::Instant::now());
+            *is_dragging_ref.borrow_mut() = true;
             if let Some(ref callback) = *on_value_change_ref.borrow() {
                 callback(v);
             }
         });
         let scale_handler_id = Rc::new(RefCell::new(Some(handler_id)));
+
+        // Monitor for drag end (no value_changed for 150ms)
+        let is_dragging_monitor = is_dragging.clone();
+        let last_change_monitor = last_user_change.clone();
+        glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+            if let Some(last) = *last_change_monitor.borrow() {
+                if last.elapsed() > std::time::Duration::from_millis(150) {
+                    *is_dragging_monitor.borrow_mut() = false;
+                }
+            }
+            glib::ControlFlow::Continue
+        });
 
         Self {
             root,
@@ -146,13 +173,15 @@ impl SliderWidget {
             icon_button,
             scale,
             expand_revealer,
-            base_icon,
+            icon,
             value,
-            muted,
+            disabled,
             expandable,
             on_value_change,
             on_icon_click,
             scale_handler_id,
+            last_user_change,
+            is_dragging,
             menu_id,
         }
     }
@@ -174,7 +203,14 @@ impl SliderWidget {
     }
 
     /// Update the scale value, blocking the signal handler to prevent feedback loops.
+    ///
+    /// Completely blocks external updates during active drag gestures to prevent
+    /// value jumping. After the user stops dragging (150ms of inactivity), updates
+    /// reconcile immediately.
     pub fn set_value(&self, v: f64) {
+        if *self.is_dragging.borrow() {
+            return; // Block all external updates during drag
+        }
         *self.value.borrow_mut() = v;
         if let Some(ref handler_id) = *self.scale_handler_id.borrow() {
             self.scale.block_signal(handler_id);
@@ -183,15 +219,15 @@ impl SliderWidget {
         }
     }
 
-    /// Update the muted state — toggles CSS class and icon suffix.
-    pub fn set_muted(&self, m: bool) {
-        *self.muted.borrow_mut() = m;
-        crate::css::toggle_class(&self.root, "slider-row-muted", m);
+    /// Update the disabled state — toggles CSS class.
+    pub fn set_disabled(&self, d: bool) {
+        *self.disabled.borrow_mut() = d;
+        crate::css::toggle_class(&self.root, "disabled", d);
     }
 
-    /// Update the base icon name.
+    /// Update the icon name.
     pub fn set_icon(&self, icon: &str) {
-        *self.base_icon.borrow_mut() = icon.to_string();
+        *self.icon.borrow_mut() = icon.to_string();
         self.icon_widget.set_icon(&icon);
     }
 
@@ -225,7 +261,7 @@ impl crate::reconcile::Reconcilable for SliderWidget {
                 waft_ipc::Widget::Slider {
                     icon,
                     value,
-                    muted,
+                    disabled,
                     expandable,
                     on_value_change: new_vc,
                     on_icon_click: new_ic,
@@ -236,7 +272,7 @@ impl crate::reconcile::Reconcilable for SliderWidget {
                     return ReconcileOutcome::Recreate;
                 }
                 self.set_value(*value);
-                self.set_muted(*muted);
+                self.set_disabled(*disabled);
                 self.set_icon(icon);
                 self.set_expandable(*expandable);
                 ReconcileOutcome::Updated
@@ -257,7 +293,7 @@ pub(crate) fn render_slider(
     menu_store: &Rc<MenuStore>,
     icon: &str,
     value: f64,
-    muted: bool,
+    disabled: bool,
     expandable: bool,
     expanded_content: &Option<Box<crate::types::Widget>>,
     on_value_change: &Action,
@@ -269,7 +305,7 @@ pub(crate) fn render_slider(
         SliderProps {
             icon: icon.to_string(),
             value,
-            muted,
+            disabled,
             expandable,
             menu_id: Some(mid.clone()),
         },
@@ -373,7 +409,7 @@ mod tests {
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_slider_muted() {
+    fn test_render_slider_disabled() {
         init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
@@ -399,11 +435,11 @@ mod tests {
             &None,
             &on_value_change,
             &on_icon_click,
-            "muted_slider",
+            "disabled_slider",
         );
 
         let main_box: gtk::Box = widget.downcast().unwrap();
-        assert!(main_box.has_css_class("slider-row-muted"));
+        assert!(main_box.has_css_class("disabled"));
     }
 
     #[test]
@@ -573,7 +609,7 @@ mod tests {
             SliderProps {
                 icon: "audio-volume-high-symbolic".to_string(),
                 value: 0.5,
-                muted: false,
+                disabled: false,
                 expandable: false,
                 menu_id: None,
             },
@@ -597,7 +633,7 @@ mod tests {
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_slider_widget_set_muted() {
+    fn test_slider_widget_set_disabled() {
         init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
 
@@ -605,18 +641,18 @@ mod tests {
             SliderProps {
                 icon: "audio-volume-high-symbolic".to_string(),
                 value: 0.5,
-                muted: false,
+                disabled: false,
                 expandable: false,
                 menu_id: None,
             },
             Some(menu_store),
         );
 
-        assert!(!slider.root.has_css_class("slider-row-muted"));
-        slider.set_muted(true);
-        assert!(slider.root.has_css_class("slider-row-muted"));
-        slider.set_muted(false);
-        assert!(!slider.root.has_css_class("slider-row-muted"));
+        assert!(!slider.root.has_css_class("disabled"));
+        slider.set_disabled(true);
+        assert!(slider.root.has_css_class("disabled"));
+        slider.set_disabled(false);
+        assert!(!slider.root.has_css_class("disabled"));
     }
 
     #[test]
@@ -629,7 +665,7 @@ mod tests {
             SliderProps {
                 icon: "audio-volume-high-symbolic".to_string(),
                 value: 0.5,
-                muted: false,
+                disabled: false,
                 expandable: false,
                 menu_id: None,
             },
@@ -637,7 +673,7 @@ mod tests {
         );
 
         slider.set_icon("brightness-display-symbolic");
-        assert_eq!(*slider.base_icon.borrow(), "brightness-display-symbolic");
+        assert_eq!(*slider.icon.borrow(), "brightness-display-symbolic");
     }
 
     #[test]
@@ -650,7 +686,7 @@ mod tests {
             SliderProps {
                 icon: "icon".to_string(),
                 value: 0.5,
-                muted: false,
+                disabled: false,
                 expandable: false,
                 menu_id: None,
             },

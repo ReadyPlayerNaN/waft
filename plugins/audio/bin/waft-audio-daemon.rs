@@ -233,7 +233,7 @@ impl PluginDaemon for AudioDaemon {
         let output_slider = {
             let mut builder = SliderBuilder::new(state.output_volume)
                 .icon(output_icon(&state))
-                .muted(state.output_muted)
+                .disabled(state.output_muted)
                 .on_value_change("set_output_volume")
                 .on_icon_click("toggle_output_mute");
 
@@ -254,7 +254,7 @@ impl PluginDaemon for AudioDaemon {
         let input_slider = {
             let mut builder = SliderBuilder::new(state.input_volume)
                 .icon(input_icon(&state))
-                .muted(state.input_muted)
+                .disabled(state.input_muted)
                 .on_value_change("set_input_volume")
                 .on_icon_click("toggle_input_mute");
 
