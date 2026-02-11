@@ -154,7 +154,7 @@ impl PluginDaemon for NetworkManagerDaemon {
     }
 
     async fn handle_action(
-        &mut self,
+        &self,
         _widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -190,7 +190,7 @@ impl PluginDaemon for NetworkManagerDaemon {
 
 impl NetworkManagerDaemon {
     async fn handle_toggle_wifi(
-        &mut self,
+        &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let current_enabled = {
             let state = self.state.lock().unwrap();
@@ -241,7 +241,7 @@ impl NetworkManagerDaemon {
     }
 
     async fn handle_connect_wifi(
-        &mut self,
+        &self,
         ssid: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("[nm] Connecting to WiFi: {}", ssid);
@@ -278,7 +278,7 @@ impl NetworkManagerDaemon {
     }
 
     async fn handle_disconnect_wifi(
-        &mut self,
+        &self,
         device_path: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("[nm] Disconnecting WiFi: {}", device_path);
@@ -301,7 +301,7 @@ impl NetworkManagerDaemon {
     }
 
     async fn handle_toggle_wired(
-        &mut self,
+        &self,
         device_path: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let is_connected = {
@@ -332,7 +332,7 @@ impl NetworkManagerDaemon {
     }
 
     async fn handle_toggle_vpn(
-        &mut self,
+        &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let active_vpns: Vec<(String, String)> = {
             let state = self.state.lock().unwrap();
@@ -381,7 +381,7 @@ impl NetworkManagerDaemon {
     }
 
     async fn handle_connect_vpn(
-        &mut self,
+        &self,
         conn_path: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("[nm] Connecting VPN: {}", conn_path);
@@ -430,7 +430,7 @@ impl NetworkManagerDaemon {
     }
 
     async fn handle_disconnect_vpn(
-        &mut self,
+        &self,
         conn_path: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("[nm] Disconnecting VPN: {}", conn_path);

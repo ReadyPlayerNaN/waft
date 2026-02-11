@@ -33,13 +33,13 @@ pub enum Widget {
         on_icon_click: Action,
     },
 
-    /// A menu row with icon, labels, and optional trailing widget
+    /// A menu row with icon, label, and optional trailing widget
     MenuRow {
         icon: Option<String>,
         label: String,
-        sublabel: Option<String>,
         trailing: Option<Box<Widget>>, // Switch, Spinner, Checkmark
         sensitive: bool,
+        busy: bool,
         on_click: Option<Action>,
     },
 
@@ -372,9 +372,9 @@ mod tests {
         let widget = Widget::MenuRow {
             icon: Some("settings".to_string()),
             label: "Settings".to_string(),
-            sublabel: Some("Configure system".to_string()),
             trailing: Some(Box::new(Widget::Checkmark { visible: true })),
             sensitive: true,
+            busy: false,
             on_click: Some(Action {
                 id: "open_settings".to_string(),
                 params: ActionParams::None,
@@ -497,16 +497,15 @@ mod tests {
                     Widget::MenuRow {
                         icon: None,
                         label: "Child 1".to_string(),
-                        sublabel: None,
                         trailing: None,
                         sensitive: true,
+                        busy: false,
                         on_click: None,
                     }
                     .into(),
                     Widget::MenuRow {
                         icon: None,
                         label: "Child 2".to_string(),
-                        sublabel: None,
                         trailing: Some(Box::new(Widget::Switch {
                             active: true,
                             sensitive: true,
@@ -516,6 +515,7 @@ mod tests {
                             },
                         })),
                         sensitive: true,
+                        busy: false,
                         on_click: None,
                     }
                     .into(),

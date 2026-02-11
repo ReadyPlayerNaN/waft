@@ -57,12 +57,17 @@ async fn probe_backend(conn: &Connection) -> Result<Backend> {
     bail!("No screen inhibit backend available")
 }
 
-struct CaffeineDaemon {
-    conn: Connection,
-    backend: Backend,
+/// Mutable caffeine state behind interior mutability.
+struct CaffeineState {
     active: bool,
     busy: bool,
     screensaver_cookie: Option<u32>,
+}
+
+struct CaffeineDaemon {
+    conn: Connection,
+    backend: Backend,
+    state: std::sync::Mutex<CaffeineState>,
 }
 
 impl CaffeineDaemon {
@@ -77,13 +82,25 @@ impl CaffeineDaemon {
         Ok(Self {
             conn,
             backend,
-            active: false,
-            busy: false,
-            screensaver_cookie: None,
+            state: std::sync::Mutex::new(CaffeineState {
+                active: false,
+                busy: false,
+                screensaver_cookie: None,
+            }),
         })
     }
 
-    async fn inhibit(&mut self) -> Result<()> {
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, CaffeineState> {
+        match self.state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("[caffeine] mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        }
+    }
+
+    async fn inhibit(&self) -> Result<()> {
         match &self.backend {
             Backend::Portal => {
                 let proxy = zbus::Proxy::new(
@@ -115,22 +132,23 @@ impl CaffeineDaemon {
                     .call("Inhibit", &("waft-overview", "User activated caffeine mode"))
                     .await?;
 
-                self.screensaver_cookie = Some(cookie);
+                self.lock_state().screensaver_cookie = Some(cookie);
                 debug!("[caffeine] ScreenSaver inhibit cookie: {}", cookie);
             }
         }
-        self.active = true;
+        self.lock_state().active = true;
         Ok(())
     }
 
-    async fn uninhibit(&mut self) -> Result<()> {
+    async fn uninhibit(&self) -> Result<()> {
         match &self.backend {
             Backend::Portal => {
                 // Portal inhibition tied to request lifetime — just update state
                 warn!("[caffeine] Portal uninhibit: inhibition releases when daemon restarts");
             }
             Backend::ScreenSaver { path } => {
-                if let Some(cookie) = self.screensaver_cookie.take() {
+                let cookie = self.lock_state().screensaver_cookie.take();
+                if let Some(cookie) = cookie {
                     let proxy = zbus::Proxy::new(
                         &self.conn,
                         SCREENSAVER_DESTINATION,
@@ -144,7 +162,7 @@ impl CaffeineDaemon {
                 }
             }
         }
-        self.active = false;
+        self.lock_state().active = false;
         Ok(())
     }
 }
@@ -152,32 +170,34 @@ impl CaffeineDaemon {
 #[async_trait::async_trait]
 impl PluginDaemon for CaffeineDaemon {
     fn get_widgets(&self) -> Vec<NamedWidget> {
+        let state = self.lock_state();
         vec![NamedWidget {
             id: "caffeine:toggle".to_string(),
             weight: 65,
             widget: FeatureToggleBuilder::new("Caffeine")
                 .icon("changes-allow-symbolic")
-                .active(self.active)
-                .busy(self.busy)
+                .active(state.active)
+                .busy(state.busy)
                 .on_toggle("toggle")
                 .build(),
         }]
     }
 
     async fn handle_action(
-        &mut self,
+        &self,
         _widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if action.id == "toggle" {
-            self.busy = true;
-            let result = if self.active {
+            self.lock_state().busy = true;
+            let was_active = self.lock_state().active;
+            let result = if was_active {
                 self.uninhibit().await
             } else {
                 self.inhibit().await
             };
 
-            self.busy = false;
+            self.lock_state().busy = false;
 
             if let Err(e) = result {
                 log::error!("[caffeine] Toggle failed: {}", e);

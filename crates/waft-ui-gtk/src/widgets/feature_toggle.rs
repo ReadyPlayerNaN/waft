@@ -436,10 +436,18 @@ pub(crate) fn render_feature_toggle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reconcile::Reconcilable;
     use crate::test_utils::init_gtk_for_tests;
     use crate::types::ActionParams;
     use std::cell::RefCell;
     use waft_core::menu_state::create_menu_store;
+
+    fn dummy_action() -> Action {
+        Action {
+            id: "toggle".to_string(),
+            params: ActionParams::None,
+        }
+    }
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
@@ -724,5 +732,244 @@ mod tests {
         assert!(main_box.has_css_class("active"));
         assert!(main_box.has_css_class("busy"));
         assert!(main_box.has_css_class("expandable"));
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_feature_toggle_expanded_content_change_updates_in_place() {
+        init_gtk_for_tests();
+        let menu_store = Rc::new(create_menu_store());
+
+        let old_widget = waft_ipc::Widget::FeatureToggle {
+            title: "Bluetooth".to_string(),
+            icon: "bluetooth-symbolic".to_string(),
+            details: Some("1 connected".to_string()),
+            active: true,
+            busy: false,
+            expandable: true,
+            expanded_content: Some(Box::new(waft_ipc::Widget::Col {
+                spacing: 4,
+                css_classes: vec![],
+                children: vec![
+                    waft_ipc::Node::keyed(
+                        "device1",
+                        waft_ipc::Widget::Label {
+                            text: "Headphones".to_string(),
+                            css_classes: vec![],
+                        },
+                    ),
+                ],
+            })),
+            on_toggle: dummy_action(),
+        };
+
+        let new_widget = waft_ipc::Widget::FeatureToggle {
+            title: "Bluetooth".to_string(),
+            icon: "bluetooth-symbolic".to_string(),
+            details: Some("2 connected".to_string()),
+            active: true,
+            busy: false,
+            expandable: true,
+            expanded_content: Some(Box::new(waft_ipc::Widget::Col {
+                spacing: 4,
+                css_classes: vec![],
+                children: vec![
+                    waft_ipc::Node::keyed(
+                        "device1",
+                        waft_ipc::Widget::Label {
+                            text: "Headphones".to_string(),
+                            css_classes: vec![],
+                        },
+                    ),
+                    waft_ipc::Node::keyed(
+                        "device2",
+                        waft_ipc::Widget::Label {
+                            text: "Speaker".to_string(),
+                            css_classes: vec![],
+                        },
+                    ),
+                ],
+            })),
+            on_toggle: dummy_action(),
+        };
+
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
+                title: "Bluetooth".to_string(),
+                icon: "bluetooth-symbolic".to_string(),
+                details: Some("1 connected".to_string()),
+                active: true,
+                busy: false,
+                expandable: true,
+                menu_id: None,
+            },
+            Some(menu_store),
+        );
+
+        let outcome = toggle.try_reconcile(&old_widget, &new_widget);
+        assert_eq!(
+            outcome,
+            crate::reconcile::ReconcileOutcome::Updated,
+            "Changing expanded_content should update in-place (menu swap handled by reconciler)"
+        );
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_feature_toggle_expanded_content_none_to_some_updates_in_place() {
+        init_gtk_for_tests();
+        let menu_store = Rc::new(create_menu_store());
+
+        let old_widget = waft_ipc::Widget::FeatureToggle {
+            title: "Bluetooth".to_string(),
+            icon: "bluetooth-symbolic".to_string(),
+            details: None,
+            active: true,
+            busy: false,
+            expandable: true,
+            expanded_content: None,
+            on_toggle: dummy_action(),
+        };
+
+        let new_widget = waft_ipc::Widget::FeatureToggle {
+            title: "Bluetooth".to_string(),
+            icon: "bluetooth-symbolic".to_string(),
+            details: Some("1 connected".to_string()),
+            active: true,
+            busy: false,
+            expandable: true,
+            expanded_content: Some(Box::new(waft_ipc::Widget::Label {
+                text: "Headphones".to_string(),
+                css_classes: vec![],
+            })),
+            on_toggle: dummy_action(),
+        };
+
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
+                title: "Bluetooth".to_string(),
+                icon: "bluetooth-symbolic".to_string(),
+                details: None,
+                active: true,
+                busy: false,
+                expandable: true,
+                menu_id: None,
+            },
+            Some(menu_store),
+        );
+
+        let outcome = toggle.try_reconcile(&old_widget, &new_widget);
+        assert_eq!(
+            outcome,
+            crate::reconcile::ReconcileOutcome::Updated,
+            "None→Some handled by reconciler, widget level returns Updated"
+        );
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_feature_toggle_expanded_content_some_to_none_updates_in_place() {
+        init_gtk_for_tests();
+        let menu_store = Rc::new(create_menu_store());
+
+        let old_widget = waft_ipc::Widget::FeatureToggle {
+            title: "Bluetooth".to_string(),
+            icon: "bluetooth-symbolic".to_string(),
+            details: Some("1 connected".to_string()),
+            active: true,
+            busy: false,
+            expandable: true,
+            expanded_content: Some(Box::new(waft_ipc::Widget::Label {
+                text: "Headphones".to_string(),
+                css_classes: vec![],
+            })),
+            on_toggle: dummy_action(),
+        };
+
+        let new_widget = waft_ipc::Widget::FeatureToggle {
+            title: "Bluetooth".to_string(),
+            icon: "bluetooth-symbolic".to_string(),
+            details: None,
+            active: true,
+            busy: false,
+            expandable: true,
+            expanded_content: None,
+            on_toggle: dummy_action(),
+        };
+
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
+                title: "Bluetooth".to_string(),
+                icon: "bluetooth-symbolic".to_string(),
+                details: Some("1 connected".to_string()),
+                active: true,
+                busy: false,
+                expandable: true,
+                menu_id: None,
+            },
+            Some(menu_store),
+        );
+
+        let outcome = toggle.try_reconcile(&old_widget, &new_widget);
+        assert_eq!(
+            outcome,
+            crate::reconcile::ReconcileOutcome::Updated,
+            "Some→None handled by reconciler, widget level returns Updated"
+        );
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_feature_toggle_expanded_content_unchanged_updates_in_place() {
+        init_gtk_for_tests();
+        let menu_store = Rc::new(create_menu_store());
+
+        let old_widget = waft_ipc::Widget::FeatureToggle {
+            title: "Bluetooth".to_string(),
+            icon: "bluetooth-symbolic".to_string(),
+            details: Some("1 connected".to_string()),
+            active: false,
+            busy: false,
+            expandable: true,
+            expanded_content: Some(Box::new(waft_ipc::Widget::Label {
+                text: "Headphones".to_string(),
+                css_classes: vec![],
+            })),
+            on_toggle: dummy_action(),
+        };
+
+        let new_widget = waft_ipc::Widget::FeatureToggle {
+            title: "Bluetooth".to_string(),
+            icon: "bluetooth-symbolic".to_string(),
+            details: Some("1 connected".to_string()),
+            active: true,
+            busy: false,
+            expandable: true,
+            expanded_content: Some(Box::new(waft_ipc::Widget::Label {
+                text: "Headphones".to_string(),
+                css_classes: vec![],
+            })),
+            on_toggle: dummy_action(),
+        };
+
+        let toggle = FeatureToggleWidget::new(
+            FeatureToggleProps {
+                title: "Bluetooth".to_string(),
+                icon: "bluetooth-symbolic".to_string(),
+                details: Some("1 connected".to_string()),
+                active: false,
+                busy: false,
+                expandable: true,
+                menu_id: None,
+            },
+            Some(menu_store),
+        );
+
+        let outcome = toggle.try_reconcile(&old_widget, &new_widget);
+        assert_eq!(
+            outcome,
+            crate::reconcile::ReconcileOutcome::Updated,
+            "When expanded_content is unchanged, should update in-place"
+        );
     }
 }

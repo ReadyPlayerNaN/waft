@@ -6,6 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use gtk::prelude::*;
 use waft_core::menu_state::MenuStore;
 use waft_ipc::{NamedWidget, Widget as IpcWidget};
 
@@ -68,6 +69,64 @@ pub struct WidgetReconciler {
     action_callback: ActionCallback,
 }
 
+/// Try to update the menu widget in-place for FeatureToggle.
+///
+/// Returns true if handled (no change needed, or swapped in-place).
+/// Returns false if structural change (None↔Some) requires Recreate.
+fn try_swap_menu(
+    cached: &mut CachedEntry,
+    new_widget: &IpcWidget,
+    widget_id: &str,
+    menu_store: &Rc<MenuStore>,
+    action_callback: &ActionCallback,
+) -> bool {
+    let (old_ec, new_ec) = match (&cached.widget_desc.widget, new_widget) {
+        (
+            IpcWidget::FeatureToggle {
+                expanded_content: old_ec,
+                ..
+            },
+            IpcWidget::FeatureToggle {
+                expanded_content: new_ec,
+                ..
+            },
+        ) => (old_ec, new_ec),
+        _ => return true, // Not a FeatureToggle
+    };
+
+    if old_ec == new_ec {
+        return true; // No change
+    }
+
+    match (&cached.menu, new_ec) {
+        // Both have menu content — swap in GTK tree
+        (Some(old_menu), Some(new_content)) => {
+            let renderer = WidgetRenderer::new(
+                menu_store.clone(),
+                action_callback.clone(),
+            );
+            let content_id = format!("{}:expanded", widget_id);
+            let new_menu = renderer.render(new_content, &content_id);
+
+            if let Some(parent) = old_menu.parent() {
+                old_menu.unparent();
+                if let Ok(parent_box) = parent.downcast::<gtk::Box>() {
+                    parent_box.append(&new_menu);
+                } else {
+                    log::warn!("[reconciler] menu parent is not a Box, recreating");
+                    return false;
+                }
+            }
+
+            cached.menu = Some(new_menu);
+            true
+        }
+        (None, None) => true,
+        // None↔Some = structural change (grid Revealer/Stack affected)
+        _ => false,
+    }
+}
+
 impl WidgetReconciler {
     pub fn new(menu_store: Rc<MenuStore>, action_callback: ActionCallback) -> Self {
         Self {
@@ -106,9 +165,14 @@ impl WidgetReconciler {
                 } else if let Some(ref typed) = cached.typed {
                     match typed.try_reconcile(&cached.widget_desc.widget, &new_widget.widget) {
                         ReconcileOutcome::Updated => {
-                            cached.widget_desc = new_widget.clone();
-                            result.updated_in_place += 1;
-                            continue;
+                            if !try_swap_menu(cached, &new_widget.widget, &new_widget.id, &self.menu_store, &self.action_callback) {
+                                // None↔Some structural change — fall back to Recreate
+                                result.removed.push(new_widget.id.clone());
+                            } else {
+                                cached.widget_desc = new_widget.clone();
+                                result.updated_in_place += 1;
+                                continue;
+                            }
                         }
                         ReconcileOutcome::Recreate => {
                             result.removed.push(new_widget.id.clone());
@@ -721,5 +785,107 @@ mod tests {
             Some("bluetooth_toggle_menu"),
             "FeatureToggle menu_id should be deterministic based on widget ID"
         );
+    }
+
+    fn make_toggle_expandable(
+        id: &str,
+        active: bool,
+        expanded_content: Option<IpcWidget>,
+    ) -> NamedWidget {
+        NamedWidget {
+            id: id.to_string(),
+            weight: 100,
+            widget: IpcWidget::FeatureToggle {
+                title: "Bluetooth".to_string(),
+                icon: "bluetooth-symbolic".to_string(),
+                details: None,
+                active,
+                busy: false,
+                expandable: true,
+                expanded_content: expanded_content.map(Box::new),
+                on_toggle: Action {
+                    id: "toggle".to_string(),
+                    params: ActionParams::None,
+                },
+            },
+        }
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_toggle_expanded_content_change_updates_in_place() {
+        init_gtk_for_tests();
+        let mut rec = make_reconciler();
+
+        let content_a = IpcWidget::Label {
+            text: "Headphones".to_string(),
+            css_classes: vec![],
+        };
+        let content_b = IpcWidget::Col {
+            spacing: 4,
+            css_classes: vec![],
+            children: vec![
+                waft_ipc::Node::keyed(
+                    "device1",
+                    IpcWidget::Label {
+                        text: "Headphones".to_string(),
+                        css_classes: vec![],
+                    },
+                ),
+                waft_ipc::Node::keyed(
+                    "device2",
+                    IpcWidget::Label {
+                        text: "Speaker".to_string(),
+                        css_classes: vec![],
+                    },
+                ),
+            ],
+        };
+
+        rec.reconcile(&vec![make_toggle_expandable("bt", true, Some(content_a))]);
+        let result = rec.reconcile(&vec![make_toggle_expandable("bt", true, Some(content_b))]);
+
+        assert!(!result.changed);
+        assert!(result.added.is_empty());
+        assert!(result.removed.is_empty());
+        assert_eq!(result.updated_in_place, 1);
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_toggle_expanded_content_none_to_some_recreates() {
+        init_gtk_for_tests();
+        let mut rec = make_reconciler();
+
+        let content = IpcWidget::Label {
+            text: "Headphones".to_string(),
+            css_classes: vec![],
+        };
+
+        rec.reconcile(&vec![make_toggle_expandable("bt", true, None)]);
+        let result = rec.reconcile(&vec![make_toggle_expandable("bt", true, Some(content))]);
+
+        assert!(result.changed);
+        assert_eq!(result.added.len(), 1);
+        assert_eq!(result.removed.len(), 1);
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_toggle_expanded_content_some_to_none_recreates() {
+        init_gtk_for_tests();
+        let mut rec = make_reconciler();
+
+        let content = IpcWidget::Label {
+            text: "Headphones".to_string(),
+            css_classes: vec![],
+        };
+
+        rec.reconcile(&vec![make_toggle_expandable("bt", true, Some(content))]);
+        let result = rec.reconcile(&vec![make_toggle_expandable("bt", true, None)]);
+
+        assert!(result.changed);
+        assert_eq!(result.added.len(), 1);
+        assert_eq!(result.removed.len(), 1);
     }
 }

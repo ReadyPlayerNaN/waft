@@ -7,30 +7,33 @@ use waft_plugin_sdk::*;
 
 /// A simple plugin that toggles a feature on/off.
 struct SimplePlugin {
-    enabled: bool,
+    enabled: std::sync::Mutex<bool>,
 }
 
 impl SimplePlugin {
     fn new() -> Self {
-        Self { enabled: false }
+        Self {
+            enabled: std::sync::Mutex::new(false),
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl PluginDaemon for SimplePlugin {
     fn get_widgets(&self) -> Vec<NamedWidget> {
+        let enabled = *self.enabled.lock().unwrap();
         vec![NamedWidget {
             id: "simple:toggle".into(),
             weight: 100,
             widget: Widget::FeatureToggle {
                 title: "Simple Plugin".into(),
                 icon: "emblem-system-symbolic".into(),
-                details: Some(if self.enabled {
+                details: Some(if enabled {
                     "Feature is enabled".into()
                 } else {
                     "Feature is disabled".into()
                 }),
-                active: self.enabled,
+                active: enabled,
                 busy: false,
                 expandable: false,
                 expanded_content: None,
@@ -43,7 +46,7 @@ impl PluginDaemon for SimplePlugin {
     }
 
     async fn handle_action(
-        &mut self,
+        &self,
         widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -51,8 +54,9 @@ impl PluginDaemon for SimplePlugin {
 
         match action.id.as_str() {
             "toggle" => {
-                self.enabled = !self.enabled;
-                log::info!("Toggled: enabled={}", self.enabled);
+                let mut enabled = self.enabled.lock().unwrap();
+                *enabled = !*enabled;
+                log::info!("Toggled: enabled={}", *enabled);
                 Ok(())
             }
             _ => {

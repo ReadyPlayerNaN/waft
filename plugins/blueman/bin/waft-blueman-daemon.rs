@@ -16,6 +16,7 @@ use zbus::Connection;
 struct BluemanDaemon {
     conn: Connection,
     state: Arc<StdMutex<State>>,
+    notifier: Arc<StdMutex<Option<WidgetNotifier>>>,
 }
 
 impl BluemanDaemon {
@@ -49,11 +50,24 @@ impl BluemanDaemon {
         Ok(Self {
             conn,
             state: Arc::new(StdMutex::new(state)),
+            notifier: Arc::new(StdMutex::new(None)),
         })
     }
 
     fn shared_state(&self) -> Arc<StdMutex<State>> {
         self.state.clone()
+    }
+
+    fn notifier_arc(&self) -> Arc<StdMutex<Option<WidgetNotifier>>> {
+        self.notifier.clone()
+    }
+
+    fn notify_if_ready(&self) {
+        if let Ok(guard) = self.notifier.lock() {
+            if let Some(ref n) = *guard {
+                n.notify();
+            }
+        }
     }
 }
 
@@ -71,7 +85,7 @@ impl PluginDaemon for BluemanDaemon {
     }
 
     async fn handle_action(
-        &mut self,
+        &self,
         _widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -93,6 +107,8 @@ impl PluginDaemon for BluemanDaemon {
                 }
             }
 
+            self.notify_if_ready();
+
             // Toggle powered state
             let current_powered = {
                 let state = match self.state.lock() {
@@ -113,18 +129,22 @@ impl PluginDaemon for BluemanDaemon {
             let new_powered = !current_powered;
             if let Err(e) = dbus::set_powered(&self.conn, &adapter_path, new_powered).await {
                 error!("[bluetooth] Failed to set powered: {}", e);
-                let mut state = match self.state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[bluetooth] mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
-                if let Some(adapter) =
-                    state.adapters.iter_mut().find(|a| a.path == adapter_path)
                 {
-                    adapter.busy = false;
+                    let mut state = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[bluetooth] mutex poisoned, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    if let Some(adapter) =
+                        state.adapters.iter_mut().find(|a| a.path == adapter_path)
+                    {
+                        adapter.busy = false;
+                    }
                 }
+
+                self.notify_if_ready();
                 return Err(e.into());
             }
 
@@ -144,6 +164,8 @@ impl PluginDaemon for BluemanDaemon {
                     adapter.busy = false;
                 }
             }
+
+            self.notify_if_ready();
         } else if let Some(device_path) = action.id.strip_prefix("toggle_device:") {
             let device_path = device_path.to_string();
             debug!("[bluetooth] Toggle device: {}", device_path);
@@ -183,6 +205,8 @@ impl PluginDaemon for BluemanDaemon {
                 }
             }
 
+            self.notify_if_ready();
+
             let result = if currently_connected {
                 dbus::disconnect_device(&self.conn, &device_path).await
             } else {
@@ -200,20 +224,24 @@ impl PluginDaemon for BluemanDaemon {
                     e
                 );
                 // Revert connecting state
-                let mut state = match self.state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[bluetooth] mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
-                for adapter in &mut state.adapters {
-                    if let Some(device) =
-                        adapter.devices.iter_mut().find(|d| d.path == device_path)
-                    {
-                        device.connecting = false;
+                {
+                    let mut state = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[bluetooth] mutex poisoned, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    for adapter in &mut state.adapters {
+                        if let Some(device) =
+                            adapter.devices.iter_mut().find(|d| d.path == device_path)
+                        {
+                            device.connecting = false;
+                        }
                     }
                 }
+
+                self.notify_if_ready();
                 return Err(e.into());
             }
 
@@ -235,6 +263,8 @@ impl PluginDaemon for BluemanDaemon {
                     }
                 }
             }
+
+            self.notify_if_ready();
         }
 
         Ok(())
@@ -250,9 +280,16 @@ async fn main() -> Result<()> {
     let daemon = BluemanDaemon::new().await?;
 
     let shared_state = daemon.shared_state();
+    let notifier_arc = daemon.notifier_arc();
     let monitor_conn = daemon.conn.clone();
 
     let (server, notifier) = PluginServer::new("blueman-daemon", daemon);
+
+    // Set the notifier in the shared Arc
+    {
+        let mut guard = notifier_arc.lock().unwrap();
+        *guard = Some(notifier.clone());
+    }
 
     // Monitor BlueZ D-Bus signals
     tokio::spawn(async move {

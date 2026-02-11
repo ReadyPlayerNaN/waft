@@ -155,7 +155,7 @@ impl PluginDaemon for SystemdActionsDaemon {
     }
 
     async fn handle_action(
-        &mut self,
+        &self,
         _widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

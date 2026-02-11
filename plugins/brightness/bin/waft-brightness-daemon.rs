@@ -340,7 +340,7 @@ fn icon_for_display_type(dt: DisplayType) -> &'static str {
 // ---------------------------------------------------------------------------
 
 struct BrightnessDaemon {
-    displays: Vec<Display>,
+    displays: std::sync::Mutex<Vec<Display>>,
 }
 
 impl BrightnessDaemon {
@@ -354,7 +354,9 @@ impl BrightnessDaemon {
                 displays.len()
             );
         }
-        Ok(Self { displays })
+        Ok(Self {
+            displays: std::sync::Mutex::new(displays),
+        })
     }
 
     /// Discover all controllable displays from available backends.
@@ -397,9 +399,20 @@ impl BrightnessDaemon {
         displays
     }
 
+    fn lock_displays(&self) -> std::sync::MutexGuard<'_, Vec<Display>> {
+        match self.displays.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("[brightness] mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        }
+    }
+
     /// Build widget tree for the current state.
     fn build_widgets(&self) -> Widget {
-        match self.displays.len() {
+        let displays = self.lock_displays();
+        match displays.len() {
             0 => {
                 // Empty label -- overview will ignore it
                 Widget::Label {
@@ -409,7 +422,7 @@ impl BrightnessDaemon {
             }
             1 => {
                 // Single display -- simple slider
-                let d = &self.displays[0];
+                let d = &displays[0];
                 SliderBuilder::new(d.brightness)
                     .icon(icon_for_display_type(d.display_type))
                     .on_value_change("set_master")
@@ -417,11 +430,11 @@ impl BrightnessDaemon {
             }
             _ => {
                 // Multiple displays -- master slider with per-display sliders in expanded content
-                let master = compute_master_average(&self.displays);
+                let master = compute_master_average(&displays);
 
                 let mut per_display_container =
                     ColBuilder::new().spacing(4);
-                for d in &self.displays {
+                for d in displays.iter() {
                     let slider = SliderBuilder::new(d.brightness)
                         .icon(icon_for_display_type(d.display_type))
                         .on_value_change(&format!("set_display:{}", d.id))
@@ -443,7 +456,7 @@ impl BrightnessDaemon {
 #[async_trait::async_trait]
 impl PluginDaemon for BrightnessDaemon {
     fn get_widgets(&self) -> Vec<NamedWidget> {
-        if self.displays.is_empty() {
+        if self.lock_displays().is_empty() {
             return Vec::new();
         }
 
@@ -455,7 +468,7 @@ impl PluginDaemon for BrightnessDaemon {
     }
 
     async fn handle_action(
-        &mut self,
+        &self,
         _widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -465,8 +478,13 @@ impl PluginDaemon for BrightnessDaemon {
                 _ => return Ok(()),
             };
 
-            let old_master = compute_master_average(&self.displays);
-            let updates = compute_proportional_scaling(&self.displays, old_master, new_master);
+            let (old_master, updates) = {
+                let displays = self.lock_displays();
+                let old_master = compute_master_average(&displays);
+                let updates = compute_proportional_scaling(&displays, old_master, new_master);
+                (old_master, updates)
+            };
+            let _ = old_master;
 
             for (display_id, brightness) in &updates {
                 if let Err(e) = set_brightness(display_id, *brightness).await {
@@ -479,9 +497,12 @@ impl PluginDaemon for BrightnessDaemon {
             }
 
             // Update local state
-            for (display_id, brightness) in updates {
-                if let Some(d) = self.displays.iter_mut().find(|d| d.id == display_id) {
-                    d.brightness = brightness;
+            {
+                let mut displays = self.lock_displays();
+                for (display_id, brightness) in updates {
+                    if let Some(d) = displays.iter_mut().find(|d| d.id == display_id) {
+                        d.brightness = brightness;
+                    }
                 }
             }
         } else if let Some(target_id) = action.id.strip_prefix("set_display:") {
@@ -499,8 +520,11 @@ impl PluginDaemon for BrightnessDaemon {
             }
 
             // Update local state
-            if let Some(d) = self.displays.iter_mut().find(|d| d.id == target_id) {
-                d.brightness = new_brightness;
+            {
+                let mut displays = self.lock_displays();
+                if let Some(d) = displays.iter_mut().find(|d| d.id == target_id) {
+                    d.brightness = new_brightness;
+                }
             }
         }
 
@@ -629,7 +653,7 @@ mod tests {
     #[test]
     fn test_get_widgets_empty() {
         let daemon = BrightnessDaemon {
-            displays: Vec::new(),
+            displays: std::sync::Mutex::new(Vec::new()),
         };
         assert!(daemon.get_widgets().is_empty());
     }
@@ -637,7 +661,7 @@ mod tests {
     #[test]
     fn test_get_widgets_single_display() {
         let daemon = BrightnessDaemon {
-            displays: vec![test_display("backlight:intel_backlight", 0.5, DisplayType::Backlight)],
+            displays: std::sync::Mutex::new(vec![test_display("backlight:intel_backlight", 0.5, DisplayType::Backlight)]),
         };
         let widgets = daemon.get_widgets();
         assert_eq!(widgets.len(), 1);
@@ -649,10 +673,10 @@ mod tests {
     #[test]
     fn test_get_widgets_multiple_displays() {
         let daemon = BrightnessDaemon {
-            displays: vec![
+            displays: std::sync::Mutex::new(vec![
                 test_display("backlight:intel_backlight", 0.5, DisplayType::Backlight),
                 test_display("ddc:1", 0.8, DisplayType::External),
-            ],
+            ]),
         };
         let widgets = daemon.get_widgets();
         assert_eq!(widgets.len(), 1);

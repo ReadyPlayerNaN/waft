@@ -12,6 +12,9 @@ use tokio::net::UnixListener;
 use tokio::sync::{watch, Mutex};
 use waft_ipc::{OverviewMessage, PluginMessage};
 
+/// Shared client list for push notifications.
+type SharedClients = Arc<Mutex<Vec<OwnedWriteHalf>>>;
+
 /// Server errors.
 #[derive(Debug)]
 pub enum ServerError {
@@ -131,11 +134,13 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
         let listener = UnixListener::bind(&socket_path)?;
         log::info!("Listening on: {}", socket_path.display());
 
-        // Shared state
-        let daemon = Arc::new(Mutex::new(self.daemon));
-        let clients: Arc<Mutex<Vec<OwnedWriteHalf>>> = Arc::new(Mutex::new(Vec::new()));
+        // Shared daemon — no Mutex, so get_widgets() and handle_action()
+        // can run concurrently (both take &self via interior mutability).
+        let daemon: Arc<D> = Arc::new(self.daemon);
+        let clients: SharedClients = Arc::new(Mutex::new(Vec::new()));
 
-        // Spawn push task: watches notifier and sends SetWidgets to all clients
+        // Spawn push task: watches notifier and sends SetWidgets to all clients.
+        // No daemon lock needed — get_widgets(&self) runs concurrently with handle_action(&self).
         {
             let daemon = daemon.clone();
             let clients = clients.clone();
@@ -149,12 +154,8 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
                         break;
                     }
 
-                    // Get fresh widgets
-                    let widgets = {
-                        let daemon = daemon.lock().await;
-                        daemon.get_widgets()
-                    };
-
+                    // Get fresh widgets — no lock contention with handle_action
+                    let widgets = daemon.get_widgets();
                     let msg = PluginMessage::SetWidgets { widgets };
 
                     // Send to all connected clients, removing dead ones
@@ -219,8 +220,8 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
     /// pushes updated widgets to ALL connected clients (state may have changed).
     async fn handle_client_reads(
         mut read_half: tokio::net::unix::OwnedReadHalf,
-        daemon: Arc<Mutex<D>>,
-        clients: Arc<Mutex<Vec<OwnedWriteHalf>>>,
+        daemon: Arc<D>,
+        clients: SharedClients,
     ) -> Result<(), ServerError> {
         log::debug!("Handling client reads");
 
@@ -231,13 +232,9 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
 
             match msg {
                 OverviewMessage::GetWidgets => {
-                    let widgets = {
-                        let daemon = daemon.lock().await;
-                        daemon.get_widgets()
-                    };
+                    let widgets = daemon.get_widgets();
                     let response = PluginMessage::SetWidgets { widgets };
 
-                    // Send response to THIS client (find the matching write half)
                     // Since we can't easily match read/write halves, broadcast to all
                     let mut clients_guard = clients.lock().await;
                     let mut i = 0;
@@ -257,30 +254,32 @@ impl<D: PluginDaemon + 'static> PluginServer<D> {
                         action
                     );
 
-                    {
-                        let mut daemon = daemon.lock().await;
+                    // Spawn action handler concurrently so the read loop
+                    // can process the next message immediately. This lets
+                    // multiple actions run in parallel (e.g. connecting
+                    // several Bluetooth devices at once).
+                    let daemon = daemon.clone();
+                    let clients = clients.clone();
+                    tokio::spawn(async move {
                         if let Err(e) = daemon.handle_action(widget_id, action).await {
                             log::error!("Action handler error: {}", e);
                         }
-                    }
 
-                    // After action, push updated widgets to all clients
-                    let widgets = {
-                        let daemon = daemon.lock().await;
-                        daemon.get_widgets()
-                    };
-                    let response = PluginMessage::SetWidgets { widgets };
+                        // After action, push updated widgets to all clients
+                        let widgets = daemon.get_widgets();
+                        let response = PluginMessage::SetWidgets { widgets };
 
-                    let mut clients_guard = clients.lock().await;
-                    let mut i = 0;
-                    while i < clients_guard.len() {
-                        match write_message_to_half(&mut clients_guard[i], &response).await {
-                            Ok(()) => i += 1,
-                            Err(_) => {
-                                clients_guard.swap_remove(i);
+                        let mut clients_guard = clients.lock().await;
+                        let mut i = 0;
+                        while i < clients_guard.len() {
+                            match write_message_to_half(&mut clients_guard[i], &response).await {
+                                Ok(()) => i += 1,
+                                Err(_) => {
+                                    clients_guard.swap_remove(i);
+                                }
                             }
                         }
-                    }
+                    });
                 }
             }
         }
@@ -522,7 +521,7 @@ mod tests {
         }
 
         async fn handle_action(
-            &mut self,
+            &self,
             _widget_id: String,
             _action: waft_ipc::widget::Action,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

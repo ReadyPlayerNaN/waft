@@ -265,7 +265,6 @@ impl SliderBuilder {
 ///
 /// let row = MenuRowBuilder::new("Settings")
 ///     .icon("preferences-system-symbolic")
-///     .sublabel("Configure system")
 ///     .on_click("open_settings")
 ///     .build();
 /// ```
@@ -273,9 +272,9 @@ impl SliderBuilder {
 pub struct MenuRowBuilder {
     icon: Option<String>,
     label: String,
-    sublabel: Option<String>,
     trailing: Option<Box<Widget>>,
     sensitive: bool,
+    busy: bool,
     on_click: Option<Action>,
 }
 
@@ -284,17 +283,17 @@ impl MenuRowBuilder {
     ///
     /// # Defaults
     /// - icon: None
-    /// - sublabel: None
     /// - trailing: None
     /// - sensitive: true
+    /// - busy: false
     /// - on_click: None
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             icon: None,
             label: label.into(),
-            sublabel: None,
             trailing: None,
             sensitive: true,
+            busy: false,
             on_click: None,
         }
     }
@@ -302,12 +301,6 @@ impl MenuRowBuilder {
     /// Set the icon name (themed icon or path).
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = Some(icon.into());
-        self
-    }
-
-    /// Set the sublabel text shown below the main label.
-    pub fn sublabel(mut self, sublabel: impl Into<String>) -> Self {
-        self.sublabel = Some(sublabel.into());
         self
     }
 
@@ -320,6 +313,12 @@ impl MenuRowBuilder {
     /// Set whether the row is sensitive (clickable).
     pub fn sensitive(mut self, sensitive: bool) -> Self {
         self.sensitive = sensitive;
+        self
+    }
+
+    /// Set whether the row is busy (shows spinner, disables clicking).
+    pub fn busy(mut self, busy: bool) -> Self {
+        self.busy = busy;
         self
     }
 
@@ -343,9 +342,9 @@ impl MenuRowBuilder {
         Widget::MenuRow {
             icon: self.icon,
             label: self.label,
-            sublabel: self.sublabel,
             trailing: self.trailing,
             sensitive: self.sensitive,
+            busy: self.busy,
             on_click: self.on_click,
         }
     }
@@ -1205,14 +1204,14 @@ mod tests {
             Widget::MenuRow {
                 label,
                 icon,
-                sublabel,
                 sensitive,
+                busy,
                 ..
             } => {
                 assert_eq!(label, "Settings");
                 assert!(icon.is_none());
-                assert!(sublabel.is_none());
                 assert!(sensitive);
+                assert!(!busy);
             }
             _ => panic!("Expected MenuRow"),
         }
@@ -1223,7 +1222,7 @@ mod tests {
         let switch = SwitchBuilder::new().active(true).build();
         let widget = MenuRowBuilder::new("Feature")
             .icon("preferences-system-symbolic")
-            .sublabel("Enable feature")
+            .busy(true)
             .trailing(switch)
             .on_click("toggle_feature")
             .build();
@@ -1232,14 +1231,14 @@ mod tests {
             Widget::MenuRow {
                 icon,
                 label,
-                sublabel,
+                busy,
                 trailing,
                 on_click,
                 ..
             } => {
                 assert_eq!(icon, Some("preferences-system-symbolic".to_string()));
                 assert_eq!(label, "Feature");
-                assert_eq!(sublabel, Some("Enable feature".to_string()));
+                assert!(busy);
                 assert!(trailing.is_some());
                 assert!(on_click.is_some());
             }

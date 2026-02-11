@@ -19,12 +19,13 @@
 //! use waft_ipc::widget::*;
 //!
 //! struct MyPlugin {
-//!     enabled: bool,
+//!     enabled: std::sync::Mutex<bool>,
 //! }
 //!
 //! #[async_trait::async_trait]
 //! impl PluginDaemon for MyPlugin {
 //!     fn get_widgets(&self) -> Vec<NamedWidget> {
+//!         let enabled = *self.enabled.lock().unwrap();
 //!         vec![
 //!             NamedWidget {
 //!                 id: "my_plugin:toggle".into(),
@@ -33,7 +34,7 @@
 //!                     title: "My Feature".into(),
 //!                     icon: "emblem-system-symbolic".into(),
 //!                     details: None,
-//!                     active: self.enabled,
+//!                     active: enabled,
 //!                     busy: false,
 //!                     expandable: false,
 //!                     expanded_content: None,
@@ -46,12 +47,13 @@
 //!         ]
 //!     }
 //!
-//!     async fn handle_action(&mut self, widget_id: String, action: Action)
+//!     async fn handle_action(&self, widget_id: String, action: Action)
 //!         -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 //!     {
 //!         match action.id.as_str() {
 //!             "toggle" => {
-//!                 self.enabled = !self.enabled;
+//!                 let mut enabled = self.enabled.lock().unwrap();
+//!                 *enabled = !*enabled;
 //!                 Ok(())
 //!             }
 //!             _ => Ok(()),

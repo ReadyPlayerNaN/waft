@@ -114,9 +114,9 @@ fn test_render_feature_toggle_with_expanded_content() {
                 Widget::MenuRow {
                     icon: Some("device-headphones".to_string()),
                     label: "Headphones".to_string(),
-                    sublabel: Some("Connected".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "select_device".to_string(),
                         params: ActionParams::String("headphones".to_string()),
@@ -126,9 +126,9 @@ fn test_render_feature_toggle_with_expanded_content() {
                 Widget::MenuRow {
                     icon: Some("device-speaker".to_string()),
                     label: "Speaker".to_string(),
-                    sublabel: None,
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: None,
                 }
                 .into(),
@@ -165,9 +165,9 @@ fn test_render_slider_with_expanded_content() {
                 Widget::MenuRow {
                     icon: Some("audio-card".to_string()),
                     label: "Output Device".to_string(),
-                    sublabel: Some("Speakers".to_string()),
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: None,
                 }
                 .into(),
@@ -203,7 +203,6 @@ fn test_render_menu_row_with_all_elements() {
     let widget = Widget::MenuRow {
         icon: Some("network-wifi".to_string()),
         label: "Wi-Fi".to_string(),
-        sublabel: Some("Connected to HomeNet".to_string()),
         trailing: Some(Box::new(Widget::Switch {
             active: true,
             sensitive: true,
@@ -213,6 +212,7 @@ fn test_render_menu_row_with_all_elements() {
             },
         })),
         sensitive: true,
+                        busy: false,
         on_click: Some(Action {
             id: "open_wifi_settings".to_string(),
             params: ActionParams::None,
@@ -236,9 +236,9 @@ fn test_render_menu_row_minimal() {
     let widget = Widget::MenuRow {
         icon: None,
         label: "Simple Item".to_string(),
-        sublabel: None,
         trailing: None,
         sensitive: true,
+                        busy: false,
         on_click: None,
     };
 
@@ -258,9 +258,9 @@ fn test_render_menu_row_with_spinner() {
     let widget = Widget::MenuRow {
         icon: Some("network-cellular".to_string()),
         label: "Connecting...".to_string(),
-        sublabel: None,
         trailing: Some(Box::new(Widget::Spinner { spinning: true })),
         sensitive: false,
+                        busy: false,
         on_click: None,
     };
 
@@ -631,9 +631,9 @@ fn test_real_world_audio_control_widget() {
                         Widget::MenuRow {
                             icon: Some("audio-headphones".to_string()),
                             label: "Headphones".to_string(),
-                            sublabel: Some("USB Audio".to_string()),
                             trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                             sensitive: true,
+                        busy: false,
                             on_click: Some(Action {
                                 id: "select_output".to_string(),
                                 params: ActionParams::String("headphones".to_string()),
@@ -643,9 +643,9 @@ fn test_real_world_audio_control_widget() {
                         Widget::MenuRow {
                             icon: Some("audio-speakers".to_string()),
                             label: "Speakers".to_string(),
-                            sublabel: Some("Built-in Audio".to_string()),
                             trailing: Some(Box::new(Widget::Checkmark { visible: false })),
                             sensitive: true,
+                        busy: false,
                             on_click: Some(Action {
                                 id: "select_output".to_string(),
                                 params: ActionParams::String("speakers".to_string()),
@@ -708,7 +708,7 @@ fn test_real_world_network_settings_widget() {
                 icon: "network-wireless".to_string(),
                 details: Some("HomeNetwork".to_string()),
                 active: true,
-                busy: false,
+        busy: false,
                 expandable: true,
                 expanded_content: Some(Box::new(Widget::Col {
                     spacing: 0,
@@ -717,18 +717,18 @@ fn test_real_world_network_settings_widget() {
                         Widget::MenuRow {
                             icon: Some("network-wireless-signal-excellent".to_string()),
                             label: "HomeNetwork".to_string(),
-                            sublabel: Some("Connected".to_string()),
                             trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                             sensitive: true,
+                        busy: false,
                             on_click: None,
                         }
                         .into(),
                         Widget::MenuRow {
                             icon: Some("network-wireless-signal-good".to_string()),
                             label: "OfficeWiFi".to_string(),
-                            sublabel: Some("Saved".to_string()),
                             trailing: None,
                             sensitive: true,
+                        busy: false,
                             on_click: Some(Action {
                                 id: "connect_network".to_string(),
                                 params: ActionParams::String("OfficeWiFi".to_string()),
@@ -738,9 +738,9 @@ fn test_real_world_network_settings_widget() {
                         Widget::MenuRow {
                             icon: Some("network-wireless-signal-weak".to_string()),
                             label: "Public WiFi".to_string(),
-                            sublabel: None,
                             trailing: Some(Box::new(Widget::Spinner { spinning: false })),
                             sensitive: true,
+                        busy: false,
                             on_click: Some(Action {
                                 id: "connect_network".to_string(),
                                 params: ActionParams::String("Public WiFi".to_string()),
@@ -761,7 +761,7 @@ fn test_real_world_network_settings_widget() {
                 icon: "bluetooth-active".to_string(),
                 details: Some("2 devices".to_string()),
                 active: true,
-                busy: false,
+        busy: false,
                 expandable: false,
                 expanded_content: None,
                 on_toggle: Action {

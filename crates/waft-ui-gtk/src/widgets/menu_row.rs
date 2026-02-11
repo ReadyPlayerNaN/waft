@@ -2,12 +2,12 @@
 
 use crate::renderer::{ActionCallback, WidgetRenderer};
 use crate::widgets::icon::IconWidget;
-use waft_ipc::widget::{Action, Widget};
 use gtk::prelude::*;
+use waft_ipc::widget::{Action, Widget};
 
 /// Render a MenuRow widget as a gtk::Button with horizontal layout
 ///
-/// Structure: Button → Box(Horizontal) → [Icon, Labels Box, Trailing widget]
+/// Structure: Button → Box(Horizontal) → [Icon, Label, [Spinner (if busy)], Trailing widget]
 ///
 /// # Parameters
 ///
@@ -15,9 +15,9 @@ use gtk::prelude::*;
 /// - `callback`: The action callback for handling clicks
 /// - `icon`: Optional themed icon name
 /// - `label`: Main text label
-/// - `sublabel`: Optional secondary text (styled with "dim-label")
 /// - `trailing`: Optional trailing widget (rendered recursively)
 /// - `sensitive`: Whether the button should be clickable
+/// - `busy`: Whether the row is busy (shows spinner, disables click)
 /// - `on_click`: Optional action to trigger on click
 /// - `widget_id`: Unique identifier for this menu row
 ///
@@ -29,14 +29,15 @@ pub fn render_menu_row(
     callback: &ActionCallback,
     icon: &Option<String>,
     label: &str,
-    sublabel: &Option<String>,
     trailing: &Option<Box<Widget>>,
     sensitive: bool,
+    busy: bool,
     on_click: &Option<Action>,
     widget_id: &str,
 ) -> gtk::Widget {
     let button = gtk::Button::new();
-    button.set_sensitive(sensitive);
+    // Button is not clickable when busy or not sensitive
+    button.set_sensitive(sensitive && !busy);
 
     // Create horizontal container
     let container = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -47,25 +48,19 @@ pub fn render_menu_row(
         container.append(icon_widget.widget());
     }
 
-    // Create labels box (vertical)
-    let labels_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    labels_box.set_hexpand(true); // Labels should take available space
-    labels_box.set_halign(gtk::Align::Start);
-
     // Main label
     let main_label = gtk::Label::new(Some(label));
+    main_label.set_hexpand(true); // Label should take available space
     main_label.set_halign(gtk::Align::Start);
-    labels_box.append(&main_label);
+    main_label.set_valign(gtk::Align::Center);
+    container.append(&main_label);
 
-    // Sublabel if provided
-    if let Some(sublabel_text) = sublabel {
-        let sub_label = gtk::Label::new(Some(sublabel_text));
-        sub_label.set_halign(gtk::Align::Start);
-        sub_label.add_css_class("dim-label");
-        labels_box.append(&sub_label);
+    // Add spinner if busy (left of trailing widget)
+    if busy {
+        let spinner = gtk::Spinner::new();
+        spinner.set_spinning(true);
+        container.append(&spinner);
     }
-
-    container.append(&labels_box);
 
     // Add trailing widget if provided (recursively rendered)
     if let Some(trailing_widget) = trailing {
@@ -113,8 +108,8 @@ mod tests {
             &None,
             "Test Label",
             &None,
-            &None,
             true,
+            false,
             &None,
             "test_row",
         );
@@ -138,8 +133,8 @@ mod tests {
             &Some("audio-volume-high-symbolic".to_string()),
             "Volume",
             &None,
-            &None,
             true,
+            false,
             &None,
             "volume_row",
         );
@@ -156,7 +151,7 @@ mod tests {
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_menu_row_with_sublabel() {
+    fn test_render_menu_row_busy() {
         init_gtk_for_tests();
         let menu_store = Rc::new(create_menu_store());
         let callback: ActionCallback = Rc::new(|_id, _action| {});
@@ -166,17 +161,16 @@ mod tests {
             &renderer,
             &callback,
             &None,
-            "Main Label",
-            &Some("Sublabel text".to_string()),
+            "Loading...",
             &None,
             true,
+            true, // busy = true
             &None,
-            "row_with_sublabel",
+            "busy_row",
         );
 
-        assert!(widget.is::<gtk::Button>());
-        // Just verify it renders without panicking
-        // Detailed sublabel verification would require deep widget tree traversal
+        let button: gtk::Button = widget.downcast().unwrap();
+        assert!(!button.is_sensitive()); // Should be insensitive when busy
     }
 
     #[test]
@@ -193,7 +187,7 @@ mod tests {
             &None,
             "Disabled",
             &None,
-            &None,
+            false,
             false,
             &None,
             "disabled_row",
@@ -225,9 +219,9 @@ mod tests {
             &callback,
             &None,
             "Toggle Option",
-            &None,
             &trailing,
             true,
+            false,
             &None,
             "row_with_switch",
         );
@@ -256,9 +250,9 @@ mod tests {
             &callback,
             &None,
             "Selected Item",
-            &None,
             &trailing,
             true,
+            false,
             &None,
             "row_with_checkmark",
         );
@@ -281,9 +275,9 @@ mod tests {
             &callback,
             &None,
             "Loading...",
-            &None,
             &trailing,
             true,
+            false,
             &None,
             "row_with_spinner",
         );
@@ -320,8 +314,8 @@ mod tests {
             &None,
             "Clickable Row",
             &None,
-            &None,
             true,
+            false,
             &action,
             "clickable_row",
         );
@@ -362,8 +356,8 @@ mod tests {
             &None,
             "Non-clickable Row",
             &None,
-            &None,
             true,
+            false,
             &None,
             "nonclickable_row",
         );
@@ -405,9 +399,9 @@ mod tests {
             &callback,
             &Some("preferences-system-symbolic".to_string()),
             "Settings",
-            &Some("Configure your system".to_string()),
             &trailing,
             true,
+            false,
             &action,
             "full_featured_row",
         );

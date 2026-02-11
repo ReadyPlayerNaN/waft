@@ -69,10 +69,6 @@ fn build_wifi_widget(adapter: &WiFiAdapterState) -> NamedWidget {
                 row = row.trailing(Widget::Checkmark { visible: true });
             }
 
-            if ap.secure {
-                row = row.sublabel("Secured");
-            }
-
             row = row.on_click(format!("connect_wifi:{}", ap.ssid));
             container = container.child(row.build());
         }
@@ -153,37 +149,24 @@ fn build_vpn_widget(vpn_connections: &[VpnConnectionInfo]) -> NamedWidget {
     let mut container = ColBuilder::new().spacing(4);
 
     for vpn in vpn_connections {
-        let sublabel = match &vpn.state {
-            VpnState::Connecting => Some("Connecting...".to_string()),
-            VpnState::Connected => Some("Connected".to_string()),
-            VpnState::Disconnecting => Some("Disconnecting...".to_string()),
-            VpnState::Disconnected => None,
-        };
-
         let is_busy = matches!(vpn.state, VpnState::Connecting | VpnState::Disconnecting);
+        let is_connected = vpn.state == VpnState::Connected;
 
-        let trailing = if is_busy {
-            Widget::Spinner { spinning: true }
+        let action_id = if is_connected {
+            format!("disconnect_vpn:{}", vpn.path)
         } else {
-            let is_connected = vpn.state == VpnState::Connected;
-            let action_id = if is_connected {
-                format!("disconnect_vpn:{}", vpn.path)
-            } else {
-                format!("connect_vpn:{}", vpn.path)
-            };
-            SwitchBuilder::new()
-                .active(is_connected)
-                .on_toggle(action_id)
-                .build()
+            format!("connect_vpn:{}", vpn.path)
         };
+
+        let trailing = SwitchBuilder::new()
+            .active(is_connected)
+            .on_toggle(action_id)
+            .build();
 
         let mut row = MenuRowBuilder::new(&vpn.name)
             .icon("network-vpn-symbolic")
-            .trailing(trailing);
-
-        if let Some(ref sub) = sublabel {
-            row = row.sublabel(sub);
-        }
+            .trailing(trailing)
+            .busy(is_busy);
 
         // Click action: toggle connection
         let click_action = if vpn.state == VpnState::Connected {

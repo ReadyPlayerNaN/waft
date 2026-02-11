@@ -59,16 +59,21 @@ impl Default for DarkmanMode {
 #[serde(default)]
 struct DarkmanConfig {}
 
+/// Shared daemon state behind interior mutability.
+struct DarkmanState {
+    mode: DarkmanMode,
+    busy: bool,
+}
+
 /// Darkman daemon state.
 ///
-/// The `mode` field is shared with the D-Bus signal monitoring task via
+/// The state is shared with the D-Bus signal monitoring task via
 /// `Arc<StdMutex>` so external changes (e.g. `darkman toggle`) update
 /// the daemon's state immediately.
 struct DarkmanDaemon {
     #[allow(dead_code)]
     config: DarkmanConfig,
-    mode: Arc<StdMutex<DarkmanMode>>,
-    busy: bool,
+    state: Arc<StdMutex<DarkmanState>>,
     conn: Connection,
 }
 
@@ -88,8 +93,7 @@ impl DarkmanDaemon {
 
         Ok(Self {
             config,
-            mode: Arc::new(StdMutex::new(mode)),
-            busy: false,
+            state: Arc::new(StdMutex::new(DarkmanState { mode, busy: false })),
             conn,
         })
     }
@@ -150,18 +154,19 @@ impl DarkmanDaemon {
     }
 
     fn current_mode(&self) -> DarkmanMode {
-        *self.mode.lock().unwrap()
+        self.state.lock().unwrap().mode
     }
 
-    fn shared_mode(&self) -> Arc<StdMutex<DarkmanMode>> {
-        self.mode.clone()
+    fn shared_state(&self) -> Arc<StdMutex<DarkmanState>> {
+        self.state.clone()
     }
 
     fn build_toggle_widget(&self) -> Widget {
+        let state = self.state.lock().unwrap();
         FeatureToggleBuilder::new("Dark Mode")
             .icon("weather-clear-night-symbolic")
-            .active(self.current_mode().is_active())
-            .busy(self.busy)
+            .active(state.mode.is_active())
+            .busy(state.busy)
             .on_toggle("toggle")
             .build()
     }
@@ -178,13 +183,13 @@ impl PluginDaemon for DarkmanDaemon {
     }
 
     async fn handle_action(
-        &mut self,
+        &self,
         _widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if action.id == "toggle" {
             log::debug!("Toggle action received");
-            self.busy = true;
+            self.state.lock().unwrap().busy = true;
 
             // Toggle the mode
             let current = self.current_mode();
@@ -196,13 +201,16 @@ impl PluginDaemon for DarkmanDaemon {
             // Set mode via D-Bus
             if let Err(e) = self.set_mode(new_mode).await {
                 log::error!("Failed to set darkman mode: {}", e);
-                self.busy = false;
+                self.state.lock().unwrap().busy = false;
                 return Err(e.into());
             }
 
             // Update shared state
-            *self.mode.lock().unwrap() = new_mode;
-            self.busy = false;
+            {
+                let mut state = self.state.lock().unwrap();
+                state.mode = new_mode;
+                state.busy = false;
+            }
             log::debug!("Mode toggled to: {:?}", new_mode);
         }
         Ok(())
@@ -212,7 +220,7 @@ impl PluginDaemon for DarkmanDaemon {
 /// Listen for `ModeChanged` D-Bus signals from darkman and update shared state.
 async fn monitor_mode_signals(
     conn: Connection,
-    mode: Arc<StdMutex<DarkmanMode>>,
+    state: Arc<StdMutex<DarkmanState>>,
     notifier: WidgetNotifier,
 ) -> Result<()> {
     let config = SignalMonitorConfig::builder()
@@ -222,11 +230,11 @@ async fn monitor_mode_signals(
         .member("ModeChanged")
         .build()?;
 
-    monitor_signal(conn, config, mode, notifier, |msg, mode_state| {
+    monitor_signal(conn, config, state, notifier, |msg, darkman_state| {
         let new_mode_str: String = msg.body().deserialize()?;
         let new_mode = DarkmanMode::from_str(&new_mode_str).unwrap_or_default();
         log::info!("Darkman mode changed externally: {:?}", new_mode);
-        *mode_state = new_mode;
+        darkman_state.mode = new_mode;
         Ok(true)
     })
     .await
@@ -243,7 +251,7 @@ async fn main() -> Result<()> {
     let daemon = DarkmanDaemon::new().await?;
 
     // Grab shared handles before daemon is moved into the server
-    let shared_mode = daemon.shared_mode();
+    let shared_state = daemon.shared_state();
     let monitor_conn = daemon.conn.clone();
 
     // Create server and notifier
@@ -251,7 +259,7 @@ async fn main() -> Result<()> {
 
     // Listen for D-Bus ModeChanged signals (instant, no polling)
     tokio::spawn(async move {
-        if let Err(e) = monitor_mode_signals(monitor_conn, shared_mode, notifier).await {
+        if let Err(e) = monitor_mode_signals(monitor_conn, shared_state, notifier).await {
             log::error!("D-Bus signal monitoring failed: {}", e);
         }
     });

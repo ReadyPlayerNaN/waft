@@ -74,7 +74,7 @@ impl AppState {
                     icon: "emblem-ok".to_string(),
                     details: Some("Just added".to_string()),
                     active: true,
-                    busy: false,
+        busy: false,
                     expandable: false,
                     expanded_content: None,
                     on_toggle: Action {
@@ -316,9 +316,9 @@ impl AppState {
                     Widget::MenuRow {
                         icon: Some(format!("device-{}", i % 4)),
                         label: format!("Device {}", i),
-                        sublabel: Some("Connected".to_string()),
                         trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                         sensitive: true,
+                        busy: false,
                         on_click: Some(Action {
                             id: "select_device".to_string(),
                             params: ActionParams::String(format!("device_{}", i)),

@@ -54,7 +54,7 @@ impl PluginDaemon for MockPluginDaemon {
     }
 
     async fn handle_action(
-        &mut self,
+        &self,
         widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -67,12 +67,18 @@ impl PluginDaemon for MockPluginDaemon {
 
 /// A simple test plugin with a single toggle widget.
 pub struct TestPlugin {
-    pub enabled: bool,
+    enabled: std::sync::Mutex<bool>,
 }
 
 impl TestPlugin {
     pub fn new() -> Self {
-        Self { enabled: false }
+        Self {
+            enabled: std::sync::Mutex::new(false),
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        *self.enabled.lock().unwrap()
     }
 }
 
@@ -87,18 +93,19 @@ impl PluginDaemon for TestPlugin {
     fn get_widgets(&self) -> Vec<NamedWidget> {
         use waft_ipc::{ActionParams, Widget};
 
+        let enabled = self.is_enabled();
         vec![NamedWidget {
             id: "test:toggle".into(),
             weight: 100,
             widget: Widget::FeatureToggle {
                 title: "Test Plugin".into(),
                 icon: "emblem-system-symbolic".into(),
-                details: Some(if self.enabled {
+                details: Some(if enabled {
                     "Enabled".into()
                 } else {
                     "Disabled".into()
                 }),
-                active: self.enabled,
+                active: enabled,
                 busy: false,
                 expandable: false,
                 expanded_content: None,
@@ -111,12 +118,13 @@ impl PluginDaemon for TestPlugin {
     }
 
     async fn handle_action(
-        &mut self,
+        &self,
         _widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if action.id == "toggle" {
-            self.enabled = !self.enabled;
+            let mut enabled = self.enabled.lock().unwrap();
+            *enabled = !*enabled;
         }
         Ok(())
     }
@@ -249,7 +257,7 @@ mod tests {
         let called = Arc::new(Mutex::new(false));
         let called_clone = called.clone();
 
-        let mut daemon = MockPluginDaemon::new("test", vec![]).with_action_handler(move |_, _| {
+        let daemon = MockPluginDaemon::new("test", vec![]).with_action_handler(move |_, _| {
             *called_clone.lock().unwrap() = true;
         });
 
@@ -265,7 +273,7 @@ mod tests {
     #[test]
     fn test_plugin_creation() {
         let plugin = TestPlugin::new();
-        assert!(!plugin.enabled);
+        assert!(!plugin.is_enabled());
 
         let widgets = plugin.get_widgets();
         assert_eq!(widgets.len(), 1);
@@ -274,8 +282,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_plugin_toggle_action() {
-        let mut plugin = TestPlugin::new();
-        assert!(!plugin.enabled);
+        let plugin = TestPlugin::new();
+        assert!(!plugin.is_enabled());
 
         let action = Action {
             id: "toggle".into(),
@@ -283,10 +291,10 @@ mod tests {
         };
 
         plugin.handle_action("test:toggle".into(), action.clone()).await.unwrap();
-        assert!(plugin.enabled);
+        assert!(plugin.is_enabled());
 
         plugin.handle_action("test:toggle".into(), action).await.unwrap();
-        assert!(!plugin.enabled);
+        assert!(!plugin.is_enabled());
     }
 
     #[test]
@@ -368,6 +376,6 @@ mod tests {
     #[test]
     fn test_default_impl() {
         let plugin = TestPlugin::default();
-        assert!(!plugin.enabled);
+        assert!(!plugin.is_enabled());
     }
 }

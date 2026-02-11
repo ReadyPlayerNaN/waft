@@ -91,27 +91,27 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("audio-headphones".to_string()),
                     label: "Headphones".to_string(),
-                    sublabel: Some("Connected".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: None,
                 }
                 .into(),
                 Widget::MenuRow {
                     icon: Some("audio-speakers".to_string()),
                     label: "Speaker".to_string(),
-                    sublabel: Some("Connected".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: None,
                 }
                 .into(),
                 Widget::MenuRow {
                     icon: Some("input-keyboard".to_string()),
                     label: "Keyboard".to_string(),
-                    sublabel: Some("Connected".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: None,
                 }
                 .into(),
@@ -142,18 +142,18 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("network-wireless-signal-excellent".to_string()),
                     label: "HomeNetwork".to_string(),
-                    sublabel: Some("Connected • 5GHz".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: None,
                 }
                 .into(),
                 Widget::MenuRow {
                     icon: Some("network-wireless-signal-good".to_string()),
                     label: "OfficeWiFi".to_string(),
-                    sublabel: Some("Saved".to_string()),
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "connect_network".to_string(),
                         params: ActionParams::String("OfficeWiFi".to_string()),
@@ -163,9 +163,9 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("network-wireless-signal-weak".to_string()),
                     label: "Public WiFi".to_string(),
-                    sublabel: Some("Open".to_string()),
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "connect_network".to_string(),
                         params: ActionParams::String("Public WiFi".to_string()),
@@ -199,18 +199,18 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("network-vpn".to_string()),
                     label: "Office VPN".to_string(),
-                    sublabel: Some("Connected".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: None,
                 }
                 .into(),
                 Widget::MenuRow {
                     icon: Some("network-vpn".to_string()),
                     label: "Home VPN".to_string(),
-                    sublabel: Some("Available".to_string()),
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "connect_vpn".to_string(),
                         params: ActionParams::String("home".to_string()),
@@ -245,18 +245,18 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("audio-speakers".to_string()),
                     label: "Built-in Speakers".to_string(),
-                    sublabel: Some("Default".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: None,
                 }
                 .into(),
                 Widget::MenuRow {
                     icon: Some("audio-headphones".to_string()),
                     label: "Headphones".to_string(),
-                    sublabel: Some("USB Audio".to_string()),
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "switch_output".to_string(),
                         params: ActionParams::String("headphones".to_string()),
@@ -266,9 +266,9 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("audio-card".to_string()),
                     label: "HDMI Audio".to_string(),
-                    sublabel: Some("Monitor".to_string()),
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "switch_output".to_string(),
                         params: ActionParams::String("hdmi".to_string()),
@@ -304,9 +304,9 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("weather-clear".to_string()),
                     label: "Bright (100%)".to_string(),
-                    sublabel: None,
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "set_brightness_preset".to_string(),
                         params: ActionParams::Value(1.0),
@@ -316,9 +316,9 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("weather-few-clouds".to_string()),
                     label: "Medium (60%)".to_string(),
-                    sublabel: None,
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "set_brightness_preset".to_string(),
                         params: ActionParams::Value(0.6),
@@ -328,9 +328,9 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("weather-clear-night".to_string()),
                     label: "Dim (30%)".to_string(),
-                    sublabel: None,
                     trailing: None,
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "set_brightness_preset".to_string(),
                         params: ActionParams::Value(0.3),

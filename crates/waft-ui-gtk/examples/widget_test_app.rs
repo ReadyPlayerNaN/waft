@@ -87,9 +87,9 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("audio-headphones".to_string()),
                     label: "Wireless Headphones".to_string(),
-                    sublabel: Some("Connected".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "select_bt_device".to_string(),
                         params: ActionParams::String("headphones".to_string()),
@@ -99,9 +99,9 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("audio-speakers".to_string()),
                     label: "Bluetooth Speaker".to_string(),
-                    sublabel: Some("Connected".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "select_bt_device".to_string(),
                         params: ActionParams::String("speaker".to_string()),
@@ -175,18 +175,18 @@ fn main() {
                 Widget::MenuRow {
                     icon: Some("audio-card".to_string()),
                     label: "Output Device".to_string(),
-                    sublabel: Some("Built-in Speakers".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                     sensitive: true,
+                        busy: false,
                     on_click: None,
                 }
                 .into(),
                 Widget::MenuRow {
                     icon: Some("audio-headphones".to_string()),
                     label: "Headphones".to_string(),
-                    sublabel: Some("USB Audio".to_string()),
                     trailing: Some(Box::new(Widget::Checkmark { visible: false })),
                     sensitive: true,
+                        busy: false,
                     on_click: Some(Action {
                         id: "switch_audio_output".to_string(),
                         params: ActionParams::String("headphones".to_string()),
@@ -263,7 +263,6 @@ fn main() {
             Widget::MenuRow {
                 icon: Some("network-wireless".to_string()),
                 label: "Wi-Fi".to_string(),
-                sublabel: Some("HomeNetwork".to_string()),
                 trailing: Some(Box::new(Widget::Switch {
                     active: true,
                     sensitive: true,
@@ -273,6 +272,7 @@ fn main() {
                     },
                 })),
                 sensitive: true,
+                        busy: false,
                 on_click: Some(Action {
                     id: "open_wifi_settings".to_string(),
                     params: ActionParams::None,
@@ -283,9 +283,9 @@ fn main() {
             Widget::MenuRow {
                 icon: Some("network-cellular".to_string()),
                 label: "Mobile Data".to_string(),
-                sublabel: Some("Connecting...".to_string()),
                 trailing: Some(Box::new(Widget::Spinner { spinning: true })),
                 sensitive: false,
+                        busy: false,
                 on_click: None,
             }
             .into(),
@@ -293,9 +293,9 @@ fn main() {
             Widget::MenuRow {
                 icon: Some("network-vpn".to_string()),
                 label: "VPN Connection".to_string(),
-                sublabel: Some("Connected".to_string()),
                 trailing: Some(Box::new(Widget::Checkmark { visible: true })),
                 sensitive: true,
+                        busy: false,
                 on_click: Some(Action {
                     id: "disconnect_vpn".to_string(),
                     params: ActionParams::None,
@@ -306,9 +306,9 @@ fn main() {
             Widget::MenuRow {
                 icon: None,
                 label: "Advanced Settings".to_string(),
-                sublabel: None,
                 trailing: None,
                 sensitive: true,
+                        busy: false,
                 on_click: Some(Action {
                     id: "open_advanced_settings".to_string(),
                     params: ActionParams::None,

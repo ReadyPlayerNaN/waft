@@ -17,8 +17,11 @@ pub trait PluginDaemon: Send + Sync {
     /// Handle a user action from the overview.
     ///
     /// Called when the user interacts with a widget (toggle, slider, button, etc.)
+    /// Takes `&self` (not `&mut self`) so the server can call `get_widgets()`
+    /// concurrently — enabling intermediate state pushes (e.g. busy spinners)
+    /// while an action is in progress. Use interior mutability for state changes.
     async fn handle_action(
-        &mut self,
+        &self,
         widget_id: String,
         action: Action,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;

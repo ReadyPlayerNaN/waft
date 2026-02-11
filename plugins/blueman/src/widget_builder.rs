@@ -6,29 +6,15 @@ use crate::state::{AdapterState, DeviceState, State};
 
 /// Build device row widget for a paired Bluetooth device.
 pub fn build_device_row(device: &DeviceState) -> Widget {
-    let sublabel = if device.connecting {
-        Some("Connecting...".to_string())
-    } else if device.connected {
-        Some("Connected".to_string())
-    } else {
-        None
-    };
-
-    let trailing = if device.connecting {
-        Some(Widget::Spinner { spinning: true })
-    } else {
-        Some(
-            SwitchBuilder::new()
-                .active(device.connected)
-                .on_toggle(format!("toggle_device:{}", device.path))
-                .build(),
-        )
-    };
+    let trailing = SwitchBuilder::new()
+        .active(device.connected)
+        .on_toggle(format!("toggle_device:{}", device.path))
+        .build();
 
     MenuRowBuilder::new(&device.name)
         .icon(&device.icon)
-        .sublabel(sublabel.unwrap_or_default())
-        .trailing(trailing.unwrap())
+        .trailing(trailing)
+        .busy(device.connecting)
         .on_click(format!("toggle_device:{}", device.path))
         .build()
 }
@@ -116,11 +102,15 @@ mod tests {
 
         match widget {
             Widget::MenuRow {
-                label, icon, sublabel, on_click, ..
+                label,
+                icon,
+                busy,
+                on_click,
+                ..
             } => {
                 assert_eq!(label, "Headphones");
                 assert_eq!(icon.unwrap(), "audio-headphones-symbolic");
-                assert_eq!(sublabel.unwrap(), "");
+                assert!(!busy);
                 assert!(on_click.unwrap().id.contains("toggle_device:"));
             }
             other => panic!("Expected MenuRow, got {:?}", other),
@@ -133,8 +123,13 @@ mod tests {
         let widget = build_device_row(&device);
 
         match widget {
-            Widget::MenuRow { sublabel, .. } => {
-                assert_eq!(sublabel.unwrap(), "Connected");
+            Widget::MenuRow { busy, trailing, .. } => {
+                assert!(!busy);
+                // Should have switch as trailing
+                match *trailing.unwrap() {
+                    Widget::Switch { active, .. } => assert!(active),
+                    other => panic!("Expected Switch, got {:?}", other),
+                }
             }
             other => panic!("Expected MenuRow, got {:?}", other),
         }
@@ -146,11 +141,14 @@ mod tests {
         let widget = build_device_row(&device);
 
         match widget {
-            Widget::MenuRow { sublabel, trailing, .. } => {
-                assert_eq!(sublabel.unwrap(), "Connecting...");
+            Widget::MenuRow {
+                busy, trailing, ..
+            } => {
+                assert!(busy); // Busy flag should be true when connecting
+                // Should have switch as trailing (spinner shown via busy flag)
                 match *trailing.unwrap() {
-                    Widget::Spinner { spinning } => assert!(spinning),
-                    other => panic!("Expected Spinner, got {:?}", other),
+                    Widget::Switch { active, .. } => assert!(!active), // Not connected yet
+                    other => panic!("Expected Switch, got {:?}", other),
                 }
             }
             other => panic!("Expected MenuRow, got {:?}", other),
