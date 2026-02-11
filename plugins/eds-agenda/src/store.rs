@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 pub use waft_core::set_field;
 use waft_core::store::{PluginStore, StoreOp, StoreState};
 
-use super::values::{AgendaEvent, CalendarSource};
+use super::values::{AgendaEvent, CalendarSource, remove_events_by_uids};
 
 /// Operations for the agenda store.
 #[derive(Clone)]
@@ -82,26 +82,9 @@ pub fn create_agenda_store() -> AgendaStore {
             changed
         }
         AgendaOp::RemoveEvents(uids) => {
-            let mut changed = false;
-            for uid in uids {
-                // Recurring events share the same base UID but are stored
-                // with occurrence keys (uid@start_time). Remove all
-                // occurrences whose key starts with the base UID.
-                let keys_to_remove: Vec<String> = state
-                    .events
-                    .keys()
-                    .filter(|k| {
-                        k.starts_with(&uid)
-                            && (k.len() == uid.len() || k[uid.len()..].starts_with('@'))
-                    })
-                    .cloned()
-                    .collect();
-                for key in keys_to_remove {
-                    state.events.remove(&key);
-                    changed = true;
-                }
-            }
-            changed
+            let before = state.events.len();
+            remove_events_by_uids(&mut state.events, &uids);
+            state.events.len() != before
         }
         AgendaOp::ClearEvents => {
             if state.events.is_empty() {

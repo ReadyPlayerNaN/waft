@@ -104,6 +104,27 @@ pub struct CalendarSource {
     pub display_name: String,
 }
 
+/// Remove all event occurrences matching the given base UIDs.
+///
+/// Recurring events are stored with occurrence keys (`uid@start_time`).
+/// This removes both exact UID matches and all occurrences whose key
+/// starts with the UID followed by `@`.
+pub fn remove_events_by_uids(events: &mut std::collections::BTreeMap<String, AgendaEvent>, uids: &[String]) {
+    for uid in uids {
+        let keys_to_remove: Vec<String> = events
+            .keys()
+            .filter(|k| {
+                k.starts_with(uid.as_str())
+                    && (k.len() == uid.len() || k[uid.len()..].starts_with('@'))
+            })
+            .cloned()
+            .collect();
+        for key in keys_to_remove {
+            events.remove(&key);
+        }
+    }
+}
+
 /// Parse a period string into an `AgendaPeriod`.
 ///
 /// Accepts `"today"` or an ISO 8601 duration like `"P3D"`.
@@ -525,7 +546,7 @@ pub fn parse_vevent(ical_str: &str) -> Option<AgendaEvent> {
 
 /// Unfold iCal continuation lines (lines starting with a space or tab are appended
 /// to the previous line).
-fn unfold_ical(s: &str) -> String {
+pub fn unfold_ical(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for line in s.lines() {
         if line.starts_with(' ') || line.starts_with('\t') {
@@ -542,7 +563,7 @@ fn unfold_ical(s: &str) -> String {
 }
 
 /// Unescape iCal text values: `\\n` → newline, `\\,` → `,`, `\\;` → `;`, `\\\\` → `\\`.
-fn unescape_ical(s: &str) -> String {
+pub fn unescape_ical(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
@@ -567,7 +588,7 @@ fn unescape_ical(s: &str) -> String {
 
 /// Split an iCal property line like `DTSTART;TZID=Europe/Prague:20250126T100000`
 /// into (params_string, value_string).
-fn split_ical_property(line: &str, prop_name: &str) -> (String, String) {
+pub fn split_ical_property(line: &str, prop_name: &str) -> (String, String) {
     // Strip the property name prefix
     let rest = &line[prop_name.len()..];
 
@@ -717,7 +738,7 @@ fn calculate_rrule_occurrence(dtstart: i64, dtend: i64, rrule: &str) -> Option<(
 /// Parse BYDAY value to a weekday.
 ///
 /// Handles simple cases like "TU", "MO", etc.
-fn parse_byday(byday: &str) -> Option<chrono::Weekday> {
+pub fn parse_byday(byday: &str) -> Option<chrono::Weekday> {
     use chrono::Weekday;
     // Take the first day if multiple are specified (e.g., "MO,WE,FR")
     let day = byday.split(',').next()?;
@@ -741,7 +762,7 @@ fn parse_byday(byday: &str) -> Option<chrono::Weekday> {
 /// - "1WE" -> (1, Weekday::Wed) - first Wednesday
 /// - "2TU" -> (2, Weekday::Tue) - second Tuesday
 /// - "-1FR" -> (-1, Weekday::Fri) - last Friday
-fn parse_monthly_byday(byday: &str) -> Option<(i32, chrono::Weekday)> {
+pub fn parse_monthly_byday(byday: &str) -> Option<(i32, chrono::Weekday)> {
     use chrono::Weekday;
 
     // Take the first day if multiple are specified
@@ -772,7 +793,7 @@ fn parse_monthly_byday(byday: &str) -> Option<(i32, chrono::Weekday)> {
 ///
 /// Positive positions count from the start (1 = first, 2 = second, etc.)
 /// Negative positions count from the end (-1 = last, -2 = second to last, etc.)
-fn find_nth_weekday_in_month(
+pub fn find_nth_weekday_in_month(
     year: i32,
     month: u32,
     position: i32,
@@ -2343,5 +2364,269 @@ END:VEVENT";
     fn has_details_with_none() {
         let event = make_event(None, None);
         assert!(!event.has_details());
+    }
+
+    // ── split_ical_property ──────────────────────────────────────
+
+    #[test]
+    fn split_property_with_params() {
+        let (params, value) = split_ical_property("DTSTART;TZID=Europe/Prague:20250126T100000", "DTSTART");
+        assert_eq!(params, ";TZID=Europe/Prague");
+        assert_eq!(value, "20250126T100000");
+    }
+
+    #[test]
+    fn split_property_no_params() {
+        let (params, value) = split_ical_property("UID:evt-001", "UID");
+        assert_eq!(params, "");
+        assert_eq!(value, "evt-001");
+    }
+
+    #[test]
+    fn split_property_value_date() {
+        let (params, value) = split_ical_property("DTSTART;VALUE=DATE:20250126", "DTSTART");
+        assert_eq!(params, ";VALUE=DATE");
+        assert_eq!(value, "20250126");
+    }
+
+    #[test]
+    fn split_property_multiple_params() {
+        let (params, value) = split_ical_property("DTSTART;VALUE=DATE-TIME;TZID=UTC:20250126T100000", "DTSTART");
+        assert_eq!(params, ";VALUE=DATE-TIME;TZID=UTC");
+        assert_eq!(value, "20250126T100000");
+    }
+
+    #[test]
+    fn split_property_no_colon() {
+        let (params, value) = split_ical_property("DTSTART", "DTSTART");
+        assert_eq!(params, "");
+        assert_eq!(value, "");
+    }
+
+    #[test]
+    fn split_property_colons_in_value() {
+        // X-ALT-DESC value contains colons (HTML content)
+        let (params, value) = split_ical_property(
+            "X-ALT-DESC;FMTTYPE=text/html:<html>Time: 10:00</html>",
+            "X-ALT-DESC",
+        );
+        assert_eq!(params, ";FMTTYPE=text/html");
+        assert_eq!(value, "<html>Time: 10:00</html>");
+    }
+
+    // ── parse_byday ─────────────────────────────────────────────
+
+    #[test]
+    fn parse_byday_monday() {
+        assert_eq!(parse_byday("MO"), Some(chrono::Weekday::Mon));
+    }
+
+    #[test]
+    fn parse_byday_friday() {
+        assert_eq!(parse_byday("FR"), Some(chrono::Weekday::Fri));
+    }
+
+    #[test]
+    fn parse_byday_sunday() {
+        assert_eq!(parse_byday("SU"), Some(chrono::Weekday::Sun));
+    }
+
+    #[test]
+    fn parse_byday_with_numeric_prefix() {
+        // "1MO" should parse to Monday (strip numeric prefix)
+        assert_eq!(parse_byday("1MO"), Some(chrono::Weekday::Mon));
+    }
+
+    #[test]
+    fn parse_byday_with_negative_prefix() {
+        assert_eq!(parse_byday("-1FR"), Some(chrono::Weekday::Fri));
+    }
+
+    #[test]
+    fn parse_byday_comma_separated_takes_first() {
+        assert_eq!(parse_byday("MO,WE,FR"), Some(chrono::Weekday::Mon));
+    }
+
+    #[test]
+    fn parse_byday_invalid() {
+        assert_eq!(parse_byday("XX"), None);
+    }
+
+    #[test]
+    fn parse_byday_empty() {
+        assert_eq!(parse_byday(""), None);
+    }
+
+    // ── parse_monthly_byday ─────────────────────────────────────
+
+    #[test]
+    fn parse_monthly_byday_first_wednesday() {
+        let (pos, day) = parse_monthly_byday("1WE").unwrap();
+        assert_eq!(pos, 1);
+        assert_eq!(day, chrono::Weekday::Wed);
+    }
+
+    #[test]
+    fn parse_monthly_byday_second_tuesday() {
+        let (pos, day) = parse_monthly_byday("2TU").unwrap();
+        assert_eq!(pos, 2);
+        assert_eq!(day, chrono::Weekday::Tue);
+    }
+
+    #[test]
+    fn parse_monthly_byday_last_friday() {
+        let (pos, day) = parse_monthly_byday("-1FR").unwrap();
+        assert_eq!(pos, -1);
+        assert_eq!(day, chrono::Weekday::Fri);
+    }
+
+    #[test]
+    fn parse_monthly_byday_third_monday() {
+        let (pos, day) = parse_monthly_byday("3MO").unwrap();
+        assert_eq!(pos, 3);
+        assert_eq!(day, chrono::Weekday::Mon);
+    }
+
+    #[test]
+    fn parse_monthly_byday_no_numeric_returns_none() {
+        assert!(parse_monthly_byday("MO").is_none());
+    }
+
+    #[test]
+    fn parse_monthly_byday_invalid_day_returns_none() {
+        assert!(parse_monthly_byday("1XX").is_none());
+    }
+
+    // ── find_nth_weekday_in_month ───────────────────────────────
+
+    #[test]
+    fn find_first_monday_january_2026() {
+        // January 2026 starts on Thursday. First Monday is the 5th.
+        let date = find_nth_weekday_in_month(2026, 1, 1, chrono::Weekday::Mon).unwrap();
+        assert_eq!(date, NaiveDate::from_ymd_opt(2026, 1, 5).unwrap());
+    }
+
+    #[test]
+    fn find_second_tuesday_february_2026() {
+        // February 2026 starts on Sunday. First Tuesday is the 3rd, second is the 10th.
+        let date = find_nth_weekday_in_month(2026, 2, 2, chrono::Weekday::Tue).unwrap();
+        assert_eq!(date, NaiveDate::from_ymd_opt(2026, 2, 10).unwrap());
+    }
+
+    #[test]
+    fn find_last_friday_january_2026() {
+        // January 2026: last day is Saturday 31st. Last Friday is the 30th.
+        let date = find_nth_weekday_in_month(2026, 1, -1, chrono::Weekday::Fri).unwrap();
+        assert_eq!(date, NaiveDate::from_ymd_opt(2026, 1, 30).unwrap());
+    }
+
+    #[test]
+    fn find_last_sunday_february_2026() {
+        // February 2026 has 28 days, last day is Saturday 28th. Last Sunday is the 22nd.
+        let date = find_nth_weekday_in_month(2026, 2, -1, chrono::Weekday::Sun).unwrap();
+        assert_eq!(date, NaiveDate::from_ymd_opt(2026, 2, 22).unwrap());
+    }
+
+    #[test]
+    fn find_fifth_monday_returns_none_if_not_exists() {
+        // January 2026 has only 4 Mondays (5th, 12th, 19th, 26th)
+        assert!(find_nth_weekday_in_month(2026, 1, 5, chrono::Weekday::Mon).is_none());
+    }
+
+    #[test]
+    fn find_position_zero_returns_none() {
+        assert!(find_nth_weekday_in_month(2026, 1, 0, chrono::Weekday::Mon).is_none());
+    }
+
+    #[test]
+    fn find_first_thursday_january_2026() {
+        // January 2026 starts on Thursday, so first Thursday is the 1st
+        let date = find_nth_weekday_in_month(2026, 1, 1, chrono::Weekday::Thu).unwrap();
+        assert_eq!(date, NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+    }
+
+    // ── remove_events_by_uids ───────────────────────────────────
+
+    #[test]
+    fn remove_events_exact_uid_match() {
+        let mut events = std::collections::BTreeMap::new();
+        events.insert("abc".to_string(), make_event(None, None));
+        events.insert("def".to_string(), make_event(None, None));
+        remove_events_by_uids(&mut events, &["abc".to_string()]);
+        assert_eq!(events.len(), 1);
+        assert!(events.contains_key("def"));
+    }
+
+    #[test]
+    fn remove_events_occurrence_keys() {
+        let mut events = std::collections::BTreeMap::new();
+        events.insert("abc@1000".to_string(), make_event(None, None));
+        events.insert("abc@2000".to_string(), make_event(None, None));
+        events.insert("def@3000".to_string(), make_event(None, None));
+        remove_events_by_uids(&mut events, &["abc".to_string()]);
+        assert_eq!(events.len(), 1);
+        assert!(events.contains_key("def@3000"));
+    }
+
+    #[test]
+    fn remove_events_uid_prefix_not_matching() {
+        // "abc" should not match "abcdef" (no @ separator)
+        let mut events = std::collections::BTreeMap::new();
+        events.insert("abcdef@1000".to_string(), make_event(None, None));
+        remove_events_by_uids(&mut events, &["abc".to_string()]);
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn remove_events_empty_uids_noop() {
+        let mut events = std::collections::BTreeMap::new();
+        events.insert("abc@1000".to_string(), make_event(None, None));
+        remove_events_by_uids(&mut events, &[]);
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn remove_events_nonexistent_uid_noop() {
+        let mut events = std::collections::BTreeMap::new();
+        events.insert("abc@1000".to_string(), make_event(None, None));
+        remove_events_by_uids(&mut events, &["xyz".to_string()]);
+        assert_eq!(events.len(), 1);
+    }
+
+    // ── occurrence_key ──────────────────────────────────────────
+
+    #[test]
+    fn occurrence_key_format() {
+        let event = AgendaEvent {
+            uid: "evt-123".to_string(),
+            summary: String::new(),
+            start_time: 1700000000,
+            end_time: 1700003600,
+            all_day: false,
+            description: None,
+            alt_description: None,
+            location: None,
+            attendees: Vec::new(),
+        };
+        assert_eq!(event.occurrence_key(), "evt-123@1700000000");
+    }
+
+    #[test]
+    fn occurrence_key_different_starts_differ() {
+        let mut event = AgendaEvent {
+            uid: "evt-123".to_string(),
+            summary: String::new(),
+            start_time: 1000,
+            end_time: 2000,
+            all_day: false,
+            description: None,
+            alt_description: None,
+            location: None,
+            attendees: Vec::new(),
+        };
+        let key1 = event.occurrence_key();
+        event.start_time = 5000;
+        let key2 = event.occurrence_key();
+        assert_ne!(key1, key2);
     }
 }

@@ -1059,6 +1059,205 @@ impl ListButtonBuilder {
     }
 }
 
+/// Builder for Details widgets (collapsible section).
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::{DetailsBuilder, LabelBuilder};
+///
+/// let details = DetailsBuilder::new()
+///     .summary(LabelBuilder::new("Show more").build())
+///     .content(LabelBuilder::new("Hidden content").build())
+///     .css_class("details-section")
+///     .on_toggle("toggle_details")
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct DetailsBuilder {
+    summary: Option<Box<Widget>>,
+    content: Option<Box<Widget>>,
+    css_classes: Vec<String>,
+    on_toggle: Action,
+}
+
+impl DetailsBuilder {
+    /// Create a new Details builder.
+    ///
+    /// # Defaults
+    /// - summary: None (must be set before building)
+    /// - content: None (must be set before building)
+    /// - css_classes: empty
+    /// - on_toggle: Action with id "toggle" and no params
+    pub fn new() -> Self {
+        Self {
+            summary: None,
+            content: None,
+            css_classes: Vec::new(),
+            on_toggle: Action {
+                id: "toggle".into(),
+                params: ActionParams::None,
+            },
+        }
+    }
+
+    /// Set the summary widget (always visible).
+    pub fn summary(mut self, widget: Widget) -> Self {
+        self.summary = Some(Box::new(widget));
+        self
+    }
+
+    /// Set the content widget (shown when expanded).
+    pub fn content(mut self, widget: Widget) -> Self {
+        self.content = Some(Box::new(widget));
+        self
+    }
+
+    /// Add a CSS class to the details widget.
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    /// Add multiple CSS classes to the details widget.
+    pub fn css_classes(mut self, classes: Vec<String>) -> Self {
+        self.css_classes.extend(classes);
+        self
+    }
+
+    /// Set the toggle action by ID.
+    pub fn on_toggle(mut self, action_id: impl Into<String>) -> Self {
+        self.on_toggle = Action {
+            id: action_id.into(),
+            params: ActionParams::None,
+        };
+        self
+    }
+
+    /// Set the full toggle action.
+    pub fn on_toggle_action(mut self, action: Action) -> Self {
+        self.on_toggle = action;
+        self
+    }
+
+    /// Build the Details widget.
+    ///
+    /// # Panics
+    ///
+    /// Panics if summary or content have not been set.
+    pub fn build(self) -> Widget {
+        Widget::Details {
+            summary: self.summary.expect("Details widget requires a summary"),
+            content: self.content.expect("Details widget requires content"),
+            css_classes: self.css_classes,
+            on_toggle: self.on_toggle,
+        }
+    }
+}
+
+impl Default for DetailsBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Builder for ToggleButton widgets.
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::ToggleButtonBuilder;
+///
+/// let button = ToggleButtonBuilder::new("star-symbolic")
+///     .active(true)
+///     .on_toggle("toggle_favorite")
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct ToggleButtonBuilder {
+    icon: String,
+    active: bool,
+    on_toggle: Action,
+}
+
+impl ToggleButtonBuilder {
+    /// Create a new ToggleButton builder with the given icon.
+    ///
+    /// # Defaults
+    /// - active: false
+    /// - on_toggle: Action with id "toggle" and no params
+    pub fn new(icon: impl Into<String>) -> Self {
+        Self {
+            icon: icon.into(),
+            active: false,
+            on_toggle: Action {
+                id: "toggle".into(),
+                params: ActionParams::None,
+            },
+        }
+    }
+
+    /// Set the active state of the toggle button.
+    pub fn active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
+
+    /// Set the toggle action by ID.
+    pub fn on_toggle(mut self, action_id: impl Into<String>) -> Self {
+        self.on_toggle = Action {
+            id: action_id.into(),
+            params: ActionParams::None,
+        };
+        self
+    }
+
+    /// Set the full toggle action.
+    pub fn on_toggle_action(mut self, action: Action) -> Self {
+        self.on_toggle = action;
+        self
+    }
+
+    /// Build the ToggleButton widget.
+    pub fn build(self) -> Widget {
+        Widget::ToggleButton {
+            icon: self.icon,
+            active: self.active,
+            on_toggle: self.on_toggle,
+        }
+    }
+}
+
+/// Builder for Separator widgets (visual divider line).
+///
+/// # Example
+///
+/// ```rust
+/// use waft_plugin_sdk::builder::SeparatorBuilder;
+///
+/// let separator = SeparatorBuilder::new().build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct SeparatorBuilder {}
+
+impl SeparatorBuilder {
+    /// Create a new Separator builder.
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// Build the Separator widget.
+    pub fn build(self) -> Widget {
+        Widget::Separator
+    }
+}
+
+impl Default for SeparatorBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1529,6 +1728,124 @@ mod tests {
                 assert_eq!(on_click.id, "click");
             }
             _ => panic!("Expected ListButton"),
+        }
+    }
+
+    #[test]
+    fn test_details_builder_minimal() {
+        let summary = LabelBuilder::new("Summary").build();
+        let content = LabelBuilder::new("Content").build();
+        let widget = DetailsBuilder::new()
+            .summary(summary)
+            .content(content)
+            .build();
+
+        match widget {
+            Widget::Details {
+                summary,
+                content,
+                css_classes,
+                on_toggle,
+            } => {
+                assert!(matches!(*summary, Widget::Label { .. }));
+                assert!(matches!(*content, Widget::Label { .. }));
+                assert!(css_classes.is_empty());
+                assert_eq!(on_toggle.id, "toggle");
+            }
+            _ => panic!("Expected Details"),
+        }
+    }
+
+    #[test]
+    fn test_details_builder_full() {
+        let summary = LabelBuilder::new("Show details").build();
+        let content = ColBuilder::new()
+            .child(LabelBuilder::new("Line 1").build())
+            .child(LabelBuilder::new("Line 2").build())
+            .build();
+        let widget = DetailsBuilder::new()
+            .summary(summary)
+            .content(content)
+            .css_class("details-section")
+            .css_class("expandable")
+            .on_toggle("toggle_details")
+            .build();
+
+        match widget {
+            Widget::Details {
+                css_classes,
+                on_toggle,
+                ..
+            } => {
+                assert_eq!(css_classes, vec!["details-section", "expandable"]);
+                assert_eq!(on_toggle.id, "toggle_details");
+            }
+            _ => panic!("Expected Details"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Details widget requires a summary")]
+    fn test_details_builder_missing_summary() {
+        let content = LabelBuilder::new("Content").build();
+        DetailsBuilder::new().content(content).build();
+    }
+
+    #[test]
+    #[should_panic(expected = "Details widget requires content")]
+    fn test_details_builder_missing_content() {
+        let summary = LabelBuilder::new("Summary").build();
+        DetailsBuilder::new().summary(summary).build();
+    }
+
+    #[test]
+    fn test_toggle_button_builder_minimal() {
+        let widget = ToggleButtonBuilder::new("star-symbolic").build();
+
+        match widget {
+            Widget::ToggleButton {
+                icon,
+                active,
+                on_toggle,
+            } => {
+                assert_eq!(icon, "star-symbolic");
+                assert!(!active);
+                assert_eq!(on_toggle.id, "toggle");
+            }
+            _ => panic!("Expected ToggleButton"),
+        }
+    }
+
+    #[test]
+    fn test_toggle_button_builder_full() {
+        let widget = ToggleButtonBuilder::new("heart-symbolic")
+            .active(true)
+            .on_toggle("toggle_favorite")
+            .build();
+
+        match widget {
+            Widget::ToggleButton {
+                icon,
+                active,
+                on_toggle,
+            } => {
+                assert_eq!(icon, "heart-symbolic");
+                assert!(active);
+                assert_eq!(on_toggle.id, "toggle_favorite");
+            }
+            _ => panic!("Expected ToggleButton"),
+        }
+    }
+
+    #[test]
+    fn test_separator_builder() {
+        let widget = SeparatorBuilder::new().build();
+
+        match widget {
+            Widget::Separator => {
+                // Separator has no fields to check
+            }
+            _ => panic!("Expected Separator"),
         }
     }
 }

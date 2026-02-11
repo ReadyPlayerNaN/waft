@@ -151,7 +151,7 @@ pub async fn setup() -> Result<adw::Application> {
     }
 
     // Legacy cdylib plugins loaded from .so files
-    // (notifications, eds-agenda)
+    // (notifications)
 
     // Spawn daemon plugin processes
     use crate::daemon_spawner::{DaemonSpawner, DaemonSpawnerConfig};
@@ -189,7 +189,7 @@ pub async fn setup() -> Result<adw::Application> {
         eprintln!("  id = \"waft::notifications\"");
         eprintln!();
         eprintln!(
-            "Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::brightness, plugin::agenda, plugin::networkmanager"
+            "Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::brightness, plugin::eds-agenda, plugin::networkmanager"
         );
         std::process::exit(1);
     }

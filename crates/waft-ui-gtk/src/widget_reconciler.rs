@@ -12,10 +12,12 @@ use waft_ipc::{NamedWidget, Widget as IpcWidget};
 
 use crate::reconcile::{ReconcileOutcome, Reconcilable};
 use crate::renderer::{ActionCallback, WidgetRenderer};
+use crate::widgets::details::{DetailsProps, DetailsWidget};
 use crate::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 use crate::widgets::info_card::InfoCardWidget;
 use crate::widgets::slider::{SliderProps, SliderWidget};
 use crate::widgets::status_cycle_button::StatusCycleButtonWidget;
+use crate::widgets::toggle_button::{ToggleButtonProps, ToggleButtonWidget};
 
 /// What kind of widget was created — the overview uses this to decide
 /// which `SlotItem` variant to build.
@@ -69,7 +71,7 @@ pub struct WidgetReconciler {
     action_callback: ActionCallback,
 }
 
-/// Try to update the menu widget in-place for FeatureToggle.
+/// Try to update the menu widget in-place for FeatureToggle and Details.
 ///
 /// Returns true if handled (no change needed, or swapped in-place).
 /// Returns false if structural change (None↔Some) requires Recreate.
@@ -80,51 +82,53 @@ fn try_swap_menu(
     menu_store: &Rc<MenuStore>,
     action_callback: &ActionCallback,
 ) -> bool {
-    let (old_ec, new_ec) = match (&cached.widget_desc.widget, new_widget) {
-        (
-            IpcWidget::FeatureToggle {
-                expanded_content: old_ec,
-                ..
-            },
-            IpcWidget::FeatureToggle {
-                expanded_content: new_ec,
-                ..
-            },
-        ) => (old_ec, new_ec),
-        _ => return true, // Not a FeatureToggle
-    };
-
-    if old_ec == new_ec {
-        return true; // No change
-    }
-
-    match (&cached.menu, new_ec) {
-        // Both have menu content — swap in GTK tree
-        (Some(old_menu), Some(new_content)) => {
-            let renderer = WidgetRenderer::new(
-                menu_store.clone(),
-                action_callback.clone(),
-            );
-            let content_id = format!("{}:expanded", widget_id);
-            let new_menu = renderer.render(new_content, &content_id);
-
-            if let Some(parent) = old_menu.parent() {
-                old_menu.unparent();
-                if let Ok(parent_box) = parent.downcast::<gtk::Box>() {
-                    parent_box.append(&new_menu);
-                } else {
-                    log::warn!("[reconciler] menu parent is not a Box, recreating");
-                    return false;
-                }
-            }
-
-            cached.menu = Some(new_menu);
-            true
+    // Handle FeatureToggle expanded_content
+    if let (
+        IpcWidget::FeatureToggle {
+            expanded_content: old_ec,
+            ..
+        },
+        IpcWidget::FeatureToggle {
+            expanded_content: new_ec,
+            ..
+        },
+    ) = (&cached.widget_desc.widget, new_widget)
+    {
+        if old_ec == new_ec {
+            return true; // No change
         }
-        (None, None) => true,
-        // None↔Some = structural change (grid Revealer/Stack affected)
-        _ => false,
+
+        match (&cached.menu, new_ec) {
+            // Both have menu content — swap in GTK tree
+            (Some(old_menu), Some(new_content)) => {
+                let renderer = WidgetRenderer::new(
+                    menu_store.clone(),
+                    action_callback.clone(),
+                );
+                let content_id = format!("{}:expanded", widget_id);
+                let new_menu = renderer.render(new_content, &content_id);
+
+                if let Some(parent) = old_menu.parent() {
+                    old_menu.unparent();
+                    if let Ok(parent_box) = parent.downcast::<gtk::Box>() {
+                        parent_box.append(&new_menu);
+                    } else {
+                        log::warn!("[reconciler] menu parent is not a Box, recreating");
+                        return false;
+                    }
+                }
+
+                cached.menu = Some(new_menu);
+                return true;
+            }
+            (None, None) => return true,
+            // None↔Some = structural change (grid Revealer/Stack affected)
+            _ => return false,
+        }
     }
+
+    // Details widgets don't use cached.menu, so just return true
+    true
 }
 
 impl WidgetReconciler {
@@ -417,6 +421,91 @@ impl WidgetReconciler {
                     menu_id: None,
                     menu: None,
                     typed: Some(Box::new(scb)),
+                }
+            }
+            IpcWidget::Details {
+                summary,
+                content,
+                css_classes,
+                on_toggle,
+            } => {
+                use crate::menu_state::menu_id_for_widget;
+                let menu_id = menu_id_for_widget(&named_widget.id);
+
+                // Render summary and content widgets
+                let renderer = WidgetRenderer::new(
+                    self.menu_store.clone(),
+                    self.action_callback.clone(),
+                );
+                let summary_id = format!("{}:summary", named_widget.id);
+                let content_id = format!("{}:content", named_widget.id);
+                let summary_gtk = renderer.render(summary, &summary_id);
+                let content_gtk = renderer.render(content, &content_id);
+
+                let details = DetailsWidget::new(
+                    DetailsProps { menu_id: menu_id.clone() },
+                    summary_gtk,
+                    content_gtk,
+                    css_classes,
+                    self.menu_store.clone(),
+                );
+
+                // Wire up the action callback for toggle events
+                let cb = self.action_callback.clone();
+                let wid = named_widget.id.clone();
+                let action = on_toggle.clone();
+                let store_clone = self.menu_store.clone();
+                let mid_clone = menu_id.clone();
+                self.menu_store.subscribe(move || {
+                    let state = store_clone.get_state();
+                    let is_open = state.active_menu_id.as_ref() == Some(&mid_clone);
+                    let mut a = action.clone();
+                    a.params = waft_ipc::widget::ActionParams::Value(if is_open { 1.0 } else { 0.0 });
+                    cb(wid.clone(), a);
+                });
+
+                let gtk_widget = details.widget();
+
+                CachedEntry {
+                    widget_desc: named_widget.clone(),
+                    gtk_widget,
+                    kind: WidgetKind::Generic,
+                    menu_id: Some(menu_id),
+                    menu: None,
+                    typed: Some(Box::new(details)),
+                }
+            }
+            IpcWidget::ToggleButton {
+                icon,
+                active,
+                on_toggle,
+            } => {
+                let toggle_button = ToggleButtonWidget::new(ToggleButtonProps {
+                    icon: icon.clone(),
+                    active: *active,
+                });
+
+                // Wire up the action callback
+                let cb = self.action_callback.clone();
+                let wid = named_widget.id.clone();
+                let action = on_toggle.clone();
+                toggle_button.root.connect_toggled(move |button| {
+                    use waft_ipc::widget::ActionParams;
+                    let is_active = button.is_active();
+                    let mut a = action.clone();
+                    a.params = ActionParams::Value(if is_active { 1.0 } else { 0.0 });
+                    cb(wid.clone(), a);
+                });
+
+                let gtk_widget = toggle_button.widget();
+
+                CachedEntry {
+                    widget_desc: named_widget.clone(),
+                    gtk_widget,
+                    kind: WidgetKind::Generic,
+                    menu_id: None,
+                    menu: None,
+                    typed: Some(Box::new(toggle_button)),
                 }
             }
             _ => {

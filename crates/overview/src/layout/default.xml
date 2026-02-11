@@ -13,7 +13,7 @@
   <Divider />
   <TwoColumns>
     <Col>
-      <Widget id="agenda:main" />
+      <Widget id="eds-agenda:*" />
       <Widget id="notifications:list" />
     </Col>
     <Col>

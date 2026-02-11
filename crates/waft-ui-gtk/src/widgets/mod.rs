@@ -3,6 +3,7 @@
 pub mod button;
 pub mod checkmark;
 pub mod col;
+pub mod details;
 pub mod feature_toggle;
 pub mod icon;
 pub mod icon_list;
@@ -14,7 +15,9 @@ pub mod menu_chevron;
 pub mod menu_item;
 pub mod menu_row;
 pub mod row;
+pub mod separator;
 pub mod slider;
 pub mod spinner;
 pub mod status_cycle_button;
 pub mod switch;
+pub mod toggle_button;

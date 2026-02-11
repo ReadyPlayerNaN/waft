@@ -120,6 +120,24 @@ pub enum Widget {
         #[serde(skip_serializing_if = "Option::is_none", default)]
         on_click: Option<Action>,
     },
+
+    /// A collapsible details widget with summary and expandable content
+    Details {
+        summary: Box<Widget>,
+        content: Box<Widget>,
+        css_classes: Vec<String>,
+        on_toggle: Action,
+    },
+
+    /// A toggle button with icon and active state
+    ToggleButton {
+        icon: String,
+        active: bool,
+        on_toggle: Action,
+    },
+
+    /// A visual separator line
+    Separator,
 }
 
 /// An option for StatusCycleButton
@@ -648,6 +666,188 @@ mod tests {
                 assert!(description.is_none());
             }
             _ => panic!("Expected Widget::InfoCard"),
+        }
+    }
+
+    #[test]
+    fn test_widget_details_serialization() {
+        let widget = Widget::Details {
+            summary: Box::new(Widget::Label {
+                text: "Summary".to_string(),
+                css_classes: vec![],
+            }),
+            content: Box::new(Widget::Col {
+                spacing: 4,
+                css_classes: vec![],
+                children: vec![
+                    Widget::Label {
+                        text: "Detail 1".to_string(),
+                        css_classes: vec![],
+                    }
+                    .into(),
+                    Widget::Label {
+                        text: "Detail 2".to_string(),
+                        css_classes: vec![],
+                    }
+                    .into(),
+                ],
+            }),
+            css_classes: vec!["expandable".to_string()],
+            on_toggle: Action {
+                id: "toggle_details".to_string(),
+                params: ActionParams::None,
+            },
+        };
+
+        let json = serde_json::to_string(&widget).unwrap();
+        let deserialized: Widget = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            Widget::Details {
+                summary,
+                content,
+                css_classes,
+                on_toggle,
+            } => {
+                match *summary {
+                    Widget::Label { text, .. } => assert_eq!(text, "Summary"),
+                    _ => panic!("Expected Label in summary"),
+                }
+                match *content {
+                    Widget::Col { children, .. } => assert_eq!(children.len(), 2),
+                    _ => panic!("Expected Col in content"),
+                }
+                assert_eq!(css_classes, vec!["expandable"]);
+                assert_eq!(on_toggle.id, "toggle_details");
+            }
+            _ => panic!("Expected Widget::Details"),
+        }
+    }
+
+    #[test]
+    fn test_widget_details_minimal() {
+        let widget = Widget::Details {
+            summary: Box::new(Widget::Label {
+                text: "Click to expand".to_string(),
+                css_classes: vec![],
+            }),
+            content: Box::new(Widget::Label {
+                text: "Hidden content".to_string(),
+                css_classes: vec![],
+            }),
+            css_classes: vec![],
+            on_toggle: Action {
+                id: "toggle".to_string(),
+                params: ActionParams::None,
+            },
+        };
+
+        let json = serde_json::to_string(&widget).unwrap();
+        let deserialized: Widget = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            Widget::Details { css_classes, .. } => {
+                assert!(css_classes.is_empty());
+            }
+            _ => panic!("Expected Widget::Details"),
+        }
+    }
+
+    #[test]
+    fn test_widget_toggle_button_serialization() {
+        let widget = Widget::ToggleButton {
+            icon: "view-list-symbolic".to_string(),
+            active: true,
+            on_toggle: Action {
+                id: "toggle_view".to_string(),
+                params: ActionParams::None,
+            },
+        };
+
+        let json = serde_json::to_string(&widget).unwrap();
+        let deserialized: Widget = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            Widget::ToggleButton {
+                icon,
+                active,
+                on_toggle,
+            } => {
+                assert_eq!(icon, "view-list-symbolic");
+                assert!(active);
+                assert_eq!(on_toggle.id, "toggle_view");
+            }
+            _ => panic!("Expected Widget::ToggleButton"),
+        }
+    }
+
+    #[test]
+    fn test_widget_toggle_button_inactive() {
+        let widget = Widget::ToggleButton {
+            icon: "view-grid-symbolic".to_string(),
+            active: false,
+            on_toggle: Action {
+                id: "toggle_grid".to_string(),
+                params: ActionParams::None,
+            },
+        };
+
+        let json = serde_json::to_string(&widget).unwrap();
+        let deserialized: Widget = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            Widget::ToggleButton { active, .. } => {
+                assert!(!active);
+            }
+            _ => panic!("Expected Widget::ToggleButton"),
+        }
+    }
+
+    #[test]
+    fn test_widget_separator_serialization() {
+        let widget = Widget::Separator;
+
+        let json = serde_json::to_string(&widget).unwrap();
+        let deserialized: Widget = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            Widget::Separator => {} // Success
+            _ => panic!("Expected Widget::Separator"),
+        }
+    }
+
+    #[test]
+    fn test_widget_separator_in_container() {
+        let widget = Widget::Col {
+            spacing: 8,
+            css_classes: vec![],
+            children: vec![
+                Widget::Label {
+                    text: "Before".to_string(),
+                    css_classes: vec![],
+                }
+                .into(),
+                Widget::Separator.into(),
+                Widget::Label {
+                    text: "After".to_string(),
+                    css_classes: vec![],
+                }
+                .into(),
+            ],
+        };
+
+        let json = serde_json::to_string(&widget).unwrap();
+        let deserialized: Widget = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            Widget::Col { children, .. } => {
+                assert_eq!(children.len(), 3);
+                match &children[1].widget {
+                    Widget::Separator => {} // Success
+                    _ => panic!("Expected Separator at index 1"),
+                }
+            }
+            _ => panic!("Expected Widget::Col"),
         }
     }
 

@@ -8,6 +8,7 @@ use waft_ipc::widget::{Action, Widget};
 use crate::widgets::button::render_button;
 use crate::widgets::checkmark::render_checkmark;
 use crate::widgets::col::render_col;
+use crate::widgets::details::render_details;
 use crate::widgets::feature_toggle::render_feature_toggle;
 use crate::widgets::icon_list::render_icon_list;
 use crate::widgets::info_card::render_info_card;
@@ -16,10 +17,12 @@ use crate::widgets::list_button::render_list_button;
 use crate::widgets::list_row::render_list_row;
 use crate::widgets::menu_row::render_menu_row;
 use crate::widgets::row::render_row;
+use crate::widgets::separator::render_separator;
 use crate::widgets::slider::render_slider;
 use crate::widgets::spinner::render_spinner;
 use crate::widgets::status_cycle_button::render_status_cycle_button;
 use crate::widgets::switch::render_switch;
+use crate::widgets::toggle_button::render_toggle_button;
 use std::rc::Rc;
 use waft_core::menu_state::MenuStore;
 
@@ -241,6 +244,30 @@ impl WidgetRenderer {
                 css_classes,
                 on_click,
             } => render_list_button(&self.action_callback, label, icon, css_classes, on_click, widget_id),
+
+            Widget::Details {
+                summary,
+                content,
+                css_classes,
+                on_toggle,
+            } => render_details(
+                self,
+                &self.action_callback,
+                &self.menu_store,
+                summary,
+                content,
+                css_classes,
+                on_toggle,
+                widget_id,
+            ),
+
+            Widget::ToggleButton {
+                icon,
+                active,
+                on_toggle,
+            } => render_toggle_button(&self.action_callback, icon, *active, on_toggle, widget_id),
+
+            Widget::Separator => render_separator(),
         }
     }
 

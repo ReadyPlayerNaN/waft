@@ -81,6 +81,7 @@ impl DaemonSpawner {
             "waft-networkmanager-daemon",
             "waft-weather-daemon",
             "waft-sunsetr-daemon",
+            "waft-eds-agenda-daemon",
         ];
 
         for name in daemon_names {
