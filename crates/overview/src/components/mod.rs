@@ -1,4 +1,5 @@
 pub mod agenda;
+pub mod agenda_ui;
 pub mod audio_sliders;
 pub mod battery;
 pub mod brightness_sliders;

@@ -1,9 +1,11 @@
-//! Calendar agenda component.
+//! Calendar agenda component with expandable cards and smart features.
 //!
-//! Subscribes to the `calendar-event` entity type and renders upcoming events
-//! sorted by start time. Always visible, showing a placeholder when no events
-//! are available.
+//! Subscribes to `calendar-event` entities and renders them as sophisticated
+//! cards with expandable details, attendee lists, meeting link buttons, and
+//! past/ongoing event detection.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -11,137 +13,292 @@ use gtk::prelude::*;
 use waft_protocol::entity;
 use waft_protocol::Urn;
 
+use crate::components::agenda_ui::agenda_card::{AgendaCard, AgendaCardOutput};
 use crate::entity_store::EntityStore;
+use crate::menu_state::{MenuOp, MenuStore};
 
-/// Displays a list of upcoming calendar events.
+/// Displays upcoming calendar events with sophisticated UI.
 ///
-/// Shows a "Calendar" header label followed by event cards sorted by start time.
-/// When no events are present, shows a "No upcoming events" placeholder.
+/// Features:
+/// - Expandable cards with location, attendees, description
+/// - Past events are dimmed, ongoing events highlighted
+/// - "Now" divider separates past from current/future
+/// - Show/hide past events toggle with animation
+/// - Smart meeting buttons (1 link = button, 2+ = popover)
+/// - Incremental HashMap-based updates (no full rebuild)
 pub struct AgendaComponent {
     container: gtk::Box,
-    events_container: gtk::Box,
+    content_box: gtk::Box,
+    empty_label: gtk::Label,
+    past_revealer: gtk::Revealer,
+    past_box: gtk::Box,
+    show_past_btn: gtk::ToggleButton,
+    /// Map of occurrence keys to card widgets
+    event_cards: Rc<RefCell<HashMap<String, Rc<AgendaCard>>>>,
+    now_divider: RefCell<Option<gtk::Separator>>,
+    _store: Rc<EntityStore>,
+    _menu_store: Rc<MenuStore>,
 }
 
 impl AgendaComponent {
-    pub fn new(store: &Rc<EntityStore>) -> Self {
-        let container = gtk::Box::new(gtk::Orientation::Vertical, 8);
-
-        let header = gtk::Label::builder()
-            .label("Calendar")
-            .css_classes(["title-2"])
-            .xalign(0.0)
+    pub fn new(store: &Rc<EntityStore>, menu_store: &Rc<MenuStore>) -> Self {
+        let container = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(8)
+            .css_classes(["agenda-container"])
             .build();
+
+        // Header row: title + show-past toggle
+        let header = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(8)
+            .build();
+
+        let header_label = gtk::Label::builder()
+            .label(crate::i18n::t("agenda-title"))
+            .xalign(0.0)
+            .hexpand(true)
+            .css_classes(["title-3", "agenda-header"])
+            .build();
+
+        let show_past_btn = gtk::ToggleButton::builder()
+            .icon_name("task-past-due-symbolic")
+            .tooltip_text(crate::i18n::t("agenda-show-past-tooltip"))
+            .css_classes(["agenda-show-past-pill"])
+            .active(true) // Start with past events visible
+            .build();
+
+        header.append(&header_label);
+        header.append(&show_past_btn);
+
+        // Revealer for past events with slide-down animation
+        let past_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .build();
+
+        let past_revealer = gtk::Revealer::builder()
+            .transition_type(gtk::RevealerTransitionType::SlideDown)
+            .transition_duration(200)
+            .reveal_child(true) // Start revealed
+            .build();
+        past_revealer.set_child(Some(&past_box));
+
+        // Content box for current/future events
+        let content_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .build();
+
+        // Empty state label
+        let empty_label = gtk::Label::builder()
+            .label(crate::i18n::t("agenda-empty"))
+            .xalign(0.0)
+            .css_classes(["dim-label", "agenda-empty"])
+            .visible(false)
+            .build();
+
         container.append(&header);
+        container.append(&past_revealer);
+        container.append(&content_box);
+        container.append(&empty_label);
 
-        let events_container = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        container.append(&events_container);
+        content_box.set_visible(false);
 
-        // Show placeholder initially
-        let placeholder = gtk::Label::builder()
-            .label("No upcoming events")
-            .css_classes(["dim-label"])
-            .xalign(0.0)
-            .build();
-        events_container.append(&placeholder);
+        let event_cards: Rc<RefCell<HashMap<String, Rc<AgendaCard>>>> =
+            Rc::new(RefCell::new(HashMap::new()));
 
+        // Toggle past events visibility
+        let past_revealer_toggle = past_revealer.clone();
+        let content_box_toggle = content_box.clone();
+        let empty_label_toggle = empty_label.clone();
+        show_past_btn.connect_toggled(move |btn| {
+            let show_past = btn.is_active();
+            past_revealer_toggle.set_reveal_child(show_past);
+
+            // Update tooltip
+            if show_past {
+                btn.set_tooltip_text(Some(&crate::i18n::t("agenda-hide-past-tooltip")));
+            } else {
+                btn.set_tooltip_text(Some(&crate::i18n::t("agenda-show-past-tooltip")));
+            }
+
+            // If hiding past and no future events, show empty label
+            if !show_past && content_box_toggle.first_child().is_none() {
+                content_box_toggle.set_visible(false);
+                empty_label_toggle.set_visible(true);
+            }
+        });
+
+        // Subscribe to MenuStore for expansion state sync
+        let event_cards_menu = event_cards.clone();
+        let menu_store_sync = menu_store.clone();
+        menu_store.subscribe(move || {
+            let cards = event_cards_menu.borrow();
+            let state = menu_store_sync.get_state();
+
+            for card in cards.values() {
+                let should_be_open = state
+                    .active_menu_id
+                    .as_ref()
+                    .map(|id| id == card.menu_id())
+                    .unwrap_or(false);
+                card.set_expanded(should_be_open);
+            }
+        });
+
+        // Subscribe to calendar events
         let store_ref = store.clone();
-        let events_container_ref = events_container.clone();
+        let event_cards_ref = event_cards.clone();
+        let past_box_ref = past_box.clone();
+        let content_box_ref = content_box.clone();
+        let empty_label_ref = empty_label.clone();
+        let menu_store_ref = menu_store.clone();
+        let now_divider = RefCell::new(None::<gtk::Separator>);
 
         store.subscribe_type(entity::calendar::ENTITY_TYPE, move || {
-            let mut entities: Vec<(Urn, entity::calendar::CalendarEvent)> =
-                store_ref.get_entities_typed(entity::calendar::ENTITY_TYPE);
-
-            // Sort by start_time ascending
-            entities.sort_by_key(|(_urn, event)| event.start_time);
-
-            // Clear existing children
-            while let Some(child) = events_container_ref.first_child() {
-                events_container_ref.remove(&child);
-            }
-
-            if entities.is_empty() {
-                let placeholder = gtk::Label::builder()
-                    .label("No upcoming events")
-                    .css_classes(["dim-label"])
-                    .xalign(0.0)
-                    .build();
-                events_container_ref.append(&placeholder);
-                return;
-            }
-
-            for (_urn, event) in &entities {
-                let card = build_event_card(event);
-                events_container_ref.append(&card);
-            }
+            Self::update_events(
+                &store_ref,
+                &event_cards_ref,
+                &past_box_ref,
+                &content_box_ref,
+                &empty_label_ref,
+                &menu_store_ref,
+                &now_divider,
+            );
         });
 
         Self {
             container,
-            events_container,
+            content_box,
+            empty_label,
+            past_revealer,
+            past_box,
+            show_past_btn,
+            event_cards,
+            now_divider: RefCell::new(None),
+            _store: store.clone(),
+            _menu_store: menu_store.clone(),
         }
+    }
+
+    /// Update event display based on current entities.
+    fn update_events(
+        store: &Rc<EntityStore>,
+        event_cards: &Rc<RefCell<HashMap<String, Rc<AgendaCard>>>>,
+        past_box: &gtk::Box,
+        content_box: &gtk::Box,
+        empty_label: &gtk::Label,
+        menu_store: &Rc<MenuStore>,
+        now_divider: &RefCell<Option<gtk::Separator>>,
+    ) {
+        let mut entities: Vec<(Urn, entity::calendar::CalendarEvent)> =
+            store.get_entities_typed(entity::calendar::ENTITY_TYPE);
+
+        // Sort by start_time, then end_time
+        entities.sort_by(|a, b| {
+            a.1.start_time
+                .cmp(&b.1.start_time)
+                .then(a.1.end_time.cmp(&b.1.end_time))
+        });
+
+        let now = chrono::Local::now().timestamp();
+
+        // Split into past and current/future
+        let (past_events, future_events): (Vec<_>, Vec<_>) = entities
+            .into_iter()
+            .partition(|(_, event)| event.end_time <= now);
+
+        // Clear containers
+        while let Some(child) = past_box.first_child() {
+            past_box.remove(&child);
+        }
+        while let Some(child) = content_box.first_child() {
+            content_box.remove(&child);
+        }
+
+        // Handle empty state
+        if past_events.is_empty() && future_events.is_empty() {
+            content_box.set_visible(false);
+            empty_label.set_visible(true);
+            event_cards.borrow_mut().clear();
+            *now_divider.borrow_mut() = None;
+            return;
+        }
+
+        empty_label.set_visible(false);
+
+        let mut cards_map = event_cards.borrow_mut();
+        let mut new_cards = HashMap::new();
+
+        // Render past events
+        for (_urn, event) in &past_events {
+            let occurrence_key = format!("{}@{}", event.uid, event.start_time);
+
+            let card = if let Some(existing) = cards_map.get(&occurrence_key) {
+                existing.clone()
+            } else {
+                let new_card = Rc::new(AgendaCard::new(event, true, false, menu_store));
+
+                // Connect toggle handler
+                let menu_store_toggle = menu_store.clone();
+                new_card.connect_output(move |output| {
+                    if let AgendaCardOutput::ToggleExpand(menu_id) = output {
+                        menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
+                    }
+                });
+
+                new_card
+            };
+
+            past_box.append(&card.root);
+            new_cards.insert(occurrence_key, card);
+        }
+
+        // Add "now" divider if we have both past and future events
+        if !past_events.is_empty() && !future_events.is_empty() {
+            let divider = gtk::Separator::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .css_classes(["agenda-divider-now"])
+                .build();
+            past_box.append(&divider);
+            *now_divider.borrow_mut() = Some(divider);
+        } else {
+            *now_divider.borrow_mut() = None;
+        }
+
+        // Render current/future events
+        for (_urn, event) in &future_events {
+            let occurrence_key = format!("{}@{}", event.uid, event.start_time);
+            let is_ongoing = event.start_time <= now && now < event.end_time;
+
+            let card = if let Some(existing) = cards_map.get(&occurrence_key) {
+                existing.clone()
+            } else {
+                let new_card = Rc::new(AgendaCard::new(event, false, is_ongoing, menu_store));
+
+                // Connect toggle handler
+                let menu_store_toggle = menu_store.clone();
+                new_card.connect_output(move |output| {
+                    if let AgendaCardOutput::ToggleExpand(menu_id) = output {
+                        menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
+                    }
+                });
+
+                new_card
+            };
+
+            content_box.append(&card.root);
+            new_cards.insert(occurrence_key, card);
+        }
+
+        content_box.set_visible(!future_events.is_empty());
+
+        // Update cards map
+        *cards_map = new_cards;
     }
 
     pub fn widget(&self) -> &gtk::Widget {
         self.container.upcast_ref()
-    }
-}
-
-/// Build a GTK box representing a single calendar event.
-fn build_event_card(event: &entity::calendar::CalendarEvent) -> gtk::Box {
-    let card = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(2)
-        .css_classes(["agenda-event-card"])
-        .build();
-
-    let summary_label = gtk::Label::builder()
-        .label(&event.summary)
-        .css_classes(["title-4"])
-        .xalign(0.0)
-        .build();
-    card.append(&summary_label);
-
-    let time_label = gtk::Label::builder()
-        .label(&format_time_range(event))
-        .css_classes(["caption"])
-        .xalign(0.0)
-        .build();
-    card.append(&time_label);
-
-    if let Some(ref location) = event.location {
-        let location_label = gtk::Label::builder()
-            .label(location)
-            .css_classes(["dim-label", "caption"])
-            .xalign(0.0)
-            .build();
-        card.append(&location_label);
-    }
-
-    card
-}
-
-/// Format the time range for display.
-///
-/// For all-day events, returns "All day". Otherwise formats start and end
-/// times as HH:MM - HH:MM using the local timezone.
-fn format_time_range(event: &entity::calendar::CalendarEvent) -> String {
-    if event.all_day {
-        return "All day".to_string();
-    }
-
-    let start = chrono::DateTime::from_timestamp(event.start_time, 0);
-    let end = chrono::DateTime::from_timestamp(event.end_time, 0);
-
-    match (start, end) {
-        (Some(s), Some(e)) => {
-            let local_start = s.with_timezone(&chrono::Local);
-            let local_end = e.with_timezone(&chrono::Local);
-            format!(
-                "{} - {}",
-                local_start.format("%H:%M"),
-                local_end.format("%H:%M"),
-            )
-        }
-        _ => "Unknown time".to_string(),
     }
 }

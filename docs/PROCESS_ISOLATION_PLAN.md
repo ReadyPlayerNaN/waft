@@ -328,7 +328,7 @@ plugins/caffeine/
 2. **Simple with menus**: battery, brightness
 3. **Medium complexity**: clock, sunsetr, weather, keyboard-layout
 4. **Complex state**: audio, blueman, systemd-actions
-5. **Very complex**: networkmanager, eds-agenda, notifications
+5. **Very complex**: networkmanager, eds, notifications
 
 **For each plugin**:
 - [ ] Create daemon binary

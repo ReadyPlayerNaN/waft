@@ -14,7 +14,7 @@ members = [
     "widget-docs",
     "plugins/clock",
     "plugins/darkman",
-    "plugins/eds-agenda",
+    "plugins/eds",
     "plugins/battery",
     "plugins/blueman",
     "plugins/brightness",

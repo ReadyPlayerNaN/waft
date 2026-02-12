@@ -2987,6 +2987,7 @@ dependencies = [
  "chrono-tz",
  "dirs 5.0.1",
  "env_logger",
+ "fluent-bundle",
  "flume",
  "futures-util",
  "gio 0.20.12",
@@ -3003,9 +3004,11 @@ dependencies = [
  "roxmltree",
  "serde",
  "serde_json",
+ "sys-locale",
  "tokio",
  "tokio-stream",
  "toml 0.8.23",
+ "unic-langid",
  "uuid",
  "waft-config",
  "waft-core",
@@ -3041,38 +3044,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "waft-plugin-agenda"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "chrono-tz",
- "env_logger",
- "flume",
- "log",
- "serde",
- "tokio",
- "toml 0.8.23",
- "waft-core",
- "zbus",
- "zvariant",
-]
-
-[[package]]
 name = "waft-plugin-api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "fluent-bundle",
  "gtk4",
  "libloading",
  "log",
+ "sys-locale",
  "tokio",
  "toml 0.8.23",
+ "unic-langid",
  "uuid",
  "waft-core",
- "waft-i18n",
  "waft-ui-gtk",
 ]
 
@@ -3173,6 +3159,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-plugin-eds"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "futures-util",
+ "log",
+ "serde",
+ "tokio",
+ "waft-plugin",
+ "waft-protocol",
+ "zbus",
+ "zvariant",
+]
+
+[[package]]
 name = "waft-plugin-keyboard-layout"
 version = "0.1.0"
 dependencies = [
@@ -3229,10 +3233,13 @@ name = "waft-plugin-sunsetr"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "env_logger",
+ "async-trait",
  "log",
  "serde",
  "serde_json",
+ "tokio",
+ "waft-plugin",
+ "waft-protocol",
 ]
 
 [[package]]

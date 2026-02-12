@@ -18,7 +18,7 @@ This checklist tracks the conversion of all plugins from cdylib shared libraries
 | networkmanager | 3 | ⏳ Pending | High | 16 | nmrs library integration |
 | blueman | 3 | ⏳ Pending | High | 16 | BlueZ D-Bus, device pairing |
 | notifications | 4 | ⏳ Pending | Very High | 24+ | Custom UI, runtime bridge |
-| eds-agenda | 4 | ⏳ Pending | Very High | 24+ | Calendar data, recurring events |
+| eds | 4 | ⏳ Pending | Very High | 24+ | Calendar data, recurring events |
 | weather | 4 | ⏳ Pending | Very High | 24+ | Network requests, caching |
 | keyboard-layout | 1 | ⏳ Pending | Low | 4 | XKB state, D-Bus signals |
 
@@ -49,7 +49,7 @@ This checklist tracks the conversion of all plugins from cdylib shared libraries
 - Custom rendering requirements
 - Asynchronous data processing
 - Cache management
-- **Examples**: notifications, eds-agenda, weather
+- **Examples**: notifications, eds, weather
 
 ---
 
@@ -461,11 +461,11 @@ on_click = "gnome-calendar"
 
 ---
 
-### ⏳ eds-agenda (Tier 4)
+### ⏳ eds (Tier 4)
 
 **Current Type**: cdylib
-**Current File**: `/home/just-paja/Work/shell/sacrebleui/plugins/eds-agenda/src/lib.rs`
-**Daemon File**: `plugins/eds-agenda/bin/waft-eds-agenda-daemon.rs` (to be created)
+**Current File**: `/home/just-paja/Work/shell/sacrebleui/plugins/eds/src/lib.rs`
+**Daemon File**: `plugins/eds/bin/waft-eds-daemon.rs` (to be created)
 
 **Widgets**:
 - Calendar widget (custom rendering)

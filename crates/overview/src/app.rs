@@ -151,7 +151,7 @@ pub async fn setup() -> Result<adw::Application> {
     }
 
     // Legacy cdylib plugins loaded from .so files
-    // (notifications, eds-agenda, sunsetr)
+    // (notifications, eds, sunsetr)
 
     // Connect to the central waft daemon via WaftClient.
     // Uses D-Bus activation + exponential backoff retry if the daemon isn't ready yet.

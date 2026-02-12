@@ -348,7 +348,7 @@ fn render_component(name: &str, ctx: &Rc<RenderContext>, menu_store: &Rc<MenuSto
             w
         }
         "Agenda" => {
-            let c = AgendaComponent::new(&ctx.store);
+            let c = AgendaComponent::new(&ctx.store, menu_store);
             let w = c.widget().clone();
             keep.push(Box::new(c));
             w
@@ -484,6 +484,7 @@ fn render_feature_toggle_grid(
                         let bt = Rc::new(BluetoothToggles::new(
                             &ctx.store,
                             &ctx.action_callback,
+                            menu_store,
                             dynamic_rebuild.clone(),
                         ));
                         dynamic_sources.push(bt.clone());
@@ -493,6 +494,7 @@ fn render_feature_toggle_grid(
                         let net = Rc::new(NetworkManagerToggles::new(
                             &ctx.store,
                             &ctx.action_callback,
+                            menu_store,
                             dynamic_rebuild.clone(),
                         ));
                         dynamic_sources.push(net.clone());

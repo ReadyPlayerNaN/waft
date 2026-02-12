@@ -14,6 +14,7 @@ use waft_protocol::Urn;
 
 use super::notification_group::{NotificationData, NotificationGroup, NotificationGroupOutput};
 use crate::entity_store::{EntityActionCallback, EntityStore};
+use crate::i18n;
 use crate::menu_state::MenuStore;
 
 /// Displays grouped desktop notifications sorted newest first.
@@ -37,7 +38,7 @@ impl NotificationsComponent {
         let container = gtk::Box::new(gtk::Orientation::Vertical, 8);
 
         let header = gtk::Label::builder()
-            .label("Notifications")
+            .label(&i18n::t("notifications-title"))
             .css_classes(["title-2"])
             .xalign(0.0)
             .build();
@@ -49,7 +50,7 @@ impl NotificationsComponent {
         // Empty placeholder
         let empty_placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let placeholder_label = gtk::Label::builder()
-            .label("No notifications")
+            .label(&i18n::t("notifications-empty"))
             .css_classes(["dim-label"])
             .xalign(0.0)
             .build();

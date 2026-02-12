@@ -10,8 +10,9 @@ use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::entity::network::{
-    AdapterKind, Network, NetworkAdapter, VpnState as EntityVpnState, ADAPTER_ENTITY_TYPE,
-    VPN_ENTITY_TYPE,
+    AdapterKind, EthernetConnection, NetworkAdapter, VpnState as EntityVpnState, WiFiNetwork,
+    ADAPTER_ENTITY_TYPE, ETHERNET_CONNECTION_ENTITY_TYPE, VPN_ENTITY_TYPE,
+    WIFI_NETWORK_ENTITY_TYPE,
 };
 use waft_plugin::*;
 use zbus::Connection;
@@ -169,65 +170,65 @@ fn to_entity_vpn_state(state: &VpnState) -> EntityVpnState {
     }
 }
 
-fn wifi_adapter_to_entity(adapter: &WiFiAdapterState) -> Entity {
-    let connected_network = adapter.active_ssid.as_ref().and_then(|ssid| {
-        adapter
-            .access_points
-            .iter()
-            .find(|ap| &ap.ssid == ssid)
-            .map(|ap| Network {
-                ssid: ap.ssid.clone(),
-                strength: ap.strength,
-                secure: ap.secure,
-            })
-    });
+fn wifi_adapter_to_entities(adapter: &WiFiAdapterState) -> Vec<Entity> {
+    let mut entities = Vec::new();
 
-    let networks: Vec<Network> = adapter
-        .access_points
-        .iter()
-        .map(|ap| Network {
+    // Adapter entity
+    let adapter_urn = Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, &adapter.interface_name);
+    let adapter_entity = NetworkAdapter {
+        name: adapter.interface_name.clone(),
+        enabled: adapter.enabled,
+        connected: adapter.active_ssid.is_some(),
+        ip: None,
+        kind: AdapterKind::Wireless,
+    };
+    entities.push(Entity::new(
+        adapter_urn.clone(),
+        ADAPTER_ENTITY_TYPE,
+        &adapter_entity,
+    ));
+
+    // WiFi network child entities
+    for ap in &adapter.access_points {
+        let network_urn = adapter_urn.child(WIFI_NETWORK_ENTITY_TYPE, &ap.ssid);
+        let network_entity = WiFiNetwork {
             ssid: ap.ssid.clone(),
             strength: ap.strength,
             secure: ap.secure,
-        })
-        .collect();
+            known: true, // TODO: Check if network has saved profile
+            connected: adapter.active_ssid.as_ref() == Some(&ap.ssid),
+        };
+        entities.push(Entity::new(
+            network_urn,
+            WIFI_NETWORK_ENTITY_TYPE,
+            &network_entity,
+        ));
+    }
 
-    let known_networks: Vec<Network> = networks.clone();
-
-    let entity = NetworkAdapter {
-        name: adapter.interface_name.clone(),
-        active: adapter.enabled && adapter.active_ssid.is_some(),
-        ip: None,
-        kind: AdapterKind::Wireless {
-            networks,
-            known_networks,
-            connected: connected_network,
-        },
-    };
-
-    Entity::new(
-        Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, &adapter.interface_name),
-        ADAPTER_ENTITY_TYPE,
-        &entity,
-    )
+    entities
 }
 
-fn ethernet_adapter_to_entity(adapter: &EthernetAdapterState) -> Entity {
-    let entity = NetworkAdapter {
-        name: adapter.interface_name.clone(),
-        active: adapter.is_connected(),
-        ip: None,
-        kind: AdapterKind::Wired {
-            profiles: vec![],
-            current_profile: None,
-        },
-    };
+fn ethernet_adapter_to_entities(adapter: &EthernetAdapterState) -> Vec<Entity> {
+    let mut entities = Vec::new();
 
-    Entity::new(
-        Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, &adapter.interface_name),
+    // Adapter entity
+    let adapter_urn = Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, &adapter.interface_name);
+    let adapter_entity = NetworkAdapter {
+        name: adapter.interface_name.clone(),
+        enabled: true,
+        connected: adapter.is_connected(),
+        ip: None,
+        kind: AdapterKind::Wired,
+    };
+    entities.push(Entity::new(
+        adapter_urn.clone(),
         ADAPTER_ENTITY_TYPE,
-        &entity,
-    )
+        &adapter_entity,
+    ));
+
+    // TODO: Emit ethernet connection child entities when we have profile data
+
+    entities
 }
 
 fn vpn_to_entity(vpn: &waft_plugin_networkmanager::state::VpnConnectionInfo) -> Entity {
@@ -254,11 +255,11 @@ impl Plugin for NetworkManagerPlugin {
         let mut entities = Vec::new();
 
         for adapter in &state.wifi_adapters {
-            entities.push(wifi_adapter_to_entity(adapter));
+            entities.extend(wifi_adapter_to_entities(adapter));
         }
 
         for adapter in &state.ethernet_adapters {
-            entities.push(ethernet_adapter_to_entity(adapter));
+            entities.extend(ethernet_adapter_to_entities(adapter));
         }
 
         for vpn in &state.vpn_connections {
@@ -275,14 +276,25 @@ impl Plugin for NetworkManagerPlugin {
         params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let entity_type = urn.entity_type();
-        let entity_id = urn.id();
 
         match entity_type {
             "network-adapter" => {
-                self.handle_adapter_action(entity_id, &action, &params)
+                let adapter_id = urn.id();
+                self.handle_adapter_action(adapter_id, &action, &params)
                     .await?
             }
-            "vpn" => self.handle_vpn_action(entity_id, &action).await?,
+            "wifi-network" => {
+                let ssid = urn.id();
+                self.handle_wifi_network_action(&urn, ssid, &action).await?
+            }
+            "ethernet-connection" => {
+                let uuid = urn.id();
+                self.handle_ethernet_connection_action(&urn, uuid, &action).await?
+            }
+            "vpn" => {
+                let vpn_id = urn.id();
+                self.handle_vpn_action(vpn_id, &action).await?
+            }
             _ => {
                 debug!("[nm] Unknown entity type: {}", entity_type);
             }
@@ -363,6 +375,63 @@ impl NetworkManagerPlugin {
             }
         }
 
+        Ok(())
+    }
+
+    async fn handle_wifi_network_action(
+        &self,
+        _urn: &Urn,
+        ssid: &str,
+        action: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match action {
+            "connect" => {
+                debug!("[nm] Connect to WiFi network: {}", ssid);
+                self.handle_connect_wifi(ssid).await?;
+            }
+            "disconnect" => {
+                debug!("[nm] Disconnect WiFi network: {}", ssid);
+                // Find the WiFi adapter and disconnect it
+                let device_path = {
+                    let state = self.lock_state();
+                    state
+                        .wifi_adapters
+                        .iter()
+                        .find(|a| a.active_ssid.as_ref() == Some(&ssid.to_string()))
+                        .map(|a| a.path.clone())
+                };
+                if let Some(path) = device_path {
+                    disconnect_device(&self.conn, &path).await?;
+                } else {
+                    warn!("[nm] Cannot disconnect - WiFi adapter not found for: {}", ssid);
+                }
+            }
+            _ => {
+                debug!("[nm] Unknown wifi-network action: {}", action);
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_ethernet_connection_action(
+        &self,
+        urn: &Urn,
+        uuid: &str,
+        action: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match action {
+            "activate" => {
+                debug!("[nm] Activate ethernet connection: {}", uuid);
+                // TODO: Implement ethernet connection activation
+            }
+            "deactivate" => {
+                debug!("[nm] Deactivate ethernet connection: {}", uuid);
+                // TODO: Implement ethernet connection deactivation
+            }
+            _ => {
+                debug!("[nm] Unknown ethernet-connection action: {}", action);
+            }
+        }
         Ok(())
     }
 
@@ -668,7 +737,12 @@ impl NetworkManagerPlugin {
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[ADAPTER_ENTITY_TYPE, VPN_ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides(&[
+        ADAPTER_ENTITY_TYPE,
+        WIFI_NETWORK_ENTITY_TYPE,
+        ETHERNET_CONNECTION_ENTITY_TYPE,
+        VPN_ENTITY_TYPE,
+    ]) {
         return Ok(());
     }
 

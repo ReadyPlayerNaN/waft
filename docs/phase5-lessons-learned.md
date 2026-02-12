@@ -288,7 +288,7 @@ async fn handle_action(...) -> Result<...> {
 
 **Tier 4 (Very Complex - Custom UI)**:
 - notifications (custom popup windows)
-- eds-agenda (calendar data, recurring events)
+- eds (calendar data, recurring events)
 - weather (network requests, caching)
 
 ### Architecture Decisions

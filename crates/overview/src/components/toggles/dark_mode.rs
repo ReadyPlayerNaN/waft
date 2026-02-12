@@ -12,6 +12,7 @@ use waft_protocol::Urn;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
 use crate::entity_store::{EntityActionCallback, EntityStore};
+use crate::i18n;
 use crate::plugin::WidgetFeatureToggle;
 
 /// Toggle for enabling/disabling dark mode via the darkman daemon.
@@ -37,7 +38,7 @@ impl DarkModeToggle {
                 details: None,
                 expandable: false,
                 icon: "weather-clear-night-symbolic".to_string(),
-                title: "Dark Mode".to_string(),
+                title: i18n::t("darkman-title"),
                 menu_id: None,
             },
             None,
