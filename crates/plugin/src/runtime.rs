@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::net::UnixStream;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, Mutex};
 use uuid::Uuid;
 use waft_protocol::urn::Urn;
 use waft_protocol::{PluginCommand, PluginMessage};
@@ -67,8 +67,12 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
         let name_for_writer = self.name.clone();
         tokio::spawn(write_loop(name_for_writer, write_half, write_rx));
 
+        // Shared previous-entity state for diffing (used by both the main loop and handle_action)
+        let previous: Arc<Mutex<HashMap<String, serde_json::Value>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
         // Send initial entities
-        let mut previous = send_all_entities(&*self.plugin, &write_tx, &self.name, HashMap::new()).await;
+        send_all_entities(&*self.plugin, &write_tx, &self.name, &previous).await;
 
         // Event loop
         let mut notifier_rx = self.notifier_rx;
@@ -82,7 +86,7 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                         log::info!("[{}] notifier dropped, shutting down", self.name);
                         break;
                     }
-                    previous = send_all_entities(&*self.plugin, &write_tx, &self.name, previous).await;
+                    send_all_entities(&*self.plugin, &write_tx, &self.name, &previous).await;
                 }
 
                 // Incoming command from daemon
@@ -94,8 +98,9 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                                     let plugin = self.plugin.clone();
                                     let tx = write_tx.clone();
                                     let name = self.name.clone();
+                                    let prev = previous.clone();
                                     tokio::spawn(async move {
-                                        handle_action(plugin, &name, &tx, urn, action, action_id, params).await;
+                                        handle_action(plugin, &name, &tx, &prev, urn, action, action_id, params).await;
                                     });
                                 }
                                 PluginCommand::CanStop => {
@@ -129,6 +134,7 @@ async fn handle_action<P: Plugin>(
     plugin: Arc<P>,
     name: &str,
     tx: &mpsc::Sender<PluginMessage>,
+    previous: &Arc<Mutex<HashMap<String, serde_json::Value>>>,
     urn: Urn,
     action: String,
     action_id: Uuid,
@@ -156,38 +162,31 @@ async fn handle_action<P: Plugin>(
         }
     }
 
-    // Re-send entities after action (state may have changed)
-    let entities = plugin.get_entities();
-    for entity in entities {
-        let msg = PluginMessage::EntityUpdated {
-            urn: entity.urn,
-            entity_type: entity.entity_type,
-            data: entity.data,
-        };
-        if tx.send(msg).await.is_err() {
-            break;
-        }
-    }
+    // Re-send entities after action, diffing against previous state
+    // so that removed entities get EntityRemoved messages.
+    send_all_entities(&*plugin, tx, name, previous).await;
 }
 
 /// Send all current entities to the daemon, diffing against previous state.
 ///
-/// Returns the new state map for the next diff cycle.
+/// Updates the shared `previous` map in place for the next diff cycle.
 async fn send_all_entities<P: Plugin>(
     plugin: &P,
     tx: &mpsc::Sender<PluginMessage>,
     name: &str,
-    previous: HashMap<String, serde_json::Value>,
-) -> HashMap<String, serde_json::Value> {
+    previous: &Arc<Mutex<HashMap<String, serde_json::Value>>>,
+) {
     let entities = plugin.get_entities();
     let mut current: HashMap<String, serde_json::Value> = HashMap::new();
+
+    let prev_snapshot = previous.lock().await.clone();
 
     for entity in &entities {
         let key = entity.urn.as_str().to_string();
         current.insert(key.clone(), entity.data.clone());
 
         // Only send if data changed or is new
-        let changed = match previous.get(&key) {
+        let changed = match prev_snapshot.get(&key) {
             Some(prev_data) => prev_data != &entity.data,
             None => true,
         };
@@ -200,13 +199,14 @@ async fn send_all_entities<P: Plugin>(
             };
             if tx.send(msg).await.is_err() {
                 log::warn!("[{name}] write channel closed during entity sync");
-                return current;
+                *previous.lock().await = current;
+                return;
             }
         }
     }
 
     // Send EntityRemoved for entities that no longer exist
-    for (prev_key, _) in &previous {
+    for (prev_key, _) in &prev_snapshot {
         if !current.contains_key(prev_key) {
             let urn = match Urn::parse(prev_key) {
                 Ok(u) => u,
@@ -221,12 +221,13 @@ async fn send_all_entities<P: Plugin>(
             };
             if tx.send(msg).await.is_err() {
                 log::warn!("[{name}] write channel closed during entity removal");
-                return current;
+                *previous.lock().await = current;
+                return;
             }
         }
     }
 
-    current
+    *previous.lock().await = current;
 }
 
 /// Background task that writes queued messages to the socket.

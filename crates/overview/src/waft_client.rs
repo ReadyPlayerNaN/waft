@@ -226,6 +226,22 @@ impl WaftClient {
         }
     }
 
+    /// Request cached entity state for an entity type.
+    ///
+    /// The daemon responds with `EntityUpdated` for each cached entity of
+    /// the given type. Use after subscribing to populate initial UI state
+    /// when reconnecting to a running daemon.
+    ///
+    /// Safe to call from the GTK main thread.
+    pub fn request_status(&self, entity_type: &str) {
+        let msg = AppMessage::Status {
+            entity_type: entity_type.to_string(),
+        };
+        if let Err(e) = self.write_tx.send(msg) {
+            log::warn!("[waft-client] failed to send Status: {e}");
+        }
+    }
+
     /// Unsubscribe from updates for an entity type.
     ///
     /// Safe to call from the GTK main thread.

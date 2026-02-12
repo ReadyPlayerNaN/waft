@@ -410,6 +410,9 @@ pub async fn setup() -> Result<adw::Application> {
                             for et in &entity_types {
                                 client.subscribe(et);
                             }
+                            for et in &entity_types {
+                                client.request_status(et);
+                            }
                             info!("[app] Subscribed to {} entity types", entity_types.len());
                         }
                     }
