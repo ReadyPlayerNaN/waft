@@ -1,0 +1,41 @@
+//! Clock header component.
+//!
+//! Subscribes to clock entity type and renders current time and date
+//! via an InfoCardWidget.
+
+use std::rc::Rc;
+
+use gtk::prelude::*;
+
+use waft_protocol::entity;
+use waft_ui_gtk::widgets::info_card::InfoCardWidget;
+
+use crate::entity_store::EntityStore;
+
+/// Displays current time as title and date as description.
+pub struct ClockComponent {
+    widget: Rc<InfoCardWidget>,
+}
+
+impl ClockComponent {
+    pub fn new(store: &Rc<EntityStore>) -> Self {
+        let widget = Rc::new(InfoCardWidget::new("appointment-symbolic", "", None));
+
+        let store_ref = store.clone();
+        let widget_ref = widget.clone();
+        store.subscribe_type(entity::clock::ENTITY_TYPE, move || {
+            let entities = store_ref
+                .get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE);
+            if let Some((_urn, clock)) = entities.first() {
+                widget_ref.set_title(&clock.time);
+                widget_ref.set_description(Some(&clock.date));
+            }
+        });
+
+        Self { widget }
+    }
+
+    pub fn widget(&self) -> gtk::Widget {
+        self.widget.widget()
+    }
+}

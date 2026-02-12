@@ -11,7 +11,7 @@ use std::thread;
 use adw::prelude::*;
 
 use crate::dbus::DbusHandle;
-use crate::entity_renderer::{EntityActionCallback, EntityRenderer};
+use crate::entity_store::{EntityActionCallback, EntityStore};
 use crate::features::session::SessionEvent;
 use crate::menu_state::create_menu_store;
 use crate::plugin::PluginResources;
@@ -240,9 +240,33 @@ pub async fn setup() -> Result<adw::Application> {
             // Apply CSS before creating any windows so they get correct styling
             MainWindowWidget::apply_css();
 
+            // Create entity store for daemon notification distribution
+            let entity_store = Rc::new(EntityStore::new());
+
+            // Entity action callback routes actions from components back through WaftClient
+            let waft_client_for_entity_actions = waft_client_slot.clone();
+            let entity_action_callback: EntityActionCallback =
+                Rc::new(move |urn, action_name, params| {
+                    debug!("[entity] Entity action on {}: {}", urn, action_name);
+                    if let Ok(guard) = waft_client_for_entity_actions.lock() {
+                        if let Some(ref client) = *guard {
+                            client.trigger_action(urn, &action_name, params);
+                        } else {
+                            warn!("[entity] WaftClient not available for entity action");
+                        }
+                    } else {
+                        warn!("[entity] Failed to lock WaftClient for entity action");
+                    }
+                });
+
             // Create the main window BEFORE creating plugin elements
             // This allows IPC commands to be processed even while plugins are still initializing
-            let main_window = MainWindowWidget::new(&app, &registry);
+            let main_window = MainWindowWidget::new(
+                &app,
+                &registry,
+                &entity_store,
+                &entity_action_callback,
+            );
 
             // Connect stop handler
             let app_for_stop = app.clone();
@@ -359,61 +383,9 @@ pub async fn setup() -> Result<adw::Application> {
             // Setup entity-based daemon notification receiver.
             // WaftClient reads AppNotification from the daemon via tokio and forwards
             // through a flume channel. We consume it here on the glib main context
-            // and feed it into the EntityRenderer which reconciles widgets.
+            // and feed it into the EntityStore which distributes to components.
             if let Ok(mut rx_slot) = daemon_notification_rx_slot.lock()
                 && let Some(notification_rx) = rx_slot.take() {
-                    let registrar_for_entities = Rc::new(
-                        crate::plugin_registry::RegistrarHandle::new(registry.clone()),
-                    );
-                    let menu_store_for_entities = registry.menu_store().clone();
-
-                    // Action callback that routes widget actions back through WaftClient.
-                    // The widget_id is the entity URN string (e.g. "clock/clock/default").
-                    // The action contains the action id and params from the widget protocol.
-                    let waft_client_for_actions = waft_client_slot.clone();
-                    let action_callback: waft_ui_gtk::renderer::ActionCallback =
-                        Rc::new(move |widget_id, action| {
-                            debug!("[entity] Action from widget {}: {:?}", widget_id, action);
-                            let urn = match waft_protocol::Urn::parse(&widget_id) {
-                                Ok(urn) => urn,
-                                Err(e) => {
-                                    warn!("[entity] Invalid URN '{}': {e}", widget_id);
-                                    return;
-                                }
-                            };
-                            let params = match &action.params {
-                                waft_ipc::ActionParams::None => serde_json::Value::Null,
-                                waft_ipc::ActionParams::Value(v) => serde_json::json!(v),
-                                waft_ipc::ActionParams::String(s) => serde_json::json!(s),
-                                waft_ipc::ActionParams::Map(m) => serde_json::json!(m),
-                            };
-                            if let Ok(guard) = waft_client_for_actions.lock() {
-                                if let Some(ref client) = *guard {
-                                    client.trigger_action(urn, &action.id, params);
-                                } else {
-                                    warn!("[entity] WaftClient not available for action");
-                                }
-                            } else {
-                                warn!("[entity] Failed to lock WaftClient for action");
-                            }
-                        });
-
-                    // Entity action callback for EntityRenderer (same routing, different signature)
-                    let waft_client_for_entity_actions = waft_client_slot.clone();
-                    let entity_action_callback: EntityActionCallback =
-                        Rc::new(move |urn, action_name, params| {
-                            debug!("[entity] Entity action on {}: {}", urn, action_name);
-                            if let Ok(guard) = waft_client_for_entity_actions.lock() {
-                                if let Some(ref client) = *guard {
-                                    client.trigger_action(urn, &action_name, params);
-                                } else {
-                                    warn!("[entity] WaftClient not available for entity action");
-                                }
-                            } else {
-                                warn!("[entity] Failed to lock WaftClient for entity action");
-                            }
-                        });
-
                     // Subscribe to all known entity types so the daemon spawns plugins on demand
                     if let Ok(guard) = waft_client_slot.lock() {
                         if let Some(ref client) = *guard {
@@ -442,16 +414,10 @@ pub async fn setup() -> Result<adw::Application> {
                         }
                     }
 
+                    let store_for_notifications = entity_store.clone();
                     glib::spawn_future_local(async move {
-                        let mut renderer = EntityRenderer::new(
-                            menu_store_for_entities,
-                            action_callback,
-                            registrar_for_entities,
-                            entity_action_callback,
-                        );
-
                         while let Ok(notification) = notification_rx.recv_async().await {
-                            renderer.handle_notification(notification);
+                            store_for_notifications.handle_notification(notification);
                         }
                         warn!("[entity] Entity notification receiver loop exited");
                     });

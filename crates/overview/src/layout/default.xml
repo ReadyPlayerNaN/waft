@@ -1,31 +1,32 @@
 <Overview>
   <Header>
     <Row>
-      <Widget id="clock:main" />
-      <Widget id="battery:main" />
-      <Widget id="weather:main" />
+      <Clock />
+      <Battery />
+      <Weather />
     </Row>
     <Row halign="end">
-      <Widget id="keyboard-layout:indicator" />
-      <Widget id="systemd-actions:*" />
+      <KeyboardLayout />
+      <SessionActions />
+      <SystemActions />
     </Row>
   </Header>
   <Divider />
   <TwoColumns>
     <Col>
-      <Widget id="eds-agenda:*" />
-      <Widget id="notifications:list" />
+      <Agenda />
+      <NotificationList />
     </Col>
     <Col>
-      <Widget id="audio:*" />
-      <Widget id="brightness:*" />
+      <AudioSliders />
+      <BrightnessSliders />
       <FeatureToggleGrid>
-        <Widget id="notifications:dnd" />
-        <Widget id="caffeine:toggle" />
-        <Widget id="darkman:toggle" />
-        <Widget id="sunsetr:toggle" />
-        <Widget id="bluetooth:*" />
-        <Widget id="networkmanager:*" />
+        <DndToggle />
+        <CaffeineToggle />
+        <DarkModeToggle />
+        <NightLightToggle />
+        <BluetoothToggles />
+        <NetworkToggles />
       </FeatureToggleGrid>
       <Unmatched />
     </Col>

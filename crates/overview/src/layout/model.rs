@@ -21,6 +21,8 @@ pub enum LayoutNode {
     Divider,
     /// Groups child Widget patterns into a feature toggle grid
     FeatureToggleGrid { children: Vec<LayoutNode> },
+    /// Purpose-built component, created by the renderer on encounter
+    Component { name: String },
     /// Widget placeholder, matches by ID pattern (supports `*` suffix wildcard)
     Widget { id: String },
     /// Catch-all for widgets not matched by any pattern

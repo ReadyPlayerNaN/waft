@@ -10,8 +10,9 @@ use gtk4_layer_shell::LayerShell;
 use log::debug;
 
 use crate::common::VoidCallback;
-use crate::layout::parser::{load_layout, parse_layout, DEFAULT_LAYOUT};
-use crate::layout::renderer::{render_layout, RenderedLayout};
+use crate::entity_store::{EntityActionCallback, EntityStore};
+use crate::layout::load_layout;
+use crate::layout::renderer::{RenderContext, render_layout};
 use crate::menu_state::MenuStore;
 use crate::plugin_registry::PluginRegistry;
 
@@ -72,7 +73,12 @@ pub struct MainWindowWidget {
 
 impl MainWindowWidget {
     /// Create a new main window with the given registry.
-    pub fn new(app: &adw::Application, registry: &Rc<PluginRegistry>) -> Self {
+    pub fn new(
+        app: &adw::Application,
+        registry: &Rc<PluginRegistry>,
+        store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+    ) -> Self {
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title(crate::i18n::t("app-title"))
@@ -87,20 +93,9 @@ impl MainWindowWidget {
         // Configure layer shell
         Self::configure_layer_shell(&window);
 
-        // Build content from declarative layout
+        // Build content from layout XML with entity components
         let menu_store = registry.menu_store();
-        let (clip, rendered) = Self::build_content(&window, registry, menu_store.clone());
-
-        // Subscribe to widget changes — layout bindings handle routing
-        let layout = Rc::new(rendered);
-        let registry_for_sync = registry.clone();
-        registry.subscribe_widgets({
-            let layout = layout.clone();
-            move || {
-                debug!("[main_window] Widget change detected, syncing layout");
-                layout.sync(&registry_for_sync);
-            }
-        });
+        let clip = Self::build_content(&window, registry, store, action_callback, menu_store.clone());
 
         // Start in hidden state (fully transparent)
         clip.set_opacity(0.0);
@@ -815,14 +810,26 @@ impl MainWindowWidget {
 
     fn build_content(
         window: &adw::ApplicationWindow,
-        _registry: &Rc<PluginRegistry>,
+        registry: &Rc<PluginRegistry>,
+        store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
         menu_store: Rc<MenuStore>,
-    ) -> (gtk::Frame, RenderedLayout) {
-        let layout_tree = load_layout().unwrap_or_else(|e| {
-            log::warn!("Failed to load layout: {}, using default", e);
-            parse_layout(DEFAULT_LAYOUT).expect("Default layout must be valid")
+    ) -> gtk::Frame {
+        let tree = load_layout().expect("failed to load layout");
+
+        let ctx = Rc::new(RenderContext::new(
+            store.clone(),
+            action_callback.clone(),
+        ));
+
+        let rendered = Rc::new(render_layout(&tree, &ctx, &menu_store));
+
+        // Subscribe for legacy <Widget id="..."> bindings (cdylib plugins)
+        let rendered_ref = rendered.clone();
+        let registry_ref = registry.clone();
+        registry.subscribe_widgets(move || {
+            rendered_ref.sync(&registry_ref);
         });
-        let rendered = render_layout(&layout_tree, &menu_store);
 
         // Calculate max height based on monitor size
         let max_height = match gtk::gdk::Display::default() {
@@ -866,6 +873,9 @@ impl MainWindowWidget {
 
         window.set_content(Some(&clip));
 
-        (clip, rendered)
+        // Keep rendered layout + context alive (components hold entity subscriptions)
+        std::mem::forget(rendered);
+
+        clip
     }
 }

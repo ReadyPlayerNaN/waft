@@ -57,6 +57,14 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
             })
         }
         "Unmatched" => Ok(LayoutNode::Unmatched),
+        tag @ ("Clock" | "Battery" | "Weather" | "KeyboardLayout" | "SessionActions"
+        | "SystemActions" | "Agenda" | "NotificationList" | "AudioSliders"
+        | "BrightnessSliders" | "DndToggle" | "CaffeineToggle" | "DarkModeToggle"
+        | "NightLightToggle" | "BluetoothToggles" | "NetworkToggles") => {
+            Ok(LayoutNode::Component {
+                name: tag.to_string(),
+            })
+        }
         tag => Err(anyhow!("Unknown layout tag: {}", tag)),
     }
 }
@@ -119,18 +127,48 @@ mod tests {
                 assert!(matches!(&children[1], LayoutNode::Divider));
                 assert!(matches!(&children[2], LayoutNode::TwoColumns { .. }));
 
-                // Header should contain Rows
+                // Header should contain Rows with Component children
                 if let LayoutNode::Header { children: header_children } = &children[0] {
                     assert_eq!(header_children.len(), 2);
-                    assert!(matches!(&header_children[0], LayoutNode::Row { .. }));
-                    assert!(matches!(&header_children[1], LayoutNode::Row { halign: Some(_), .. }));
+                    if let LayoutNode::Row { children, .. } = &header_children[0] {
+                        assert_eq!(children.len(), 3);
+                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "Clock"));
+                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "Battery"));
+                        assert!(matches!(&children[2], LayoutNode::Component { name } if name == "Weather"));
+                    }
+                    if let LayoutNode::Row { halign, children } = &header_children[1] {
+                        assert_eq!(halign.as_deref(), Some("end"));
+                        assert_eq!(children.len(), 3);
+                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "KeyboardLayout"));
+                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "SessionActions"));
+                        assert!(matches!(&children[2], LayoutNode::Component { name } if name == "SystemActions"));
+                    }
                 }
 
                 // TwoColumns should contain Cols
                 if let LayoutNode::TwoColumns { children: col_children } = &children[2] {
                     assert_eq!(col_children.len(), 2);
-                    assert!(matches!(&col_children[0], LayoutNode::Col { .. }));
-                    assert!(matches!(&col_children[1], LayoutNode::Col { .. }));
+                    // Left column: Agenda, NotificationList
+                    if let LayoutNode::Col { children, .. } = &col_children[0] {
+                        assert_eq!(children.len(), 2);
+                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "Agenda"));
+                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "NotificationList"));
+                    }
+                    // Right column: AudioSliders, BrightnessSliders, FeatureToggleGrid, Unmatched
+                    if let LayoutNode::Col { children, .. } = &col_children[1] {
+                        assert_eq!(children.len(), 4);
+                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "AudioSliders"));
+                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "BrightnessSliders"));
+                        assert!(matches!(&children[2], LayoutNode::FeatureToggleGrid { .. }));
+                        assert!(matches!(&children[3], LayoutNode::Unmatched));
+
+                        // FeatureToggleGrid children
+                        if let LayoutNode::FeatureToggleGrid { children: toggle_children } = &children[2] {
+                            assert_eq!(toggle_children.len(), 6);
+                            assert!(matches!(&toggle_children[0], LayoutNode::Component { name } if name == "DndToggle"));
+                            assert!(matches!(&toggle_children[5], LayoutNode::Component { name } if name == "NetworkToggles"));
+                        }
+                    }
                 }
             }
             _ => panic!("root should be Overview"),
@@ -273,6 +311,42 @@ mod tests {
                         assert_eq!(children.len(), 2);
                     }
                     _ => panic!("expected FeatureToggleGrid"),
+                }
+            }
+            _ => panic!("root should be Overview"),
+        }
+    }
+
+    #[test]
+    fn parse_feature_toggle_grid_with_components() {
+        let xml = r#"<Overview><FeatureToggleGrid><DndToggle /><CaffeineToggle /><BluetoothToggles /></FeatureToggleGrid></Overview>"#;
+        let root = parse_layout(xml).expect("should parse");
+        match root {
+            LayoutNode::Overview { children } => {
+                match &children[0] {
+                    LayoutNode::FeatureToggleGrid { children } => {
+                        assert_eq!(children.len(), 3);
+                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "DndToggle"));
+                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "CaffeineToggle"));
+                        assert!(matches!(&children[2], LayoutNode::Component { name } if name == "BluetoothToggles"));
+                    }
+                    _ => panic!("expected FeatureToggleGrid"),
+                }
+            }
+            _ => panic!("root should be Overview"),
+        }
+    }
+
+    #[test]
+    fn parse_component() {
+        let xml = r#"<Overview><Clock /></Overview>"#;
+        let root = parse_layout(xml).expect("should parse");
+        match root {
+            LayoutNode::Overview { children } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    LayoutNode::Component { name } => assert_eq!(name, "Clock"),
+                    _ => panic!("expected Component"),
                 }
             }
             _ => panic!("root should be Overview"),
