@@ -274,7 +274,7 @@ fn render_node(
             sep.upcast()
         }
 
-        LayoutNode::Component { name } => render_component(name, ctx),
+        LayoutNode::Component { name } => render_component(name, ctx, menu_store),
 
         LayoutNode::FeatureToggleGrid { children } => {
             render_feature_toggle_grid(children, ctx, menu_store, bindings)
@@ -308,7 +308,7 @@ fn render_node(
 }
 
 /// Create a purpose-built entity component by name.
-fn render_component(name: &str, ctx: &Rc<RenderContext>) -> gtk::Widget {
+fn render_component(name: &str, ctx: &Rc<RenderContext>, menu_store: &Rc<MenuStore>) -> gtk::Widget {
     let mut keep = ctx.keep_alive.borrow_mut();
     match name {
         "Clock" => {
@@ -354,7 +354,7 @@ fn render_component(name: &str, ctx: &Rc<RenderContext>) -> gtk::Widget {
             w
         }
         "NotificationList" => {
-            let c = NotificationsComponent::new(&ctx.store, &ctx.action_callback);
+            let c = NotificationsComponent::new(&ctx.store, &ctx.action_callback, menu_store);
             let w = c.widget().clone();
             keep.push(Box::new(c));
             w

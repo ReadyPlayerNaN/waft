@@ -1,34 +1,39 @@
 //! Notification list component.
 //!
-//! Subscribes to the `notification` entity type and renders notifications
-//! sorted by creation time (newest first). Always visible, showing a
-//! placeholder when no notifications exist.
+//! Smart container that subscribes to the `notification` entity type, groups
+//! notifications by application, and routes actions back to the daemon.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
 
-use waft_ipc::widget::{Action, ActionParams};
 use waft_protocol::entity;
-use waft_protocol::entity::notification::NotificationIconHint;
 use waft_protocol::Urn;
-use waft_ui_gtk::renderer::ActionCallback;
-use waft_ui_gtk::widgets::info_card::InfoCardWidget;
 
+use super::notification_group::{NotificationData, NotificationGroup, NotificationGroupOutput};
 use crate::entity_store::{EntityActionCallback, EntityStore};
+use crate::menu_state::MenuStore;
 
-/// Displays a list of desktop notifications sorted newest first.
+/// Displays grouped desktop notifications sorted newest first.
 ///
-/// Each notification is rendered as an `InfoCardWidget`. Notifications
-/// with a "default" action are clickable. Shows "No notifications"
-/// when the list is empty.
+/// Notifications are grouped by `app_id`. Each group shows the newest
+/// notification and allows expanding to see older ones. Supports dismiss,
+/// clear-all, and action invocation via entity callbacks.
 pub struct NotificationsComponent {
     container: gtk::Box,
-    notifications_container: gtk::Box,
+    groups_container: gtk::Box,
+    empty_placeholder: gtk::Box,
+    groups: Rc<RefCell<HashMap<String, NotificationGroup>>>,
 }
 
 impl NotificationsComponent {
-    pub fn new(store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        menu_store: &Rc<MenuStore>,
+    ) -> Self {
         let container = gtk::Box::new(gtk::Orientation::Vertical, 8);
 
         let header = gtk::Label::builder()
@@ -38,44 +43,29 @@ impl NotificationsComponent {
             .build();
         container.append(&header);
 
-        let notifications_container = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        container.append(&notifications_container);
+        let groups_container = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        container.append(&groups_container);
 
-        // Show placeholder initially
-        let placeholder = gtk::Label::builder()
+        // Empty placeholder
+        let empty_placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let placeholder_label = gtk::Label::builder()
             .label("No notifications")
             .css_classes(["dim-label"])
             .xalign(0.0)
             .build();
-        notifications_container.append(&placeholder);
+        empty_placeholder.append(&placeholder_label);
+        container.append(&empty_placeholder);
 
-        // Build an ActionCallback bridge from the EntityActionCallback.
-        // InfoCardWidget expects Rc<dyn Fn(String, Action)> where the
-        // String is a widget_id we set to the URN string.
-        let entity_cb = action_callback.clone();
-        let bridge_callback: ActionCallback = Rc::new(move |widget_id, action: Action| {
-            match Urn::parse(&widget_id) {
-                Ok(urn) => {
-                    let params = match &action.params {
-                        ActionParams::None => serde_json::Value::Null,
-                        ActionParams::Value(v) => serde_json::json!(v),
-                        ActionParams::String(s) => serde_json::json!(s),
-                        ActionParams::Map(m) => serde_json::json!(m),
-                    };
-                    entity_cb(urn, action.id.clone(), params);
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[notifications] failed to parse URN from widget_id '{}': {e}",
-                        widget_id,
-                    );
-                }
-            }
-        });
+        let groups: Rc<RefCell<HashMap<String, NotificationGroup>>> =
+            Rc::new(RefCell::new(HashMap::new()));
 
+        // Subscribe to notification entity changes
         let store_ref = store.clone();
-        let notifications_container_ref = notifications_container.clone();
-        let bridge_cb = bridge_callback.clone();
+        let entity_cb = action_callback.clone();
+        let groups_ref = groups.clone();
+        let groups_container_ref = groups_container.clone();
+        let empty_placeholder_ref = empty_placeholder.clone();
+        let menu_store_ref = menu_store.clone();
 
         store.subscribe_type(entity::notification::NOTIFICATION_ENTITY_TYPE, move || {
             let mut entities: Vec<(Urn, entity::notification::Notification)> =
@@ -84,71 +74,108 @@ impl NotificationsComponent {
             // Sort by created_at_ms descending (newest first)
             entities.sort_by(|a, b| b.1.created_at_ms.cmp(&a.1.created_at_ms));
 
-            // Clear existing children
-            while let Some(child) = notifications_container_ref.first_child() {
-                notifications_container_ref.remove(&child);
-            }
-
-            if entities.is_empty() {
-                let placeholder = gtk::Label::builder()
-                    .label("No notifications")
-                    .css_classes(["dim-label"])
-                    .xalign(0.0)
-                    .build();
-                notifications_container_ref.append(&placeholder);
-                return;
-            }
-
+            // Group by app_id
+            let mut grouped: HashMap<String, Vec<(Urn, entity::notification::Notification)>> =
+                HashMap::new();
             for (urn, notif) in &entities {
-                let icon = resolve_notification_icon(&notif.icon_hints);
-                let has_default_action = notif.actions.iter().any(|a| a.key == "default");
-
-                let card = if has_default_action {
-                    let on_click = Action {
-                        id: "invoke-action".to_string(),
-                        params: ActionParams::Map(
-                            [("key".to_string(), serde_json::json!("default"))]
-                                .into_iter()
-                                .collect(),
-                        ),
-                    };
-                    InfoCardWidget::new_clickable(
-                        &icon,
-                        &notif.title,
-                        Some(notif.description.as_str()),
-                        &bridge_cb,
-                        &on_click,
-                        urn.as_str(),
-                    )
-                } else {
-                    InfoCardWidget::new(&icon, &notif.title, Some(notif.description.as_str()))
-                };
-
-                notifications_container_ref.append(&card.widget());
+                let group_key = notif
+                    .app_id
+                    .as_deref()
+                    .unwrap_or("unknown")
+                    .to_string();
+                grouped
+                    .entry(group_key)
+                    .or_default()
+                    .push((urn.clone(), notif.clone()));
             }
+
+            // Remove groups no longer present
+            let current_group_keys: Vec<String> =
+                groups_ref.borrow().keys().cloned().collect();
+            for key in &current_group_keys {
+                if !grouped.contains_key(key) {
+                    if let Some(group) = groups_ref.borrow_mut().remove(key) {
+                        groups_container_ref.remove(group.widget());
+                    }
+                }
+            }
+
+            // Create or update groups
+            for (group_key, notifs) in &grouped {
+                let data: Vec<NotificationData> = notifs
+                    .iter()
+                    .map(|(urn, notif)| NotificationData {
+                        urn: urn.clone(),
+                        title: notif.title.clone(),
+                        description: notif.description.clone(),
+                        icon_hints: notif.icon_hints.clone(),
+                        actions: notif.actions.clone(),
+                    })
+                    .collect();
+
+                let mut groups_map = groups_ref.borrow_mut();
+
+                if let Some(existing) = groups_map.get(group_key) {
+                    existing.update(&data);
+                } else {
+                    // Determine app title and icon from first notification
+                    let first = &notifs[0].1;
+                    let app_title = first
+                        .app_name
+                        .as_deref()
+                        .unwrap_or(group_key);
+
+                    let group = NotificationGroup::new(
+                        group_key,
+                        app_title,
+                        &first.icon_hints,
+                        &menu_store_ref,
+                    );
+
+                    // Wire output to entity callbacks
+                    let entity_cb_ref = entity_cb.clone();
+                    group.connect_output(move |event| match event {
+                        NotificationGroupOutput::ActionClick(urn, key) => {
+                            entity_cb_ref(
+                                urn,
+                                "invoke-action".to_string(),
+                                serde_json::json!({ "key": key }),
+                            );
+                        }
+                        NotificationGroupOutput::Close(urn) => {
+                            entity_cb_ref(urn, "dismiss".to_string(), serde_json::Value::Null);
+                        }
+                        NotificationGroupOutput::ClearAll(urns) => {
+                            for urn in urns {
+                                entity_cb_ref(
+                                    urn,
+                                    "dismiss".to_string(),
+                                    serde_json::Value::Null,
+                                );
+                            }
+                        }
+                    });
+
+                    group.update(&data);
+                    groups_container_ref.append(group.widget());
+                    groups_map.insert(group_key.clone(), group);
+                }
+            }
+
+            // Toggle empty placeholder
+            empty_placeholder_ref.set_visible(entities.is_empty());
+            groups_container_ref.set_visible(!entities.is_empty());
         });
 
         Self {
             container,
-            notifications_container,
+            groups_container,
+            empty_placeholder,
+            groups,
         }
     }
 
     pub fn widget(&self) -> &gtk::Widget {
         self.container.upcast_ref()
     }
-}
-
-/// Resolve the best icon from notification icon hints.
-///
-/// Tries themed icons first (most efficient for GTK), falls back to
-/// the default information icon.
-fn resolve_notification_icon(hints: &[NotificationIconHint]) -> String {
-    hints
-        .iter()
-        .find_map(|h| match h {
-            NotificationIconHint::Themed(name) => Some(name.clone()),
-            _ => None,
-        })
-        .unwrap_or_else(|| "dialog-information-symbolic".to_string())
 }
