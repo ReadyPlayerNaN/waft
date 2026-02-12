@@ -30,7 +30,11 @@ pub struct BrightnessSlidersComponent {
 
 impl BrightnessSlidersComponent {
     pub fn new(store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
-        let container = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let container = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(8)
+            .visible(false)
+            .build();
 
         let sliders: Rc<RefCell<HashMap<String, SliderEntry>>> =
             Rc::new(RefCell::new(HashMap::new()));
@@ -104,6 +108,8 @@ impl BrightnessSlidersComponent {
                     });
                 }
             }
+
+            container_ref.set_visible(!sliders.is_empty());
         });
 
         Self { container, sliders }

@@ -1,7 +1,7 @@
 //! Layout renderer -- converts a LayoutNode tree into a GTK widget tree with bindings.
 //!
-//! Handles both purpose-built entity components (`LayoutNode::Component`) and
-//! legacy cdylib plugin widgets (`LayoutNode::Widget`, `LayoutNode::Unmatched`).
+//! Handles purpose-built entity components (`LayoutNode::Component`) and
+//! legacy Widget/Unmatched nodes for backward compatibility.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -436,7 +436,6 @@ fn render_feature_toggle_grid(
         }
     });
 
-    let mut static_toggles: Vec<Rc<WidgetFeatureToggle>> = Vec::new();
     let mut dynamic_sources: Vec<Rc<dyn DynamicToggleSource>> = Vec::new();
 
     {
@@ -446,23 +445,39 @@ fn render_feature_toggle_grid(
             match child {
                 LayoutNode::Component { name } => match name.as_str() {
                     "DndToggle" => {
-                        let t = DoNotDisturbToggle::new(&ctx.store, &ctx.action_callback);
-                        static_toggles.push(t.as_feature_toggle());
+                        let t = Rc::new(DoNotDisturbToggle::new(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
                     }
                     "CaffeineToggle" => {
-                        let t = CaffeineToggle::new(&ctx.store, &ctx.action_callback);
-                        static_toggles.push(t.as_feature_toggle());
+                        let t = Rc::new(CaffeineToggle::new(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
                     }
                     "DarkModeToggle" => {
-                        let t = DarkModeToggle::new(&ctx.store, &ctx.action_callback);
-                        static_toggles.push(t.as_feature_toggle());
+                        let t = Rc::new(DarkModeToggle::new(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
                     }
                     "NightLightToggle" => {
-                        let t = NightLightToggle::new(&ctx.store, &ctx.action_callback);
-                        static_toggles.push(t.as_feature_toggle());
+                        let t = Rc::new(NightLightToggle::new(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
                     }
                     "BluetoothToggles" => {
@@ -506,7 +521,7 @@ fn render_feature_toggle_grid(
     // Wire the real rebuild closure
     let grid_ref = grid.clone();
     let rebuild: Rc<dyn Fn()> = Rc::new(move || {
-        let mut all = static_toggles.clone();
+        let mut all: Vec<Rc<WidgetFeatureToggle>> = Vec::new();
         for source in &dynamic_sources {
             all.extend(source.as_feature_toggles());
         }
@@ -556,5 +571,29 @@ impl DynamicToggleSource for BluetoothToggles {
 impl DynamicToggleSource for NetworkManagerToggles {
     fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
         NetworkManagerToggles::as_feature_toggles(self)
+    }
+}
+
+impl DynamicToggleSource for DarkModeToggle {
+    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        DarkModeToggle::as_feature_toggles(self)
+    }
+}
+
+impl DynamicToggleSource for NightLightToggle {
+    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        NightLightToggle::as_feature_toggles(self)
+    }
+}
+
+impl DynamicToggleSource for CaffeineToggle {
+    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        CaffeineToggle::as_feature_toggles(self)
+    }
+}
+
+impl DynamicToggleSource for DoNotDisturbToggle {
+    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        DoNotDisturbToggle::as_feature_toggles(self)
     }
 }

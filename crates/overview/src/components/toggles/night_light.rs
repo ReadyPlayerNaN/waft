@@ -2,7 +2,9 @@
 //!
 //! Subscribes to the `night-light` entity type from the sunsetr plugin and
 //! renders a FeatureToggleWidget that enables/disables blue light filtering.
+//! Hidden until entity data arrives from the daemon.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use waft_protocol::entity;
@@ -13,12 +15,21 @@ use crate::entity_store::{EntityActionCallback, EntityStore};
 use crate::plugin::WidgetFeatureToggle;
 
 /// Toggle for enabling/disabling night light (blue light filter).
+///
+/// Reports zero toggles until the first entity arrives, then one toggle.
 pub struct NightLightToggle {
     toggle: Rc<FeatureToggleWidget>,
+    available: Rc<Cell<bool>>,
 }
 
 impl NightLightToggle {
-    pub fn new(store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        rebuild_callback: Rc<dyn Fn()>,
+    ) -> Self {
+        let available = Rc::new(Cell::new(false));
+
         let toggle = Rc::new(FeatureToggleWidget::new(
             FeatureToggleProps {
                 active: false,
@@ -42,27 +53,39 @@ impl NightLightToggle {
         // Subscribe to entity changes and update the widget
         let store_ref = store.clone();
         let toggle_ref = toggle.clone();
+        let available_ref = available.clone();
         store.subscribe_type(entity::display::NIGHT_LIGHT_ENTITY_TYPE, move || {
             let entities: Vec<(Urn, entity::display::NightLight)> =
                 store_ref.get_entities_typed(entity::display::NIGHT_LIGHT_ENTITY_TYPE);
+
+            let was_available = available_ref.get();
+            let now_available = !entities.is_empty();
 
             if let Some((_urn, night_light)) = entities.first() {
                 toggle_ref.set_active(night_light.active);
                 toggle_ref.set_details(night_light.period.clone());
             }
+
+            if was_available != now_available {
+                available_ref.set(now_available);
+                rebuild_callback();
+            }
         });
 
-        Self { toggle }
+        Self { toggle, available }
     }
 
-    pub fn as_feature_toggle(&self) -> Rc<WidgetFeatureToggle> {
-        Rc::new(WidgetFeatureToggle {
+    pub fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        if !self.available.get() {
+            return Vec::new();
+        }
+        vec![Rc::new(WidgetFeatureToggle {
             id: "night-light-toggle".to_string(),
             weight: 210,
             el: self.toggle.widget(),
             menu: None,
             on_expand_toggled: None,
             menu_id: None,
-        })
+        })]
     }
 }

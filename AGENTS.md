@@ -56,7 +56,7 @@ When implementing features:
 
 **Waft** (formerly sacrebleui) is a Wayland-only overlay UI application using Rust, GTK4, and libadwaita. It acts as a notification server (owns `org.freedesktop.Notifications` on DBus) and provides an extensible overlay panel with feature toggles and a plugin-based architecture.
 
-The project uses a **hybrid plugin architecture**: most plugins run as **daemon binaries** communicating via Unix socket IPC, while 3 legacy plugins remain as cdylib `.so` files loaded in-process.
+All plugins run as **daemon binaries** communicating with the overview app via Unix socket IPC.
 
 ### Technology Stack
 
@@ -65,7 +65,6 @@ The project uses a **hybrid plugin architecture**: most plugins run as **daemon 
 - **System:** zbus 5.0 (DBus), nmrs 2.0 (NetworkManager bindings)
 - **Plugin SDK:** waft-plugin-sdk (daemon binaries with IPC)
 - **Widget rendering:** waft-ui-gtk (declarative Widget -> GTK reconciler)
-- **Legacy plugin loading:** libloading (cdylib `.so` for 3 remaining plugins)
 - **Config:** TOML (`~/.config/waft/config.toml`)
 - **Localization:** waft-i18n (Fluent internationalization)
 
@@ -75,10 +74,9 @@ The project uses a **hybrid plugin architecture**: most plugins run as **daemon 
 - **`waft-config`** - Configuration loading from `~/.config/waft/config.toml`
 - **`waft-ipc`** - IPC protocol types: `OverviewMessage`, `PluginMessage`, `Widget`, `Action`, `ActionParams`, `NamedWidget`, `Node`, `Orientation`, `WidgetSet`. Also CLI command parsing (`IpcCommand`) and socket path helpers.
 - **`waft-i18n`** - Fluent localization: `system_locale()` returns BCP47 locale, `I18n` struct for translations with `t()` and `t_args()`.
-- **`waft-plugin-api`** - Legacy cdylib plugin API: `OverviewPlugin` trait, `PluginId`, `PluginMetadata`, `Widget`/`Slot`/`WidgetRegistrar`, plugin loader, export macros.
 - **`waft-plugin-sdk`** - Daemon plugin SDK: `PluginDaemon` trait (Send+Sync), `PluginServer`, `WidgetNotifier`, widget builders (`FeatureToggleBuilder`, `SliderBuilder`, `MenuRowBuilder`, `ContainerBuilder`, `ButtonBuilder`, `LabelBuilder`, `InfoCardBuilder`, `SwitchBuilder`), testing utilities.
 - **`waft-ui-gtk`** - GTK4 renderer: `Reconcilable` trait, `WidgetReconciler`, widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`, `MenuItemWidget`), `renderer` module.
-- **`waft-overview`** - Main GTK4 overlay application binary. Spawns daemon plugins via `DaemonSpawner`, manages IPC connections via `PluginManager`, reconciles daemon widgets via `DaemonWidgetReconciler`, loads legacy cdylib plugins, manages the layer-shell window.
+- **`waft-overview`** - Main GTK4 overlay application binary. Spawns daemon plugins via `DaemonSpawner`, manages IPC connections via `PluginManager`, reconciles daemon widgets via `DaemonWidgetReconciler`, manages the layer-shell window.
 
 ### Plugin Architecture
 
@@ -97,9 +95,9 @@ The application has 14 plugins plus 1 internal feature:
 | **audio** | Daemon | Volume sliders, device selection (pactl) |
 | **networkmanager** | Daemon | WiFi/Ethernet/VPN management (nmrs + zbus) |
 | **weather** | Daemon | Weather information via HTTP API |
-| **notifications** | CDylib (legacy) | D-Bus notification server, toasts, DND |
-| **eds-agenda** | CDylib (legacy) | EDS calendar integration |
-| **sunsetr** | CDylib (legacy) | Night light control via sunsetr CLI |
+| **notifications** | Daemon | D-Bus notification server, toasts, DND |
+| **eds-agenda** | Daemon | EDS calendar integration |
+| **sunsetr** | Daemon | Night light control via sunsetr CLI |
 | *session* | Internal | Session lock detection (in overview/src/features/) |
 
 ### Daemon Architecture
@@ -107,7 +105,7 @@ The application has 14 plugins plus 1 internal feature:
 The primary plugin pattern. Daemon plugins are standalone tokio binaries that communicate with waft-overview via Unix socket IPC.
 
 **Components:**
-- **`DaemonSpawner`** (`crates/overview/src/daemon_spawner.rs`) - Spawns all 11 daemon binaries at startup. Discovers binaries via `WAFT_DAEMON_DIR` env var or standard paths.
+- **`DaemonSpawner`** (`crates/overview/src/daemon_spawner.rs`) - Spawns all daemon binaries at startup. Discovers binaries via `WAFT_DAEMON_DIR` env var or standard paths.
 - **`PluginManager`** (`crates/overview/src/plugin_manager/`) - IPC client that connects to daemon sockets, sends `GetWidgets`/`TriggerAction` messages, receives `SetWidgets` pushes. Submodules: `client.rs`, `router.rs`, `discovery.rs`, `registry.rs`.
 - **`DaemonWidgetReconciler`** (`crates/overview/src/daemon_widget_reconciler.rs`) - Converts declarative `Widget` descriptions from daemons into actual GTK widgets using `waft-ui-gtk`.
 - **`PluginServer`** (`crates/plugin-sdk/src/server.rs`) - Daemon-side socket server. Handles connections, message routing, and push notifications via `WidgetNotifier`.
@@ -143,16 +141,15 @@ crates/
     overview/                     # waft-overview: main GTK4 overlay binary
         src/
             main.rs               # Tokio entrypoint
-            app.rs                # Plugin loading (daemon + cdylib), IPC, window
-            daemon_spawner.rs     # Spawns 11 daemon binaries
+            app.rs                # Plugin loading, IPC, window
+            daemon_spawner.rs     # Spawns daemon binaries
             daemon_widget_reconciler.rs  # Widget desc -> GTK widgets
             plugin_manager/       # IPC client (manager, client, router, discovery, registry)
-            plugin.rs             # Re-exports from waft-plugin-api
-            plugin_registry.rs    # CDylib plugin lifecycle
+            plugin.rs             # Plugin type definitions
+            plugin_registry.rs    # Plugin lifecycle
             ui/                   # UI components (main_window, feature_grid, feature_toggle, icon)
             features/
                 session/          # Session lock detection (internal, not a user plugin)
-    plugin-api/                   # waft-plugin-api: legacy cdylib OverviewPlugin trait, loader
     plugin-sdk/                   # waft-plugin-sdk: daemon SDK
         src/
             lib.rs                # Re-exports PluginDaemon, PluginServer, builders, IPC types
@@ -176,9 +173,9 @@ plugins/
     audio/          bin/          # Daemon: volume + device selection (pactl)
     networkmanager/ bin/          # Daemon: WiFi/Ethernet/VPN (nmrs + zbus)
     weather/        bin/          # Daemon: weather info (HTTP API)
-    notifications/  src/          # CDylib: notification server + toasts
-    eds-agenda/     src/          # CDylib: EDS calendar integration
-    sunsetr/        src/          # CDylib: night light control
+    notifications/  bin/          # Daemon: notification server + toasts
+    eds-agenda/     bin/          # Daemon: EDS calendar integration
+    sunsetr/        bin/          # Daemon: night light control
 ```
 
 ### Key Architectural Patterns
@@ -270,19 +267,6 @@ Naming conventions: `*Props` for input structs, `*Output` for event enums, `conn
 
 When a widget has no events (purely presentational), skip the `Output` enum and `connect_output`.
 
-### GTK Init Boundary (has caused crashes)
-
-**For cdylib plugins and overview UI code:** Plugins are initialized **before** GTK. Creating widgets in `init()` will crash with `GTK has not been initialized`.
-
-**Allowed in `init()`:** DBus connections, async tasks, channels, pure Rust state
-**NOT allowed in `init()`:** Any GTK widget construction
-
-Construct widgets lazily in `create_elements()` or `get_widgets()`.
-
-**CRITICAL for cdylib plugins:** Dynamic `.so` plugins MUST use `gtk4` feature `unsafe-assume-initialized`. Each `.so` gets its own copy of gtk4's `static INITIALIZED: AtomicBool` -- the host app sets it to `true` via `gtk::init()` but the plugin's copy stays `false`, causing "GTK has not been initialized" panics. The `unsafe-assume-initialized` feature skips this Rust-side check.
-
-**Note:** Daemon plugins don't face this issue -- they have no GTK dependency.
-
 ### Threading Model
 
 **Overview (GTK host):**
@@ -364,13 +348,12 @@ Non-goals: No `gio`/`GDesktopAppInfo` dependency for `.desktop` file resolution.
 
 ### Architecture Terms
 
-- **Daemon Plugin** - A standalone tokio binary implementing `PluginDaemon` (Send+Sync) from `waft-plugin-sdk`. Communicates with overview via Unix socket IPC. The primary plugin architecture.
-- **CDylib Plugin** - Legacy `.so` file implementing `OverviewPlugin` (!Send) from `waft-plugin-api`. Runs in-process with GTK. Only 3 remain: notifications, eds-agenda, sunsetr.
+- **Daemon Plugin** - A standalone tokio binary implementing `PluginDaemon` (Send+Sync) from `waft-plugin-sdk`. Communicates with overview via Unix socket IPC.
 - **Widget Protocol** - The `Widget` enum (in `waft-ipc`) that daemon plugins use to describe their UI declaratively. Variants: `FeatureToggle`, `Slider`, `MenuRow`, `Container`, `Button`, `Label`, `InfoCard`, `Switch`, `Spinner`, `Checkmark`.
 - **NamedWidget** - A `Widget` with an `id` (string) and `weight` (i32 for sort order). The unit of plugin-to-overview communication.
 - **WidgetReconciler** - Cache-based system in `waft-ui-gtk` that efficiently updates GTK widgets when `Widget` descriptions change, avoiding full rebuilds.
 - **PluginManager** - Overview component that manages IPC connections to all daemon plugins (`crates/overview/src/plugin_manager/`).
-- **DaemonSpawner** - Overview component that spawns all 11 daemon binaries at startup (`crates/overview/src/daemon_spawner.rs`).
+- **DaemonSpawner** - Overview component that spawns all daemon binaries at startup (`crates/overview/src/daemon_spawner.rs`).
 - **WidgetNotifier** - Daemon-side mechanism to push updated widgets to all connected overview clients when state changes.
 - **Overlay** - The main layer-shell window that appears on top of other applications.
 
@@ -548,24 +531,16 @@ let handle = match self.field.as_ref() {
 
 ## Migration Status
 
-### Phase 5: Daemon Architecture (Active)
+### Phase 5: Daemon Architecture (Complete)
 
-**Completed:**
-- 11 daemon plugins migrated and operational
+**All 14 plugins migrated to daemon architecture.**
+
 - `waft-plugin-sdk` with `PluginDaemon` trait, `PluginServer`, `WidgetNotifier`, builders
 - `waft-ui-gtk` renderer with `WidgetReconciler` and `Reconcilable` trait
 - `waft-ipc` Widget protocol with all widget types
 - `DaemonSpawner` and `PluginManager` in overview
 
-**Remaining cdylib plugins (3):**
-- **notifications** -- Tier 4 complexity (custom D-Bus server, toast popups, 79+ tests)
-- **eds-agenda** -- Tier 4 (EDS calendar integration)
-- **sunsetr** -- CLI integration
-
-For cdylib plugin maintenance, use the `maintain-cdylib-plugin` skill.
-
 **Next:**
-- Migrate remaining 3 cdylib plugins to daemon architecture
 - Arch Linux split packaging (PKGBUILD)
 - New apps (`waft-settings`, `waft-palette`, etc.)
 
@@ -578,7 +553,6 @@ For cdylib plugin maintenance, use the `maintain-cdylib-plugin` skill.
 
 ### Planned Features
 
-- **Remaining cdylib migration** -- Migrate notifications, eds-agenda, sunsetr to daemons
 - **SNI (Status Notifier Items) support** -- Systray compatibility
 - **Settings app (`waft-settings`)** -- Standalone preferences/control center
 - **Arch Linux split packaging** -- Independent packages per plugin
