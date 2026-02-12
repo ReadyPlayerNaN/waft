@@ -9,6 +9,7 @@ members = [
     "crates/plugin-api",
     "crates/plugin-sdk",
     "crates/protocol",
+    "crates/waft",
     "crates/waft-ui-gtk",
     "widget-docs",
     "plugins/clock",
