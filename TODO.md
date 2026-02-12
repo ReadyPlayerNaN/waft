@@ -4,6 +4,7 @@
 - Rename property `base_icon` to `icon`
 - Replace custom implementation of chevron icon with MenuChevron widget
 - Deduplicate code in slider
+- Changing slider value is anything but smooth. When I drag the slider handle, it keeps jumping there and back
 
 # 4. Migrate eds-agenda
 
