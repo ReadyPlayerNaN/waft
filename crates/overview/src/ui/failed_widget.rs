@@ -2,7 +2,7 @@
 
 use gtk::prelude::*;
 
-use crate::ui::icon::IconWidget;
+use waft_ui_gtk::widgets::icon::IconWidget;
 
 /// A widget that indicates a plugin failed to load.
 ///

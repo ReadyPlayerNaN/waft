@@ -21,7 +21,6 @@ use crate::waft_client::WaftClient;
 use waft_config::Config;
 use waft_ipc::net as ipc_net;
 use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
-use waft_plugin_api::loader;
 use waft_protocol::entity;
 
 /// Set up the overlay host app and return the GTK Application.
@@ -128,30 +127,7 @@ pub async fn setup() -> Result<adw::Application> {
     // Create menu store for coordinating expandable menus
     let menu_store = Rc::new(create_menu_store());
 
-    let mut registry = PluginRegistry::new(menu_store);
-
-    // Load dynamic plugins from .so files
-    let plugin_dir = loader::plugin_dir();
-    let loaded_plugins = loader::discover_plugins(&plugin_dir);
-    for loaded in &loaded_plugins {
-        let plugin_id = loaded.metadata.id.as_str().to_string();
-        if !config.is_plugin_enabled(&plugin_id) {
-            debug!("Skipping disabled dynamic plugin: {}", plugin_id);
-            continue;
-        }
-        if let Some(mut plugin) = loaded.create_overview_plugin() {
-            if let Some(settings) = config.get_plugin_settings(&plugin_id)
-                && let Err(e) = plugin.configure(settings)
-            {
-                warn!("Failed to configure dynamic plugin {}: {}", plugin_id, e);
-            }
-            debug!("Registered dynamic plugin: {}", plugin_id);
-            registry.register_boxed(plugin);
-        }
-    }
-
-    // Legacy cdylib plugins loaded from .so files
-    // (notifications, eds, sunsetr)
+    let registry = PluginRegistry::new(menu_store);
 
     // Connect to the central waft daemon via WaftClient.
     // Uses D-Bus activation + exponential backoff retry if the daemon isn't ready yet.

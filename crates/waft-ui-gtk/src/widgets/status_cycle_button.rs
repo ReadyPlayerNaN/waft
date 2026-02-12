@@ -2,12 +2,9 @@
 
 use gtk::prelude::*;
 
-use crate::reconcile::{ReconcileOutcome, Reconcilable};
-use crate::renderer::ActionCallback;
+use crate::types::ActionCallback;
 use crate::widgets::icon::IconWidget;
 use waft_ipc::widget::{Action, ActionParams, StatusOption};
-use waft_ipc::Widget as IpcWidget;
-
 /// GTK4 status cycle button widget.
 #[derive(Clone)]
 pub struct StatusCycleButtonWidget {
@@ -118,43 +115,8 @@ impl StatusCycleButtonWidget {
     }
 }
 
-impl Reconcilable for StatusCycleButtonWidget {
-    fn try_reconcile(&self, old_desc: &IpcWidget, new_desc: &IpcWidget) -> ReconcileOutcome {
-        match (old_desc, new_desc) {
-            (
-                IpcWidget::StatusCycleButton {
-                    on_cycle: old_cycle,
-                    ..
-                },
-                IpcWidget::StatusCycleButton {
-                    value,
-                    icon,
-                    options,
-                    on_cycle: new_cycle,
-                },
-            ) => {
-                if old_cycle != new_cycle {
-                    return ReconcileOutcome::Recreate;
-                }
-                self.set_value(value);
-                self.set_icon(icon);
-                self.set_options(options);
-                ReconcileOutcome::Updated
-            }
-            _ => ReconcileOutcome::Recreate,
-        }
+impl crate::widget_base::WidgetBase for StatusCycleButtonWidget {
+    fn widget(&self) -> gtk::Widget {
+        self.widget()
     }
-}
-
-/// Render a StatusCycleButton from the IPC protocol.
-pub(crate) fn render_status_cycle_button(
-    callback: &ActionCallback,
-    value: &str,
-    icon: &str,
-    options: &[StatusOption],
-    on_cycle: &Action,
-    widget_id: &str,
-) -> gtk::Widget {
-    let widget = StatusCycleButtonWidget::new(value, icon, options, callback, on_cycle, widget_id);
-    widget.widget()
 }

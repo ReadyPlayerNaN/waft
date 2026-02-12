@@ -3,8 +3,7 @@
 //! Provides `set_value()`, `set_disabled()`, `set_icon()`, `set_expandable()` for
 //! in-place property updates without recreating the GTK tree.
 
-use crate::menu_state::{is_menu_open, menu_id_for_widget, toggle_menu};
-use crate::renderer::{ActionCallback, WidgetRenderer};
+use crate::menu_state::{is_menu_open, toggle_menu};
 use crate::widgets::icon::IconWidget;
 use crate::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use gtk::glib;
@@ -13,7 +12,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use waft_core::menu_state::MenuStore;
 use waft_core::{Callback, VoidCallback};
-use waft_ipc::widget::{Action, ActionParams};
 
 /// Properties for initializing a slider.
 #[derive(Debug, Clone)]
@@ -34,7 +32,6 @@ pub struct SliderProps {
 pub struct SliderWidget {
     pub(crate) root: gtk::Box,
     icon_widget: IconWidget,
-    icon_button: gtk::Button,
     scale: gtk::Scale,
     expand_revealer: gtk::Revealer,
     icon: Rc<RefCell<String>>,
@@ -44,7 +41,6 @@ pub struct SliderWidget {
     on_value_change: Callback<f64>,
     on_icon_click: VoidCallback,
     scale_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>>,
-    last_user_change: Rc<RefCell<Option<std::time::Instant>>>,
     is_dragging: Rc<RefCell<bool>>,
     pub menu_id: Option<String>,
 }
@@ -97,7 +93,7 @@ impl SliderWidget {
             let mid = menu_id.clone().unwrap();
             let is_open = is_menu_open(store, &mid);
             let menu_chevron = MenuChevronWidget::new(MenuChevronProps { expanded: is_open });
-            expand_button.set_child(menu_chevron.widget());
+            expand_button.set_child(Some(&menu_chevron.root));
 
             let store_clone = store.clone();
             let mid_clone = mid.clone();
@@ -170,7 +166,6 @@ impl SliderWidget {
         Self {
             root,
             icon_widget,
-            icon_button,
             scale,
             expand_revealer,
             icon,
@@ -180,7 +175,6 @@ impl SliderWidget {
             on_value_change,
             on_icon_click,
             scale_handler_id,
-            last_user_change,
             is_dragging,
             menu_id,
         }
@@ -243,361 +237,18 @@ impl SliderWidget {
     }
 }
 
-impl crate::reconcile::Reconcilable for SliderWidget {
-    fn try_reconcile(
-        &self,
-        old_desc: &waft_ipc::Widget,
-        new_desc: &waft_ipc::Widget,
-    ) -> crate::reconcile::ReconcileOutcome {
-        use crate::reconcile::ReconcileOutcome;
-        match (old_desc, new_desc) {
-            (
-                waft_ipc::Widget::Slider {
-                    on_value_change: old_vc,
-                    on_icon_click: old_ic,
-                    expanded_content: old_ec,
-                    ..
-                },
-                waft_ipc::Widget::Slider {
-                    icon,
-                    value,
-                    disabled,
-                    expandable,
-                    on_value_change: new_vc,
-                    on_icon_click: new_ic,
-                    expanded_content: new_ec,
-                },
-            ) => {
-                if old_vc != new_vc || old_ic != new_ic || old_ec != new_ec {
-                    return ReconcileOutcome::Recreate;
-                }
-                self.set_value(*value);
-                self.set_disabled(*disabled);
-                self.set_icon(icon);
-                self.set_expandable(*expandable);
-                ReconcileOutcome::Updated
-            }
-            _ => ReconcileOutcome::Recreate,
-        }
+impl crate::widget_base::WidgetBase for SliderWidget {
+    fn widget(&self) -> gtk::Widget {
+        self.widget()
     }
-}
-
-/// Render a Slider widget from the IPC protocol using SliderWidget.
-///
-/// This bridges the daemon widget protocol to the stateful SliderWidget,
-/// ensuring daemon plugins and cdylib plugins use the same rendering.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn render_slider(
-    renderer: &WidgetRenderer,
-    callback: &ActionCallback,
-    menu_store: &Rc<MenuStore>,
-    icon: &str,
-    value: f64,
-    disabled: bool,
-    expandable: bool,
-    expanded_content: &Option<Box<crate::types::Widget>>,
-    on_value_change: &Action,
-    on_icon_click: &Action,
-    widget_id: &str,
-) -> gtk::Widget {
-    let mid = menu_id_for_widget(widget_id);
-    let slider = SliderWidget::new(
-        SliderProps {
-            icon: icon.to_string(),
-            value,
-            disabled,
-            expandable,
-            menu_id: Some(mid.clone()),
-        },
-        Some(menu_store.clone()),
-    );
-
-    // Wire up action callbacks
-    let cb = callback.clone();
-    let wid = widget_id.to_string();
-    let action = on_value_change.clone();
-    slider.connect_value_change(move |v| {
-        let mut a = action.clone();
-        a.params = ActionParams::Value(v);
-        cb(wid.clone(), a);
-    });
-
-    let cb = callback.clone();
-    let wid = widget_id.to_string();
-    let action = on_icon_click.clone();
-    slider.connect_icon_click(move || {
-        cb(wid.clone(), action.clone());
-    });
-
-    // Revealer for expanded content (created outside the SliderWidget because it
-    // needs the WidgetRenderer for recursive rendering)
-    if expandable {
-        if let Some(content) = expanded_content {
-            let revealer = gtk::Revealer::new();
-            revealer.set_transition_type(gtk::RevealerTransitionType::SlideDown);
-            revealer.set_transition_duration(200);
-
-            let content_id = format!("{}:expanded", widget_id);
-            let gtk_content = renderer.render(content, &content_id);
-            revealer.set_child(Some(&gtk_content));
-
-            let is_open = is_menu_open(menu_store, &mid);
-            revealer.set_reveal_child(is_open);
-
-            // Subscribe to MenuStore so the revealer reacts to expand button clicks
-            let store_clone = menu_store.clone();
-            let mid_clone = mid.clone();
-            let revealer_clone = revealer.clone();
-            menu_store.subscribe(move || {
-                let state = store_clone.get_state();
-                let should_be_open = state.active_menu_id.as_deref() == Some(mid_clone.as_str());
-                revealer_clone.set_reveal_child(should_be_open);
-            });
-
-            // Append revealer to the root box
-            let root: gtk::Box = slider.root.clone();
-            root.append(&revealer);
-        }
-    }
-
-    slider.widget()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::init_gtk_for_tests;
-    use crate::types::{ActionParams, Widget};
     use std::cell::RefCell;
     use waft_core::menu_state::create_menu_store;
-
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_slider_basic() {
-        init_gtk_for_tests();
-        let menu_store = Rc::new(create_menu_store());
-        let callback: ActionCallback = Rc::new(|_id, _action| {});
-        let renderer = WidgetRenderer::new(menu_store.clone(), callback.clone());
-
-        let on_value_change = Action {
-            id: "set_volume".to_string(),
-            params: ActionParams::Value(0.5),
-        };
-        let on_icon_click = Action {
-            id: "toggle_mute".to_string(),
-            params: ActionParams::None,
-        };
-
-        let widget = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "audio-volume-high-symbolic",
-            0.5,
-            false,
-            false,
-            &None,
-            &on_value_change,
-            &on_icon_click,
-            "audio_slider",
-        );
-
-        assert!(widget.is::<gtk::Box>());
-        let main_box: gtk::Box = widget.downcast().unwrap();
-        assert_eq!(main_box.orientation(), gtk::Orientation::Vertical);
-    }
-
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_slider_disabled() {
-        init_gtk_for_tests();
-        let menu_store = Rc::new(create_menu_store());
-        let callback: ActionCallback = Rc::new(|_id, _action| {});
-        let renderer = WidgetRenderer::new(menu_store.clone(), callback.clone());
-
-        let on_value_change = Action {
-            id: "set_volume".to_string(),
-            params: ActionParams::Value(0.0),
-        };
-        let on_icon_click = Action {
-            id: "toggle_mute".to_string(),
-            params: ActionParams::None,
-        };
-
-        let widget = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "audio-volume-high-symbolic",
-            0.0,
-            true,
-            false,
-            &None,
-            &on_value_change,
-            &on_icon_click,
-            "disabled_slider",
-        );
-
-        let main_box: gtk::Box = widget.downcast().unwrap();
-        assert!(main_box.has_css_class("disabled"));
-    }
-
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_slider_expandable_collapsed() {
-        init_gtk_for_tests();
-        let menu_store = Rc::new(create_menu_store());
-        let callback: ActionCallback = Rc::new(|_id, _action| {});
-        let renderer = WidgetRenderer::new(menu_store.clone(), callback.clone());
-
-        let expanded_content = Some(Box::new(Widget::Label {
-            text: "Expanded Content".to_string(),
-            css_classes: vec![],
-        }));
-
-        let on_value_change = Action {
-            id: "set_value".to_string(),
-            params: ActionParams::Value(0.75),
-        };
-        let on_icon_click = Action {
-            id: "icon_click".to_string(),
-            params: ActionParams::None,
-        };
-
-        let widget = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "preferences-system-symbolic",
-            0.75,
-            false,
-            true,
-            &expanded_content,
-            &on_value_change,
-            &on_icon_click,
-            "expandable_slider",
-        );
-
-        assert!(widget.is::<gtk::Box>());
-    }
-
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_slider_icon_click_callback() {
-        init_gtk_for_tests();
-        let menu_store = Rc::new(create_menu_store());
-
-        let captured_actions: Rc<RefCell<Vec<(String, Action)>>> =
-            Rc::new(RefCell::new(Vec::new()));
-        let captured_actions_clone = captured_actions.clone();
-
-        let callback: ActionCallback = Rc::new(move |widget_id, action| {
-            captured_actions_clone
-                .borrow_mut()
-                .push((widget_id, action));
-        });
-
-        let renderer = WidgetRenderer::new(menu_store.clone(), callback.clone());
-
-        let on_value_change = Action {
-            id: "set_value".to_string(),
-            params: ActionParams::Value(0.5),
-        };
-        let on_icon_click = Action {
-            id: "icon_clicked".to_string(),
-            params: ActionParams::None,
-        };
-
-        let widget = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "audio-volume-high-symbolic",
-            0.5,
-            false,
-            false,
-            &None,
-            &on_value_change,
-            &on_icon_click,
-            "test_slider",
-        );
-
-        let main_box: gtk::Box = widget.downcast().unwrap();
-        let controls_box = main_box.first_child().unwrap();
-        let controls_box: gtk::Box = controls_box.downcast().unwrap();
-        let icon_button = controls_box.first_child().unwrap();
-        let icon_button: gtk::Button = icon_button.downcast().unwrap();
-
-        icon_button.emit_clicked();
-
-        let actions = captured_actions.borrow();
-        assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0].0, "test_slider");
-        assert_eq!(actions[0].1.id, "icon_clicked");
-    }
-
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_slider_value_range() {
-        init_gtk_for_tests();
-        let menu_store = Rc::new(create_menu_store());
-        let callback: ActionCallback = Rc::new(|_id, _action| {});
-        let renderer = WidgetRenderer::new(menu_store.clone(), callback.clone());
-
-        let on_value_change = Action {
-            id: "set_value".to_string(),
-            params: ActionParams::Value(0.0),
-        };
-        let on_icon_click = Action {
-            id: "icon_click".to_string(),
-            params: ActionParams::None,
-        };
-
-        let widget_min = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "icon",
-            0.0,
-            false,
-            false,
-            &None,
-            &on_value_change,
-            &on_icon_click,
-            "slider_min",
-        );
-        assert!(widget_min.is::<gtk::Box>());
-
-        let widget_max = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "icon",
-            1.0,
-            false,
-            false,
-            &None,
-            &on_value_change,
-            &on_icon_click,
-            "slider_max",
-        );
-        assert!(widget_max.is::<gtk::Box>());
-
-        let widget_mid = render_slider(
-            &renderer,
-            &callback,
-            &menu_store,
-            "icon",
-            0.5,
-            false,
-            false,
-            &None,
-            &on_value_change,
-            &on_icon_click,
-            "slider_mid",
-        );
-        assert!(widget_mid.is::<gtk::Box>());
-    }
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]

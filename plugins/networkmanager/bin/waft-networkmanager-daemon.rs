@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::entity::network::{
-    AdapterKind, EthernetConnection, NetworkAdapter, VpnState as EntityVpnState, WiFiNetwork,
+    AdapterKind, NetworkAdapter, VpnState as EntityVpnState, WiFiNetwork,
     ADAPTER_ENTITY_TYPE, ETHERNET_CONNECTION_ENTITY_TYPE, VPN_ENTITY_TYPE,
     WIFI_NETWORK_ENTITY_TYPE,
 };
@@ -19,9 +19,13 @@ use zbus::Connection;
 
 use waft_plugin_networkmanager::dbus_property::{DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI};
 use waft_plugin_networkmanager::device_discovery::discover_devices;
+use waft_plugin_networkmanager::ethernet::{
+    activate_ethernet_connection, deactivate_ethernet_connection,
+};
+use waft_plugin_networkmanager::ip_config::{fetch_public_ip, get_device_ip4_config};
 use waft_plugin_networkmanager::signal_monitor::monitor_nm_signals;
 use waft_plugin_networkmanager::state::{
-    EthernetAdapterState, NmState, VpnState, WiFiAdapterState,
+    CachedIpConfig, EthernetAdapterState, NmState, VpnState, WiFiAdapterState,
 };
 use waft_plugin_networkmanager::vpn::{
     activate_vpn, deactivate_vpn, get_active_vpn_connections, get_vpn_profiles,
@@ -72,6 +76,9 @@ impl NetworkManagerPlugin {
                                 path: device.path,
                                 interface_name: device.interface_name,
                                 device_state: device.device_state,
+                                ip_config: None,
+                                active_connection_uuid: None,
+                                profiles: Vec::new(),
                             });
                         }
                         DEVICE_TYPE_WIFI => {
@@ -91,6 +98,65 @@ impl NetworkManagerPlugin {
             }
             Err(e) => {
                 error!("[nm] Failed to discover devices: {}", e);
+            }
+        }
+
+        // Read IP configuration for connected ethernet adapters
+        for adapter in &mut state.ethernet_adapters {
+            if adapter.is_connected() {
+                match get_device_ip4_config(&conn, &adapter.path).await {
+                    Ok(Some(ip)) => {
+                        debug!(
+                            "[nm] Ethernet {} IP: {}/{}",
+                            adapter.interface_name, ip.address, ip.prefix
+                        );
+                        adapter.ip_config = Some(CachedIpConfig {
+                            address: ip.address,
+                            prefix: ip.prefix,
+                            gateway: ip.gateway,
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        warn!(
+                            "[nm] Failed to read IP config for {}: {}",
+                            adapter.interface_name, e
+                        );
+                    }
+                }
+            }
+        }
+
+        // Fetch public IP if any adapter is connected
+        let any_connected = state.ethernet_adapters.iter().any(|a| a.is_connected())
+            || state.wifi_adapters.iter().any(|a| a.active_ssid.is_some());
+        if any_connected {
+            if let Some(public_ip) = fetch_public_ip().await {
+                debug!("[nm] Public IP: {}", public_ip);
+                state.public_ip = Some(public_ip);
+            }
+        }
+
+        // Discover ethernet connection profiles
+        match waft_plugin_networkmanager::ethernet::get_ethernet_profiles(&conn).await {
+            Ok(profiles) => {
+                info!("[nm] Found {} ethernet profiles", profiles.len());
+                for adapter in &mut state.ethernet_adapters {
+                    // Read active connection UUID for connected adapters
+                    if adapter.is_connected() {
+                        adapter.active_connection_uuid =
+                            waft_plugin_networkmanager::ethernet::get_active_connection_uuid(
+                                &conn,
+                                &adapter.path,
+                            )
+                            .await
+                            .unwrap_or(None);
+                    }
+                    adapter.profiles = profiles.clone();
+                }
+            }
+            Err(e) => {
+                error!("[nm] Failed to get ethernet profiles: {}", e);
             }
         }
 
@@ -180,6 +246,7 @@ fn wifi_adapter_to_entities(adapter: &WiFiAdapterState) -> Vec<Entity> {
         enabled: adapter.enabled,
         connected: adapter.active_ssid.is_some(),
         ip: None,
+        public_ip: None,
         kind: AdapterKind::Wireless,
     };
     entities.push(Entity::new(
@@ -208,16 +275,33 @@ fn wifi_adapter_to_entities(adapter: &WiFiAdapterState) -> Vec<Entity> {
     entities
 }
 
-fn ethernet_adapter_to_entities(adapter: &EthernetAdapterState) -> Vec<Entity> {
+fn ethernet_adapter_to_entities(
+    adapter: &EthernetAdapterState,
+    public_ip: &Option<String>,
+) -> Vec<Entity> {
     let mut entities = Vec::new();
 
     // Adapter entity
     let adapter_urn = Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, &adapter.interface_name);
+
+    let ip = adapter.ip_config.as_ref().map(|c| {
+        waft_plugin::entity::network::IpInfo {
+            address: c.address.clone(),
+            prefix: c.prefix,
+            gateway: c.gateway.clone(),
+        }
+    });
+
     let adapter_entity = NetworkAdapter {
         name: adapter.interface_name.clone(),
         enabled: true,
         connected: adapter.is_connected(),
-        ip: None,
+        ip,
+        public_ip: if adapter.is_connected() {
+            public_ip.clone()
+        } else {
+            None
+        },
         kind: AdapterKind::Wired,
     };
     entities.push(Entity::new(
@@ -226,7 +310,24 @@ fn ethernet_adapter_to_entities(adapter: &EthernetAdapterState) -> Vec<Entity> {
         &adapter_entity,
     ));
 
-    // TODO: Emit ethernet connection child entities when we have profile data
+    // Ethernet connection profile child entities
+    for profile in &adapter.profiles {
+        let conn_urn =
+            adapter_urn.child(ETHERNET_CONNECTION_ENTITY_TYPE, &profile.uuid);
+        let conn_entity = waft_plugin::entity::network::EthernetConnection {
+            name: profile.name.clone(),
+            uuid: profile.uuid.clone(),
+            active: adapter
+                .active_connection_uuid
+                .as_ref()
+                .is_some_and(|u| *u == profile.uuid),
+        };
+        entities.push(Entity::new(
+            conn_urn,
+            ETHERNET_CONNECTION_ENTITY_TYPE,
+            &conn_entity,
+        ));
+    }
 
     entities
 }
@@ -259,7 +360,7 @@ impl Plugin for NetworkManagerPlugin {
         }
 
         for adapter in &state.ethernet_adapters {
-            entities.extend(ethernet_adapter_to_entities(adapter));
+            entities.extend(ethernet_adapter_to_entities(adapter, &state.public_ip));
         }
 
         for vpn in &state.vpn_connections {
@@ -421,12 +522,78 @@ impl NetworkManagerPlugin {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match action {
             "activate" => {
-                debug!("[nm] Activate ethernet connection: {}", uuid);
-                // TODO: Implement ethernet connection activation
+                info!("[nm] Activate ethernet connection: {}", uuid);
+
+                // Find the connection path and device path
+                let (conn_path, device_path) = {
+                    let state = self.lock_state();
+                    let mut result = (None, None);
+                    for adapter in &state.ethernet_adapters {
+                        if let Some(profile) = adapter.profiles.iter().find(|p| p.uuid == uuid) {
+                            result = (Some(profile.path.clone()), Some(adapter.path.clone()));
+                            break;
+                        }
+                    }
+                    result
+                };
+
+                if let (Some(conn_path), Some(device_path)) = (conn_path, device_path) {
+                    match activate_ethernet_connection(&self.conn, &conn_path, &device_path).await
+                    {
+                        Ok(_) => {
+                            info!("[nm] Ethernet connection activated: {}", uuid);
+                            let mut state = self.lock_state();
+                            for adapter in &mut state.ethernet_adapters {
+                                if adapter.path == device_path {
+                                    adapter.active_connection_uuid = Some(uuid.to_string());
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("[nm] Failed to activate ethernet connection: {}", e);
+                            return Err(e.into());
+                        }
+                    }
+                } else {
+                    warn!(
+                        "[nm] Ethernet connection not found: {} (urn: {})",
+                        uuid,
+                        urn.as_str()
+                    );
+                }
             }
             "deactivate" => {
-                debug!("[nm] Deactivate ethernet connection: {}", uuid);
-                // TODO: Implement ethernet connection deactivation
+                info!("[nm] Deactivate ethernet connection: {}", uuid);
+
+                // Find the device path
+                let device_path = {
+                    let state = self.lock_state();
+                    state
+                        .ethernet_adapters
+                        .iter()
+                        .find(|a| a.active_connection_uuid.as_deref() == Some(uuid))
+                        .map(|a| a.path.clone())
+                };
+
+                if let Some(device_path) = device_path {
+                    match deactivate_ethernet_connection(&self.conn, &device_path).await {
+                        Ok(()) => {
+                            info!("[nm] Ethernet connection deactivated: {}", uuid);
+                            let mut state = self.lock_state();
+                            for adapter in &mut state.ethernet_adapters {
+                                if adapter.path == device_path {
+                                    adapter.active_connection_uuid = None;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("[nm] Failed to deactivate ethernet connection: {}", e);
+                            return Err(e.into());
+                        }
+                    }
+                } else {
+                    warn!("[nm] No active ethernet connection with UUID: {}", uuid);
+                }
             }
             _ => {
                 debug!("[nm] Unknown ethernet-connection action: {}", action);

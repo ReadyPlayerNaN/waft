@@ -4,11 +4,11 @@
 
 pub mod css;
 pub mod menu_state;
-pub mod reconcile;
-pub mod renderer;
 pub mod types;
-pub mod widget_reconciler;
+pub mod widget_base;
 pub mod widgets;
+
+pub use widget_base::{Child, Children, WidgetBase};
 
 #[cfg(test)]
 pub mod test_utils;

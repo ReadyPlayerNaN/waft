@@ -4,3 +4,8 @@
 // re-exported here for backwards compatibility with existing code.
 
 pub use waft_ipc::widget::*;
+
+use std::rc::Rc;
+
+/// Type alias for the action callback function.
+pub type ActionCallback = Rc<dyn Fn(String, Action)>;

@@ -6,12 +6,9 @@
 
 use gtk::prelude::*;
 
-use crate::reconcile::{ReconcileOutcome, Reconcilable};
-use crate::renderer::ActionCallback;
+use crate::types::ActionCallback;
 use crate::widgets::icon::IconWidget;
 use waft_ipc::widget::Action;
-use waft_ipc::Widget as IpcWidget;
-
 /// Pure GTK4 info card widget.
 #[derive(Clone)]
 pub struct InfoCardWidget {
@@ -19,7 +16,6 @@ pub struct InfoCardWidget {
     icon_widget: IconWidget,
     title_label: gtk::Label,
     description_label: gtk::Label,
-    clickable: bool,
 }
 
 impl InfoCardWidget {
@@ -33,7 +29,6 @@ impl InfoCardWidget {
             icon_widget,
             title_label,
             description_label,
-            clickable: false,
         }
     }
 
@@ -62,7 +57,6 @@ impl InfoCardWidget {
             icon_widget,
             title_label,
             description_label,
-            clickable: true,
         }
     }
 
@@ -148,61 +142,8 @@ impl InfoCardWidget {
     }
 }
 
-impl Reconcilable for InfoCardWidget {
-    fn try_reconcile(&self, old_desc: &IpcWidget, new_desc: &IpcWidget) -> ReconcileOutcome {
-        match (old_desc, new_desc) {
-            (
-                IpcWidget::InfoCard {
-                    on_click: old_click,
-                    ..
-                },
-                IpcWidget::InfoCard {
-                    icon,
-                    title,
-                    description,
-                    on_click: new_click,
-                },
-            ) => {
-                // Recreate if clickability changes (Some vs None) or action changes
-                let old_clickable = old_click.is_some();
-                let new_clickable = new_click.is_some();
-                if old_clickable != new_clickable || old_click != new_click {
-                    return ReconcileOutcome::Recreate;
-                }
-                self.set_icon(icon);
-                self.set_title(title);
-                self.set_description(description.as_deref());
-                ReconcileOutcome::Updated
-            }
-            _ => ReconcileOutcome::Recreate,
-        }
-    }
-}
-
-/// Render an InfoCard widget from the IPC protocol.
-pub(crate) fn render_info_card(
-    callback: &ActionCallback,
-    icon: &str,
-    title: &str,
-    description: &Option<String>,
-    on_click: &Option<Action>,
-    widget_id: &str,
-) -> gtk::Widget {
-    match on_click {
-        Some(action) => {
-            let card = InfoCardWidget::new_clickable(
-                icon,
-                title,
-                description.as_deref(),
-                callback,
-                action,
-                widget_id,
-            );
-            card.widget()
-        }
-        None => {
-            let card = InfoCardWidget::new(icon, title, description.as_deref());
-            card.widget()
-        }
+impl crate::widget_base::WidgetBase for InfoCardWidget {
+    fn widget(&self) -> gtk::Widget {
+        self.widget()
     }
 }

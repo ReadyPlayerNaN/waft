@@ -10,7 +10,7 @@ use log::debug;
 use crate::menu_state::MenuStore;
 use crate::plugin::WidgetFeatureToggle;
 use crate::plugin_registry::SlotItem;
-use crate::ui::feature_grid::FeatureGridWidget;
+use waft_ui_gtk::widgets::feature_grid::{FeatureGridItem, FeatureGridWidget};
 
 /// A compositor manages a GTK container and syncs SlotItems into it.
 pub trait WidgetCompositor {
@@ -113,8 +113,16 @@ pub struct FeatureToggleGridCompositor {
 
 impl FeatureToggleGridCompositor {
     pub fn new(menu_store: Rc<MenuStore>) -> Self {
-        let grid = FeatureGridWidget::new(Vec::new(), menu_store);
+        let grid = FeatureGridWidget::new(Vec::new(), menu_store, None);
         Self { grid }
+    }
+}
+
+fn toggle_to_grid_item(t: &WidgetFeatureToggle) -> FeatureGridItem {
+    FeatureGridItem {
+        id: t.id.clone(),
+        toggle: t.toggle.clone(),
+        menu: t.menu.clone(),
     }
 }
 
@@ -124,16 +132,16 @@ impl WidgetCompositor for FeatureToggleGridCompositor {
     }
 
     fn sync(&self, items: &[SlotItem]) {
-        let toggles: Vec<Rc<WidgetFeatureToggle>> = items
+        let grid_items: Vec<FeatureGridItem> = items
             .iter()
             .filter_map(|item| {
                 if let SlotItem::Toggle(t) = item {
-                    Some(t.clone())
+                    Some(toggle_to_grid_item(t))
                 } else {
                     None
                 }
             })
             .collect();
-        self.grid.sync_toggles(&toggles);
+        self.grid.sync_toggles(&grid_items);
     }
 }

@@ -19,6 +19,7 @@ pub struct NetworkAdapter {
     pub enabled: bool,
     pub connected: bool,
     pub ip: Option<IpInfo>,
+    pub public_ip: Option<String>,
     pub kind: AdapterKind,
 }
 
@@ -101,6 +102,7 @@ mod tests {
                 prefix: 24,
                 gateway: Some("192.168.1.1".to_string()),
             }),
+            public_ip: Some("203.0.113.42".to_string()),
             kind: AdapterKind::Wired,
         };
         let json = serde_json::to_value(&adapter).unwrap();
@@ -115,6 +117,7 @@ mod tests {
             enabled: true,
             connected: false,
             ip: None,
+            public_ip: None,
             kind: AdapterKind::Wireless,
         };
         let json = serde_json::to_value(&adapter).unwrap();

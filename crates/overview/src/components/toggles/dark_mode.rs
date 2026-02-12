@@ -82,10 +82,8 @@ impl DarkModeToggle {
         vec![Rc::new(WidgetFeatureToggle {
             id: "dark-mode-toggle".to_string(),
             weight: 200,
-            el: self.toggle.widget(),
+            toggle: (*self.toggle).clone(),
             menu: None,
-            on_expand_toggled: None,
-            menu_id: None,
         })]
     }
 }

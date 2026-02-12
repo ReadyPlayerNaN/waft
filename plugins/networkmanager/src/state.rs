@@ -42,12 +42,33 @@ pub struct WiFiAdapterState {
     pub scanning: bool,
 }
 
+/// Cached IP configuration for a connected device.
+#[derive(Debug, Clone)]
+pub struct CachedIpConfig {
+    pub address: String,
+    pub prefix: u8,
+    pub gateway: Option<String>,
+}
+
+/// A saved Ethernet connection profile.
+#[derive(Debug, Clone)]
+pub struct EthernetProfileInfo {
+    pub path: String,
+    pub uuid: String,
+    pub name: String,
+}
+
 /// Per-adapter Ethernet state.
 #[derive(Debug, Clone)]
 pub struct EthernetAdapterState {
     pub path: String,
     pub interface_name: String,
     pub device_state: u32,
+    pub ip_config: Option<CachedIpConfig>,
+    /// UUID of the currently active connection, if any.
+    pub active_connection_uuid: Option<String>,
+    /// Available ethernet connection profiles.
+    pub profiles: Vec<EthernetProfileInfo>,
 }
 
 impl EthernetAdapterState {
@@ -78,4 +99,6 @@ pub struct NmState {
     pub wifi_adapters: Vec<WiFiAdapterState>,
     pub ethernet_adapters: Vec<EthernetAdapterState>,
     pub vpn_connections: Vec<VpnConnectionInfo>,
+    /// Cached public IP address (shared across all adapters).
+    pub public_ip: Option<String>,
 }

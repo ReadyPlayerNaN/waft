@@ -82,10 +82,8 @@ impl NightLightToggle {
         vec![Rc::new(WidgetFeatureToggle {
             id: "night-light-toggle".to_string(),
             weight: 210,
-            el: self.toggle.widget(),
+            toggle: (*self.toggle).clone(),
             menu: None,
-            on_expand_toggled: None,
-            menu_id: None,
         })]
     }
 }

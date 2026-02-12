@@ -219,9 +219,9 @@ let button = ButtonBuilder::new()
     .build();
 ```
 
-**Before (GTK FeatureToggle via waft-plugin-api):**
+**Before (GTK FeatureToggle via legacy plugin API, now removed):**
 ```rust
-use waft_plugin_api::ui::feature_toggle::*;
+use waft_ui_gtk::widgets::feature_toggle::*;
 
 let toggle = FeatureToggleWidget::new(FeatureToggleProps {
     title: "Bluetooth".into(),
@@ -744,7 +744,7 @@ Use this checklist when converting a plugin:
 ### Cleanup
 
 - [ ] Remove old cdylib code (if fully migrated)
-- [ ] Remove waft-plugin-api dependency (if not shared)
+- [x] Remove waft-plugin-api dependency (removed)
 - [ ] Remove gtk4 dependency from daemon
 - [ ] Update workspace Cargo.toml if needed
 

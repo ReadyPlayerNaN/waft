@@ -40,20 +40,17 @@ impl MenuChevronWidget {
         Self::update_css_classes(&self.root, expanded);
     }
 
-    #[allow(dead_code)] // API for future menu chevron visibility control
-    pub fn set_visible(&self, visible: bool) {
-        self.root.set_visible(visible);
-    }
-
-    pub fn widget(&self) -> Option<&gtk::Image> {
-        self.root.downcast_ref::<gtk::Image>()
-    }
-
     pub fn update_css_classes(el: &gtk::Image, expanded: bool) {
         el.remove_css_class("expanded");
 
         if expanded {
             el.add_css_class("expanded");
         }
+    }
+}
+
+impl crate::widget_base::WidgetBase for MenuChevronWidget {
+    fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
     }
 }

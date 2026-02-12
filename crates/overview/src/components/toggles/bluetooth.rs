@@ -25,12 +25,13 @@ struct ToggleEntry {
     device_rows: RefCell<Vec<DeviceRow>>,
 }
 
-/// A single device row in the menu.
+/// A single device row in the menu — a clickable button row.
 struct DeviceRow {
     urn_str: String,
-    root: gtk::Box,
-    switch: gtk::Switch,
-    spinner: gtk::Spinner,
+    root: gtk::Button,
+    name_label: gtk::Label,
+    battery_label: gtk::Label,
+    connected_icon: gtk::Widget,
 }
 
 /// Dynamic set of toggles for Bluetooth adapters (0..N).
@@ -206,7 +207,14 @@ impl BluetoothToggles {
                 .iter()
                 .map(|(urn, _)| urn.as_str().to_string())
                 .collect();
-            device_rows.retain(|row| current_device_urns.contains(&row.urn_str));
+            device_rows.retain(|row| {
+                if current_device_urns.contains(&row.urn_str) {
+                    true
+                } else {
+                    row.root.unparent();
+                    false
+                }
+            });
 
             // Update or create rows for each device
             for (device_urn, device) in &adapter_devices {
@@ -214,16 +222,21 @@ impl BluetoothToggles {
 
                 if let Some(row) = device_rows.iter().find(|r| r.urn_str == device_urn_str) {
                     // Update existing row
-                    row.switch.set_active(device.connected);
-                    row.switch.set_sensitive(true);
-                    row.spinner.set_visible(false);
-                    row.spinner.set_spinning(false);
+                    row.name_label.set_label(&device.name);
+                    row.connected_icon.set_visible(device.connected);
+                    if let Some(pct) = device.battery_percentage {
+                        row.battery_label.set_label(&format!("{}%", pct));
+                        row.battery_label.set_visible(true);
+                    } else {
+                        row.battery_label.set_visible(false);
+                    }
                 } else {
-                    // Create new row
-                    let row_box = gtk::Box::builder()
+                    // Create new clickable button row
+                    let inner = gtk::Box::builder()
                         .orientation(gtk::Orientation::Horizontal)
-                        .spacing(12)
-                        .css_classes(["menu-row"])
+                        .spacing(8)
+                        .margin_start(4)
+                        .margin_end(4)
                         .build();
 
                     // Device icon
@@ -232,10 +245,12 @@ impl BluetoothToggles {
                         "audio-headset" => "audio-headset-symbolic",
                         "input-mouse" => "input-mouse-symbolic",
                         "input-keyboard" => "input-keyboard-symbolic",
+                        "phone" => "phone-symbolic",
+                        "computer" => "computer-symbolic",
                         _ => "bluetooth-symbolic",
                     };
-                    let icon_widget = IconWidget::from_name(icon_name, 24);
-                    row_box.append(icon_widget.widget());
+                    let icon_widget = IconWidget::from_name(icon_name, 16);
+                    inner.append(icon_widget.widget());
 
                     // Device name
                     let name_label = gtk::Label::builder()
@@ -243,51 +258,47 @@ impl BluetoothToggles {
                         .hexpand(true)
                         .xalign(0.0)
                         .build();
-                    row_box.append(&name_label);
+                    inner.append(&name_label);
 
-                    // Battery indicator (if available)
-                    if let Some(battery_pct) = device.battery_percentage {
-                        let battery_label = gtk::Label::builder()
-                            .label(&format!("{}%", battery_pct))
-                            .css_classes(["dim-label"])
-                            .build();
-                        row_box.append(&battery_label);
-                    }
-
-                    // Spinner (for connecting/disconnecting)
-                    let spinner = gtk::Spinner::builder()
-                        .spinning(false)
-                        .visible(false)
+                    // Battery indicator (always created, visibility toggled)
+                    let battery_label = gtk::Label::builder()
+                        .css_classes(["dim-label"])
+                        .visible(device.battery_percentage.is_some())
                         .build();
-                    row_box.append(&spinner);
+                    if let Some(pct) = device.battery_percentage {
+                        battery_label.set_label(&format!("{}%", pct));
+                    }
+                    inner.append(&battery_label);
 
-                    // Connect/disconnect switch
-                    let switch = gtk::Switch::builder()
-                        .active(device.connected)
-                        .valign(gtk::Align::Center)
+                    // Connected indicator (checkmark)
+                    let connected_icon = IconWidget::from_name("object-select-symbolic", 16);
+                    let connected_widget = connected_icon.widget().clone().upcast::<gtk::Widget>();
+                    connected_widget.set_visible(device.connected);
+                    inner.append(&connected_widget);
+
+                    let button = gtk::Button::builder()
+                        .child(&inner)
+                        .css_classes(["flat"])
                         .build();
 
                     let action_cb = action_callback.clone();
-                    let urn_for_switch = device_urn.clone();
-                    switch.connect_state_set(move |_switch, _active| {
+                    let urn_for_click = device_urn.clone();
+                    button.connect_clicked(move |_| {
                         action_cb(
-                            urn_for_switch.clone(),
+                            urn_for_click.clone(),
                             "toggle-connect".to_string(),
                             serde_json::Value::Null,
                         );
-                        // Return Stop to prevent automatic state change
-                        // The entity update will set the proper state
-                        glib::Propagation::Stop
                     });
 
-                    row_box.append(&switch);
-                    entry.menu.append(&row_box);
+                    entry.menu.append(&button);
 
                     device_rows.push(DeviceRow {
                         urn_str: device_urn_str,
-                        root: row_box,
-                        switch,
-                        spinner,
+                        root: button,
+                        name_label,
+                        battery_label,
+                        connected_icon: connected_widget,
                     });
                 }
             }
@@ -304,10 +315,8 @@ impl BluetoothToggles {
                 Rc::new(WidgetFeatureToggle {
                     id: format!("bluetooth-toggle-{}", entry.urn_str),
                     weight: 500 + i as i32,
-                    el: entry.toggle.widget(),
+                    toggle: (*entry.toggle).clone(),
                     menu: Some(entry.menu.clone().upcast::<gtk::Widget>()),
-                    on_expand_toggled: None,
-                    menu_id: entry.toggle.menu_id.clone(),
                 })
             })
             .collect()

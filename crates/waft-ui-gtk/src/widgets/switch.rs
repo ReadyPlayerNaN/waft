@@ -1,82 +1,52 @@
-//! Switch widget renderer
+//! Switch widget
 
-use crate::renderer::ActionCallback;
+use crate::types::ActionCallback;
 use waft_ipc::widget::Action;
 use gtk::prelude::*;
 
-/// Render a Switch widget
-///
-/// Maps to gtk::Switch with active state and sensitivity.
-/// Connects state_set signal to trigger on_toggle action.
-pub fn render_switch(
-    callback: &ActionCallback,
-    active: bool,
-    sensitive: bool,
-    on_toggle: &Action,
-    widget_id: &str,
-) -> gtk::Widget {
-    let switch = gtk::Switch::new();
-    switch.set_active(active);
-    switch.set_sensitive(sensitive);
-    switch.set_valign(gtk::Align::Center);
-
-    // Clone necessary data for the closure
-    let widget_id = widget_id.to_string();
-    let on_toggle = on_toggle.clone();
-    let callback = callback.clone();
-
-    switch.connect_state_set(move |_switch, state| {
-        // Trigger the action with the new state
-        let mut action = on_toggle.clone();
-        action.params = crate::types::ActionParams::Value(if state { 1.0 } else { 0.0 });
-        callback(widget_id.clone(), action);
-        gtk::glib::Propagation::Proceed
-    });
-
-    switch.upcast()
+/// GTK4 switch widget with active state, sensitivity, and toggle action.
+pub struct SwitchWidget {
+    switch: gtk::Switch,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_utils::init_gtk_for_tests;
-    use crate::types::ActionParams;
-    use std::rc::Rc;
+impl SwitchWidget {
+    pub fn new(
+        callback: &ActionCallback,
+        active: bool,
+        sensitive: bool,
+        on_toggle: &Action,
+        widget_id: &str,
+    ) -> Self {
+        let switch = gtk::Switch::new();
+        switch.set_active(active);
+        switch.set_sensitive(sensitive);
+        switch.set_valign(gtk::Align::Center);
 
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_switch_basic() {
-        init_gtk_for_tests();
-        let callback: ActionCallback = Rc::new(|_id, _action| {});
+        let widget_id = widget_id.to_string();
+        let on_toggle = on_toggle.clone();
+        let callback = callback.clone();
 
-        let action = Action {
-            id: "toggle_test".to_string(),
-            params: ActionParams::None,
-        };
+        switch.connect_state_set(move |_switch, state| {
+            let mut action = on_toggle.clone();
+            action.params = crate::types::ActionParams::Value(if state { 1.0 } else { 0.0 });
+            callback(widget_id.clone(), action);
+            gtk::glib::Propagation::Proceed
+        });
 
-        let widget = render_switch(&callback, true, true, &action, "test_switch");
-
-        assert!(widget.is::<gtk::Switch>());
-        let switch: gtk::Switch = widget.downcast().unwrap();
-        assert!(switch.is_active());
-        assert!(switch.is_sensitive());
+        Self { switch }
     }
 
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_switch_inactive_insensitive() {
-        init_gtk_for_tests();
-        let callback: ActionCallback = Rc::new(|_id, _action| {});
+    pub fn set_active(&self, active: bool) {
+        self.switch.set_active(active);
+    }
 
-        let action = Action {
-            id: "toggle_test".to_string(),
-            params: ActionParams::None,
-        };
+    pub fn set_sensitive(&self, sensitive: bool) {
+        self.switch.set_sensitive(sensitive);
+    }
+}
 
-        let widget = render_switch(&callback, false, false, &action, "test_switch");
-
-        let switch: gtk::Switch = widget.downcast().unwrap();
-        assert!(!switch.is_active());
-        assert!(!switch.is_sensitive());
+impl crate::widget_base::WidgetBase for SwitchWidget {
+    fn widget(&self) -> gtk::Widget {
+        self.switch.clone().upcast()
     }
 }

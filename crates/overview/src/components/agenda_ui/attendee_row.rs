@@ -5,7 +5,7 @@ use gtk::prelude::*;
 use waft_protocol::entity::calendar::AttendeeStatus;
 use waft_protocol::entity::calendar::CalendarEventAttendee;
 
-use crate::ui::icon::IconWidget;
+use waft_ui_gtk::widgets::icon::IconWidget;
 
 /// Map an attendee's participation status to an icon name.
 pub fn attendee_status_icon_name(status: &AttendeeStatus) -> &'static str {

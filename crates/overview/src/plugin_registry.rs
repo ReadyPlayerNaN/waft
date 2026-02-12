@@ -32,10 +32,10 @@ impl SlotItem {
         }
     }
 
-    pub fn el(&self) -> &gtk::Widget {
+    pub fn el(&self) -> gtk::Widget {
         match self {
-            Self::Widget(w) => &w.el,
-            Self::Toggle(t) => &t.el,
+            Self::Widget(w) => w.el.clone(),
+            Self::Toggle(t) => t.toggle.widget(),
         }
     }
 }

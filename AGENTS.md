@@ -64,7 +64,7 @@ All plugins run as **daemon binaries** communicating with the overview app via U
 - **Async:** Tokio (multi-threaded runtime), flume (executor-agnostic channels)
 - **System:** zbus 5.0 (DBus), nmrs 2.0 (NetworkManager bindings)
 - **Plugin SDK:** waft-plugin-sdk (daemon binaries with IPC)
-- **Widget rendering:** waft-ui-gtk (declarative Widget -> GTK reconciler)
+- **Widget rendering:** waft-ui-gtk (GTK widget implementations with `WidgetBase`, `Child`, `Children` types)
 - **Config:** TOML (`~/.config/waft/config.toml`)
 - **Localization:** waft-i18n (Fluent internationalization)
 
@@ -75,7 +75,7 @@ All plugins run as **daemon binaries** communicating with the overview app via U
 - **`waft-ipc`** - IPC protocol types: `OverviewMessage`, `PluginMessage`, `Widget`, `Action`, `ActionParams`, `NamedWidget`, `Node`, `Orientation`, `WidgetSet`. Also CLI command parsing (`IpcCommand`) and socket path helpers.
 - **`waft-i18n`** - Fluent localization: `system_locale()` returns BCP47 locale, `I18n` struct for translations with `t()` and `t_args()`.
 - **`waft-plugin-sdk`** - Daemon plugin SDK: `PluginDaemon` trait (Send+Sync), `PluginServer`, `WidgetNotifier`, widget builders (`FeatureToggleBuilder`, `SliderBuilder`, `MenuRowBuilder`, `ContainerBuilder`, `ButtonBuilder`, `LabelBuilder`, `InfoCardBuilder`, `SwitchBuilder`), testing utilities.
-- **`waft-ui-gtk`** - GTK4 renderer: `Reconcilable` trait, `WidgetReconciler`, widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`, `MenuItemWidget`), `renderer` module.
+- **`waft-ui-gtk`** - GTK4 widget library: `WidgetBase` trait, `Child`/`Children` container types, `ActionCallback` (in `types`), widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`).
 - **`waft-overview`** - Main GTK4 overlay application binary. Spawns daemon plugins via `DaemonSpawner`, manages IPC connections via `PluginManager`, reconciles daemon widgets via `DaemonWidgetReconciler`, manages the layer-shell window.
 
 ### Plugin Architecture
@@ -107,7 +107,7 @@ The primary plugin pattern. Daemon plugins are standalone tokio binaries that co
 **Components:**
 - **`DaemonSpawner`** (`crates/overview/src/daemon_spawner.rs`) - Spawns all daemon binaries at startup. Discovers binaries via `WAFT_DAEMON_DIR` env var or standard paths.
 - **`PluginManager`** (`crates/overview/src/plugin_manager/`) - IPC client that connects to daemon sockets, sends `GetWidgets`/`TriggerAction` messages, receives `SetWidgets` pushes. Submodules: `client.rs`, `router.rs`, `discovery.rs`, `registry.rs`.
-- **`DaemonWidgetReconciler`** (`crates/overview/src/daemon_widget_reconciler.rs`) - Converts declarative `Widget` descriptions from daemons into actual GTK widgets using `waft-ui-gtk`.
+- **`DaemonWidgetReconciler`** (`crates/overview/src/daemon_widget_reconciler.rs`) - Converts declarative `Widget` descriptions from daemons into actual GTK widgets.
 - **`PluginServer`** (`crates/plugin-sdk/src/server.rs`) - Daemon-side socket server. Handles connections, message routing, and push notifications via `WidgetNotifier`.
 
 **IPC Protocol:**
@@ -159,7 +159,7 @@ crates/
             testing.rs            # MockPluginDaemon, TestPlugin, test socket helpers
     waft-ui-gtk/                  # GTK4 renderer library
         src/
-            lib.rs                # reconcile, renderer, widget_reconciler, widgets
+            lib.rs                # renderer, widgets
             widgets/              # FeatureToggleWidget, SliderWidget, IconWidget, etc.
 plugins/
     clock/          bin/          # Daemon: time/date display
@@ -351,7 +351,6 @@ Non-goals: No `gio`/`GDesktopAppInfo` dependency for `.desktop` file resolution.
 - **Daemon Plugin** - A standalone tokio binary implementing `PluginDaemon` (Send+Sync) from `waft-plugin-sdk`. Communicates with overview via Unix socket IPC.
 - **Widget Protocol** - The `Widget` enum (in `waft-ipc`) that daemon plugins use to describe their UI declaratively. Variants: `FeatureToggle`, `Slider`, `MenuRow`, `Container`, `Button`, `Label`, `InfoCard`, `Switch`, `Spinner`, `Checkmark`.
 - **NamedWidget** - A `Widget` with an `id` (string) and `weight` (i32 for sort order). The unit of plugin-to-overview communication.
-- **WidgetReconciler** - Cache-based system in `waft-ui-gtk` that efficiently updates GTK widgets when `Widget` descriptions change, avoiding full rebuilds.
 - **PluginManager** - Overview component that manages IPC connections to all daemon plugins (`crates/overview/src/plugin_manager/`).
 - **DaemonSpawner** - Overview component that spawns all daemon binaries at startup (`crates/overview/src/daemon_spawner.rs`).
 - **WidgetNotifier** - Daemon-side mechanism to push updated widgets to all connected overview clients when state changes.
@@ -536,7 +535,7 @@ let handle = match self.field.as_ref() {
 **All 14 plugins migrated to daemon architecture.**
 
 - `waft-plugin-sdk` with `PluginDaemon` trait, `PluginServer`, `WidgetNotifier`, builders
-- `waft-ui-gtk` renderer with `WidgetReconciler` and `Reconcilable` trait
+- `waft-ui-gtk` widget library with `WidgetBase` trait, `Child`/`Children` types
 - `waft-ipc` Widget protocol with all widget types
 - `DaemonSpawner` and `PluginManager` in overview
 

@@ -1,1 +1,1 @@
-pub use waft_plugin_api::common::*;
+pub use waft_core::{Callback, VoidCallback};

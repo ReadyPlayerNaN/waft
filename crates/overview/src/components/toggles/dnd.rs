@@ -91,10 +91,8 @@ impl DoNotDisturbToggle {
         vec![Rc::new(WidgetFeatureToggle {
             id: "dnd-toggle".to_string(),
             weight: 60,
-            el: self.toggle.widget(),
+            toggle: (*self.toggle).clone(),
             menu: None,
-            on_expand_toggled: None,
-            menu_id: None,
         })]
     }
 }

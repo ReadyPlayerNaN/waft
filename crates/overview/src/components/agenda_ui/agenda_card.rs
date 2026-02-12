@@ -9,7 +9,7 @@ use waft_core::Callback;
 use waft_protocol::entity::calendar::CalendarEvent;
 
 use crate::menu_state::MenuStore;
-use crate::ui::menu_chevron::{MenuChevronProps, MenuChevronWidget};
+use waft_ui_gtk::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 
 use super::agenda_details::AgendaDetails;
 use super::format::format_time_range;
@@ -122,7 +122,7 @@ impl AgendaCard {
             let expand_btn = gtk::Button::builder()
                 .css_classes(["flat", "circular", "agenda-expand-btn"])
                 .build();
-            expand_btn.set_child(menu_chevron.widget());
+            expand_btn.set_child(Some(&menu_chevron.root));
             top_row.append(&expand_btn);
 
             card.append(&top_row);

@@ -8,22 +8,33 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use log::debug;
 
-use crate::menu_state::MenuStore;
-use crate::plugin::WidgetFeatureToggle;
-use crate::ui::main_window::trigger_window_resize;
+use crate::widgets::feature_toggle::FeatureToggleWidget;
+use waft_core::menu_state::MenuStore;
+
+/// A single item in the feature grid, bundling a toggle with its metadata.
+pub struct FeatureGridItem {
+    pub id: String,
+    pub toggle: FeatureToggleWidget,
+    pub menu: Option<gtk::Widget>,
+}
 
 /// Pure GTK4 feature grid widget.
 pub struct FeatureGridWidget {
     pub root: gtk::Box,
     grid: gtk::Grid,
     menu_store: Rc<MenuStore>,
+    on_content_changed: Option<Rc<dyn Fn()>>,
     /// Current toggle IDs in order, used for diffing
     toggle_ids: Rc<RefCell<Vec<String>>>,
 }
 
 impl FeatureGridWidget {
     /// Create a new feature grid with the given toggles.
-    pub fn new(items: Vec<Rc<WidgetFeatureToggle>>, menu_store: Rc<MenuStore>) -> Self {
+    pub fn new(
+        items: Vec<FeatureGridItem>,
+        menu_store: Rc<MenuStore>,
+        on_content_changed: Option<Rc<dyn Fn()>>,
+    ) -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
         let grid = gtk::Grid::builder()
@@ -39,6 +50,7 @@ impl FeatureGridWidget {
             root,
             grid,
             menu_store,
+            on_content_changed,
             toggle_ids,
         };
 
@@ -49,7 +61,7 @@ impl FeatureGridWidget {
     }
 
     /// Populate the grid with toggles.
-    fn populate_grid(&self, items: &[Rc<WidgetFeatureToggle>]) {
+    fn populate_grid(&self, items: &[FeatureGridItem]) {
         let cols = 2;
 
         // Track toggle IDs for diffing
@@ -64,11 +76,12 @@ impl FeatureGridWidget {
 
             // Attach toggles (set widget_name to ID for identification)
             for (col, item) in pair.iter().enumerate() {
-                item.el.set_widget_name(&item.id);
-                if item.el.parent().is_some() {
-                    item.el.unparent();
+                let widget = item.toggle.widget();
+                widget.set_widget_name(&item.id);
+                if widget.parent().is_some() {
+                    widget.unparent();
                 }
-                self.grid.attach(&item.el, col as i32, grid_row, 1, 1);
+                self.grid.attach(&widget, col as i32, grid_row, 1, 1);
             }
 
             // Collect menus for this row
@@ -77,7 +90,7 @@ impl FeatureGridWidget {
                 .filter_map(|item| {
                     item.menu
                         .clone()
-                        .map(|menu| (menu, item.menu_id.clone(), item.on_expand_toggled.clone()))
+                        .map(|menu| (menu, item.toggle.menu_id.clone()))
                 })
                 .collect();
 
@@ -91,7 +104,7 @@ impl FeatureGridWidget {
                 self.grid.attach(&menu_container, 0, grid_row + 1, cols, 1);
 
                 // Create a separate revealer for each menu
-                for (menu, menu_id, callback_cell) in menus_with_ids {
+                for (menu, menu_id) in menus_with_ids {
                     if let Some(menu_id) = menu_id {
                         let menu_box = gtk::Box::builder()
                             .orientation(gtk::Orientation::Vertical)
@@ -111,10 +124,13 @@ impl FeatureGridWidget {
                         // Add revealer to the stack
                         menu_container.add_named(&menu_revealer, Some(&menu_id));
 
-                        // Trigger window resize when animation completes
-                        menu_revealer.connect_child_revealed_notify(move |_| {
-                            trigger_window_resize();
-                        });
+                        // Trigger content changed callback when animation completes
+                        if let Some(ref cb) = self.on_content_changed {
+                            let cb = cb.clone();
+                            menu_revealer.connect_child_revealed_notify(move |_| {
+                                cb();
+                            });
+                        }
 
                         // Subscribe this revealer to menu store
                         let menu_revealer_clone = menu_revealer.clone();
@@ -152,16 +168,6 @@ impl FeatureGridWidget {
 
                             menu_revealer.set_reveal_child(should_be_open);
                         }
-
-                        // Connect expand callback for plugin
-                        if let Some(ref callback_cell) = callback_cell {
-                            let existing_callback = callback_cell.borrow_mut().take();
-                            *callback_cell.borrow_mut() = Some(Box::new(move |expanded| {
-                                if let Some(ref cb) = existing_callback {
-                                    cb(expanded);
-                                }
-                            }));
-                        }
                     }
                 }
             }
@@ -173,7 +179,7 @@ impl FeatureGridWidget {
     /// Always rebuilds the grid because daemon plugins provide new GTK widget
     /// objects with updated state on each sync. The grid is small (4-8 toggles)
     /// so rebuilding is trivial. Menu state is preserved in MenuStore.
-    pub fn sync_toggles(&self, items: &[Rc<WidgetFeatureToggle>]) {
+    pub fn sync_toggles(&self, items: &[FeatureGridItem]) {
         debug!(
             "[feature_grid] Rebuilding grid ({} -> {} toggles)",
             self.toggle_ids.borrow().len(),
@@ -188,7 +194,9 @@ impl FeatureGridWidget {
         // Rebuild with new toggles
         self.populate_grid(items);
 
-        trigger_window_resize();
+        if let Some(ref cb) = self.on_content_changed {
+            cb();
+        }
     }
 
     /// Get a reference to the root widget.

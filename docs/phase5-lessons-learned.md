@@ -358,13 +358,11 @@ Based on clock conversion (4 hours of work):
 - `plugins/clock/src/lib.rs` (old cdylib entry point)
 - `Cargo.toml` crate-type = ["cdylib"]
 
-### 2. waft-plugin-api Deprecation
+### 2. waft-plugin-api Removal
 
-**Status**: Still used by 13 plugins (not clock daemon)
+**Status**: Removed. All 14 plugins use daemon architecture.
 
-**Action**: Gradually deprecate as plugins convert to daemons
-
-**Timeline**: Remove after all plugins converted
+**Completed**: Crate deleted, types inlined into overview where still needed.
 
 ### 3. Overview Plugin Manager Duplication
 

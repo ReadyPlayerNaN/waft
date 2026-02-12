@@ -8,8 +8,3 @@
 pub mod common;
 pub mod menu_state;
 pub mod store;
-
-pub mod ui {
-    #[path = "icon.rs"]
-    pub mod icon;
-}

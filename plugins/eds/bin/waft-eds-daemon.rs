@@ -373,6 +373,26 @@ async fn spawn_view_monitor(
     // Get message stream
     let mut stream = MessageStream::from(&conn);
 
+    // Register match rules so the bus forwards signals to us
+    for member in &["ObjectsAdded", "ObjectsModified", "ObjectsRemoved"] {
+        let rule = format!(
+            "type='signal',interface='{}',path='{}',member='{}'",
+            CALENDAR_VIEW_IFACE, view_path, member
+        );
+        if let Err(e) = conn
+            .call_method(
+                Some("org.freedesktop.DBus"),
+                "/org/freedesktop/DBus",
+                Some("org.freedesktop.DBus"),
+                "AddMatch",
+                &(&rule,),
+            )
+            .await
+        {
+            warn!("[eds] Failed to add match rule for {}: {e}", member);
+        }
+    }
+
     tokio::spawn(async move {
         debug!("[eds] Monitoring view: {}", view_path);
 
@@ -384,6 +404,11 @@ async fn spawn_view_monitor(
                     break;
                 }
             };
+
+            // Only process signals (skip method calls, replies, errors)
+            if msg.header().message_type() != zbus::message::Type::Signal {
+                continue;
+            }
 
             // Check if this message is for our view
             let msg_path = msg
@@ -416,18 +441,20 @@ async fn spawn_view_monitor(
             match member.as_str() {
                 "ObjectsAdded" => {
                     let body = msg.body();
-                    if let Ok(icals) = body.deserialize::<Vec<String>>() {
+                    if let Ok((icals,)) = body.deserialize::<(Vec<String>,)>() {
                         let events = parse_ical_events(&icals);
                         if !events.is_empty() {
                             debug!("[eds] ObjectsAdded: {} events", events.len());
                             update_state_add_events(&state, events);
                             notifier.notify();
                         }
+                    } else {
+                        warn!("[eds] Failed to deserialize ObjectsAdded signal body");
                     }
                 }
                 "ObjectsModified" => {
                     let body = msg.body();
-                    if let Ok(icals) = body.deserialize::<Vec<String>>() {
+                    if let Ok((icals,)) = body.deserialize::<(Vec<String>,)>() {
                         let events = parse_ical_events(&icals);
                         if !events.is_empty() {
                             debug!("[eds] ObjectsModified: {} events", events.len());
@@ -438,16 +465,20 @@ async fn spawn_view_monitor(
                             update_state_add_events(&state, events);
                             notifier.notify();
                         }
+                    } else {
+                        warn!("[eds] Failed to deserialize ObjectsModified signal body");
                     }
                 }
                 "ObjectsRemoved" => {
                     let body = msg.body();
-                    if let Ok(uids) = body.deserialize::<Vec<String>>() {
+                    if let Ok((uids,)) = body.deserialize::<(Vec<String>,)>() {
                         if !uids.is_empty() {
                             debug!("[eds] ObjectsRemoved: {} events", uids.len());
                             update_state_remove_events(&state, &uids);
                             notifier.notify();
                         }
+                    } else {
+                        warn!("[eds] Failed to deserialize ObjectsRemoved signal body");
                     }
                 }
                 _ => {}

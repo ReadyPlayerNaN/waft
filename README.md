@@ -74,7 +74,7 @@ waft uses an async-first architecture with clear boundaries between the main thr
 
 - **Entry point:** `crates/overview/src/main.rs` → `app::run()`
 - **App model:** `crates/overview/src/app.rs` - Pure GTK4 app managing overlay window and plugin registry
-- **Plugin system:** `crates/waft-plugin-api/` - Plugin trait definitions and dynamic loading
+- **Plugin system:** All plugins use daemon architecture via `crates/plugin-sdk/`
 - **Plugin registry:** `crates/overview/src/plugin_registry.rs` - Non-`Send` plugin lifecycle management
 - **Shared infrastructure:** `crates/waft-core/` - Store pattern, DbusHandle, menu state
 - **Notifications:** `crates/overview/src/features/notifications/` - DBus server with reducer-based state management
@@ -82,9 +82,8 @@ waft uses an async-first architecture with clear boundaries between the main thr
 
 ### Plugin System
 
-Plugins implement the `OverviewPlugin` trait and can be either:
-- **Dynamic plugins** (`.so` files) - Loaded at runtime from `/usr/lib/waft/plugins/` or `WAFT_PLUGIN_DIR`
-- **Static plugins** - Compiled directly into `waft-overview` (being migrated to dynamic)
+All plugins use the **daemon architecture**: standalone executables communicating
+with the overview via Unix socket IPC through the central `waft` daemon.
 
 Plugin lifecycle:
 - `configure(settings)` - Parse plugin-specific TOML config

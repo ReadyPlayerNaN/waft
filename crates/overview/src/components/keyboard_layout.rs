@@ -12,7 +12,7 @@ use gtk::prelude::*;
 use waft_ipc::widget::{Action, ActionParams, StatusOption};
 use waft_protocol::entity;
 use waft_protocol::Urn;
-use waft_ui_gtk::renderer::ActionCallback;
+use waft_ui_gtk::types::ActionCallback;
 use waft_ui_gtk::widgets::status_cycle_button::StatusCycleButtonWidget;
 
 use crate::entity_store::{EntityActionCallback, EntityStore};

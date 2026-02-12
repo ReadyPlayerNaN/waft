@@ -486,6 +486,20 @@ fn spawn_follow_task(state: Arc<StdMutex<SunsetrState>>, notifier: EntityNotifie
     });
 }
 
+fn binary_available() -> bool {
+    match std::process::Command::new("sunsetr")
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    {
+        Ok(_) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => true, // binary exists but failed for other reason
+    }
+}
+
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
     if waft_plugin::manifest::handle_provides(&[entity::display::NIGHT_LIGHT_ENTITY_TYPE]) {
@@ -496,6 +510,11 @@ fn main() -> Result<()> {
     waft_plugin::init_plugin_logger("info");
 
     info!("Starting sunsetr plugin...");
+
+    if !binary_available() {
+        info!("[sunsetr] sunsetr binary not found, exiting");
+        return Ok(());
+    }
 
     let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
     rt.block_on(async {

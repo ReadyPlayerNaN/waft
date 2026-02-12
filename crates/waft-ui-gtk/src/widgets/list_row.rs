@@ -1,32 +1,33 @@
-//! ListRow widget renderer — a horizontal row of children with CSS classes.
+//! ListRow widget -- a horizontal row of children with CSS classes.
 
 use crate::css::apply_css_classes;
-use crate::renderer::WidgetRenderer;
+use crate::widget_base::Children;
 use gtk::prelude::*;
-use waft_ipc::widget::Node;
 
-/// Render a ListRow widget as a horizontal gtk::Box with children.
-pub(crate) fn render_list_row(
-    renderer: &WidgetRenderer,
-    children: &[Node],
-    css_classes: &[String],
-    widget_id: &str,
-) -> gtk::Widget {
-    let row = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(8)
-        .build();
+/// GTK4 list row widget -- a horizontal box with children and CSS classes.
+pub struct ListRowWidget {
+    row: gtk::Box,
+}
 
-    apply_css_classes(&row, css_classes);
+impl ListRowWidget {
+    pub fn new(children: Children, css_classes: &[String]) -> Self {
+        let row = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(8)
+            .build();
 
-    for (i, child) in children.iter().enumerate() {
-        let child_id = match &child.key {
-            Some(key) => format!("{}:{}", widget_id, key),
-            None => format!("{}:{}", widget_id, i),
-        };
-        let gtk_child = renderer.render(&child.widget, &child_id);
-        row.append(&gtk_child);
+        apply_css_classes(&row, css_classes);
+
+        for child in children.iter_widgets() {
+            row.append(&child);
+        }
+
+        Self { row }
     }
+}
 
-    row.upcast()
+impl crate::widget_base::WidgetBase for ListRowWidget {
+    fn widget(&self) -> gtk::Widget {
+        self.row.clone().upcast()
+    }
 }

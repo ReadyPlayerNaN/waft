@@ -111,9 +111,7 @@ impl NotificationGroup {
             .css_classes(["flat", "circular", "notification-expand"])
             .visible(false)
             .build();
-        if let Some(chevron_image) = menu_chevron.widget() {
-            expand_btn.set_child(Some(chevron_image));
-        }
+        expand_btn.set_child(Some(&menu_chevron.root));
 
         header.append(icon_widget.widget());
         header.append(&app_title_label);

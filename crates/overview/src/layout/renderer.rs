@@ -35,8 +35,8 @@ use crate::layout::parser::glob_match;
 use crate::menu_state::MenuStore;
 use crate::plugin::WidgetFeatureToggle;
 use crate::plugin_registry::{PluginRegistry, SlotItem};
-use crate::ui::feature_grid::FeatureGridWidget;
 use crate::ui::main_window::trigger_window_resize;
+use waft_ui_gtk::widgets::feature_grid::{FeatureGridItem, FeatureGridWidget};
 
 /// Shared context for the layout renderer, providing access to entity store,
 /// action routing, and component lifetime management.
@@ -424,7 +424,8 @@ fn render_feature_toggle_grid(
     }
 
     // Entity component mode: create toggle components and wire into a grid
-    let grid = Rc::new(FeatureGridWidget::new(Vec::new(), menu_store.clone()));
+    let resize_cb: Rc<dyn Fn()> = Rc::new(|| trigger_window_resize());
+    let grid = Rc::new(FeatureGridWidget::new(Vec::new(), menu_store.clone(), Some(resize_cb)));
 
     // Two-phase init for dynamic toggle rebuild cycle
     let rebuild_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
@@ -528,7 +529,15 @@ fn render_feature_toggle_grid(
             all.extend(source.as_feature_toggles());
         }
         all.sort_by_key(|t| t.weight);
-        grid_ref.sync_toggles(&all);
+        let grid_items: Vec<FeatureGridItem> = all
+            .iter()
+            .map(|t| FeatureGridItem {
+                id: t.id.clone(),
+                toggle: t.toggle.clone(),
+                menu: t.menu.clone(),
+            })
+            .collect();
+        grid_ref.sync_toggles(&grid_items);
     });
 
     *rebuild_slot.borrow_mut() = Some(rebuild.clone());

@@ -1,27 +1,40 @@
-# 1. Consistent `waft-ui-gtk`
+# 1. `BluetoothDeviceRow`
 
-The widgets in `waft-ui-gtk` are defined as functions. This is difficult to update. Instead, the library must be refactored, so each of the widgets is a struct, that provides update methods.
+Create a device row component, that displays icons, name, spinner and connection toggle. Then integrate it in waft-overview
 
-Some properties must be shared (may be converted to trait):
+The layout:
 
-- `set_css_classes`
-- `set_visible`
-- ...see if any other apply
+```
+<Row class="bluetooth-device-row">
+    <Box>
+        <DeviceTypeIcon />
+        <DeviceBatteryStatusIcon />
+    </Box>
+    <Box>
+        {device_name}
+    </Box>
+    <Box>
+        <Spinner />
+        <ToggleButton />
+    </Box>
+</Box>
+```
 
-# 2. Remove `waft-plugin-api`
+The spinner is visible only when the device is changing state (connecting, disconnecting, ...)
+The device type icon must be derived from the device type and provided as a set of icon hints to the icon widget.
+The device battery status icon is a new widget. It will receive the device battery percentage.
+Toggle button serves as a static display-only widget.
+Everything is vertically centered.
 
-It is a leftover of previous architectures. Some packages reuse re-exported things from `waft-ui-gtk` - relink it to `waft-ui-gtk` directly.
+While connecting, the row is functionally and visually disabled. Clicking it does not produce any events.
 
-# 3. Bluetooth menu menu row
+## Integration inside `waft-overview`
 
-Bluetooth menu should use MenuRow widget. Clicking the row should intiiate connect or disconnect of the device.
+Clicking the row when disconnected will start connecting the device. The row becomes connecting until the ocnnecting status is resolved. Clicking the row when connected will start disconnecting the device.
 
-# 4. Wired menu info
+# 2. Close menu on hide
 
-The wired adapter menu must display the network details, like:
-
-- Local IP address
-- Public IP address (if available)
+The waft overview must collapse open menu on close.
 
 # 5. Wired menu profiles
 
@@ -38,14 +51,6 @@ Sunsetr plugin must always return night light entity even when sunsetr is not ru
 # 8. Agenda is empty
 
 For unknown reason, the agenda plugin displays nothing. I definitely have at least one event in one of my calendars for tomorrow and for today.
-
-# 9. D-Bus errors from `nmrs`
-
-This looks like a problem.
-
-```
-[2026-02-12T21:53:31Z DEBUG nmrs::core::device] Permanent hardware address not available for device lo: org.freedesktop.DBus.Error.InvalidArgs: No such property “PermHwAddress”
-```
 
 # Calendar widget
 

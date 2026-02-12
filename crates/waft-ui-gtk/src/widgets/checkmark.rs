@@ -1,43 +1,27 @@
-//! Checkmark widget renderer
+//! Checkmark widget
 
 use gtk::prelude::*;
 
-/// Render a Checkmark widget
-///
-/// Maps to gtk::Image with "object-select-symbolic" icon.
-/// Applies "checkmark" CSS class and sets visibility.
-pub fn render_checkmark(visible: bool) -> gtk::Widget {
-    let image = gtk::Image::from_icon_name("object-select-symbolic");
-    image.add_css_class("checkmark");
-    image.set_visible(visible);
-    image.upcast()
+/// GTK4 checkmark widget using "object-select-symbolic" icon.
+pub struct CheckmarkWidget {
+    image: gtk::Image,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_utils::init_gtk_for_tests;
-
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_checkmark_visible() {
-        init_gtk_for_tests();
-        let widget = render_checkmark(true);
-
-        assert!(widget.is::<gtk::Image>());
-        let image: gtk::Image = widget.downcast().unwrap();
-        assert!(image.is_visible());
-        assert!(image.has_css_class("checkmark"));
+impl CheckmarkWidget {
+    pub fn new(visible: bool) -> Self {
+        let image = gtk::Image::from_icon_name("object-select-symbolic");
+        image.add_css_class("checkmark");
+        image.set_visible(visible);
+        Self { image }
     }
 
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_checkmark_hidden() {
-        init_gtk_for_tests();
-        let widget = render_checkmark(false);
+    pub fn set_visible(&self, visible: bool) {
+        self.image.set_visible(visible);
+    }
+}
 
-        let image: gtk::Image = widget.downcast().unwrap();
-        assert!(!image.is_visible());
-        assert!(image.has_css_class("checkmark"));
+impl crate::widget_base::WidgetBase for CheckmarkWidget {
+    fn widget(&self) -> gtk::Widget {
+        self.image.clone().upcast()
     }
 }

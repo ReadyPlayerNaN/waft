@@ -145,6 +145,13 @@ impl IconWidget {
     }
 }
 
+impl crate::widget_base::WidgetBase for IconWidget {
+    fn widget(&self) -> gtk::Widget {
+        use gtk::prelude::*;
+        self.image.clone().upcast()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

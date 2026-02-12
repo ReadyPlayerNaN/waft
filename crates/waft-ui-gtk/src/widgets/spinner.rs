@@ -1,41 +1,32 @@
-//! Spinner widget renderer
+//! Spinner widget
 
 use gtk::prelude::*;
 
-/// Render a Spinner widget
-///
-/// Maps to gtk::Spinner. Calls start() if spinning is true.
-pub fn render_spinner(spinning: bool) -> gtk::Widget {
-    let spinner = gtk::Spinner::new();
-    if spinning {
-        spinner.start();
-    }
-    spinner.upcast()
+/// GTK4 spinner widget.
+pub struct SpinnerWidget {
+    spinner: gtk::Spinner,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_utils::init_gtk_for_tests;
-
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_spinner_spinning() {
-        init_gtk_for_tests();
-        let widget = render_spinner(true);
-
-        assert!(widget.is::<gtk::Spinner>());
-        let spinner: gtk::Spinner = widget.downcast().unwrap();
-        assert!(spinner.is_spinning());
+impl SpinnerWidget {
+    pub fn new(spinning: bool) -> Self {
+        let spinner = gtk::Spinner::new();
+        if spinning {
+            spinner.start();
+        }
+        Self { spinner }
     }
 
-    #[test]
-    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
-    fn test_render_spinner_not_spinning() {
-        init_gtk_for_tests();
-        let widget = render_spinner(false);
+    pub fn set_spinning(&self, spinning: bool) {
+        if spinning {
+            self.spinner.start();
+        } else {
+            self.spinner.stop();
+        }
+    }
+}
 
-        let spinner: gtk::Spinner = widget.downcast().unwrap();
-        assert!(!spinner.is_spinning());
+impl crate::widget_base::WidgetBase for SpinnerWidget {
+    fn widget(&self) -> gtk::Widget {
+        self.spinner.clone().upcast()
     }
 }

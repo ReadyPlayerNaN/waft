@@ -4,7 +4,7 @@ use gtk::prelude::*;
 
 use waft_protocol::entity::calendar::CalendarEventAttendee;
 
-use crate::ui::icon::IconWidget;
+use waft_ui_gtk::widgets::icon::IconWidget;
 
 use super::attendee_row::AttendeeRow;
 

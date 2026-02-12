@@ -32,34 +32,6 @@ pub fn toggle_menu(menu_store: &MenuStore, menu_id: &str) {
     menu_store.emit(MenuOp::OpenMenu(menu_id.to_string()));
 }
 
-/// Open a specific menu, closing any other open menu.
-///
-/// # Arguments
-/// * `menu_store` - The shared MenuStore instance
-/// * `menu_id` - The unique identifier for this menu
-pub fn open_menu(menu_store: &MenuStore, menu_id: &str) {
-    if !is_menu_open(menu_store, menu_id) {
-        menu_store.emit(MenuOp::OpenMenu(menu_id.to_string()));
-    }
-}
-
-/// Close a specific menu if it's currently open.
-///
-/// # Arguments
-/// * `menu_store` - The shared MenuStore instance
-/// * `menu_id` - The unique identifier for this menu
-pub fn close_menu(menu_store: &MenuStore, menu_id: &str) {
-    menu_store.emit(MenuOp::CloseMenu(menu_id.to_string()));
-}
-
-/// Close all menus.
-///
-/// # Arguments
-/// * `menu_store` - The shared MenuStore instance
-pub fn close_all_menus(menu_store: &MenuStore) {
-    menu_store.emit(MenuOp::CloseAll);
-}
-
 /// Generate a deterministic menu ID from a widget ID.
 ///
 /// This ensures consistent menu IDs across re-renders.
@@ -101,50 +73,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_menu_open_after_opening() {
-        let store = create_menu_store();
-        open_menu(&store, "test_menu");
-        assert!(is_menu_open(&store, "test_menu"));
-    }
-
-    #[test]
-    fn test_is_menu_open_different_menu() {
-        let store = create_menu_store();
-        open_menu(&store, "menu1");
-        assert!(!is_menu_open(&store, "menu2"));
-    }
-
-    #[test]
-    fn test_open_menu_closes_other() {
-        let store = create_menu_store();
-        open_menu(&store, "menu1");
-        assert!(is_menu_open(&store, "menu1"));
-
-        open_menu(&store, "menu2");
-        assert!(!is_menu_open(&store, "menu1"));
-        assert!(is_menu_open(&store, "menu2"));
-    }
-
-    #[test]
-    fn test_close_menu() {
-        let store = create_menu_store();
-        open_menu(&store, "test_menu");
-        assert!(is_menu_open(&store, "test_menu"));
-
-        close_menu(&store, "test_menu");
-        assert!(!is_menu_open(&store, "test_menu"));
-    }
-
-    #[test]
-    fn test_close_menu_wrong_id_does_nothing() {
-        let store = create_menu_store();
-        open_menu(&store, "menu1");
-
-        close_menu(&store, "menu2");
-        assert!(is_menu_open(&store, "menu1"));
-    }
-
-    #[test]
     fn test_toggle_menu_opens_when_closed() {
         let store = create_menu_store();
         toggle_menu(&store, "test_menu");
@@ -172,22 +100,4 @@ mod tests {
         assert!(is_menu_open(&store, "menu2"));
     }
 
-    #[test]
-    fn test_close_all_menus() {
-        let store = create_menu_store();
-        open_menu(&store, "menu1");
-        assert!(is_menu_open(&store, "menu1"));
-
-        close_all_menus(&store);
-        assert!(!is_menu_open(&store, "menu1"));
-        assert!(!is_menu_open(&store, "menu2"));
-    }
-
-    #[test]
-    fn test_open_menu_idempotent() {
-        let store = create_menu_store();
-        open_menu(&store, "test_menu");
-        open_menu(&store, "test_menu");
-        assert!(is_menu_open(&store, "test_menu"));
-    }
 }
