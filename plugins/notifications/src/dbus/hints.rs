@@ -144,6 +144,26 @@ fn get_bytes_hint(hints: &HashMap<String, HintValue>, key: &str) -> Option<Vec<u
     })
 }
 
+impl Default for Hints {
+    fn default() -> Self {
+        Self {
+            action_icons: false,
+            category: None,
+            desktop_entry: None,
+            image_data: None,
+            image_path: None,
+            resident: false,
+            sound_file: None,
+            sound_name: None,
+            suppress_sound: false,
+            transient: false,
+            urgency: NotificationUrgency::Normal,
+            x: 0,
+            y: 0,
+        }
+    }
+}
+
 pub fn parse_hints(hints: &HashMap<String, HintValue>) -> Result<Hints> {
     Ok(Hints {
         action_icons: get_bool_hint(hints, "action-icons"),

@@ -1,10 +1,44 @@
-# 1. Cleanup slider
+# 1. Overview UI layout
 
-- Rename property `muted` to `disabled`
-- Rename property `base_icon` to `icon`
-- Replace custom implementation of chevron icon with MenuChevron widget
-- Deduplicate code in slider
-- Changing slider value is anything but smooth. When I drag the slider handle, it keeps jumping there and back
+The current layouting with `<Widget id="xx" />` no longer makes sense, because UI is not going to be defined by plugins anymore. Instead we need to create specific widget for each use case. So the layout should instead look like this:
+
+```
+<Overview>
+  <Header>
+    <Row>
+      <Clock />
+      <Battery />
+      <Weather />
+    </Row>
+    <Row halign="end">
+      <KeyboardLayout />
+      <SessionActions />
+      <SystemActions />
+    </Row>
+  </Header>
+  <Divider />
+  <TwoColumns>
+    <Col>
+      <Agenda />
+      <Notifications />
+    </Col>
+    <Col>
+      <AudioSliders />
+      <BrightnessSliders />
+      <FeatureToggleGrid>
+        <DoNotDisturbToggle />
+        <CaffeineToggle />
+        <DarkModeToggle />
+        <NightLightToggle />
+        <BluetoothToggles />
+        <NetworkManagerToggles />
+      </FeatureToggleGrid>
+    </Col>
+  </TwoColumns>
+</Overview>
+```
+
+This means, that each of the layout "UI components" are going to be responsible for mapping the state of waft entities to the UI. The Agenda and Notifications must be displayed despite they do not have any entity to display, it's ok and expected.
 
 # 4. Migrate eds-agenda
 

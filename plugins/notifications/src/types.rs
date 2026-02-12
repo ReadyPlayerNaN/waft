@@ -1,10 +1,35 @@
 #![allow(dead_code)] // Many fields and enum variants are for future UI features
 
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-pub use waft_plugin_api::ui::icon::Icon as NotificationIcon;
+/// Icon representation for notifications — themed name, file path, or raw bytes.
+///
+/// Mirrors the `waft_ui_gtk::widgets::icon::Icon` variants but without GTK dependency,
+/// allowing this type to be used in daemon context.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
+pub enum NotificationIcon {
+    Bytes(Vec<u8>),
+    FilePath(Arc<PathBuf>),
+    Themed(Arc<str>),
+}
+
+impl NotificationIcon {
+    /// Parse an icon from a string reference.
+    ///
+    /// If the string contains path-like characters (`/`, `.`, `~`),
+    /// it's treated as a file path. Otherwise, it's treated as a themed icon name.
+    pub fn parse(str: &Arc<str>) -> Self {
+        let s: &str = str.trim();
+        if s.contains('/') || s.starts_with('.') || s.starts_with('~') {
+            Self::FilePath(Arc::new(PathBuf::from(s)))
+        } else {
+            Self::Themed(Arc::from(s))
+        }
+    }
+}
 
 /// Notification urgency, aligned with `org.freedesktop.Notifications` (`urgency` hint).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]

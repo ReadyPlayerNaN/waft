@@ -1,447 +1,461 @@
-//! Notifications plugin - DBus notification handling and display.
+//! Notifications plugin — daemon-based freedesktop.org notification server.
 //!
-//! This is a dynamic plugin (.so) loaded by waft-overview at runtime.
-//! It implements a freedesktop.org-compliant notification daemon.
+//! Provides `notification` entities (one per active notification) and a `dnd`
+//! (Do Not Disturb) entity via the entity-based daemon architecture.
+//!
+//! Owns `org.freedesktop.Notifications` on the session bus and translates
+//! D-Bus notifications into entities for the waft daemon.
 
-use anyhow::{Context, Result};
-use async_trait::async_trait;
-use log::{debug, error, info, warn};
-use serde::Deserialize;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex as StdMutex};
 
-use gtk::prelude::*;
+use log::{debug, info, warn};
+use waft_plugin::*;
+use waft_protocol::entity::notification as proto;
 
-use waft_plugin_api::{
-    OverviewPlugin, PluginId, PluginResources, Slot, Widget, WidgetFeatureToggle,
-    WidgetRegistrar,
-};
-use waft_core::menu_state::MenuStore;
-
-use self::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
-use self::dbus::server::NotificationsDbusServer;
-use self::debounce::NotificationDebouncer;
-use self::dnd_toggle::{
-    DoNotDisturbToggleInit, DoNotDisturbToggleOutput, DoNotDisturbToggleWidget,
-};
-use self::store::{NotificationOp, NotificationStore, create_notification_store};
-use self::ui::notifications_widget::{NotificationsWidget, NotificationsWidgetOutput};
-use self::ui::toast_window::{HPos, ToastWindowOutput, ToastWindowWidget, VPos};
+use self::dbus::client::{OutboundEvent, close_reasons};
+use self::dbus::ingress::IngressedNotification;
+use self::store::{NotificationOp, State, process_op};
+use self::types::{NotificationIcon, NotificationUrgency};
 
 pub mod dbus;
-mod debounce;
-mod dnd_toggle;
-mod runtime_bridge;
 pub mod store;
+pub mod ttl;
 pub mod types;
-pub mod ui;
 
-// Export plugin entry points
-waft_plugin_api::export_plugin_metadata!("waft::notifications", "Notifications", "0.1.0");
-waft_plugin_api::export_overview_plugin!(NotificationsPlugin::new());
-
-fn default_toast_limit() -> u32 {
-    3
-}
-
-/// Configuration for the notifications plugin.
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
-pub struct NotificationsConfig {
-    #[serde(default = "default_toast_limit")]
-    pub toast_limit: u32,
-    #[serde(default)]
-    pub disable_toasts: bool,
-}
-
-impl NotificationsConfig {
-    /// Get toast limit as usize, ensuring minimum of 1.
-    pub fn toast_limit(&self) -> usize {
-        self.toast_limit.max(1) as usize
-    }
-}
-
+/// Notifications plugin implementing the entity-based `Plugin` trait.
 pub struct NotificationsPlugin {
-    store: Rc<NotificationStore>,
-    client_channel: flume::Sender<OutboundEvent>,
-    client_receiver: flume::Receiver<OutboundEvent>,
-    config: NotificationsConfig,
-    dbus_server: Option<NotificationsDbusServer>,
-    dnd_toggle: Rc<RefCell<Option<DoNotDisturbToggleWidget>>>,
-    notifications_widget: Rc<RefCell<Option<NotificationsWidget>>>,
-    server_channel: flume::Sender<IngressEvent>,
-    server_receiver: flume::Receiver<IngressEvent>,
-    tick_source: Arc<std::sync::Mutex<Option<glib::SourceId>>>,
-    toast: Option<ToastWindowWidget>,
-    debouncer: Option<NotificationDebouncer>,
-    session_locked: Arc<std::sync::atomic::AtomicBool>,
-}
-
-impl Default for NotificationsPlugin {
-    fn default() -> Self {
-        Self::new()
-    }
+    state: Arc<StdMutex<State>>,
+    outbound_tx: flume::Sender<OutboundEvent>,
 }
 
 impl NotificationsPlugin {
-    pub fn new() -> Self {
-        let (client_tx, client_rx) = flume::unbounded();
-        let (server_tx, server_rx) = flume::unbounded();
-        let store = Rc::new(create_notification_store());
-
+    /// Create a new plugin instance.
+    ///
+    /// Returns the plugin and the receiver for outbound D-Bus events
+    /// (to be consumed by the D-Bus server's signal loop).
+    pub fn new(
+        state: Arc<StdMutex<State>>,
+        outbound_tx: flume::Sender<OutboundEvent>,
+    ) -> Self {
         Self {
-            store,
-            client_channel: client_tx,
-            client_receiver: client_rx,
-            config: NotificationsConfig::default(),
-            dbus_server: None,
-            dnd_toggle: Rc::new(RefCell::new(None)),
-            notifications_widget: Rc::new(RefCell::new(None)),
-            server_channel: server_tx,
-            server_receiver: server_rx,
-            tick_source: Arc::new(std::sync::Mutex::new(None)),
-            toast: None,
-            debouncer: None,
-            session_locked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            state,
+            outbound_tx,
         }
     }
 
-    fn create_toast_window(&self) -> ToastWindowWidget {
-        ToastWindowWidget::new(self.store.clone(), HPos::Center, VPos::Top)
-    }
-
-    fn schedule_tick(&self) {
-        let tick_source = self.tick_source.clone();
-        let tick_source_for_closure = self.tick_source.clone();
-        let store = self.store.clone();
-        let store_for_interval = self.store.clone();
-
-        let mut guard = match tick_source.lock() {
+    /// Ingest a notification from the D-Bus server into the store.
+    ///
+    /// Called from the ingress monitor task when a `Notify` D-Bus call arrives.
+    pub fn process_ingress(&self, notification: IngressedNotification) {
+        let mut guard = match self.state.lock() {
             Ok(g) => g,
             Err(e) => {
-                warn!("[notifications] tick_source mutex poisoned, recovering: {e}");
+                warn!("[notifications] mutex poisoned in process_ingress, recovering: {e}");
                 e.into_inner()
             }
         };
-        *guard = Some(glib::timeout_add_local_once(
-            Duration::from_millis(200),
-            move || {
-                store.emit(NotificationOp::Tick);
+        process_op(
+            &mut guard,
+            NotificationOp::Ingress(Box::new(notification)),
+        );
+    }
 
-                // Schedule the next tick
-                let mut guard = match tick_source_for_closure.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[notifications] tick_source mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
-                *guard = Some(glib::timeout_add_local(
-                    Duration::from_millis(200),
-                    move || {
-                        store_for_interval.emit(NotificationOp::Tick);
-                        glib::ControlFlow::Continue
-                    },
-                ));
-            },
-        ));
+    /// Process a CloseNotification D-Bus call.
+    pub fn process_close(&self, id: u32) {
+        let mut guard = match self.state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("[notifications] mutex poisoned in process_close, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        process_op(&mut guard, NotificationOp::NotificationRetract(id as u64));
+        // Emit the close signal on the D-Bus side
+        if self
+            .outbound_tx
+            .send(OutboundEvent::NotificationClosed {
+                id,
+                reason: close_reasons::CLOSED_BY_CALL,
+            })
+            .is_err()
+        {
+            warn!("[notifications] outbound channel closed on CloseNotification");
+        }
     }
 }
 
-#[async_trait(?Send)]
-impl OverviewPlugin for NotificationsPlugin {
-    fn id(&self) -> PluginId {
-        PluginId::from_static("waft::notifications")
-    }
-
-    fn configure(&mut self, settings: &toml::Table) -> Result<()> {
-        self.config = settings.clone().try_into()?;
-        debug!("Configured notifications plugin: {:?}", self.config);
-        Ok(())
-    }
-
-    async fn init(&mut self, resources: &PluginResources) -> Result<()> {
-        // Initialize runtime bridge with tokio handle from host
-        let tokio_handle = resources
-            .tokio_handle
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("tokio_handle not provided"))?;
-        runtime_bridge::init_tokio_handle(tokio_handle.clone());
-
-        // Create and start D-Bus server on plugin-local runtime
-        let server_channel = self.server_channel.clone();
-        let client_receiver = self.client_receiver.clone();
-
-        let dbus_server = runtime_bridge::spawn_on_tokio(async move {
-            info!("Starting notifications dbus server");
-            let mut server = NotificationsDbusServer::connect().await
-                .context("Failed to connect DBus notifications server")?;
-
-            server.start(server_channel, client_receiver).await
-                .context("Failed to start DBus notifications server")?;
-
-            Ok::<_, anyhow::Error>(server)
-        })
-        .await?;
-
-        self.dbus_server = Some(dbus_server);
-
-        Ok(())
-    }
-
-    async fn create_elements(
-        &mut self,
-        app: &gtk::Application,
-        menu_store: Rc<MenuStore>,
-        registrar: Rc<dyn WidgetRegistrar>,
-    ) -> Result<()> {
-        // Configure the store with plugin settings
-        self.store.emit(NotificationOp::Configure {
-            toast_limit: self.config.toast_limit(),
-            disable_toasts: self.config.disable_toasts,
-        });
-
-        let (debouncer_tx, debouncer_rx) = flume::unbounded();
-
-        // Forward debouncer output to store
-        let store_for_debounce = self.store.clone();
-        glib::spawn_future_local(async move {
-            while let Ok(op) = debouncer_rx.recv_async().await {
-                store_for_debounce.emit(op);
-            }
-        });
-
-        let debouncer = NotificationDebouncer::new(debouncer_tx);
-        let db_server = debouncer.clone();
-        let db_toast = debouncer.clone();
-
-        self.debouncer = Some(debouncer);
-
-        // Create pure GTK4 toast window with store reference
-        let toast = self.create_toast_window();
-
-        // Add window to application so GTK tracks it for lifecycle management
-        app.add_window(&toast.window);
-
-        // Connect output handler for toast events
-        let outbound_tx_toast = self.client_channel.clone();
-        toast.connect_output(move |event| {
-            debug!("[toast] Received: {:?}", event);
-            match event {
-                ToastWindowOutput::ActionClick(id, action_key) => {
-                    let _ = db_toast.send(NotificationOp::NotificationDismiss(id));
-                    let _ = outbound_tx_toast.send(OutboundEvent::ActionInvoked {
-                        id: id as u32,
-                        action_key: action_key.clone(),
-                    });
-                    let _ = outbound_tx_toast.send(OutboundEvent::NotificationClosed {
-                        id: id as u32,
-                        reason: close_reasons::DISMISSED_BY_USER,
-                    });
-                }
-
-                ToastWindowOutput::CardClose(id) => {
-                    let _ = outbound_tx_toast.send(OutboundEvent::NotificationClosed {
-                        id: id as u32,
-                        reason: close_reasons::DISMISSED_BY_USER,
-                    });
-                    let _ = db_toast.send(NotificationOp::NotificationDismiss(id));
-                }
-
-                ToastWindowOutput::TimedOut(id) => {
-                    let _ = outbound_tx_toast.send(OutboundEvent::NotificationClosed {
-                        id: id as u32,
-                        reason: close_reasons::EXPIRED,
-                    });
-                }
-
-                ToastWindowOutput::CardClick(_id) => {}
-            }
-        });
-
-        self.toast = Some(toast);
-
-        let server_receiver = self.server_receiver.clone();
-        let outbound_tx = self.client_channel.clone();
-        glib::spawn_future_local(async move {
-            while let Ok(event) = server_receiver.recv_async().await {
-                match event {
-                    IngressEvent::Notify { notification } => {
-                        let _ = db_server.send(NotificationOp::Ingress(notification));
-                    }
-
-                    IngressEvent::CloseNotification { id } => {
-                        let _ = db_server.send(NotificationOp::NotificationRetract(id as u64));
-
-                        let _ = outbound_tx.send(OutboundEvent::NotificationClosed {
-                            id,
-                            reason: close_reasons::CLOSED_BY_CALL,
-                        });
-                    }
-                }
-            }
-        });
-
-        // Create DnD toggle
-        let dnd_toggle = DoNotDisturbToggleWidget::new(DoNotDisturbToggleInit {
-            active: false,
-            busy: false,
-        });
-
-        // Connect output handler
-        let dnd_toggle_ref = self.dnd_toggle.clone();
-        let store_for_dnd = self.store.clone();
-        dnd_toggle.connect_output(move |event| {
-            debug!("[dnd] Received: {:?}", event);
-            match event {
-                DoNotDisturbToggleOutput::Activate => {
-                    store_for_dnd.emit(NotificationOp::SetDnd(true));
-                    if let Some(ref toggle) = *dnd_toggle_ref.borrow() {
-                        toggle.set_active(true);
-                    }
-                }
-                DoNotDisturbToggleOutput::Deactivate => {
-                    store_for_dnd.emit(NotificationOp::SetDnd(false));
-                    if let Some(ref toggle) = *dnd_toggle_ref.borrow() {
-                        toggle.set_active(false);
-                    }
-                }
-            }
-        });
-
-        *self.dnd_toggle.borrow_mut() = Some(dnd_toggle);
-
-        // Create NotificationsWidget for the overlay Info slot
-        let notifications_widget = NotificationsWidget::new(self.store.clone(), menu_store);
-
-        // Connect output handler for widget events
-        let db_widget = match self.debouncer.as_ref() {
-            Some(d) => d.clone(),
-            None => {
-                error!(
-                    "[notifications] debouncer not initialized when creating widget output handler"
-                );
-                return Ok(());
-            }
-        };
-        let outbound_tx_widget = self.client_channel.clone();
-        notifications_widget.connect_output(move |event| {
-            debug!("[notifications_widget] Received: {:?}", event);
-            match event {
-                NotificationsWidgetOutput::ActionClick(id, action_key) => {
-                    let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
-                    let _ = outbound_tx_widget.send(OutboundEvent::ActionInvoked {
-                        id: id as u32,
-                        action_key: action_key.clone(),
-                    });
-                    let _ = outbound_tx_widget.send(OutboundEvent::NotificationClosed {
-                        id: id as u32,
-                        reason: close_reasons::DISMISSED_BY_USER,
-                    });
-                }
-                NotificationsWidgetOutput::Dismiss(id) => {
-                    let _ = outbound_tx_widget.send(OutboundEvent::NotificationClosed {
-                        id: id as u32,
-                        reason: close_reasons::DISMISSED_BY_USER,
-                    });
-                    let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
-                }
-                NotificationsWidgetOutput::DismissAll(ids) => {
-                    for id in ids {
-                        let _ = outbound_tx_widget.send(OutboundEvent::NotificationClosed {
-                            id: id as u32,
-                            reason: close_reasons::DISMISSED_BY_USER,
-                        });
-                        let _ = db_widget.send(NotificationOp::NotificationDismiss(id));
-                    }
-                }
-            }
-        });
-
-        *self.notifications_widget.borrow_mut() = Some(notifications_widget);
-
-        // Register widgets
-        if let Some(ref dnd_toggle) = *self.dnd_toggle.borrow() {
-            registrar.register_feature_toggle(Rc::new(WidgetFeatureToggle {
-                id: "notifications:dnd".to_string(),
-                el: dnd_toggle.widget().clone().upcast::<gtk::Widget>(),
-                weight: 60,
-                menu: None,
-                menu_id: None,
-                on_expand_toggled: None,
-            }));
-        }
-        if let Some(ref notifications_widget) = *self.notifications_widget.borrow() {
-            registrar.register_widget(Rc::new(Widget {
-                id: "notifications:list".to_string(),
-                slot: Slot::Info,
-                weight: 50,
-                el: notifications_widget
-                    .widget()
-                    .clone()
-                    .upcast::<gtk::Widget>(),
-            }));
-        }
-
-        self.schedule_tick();
-
-        Ok(())
-    }
-
-    fn on_overlay_visible(&self, visible: bool) {
-        // Don't show toast window if session is locked
-        if self
-            .session_locked
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            return;
-        }
-        if let Some(ref toast) = self.toast {
-            if visible {
-                toast.hide();
-            } else {
-                toast.present();
-            }
-        }
-    }
-
-    fn on_session_lock(&self) {
-        use std::sync::atomic::Ordering;
-
-        debug!("[notifications] Session locked, hiding toast window");
-        self.session_locked.store(true, Ordering::Relaxed);
-
-        // Hide toast window
-        if let Some(ref toast) = self.toast {
-            toast.hide();
-        }
-
-        // Stop the tick timer to pause countdown bars
-        let mut guard = match self.tick_source.lock() {
+#[async_trait::async_trait]
+impl Plugin for NotificationsPlugin {
+    fn get_entities(&self) -> Vec<Entity> {
+        let guard = match self.state.lock() {
             Ok(g) => g,
             Err(e) => {
-                warn!("[notifications] tick_source mutex poisoned in on_session_lock: {e}");
+                warn!("[notifications] mutex poisoned in get_entities, recovering: {e}");
                 e.into_inner()
             }
         };
-        if let Some(source_id) = guard.take() {
-            source_id.remove();
+
+        let mut entities = Vec::new();
+
+        // DND entity
+        let dnd = proto::Dnd { active: guard.dnd };
+        entities.push(Entity::new(
+            Urn::new("notifications", proto::DND_ENTITY_TYPE, "default"),
+            proto::DND_ENTITY_TYPE,
+            &dnd,
+        ));
+
+        // One entity per visible panel notification
+        for (id, _lifecycle) in &guard.panel_notifications {
+            let Some(notif) = guard.notifications.get(id) else {
+                continue;
+            };
+
+            let proto_notif = proto::Notification {
+                title: notif.title.to_string(),
+                description: notif.description.to_string(),
+                app_name: notif.app.as_ref().and_then(|a| a.title.as_ref()).map(|t| t.to_string()),
+                app_id: notif.app.as_ref().map(|a| a.ident.to_string()),
+                urgency: match notif.urgency {
+                    NotificationUrgency::Low => proto::NotificationUrgency::Low,
+                    NotificationUrgency::Normal => proto::NotificationUrgency::Normal,
+                    NotificationUrgency::Critical => proto::NotificationUrgency::Critical,
+                },
+                actions: notif
+                    .actions
+                    .iter()
+                    .map(|a| proto::NotificationAction {
+                        key: a.key.to_string(),
+                        label: a.label.to_string(),
+                    })
+                    .collect(),
+                icon_hints: notif
+                    .icon_hints
+                    .iter()
+                    .map(|h| match h {
+                        NotificationIcon::Bytes(b) => proto::NotificationIconHint::Bytes(b.clone()),
+                        NotificationIcon::FilePath(p) => {
+                            proto::NotificationIconHint::FilePath(p.display().to_string())
+                        }
+                        NotificationIcon::Themed(name) => {
+                            proto::NotificationIconHint::Themed(name.to_string())
+                        }
+                    })
+                    .collect(),
+                created_at_ms: notif
+                    .created_at
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0),
+                resident: notif.resident,
+            };
+
+            entities.push(Entity::new(
+                Urn::new("notifications", proto::NOTIFICATION_ENTITY_TYPE, &id.to_string()),
+                proto::NOTIFICATION_ENTITY_TYPE,
+                &proto_notif,
+            ));
+        }
+
+        entities
+    }
+
+    async fn handle_action(
+        &self,
+        urn: Urn,
+        action: String,
+        params: serde_json::Value,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let parts: Vec<&str> = urn.as_str().split('/').collect();
+        // URN format: notifications/{entity-type}/{id}
+        let entity_type = parts.get(1).copied().unwrap_or("");
+        let entity_id = parts.get(2).copied().unwrap_or("");
+
+        match (entity_type, action.as_str()) {
+            ("dnd", "toggle") => {
+                let mut guard = match self.state.lock() {
+                    Ok(g) => g,
+                    Err(e) => {
+                        warn!("[notifications] mutex poisoned in handle_action, recovering: {e}");
+                        e.into_inner()
+                    }
+                };
+                let new_dnd = !guard.dnd;
+                process_op(&mut guard, NotificationOp::SetDnd(new_dnd));
+                info!("[notifications] DND toggled to {new_dnd}");
+            }
+
+            ("notification", "dismiss") => {
+                let id: u64 = entity_id.parse().map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("invalid notification id: {e}"),
+                    )) as Box<dyn std::error::Error + Send + Sync>
+                })?;
+
+                {
+                    let mut guard = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[notifications] mutex poisoned in handle_action, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    process_op(&mut guard, NotificationOp::NotificationDismiss(id));
+                }
+
+                if self
+                    .outbound_tx
+                    .send(OutboundEvent::NotificationClosed {
+                        id: id as u32,
+                        reason: close_reasons::DISMISSED_BY_USER,
+                    })
+                    .is_err()
+                {
+                    warn!("[notifications] outbound channel closed on dismiss");
+                }
+            }
+
+            ("notification", "invoke-action") => {
+                let id: u64 = entity_id.parse().map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("invalid notification id: {e}"),
+                    )) as Box<dyn std::error::Error + Send + Sync>
+                })?;
+
+                let action_key = params
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default")
+                    .to_string();
+
+                // Remove notification from store
+                {
+                    let mut guard = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[notifications] mutex poisoned in handle_action, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    process_op(&mut guard, NotificationOp::NotificationDismiss(id));
+                }
+
+                // Emit ActionInvoked + NotificationClosed signals
+                if self
+                    .outbound_tx
+                    .send(OutboundEvent::ActionInvoked {
+                        id: id as u32,
+                        action_key,
+                    })
+                    .is_err()
+                {
+                    warn!("[notifications] outbound channel closed on invoke-action");
+                }
+                if self
+                    .outbound_tx
+                    .send(OutboundEvent::NotificationClosed {
+                        id: id as u32,
+                        reason: close_reasons::DISMISSED_BY_USER,
+                    })
+                    .is_err()
+                {
+                    warn!("[notifications] outbound channel closed on invoke-action close");
+                }
+            }
+
+            _ => {
+                debug!(
+                    "[notifications] Unknown action '{}' on entity type '{}'",
+                    action, entity_type
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn can_stop(&self) -> bool {
+        // Must keep running to receive D-Bus notifications
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dbus::ingress::IngressedNotification;
+    use std::sync::Arc;
+    use std::time::SystemTime;
+
+    fn make_notification(id: u64) -> IngressedNotification {
+        IngressedNotification {
+            app_name: Some(Arc::from("test-app")),
+            actions: vec![Arc::from("default"), Arc::from("Open")],
+            created_at: SystemTime::now(),
+            description: Arc::from("Test body"),
+            icon: Some(Arc::from("dialog-information")),
+            id,
+            hints: Default::default(),
+            replaces_id: None,
+            title: Arc::from("Test Title"),
+            ttl: None,
         }
     }
 
-    fn on_session_unlock(&self) {
-        use std::sync::atomic::Ordering;
+    #[test]
+    fn get_entities_returns_dnd_when_empty() {
+        let state = Arc::new(StdMutex::new(State::new()));
+        let (tx, _rx) = flume::unbounded();
+        let plugin = NotificationsPlugin::new(state, tx);
+        let entities = plugin.get_entities();
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].entity_type, "dnd");
+    }
 
-        debug!("[notifications] Session unlocked, resuming toast processing");
-        self.session_locked.store(false, Ordering::Relaxed);
+    #[test]
+    fn get_entities_returns_notification_entities() {
+        let state = Arc::new(StdMutex::new(State::new()));
+        let (tx, _rx) = flume::unbounded();
+        let plugin = NotificationsPlugin::new(state.clone(), tx);
 
-        // Restart the tick timer
-        self.schedule_tick();
+        // Ingest a notification
+        plugin.process_ingress(make_notification(42));
 
-        // Toast window will be shown when a new notification arrives or
-        // on_overlay_visible(false) is called. We don't force it visible
-        // immediately since the overlay might be about to show.
+        let entities = plugin.get_entities();
+        // 1 DND + 1 notification
+        assert_eq!(entities.len(), 2);
+
+        let notif_entities: Vec<_> = entities
+            .iter()
+            .filter(|e| e.entity_type == "notification")
+            .collect();
+        assert_eq!(notif_entities.len(), 1);
+        assert_eq!(notif_entities[0].urn.as_str(), "notifications/notification/42");
+    }
+
+    #[test]
+    fn can_stop_returns_false() {
+        let state = Arc::new(StdMutex::new(State::new()));
+        let (tx, _rx) = flume::unbounded();
+        let plugin = NotificationsPlugin::new(state, tx);
+        assert!(!plugin.can_stop());
+    }
+
+    #[tokio::test]
+    async fn handle_action_dnd_toggle() {
+        let state = Arc::new(StdMutex::new(State::new()));
+        let (tx, _rx) = flume::unbounded();
+        let plugin = NotificationsPlugin::new(state.clone(), tx);
+
+        assert!(!state.lock().unwrap().dnd);
+
+        plugin
+            .handle_action(
+                Urn::new("notifications", "dnd", "default"),
+                "toggle".to_string(),
+                serde_json::Value::Null,
+            )
+            .await
+            .unwrap();
+
+        assert!(state.lock().unwrap().dnd);
+
+        // Toggle again
+        plugin
+            .handle_action(
+                Urn::new("notifications", "dnd", "default"),
+                "toggle".to_string(),
+                serde_json::Value::Null,
+            )
+            .await
+            .unwrap();
+
+        assert!(!state.lock().unwrap().dnd);
+    }
+
+    #[tokio::test]
+    async fn handle_action_dismiss() {
+        let state = Arc::new(StdMutex::new(State::new()));
+        let (tx, rx) = flume::unbounded();
+        let plugin = NotificationsPlugin::new(state.clone(), tx);
+
+        plugin.process_ingress(make_notification(10));
+        assert!(state.lock().unwrap().notifications.contains_key(&10));
+
+        plugin
+            .handle_action(
+                Urn::new("notifications", "notification", "10"),
+                "dismiss".to_string(),
+                serde_json::Value::Null,
+            )
+            .await
+            .unwrap();
+
+        assert!(!state.lock().unwrap().notifications.contains_key(&10));
+
+        // Should have emitted NotificationClosed
+        let event = rx.try_recv().unwrap();
+        assert!(matches!(
+            event,
+            OutboundEvent::NotificationClosed {
+                id: 10,
+                reason: close_reasons::DISMISSED_BY_USER
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn handle_action_invoke_action() {
+        let state = Arc::new(StdMutex::new(State::new()));
+        let (tx, rx) = flume::unbounded();
+        let plugin = NotificationsPlugin::new(state.clone(), tx);
+
+        plugin.process_ingress(make_notification(20));
+
+        plugin
+            .handle_action(
+                Urn::new("notifications", "notification", "20"),
+                "invoke-action".to_string(),
+                serde_json::json!({"key": "default"}),
+            )
+            .await
+            .unwrap();
+
+        assert!(!state.lock().unwrap().notifications.contains_key(&20));
+
+        // Should have emitted ActionInvoked then NotificationClosed
+        let event1 = rx.try_recv().unwrap();
+        assert!(matches!(
+            event1,
+            OutboundEvent::ActionInvoked { id: 20, .. }
+        ));
+        let event2 = rx.try_recv().unwrap();
+        assert!(matches!(
+            event2,
+            OutboundEvent::NotificationClosed { id: 20, .. }
+        ));
+    }
+
+    #[test]
+    fn process_close_removes_and_signals() {
+        let state = Arc::new(StdMutex::new(State::new()));
+        let (tx, rx) = flume::unbounded();
+        let plugin = NotificationsPlugin::new(state.clone(), tx);
+
+        plugin.process_ingress(make_notification(30));
+        plugin.process_close(30);
+
+        assert!(!state.lock().unwrap().notifications.contains_key(&30));
+
+        let event = rx.try_recv().unwrap();
+        assert!(matches!(
+            event,
+            OutboundEvent::NotificationClosed {
+                id: 30,
+                reason: close_reasons::CLOSED_BY_CALL
+            }
+        ));
     }
 }

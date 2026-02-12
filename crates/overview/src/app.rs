@@ -432,6 +432,8 @@ pub async fn setup() -> Result<adw::Application> {
                                 entity::network::VPN_ENTITY_TYPE,
                                 entity::weather::ENTITY_TYPE,
                                 entity::session::SESSION_ENTITY_TYPE,
+                                entity::notification::NOTIFICATION_ENTITY_TYPE,
+                                entity::notification::DND_ENTITY_TYPE,
                             ];
                             for et in &entity_types {
                                 client.subscribe(et);

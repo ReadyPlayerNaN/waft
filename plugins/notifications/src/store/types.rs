@@ -23,7 +23,6 @@ pub struct Notification {
     pub resident: bool,
     pub title: Arc<str>,
     pub ttl: Option<u64>,
-    pub toast_ttl: Option<u64>,
     pub urgency: NotificationUrgency,
 }
 
@@ -68,33 +67,15 @@ impl PartialOrd for Notification {
     }
 }
 
-/// Lifecycle state for notifications and groups.
+/// Lifecycle state for notifications in the panel.
+///
+/// Simplified from the original cdylib version: animation states (Appearing, Hiding,
+/// Hidden, Pending) are removed since the daemon doesn't manage GTK animations.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ItemLifecycle {
-    Appearing,
-    Hiding,
-    Hidden,
-    Pending,
-    Dismissing,
-    Dismissed,
-    Retracting,
-    Retracted,
     Visible,
-}
-
-impl ItemLifecycle {
-    pub fn is_hidden(&self) -> bool {
-        matches!(
-            self,
-            ItemLifecycle::Hidden
-                | ItemLifecycle::Hiding
-                | ItemLifecycle::Retracting
-                | ItemLifecycle::Retracted
-                | ItemLifecycle::Dismissed
-                | ItemLifecycle::Dismissing
-                | ItemLifecycle::Pending
-        )
-    }
+    Dismissing,
+    Retracting,
 }
 
 /// A group of notifications from the same application.
@@ -135,84 +116,40 @@ impl Group {
 #[derive(Debug, Clone)]
 pub enum NotificationOp {
     Batch(Vec<NotificationOp>),
-    Configure {
-        toast_limit: usize,
-        disable_toasts: bool,
-    },
     Ingress(Box<IngressedNotification>),
     NotificationDismiss(u64),
-    NotificationDismissed(u64),
     NotificationRetract(u64),
-    NotificationRetracted(u64),
     SetDnd(bool),
-    Tick,
-    ToastHide(u64),
-    ToastHidden(u64),
-    ToastHoverEnter,
-    ToastHoverLeave,
+    TtlExpiry(Vec<u64>),
 }
 
 /// The notification state container.
 #[derive(Debug, Clone)]
 pub struct State {
-    pub appearing_timestamps: IndexMap<u64, SystemTime>,
     pub archive: IndexMap<Arc<str>, ItemLifecycle>,
-    pub dismissing_timestamps: IndexMap<u64, SystemTime>,
-    /// Whether toasts are disabled entirely
-    pub disable_toasts: bool,
     pub dnd: bool,
     pub groups: HashMap<Arc<str>, Group>,
-    pub hiding_timestamps: IndexMap<u64, SystemTime>,
-    /// Whether toast timers are paused due to hover
-    pub hover_paused: bool,
     pub notifications: HashMap<u64, Notification>,
     pub panel_notifications: IndexMap<u64, ItemLifecycle>,
     /// Timestamp when each panel notification became visible (for TTL tracking)
     pub panel_visible_since_timestamps: IndexMap<u64, SystemTime>,
-    pub retracting_timestamps: IndexMap<u64, SystemTime>,
-    /// Maximum number of toasts to display at once
-    pub toast_limit: usize,
-    pub toasts: IndexMap<u64, ItemLifecycle>,
-    /// Panel notifications that have expired their TTL (should be removed after animation)
-    pub ttl_expired_panel_notifications: std::collections::HashSet<u64>,
-    /// Toasts that are hiding due to TTL expiration (should be removed from queue after animation)
-    pub ttl_expired_toasts: std::collections::HashSet<u64>,
-    pub visible_since_timestamps: IndexMap<u64, SystemTime>,
 }
 
 impl State {
     /// Create a new empty state.
     pub fn new() -> Self {
         Self {
-            appearing_timestamps: IndexMap::new(),
             archive: IndexMap::new(),
-            dismissing_timestamps: IndexMap::new(),
-            disable_toasts: false,
             dnd: false,
             groups: HashMap::new(),
-            hiding_timestamps: IndexMap::new(),
-            hover_paused: false,
             notifications: HashMap::new(),
             panel_notifications: IndexMap::new(),
             panel_visible_since_timestamps: IndexMap::new(),
-            retracting_timestamps: IndexMap::new(),
-            toast_limit: 3,
-            toasts: IndexMap::new(),
-            ttl_expired_panel_notifications: std::collections::HashSet::new(),
-            ttl_expired_toasts: std::collections::HashSet::new(),
-            visible_since_timestamps: IndexMap::new(),
         }
     }
 
     pub fn get_notification(&self, id: &u64) -> Option<&Notification> {
         self.notifications.get(id)
-    }
-
-    pub fn get_toasts(&self) -> Vec<(&Notification, &ItemLifecycle)> {
-        self.toasts
-            .iter()
-            .filter_map(|(k, l)| self.notifications.get(k).map(|n| (n, l)))
-            .collect()
     }
 
     /// Get panel notifications with their lifecycle state.

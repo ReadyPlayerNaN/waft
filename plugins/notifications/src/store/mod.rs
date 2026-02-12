@@ -1,10 +1,10 @@
 //! Notification store module.
 //!
-//! Manages notification state with instance-based stores.
+//! Manages notification state with direct function calls.
 
-mod deprioritize;
-mod manager;
-mod types;
+pub mod deprioritize;
+pub mod manager;
+pub mod types;
 
-pub use manager::{NotificationStore, create_notification_store, reorder_icon_hints_for_group};
-pub use types::{ItemLifecycle, Notification, NotificationOp};
+pub use manager::{process_op, reorder_icon_hints_for_group};
+pub use types::{ItemLifecycle, Notification, NotificationOp, State};

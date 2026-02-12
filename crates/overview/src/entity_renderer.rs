@@ -534,6 +534,71 @@ fn map_entity_to_widgets(
             }])
         }
 
+        entity::notification::DND_ENTITY_TYPE => {
+            let dnd: entity::notification::Dnd =
+                serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+            let icon = if dnd.active {
+                "notifications-disabled-symbolic"
+            } else {
+                "preferences-system-notifications-symbolic"
+            };
+            Ok(vec![NamedWidget {
+                id: urn.as_str().to_string(),
+                weight: 60,
+                widget: IpcWidget::FeatureToggle {
+                    title: "Do Not Disturb".to_string(),
+                    icon: icon.to_string(),
+                    details: if dnd.active {
+                        Some("Notifications silenced".to_string())
+                    } else {
+                        None
+                    },
+                    active: dnd.active,
+                    busy: false,
+                    expandable: false,
+                    expanded_content: None,
+                    on_toggle: Action {
+                        id: "toggle".to_string(),
+                        params: ActionParams::None,
+                    },
+                },
+            }])
+        }
+
+        entity::notification::NOTIFICATION_ENTITY_TYPE => {
+            let notif: entity::notification::Notification =
+                serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+            let icon = notif
+                .icon_hints
+                .iter()
+                .find_map(|h| match h {
+                    entity::notification::NotificationIconHint::Themed(name) => Some(name.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "dialog-information-symbolic".to_string());
+            Ok(vec![NamedWidget {
+                id: urn.as_str().to_string(),
+                weight: 50,
+                widget: IpcWidget::InfoCard {
+                    icon,
+                    title: notif.title,
+                    description: Some(notif.description),
+                    on_click: if notif.actions.iter().any(|a| a.key == "default") {
+                        Some(Action {
+                            id: "invoke-action".to_string(),
+                            params: ActionParams::Map(
+                                [("key".to_string(), serde_json::json!("default"))]
+                                    .into_iter()
+                                    .collect(),
+                            ),
+                        })
+                    } else {
+                        None
+                    },
+                },
+            }])
+        }
+
         // Bluetooth devices are children rendered within their adapter's menu.
         // For now, skip standalone rendering.
         entity::bluetooth::BluetoothDevice::ENTITY_TYPE => Ok(vec![]),

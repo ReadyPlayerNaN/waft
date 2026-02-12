@@ -4,14 +4,7 @@
 //! The app owns the well-known name `org.freedesktop.Notifications` on the session bus and
 //! exports `/org/freedesktop/Notifications` implementing `org.freedesktop.Notifications`.
 //!
-//! Design constraints (see `AGENTS.md`):
-//! - GTK must remain on the main thread.
-//! - This server runs on tokio and communicates with the notifications plugin/controller
-//!   via channels using `crate::notifications_dbus::{IngressEvent, OutboundEvent}`.
-//! - If `org.freedesktop.Notifications` is already owned, startup should attempt to replace the owner.
-//!
-//! This module intentionally keeps the UI layer DBus-agnostic by translating DBus calls into
-//! `IngressEvent`s and translating `OutboundEvent`s into DBus signals.
+//! In daemon architecture, this runs directly on the tokio runtime (no glib/runtime bridge).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -36,11 +29,7 @@ const OBJECT_PATH: &str = "/org/freedesktop/Notifications";
 
 /// A DBus notifications server that owns `org.freedesktop.Notifications`.
 ///
-/// Intended usage (from `main.rs` startup, before GTK runs):
-/// - create `(ingress_tx, ingress_rx)` and `(outbound_tx, outbound_rx)`
-/// - `NotificationsDbusServer::connect().await?`
-/// - `server.start(ingress_tx, outbound_rx).await?`
-/// - pass `ingress_rx` + `outbound_tx` into `NotificationsPlugin::with_dbus_ingress(...)`
+/// In the daemon architecture, the server is started directly on the tokio runtime.
 pub struct NotificationsDbusServer {
     next_id: Arc<AtomicU32>,
     connection: Option<Connection>,
@@ -121,10 +110,9 @@ impl NotificationsDbusServer {
 
         info!("Successfully started notifications DBus server");
 
-        // Spawn outbound signal loop on plugin-local runtime.
+        // Spawn outbound signal loop on tokio runtime
         let conn_for_loop = conn.clone();
-        let handle = crate::runtime_bridge::get_handle();
-        handle.spawn(async move {
+        tokio::spawn(async move {
             if let Err(e) = outbound_signal_loop(conn_for_loop, outbound_rx).await {
                 log::warn!("[notifications/dbus] outbound signal loop error: {e}");
             }
@@ -220,10 +208,6 @@ impl NotificationsService {
     }
 
     /// Notify(s app_name, u replaces_id, s app_icon, s summary, s body, as actions, a{sv} hints, i expire_timeout) -> u
-    ///
-    /// Behavioral notes (per user decisions / AGENTS.md):
-    /// - Return DBus-generated IDs.
-    /// - `replaces_id`: receiver creates new notification and removes the old one.
     #[allow(clippy::too_many_arguments)]
     async fn notify(
         &self,
@@ -308,8 +292,6 @@ impl NotificationsService {
     }
 
     /// CloseNotification(u id) -> ()
-    ///
-    /// The UI/plugin will remove and then emit NotificationClosed(reason=CLOSED_BY_CALL).
     async fn close_notification(&self, id: u32) -> fdo::Result<()> {
         let _ = self
             .inner
@@ -344,8 +326,7 @@ async fn outbound_signal_loop(
     Ok(())
 }
 
-// Keep the close reason constants referenced somewhere so the module stays aligned with policy,
-// even if the server doesn't emit close signals for actions directly.
+// Keep the close reason constants referenced somewhere so the module stays aligned with policy.
 #[allow(unused)]
 fn _close_reason_policy_guards() -> (u32, u32, u32, u32) {
     (
