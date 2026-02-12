@@ -96,7 +96,7 @@ The application has 14 plugins plus 1 internal feature:
 | **networkmanager** | Daemon | WiFi/Ethernet/VPN management (nmrs + zbus) |
 | **weather** | Daemon | Weather information via HTTP API |
 | **notifications** | Daemon | D-Bus notification server, toasts, DND |
-| **eds-agenda** | Daemon | EDS calendar integration |
+| **eds** | Daemon (entity-based) | EDS calendar integration |
 | **sunsetr** | Daemon | Night light control via sunsetr CLI |
 | *session* | Internal | Session lock detection (in overview/src/features/) |
 
@@ -174,7 +174,7 @@ plugins/
     networkmanager/ bin/          # Daemon: WiFi/Ethernet/VPN (nmrs + zbus)
     weather/        bin/          # Daemon: weather info (HTTP API)
     notifications/  bin/          # Daemon: notification server + toasts
-    eds-agenda/     bin/          # Daemon: EDS calendar integration
+    eds/            bin/          # Daemon: EDS calendar integration
     sunsetr/        bin/          # Daemon: night light control
 ```
 

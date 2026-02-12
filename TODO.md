@@ -1,502 +1,57 @@
-# 1. Overview UI layout
+# 1. Consistent `waft-ui-gtk`
 
-The current layouting with `<Widget id="xx" />` no longer makes sense, because UI is not going to be defined by plugins anymore. Instead we need to create specific widget for each use case. So the layout should instead look like this:
+The widgets in `waft-ui-gtk` are defined as functions. This is difficult to update. Instead, the library must be refactored, so each of the widgets is a struct, that provides update methods.
 
-```
-<Overview>
-  <Header>
-    <Row>
-      <Clock />
-      <Battery />
-      <Weather />
-    </Row>
-    <Row halign="end">
-      <KeyboardLayout />
-      <SessionActions />
-      <SystemActions />
-    </Row>
-  </Header>
-  <Divider />
-  <TwoColumns>
-    <Col>
-      <Agenda />
-      <Notifications />
-    </Col>
-    <Col>
-      <AudioSliders />
-      <BrightnessSliders />
-      <FeatureToggleGrid>
-        <DoNotDisturbToggle />
-        <CaffeineToggle />
-        <DarkModeToggle />
-        <NightLightToggle />
-        <BluetoothToggles />
-        <NetworkManagerToggles />
-      </FeatureToggleGrid>
-    </Col>
-  </TwoColumns>
-</Overview>
-```
+Some properties must be shared (may be converted to trait):
 
-This means, that each of the layout "UI components" are going to be responsible for mapping the state of waft entities to the UI. The Agenda and Notifications must be displayed despite they do not have any entity to display, it's ok and expected.
+- `set_css_classes`
+- `set_visible`
+- ...see if any other apply
 
-# 4. Migrate eds-agenda
+# 2. Remove `waft-plugin-api`
 
-Migrate plugin eds-agenda to daemon architecture.
+It is a leftover of previous architectures. Some packages reuse re-exported things from `waft-ui-gtk` - relink it to `waft-ui-gtk` directly.
 
-## Component mappings
+# 3. Bluetooth menu menu row
 
-Existing GTK components map to protocol widgets:
+Bluetooth menu should use MenuRow widget. Clicking the row should intiiate connect or disconnect of the device.
 
-- AttendeeRow → ListRow (status icon + name label as children)
-- AttendeeList → IconList (section icon "system-users-symbolic" + attendee ListRows as children)
-- AgendaDetails → IconList (each detail section: location, attendees, description)
-- MeetingButton → ListButton (one per meeting link, show all links)
+# 4. Wired menu info
 
-## New protocol widgets required
+The wired adapter menu must display the network details, like:
 
-### Details
+- Local IP address
+- Public IP address (if available)
 
-Expandable section with summary + hidden content. Expansion is managed by the
-overview MenuStore, same as FeatureToggle. The renderer creates an internal
-gtk::Revealer and MenuChevron — these are not exposed in the protocol.
+# 5. Wired menu profiles
 
-Protocol fields:
+The wired adapter menu must provide list of profiles and allow switching the profiles.
 
-```rust
-Details {
-    summary: Box<Widget>,       // Always-visible content
-    content: Box<Widget>,       // Hidden until expanded
-    css_classes: Vec<String>,   // For past/ongoing styling
-    on_toggle: Action,          // Fires with ActionParams::Value(1.0) on expand, 0.0 on collapse
-}
-```
+# 6. VPN menu
 
-The renderer uses the widget_id to derive a stable MenuStore menu ID (same as
-FeatureToggle). Internally, it composes:
+If at least a single VPN is configured, then the VPN feature toggle will be displayed with a menu. The menu will list all available VPN configurations as MenuRows. Clicking the menu row dis/connects the VPN. Clicking the feature toggle toggle disconnects all VPNs
+
+# 7. Sunsetr plugin persistence
+
+Sunsetr plugin must always return night light entity even when sunsetr is not running. The only time the sunsetr plugin returns nothing is when the `sunsetr` binary is not found.
+
+# 8. Agenda is empty
+
+For unknown reason, the agenda plugin displays nothing. I definitely have at least one event in one of my calendars for tomorrow and for today.
+
+# 9. D-Bus errors from `nmrs`
+
+This looks like a problem.
 
 ```
-<Row hexpand>
-  {summary}
-  <Button><MenuChevron /></Button>
-</Row>
-<Revealer>
-  {content}
-</Revealer>
+[2026-02-12T21:53:31Z DEBUG nmrs::core::device] Permanent hardware address not available for device lo: org.freedesktop.DBus.Error.InvalidArgs: No such property “PermHwAddress”
 ```
 
-The chevron and revealer are managed by the MenuStore subscription. The
-on_toggle action notifies the daemon of expand/collapse state changes.
+# Calendar widget
 
-### ToggleButton
+The EDS plugin must be able to supply events both for agenda widget and for a calendar. The consumers must be able to add a filter to their subscription. For example: Overview is only interested in agenda events (that means today and tomorrow). Calendar widget is going to be interested in entire month of events.
 
-A button that can be active/inactive (for "show past events" toggle).
-
-```rust
-ToggleButton {
-    icon: String,
-    active: bool,
-    on_toggle: Action,          // Fires with ActionParams::Value(1.0/0.0)
-}
-```
-
-### Separator
-
-Simple horizontal divider line.
-
-```rust
-Separator {}
-```
-
-## Agenda event card structure
-
-Each event with details wraps in a Details widget:
-
-```
-<Details css_classes={past/ongoing} on_toggle={toggle_detail}>
-  summary:
-    <Row>
-      <Label css_classes=["dim-label", "caption"] width_chars=13>{time_range}</Label>
-      <Label hexpand ellipsize>{title}</Label>
-      <ListButton>{provider_label}</ListButton>   <!-- one per meeting link -->
-    </Row>
-  content:
-    <Col>
-      <IconList icon="mark-location-symbolic">
-        <Label>{location}</Label>
-      </IconList>
-      <IconList icon="system-users-symbolic">
-        <IconList icon={rsvp_icon} icon_size=12>
-          <Label>{attendee_name}</Label>
-        </IconList>
-        ...
-      </IconList>
-      <IconList icon="text-x-generic-symbolic">
-        <Label>{description_truncated}</Label>
-      </IconList>
-    </Col>
-</Details>
-```
-
-Events without details render as a plain Row (no Details wrapper).
-
-## Top-level agenda widget structure
-
-```
-<Col>
-  <Row>                                          <!-- header -->
-    <Label css_classes=["title-3"] hexpand>{agenda_title}</Label>
-    <ToggleButton icon="task-past-due-symbolic" active={show_past} on_toggle={toggle_past} />
-  </Row>
-
-  <!-- when show_past=true, daemon includes past events + separator -->
-  {...past_event_details}
-  <Separator />
-
-  <!-- period separator between today and tomorrow -->
-  <Label css_classes=["dim-label"]>{period_date_label}</Label>
-
-  {...present_or_future_event_details}
-</Col>
-```
-
-The daemon controls past event visibility by including/excluding them from the
-widget tree. When the user toggles "show past", the daemon receives the action,
-updates its state, and re-sends all widgets. No protocol-level Revealer needed.
-
-## Implementation notes
-
-- Switch time formatting from glib::DateTime to chrono::Local (daemon has no glib)
-- Reuse values.rs (iCal parsing, recurring events, timezone) and store.rs as-is — pure Rust, no GTK
-- Adapt dbus.rs: remove spawn_on_tokio bridge, use direct tokio spawns
-- Replace Rc<RefCell<T>> with Arc<StdMutex<T>> for Send+Sync daemon trait
-- Use PluginDaemon trait with WidgetNotifier for push updates on EDS signal changes
-
-# 5. Migrate notifications to daemon & multi-app architecture
-
-The notifications plugin is the last complex cdylib. Its migration is intertwined
-with a larger architectural change: splitting the monolithic overview into multiple
-apps orchestrated by a central waft daemon.
-
-## Architecture: waft daemon hub
-
-Currently plugins connect directly to waft-overview via Unix sockets. This doesn't
-scale to multiple apps (waft-overview, waft-toasts, waft-settings). Instead:
-
-```
-                    ┌─────────────────┐
-                    │   waft daemon    │  (central hub)
-                    │                  │
-                    │  Plugin registry │
-                    │  Subscriber mgmt│
-                    │  Action routing  │
-                    └──┬───┬───┬──────┘
-                       │   │   │
-          ┌────────────┘   │   └────────────┐
-          ▼                ▼                 ▼
-    ┌───────────┐   ┌───────────┐    ┌───────────┐
-    │  plugins   │   │  plugins  │    │  plugins  │
-    └───────────┘   └───────────┘    └───────────┘
-
-          ▲                ▲                 ▲
-          │                │                 │
-    ┌─────┴─────┐   ┌─────┴─────┐    ┌─────┴─────┐
-    │waft-overview│  │waft-toasts │    │waft-settings│
-    └───────────┘   └───────────┘    └───────────┘
-```
-
-- Plugins send widgets to the waft daemon
-- Apps connect to waft daemon and subscribe to plugins they care about
-- Plugins only produce widgets when they have subscribers (saves CPU when no UI is open)
-- Actions from apps flow back through the daemon to the right plugin
-- The daemon spawns plugin processes and manages their lifecycle
-
-## Protocol improvements
-
-### Subscriber model
-
-Plugins should not produce widgets until an app subscribes. This avoids wasted
-work when the overlay is closed or no app is running.
-
-New messages:
-
-```
-App → Daemon:
-  Subscribe { plugin_ids: Vec<String> }   // "I want widgets from these plugins"
-  Unsubscribe { plugin_ids: Vec<String> } // "I no longer need these"
-
-Daemon → Plugin:
-  SubscriberCount { count: usize }        // "N apps want your widgets"
-
-Plugin side:
-  PluginDaemon gets fn on_subscribers_changed(count: usize)
-  PluginServer tracks subscriber count, calls on_subscribers_changed
-  When count goes 0 → plugin can pause expensive work (D-Bus monitoring, timers)
-  When count goes >0 → plugin resumes and pushes current state
-```
-
-### App registration
-
-Apps identify themselves when connecting:
-
-```
-App → Daemon:
-  Register { app_id: String, capabilities: Vec<String> }
-  // capabilities: ["widgets", "notifications", "actions"]
-```
-
-## Notification UI: approaches for specialized rendering
-
-The notification card is highly specialized (Pango markup, countdown bar, action
-buttons, urgency styling, grouped by app). Three approaches:
-
-### Option A: NotificationCard as a protocol widget (recommended)
-
-Add a first-class `Widget::NotificationCard` to the protocol. The daemon sends
-structured notification data; each app's renderer creates the appropriate GTK
-representation.
-
-```rust
-NotificationCard {
-    notification_id: u64,
-    app_name: String,
-    app_icon: Option<String>,
-    title: String,              // May contain Pango markup
-    body: Option<String>,       // May contain Pango markup
-    actions: Vec<NotificationAction>,  // { key, label }
-    urgency: u8,                // 0=low, 1=normal, 2=critical
-    timestamp: i64,             // Unix timestamp of arrival
-    resident: bool,             // If true, doesn't auto-expire
-    on_action: Action,          // ActionParams::Text(action_key)
-    on_dismiss: Action,
-}
-```
-
-- waft-toasts renders this as a toast (countdown bar, slide animation, auto-dismiss)
-- waft-overview renders this as a panel card (grouped, persistent, expandable)
-- Each app has its own GTK rendering for NotificationCard — not shared
-
-Pro: Clean data/rendering separation, each app renders optimally for its context.
-Con: NotificationCard is domain-specific in a general protocol.
-
-### Option B: Enhance Label + add ProgressBar + compose
-
-Extend existing protocol widgets to be capable enough:
-
-- `Label`: add `markup: bool`, `wrap: bool`, `ellipsize: bool`
-- Add `ProgressBar { fraction: f64, css_classes: Vec<String> }`
-- Compose notification cards from Row/Col/Label/Button/ProgressBar
-
-Pro: General-purpose improvements, no domain-specific widgets.
-Con: Verbose widget trees, daemon duplicates rendering logic across toast/panel,
-fragile composition.
-
-### Option C: Separate notification data channel
-
-Notifications aren't really "widgets" — they're data rendered differently per
-context. The daemon sends `NotificationData` messages alongside `SetWidgets`.
-Each app has a built-in notification renderer.
-
-Pro: Maximum flexibility per app.
-Con: Parallel protocol path, more complex daemon routing.
-
-### Recommendation
-
-Option A (NotificationCard) is the pragmatic choice. Notifications are a
-well-defined domain with a freedesktop spec. Making it a first-class widget
-avoids the combinatorial explosion of Option B and the protocol complexity of
-Option C. The per-app rendering is expected — toasts and panel cards ARE
-fundamentally different views of the same data.
-
-## Tasks
-
-### Phase 1: Extract shared infrastructure from overview
-
-These extractions must happen before multi-app support, so that waft-toasts and
-other apps can reuse the same infrastructure.
-
-#### 1a. Create waft-plugin-client crate
-
-Extract from `crates/overview/src/plugin_manager/`:
-
-- `client.rs` → IPC socket client (split read/write, poll-based write thread)
-- `router.rs` → action routing (widget_id → plugin_id mapping)
-- `discovery.rs` → socket discovery (scan /run/user/{uid}/waft/plugins/)
-- `registry.rs` → widget registry (plugin_id → widget_id → NamedWidget)
-- `manager.rs` → plugin manager (event-driven IPC coordinator)
-
-This code is already generic. Needs: parameterized socket path, pub mod exports.
-
-#### 1b. Make daemon spawner configurable
-
-Currently `daemon_spawner.rs` has a hardcoded list of 11 daemon binaries. Extract
-to a shared module that accepts a config-driven plugin list. The waft daemon will
-own spawning; apps should not spawn plugins directly.
-
-#### 1c. Extract widget reconciliation wrapper
-
-The `DaemonWidgetReconciler` in overview is a thin wrapper over
-`waft_ui_gtk::WidgetReconciler`. Extract the pattern so waft-toasts and other
-apps can reuse it without copying.
-
-### Phase 2: Central waft daemon
-
-#### 2a. Create waft daemon binary
-
-New workspace member: `crates/waft-daemon/`. Responsibilities:
-
-- Spawn all plugin daemon processes (replaces DaemonSpawner in overview)
-- Accept connections from plugins (existing socket protocol)
-- Accept connections from apps (new app protocol)
-- Route widget updates: plugin → subscribed apps
-- Route actions: app → plugin
-- Track subscriber counts per plugin
-
-#### 2b. Implement subscriber protocol
-
-Add to waft-ipc:
-
-- `AppMessage::Subscribe`, `AppMessage::Unsubscribe`
-- `DaemonToPlugin::SubscriberCount`
-- `PluginDaemon::on_subscribers_changed(count: usize)` with default no-op
-
-#### 2c. App registration protocol
-
-Add to waft-ipc:
-
-- `AppMessage::Register { app_id, capabilities }`
-- Apps identify themselves so the daemon knows what to route where
-
-#### 2d. Migrate overview to connect via waft daemon
-
-waft-overview stops spawning plugins directly. Instead:
-
-- Connects to waft daemon socket
-- Sends Register + Subscribe for all feature plugins
-- Receives widget updates from daemon (not directly from plugins)
-- Sends actions to daemon (daemon routes to plugin)
-
-### Phase 3: Notifications daemon migration
-
-#### 3a. Extract notifications D-Bus server to daemon process
-
-The D-Bus server (`dbus/server.rs`) becomes a standalone daemon binary
-`waft-notifications-daemon`. It:
-
-- Owns org.freedesktop.Notifications on D-Bus
-- Implements Notify, CloseNotification, GetCapabilities, GetServerInformation
-- Manages notification state (store, lifecycle, grouping, deprioritization)
-- Sends NotificationCard widgets via the plugin protocol
-- The debouncer, markup processing, category handling stay in the daemon
-
-The daemon does NOT create any GTK widgets.
-
-#### 3b. Add NotificationCard to widget protocol
-
-Add `Widget::NotificationCard` to waft-ipc with fields from Option A above.
-Add `NotificationAction { key: String, label: String }` type.
-
-#### 3c. Create waft-toasts app
-
-New workspace member: `crates/waft-toasts/`. A standalone GTK4 layer-shell app:
-
-- Connects to waft daemon, subscribes to notifications plugin
-- Receives NotificationCard widgets
-- Renders as toast cards with countdown bar, slide animation, auto-dismiss
-- Manages toast lifecycle (appearing/visible/hiding/hidden)
-- Handles hover-pause, slot limiting, DnD state
-- Session lock awareness (pause when locked)
-
-Reuses from extracted infrastructure:
-
-- waft-plugin-client for daemon connection
-- waft-ui-gtk for icon rendering
-- waft-core for store pattern
-
-The toast window, toast list, countdown bar, and deferred removal patterns move
-here from the current notifications plugin UI code.
-
-#### 3d. Notification panel in overview via widget protocol
-
-waft-overview renders NotificationCard widgets in its notification panel. The
-grouping, expand/collapse, and panel-specific rendering live in overview. The
-DnD toggle becomes a regular daemon widget (FeatureToggle from the notifications
-daemon).
-
-#### 3e. Migrate remaining store/lifecycle logic
-
-The notification store reducer, lifecycle state machine (Appearing → Visible →
-Hiding → Hidden), and tick-based animation timing need to be split:
-
-- Notification data lifecycle (ingress, replace, close) → notifications daemon
-- Toast display lifecycle (appear animation, TTL countdown, dismiss animation)
-  → waft-toasts app
-- Panel display lifecycle (group management, expand/collapse) → waft-overview
-
-### Phase 4: Sunsetr migration
-
-#### 4a. Migrate sunsetr to daemon
-
-The last remaining cdylib. Sunsetr is a CLI integration — relatively
-straightforward daemon migration compared to notifications.
-
-### Phase 5: Remove cdylib plugin system
-
-#### 5a. Remove waft-plugin-api crate
-
-Once all 3 cdylib plugins are migrated to daemons:
-
-- Delete `crates/plugin-api/` (OverviewPlugin trait, loader, export macros)
-- Remove `libloading` dependency from overview
-- Remove `unsafe-assume-initialized` gtk4 feature from all plugin Cargo.tomls
-- Remove cdylib plugin discovery/loading from overview app.rs
-- Remove plugin_registry.rs (replaced by waft-plugin-client)
-
-#### 5b. Remove runtime bridge workarounds
-
-Delete `runtime_bridge.rs` from notifications and any other cdylib-specific
-tokio runtime workarounds. Daemon plugins use their own tokio runtime natively.
-
-#### 5c. Clean up overview
-
-With all plugins as daemons connecting via waft daemon:
-
-- Remove DaemonSpawner from overview (daemon manages this)
-- Remove direct plugin socket connections (goes through waft daemon)
-- overview becomes a pure UI app: connect to daemon, render widgets, send actions
-
-### Code deduplication
-
-#### D1. Shared layer-shell app bootstrap
-
-Both waft-overview and waft-toasts need layer-shell window setup, GTK4 init,
-config loading, daemon connection. Extract a shared bootstrap module or crate
-(`waft-app-shell` or similar) providing:
-
-- GTK4 + layer-shell initialization
-- Config loading
-- Daemon connection setup
-- Session lock detection
-- IPC command server (show/hide/toggle)
-
-#### D2. Shared notification rendering utilities
-
-Both waft-toasts and waft-overview render NotificationCard widgets. Share:
-
-- Pango markup sanitization (notification_markup.rs)
-- Icon resolution with fallback (app icon lookup)
-- Action button generation
-- Urgency-based CSS class selection
-
-These go in waft-ui-gtk or a new waft-notification-ui crate.
-
-#### D3. Consolidate store patterns
-
-The PluginStore pattern (waft-core) and notification store share the same
-reducer architecture. Ensure daemon plugins use PluginStore consistently,
-and app-side state (toast lifecycle, panel grouping) uses the same pattern.
-
-# 6. Syncthing plugin
+# Syncthing plugin
 
 Provides overlay feature toggle, that enables/pauses user's Syncthing.
 
