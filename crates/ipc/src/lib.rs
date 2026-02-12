@@ -1,4 +1,4 @@
-//! IPC protocol and utilities for waft-overview and plugin daemons.
+//! IPC protocol and utilities for waft-overview.
 //!
 //! This crate is intentionally:
 #![allow(dead_code)]
@@ -10,16 +10,11 @@
 //! - **Widget protocol types** (`widget`) - declarative UI widget descriptions
 //! - **Protocol messages** (`message`) - plugin-to-overview communication
 //! - **Command parsing** (`command`) - CLI commands like `toggle`/`show`/`hide`
-//! - **Transport framing** (`transport`) - length-prefixed message serialization
 //! - **Async networking** (`net`) - Unix socket client/server helpers
-//!
-//! This crate enables plugin daemons to run as separate processes and communicate
-//! their UI state to the overview via a well-defined protocol.
 
 pub mod command;
 pub mod message;
 pub mod net;
-pub mod transport;
 pub mod widget;
 
 // Re-export command module items at crate root for backwards compatibility

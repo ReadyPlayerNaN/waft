@@ -16,13 +16,13 @@ use crate::dbus_property::{
 use crate::device_discovery::get_device_info_dbus;
 use crate::state::{EthernetAdapterState, NmState, WiFiAdapterState};
 use crate::vpn::refresh_vpn_states;
-use waft_plugin_sdk::WidgetNotifier;
+use waft_plugin::EntityNotifier;
 
 /// Monitor NM D-Bus signals and update shared state accordingly.
 pub async fn monitor_nm_signals(
     conn: Connection,
     state: Arc<StdMutex<NmState>>,
-    notifier: WidgetNotifier,
+    notifier: EntityNotifier,
 ) -> Result<()> {
     // Subscribe to PropertiesChanged signals from NM
     let rule = zbus::MatchRule::builder()
@@ -160,7 +160,13 @@ pub async fn monitor_nm_signals(
                     info!("[nm] Device added: {}", device_path);
 
                     if let Ok(Some(info)) = get_device_info_dbus(&conn, &device_path).await {
-                        let mut st = state.lock().unwrap();
+                        let mut st = match state.lock() {
+                            Ok(g) => g,
+                            Err(e) => {
+                                warn!("[nm] Mutex poisoned, recovering: {e}");
+                                e.into_inner()
+                            }
+                        };
                         match info.device_type {
                             DEVICE_TYPE_ETHERNET => {
                                 if !st.ethernet_adapters.iter().any(|a| a.path == info.path) {
@@ -197,7 +203,13 @@ pub async fn monitor_nm_signals(
                     let device_path = path.to_string();
                     info!("[nm] Device removed: {}", device_path);
 
-                    let mut st = state.lock().unwrap();
+                    let mut st = match state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[nm] Mutex poisoned, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
                     st.ethernet_adapters.retain(|a| a.path != device_path);
                     st.wifi_adapters.retain(|a| a.path != device_path);
 
@@ -210,7 +222,13 @@ pub async fn monitor_nm_signals(
                     msg.body().deserialize::<(u32, u32, u32)>()
                 {
                     let mut changed = false;
-                    let mut st = state.lock().unwrap();
+                    let mut st = match state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[nm] Mutex poisoned, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
 
                     // Update ethernet adapter state
                     if let Some(adapter) =

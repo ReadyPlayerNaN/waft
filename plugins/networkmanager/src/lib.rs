@@ -7,7 +7,6 @@ pub mod device_discovery;
 pub mod signal_monitor;
 pub mod state;
 pub mod vpn;
-pub mod widget_builder;
 pub mod wifi;
 pub mod wifi_scan;
 

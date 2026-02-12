@@ -10,19 +10,19 @@ use std::thread;
 
 use adw::prelude::*;
 
-use crate::daemon_widget_reconciler::DaemonWidgetReconciler;
 use crate::dbus::DbusHandle;
+use crate::entity_renderer::{EntityActionCallback, EntityRenderer};
 use crate::features::session::SessionEvent;
 use crate::menu_state::create_menu_store;
 use crate::plugin::PluginResources;
-use crate::plugin_manager::{PluginManager, PluginManagerConfig, PluginUpdate, SharedRouter};
 use crate::plugin_registry::PluginRegistry;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
+use crate::waft_client::WaftClient;
 use waft_config::Config;
 use waft_ipc::net as ipc_net;
 use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
 use waft_plugin_api::loader;
-use waft_plugin_api::WidgetRegistrar;
+use waft_protocol::entity;
 
 /// Set up the overlay host app and return the GTK Application.
 ///
@@ -151,48 +151,34 @@ pub async fn setup() -> Result<adw::Application> {
     }
 
     // Legacy cdylib plugins loaded from .so files
-    // (notifications)
+    // (notifications, eds-agenda, sunsetr)
 
-    // Spawn daemon plugin processes
-    use crate::daemon_spawner::{DaemonSpawner, DaemonSpawnerConfig};
-    let mut daemon_spawner = DaemonSpawner::new(DaemonSpawnerConfig::default());
-    daemon_spawner.spawn_all_daemons();
-    info!("Spawned {} daemon processes", daemon_spawner.spawned_count());
+    // Connect to the central waft daemon via WaftClient.
+    // Uses D-Bus activation + exponential backoff retry if the daemon isn't ready yet.
+    let waft_client = match WaftClient::connect_with_retry().await {
+        Ok((client, notification_rx)) => {
+            info!("[app] connected to waft daemon");
+            Some((client, notification_rx))
+        }
+        Err(e) => {
+            warn!("[app] failed to connect to waft daemon: {e}");
+            warn!("[app] daemon-based plugins will not be available");
+            None
+        }
+    };
 
-    // Give daemons a moment to create their sockets
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // Wrap the notification receiver for transfer into the GTK startup closure
+    let daemon_notification_rx = Arc::new(Mutex::new(
+        waft_client
+            .as_ref()
+            .map(|(_, rx)| rx.clone()),
+    ));
 
-    // Create plugin manager for daemon-based plugins
-    let (plugin_manager, daemon_updates_rx, daemon_router) =
-        PluginManager::new(PluginManagerConfig::default());
-
-    // Wrap receiver before spawning task
-    let daemon_updates_rx = Arc::new(Mutex::new(Some(daemon_updates_rx)));
-    let daemon_router: Arc<std::sync::Mutex<_>> = daemon_router;
-
-    // Spawn daemon manager in background tokio task
-    let tokio_handle = tokio::runtime::Handle::current();
-    tokio_handle.spawn(async move {
-        // Take ownership of plugin_manager (can't be mut in closure signature)
-        let mut manager = plugin_manager;
-        manager.run().await;
-    });
-
-    // Refuse to start without any plugins
-    if registry.is_empty() {
-        eprintln!("error: no plugins enabled");
-        eprintln!();
-        eprintln!("Configure plugins in ~/.config/waft/config.toml");
-        eprintln!("Example:");
-        eprintln!();
-        eprintln!("  [[plugins]]");
-        eprintln!("  id = \"waft::notifications\"");
-        eprintln!();
-        eprintln!(
-            "Available plugins: plugin::clock, plugin::darkman, plugin::sunsetr, plugin::notifications, plugin::weather, plugin::bluetooth, plugin::battery, plugin::audio, plugin::brightness, plugin::eds-agenda, plugin::networkmanager"
-        );
-        std::process::exit(1);
-    }
+    // Keep the WaftClient alive and accessible from the GTK thread.
+    // WaftClient::subscribe/trigger_action are safe to call from the main thread
+    // because they use std::sync::mpsc internally.
+    let waft_client_handle: Arc<Mutex<Option<WaftClient>>> =
+        Arc::new(Mutex::new(waft_client.map(|(client, _)| client)));
 
     // Create plugin resources to pass to all plugins
     let plugin_resources = PluginResources {
@@ -232,8 +218,8 @@ pub async fn setup() -> Result<adw::Application> {
         .build();
 
     let ipc_rx_for_startup = ipc_rx.clone();
-    let daemon_updates_rx_for_startup = daemon_updates_rx.clone();
-    let daemon_router_for_startup = daemon_router.clone();
+    let daemon_notification_rx_for_startup = daemon_notification_rx.clone();
+    let waft_client_for_startup = waft_client_handle.clone();
     let registry_for_startup = registry_rc.clone();
     let session_event_rx_for_startup = session_event_rx;
 
@@ -242,8 +228,8 @@ pub async fn setup() -> Result<adw::Application> {
 
         let registry = registry_for_startup.clone();
         let ipc_rx_slot = ipc_rx_for_startup.clone();
-        let daemon_updates_rx_slot = daemon_updates_rx_for_startup.clone();
-        let daemon_router_slot = daemon_router_for_startup.clone();
+        let daemon_notification_rx_slot = daemon_notification_rx_for_startup.clone();
+        let waft_client_slot = waft_client_for_startup.clone();
         let session_event_rx = session_event_rx_for_startup.clone();
         let app = app.clone();
 
@@ -370,68 +356,102 @@ pub async fn setup() -> Result<adw::Application> {
                 });
             }
 
-            // Setup daemon widget updates receiver
-            if let Ok(mut rx_slot) = daemon_updates_rx_slot.lock()
-                && let Some(mut rx) = rx_slot.take() {
-                    let registrar_for_daemon = Rc::new(crate::plugin_registry::RegistrarHandle::new(registry.clone()));
-                    let menu_store_for_daemon = registry.menu_store().clone();
+            // Setup entity-based daemon notification receiver.
+            // WaftClient reads AppNotification from the daemon via tokio and forwards
+            // through a flume channel. We consume it here on the glib main context
+            // and feed it into the EntityRenderer which reconciles widgets.
+            if let Ok(mut rx_slot) = daemon_notification_rx_slot.lock()
+                && let Some(notification_rx) = rx_slot.take() {
+                    let registrar_for_entities = Rc::new(
+                        crate::plugin_registry::RegistrarHandle::new(registry.clone()),
+                    );
+                    let menu_store_for_entities = registry.menu_store().clone();
 
-                    // Action callback that routes actions directly to plugin clients
-                    // via the shared router — no cross-runtime hop needed.
-                    let router_for_actions = daemon_router_slot.clone();
+                    // Action callback that routes widget actions back through WaftClient.
+                    // The widget_id is the entity URN string (e.g. "clock/clock/default").
+                    // The action contains the action id and params from the widget protocol.
+                    let waft_client_for_actions = waft_client_slot.clone();
                     let action_callback: waft_ui_gtk::renderer::ActionCallback =
                         Rc::new(move |widget_id, action| {
-                            debug!("[daemon] Action from widget {}: {:?}", widget_id, action);
-                            if let Ok(router) = router_for_actions.lock() {
-                                if let Err(e) = router.route_action(
-                                    widget_id.to_string(),
-                                    action.clone(),
-                                ) {
-                                    warn!("[daemon] Failed to route action: {}", e);
+                            debug!("[entity] Action from widget {}: {:?}", widget_id, action);
+                            let urn = match waft_protocol::Urn::parse(&widget_id) {
+                                Ok(urn) => urn,
+                                Err(e) => {
+                                    warn!("[entity] Invalid URN '{}': {e}", widget_id);
+                                    return;
+                                }
+                            };
+                            let params = match &action.params {
+                                waft_ipc::ActionParams::None => serde_json::Value::Null,
+                                waft_ipc::ActionParams::Value(v) => serde_json::json!(v),
+                                waft_ipc::ActionParams::String(s) => serde_json::json!(s),
+                                waft_ipc::ActionParams::Map(m) => serde_json::json!(m),
+                            };
+                            if let Ok(guard) = waft_client_for_actions.lock() {
+                                if let Some(ref client) = *guard {
+                                    client.trigger_action(urn, &action.id, params);
+                                } else {
+                                    warn!("[entity] WaftClient not available for action");
                                 }
                             } else {
-                                warn!("[daemon] Failed to lock action router");
+                                warn!("[entity] Failed to lock WaftClient for action");
                             }
                         });
 
+                    // Entity action callback for EntityRenderer (same routing, different signature)
+                    let waft_client_for_entity_actions = waft_client_slot.clone();
+                    let entity_action_callback: EntityActionCallback =
+                        Rc::new(move |urn, action_name, params| {
+                            debug!("[entity] Entity action on {}: {}", urn, action_name);
+                            if let Ok(guard) = waft_client_for_entity_actions.lock() {
+                                if let Some(ref client) = *guard {
+                                    client.trigger_action(urn, &action_name, params);
+                                } else {
+                                    warn!("[entity] WaftClient not available for entity action");
+                                }
+                            } else {
+                                warn!("[entity] Failed to lock WaftClient for entity action");
+                            }
+                        });
+
+                    // Subscribe to all known entity types so the daemon spawns plugins on demand
+                    if let Ok(guard) = waft_client_slot.lock() {
+                        if let Some(ref client) = *guard {
+                            let entity_types = [
+                                entity::clock::ENTITY_TYPE,
+                                entity::display::DARK_MODE_ENTITY_TYPE,
+                                entity::display::DISPLAY_ENTITY_TYPE,
+                                entity::display::NIGHT_LIGHT_ENTITY_TYPE,
+                                entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
+                                entity::power::ENTITY_TYPE,
+                                entity::keyboard::ENTITY_TYPE,
+                                entity::audio::ENTITY_TYPE,
+                                entity::bluetooth::BluetoothAdapter::ENTITY_TYPE,
+                                entity::bluetooth::BluetoothDevice::ENTITY_TYPE,
+                                entity::network::ADAPTER_ENTITY_TYPE,
+                                entity::network::VPN_ENTITY_TYPE,
+                                entity::weather::ENTITY_TYPE,
+                                entity::session::SESSION_ENTITY_TYPE,
+                            ];
+                            for et in &entity_types {
+                                client.subscribe(et);
+                            }
+                            info!("[app] Subscribed to {} entity types", entity_types.len());
+                        }
+                    }
+
                     glib::spawn_future_local(async move {
-                        let mut reconciler = DaemonWidgetReconciler::new(
-                            menu_store_for_daemon,
+                        let mut renderer = EntityRenderer::new(
+                            menu_store_for_entities,
                             action_callback,
+                            registrar_for_entities,
+                            entity_action_callback,
                         );
 
-                        while let Some(update) = rx.recv().await {
-                            match update {
-                                PluginUpdate::FullUpdate { widgets } => {
-                                    let result = reconciler.reconcile(&widgets);
-                                    if result.changed || result.updated_in_place > 0 {
-                                        debug!(
-                                            "[daemon] Reconciled {} widgets: {} added, {} removed, {} updated in-place",
-                                            widgets.len(),
-                                            result.added.len(),
-                                            result.removed.len(),
-                                            result.updated_in_place,
-                                        );
-                                    }
-                                    for id in &result.removed {
-                                        registrar_for_daemon.unregister_item(id);
-                                    }
-                                    for item in result.added {
-                                        registrar_for_daemon.register_item(item);
-                                    }
-                                }
-                                PluginUpdate::PluginConnected { plugin_id } => {
-                                    debug!("[daemon] Plugin connected: {}", plugin_id);
-                                }
-                                PluginUpdate::PluginDisconnected { plugin_id } => {
-                                    debug!("[daemon] Plugin disconnected: {}", plugin_id);
-                                }
-                                PluginUpdate::Error { plugin_id, error } => {
-                                    warn!("[daemon] Plugin error from {}: {}", plugin_id, error);
-                                }
-                            }
+                        while let Ok(notification) = notification_rx.recv_async().await {
+                            renderer.handle_notification(notification);
                         }
-                        warn!("[daemon] Daemon updates receiver loop exited");
+                        warn!("[entity] Entity notification receiver loop exited");
                     });
                 }
 

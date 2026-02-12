@@ -1,17 +1,23 @@
-//! Systemd actions daemon - system power and session management.
+//! Systemd actions daemon -- system power and session management.
 //!
-//! This daemon provides quick access to system power and session management
-//! actions via D-Bus calls to org.freedesktop.login1 (systemd-logind).
+//! Provides a single session entity with the current user's name and display.
+//! Handles power and session actions via D-Bus calls to systemd-logind.
 //!
-//! Widgets:
-//! - Session actions: Lock Session, Logout
-//! - Power actions: Reboot, Shutdown, Suspend
+//! Actions:
+//! - `lock` - Lock the current session
+//! - `logout` - Terminate the current session
+//! - `reboot` - Reboot the system
+//! - `shutdown` - Power off the system
+//! - `suspend` - Suspend the system
 //!
-//! This plugin is stateless - widget definitions are fixed and only actions
-//! trigger D-Bus calls.
+//! Configuration (in ~/.config/waft/config.toml):
+//! ```toml
+//! [[plugins]]
+//! id = "systemd-actions"
+//! ```
 
 use anyhow::{Context, Result};
-use waft_plugin_sdk::*;
+use waft_plugin::*;
 use zbus::Connection;
 
 const LOGIN1_DESTINATION: &str = "org.freedesktop.login1";
@@ -30,15 +36,31 @@ fn get_session_path() -> String {
     }
 }
 
-/// Systemd actions daemon.
-///
-/// Stateless: widget structure is fixed, actions dispatch D-Bus calls.
-struct SystemdActionsDaemon {
-    conn: Connection,
-    session_path: String,
+/// Get the current user's login name from the environment.
+fn get_user_name() -> Option<String> {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .ok()
 }
 
-impl SystemdActionsDaemon {
+/// Get the current display from the environment.
+fn get_screen_name() -> Option<String> {
+    std::env::var("WAYLAND_DISPLAY")
+        .or_else(|_| std::env::var("DISPLAY"))
+        .ok()
+}
+
+/// Systemd actions plugin.
+///
+/// Stateless: the session entity is fixed; actions dispatch D-Bus calls.
+struct SystemdActionsPlugin {
+    conn: Connection,
+    session_path: String,
+    user_name: Option<String>,
+    screen_name: Option<String>,
+}
+
+impl SystemdActionsPlugin {
     async fn new() -> Result<Self> {
         let conn = Connection::system()
             .await
@@ -47,49 +69,12 @@ impl SystemdActionsDaemon {
         let session_path = get_session_path();
         log::info!("Using session path: {}", session_path);
 
-        Ok(Self { conn, session_path })
-    }
-
-    fn build_session_widget(&self) -> Widget {
-        ColBuilder::new()
-            .spacing(4)
-            .child(
-                MenuRowBuilder::new("Lock Session")
-                    .icon("system-lock-screen-symbolic")
-                    .on_click("lock")
-                    .build(),
-            )
-            .child(
-                MenuRowBuilder::new("Logout")
-                    .icon("system-log-out-symbolic")
-                    .on_click("logout")
-                    .build(),
-            )
-            .build()
-    }
-
-    fn build_power_widget(&self) -> Widget {
-        ColBuilder::new()
-            .spacing(4)
-            .child(
-                MenuRowBuilder::new("Reboot")
-                    .icon("system-reboot-symbolic")
-                    .on_click("reboot")
-                    .build(),
-            )
-            .child(
-                MenuRowBuilder::new("Shutdown")
-                    .icon("system-shutdown-symbolic")
-                    .on_click("shutdown")
-                    .build(),
-            )
-            .child(
-                MenuRowBuilder::new("Suspend")
-                    .icon("media-playback-pause-symbolic")
-                    .on_click("suspend")
-                    .build(),
-            )
-            .build()
+        Ok(Self {
+            conn,
+            session_path,
+            user_name: get_user_name(),
+            screen_name: get_screen_name(),
+        })
     }
 
     /// Call a method on the session interface (no arguments).
@@ -138,28 +123,30 @@ impl SystemdActionsDaemon {
 }
 
 #[async_trait::async_trait]
-impl PluginDaemon for SystemdActionsDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget> {
-        vec![
-            NamedWidget {
-                id: "systemd-actions:session".to_string(),
-                weight: 20,
-                widget: self.build_session_widget(),
-            },
-            NamedWidget {
-                id: "systemd-actions:power".to_string(),
-                weight: 21,
-                widget: self.build_power_widget(),
-            },
-        ]
+impl Plugin for SystemdActionsPlugin {
+    fn get_entities(&self) -> Vec<Entity> {
+        let session = entity::session::Session {
+            user_name: self.user_name.clone(),
+            screen_name: self.screen_name.clone(),
+        };
+        vec![Entity::new(
+            Urn::new(
+                "systemd-actions",
+                entity::session::SESSION_ENTITY_TYPE,
+                "default",
+            ),
+            entity::session::SESSION_ENTITY_TYPE,
+            &session,
+        )]
     }
 
     async fn handle_action(
         &self,
-        _widget_id: String,
-        action: Action,
+        _urn: Urn,
+        action: String,
+        _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        match action.id.as_str() {
+        match action.as_str() {
             "lock" => self.call_session_method("Lock").await?,
             "logout" => self.call_session_method("Terminate").await?,
             "reboot" => self.call_manager_method("Reboot", true).await?,
@@ -171,18 +158,23 @@ impl PluginDaemon for SystemdActionsDaemon {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    waft_plugin_sdk::init_daemon_logger("info");
+fn main() -> Result<()> {
+    if waft_plugin::manifest::handle_provides(&[entity::session::SESSION_ENTITY_TYPE]) {
+        return Ok(());
+    }
 
-    log::info!("Starting systemd-actions daemon...");
+    waft_plugin::init_plugin_logger("info");
 
-    let daemon = SystemdActionsDaemon::new().await?;
+    log::info!("Starting systemd-actions plugin...");
 
-    // Stateless plugin: no background tasks, no notifier needed
-    let (server, _notifier) = PluginServer::new("systemd-actions-daemon", daemon);
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(async {
+        let plugin = SystemdActionsPlugin::new().await?;
 
-    server.run().await?;
+        // Stateless plugin: no background tasks, no notifier needed
+        let (runtime, _notifier) = PluginRuntime::new("systemd-actions", plugin);
 
-    Ok(())
+        runtime.run().await?;
+        Ok(())
+    })
 }

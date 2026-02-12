@@ -8,16 +8,12 @@ name = "waft-clock-daemon"
 path = "bin/waft-clock-daemon.rs"
 
 [dependencies]
-# Daemon binary dependencies
-waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
-waft-ipc = { path = "../../crates/ipc" }
+waft-plugin = { path = "../../crates/plugin" }
+waft-protocol = { path = "../../crates/protocol" }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["unstable-locales"] }
 waft-i18n = { path = "../../crates/i18n" }
 tokio = { version = "1", features = ["full"] }
-env_logger = "0.11"
-dirs = "5.0"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
 log = "0.4"

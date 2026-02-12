@@ -1,156 +1,178 @@
 //! Weather daemon - displays current weather conditions.
 //!
-//! This daemon fetches weather data from the Open-Meteo API and displays
-//! temperature and conditions via an InfoCard widget.
+//! Provides a `weather` entity with temperature and condition data, updated
+//! periodically via the Open-Meteo API. Connects to the waft daemon via the
+//! entity-based protocol.
 //!
 //! Configuration (in ~/.config/waft/config.toml):
 //! ```toml
 //! [[plugins]]
-//! id = "waft::weather-daemon"
+//! id = "weather"
 //! latitude = 50.0755
 //! longitude = 14.4378
 //! units = "celsius"
 //! update_interval = 600
 //! ```
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use waft_plugin_sdk::*;
+use waft_plugin::*;
 
-use waft_plugin_weather::{WeatherConfig, WeatherData, TemperatureUnit, fetch_weather, i18n::i18n};
+use waft_plugin_weather::{WeatherConfig, WeatherData, TemperatureUnit, fetch_weather};
 
-/// Weather daemon state
-struct WeatherDaemon {
-    config: WeatherConfig,
-    units: TemperatureUnit,
-    state: Arc<Mutex<Option<Result<WeatherData, String>>>>,
+/// Convert local WeatherCondition to protocol WeatherCondition.
+fn to_protocol_condition(
+    condition: waft_plugin_weather::WeatherCondition,
+) -> entity::weather::WeatherCondition {
+    match condition {
+        waft_plugin_weather::WeatherCondition::Clear => entity::weather::WeatherCondition::Clear,
+        waft_plugin_weather::WeatherCondition::PartlyCloudy => {
+            entity::weather::WeatherCondition::PartlyCloudy
+        }
+        waft_plugin_weather::WeatherCondition::Cloudy => entity::weather::WeatherCondition::Cloudy,
+        waft_plugin_weather::WeatherCondition::Fog => entity::weather::WeatherCondition::Fog,
+        waft_plugin_weather::WeatherCondition::Drizzle => {
+            entity::weather::WeatherCondition::Drizzle
+        }
+        waft_plugin_weather::WeatherCondition::Rain => entity::weather::WeatherCondition::Rain,
+        waft_plugin_weather::WeatherCondition::FreezingRain => {
+            entity::weather::WeatherCondition::FreezingRain
+        }
+        waft_plugin_weather::WeatherCondition::Snow => entity::weather::WeatherCondition::Snow,
+        waft_plugin_weather::WeatherCondition::Thunderstorm => {
+            entity::weather::WeatherCondition::Thunderstorm
+        }
+    }
 }
 
-impl WeatherDaemon {
+/// Weather plugin state.
+struct WeatherPlugin {
+    state: Arc<StdMutex<Option<Result<WeatherData, String>>>>,
+}
+
+impl WeatherPlugin {
     fn new() -> Self {
-        let config = Self::load_config().unwrap_or_default();
-        let units = TemperatureUnit::from_str(&config.units);
-        log::debug!("Weather daemon config: {:?}", config);
         Self {
-            config,
-            units,
-            state: Arc::new(Mutex::new(None)),
+            state: Arc::new(StdMutex::new(None)),
         }
     }
 
-    fn load_config() -> Result<WeatherConfig> {
-        let config_path = dirs::config_dir()
-            .context("No config directory")?
-            .join("waft/config.toml");
-
-        if !config_path.exists() {
-            log::debug!("Config file not found, using defaults");
-            return Ok(WeatherConfig::default());
-        }
-
-        let content = std::fs::read_to_string(&config_path)
-            .context("Failed to read config file")?;
-
-        let root: toml::Table = toml::from_str(&content)
-            .context("Failed to parse config file")?;
-
-        if let Some(plugins) = root.get("plugins").and_then(|v| v.as_array()) {
-            for plugin in plugins {
-                if let Some(table) = plugin.as_table() {
-                    if let Some(id) = table.get("id").and_then(|v| v.as_str()) {
-                        if id == "waft::weather-daemon" || id == "weather-daemon" {
-                            return toml::Value::Table(table.clone())
-                                .try_into()
-                                .context("Failed to parse weather config");
-                        }
-                    }
-                }
+    fn current_data(&self) -> Option<Result<WeatherData, String>> {
+        match self.state.lock() {
+            Ok(g) => g.clone(),
+            Err(e) => {
+                log::warn!("[weather] mutex poisoned, recovering: {e}");
+                e.into_inner().clone()
             }
         }
-
-        Ok(WeatherConfig::default())
     }
 }
 
 #[async_trait::async_trait]
-impl PluginDaemon for WeatherDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget> {
-        let state = self.state.lock().unwrap();
-        let widget = match state.as_ref() {
-            None => InfoCardBuilder::new(i18n().t("weather-placeholder"))
-                .icon("weather-clear-symbolic")
-                .description(i18n().t("weather-loading"))
-                .build(),
-            Some(Ok(data)) => {
-                let temp_text = format!("{:.0}\u{00B0}{}", data.temperature, self.units.symbol());
-                InfoCardBuilder::new(&temp_text)
-                    .icon(data.condition.icon_name(data.is_day))
-                    .description(data.condition.description())
-                    .build()
-            }
-            Some(Err(msg)) => InfoCardBuilder::new("Weather")
-                .icon("dialog-warning-symbolic")
-                .description(msg)
-                .build(),
-        };
+impl Plugin for WeatherPlugin {
+    fn get_entities(&self) -> Vec<Entity> {
+        let data = self.current_data();
 
-        vec![NamedWidget {
-            id: "weather:main".to_string(),
-            weight: 20,
-            widget,
-        }]
+        match data {
+            Some(Ok(weather_data)) => {
+                let weather = entity::weather::Weather {
+                    temperature: weather_data.temperature,
+                    condition: to_protocol_condition(weather_data.condition),
+                    day: weather_data.is_day,
+                };
+                vec![Entity::new(
+                    Urn::new("weather", entity::weather::ENTITY_TYPE, "default"),
+                    entity::weather::ENTITY_TYPE,
+                    &weather,
+                )]
+            }
+            Some(Err(_)) | None => {
+                // No data yet or error — return empty so the daemon knows we exist
+                // but don't have data to show yet
+                vec![]
+            }
+        }
     }
 
     async fn handle_action(
         &self,
-        _widget_id: String,
-        _action: Action,
+        _urn: Urn,
+        _action: String,
+        _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Display-only, no actions
         Ok(())
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    waft_plugin_sdk::init_daemon_logger("info");
+fn main() -> Result<()> {
+    // Handle `provides` CLI command before starting runtime
+    if waft_plugin::manifest::handle_provides(&[entity::weather::ENTITY_TYPE]) {
+        return Ok(());
+    }
 
-    log::info!("Starting weather daemon...");
+    // Initialize logging
+    waft_plugin::init_plugin_logger("info");
 
-    let daemon = WeatherDaemon::new();
-    let state = daemon.state.clone();
-    let lat = daemon.config.latitude;
-    let lon = daemon.config.longitude;
-    let units = daemon.units;
-    let interval = daemon.config.update_interval;
+    log::info!("Starting weather plugin...");
 
-    let (server, notifier) = PluginServer::new("weather-daemon", daemon);
+    let config: WeatherConfig =
+        waft_plugin::config::load_plugin_config("weather").unwrap_or_default();
+    let lat = config.latitude;
+    let lon = config.longitude;
+    let units = TemperatureUnit::from_str(&config.units);
+    let interval = config.update_interval;
 
-    // Spawn periodic weather fetch task
-    tokio::spawn(async move {
-        loop {
-            log::debug!("Fetching weather update");
-            match fetch_weather(lat, lon, units).await {
-                Ok(data) => {
-                    *state.lock().unwrap() = Some(Ok(data));
-                }
-                Err(e) => {
-                    log::error!("Failed to fetch weather: {:?}", e);
-                    let mut guard = state.lock().unwrap();
-                    // Only set error if we have no previous data
-                    if guard.is_none() {
-                        *guard = Some(Err(i18n().t("weather-failed-to-load")));
+    log::debug!("Weather config: lat={lat}, lon={lon}, units={units:?}, interval={interval}s");
+
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(async {
+        let plugin = WeatherPlugin::new();
+        let state = plugin.state.clone();
+
+        let (runtime, notifier) = PluginRuntime::new("weather", plugin);
+
+        // Spawn periodic weather fetch task
+        tokio::spawn(async move {
+            loop {
+                log::debug!("Fetching weather update");
+                match fetch_weather(lat, lon, units).await {
+                    Ok(data) => {
+                        match state.lock() {
+                            Ok(mut guard) => *guard = Some(Ok(data)),
+                            Err(e) => {
+                                log::warn!("[weather] mutex poisoned, recovering: {e}");
+                                *e.into_inner() = Some(Ok(data));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to fetch weather: {e:?}");
+                        match state.lock() {
+                            Ok(mut guard) => {
+                                // Only set error if we have no previous data
+                                if guard.is_none() {
+                                    *guard = Some(Err(format!("Failed to load weather: {e}")));
+                                }
+                            }
+                            Err(poison) => {
+                                log::warn!("[weather] mutex poisoned, recovering: {poison}");
+                                let inner = poison.into_inner();
+                                if inner.is_none() {
+                                    // Don't overwrite existing data
+                                }
+                            }
+                        }
                     }
                 }
+                notifier.notify();
+                tokio::time::sleep(Duration::from_secs(interval)).await;
             }
-            notifier.notify();
-            tokio::time::sleep(Duration::from_secs(interval)).await;
-        }
-    });
+        });
 
-    server.run().await?;
-
-    Ok(())
+        runtime.run().await?;
+        Ok(())
+    })
 }

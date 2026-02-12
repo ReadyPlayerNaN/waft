@@ -1,22 +1,24 @@
 //! Brightness daemon -- display brightness control.
 //!
 //! Discovers controllable displays via `brightnessctl` (backlight) and `ddcutil` (DDC/CI external
-//! monitors), then presents one or more brightness sliders to the user.
+//! monitors), then exposes one entity per display with brightness level and kind.
 //!
-//! - Single display: a single Slider widget.
-//! - Multiple displays: a master Slider (average brightness, proportional scaling) with
-//!   per-display Sliders inside an expandable container.
+//! Configuration (in ~/.config/waft/config.toml):
+//! ```toml
+//! [[plugins]]
+//! id = "brightness"
+//! ```
 
 use anyhow::{Result, anyhow};
 use log::{debug, info, warn};
 use std::process::Stdio;
-use waft_plugin_sdk::*;
+use waft_plugin::*;
 
 // ---------------------------------------------------------------------------
 // Display types
 // ---------------------------------------------------------------------------
 
-/// Type of display for icon selection.
+/// Type of display for backend selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DisplayType {
     /// Laptop/internal backlight (via brightnessctl)
@@ -32,49 +34,6 @@ struct Display {
     name: String,
     display_type: DisplayType,
     brightness: f64,
-}
-
-// ---------------------------------------------------------------------------
-// Proportional scaling helpers
-// ---------------------------------------------------------------------------
-
-/// Compute the master brightness value (average of all displays).
-fn compute_master_average(displays: &[Display]) -> f64 {
-    if displays.is_empty() {
-        return 0.0;
-    }
-    let sum: f64 = displays.iter().map(|d| d.brightness).sum();
-    sum / displays.len() as f64
-}
-
-/// Apply proportional scaling to all displays based on master slider change.
-///
-/// Returns a vector of (display_id, new_brightness) tuples.
-fn compute_proportional_scaling(
-    displays: &[Display],
-    old_master: f64,
-    new_master: f64,
-) -> Vec<(String, f64)> {
-    if displays.is_empty() {
-        return Vec::new();
-    }
-
-    // When old master is effectively zero, use additive -- set all to new_master.
-    if old_master < 0.001 {
-        return displays
-            .iter()
-            .map(|d| (d.id.clone(), new_master))
-            .collect();
-    }
-
-    let ratio = new_master / old_master;
-    displays
-        .iter()
-        .map(|d| {
-            let new_brightness = (d.brightness * ratio).clamp(0.0, 1.0);
-            (d.id.clone(), new_brightness)
-        })
-        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -327,23 +286,15 @@ fn humanize_backlight_name(device_name: &str) -> String {
     }
 }
 
-/// Return an appropriate icon name for a display type.
-fn icon_for_display_type(dt: DisplayType) -> &'static str {
-    match dt {
-        DisplayType::Backlight => "display-brightness-symbolic",
-        DisplayType::External => "video-display-symbolic",
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Daemon
 // ---------------------------------------------------------------------------
 
-struct BrightnessDaemon {
+struct BrightnessPlugin {
     displays: std::sync::Mutex<Vec<Display>>,
 }
 
-impl BrightnessDaemon {
+impl BrightnessPlugin {
     async fn new() -> Result<Self> {
         let displays = Self::discover_all().await;
         if displays.is_empty() {
@@ -408,124 +359,69 @@ impl BrightnessDaemon {
             }
         }
     }
+}
 
-    /// Build widget tree for the current state.
-    fn build_widgets(&self) -> Widget {
-        let displays = self.lock_displays();
-        match displays.len() {
-            0 => {
-                // Empty label -- overview will ignore it
-                Widget::Label {
-                    text: String::new(),
-                    css_classes: Vec::new(),
-                }
-            }
-            1 => {
-                // Single display -- simple slider
-                let d = &displays[0];
-                SliderBuilder::new(d.brightness)
-                    .icon(icon_for_display_type(d.display_type))
-                    .on_value_change("set_master")
-                    .build()
-            }
-            _ => {
-                // Multiple displays -- master slider with per-display sliders in expanded content
-                let master = compute_master_average(&displays);
-
-                let mut per_display_container =
-                    ColBuilder::new().spacing(4);
-                for d in displays.iter() {
-                    let slider = SliderBuilder::new(d.brightness)
-                        .icon(icon_for_display_type(d.display_type))
-                        .on_value_change(&format!("set_display:{}", d.id))
-                        .build();
-                    per_display_container = per_display_container.child(slider);
-                }
-
-                SliderBuilder::new(master)
-                    .icon("display-brightness-symbolic")
-                    .on_value_change("set_master")
-                    .expandable(true)
-                    .expanded_content(per_display_container.build())
-                    .build()
-            }
-        }
+fn display_kind(dt: DisplayType) -> entity::display::DisplayKind {
+    match dt {
+        DisplayType::Backlight => entity::display::DisplayKind::Backlight,
+        DisplayType::External => entity::display::DisplayKind::External,
     }
 }
 
 #[async_trait::async_trait]
-impl PluginDaemon for BrightnessDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget> {
-        if self.lock_displays().is_empty() {
-            return Vec::new();
-        }
-
-        vec![NamedWidget {
-            id: "brightness:control".to_string(),
-            weight: 60,
-            widget: self.build_widgets(),
-        }]
+impl Plugin for BrightnessPlugin {
+    fn get_entities(&self) -> Vec<Entity> {
+        let displays = self.lock_displays();
+        displays
+            .iter()
+            .map(|d| {
+                let display = entity::display::Display {
+                    name: d.name.clone(),
+                    brightness: d.brightness,
+                    kind: display_kind(d.display_type),
+                };
+                Entity::new(
+                    Urn::new("brightness", entity::display::DISPLAY_ENTITY_TYPE, &d.id),
+                    entity::display::DISPLAY_ENTITY_TYPE,
+                    &display,
+                )
+            })
+            .collect()
     }
 
     async fn handle_action(
         &self,
-        _widget_id: String,
-        action: Action,
+        urn: Urn,
+        action: String,
+        params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if action.id == "set_master" {
-            let new_master = match action.params {
-                ActionParams::Value(v) => v,
-                _ => return Ok(()),
-            };
+        if action == "set-brightness" {
+            let new_brightness = params
+                .get("value")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0);
 
-            let (old_master, updates) = {
-                let displays = self.lock_displays();
-                let old_master = compute_master_average(&displays);
-                let updates = compute_proportional_scaling(&displays, old_master, new_master);
-                (old_master, updates)
-            };
-            let _ = old_master;
+            let device_id = urn.id().to_string();
 
-            for (display_id, brightness) in &updates {
-                if let Err(e) = set_brightness(display_id, *brightness).await {
-                    log::error!(
-                        "[brightness] Failed to set brightness for {}: {}",
-                        display_id,
-                        e
-                    );
-                }
-            }
-
-            // Update local state
-            {
-                let mut displays = self.lock_displays();
-                for (display_id, brightness) in updates {
-                    if let Some(d) = displays.iter_mut().find(|d| d.id == display_id) {
-                        d.brightness = brightness;
-                    }
-                }
-            }
-        } else if let Some(target_id) = action.id.strip_prefix("set_display:") {
-            let new_brightness = match action.params {
-                ActionParams::Value(v) => v,
-                _ => return Ok(()),
-            };
-
-            if let Err(e) = set_brightness(target_id, new_brightness).await {
+            if let Err(e) = set_brightness(&device_id, new_brightness).await {
                 log::error!(
                     "[brightness] Failed to set brightness for {}: {}",
-                    target_id,
+                    device_id,
                     e
                 );
+                return Err(e.into());
             }
 
             // Update local state
             {
                 let mut displays = self.lock_displays();
-                if let Some(d) = displays.iter_mut().find(|d| d.id == target_id) {
+                if let Some(d) = displays.iter_mut().find(|d| d.id == device_id) {
                     d.brightness = new_brightness;
                 }
             }
+        } else {
+            log::debug!("[brightness] Unknown action: {}", action);
         }
 
         Ok(())
@@ -536,17 +432,22 @@ impl PluginDaemon for BrightnessDaemon {
 // main
 // ---------------------------------------------------------------------------
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    waft_plugin_sdk::init_daemon_logger("info");
+fn main() -> Result<()> {
+    if waft_plugin::manifest::handle_provides(&[entity::display::DISPLAY_ENTITY_TYPE]) {
+        return Ok(());
+    }
 
-    info!("Starting brightness daemon...");
+    waft_plugin::init_plugin_logger("info");
 
-    let daemon = BrightnessDaemon::new().await?;
-    let (server, _notifier) = PluginServer::new("brightness-daemon", daemon);
-    server.run().await?;
+    info!("Starting brightness plugin...");
 
-    Ok(())
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let plugin = BrightnessPlugin::new().await?;
+        let (runtime, _notifier) = PluginRuntime::new("brightness", plugin);
+        runtime.run().await?;
+        Ok(())
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -567,63 +468,6 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_master_average_empty() {
-        assert_eq!(compute_master_average(&[]), 0.0);
-    }
-
-    #[test]
-    fn test_compute_master_average_single() {
-        let displays = vec![test_display("a", 0.75, DisplayType::Backlight)];
-        assert!((compute_master_average(&displays) - 0.75).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_compute_master_average_multiple() {
-        let displays = vec![
-            test_display("a", 0.5, DisplayType::Backlight),
-            test_display("b", 0.9, DisplayType::External),
-        ];
-        assert!((compute_master_average(&displays) - 0.7).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_proportional_scaling_up() {
-        let displays = vec![
-            test_display("a", 0.25, DisplayType::Backlight),
-            test_display("b", 0.45, DisplayType::External),
-        ];
-        let result = compute_proportional_scaling(&displays, 0.35, 0.70);
-        assert_eq!(result.len(), 2);
-        assert!((result[0].1 - 0.5).abs() < 0.001);
-        assert!((result[1].1 - 0.9).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_proportional_scaling_to_zero() {
-        let displays = vec![test_display("a", 0.5, DisplayType::Backlight)];
-        let result = compute_proportional_scaling(&displays, 0.5, 0.0);
-        assert_eq!(result[0].1, 0.0);
-    }
-
-    #[test]
-    fn test_proportional_scaling_from_zero() {
-        let displays = vec![
-            test_display("a", 0.0, DisplayType::Backlight),
-            test_display("b", 0.0, DisplayType::External),
-        ];
-        let result = compute_proportional_scaling(&displays, 0.0, 0.5);
-        assert_eq!(result[0].1, 0.5);
-        assert_eq!(result[1].1, 0.5);
-    }
-
-    #[test]
-    fn test_proportional_scaling_clamps() {
-        let displays = vec![test_display("a", 0.8, DisplayType::Backlight)];
-        let result = compute_proportional_scaling(&displays, 0.4, 0.8);
-        assert_eq!(result[0].1, 1.0);
-    }
-
-    #[test]
     fn test_humanize_backlight_name_intel() {
         assert_eq!(humanize_backlight_name("intel_backlight"), "Built-in Display");
     }
@@ -639,58 +483,54 @@ mod tests {
     }
 
     #[test]
-    fn test_icon_for_display_type() {
-        assert_eq!(
-            icon_for_display_type(DisplayType::Backlight),
-            "display-brightness-symbolic"
-        );
-        assert_eq!(
-            icon_for_display_type(DisplayType::External),
-            "video-display-symbolic"
-        );
-    }
-
-    #[test]
-    fn test_get_widgets_empty() {
-        let daemon = BrightnessDaemon {
+    fn test_get_entities_empty() {
+        let plugin = BrightnessPlugin {
             displays: std::sync::Mutex::new(Vec::new()),
         };
-        assert!(daemon.get_widgets().is_empty());
+        assert!(plugin.get_entities().is_empty());
     }
 
     #[test]
-    fn test_get_widgets_single_display() {
-        let daemon = BrightnessDaemon {
-            displays: std::sync::Mutex::new(vec![test_display("backlight:intel_backlight", 0.5, DisplayType::Backlight)]),
+    fn test_get_entities_single_display() {
+        let plugin = BrightnessPlugin {
+            displays: std::sync::Mutex::new(vec![test_display(
+                "backlight:intel_backlight",
+                0.5,
+                DisplayType::Backlight,
+            )]),
         };
-        let widgets = daemon.get_widgets();
-        assert_eq!(widgets.len(), 1);
-        assert_eq!(widgets[0].id, "brightness:control");
-        assert_eq!(widgets[0].weight, 60);
-        matches!(&widgets[0].widget, Widget::Slider { .. });
+        let entities = plugin.get_entities();
+        assert_eq!(entities.len(), 1);
+        assert_eq!(
+            entities[0].urn,
+            Urn::new("brightness", "display", "backlight:intel_backlight")
+        );
+        assert_eq!(entities[0].entity_type, "display");
+
+        let data: entity::display::Display =
+            serde_json::from_value(entities[0].data.clone()).unwrap();
+        assert_eq!(data.name, "backlight:intel_backlight");
+        assert!((data.brightness - 0.5).abs() < 0.001);
+        assert_eq!(data.kind, entity::display::DisplayKind::Backlight);
     }
 
     #[test]
-    fn test_get_widgets_multiple_displays() {
-        let daemon = BrightnessDaemon {
+    fn test_get_entities_multiple_displays() {
+        let plugin = BrightnessPlugin {
             displays: std::sync::Mutex::new(vec![
                 test_display("backlight:intel_backlight", 0.5, DisplayType::Backlight),
                 test_display("ddc:1", 0.8, DisplayType::External),
             ]),
         };
-        let widgets = daemon.get_widgets();
-        assert_eq!(widgets.len(), 1);
-        // Master slider with expanded content
-        match &widgets[0].widget {
-            Widget::Slider {
-                expandable,
-                expanded_content,
-                ..
-            } => {
-                assert!(expandable);
-                assert!(expanded_content.is_some());
-            }
-            other => panic!("Expected Slider, got {:?}", other),
-        }
+        let entities = plugin.get_entities();
+        assert_eq!(entities.len(), 2);
+
+        let data0: entity::display::Display =
+            serde_json::from_value(entities[0].data.clone()).unwrap();
+        assert_eq!(data0.kind, entity::display::DisplayKind::Backlight);
+
+        let data1: entity::display::Display =
+            serde_json::from_value(entities[1].data.clone()).unwrap();
+        assert_eq!(data1.kind, entity::display::DisplayKind::External);
     }
 }

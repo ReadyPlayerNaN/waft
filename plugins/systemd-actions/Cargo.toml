@@ -8,11 +8,11 @@ name = "waft-systemd-actions-daemon"
 path = "bin/waft-systemd-actions-daemon.rs"
 
 [dependencies]
-waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
-waft-ipc = { path = "../../crates/ipc" }
+waft-plugin = { path = "../../crates/plugin" }
+waft-protocol = { path = "../../crates/protocol" }
 async-trait = "0.1"
 anyhow = "1"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }
-zbus = "5"
-env_logger = "0.11"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+serde_json = "1"

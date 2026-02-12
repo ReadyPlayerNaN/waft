@@ -1,28 +1,30 @@
 //! NetworkManager daemon - WiFi, Wired, and VPN network management.
 //!
-//! Provides three NamedWidget entries:
-//! - WiFi toggle with expandable network list (weight 100)
-//! - Wired toggle with expandable IP details (weight 101)
-//! - VPN toggle with expandable connection list (weight 103)
+//! Provides entity types:
+//! - `network-adapter`: WiFi and Ethernet adapters with connection state
+//! - `vpn`: VPN connection profiles with state
 //!
 //! Monitors NetworkManager D-Bus signals for device/connection state changes.
 
 use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_plugin_sdk::*;
+use waft_plugin::entity::network::{
+    AdapterKind, Network, NetworkAdapter, VpnState as EntityVpnState, ADAPTER_ENTITY_TYPE,
+    VPN_ENTITY_TYPE,
+};
+use waft_plugin::*;
 use zbus::Connection;
 
 use waft_plugin_networkmanager::dbus_property::{DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI};
 use waft_plugin_networkmanager::device_discovery::discover_devices;
 use waft_plugin_networkmanager::signal_monitor::monitor_nm_signals;
 use waft_plugin_networkmanager::state::{
-    EthernetAdapterState, NmState, VpnConnectionInfo, VpnState, WiFiAdapterState,
+    EthernetAdapterState, NmState, VpnState, WiFiAdapterState,
 };
 use waft_plugin_networkmanager::vpn::{
     activate_vpn, deactivate_vpn, get_active_vpn_connections, get_vpn_profiles,
 };
-use waft_plugin_networkmanager::widget_builder;
 use waft_plugin_networkmanager::wifi::{
     activate_connection, connect_wired_dbus, disconnect_device, get_connections_for_ssid,
     set_wifi_enabled_dbus,
@@ -33,14 +35,14 @@ use waft_plugin_networkmanager::wifi_scan::wifi_scan_task;
 // Daemon
 // ---------------------------------------------------------------------------
 
-struct NetworkManagerDaemon {
+struct NetworkManagerPlugin {
     conn: Connection,
     state: Arc<StdMutex<NmState>>,
     /// Channel to request WiFi scan from background task.
     scan_tx: tokio::sync::mpsc::Sender<()>,
 }
 
-impl NetworkManagerDaemon {
+impl NetworkManagerPlugin {
     async fn new(
         scan_tx: tokio::sync::mpsc::Sender<()>,
     ) -> Result<(Self, nmrs::NetworkManager)> {
@@ -114,13 +116,15 @@ impl NetworkManagerDaemon {
                         profile.name, profile.path, vpn_state
                     );
 
-                    state.vpn_connections.push(VpnConnectionInfo {
-                        path: profile.path,
-                        uuid: profile.uuid,
-                        name: profile.name,
-                        state: vpn_state,
-                        active_path,
-                    });
+                    state
+                        .vpn_connections
+                        .push(waft_plugin_networkmanager::state::VpnConnectionInfo {
+                            path: profile.path,
+                            uuid: profile.uuid,
+                            name: profile.name,
+                            state: vpn_state,
+                            active_path,
+                        });
                 }
             }
             Err(e) => {
@@ -128,56 +132,160 @@ impl NetworkManagerDaemon {
             }
         }
 
-        let daemon = Self {
+        let plugin = Self {
             conn,
             state: Arc::new(StdMutex::new(state)),
             scan_tx,
         };
 
-        Ok((daemon, nm))
+        Ok((plugin, nm))
     }
 
     fn shared_state(&self) -> Arc<StdMutex<NmState>> {
         self.state.clone()
     }
+
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, NmState> {
+        match self.state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("[nm] Mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
-// PluginDaemon implementation
+// Entity building
+// ---------------------------------------------------------------------------
+
+fn to_entity_vpn_state(state: &VpnState) -> EntityVpnState {
+    match state {
+        VpnState::Disconnected => EntityVpnState::Disconnected,
+        VpnState::Connecting => EntityVpnState::Connecting,
+        VpnState::Connected => EntityVpnState::Connected,
+        VpnState::Disconnecting => EntityVpnState::Disconnecting,
+    }
+}
+
+fn wifi_adapter_to_entity(adapter: &WiFiAdapterState) -> Entity {
+    let connected_network = adapter.active_ssid.as_ref().and_then(|ssid| {
+        adapter
+            .access_points
+            .iter()
+            .find(|ap| &ap.ssid == ssid)
+            .map(|ap| Network {
+                ssid: ap.ssid.clone(),
+                strength: ap.strength,
+                secure: ap.secure,
+            })
+    });
+
+    let networks: Vec<Network> = adapter
+        .access_points
+        .iter()
+        .map(|ap| Network {
+            ssid: ap.ssid.clone(),
+            strength: ap.strength,
+            secure: ap.secure,
+        })
+        .collect();
+
+    let known_networks: Vec<Network> = networks.clone();
+
+    let entity = NetworkAdapter {
+        name: adapter.interface_name.clone(),
+        active: adapter.enabled && adapter.active_ssid.is_some(),
+        ip: None,
+        kind: AdapterKind::Wireless {
+            networks,
+            known_networks,
+            connected: connected_network,
+        },
+    };
+
+    Entity::new(
+        Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, &adapter.interface_name),
+        ADAPTER_ENTITY_TYPE,
+        &entity,
+    )
+}
+
+fn ethernet_adapter_to_entity(adapter: &EthernetAdapterState) -> Entity {
+    let entity = NetworkAdapter {
+        name: adapter.interface_name.clone(),
+        active: adapter.is_connected(),
+        ip: None,
+        kind: AdapterKind::Wired {
+            profiles: vec![],
+            current_profile: None,
+        },
+    };
+
+    Entity::new(
+        Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, &adapter.interface_name),
+        ADAPTER_ENTITY_TYPE,
+        &entity,
+    )
+}
+
+fn vpn_to_entity(vpn: &waft_plugin_networkmanager::state::VpnConnectionInfo) -> Entity {
+    let entity = waft_plugin::entity::network::Vpn {
+        name: vpn.name.clone(),
+        state: to_entity_vpn_state(&vpn.state),
+    };
+
+    Entity::new(
+        Urn::new("networkmanager", VPN_ENTITY_TYPE, &vpn.name),
+        VPN_ENTITY_TYPE,
+        &entity,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Plugin implementation
 // ---------------------------------------------------------------------------
 
 #[async_trait::async_trait]
-impl PluginDaemon for NetworkManagerDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget> {
-        let state = self.state.lock().unwrap();
-        widget_builder::build_widgets(&state)
+impl Plugin for NetworkManagerPlugin {
+    fn get_entities(&self) -> Vec<Entity> {
+        let state = self.lock_state();
+        let mut entities = Vec::new();
+
+        for adapter in &state.wifi_adapters {
+            entities.push(wifi_adapter_to_entity(adapter));
+        }
+
+        for adapter in &state.ethernet_adapters {
+            entities.push(ethernet_adapter_to_entity(adapter));
+        }
+
+        for vpn in &state.vpn_connections {
+            entities.push(vpn_to_entity(vpn));
+        }
+
+        entities
     }
 
     async fn handle_action(
         &self,
-        _widget_id: String,
-        action: Action,
+        urn: Urn,
+        action: String,
+        params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let action_id = action.id.as_str();
+        let entity_type = urn.entity_type();
+        let entity_id = urn.id();
 
-        if action_id == "toggle_wifi" {
-            self.handle_toggle_wifi().await?;
-        } else if let Some(ssid) = action_id.strip_prefix("connect_wifi:") {
-            self.handle_connect_wifi(ssid).await?;
-        } else if let Some(device_path) = action_id.strip_prefix("disconnect_wifi:") {
-            self.handle_disconnect_wifi(device_path).await?;
-        } else if let Some(device_path) = action_id.strip_prefix("toggle_wired:") {
-            self.handle_toggle_wired(device_path).await?;
-        } else if action_id == "toggle_vpn" {
-            self.handle_toggle_vpn().await?;
-        } else if let Some(conn_path) = action_id.strip_prefix("connect_vpn:") {
-            self.handle_connect_vpn(conn_path).await?;
-        } else if let Some(conn_path) = action_id.strip_prefix("disconnect_vpn:") {
-            self.handle_disconnect_vpn(conn_path).await?;
-        } else if action_id == "scan_wifi" {
-            let _ = self.scan_tx.send(()).await;
-        } else {
-            debug!("[nm] Unknown action: {}", action_id);
+        match entity_type {
+            "network-adapter" => {
+                self.handle_adapter_action(entity_id, &action, &params)
+                    .await?
+            }
+            "vpn" => self.handle_vpn_action(entity_id, &action).await?,
+            _ => {
+                debug!("[nm] Unknown entity type: {}", entity_type);
+            }
         }
 
         Ok(())
@@ -188,32 +296,131 @@ impl PluginDaemon for NetworkManagerDaemon {
 // Action handlers
 // ---------------------------------------------------------------------------
 
-impl NetworkManagerDaemon {
-    async fn handle_toggle_wifi(
+impl NetworkManagerPlugin {
+    async fn handle_adapter_action(
         &self,
+        adapter_name: &str,
+        action: &str,
+        params: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let current_enabled = {
-            let state = self.state.lock().unwrap();
+        // Determine if this is a WiFi or Ethernet adapter
+        let is_wifi = {
+            let state = self.lock_state();
             state
                 .wifi_adapters
-                .first()
-                .map(|a| a.enabled)
-                .unwrap_or(true)
+                .iter()
+                .any(|a| a.interface_name == adapter_name)
         };
 
-        let new_enabled = !current_enabled;
+        if is_wifi {
+            match action {
+                "activate" => self.handle_toggle_wifi_on().await?,
+                "deactivate" => self.handle_toggle_wifi_off().await?,
+                "scan" => {
+                    if let Err(e) = self.scan_tx.send(()).await {
+                        warn!("[nm] Failed to send scan request: {e}");
+                    }
+                }
+                "connect" => {
+                    if let Some(ssid) = params.get("ssid").and_then(|v| v.as_str()) {
+                        self.handle_connect_wifi(ssid).await?;
+                    } else {
+                        warn!("[nm] connect action missing ssid param");
+                    }
+                }
+                "disconnect" => {
+                    let device_path = {
+                        let state = self.lock_state();
+                        state
+                            .wifi_adapters
+                            .iter()
+                            .find(|a| a.interface_name == adapter_name)
+                            .map(|a| a.path.clone())
+                    };
+                    if let Some(path) = device_path {
+                        self.handle_disconnect_wifi(&path).await?;
+                    }
+                }
+                _ => debug!("[nm] Unknown WiFi action: {action}"),
+            }
+        } else {
+            // Ethernet adapter
+            match action {
+                "activate" | "deactivate" => {
+                    let device_path = {
+                        let state = self.lock_state();
+                        state
+                            .ethernet_adapters
+                            .iter()
+                            .find(|a| a.interface_name == adapter_name)
+                            .map(|a| a.path.clone())
+                    };
+                    if let Some(path) = device_path {
+                        self.handle_toggle_wired(&path).await?;
+                    }
+                }
+                _ => debug!("[nm] Unknown Ethernet action: {action}"),
+            }
+        }
 
-        // Set busy
+        Ok(())
+    }
+
+    async fn handle_vpn_action(
+        &self,
+        vpn_name: &str,
+        action: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match action {
+            "connect" => {
+                let conn_path = {
+                    let state = self.lock_state();
+                    state
+                        .vpn_connections
+                        .iter()
+                        .find(|v| v.name == vpn_name)
+                        .map(|v| v.path.clone())
+                };
+                if let Some(path) = conn_path {
+                    self.handle_connect_vpn(&path).await?;
+                } else {
+                    warn!("[nm] VPN not found: {vpn_name}");
+                }
+            }
+            "disconnect" => {
+                let conn_path = {
+                    let state = self.lock_state();
+                    state
+                        .vpn_connections
+                        .iter()
+                        .find(|v| v.name == vpn_name)
+                        .map(|v| v.path.clone())
+                };
+                if let Some(path) = conn_path {
+                    self.handle_disconnect_vpn(&path).await?;
+                } else {
+                    warn!("[nm] VPN not found: {vpn_name}");
+                }
+            }
+            _ => debug!("[nm] Unknown VPN action: {action}"),
+        }
+
+        Ok(())
+    }
+
+    async fn handle_toggle_wifi_on(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
                 adapter.busy = true;
             }
         }
 
-        if let Err(e) = set_wifi_enabled_dbus(&self.conn, new_enabled).await {
-            error!("[nm] Failed to set WiFi enabled: {}", e);
-            let mut state = self.state.lock().unwrap();
+        if let Err(e) = set_wifi_enabled_dbus(&self.conn, true).await {
+            error!("[nm] Failed to enable WiFi: {}", e);
+            let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
                 adapter.busy = false;
             }
@@ -221,20 +428,48 @@ impl NetworkManagerDaemon {
         }
 
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
-                adapter.enabled = new_enabled;
+                adapter.enabled = true;
                 adapter.busy = false;
-                if !new_enabled {
-                    adapter.active_ssid = None;
-                    adapter.access_points.clear();
-                }
             }
         }
 
-        // If enabling WiFi, trigger a scan
-        if new_enabled {
-            let _ = self.scan_tx.send(()).await;
+        // Trigger a scan after enabling WiFi
+        if let Err(e) = self.scan_tx.send(()).await {
+            warn!("[nm] Failed to send scan request: {e}");
+        }
+
+        Ok(())
+    }
+
+    async fn handle_toggle_wifi_off(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        {
+            let mut state = self.lock_state();
+            for adapter in &mut state.wifi_adapters {
+                adapter.busy = true;
+            }
+        }
+
+        if let Err(e) = set_wifi_enabled_dbus(&self.conn, false).await {
+            error!("[nm] Failed to disable WiFi: {}", e);
+            let mut state = self.lock_state();
+            for adapter in &mut state.wifi_adapters {
+                adapter.busy = false;
+            }
+            return Err(e.into());
+        }
+
+        {
+            let mut state = self.lock_state();
+            for adapter in &mut state.wifi_adapters {
+                adapter.enabled = false;
+                adapter.busy = false;
+                adapter.active_ssid = None;
+                adapter.access_points.clear();
+            }
         }
 
         Ok(())
@@ -249,7 +484,7 @@ impl NetworkManagerDaemon {
         let connections = get_connections_for_ssid(&self.conn, ssid).await?;
         if let Some(conn_path) = connections.first() {
             let device_path = {
-                let state = self.state.lock().unwrap();
+                let state = self.lock_state();
                 state.wifi_adapters.first().map(|a| a.path.clone())
             };
 
@@ -257,7 +492,7 @@ impl NetworkManagerDaemon {
                 match activate_connection(&self.conn, Some(conn_path), device_path, None).await {
                     Ok(_) => {
                         info!("[nm] WiFi connection activated for {}", ssid);
-                        let mut state = self.state.lock().unwrap();
+                        let mut state = self.lock_state();
                         for adapter in &mut state.wifi_adapters {
                             if adapter.path == *device_path {
                                 adapter.active_ssid = Some(ssid.to_string());
@@ -289,7 +524,7 @@ impl NetworkManagerDaemon {
         }
 
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
                 if adapter.path == device_path {
                     adapter.active_ssid = None;
@@ -305,7 +540,7 @@ impl NetworkManagerDaemon {
         device_path: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let is_connected = {
-            let state = self.state.lock().unwrap();
+            let state = self.lock_state();
             state
                 .ethernet_adapters
                 .iter()
@@ -331,55 +566,6 @@ impl NetworkManagerDaemon {
         Ok(())
     }
 
-    async fn handle_toggle_vpn(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let active_vpns: Vec<(String, String)> = {
-            let state = self.state.lock().unwrap();
-            state
-                .vpn_connections
-                .iter()
-                .filter(|v| v.state == VpnState::Connected)
-                .filter_map(|v| {
-                    v.active_path
-                        .as_ref()
-                        .map(|ap| (v.path.clone(), ap.clone()))
-                })
-                .collect()
-        };
-
-        if active_vpns.is_empty() {
-            debug!("[nm] No active VPNs to disconnect");
-        } else {
-            for (conn_path, active_path) in active_vpns {
-                {
-                    let mut state = self.state.lock().unwrap();
-                    if let Some(vpn) = state
-                        .vpn_connections
-                        .iter_mut()
-                        .find(|v| v.path == conn_path)
-                    {
-                        vpn.state = VpnState::Disconnecting;
-                    }
-                }
-
-                if let Err(e) = deactivate_vpn(&self.conn, &active_path).await {
-                    error!("[nm] Failed to disconnect VPN {}: {}", conn_path, e);
-                    let mut state = self.state.lock().unwrap();
-                    if let Some(vpn) = state
-                        .vpn_connections
-                        .iter_mut()
-                        .find(|v| v.path == conn_path)
-                    {
-                        vpn.state = VpnState::Connected;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     async fn handle_connect_vpn(
         &self,
         conn_path: &str,
@@ -387,7 +573,7 @@ impl NetworkManagerDaemon {
         info!("[nm] Connecting VPN: {}", conn_path);
 
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.lock_state();
             if let Some(vpn) = state
                 .vpn_connections
                 .iter_mut()
@@ -403,7 +589,7 @@ impl NetworkManagerDaemon {
                     "[nm] VPN connection initiated: {} -> {}",
                     conn_path, active_path
                 );
-                let mut state = self.state.lock().unwrap();
+                let mut state = self.lock_state();
                 if let Some(vpn) = state
                     .vpn_connections
                     .iter_mut()
@@ -414,7 +600,7 @@ impl NetworkManagerDaemon {
             }
             Err(e) => {
                 error!("[nm] Failed to connect VPN: {}", e);
-                let mut state = self.state.lock().unwrap();
+                let mut state = self.lock_state();
                 if let Some(vpn) = state
                     .vpn_connections
                     .iter_mut()
@@ -436,7 +622,7 @@ impl NetworkManagerDaemon {
         info!("[nm] Disconnecting VPN: {}", conn_path);
 
         let active_path = {
-            let state = self.state.lock().unwrap();
+            let state = self.lock_state();
             state
                 .vpn_connections
                 .iter()
@@ -446,7 +632,7 @@ impl NetworkManagerDaemon {
 
         if let Some(ref active_path) = active_path {
             {
-                let mut state = self.state.lock().unwrap();
+                let mut state = self.lock_state();
                 if let Some(vpn) = state
                     .vpn_connections
                     .iter_mut()
@@ -458,7 +644,7 @@ impl NetworkManagerDaemon {
 
             if let Err(e) = deactivate_vpn(&self.conn, active_path).await {
                 error!("[nm] Failed to disconnect VPN: {}", e);
-                let mut state = self.state.lock().unwrap();
+                let mut state = self.lock_state();
                 if let Some(vpn) = state
                     .vpn_connections
                     .iter_mut()
@@ -480,54 +666,65 @@ impl NetworkManagerDaemon {
 // Main
 // ---------------------------------------------------------------------------
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    waft_plugin_sdk::init_daemon_logger("info");
+fn main() -> Result<()> {
+    // Handle `provides` CLI command before starting runtime
+    if waft_plugin::manifest::handle_provides(&[ADAPTER_ENTITY_TYPE, VPN_ENTITY_TYPE]) {
+        return Ok(());
+    }
 
-    info!("Starting networkmanager daemon...");
+    // Initialize logging
+    waft_plugin::init_plugin_logger("info");
 
-    // Create scan channel for WiFi scanning (uses nmrs which has non-Send futures)
-    let (scan_tx, scan_rx) = tokio::sync::mpsc::channel::<()>(4);
+    info!("Starting networkmanager plugin...");
 
-    let (daemon, nm) = NetworkManagerDaemon::new(scan_tx).await?;
+    // Build the tokio runtime manually so `handle_provides` runs without it
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(async {
+        // Create scan channel for WiFi scanning (uses nmrs which has non-Send futures)
+        let (scan_tx, scan_rx) = tokio::sync::mpsc::channel::<()>(4);
 
-    let shared_state = daemon.shared_state();
-    let monitor_conn = daemon.conn.clone();
-    let scan_conn = daemon.conn.clone();
+        let (plugin, nm) = NetworkManagerPlugin::new(scan_tx).await?;
 
-    let (server, notifier) = PluginServer::new("networkmanager-daemon", daemon);
+        let shared_state = plugin.shared_state();
+        let monitor_conn = plugin.conn.clone();
+        let scan_conn = plugin.conn.clone();
 
-    let scan_notifier = notifier.clone();
+        let (runtime, notifier) = PluginRuntime::new("networkmanager", plugin);
 
-    // Monitor NM D-Bus signals
-    let monitor_state = shared_state.clone();
-    let monitor_notifier = notifier.clone();
-    tokio::spawn(async move {
-        if let Err(e) = monitor_nm_signals(monitor_conn, monitor_state, monitor_notifier).await {
-            error!("[nm] D-Bus signal monitoring failed: {}", e);
-        }
-    });
+        let scan_notifier = notifier.clone();
 
-    // WiFi scan background task (runs nmrs which has non-Send futures).
-    // Use a dedicated thread with a single-threaded runtime + LocalSet
-    // because nmrs futures are !Send and cannot be spawned on the multi-threaded runtime.
-    let scan_state = shared_state.clone();
-    std::thread::Builder::new()
-        .name("nm-wifi-scan".into())
-        .spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to create scan runtime");
+        // Monitor NM D-Bus signals
+        let monitor_state = shared_state.clone();
+        let monitor_notifier = notifier.clone();
+        tokio::spawn(async move {
+            if let Err(e) =
+                monitor_nm_signals(monitor_conn, monitor_state, monitor_notifier).await
+            {
+                error!("[nm] D-Bus signal monitoring failed: {e}");
+            }
+            warn!("[nm] D-Bus signal monitoring task stopped");
+        });
 
-            let local = tokio::task::LocalSet::new();
-            local.block_on(&rt, async move {
-                wifi_scan_task(scan_rx, nm, scan_conn, scan_state, scan_notifier).await;
-            });
-        })
-        .expect("Failed to spawn WiFi scan thread");
+        // WiFi scan background task (runs nmrs which has non-Send futures).
+        // Use a dedicated thread with a single-threaded runtime + LocalSet
+        // because nmrs futures are !Send and cannot be spawned on the multi-threaded runtime.
+        let scan_state = shared_state.clone();
+        std::thread::Builder::new()
+            .name("nm-wifi-scan".into())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to create scan runtime");
 
-    server.run().await?;
+                let local = tokio::task::LocalSet::new();
+                local.block_on(&rt, async move {
+                    wifi_scan_task(scan_rx, nm, scan_conn, scan_state, scan_notifier).await;
+                });
+            })
+            .expect("Failed to spawn WiFi scan thread");
 
-    Ok(())
+        runtime.run().await?;
+        Ok(())
+    })
 }

@@ -2931,6 +2931,7 @@ dependencies = [
  "tokio",
  "uuid",
  "waft-protocol",
+ "zbus",
 ]
 
 [[package]]
@@ -3010,12 +3011,33 @@ dependencies = [
  "waft-core",
  "waft-ipc",
  "waft-plugin-api",
+ "waft-protocol",
  "waft-ui-gtk",
  "wayland-client",
  "wayland-protocols",
  "wayland-sys",
  "zbus",
  "zvariant",
+]
+
+[[package]]
+name = "waft-plugin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "dirs 6.0.0",
+ "env_logger",
+ "futures-util",
+ "libc",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.8.23",
+ "uuid",
+ "waft-protocol",
+ "zbus",
 ]
 
 [[package]]
@@ -3033,8 +3055,6 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "waft-core",
- "waft-ipc",
- "waft-plugin-sdk",
  "zbus",
  "zvariant",
 ]
@@ -3062,11 +3082,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "env_logger",
  "log",
+ "serde_json",
  "tokio",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
 ]
 
 [[package]]
@@ -3075,12 +3095,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "env_logger",
- "futures-util",
  "log",
  "tokio",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
  "zbus",
 ]
 
@@ -3090,12 +3108,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "env_logger",
  "futures-util",
  "log",
+ "serde_json",
  "tokio",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
  "zbus",
 ]
 
@@ -3105,11 +3123,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "env_logger",
  "log",
+ "serde_json",
  "tokio",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
 ]
 
 [[package]]
@@ -3118,11 +3136,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "env_logger",
  "log",
  "tokio",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
  "zbus",
 ]
 
@@ -3133,15 +3150,12 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "dirs 5.0.1",
- "env_logger",
  "log",
  "serde",
  "tokio",
- "toml 0.8.23",
  "waft-i18n",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
 ]
 
 [[package]]
@@ -3150,17 +3164,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "dirs 6.0.0",
- "env_logger",
- "futures-util",
- "libc",
  "log",
  "serde",
  "tokio",
- "toml 0.8.23",
- "waft-ipc",
- "waft-overview",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
  "zbus",
 ]
 
@@ -3170,15 +3178,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "env_logger",
  "flume",
  "futures-util",
  "log",
  "serde",
  "serde_json",
  "tokio",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
  "zbus",
 ]
 
@@ -3188,13 +3195,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "env_logger",
  "futures-util",
  "log",
  "nmrs",
+ "serde_json",
  "tokio",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
  "zbus",
 ]
 
@@ -3222,37 +3229,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "waft-plugin-sdk"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "dirs 6.0.0",
- "env_logger",
- "futures-util",
- "libc",
- "log",
- "serde",
- "serde_json",
- "tokio",
- "toml 0.8.23",
- "waft-ipc",
- "zbus",
-]
-
-[[package]]
 name = "waft-plugin-sunsetr"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "env_logger",
  "log",
  "serde",
  "serde_json",
- "tokio",
- "waft-ipc",
- "waft-plugin-sdk",
 ]
 
 [[package]]
@@ -3261,11 +3245,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "env_logger",
  "log",
+ "serde_json",
  "tokio",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
  "zbus",
 ]
 
@@ -3276,15 +3260,14 @@ dependencies = [
  "anyhow",
  "async-trait",
  "dirs 5.0.1",
- "env_logger",
  "log",
  "reqwest",
  "serde",
  "tokio",
  "toml 0.8.23",
  "waft-i18n",
- "waft-ipc",
- "waft-plugin-sdk",
+ "waft-plugin",
+ "waft-protocol",
 ]
 
 [[package]]

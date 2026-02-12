@@ -27,6 +27,16 @@ impl PluginRegistry {
         self.plugins.get(urn.plugin()).copied()
     }
 
+    /// Find the connection ID for a plugin by name.
+    pub fn connection_for_plugin(&self, name: &str) -> Option<Uuid> {
+        self.plugins.get(name).copied()
+    }
+
+    /// Return all registered plugin names.
+    pub fn all_plugin_names(&self) -> Vec<String> {
+        self.plugins.keys().cloned().collect()
+    }
+
     /// Remove all entries for a disconnected connection.
     pub fn remove_connection(&mut self, conn_id: Uuid) {
         self.plugins.retain(|name, id| {
@@ -77,6 +87,13 @@ impl AppRegistry {
             .get(entity_type)
             .map(|s| s.iter().copied().collect())
             .unwrap_or_default()
+    }
+
+    /// Check if an entity type has any subscribers.
+    pub fn has_subscribers(&self, entity_type: &str) -> bool {
+        self.subscriptions
+            .get(entity_type)
+            .is_some_and(|s| !s.is_empty())
     }
 
     /// Remove all subscriptions for a disconnected connection.

@@ -3,18 +3,17 @@ use gtk::prelude::ApplicationExtManual;
 use log::debug;
 mod app;
 mod common;
-mod daemon_spawner;
-mod daemon_widget_reconciler;
+mod entity_renderer;
 mod dbus;
 mod features;
 mod i18n;
 mod layout;
 mod menu_state;
 mod plugin;
-mod plugin_manager;
 mod plugin_registry;
 pub mod store;
 mod ui;
+mod waft_client;
 
 // Re-export the set_field! macro from waft-core so feature plugins
 // can continue to use `use crate::set_field;`.

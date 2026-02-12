@@ -85,9 +85,10 @@ impl ActionTracker {
             .collect()
     }
 
-    /// Duration until the next action times out, or `None` if no pending actions.
-    /// Will be used to replace interval-based timeout polling with sleep-to-deadline.
-    #[allow(dead_code)]
+    /// Earliest deadline among pending actions, or `None` if no pending actions.
+    ///
+    /// Used by the daemon event loop to sleep precisely until the next timeout
+    /// instead of polling on a fixed interval.
     pub fn next_deadline(&self) -> Option<Instant> {
         self.pending.values().map(|a| a.deadline).min()
     }

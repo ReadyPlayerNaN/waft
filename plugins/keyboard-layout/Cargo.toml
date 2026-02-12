@@ -10,14 +10,13 @@ name = "waft-keyboard-layout-daemon"
 path = "bin/waft-keyboard-layout-daemon.rs"
 
 [dependencies]
-waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
-waft-ipc = { path = "../../crates/ipc" }
+waft-plugin = { path = "../../crates/plugin" }
+waft-protocol = { path = "../../crates/protocol" }
 async-trait = "0.1"
 anyhow = "1"
 flume = "0.12"
 futures-util = "0.3"
 log = "0.4"
-env_logger = "0.11"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

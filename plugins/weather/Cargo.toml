@@ -11,12 +11,11 @@ name = "waft-weather-daemon"
 path = "bin/waft-weather-daemon.rs"
 
 [dependencies]
+waft-plugin = { path = "../../crates/plugin" }
+waft-protocol = { path = "../../crates/protocol" }
 waft-i18n = { path = "../../crates/i18n" }
-waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
-waft-ipc = { path = "../../crates/ipc" }
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
-env_logger = "0.11"
 dirs = "5.0"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }

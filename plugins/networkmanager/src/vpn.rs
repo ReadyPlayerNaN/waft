@@ -201,7 +201,13 @@ pub async fn refresh_vpn_states(conn: &Connection, state: &Arc<StdMutex<NmState>
         });
     }
 
-    let mut st = state.lock().unwrap();
+    let mut st = match state.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            log::warn!("[nm] Mutex poisoned, recovering: {e}");
+            e.into_inner()
+        }
+    };
     st.vpn_connections = new_connections;
 
     Ok(())

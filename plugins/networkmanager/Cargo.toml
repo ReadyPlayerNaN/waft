@@ -10,13 +10,13 @@ name = "waft-networkmanager-daemon"
 path = "bin/waft-networkmanager-daemon.rs"
 
 [dependencies]
-waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
-waft-ipc = { path = "../../crates/ipc" }
+waft-plugin = { path = "../../crates/plugin" }
+waft-protocol = { path = "../../crates/protocol" }
 async-trait = "0.1"
 anyhow = "1"
 log = "0.4"
+serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 nmrs = "2.0"
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 futures-util = "0.3"
-env_logger = "0.11"

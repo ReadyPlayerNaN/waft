@@ -44,4 +44,5 @@ waft-config = { path = "../config" }
 waft-core = { path = "../core" }
 waft-ipc = { path = "../ipc" }
 waft-plugin-api = { path = "../plugin-api" }
+waft-protocol = { path = "../protocol" }
 waft-ui-gtk = { path = "../waft-ui-gtk" }

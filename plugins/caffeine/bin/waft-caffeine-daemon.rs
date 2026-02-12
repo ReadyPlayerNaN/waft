@@ -1,12 +1,20 @@
 //! Caffeine daemon — screen lock/screensaver inhibition toggle.
 //!
-//! Provides a toggle to inhibit screen locking via xdg-desktop-portal (Inhibit)
-//! or org.freedesktop.ScreenSaver as fallback.
+//! Provides a `sleep-inhibitor` entity that can be toggled to prevent screen
+//! locking via xdg-desktop-portal (Inhibit) or org.freedesktop.ScreenSaver
+//! as fallback.
+//!
+//! Configuration (in ~/.config/waft/config.toml):
+//! ```toml
+//! [[plugins]]
+//! id = "caffeine"
+//! ```
 
 use anyhow::{Context, Result, bail};
 use log::{debug, info, warn};
 use std::collections::HashMap;
-use waft_plugin_sdk::*;
+use std::sync::Mutex as StdMutex;
+use waft_plugin::*;
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, Value};
 
@@ -60,17 +68,16 @@ async fn probe_backend(conn: &Connection) -> Result<Backend> {
 /// Mutable caffeine state behind interior mutability.
 struct CaffeineState {
     active: bool,
-    busy: bool,
     screensaver_cookie: Option<u32>,
 }
 
-struct CaffeineDaemon {
+struct CaffeinePlugin {
     conn: Connection,
     backend: Backend,
-    state: std::sync::Mutex<CaffeineState>,
+    state: StdMutex<CaffeineState>,
 }
 
-impl CaffeineDaemon {
+impl CaffeinePlugin {
     async fn new() -> Result<Self> {
         let conn = Connection::session()
             .await
@@ -82,9 +89,8 @@ impl CaffeineDaemon {
         Ok(Self {
             conn,
             backend,
-            state: std::sync::Mutex::new(CaffeineState {
+            state: StdMutex::new(CaffeineState {
                 active: false,
-                busy: false,
                 screensaver_cookie: None,
             }),
         })
@@ -168,28 +174,30 @@ impl CaffeineDaemon {
 }
 
 #[async_trait::async_trait]
-impl PluginDaemon for CaffeineDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget> {
+impl Plugin for CaffeinePlugin {
+    fn get_entities(&self) -> Vec<Entity> {
         let state = self.lock_state();
-        vec![NamedWidget {
-            id: "caffeine:toggle".to_string(),
-            weight: 65,
-            widget: FeatureToggleBuilder::new("Caffeine")
-                .icon("changes-allow-symbolic")
-                .active(state.active)
-                .busy(state.busy)
-                .on_toggle("toggle")
-                .build(),
-        }]
+        let inhibitor = entity::session::SleepInhibitor {
+            active: state.active,
+        };
+        vec![Entity::new(
+            Urn::new(
+                "caffeine",
+                entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
+                "default",
+            ),
+            entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
+            &inhibitor,
+        )]
     }
 
     async fn handle_action(
         &self,
-        _widget_id: String,
-        action: Action,
+        _urn: Urn,
+        action: String,
+        _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if action.id == "toggle" {
-            self.lock_state().busy = true;
+        if action == "toggle" {
             let was_active = self.lock_state().active;
             let result = if was_active {
                 self.uninhibit().await
@@ -197,25 +205,36 @@ impl PluginDaemon for CaffeineDaemon {
                 self.inhibit().await
             };
 
-            self.lock_state().busy = false;
-
             if let Err(e) = result {
-                log::error!("[caffeine] Toggle failed: {}", e);
+                log::error!("[caffeine] Toggle failed: {e}");
                 return Err(e.into());
             }
         }
         Ok(())
     }
+
+    fn can_stop(&self) -> bool {
+        // Cannot stop gracefully while actively inhibiting
+        !self.lock_state().active
+    }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    waft_plugin_sdk::init_daemon_logger("info");
-    info!("Starting caffeine daemon...");
+fn main() -> Result<()> {
+    // Handle `provides` CLI command before starting runtime
+    if waft_plugin::manifest::handle_provides(&[entity::session::SLEEP_INHIBITOR_ENTITY_TYPE]) {
+        return Ok(());
+    }
 
-    let daemon = CaffeineDaemon::new().await?;
-    let (server, _notifier) = PluginServer::new("caffeine-daemon", daemon);
-    server.run().await?;
+    // Initialize logging
+    waft_plugin::init_plugin_logger("info");
 
-    Ok(())
+    info!("Starting caffeine plugin...");
+
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(async {
+        let plugin = CaffeinePlugin::new().await?;
+        let (runtime, _notifier) = PluginRuntime::new("caffeine", plugin);
+        runtime.run().await?;
+        Ok(())
+    })
 }

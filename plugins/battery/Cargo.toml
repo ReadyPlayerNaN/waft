@@ -8,13 +8,10 @@ name = "waft-battery-daemon"
 path = "bin/waft-battery-daemon.rs"
 
 [dependencies]
-# Daemon binary dependencies
-waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
-waft-ipc = { path = "../../crates/ipc" }
+waft-plugin = { path = "../../crates/plugin" }
+waft-protocol = { path = "../../crates/protocol" }
 async-trait = "0.1"
 anyhow = "1"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }
-zbus = "5"
-futures-util = "0.3"
-env_logger = "0.11"
+zbus = { version = "5", default-features = false, features = ["tokio"] }

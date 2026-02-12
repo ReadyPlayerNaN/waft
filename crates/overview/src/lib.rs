@@ -7,14 +7,7 @@
 
 pub mod common;
 pub mod menu_state;
-pub mod plugin_manager;
 pub mod store;
-
-// Re-export key plugin manager types
-pub use plugin_manager::{
-    ActionRouter, ClientError, InternalMessage, PluginClient, PluginManager, PluginManagerConfig,
-    PluginUpdate, RouterError, WidgetRegistry,
-};
 
 pub mod ui {
     #[path = "icon.rs"]
@@ -24,7 +17,7 @@ pub mod ui {
 pub mod features {
     pub mod notifications {
         // NOTE: `#[path = ...]` inside inline modules is resolved relative to the
-        // module’s implicit directory (`src/features/notifications/`), not `src/`.
+        // module's implicit directory (`src/features/notifications/`), not `src/`.
         #[path = "types.rs"]
         pub mod types;
 

@@ -1,23 +1,38 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 use uuid::Uuid;
+use waft_protocol::urn::Urn;
 use waft_protocol::{AppMessage, AppNotification, PluginCommand, PluginMessage};
 
 use crate::action_tracker::ActionTracker;
 use crate::connection::{ClientKind, Connection, ConnectionError, ReadHalf};
+use crate::crash_tracker::{CrashOutcome, CrashTracker};
+use crate::plugin_discovery::PluginDiscoveryCache;
+use crate::plugin_spawner::PluginSpawner;
 use crate::registry::{AppRegistry, PluginRegistry};
 
-/// Event from a connection reader or timeout checker.
+/// Cached entity data: (urn, entity_type, data).
+struct CachedEntity {
+    urn: Urn,
+    entity_type: String,
+    data: serde_json::Value,
+}
+
+/// Event from a connection reader.
 enum Event {
     /// A message was received from a connection.
     Message(Uuid, Vec<u8>),
     /// A connection disconnected or errored.
     Disconnected(Uuid, Option<ConnectionError>),
-    /// Time to check for timed-out actions.
-    CheckTimeouts,
+}
+
+/// Pending CanStop request awaiting a plugin response.
+struct PendingCanStop {
+    plugin_conn_id: Uuid,
+    retry_at: tokio::time::Instant,
 }
 
 /// The waft daemon: accepts connections, identifies clients, routes messages.
@@ -27,6 +42,13 @@ pub struct WaftDaemon {
     plugin_registry: PluginRegistry,
     app_registry: AppRegistry,
     action_tracker: ActionTracker,
+    entity_cache: HashMap<String, CachedEntity>,
+    /// Pending CanStop retries: plugin_name -> retry info.
+    pending_can_stops: HashMap<String, PendingCanStop>,
+    plugin_spawner: PluginSpawner,
+    crash_tracker: CrashTracker,
+    /// Plugins currently in a graceful CanStop shutdown (not a crash).
+    graceful_stops: HashSet<String>,
     event_rx: mpsc::Receiver<Event>,
     event_tx: mpsc::Sender<Event>,
 }
@@ -36,32 +58,63 @@ impl WaftDaemon {
         let listener = UnixListener::bind(&socket_path)?;
         let (event_tx, event_rx) = mpsc::channel(256);
 
+        // Build the discovery cache on a blocking thread so we don't block the
+        // tokio runtime during process spawning and I/O.
+        let discovery_cache = PluginDiscoveryCache::build();
+        let plugin_spawner = PluginSpawner::new(discovery_cache);
+
         Ok(WaftDaemon {
             listener,
             connections: HashMap::new(),
             plugin_registry: PluginRegistry::new(),
             app_registry: AppRegistry::new(),
             action_tracker: ActionTracker::new(),
+            entity_cache: HashMap::new(),
+            pending_can_stops: HashMap::new(),
+            plugin_spawner,
+            crash_tracker: CrashTracker::new(),
+            graceful_stops: HashSet::new(),
             event_rx,
             event_tx,
         })
     }
 
-    pub async fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Spawn timeout checker
-        let timeout_tx = self.event_tx.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
-            loop {
-                interval.tick().await;
-                if timeout_tx.send(Event::CheckTimeouts).await.is_err() {
-                    break;
-                }
-            }
-            eprintln!("[waft] timeout checker stopped");
-        });
+    /// Compute the next wakeup time: the earliest of action timeout or CanStop retry.
+    fn next_wakeup(&self) -> Option<tokio::time::Instant> {
+        let action_deadline = self
+            .action_tracker
+            .next_deadline()
+            .map(tokio::time::Instant::from_std);
 
+        let can_stop_deadline = self
+            .pending_can_stops
+            .values()
+            .map(|p| p.retry_at)
+            .min();
+
+        match (action_deadline, can_stop_deadline) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        }
+    }
+
+    pub async fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
         loop {
+            // Sleep until the next deadline (action timeout or CanStop retry),
+            // or wait indefinitely if nothing is pending.
+            let wakeup = self.next_wakeup();
+            let timeout_sleep = match wakeup {
+                Some(deadline) => tokio::time::sleep_until(deadline),
+                None => {
+                    tokio::time::sleep_until(
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(86400),
+                    )
+                }
+            };
+            tokio::pin!(timeout_sleep);
+
             tokio::select! {
                 accept = self.listener.accept() => {
                     match accept {
@@ -97,10 +150,12 @@ impl WaftDaemon {
                             }
                             self.remove_connection(conn_id).await;
                         }
-                        Event::CheckTimeouts => {
-                            self.handle_timeouts().await;
-                        }
                     }
+                }
+
+                _ = &mut timeout_sleep => {
+                    self.handle_timeouts().await;
+                    self.handle_can_stop_retries().await;
                 }
             }
         }
@@ -201,22 +256,29 @@ impl WaftDaemon {
     /// Handle a message from a plugin.
     async fn handle_plugin_message(
         &mut self,
-        _conn_id: Uuid,
+        conn_id: Uuid,
         msg: PluginMessage,
     ) -> Result<(), Box<dyn std::error::Error>> {
         match msg {
             PluginMessage::EntityUpdated {
                 ref urn,
                 ref entity_type,
-                ..
+                ref data,
             } => {
+                // Cache the entity data
+                self.entity_cache.insert(
+                    urn.as_str().to_string(),
+                    CachedEntity {
+                        urn: urn.clone(),
+                        entity_type: entity_type.clone(),
+                        data: data.clone(),
+                    },
+                );
+
                 let notification = AppNotification::EntityUpdated {
                     urn: urn.clone(),
                     entity_type: entity_type.clone(),
-                    data: match &msg {
-                        PluginMessage::EntityUpdated { data, .. } => data.clone(),
-                        _ => unreachable!(),
-                    },
+                    data: data.clone(),
                 };
 
                 let subscribers = self.app_registry.subscribers(entity_type);
@@ -233,6 +295,9 @@ impl WaftDaemon {
                 ref urn,
                 ref entity_type,
             } => {
+                // Remove from entity cache
+                self.entity_cache.remove(urn.as_str());
+
                 let notification = AppNotification::EntityRemoved {
                     urn: urn.clone(),
                     entity_type: entity_type.clone(),
@@ -287,8 +352,33 @@ impl WaftDaemon {
                 }
             }
 
-            PluginMessage::StopResponse { .. } => {
-                // Phase 2: handle graceful stop
+            PluginMessage::StopResponse { can_stop } => {
+                let plugin_name = self
+                    .connections
+                    .get(&conn_id)
+                    .and_then(|c| match &c.kind {
+                        ClientKind::Plugin { name } => Some(name.clone()),
+                        _ => None,
+                    });
+
+                if let Some(ref name) = plugin_name {
+                    if can_stop {
+                        eprintln!("[waft] plugin {name} confirmed it can stop, disconnecting");
+                        self.pending_can_stops.remove(name.as_str());
+                        self.graceful_stops.insert(name.clone());
+                        self.remove_connection(conn_id).await;
+                    } else {
+                        eprintln!("[waft] plugin {name} cannot stop, will retry in 30s");
+                        self.pending_can_stops.insert(
+                            name.clone(),
+                            PendingCanStop {
+                                plugin_conn_id: conn_id,
+                                retry_at: tokio::time::Instant::now()
+                                    + std::time::Duration::from_secs(30),
+                            },
+                        );
+                    }
+                }
             }
         }
 
@@ -310,9 +400,13 @@ impl WaftDaemon {
                 // Track subscription in connection state
                 if let Some(conn) = self.connections.get_mut(&conn_id) {
                     if let ClientKind::App { subscriptions } = &mut conn.kind {
-                        subscriptions.insert(entity_type);
+                        subscriptions.insert(entity_type.clone());
                     }
                 }
+
+                // Spawn plugin on demand if none is connected for this entity type
+                self.plugin_spawner
+                    .ensure_plugin_for_entity_type(&entity_type);
             }
 
             AppMessage::Unsubscribe { entity_type } => {
@@ -324,10 +418,31 @@ impl WaftDaemon {
                         subscriptions.remove(&entity_type);
                     }
                 }
+
+                // Check if any plugin now has zero subscribers and can be stopped
+                self.check_can_stop_for_entity_type(&entity_type).await;
             }
 
-            AppMessage::Status { .. } => {
-                // Phase 2: request current state from plugin
+            AppMessage::Status { entity_type } => {
+                eprintln!("[waft] app {conn_id} requested status for {entity_type}");
+
+                if let Some(conn) = self.connections.get(&conn_id) {
+                    for cached in self.entity_cache.values() {
+                        if cached.entity_type == entity_type {
+                            let notification = AppNotification::EntityUpdated {
+                                urn: cached.urn.clone(),
+                                entity_type: cached.entity_type.clone(),
+                                data: cached.data.clone(),
+                            };
+                            if let Err(e) = conn.send(&notification).await {
+                                eprintln!(
+                                    "[waft] failed to send cached entity to {conn_id}: {e}"
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
             }
 
             AppMessage::TriggerAction {
@@ -400,15 +515,217 @@ impl WaftDaemon {
         }
     }
 
-    /// Clean up all state for a disconnected connection.
-    async fn remove_connection(&mut self, conn_id: Uuid) {
-        if let Some(conn) = self.connections.remove(&conn_id) {
-            if let ClientKind::Plugin { name } = &conn.kind {
-                eprintln!("[waft] plugin {name} disconnected (conn {conn_id})");
+    /// Retry CanStop for plugins whose retry timer has expired.
+    async fn handle_can_stop_retries(&mut self) {
+        let now = tokio::time::Instant::now();
+        let ready: Vec<String> = self
+            .pending_can_stops
+            .iter()
+            .filter(|(_, p)| p.retry_at <= now)
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        for name in ready {
+            if let Some(pending) = self.pending_can_stops.remove(&name) {
+                // Re-check if the plugin still has no subscribers before retrying
+                if self.plugin_has_subscribers(&name) {
+                    eprintln!(
+                        "[waft] plugin {name} now has subscribers, cancelling CanStop retry"
+                    );
+                } else if let Some(conn) = self.connections.get(&pending.plugin_conn_id) {
+                    eprintln!("[waft] retrying CanStop for plugin {name}");
+                    if let Err(e) = conn.send(&PluginCommand::CanStop).await {
+                        eprintln!("[waft] failed to send CanStop retry to {name}: {e}");
+                    }
+                }
             }
         }
+    }
+
+    /// Get the entity types a plugin provides (from the entity cache).
+    fn entity_types_for_plugin(&self, plugin_name: &str) -> Vec<String> {
+        let mut types: Vec<String> = self
+            .entity_cache
+            .values()
+            .filter(|e| e.urn.plugin() == plugin_name)
+            .map(|e| e.entity_type.clone())
+            .collect();
+        types.sort();
+        types.dedup();
+        types
+    }
+
+    /// Check if a plugin has any subscribers across all its entity types.
+    fn plugin_has_subscribers(&self, plugin_name: &str) -> bool {
+        let entity_types = self.entity_types_for_plugin(plugin_name);
+        entity_types
+            .iter()
+            .any(|et| self.app_registry.has_subscribers(et))
+    }
+
+    /// Check if any plugin providing this entity type now has zero subscribers.
+    /// If so, send CanStop to that plugin.
+    async fn check_can_stop_for_entity_type(&mut self, entity_type: &str) {
+        // Find all plugin names that provide this entity type
+        let plugin_names: Vec<String> = self
+            .entity_cache
+            .values()
+            .filter(|e| e.entity_type == entity_type)
+            .map(|e| e.urn.plugin().to_string())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        for plugin_name in plugin_names {
+            // Skip if already pending a CanStop
+            if self.pending_can_stops.contains_key(&plugin_name) {
+                continue;
+            }
+
+            // Check if this plugin has zero subscribers across ALL its entity types
+            if !self.plugin_has_subscribers(&plugin_name) {
+                if let Some(conn_id) = self.plugin_registry.connection_for_plugin(&plugin_name) {
+                    eprintln!(
+                        "[waft] plugin {plugin_name} has zero subscribers, sending CanStop"
+                    );
+                    if let Some(conn) = self.connections.get(&conn_id) {
+                        if let Err(e) = conn.send(&PluginCommand::CanStop).await {
+                            eprintln!(
+                                "[waft] failed to send CanStop to {plugin_name}: {e}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Clean up all state for a disconnected connection.
+    async fn remove_connection(&mut self, conn_id: Uuid) {
+        let plugin_name = if let Some(conn) = self.connections.remove(&conn_id) {
+            if let ClientKind::Plugin { ref name } = conn.kind {
+                eprintln!("[waft] plugin {name} disconnected (conn {conn_id})");
+                Some(name.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Collect entity info before removing from cache (needed for notifications)
+        let plugin_entities: Vec<(Urn, String)> = if let Some(ref name) = plugin_name {
+            self.entity_cache
+                .values()
+                .filter(|e| e.urn.plugin() == name.as_str())
+                .map(|e| (e.urn.clone(), e.entity_type.clone()))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let plugin_entity_types: Vec<String> = {
+            let mut types: Vec<String> = plugin_entities
+                .iter()
+                .map(|(_, et)| et.clone())
+                .collect();
+            types.sort();
+            types.dedup();
+            types
+        };
+
+        // Remove cached entities and pending CanStop for disconnected plugin
+        if let Some(ref name) = plugin_name {
+            self.entity_cache
+                .retain(|_, cached| cached.urn.plugin() != name.as_str());
+            self.pending_can_stops.remove(name.as_str());
+        }
+
         self.plugin_registry.remove_connection(conn_id);
+
+        // Handle plugin crash detection and restart
+        if let Some(ref name) = plugin_name {
+            let graceful = self.graceful_stops.remove(name.as_str());
+            self.plugin_spawner.mark_disconnected(name);
+
+            if !graceful {
+                // Unexpected disconnect: check crash tracker and potentially restart
+                let outcome = self.crash_tracker.record_crash(name);
+
+                // Notify subscribers about stale/outdated entities
+                for (urn, entity_type) in &plugin_entities {
+                    let notification = match outcome {
+                        CrashOutcome::Restart => AppNotification::EntityStale {
+                            urn: urn.clone(),
+                            entity_type: entity_type.clone(),
+                        },
+                        CrashOutcome::CircuitBroken => AppNotification::EntityOutdated {
+                            urn: urn.clone(),
+                            entity_type: entity_type.clone(),
+                        },
+                    };
+                    let subscribers = self.app_registry.subscribers(entity_type);
+                    for app_id in subscribers {
+                        if let Some(conn) = self.connections.get(&app_id) {
+                            if let Err(e) = conn.send(&notification).await {
+                                eprintln!(
+                                    "[waft] failed to send stale/outdated notification to {app_id}: {e}"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                match outcome {
+                    CrashOutcome::Restart => {
+                        // Only restart if there are still subscribers for this plugin's entity types
+                        let has_subscribers = plugin_entity_types
+                            .iter()
+                            .any(|et| self.app_registry.has_subscribers(et));
+
+                        if has_subscribers {
+                            eprintln!("[waft] plugin {name} crashed, restarting");
+                            for et in &plugin_entity_types {
+                                self.plugin_spawner.ensure_plugin_for_entity_type(et);
+                            }
+                        } else {
+                            eprintln!(
+                                "[waft] plugin {name} crashed but has no subscribers, not restarting"
+                            );
+                        }
+                    }
+                    CrashOutcome::CircuitBroken => {
+                        eprintln!(
+                            "[waft] plugin {name} crashed too many times, circuit breaker tripped"
+                        );
+                    }
+                }
+            }
+        }
+
         self.app_registry.remove_connection(conn_id);
+
+        // When an app disconnects, check if any plugins now have zero subscribers
+        if plugin_name.is_none() {
+            let all_plugins = self.plugin_registry.all_plugin_names();
+            for name in all_plugins {
+                if !self.pending_can_stops.contains_key(&name)
+                    && !self.plugin_has_subscribers(&name)
+                {
+                    if let Some(plugin_conn_id) =
+                        self.plugin_registry.connection_for_plugin(&name)
+                    {
+                        eprintln!(
+                            "[waft] plugin {name} has zero subscribers after app disconnect, sending CanStop"
+                        );
+                        if let Some(conn) = self.connections.get(&plugin_conn_id) {
+                            if let Err(e) = conn.send(&PluginCommand::CanStop).await {
+                                eprintln!("[waft] failed to send CanStop to {name}: {e}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Notify apps of failed actions when plugin disconnects
         let orphaned = self.action_tracker.drain_for_connection(conn_id);

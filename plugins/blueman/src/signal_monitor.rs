@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use log::{info, warn};
-use waft_plugin_sdk::WidgetNotifier;
+use waft_plugin::EntityNotifier;
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
@@ -16,7 +16,7 @@ use crate::state::State;
 pub async fn monitor_bluez_signals(
     conn: Connection,
     state: Arc<StdMutex<State>>,
-    notifier: WidgetNotifier,
+    notifier: EntityNotifier,
 ) -> Result<()> {
     let rule = zbus::MatchRule::builder()
         .msg_type(zbus::message::Type::Signal)
@@ -88,7 +88,6 @@ pub async fn monitor_bluez_signals(
                                 obj_path, powered
                             );
                             adapter.powered = powered;
-                            adapter.busy = false;
                             changed = true;
                         }
                     }
@@ -108,13 +107,12 @@ pub async fn monitor_bluez_signals(
                         if let Some(device) =
                             adapter.devices.iter_mut().find(|d| d.path == obj_path)
                         {
-                            if device.connected != connected || device.connecting {
+                            if device.connected != connected {
                                 info!(
                                     "[bluetooth] Device {} connected: {}",
                                     obj_path, connected
                                 );
                                 device.connected = connected;
-                                device.connecting = false;
                                 changed = true;
                             }
                         }

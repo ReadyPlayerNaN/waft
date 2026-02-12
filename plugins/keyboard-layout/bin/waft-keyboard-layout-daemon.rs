@@ -1,7 +1,7 @@
 //! Keyboard layout daemon - displays current layout and allows switching.
 //!
-//! This daemon provides a keyboard layout indicator that shows the current layout
-//! abbreviation (e.g., "US", "CZ") and cycles through available layouts when clicked.
+//! Provides a `keyboard-layout` entity with the current layout and available
+//! alternatives. Supports cycling through layouts via the "cycle" action.
 //!
 //! ## Multi-Backend Support
 //!
@@ -13,19 +13,11 @@
 
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
+use waft_plugin::*;
 use waft_plugin_keyboard_layout::backends::{
     detect_backend, KeyboardLayoutBackend, LayoutEvent,
 };
-use waft_plugin_sdk::*;
 use zbus::Connection;
-
-/// Keyboard layout daemon state.
-struct KeyboardLayoutDaemon {
-    backend: Arc<dyn KeyboardLayoutBackend>,
-    /// Current layout and available layouts, shared with the event monitor task.
-    /// Updated by both handle_action (user switches) and the external event monitor.
-    layout_state: Arc<StdMutex<LayoutState>>,
-}
 
 /// Shared layout state.
 struct LayoutState {
@@ -33,12 +25,16 @@ struct LayoutState {
     available: Vec<String>,
 }
 
-impl KeyboardLayoutDaemon {
+/// Keyboard layout plugin.
+struct KeyboardLayoutPlugin {
+    backend: Arc<dyn KeyboardLayoutBackend>,
+    layout_state: Arc<StdMutex<LayoutState>>,
+}
+
+impl KeyboardLayoutPlugin {
     async fn new() -> Result<Self> {
-        // Connect to system bus for localed fallback
         let system_conn = Connection::system().await.ok();
 
-        // Detect backend
         let backend = detect_backend(system_conn)
             .await
             .context("No keyboard layout backend available")?;
@@ -48,7 +44,6 @@ impl KeyboardLayoutDaemon {
             backend.name()
         );
 
-        // Query initial layout
         let info = backend
             .get_layout_info()
             .await
@@ -69,107 +64,113 @@ impl KeyboardLayoutDaemon {
         self.layout_state.clone()
     }
 
-    fn build_widget(&self) -> Widget {
-        let state = self.layout_state.lock().unwrap();
-        StatusCycleButtonBuilder::new("cycle_layout")
-            .icon("input-keyboard-symbolic")
-            .value(&state.current)
-            .options(
-                state
-                    .available
-                    .iter()
-                    .map(|l| StatusOption {
-                        id: l.clone(),
-                        label: l.clone(),
-                    })
-                    .collect(),
-            )
-            .build()
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, LayoutState> {
+        match self.layout_state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("[keyboard-layout] mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        }
     }
 }
 
 #[async_trait::async_trait]
-impl PluginDaemon for KeyboardLayoutDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget> {
-        vec![NamedWidget {
-            id: "keyboard-layout:indicator".to_string(),
-            weight: 10,
-            widget: self.build_widget(),
-        }]
+impl Plugin for KeyboardLayoutPlugin {
+    fn get_entities(&self) -> Vec<Entity> {
+        let state = self.lock_state();
+        let layout = entity::keyboard::KeyboardLayout {
+            current: state.current.clone(),
+            available: state.available.clone(),
+        };
+        vec![Entity::new(
+            Urn::new("keyboard-layout", entity::keyboard::ENTITY_TYPE, "default"),
+            entity::keyboard::ENTITY_TYPE,
+            &layout,
+        )]
     }
 
     async fn handle_action(
         &self,
-        _widget_id: String,
-        action: Action,
+        _urn: Urn,
+        action: String,
+        _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        match action.id.as_str() {
-            "cycle_layout" => {
-                // StatusCycleButton sends the next layout ID via ActionParams::String
-                if let ActionParams::String(ref target) = action.params {
-                    log::debug!("Switching to layout: {}", target);
-                } else {
-                    log::debug!("Cycling to next keyboard layout");
-                }
+        match action.as_str() {
+            "cycle" => {
+                log::debug!("Cycling to next keyboard layout");
                 self.backend.switch_next().await?;
 
                 // Query new layout and update shared state
                 let info = self.backend.get_layout_info().await?;
-                let mut state = self.layout_state.lock().unwrap();
+                let mut state = self.lock_state();
                 state.current = info.current.clone();
                 state.available = info.available;
                 log::info!("Switched to layout: {}", info.current);
             }
             other => {
-                log::warn!("Unknown action: {}", other);
+                log::warn!("Unknown action: {other}");
             }
         }
         Ok(())
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // Handle `provides` CLI command before starting runtime
+    if waft_plugin::manifest::handle_provides(&[entity::keyboard::ENTITY_TYPE]) {
+        return Ok(());
+    }
+
     // Initialize logging
-    waft_plugin_sdk::init_daemon_logger("info");
+    waft_plugin::init_plugin_logger("info");
 
-    log::info!("Starting keyboard layout daemon...");
+    log::info!("Starting keyboard layout plugin...");
 
-    // Create daemon
-    let daemon = KeyboardLayoutDaemon::new().await?;
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(async {
+        let plugin = KeyboardLayoutPlugin::new().await?;
 
-    // Grab shared handles before daemon is moved into the server
-    let shared_state = daemon.shared_state();
+        // Grab shared handles before plugin is moved into the runtime
+        let shared_state = plugin.shared_state();
 
-    // Set up event subscription for layout changes from external sources
-    let (event_tx, event_rx) = flume::unbounded::<LayoutEvent>();
-    daemon.backend.subscribe(event_tx);
+        // Set up event subscription for layout changes from external sources
+        let (event_tx, event_rx) = flume::unbounded::<LayoutEvent>();
+        plugin.backend.subscribe(event_tx);
 
-    // Create server and notifier
-    let (server, notifier) = PluginServer::new("keyboard-layout-daemon", daemon);
+        let (runtime, notifier) = PluginRuntime::new("keyboard-layout", plugin);
 
-    // Monitor for external layout changes (e.g., keyboard shortcuts, compositor events)
-    tokio::spawn(async move {
-        while let Ok(event) = event_rx.recv_async().await {
-            match event {
-                LayoutEvent::Changed(info) => {
-                    log::info!("External layout change detected: {}", info.current);
-                    let mut state = shared_state.lock().unwrap();
-                    state.current = info.current;
-                    state.available = info.available;
-                    drop(state);
-                    notifier.notify();
-                }
-                LayoutEvent::Error(e) => {
-                    log::warn!("Backend subscription error: {}", e);
+        // Monitor for external layout changes (e.g., keyboard shortcuts, compositor events)
+        tokio::spawn(async move {
+            while let Ok(event) = event_rx.recv_async().await {
+                match event {
+                    LayoutEvent::Changed(info) => {
+                        log::info!("External layout change detected: {}", info.current);
+                        match shared_state.lock() {
+                            Ok(mut state) => {
+                                state.current = info.current;
+                                state.available = info.available;
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "[keyboard-layout] mutex poisoned, recovering: {e}"
+                                );
+                                let mut state = e.into_inner();
+                                state.current = info.current;
+                                state.available = info.available;
+                            }
+                        }
+                        notifier.notify();
+                    }
+                    LayoutEvent::Error(e) => {
+                        log::warn!("Backend subscription error: {e}");
+                    }
                 }
             }
-        }
-        log::warn!("Layout event receiver closed");
-    });
+            log::warn!("Layout event receiver closed");
+        });
 
-    // Run server
-    server.run().await?;
-
-    Ok(())
+        runtime.run().await?;
+        Ok(())
+    })
 }

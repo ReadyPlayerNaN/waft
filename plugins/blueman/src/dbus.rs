@@ -82,7 +82,6 @@ pub async fn load_state(conn: &Connection) -> Result<State> {
                 path: path.to_string(),
                 name,
                 powered,
-                busy: false,
                 devices: Vec::new(),
             });
         }
@@ -119,13 +118,17 @@ pub async fn load_state(conn: &Connection) -> Result<State> {
                     "bluetooth-symbolic".to_string(),
                 );
                 let connected = extract_prop(device_props, "Connected", false);
+                let battery_percentage: Option<u8> = device_props
+                    .get("Percentage")
+                    .and_then(|v| u8::try_from(v.clone()).ok())
+                    .filter(|&p| p > 0);
 
                 devices.push(DeviceState {
                     path: path_str,
                     name,
                     icon,
                     connected,
-                    connecting: false,
+                    battery_percentage,
                 });
             }
         }

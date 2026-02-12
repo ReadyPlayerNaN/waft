@@ -1,22 +1,23 @@
-//! Clock daemon - displays current date and time.
+//! Clock plugin — displays current date and time.
 //!
-//! This daemon provides a clock widget that shows the current date and time.
-//! Updates are pushed to connected clients on minute boundaries via WidgetNotifier.
+//! Provides a `clock` entity with time and date strings, updated on minute
+//! boundaries. Connects to the waft daemon via the entity-based protocol.
 //!
 //! Configuration (in ~/.config/waft/config.toml):
 //! ```toml
 //! [[plugins]]
-//! id = "waft::clock-daemon"
+//! id = "clock"
 //! on_click = "gnome-calendar"  # Optional: command to run when clock is clicked
 //! ```
 
 use std::time::Duration;
+
 use anyhow::{Context, Result};
 use chrono::{Local, Locale, Timelike};
 use serde::Deserialize;
-use waft_plugin_sdk::*;
+use waft_plugin::*;
 
-/// Clock configuration from config file
+/// Clock configuration from config file.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 struct ClockConfig {
@@ -27,72 +28,58 @@ struct ClockConfig {
 
 fn detect_chrono_locale() -> Locale {
     let bcp47 = waft_i18n::system_locale();
-    // chrono Locale uses POSIX underscores ("cs_CZ"), sys-locale returns BCP47 hyphens ("cs-CZ")
     let posix = bcp47.replace('-', "_");
     posix.parse::<Locale>().unwrap_or(Locale::en_US)
 }
 
-/// Clock daemon state
-struct ClockDaemon {
+/// Clock plugin state.
+struct ClockPlugin {
     config: ClockConfig,
     locale: Locale,
 }
 
-impl ClockDaemon {
+impl ClockPlugin {
     fn new() -> Result<Self> {
-        let config = Self::load_config().unwrap_or_default();
+        let config: ClockConfig =
+            waft_plugin::config::load_plugin_config("clock").unwrap_or_default();
         let locale = detect_chrono_locale();
-        log::debug!("Clock daemon config: {:?}", config);
-        log::debug!("Clock daemon locale: {:?}", locale);
+        log::debug!("Clock config: {config:?}");
+        log::debug!("Clock locale: {locale:?}");
         Ok(Self { config, locale })
     }
 
-    fn load_config() -> Result<ClockConfig> {
-        waft_plugin_sdk::config::load_plugin_config("clock-daemon")
-            .context("Failed to load clock config")
-    }
-
-    fn format_date(locale: Locale) -> String {
+    fn format_date(&self) -> String {
         Local::now()
-            .format_localized("%a, %d %b %Y", locale)
+            .format_localized("%a, %d %b %Y", self.locale)
             .to_string()
     }
 
     fn format_time() -> String {
         Local::now().format("%H:%M").to_string()
     }
-
-    fn build_clock_widget(&self) -> Widget {
-        let time_text = Self::format_time();
-        let date_text = Self::format_date(self.locale);
-
-        let mut builder = InfoCardBuilder::new(&time_text)
-            .icon("appointment-symbolic")
-            .description(&date_text);
-        if !self.config.on_click.is_empty() {
-            builder = builder.on_click("click");
-        }
-        builder.build()
-    }
 }
 
 #[async_trait::async_trait]
-impl PluginDaemon for ClockDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget> {
-        vec![NamedWidget {
-            id: "clock:main".to_string(),
-            weight: 10,
-            widget: self.build_clock_widget(),
-        }]
+impl Plugin for ClockPlugin {
+    fn get_entities(&self) -> Vec<Entity> {
+        let clock = entity::clock::Clock {
+            time: Self::format_time(),
+            date: self.format_date(),
+        };
+        vec![Entity::new(
+            Urn::new("clock", entity::clock::ENTITY_TYPE, "default"),
+            entity::clock::ENTITY_TYPE,
+            &clock,
+        )]
     }
 
     async fn handle_action(
         &self,
-        _widget_id: String,
-        action: Action,
+        _urn: Urn,
+        action: String,
+        _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Handle click action
-        if action.id == "click" && !self.config.on_click.is_empty() {
+        if action == "click" && !self.config.on_click.is_empty() {
             log::debug!("Clock clicked, running command: {}", self.config.on_click);
 
             let on_click_cmd = self.config.on_click.clone();
@@ -103,13 +90,12 @@ impl PluginDaemon for ClockDaemon {
                     .spawn()
                 {
                     Ok(mut child) => {
-                        // Wait for child to complete
                         if let Err(e) = child.wait() {
-                            log::error!("Clock on_click command failed: {}", e);
+                            log::error!("Clock on_click command failed: {e}");
                         }
                     }
                     Err(e) => {
-                        log::error!("Failed to spawn clock on_click command: {}", e);
+                        log::error!("Failed to spawn clock on_click command: {e}");
                     }
                 }
             });
@@ -118,31 +104,34 @@ impl PluginDaemon for ClockDaemon {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // Handle `provides` CLI command before starting runtime
+    if waft_plugin::manifest::handle_provides(&[entity::clock::ENTITY_TYPE]) {
+        return Ok(());
+    }
+
     // Initialize logging
-    waft_plugin_sdk::init_daemon_logger("info");
+    waft_plugin::init_plugin_logger("info");
 
-    log::info!("Starting clock daemon...");
+    log::info!("Starting clock plugin...");
 
-    // Create daemon
-    let daemon = ClockDaemon::new()?;
+    // Build the tokio runtime manually so `handle_provides` runs without it
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(async {
+        let plugin = ClockPlugin::new()?;
+        let (runtime, notifier) = PluginRuntime::new("clock", plugin);
 
-    // Create server and notifier
-    let (server, notifier) = PluginServer::new("clock-daemon", daemon);
+        // Clock updates on minute boundaries (display is HH:MM)
+        tokio::spawn(async move {
+            loop {
+                let now = Local::now();
+                let secs_to_next = 60 - now.second() as u64;
+                tokio::time::sleep(Duration::from_secs(secs_to_next)).await;
+                notifier.notify();
+            }
+        });
 
-    // Clock updates on minute boundaries (display is HH:MM)
-    tokio::spawn(async move {
-        loop {
-            let now = Local::now();
-            let secs_to_next = 60 - now.second() as u64;
-            tokio::time::sleep(Duration::from_secs(secs_to_next)).await;
-            notifier.notify();
-        }
-    });
-
-    // Run server
-    server.run().await?;
-
-    Ok(())
+        runtime.run().await?;
+        Ok(())
+    })
 }

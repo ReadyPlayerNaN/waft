@@ -1,14 +1,18 @@
 //! Battery daemon - displays battery status from UPower.
 //!
-//! This daemon monitors the UPower DisplayDevice on the system bus and
-//! provides a widget showing battery percentage, icon, and time remaining.
-//! Updates are pushed to connected clients when D-Bus PropertiesChanged
-//! signals arrive (no polling).
+//! Provides a `battery` entity via the UPower DisplayDevice on the system bus.
+//! Updates are pushed when D-Bus PropertiesChanged signals arrive (no polling).
+//!
+//! Configuration (in ~/.config/waft/config.toml):
+//! ```toml
+//! [[plugins]]
+//! id = "battery"
+//! ```
 
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_plugin_sdk::dbus_monitor::{monitor_signal_async, SignalMonitorConfig};
-use waft_plugin_sdk::*;
+use waft_plugin::dbus_monitor::{monitor_signal_async, SignalMonitorConfig};
+use waft_plugin::*;
 use zbus::Connection;
 
 const UPOWER_DEST: &str = "org.freedesktop.UPower";
@@ -25,7 +29,7 @@ const IFACE_DEVICE: &str = "org.freedesktop.UPower.Device";
 /// 0=Unknown, 1=Charging, 2=Discharging, 3=Empty,
 /// 4=FullyCharged, 5=PendingCharge, 6=PendingDischarge.
 #[derive(Clone, Debug, Default, PartialEq)]
-enum BatteryState {
+enum LocalBatteryState {
     #[default]
     Unknown,
     Charging,
@@ -36,7 +40,7 @@ enum BatteryState {
     PendingDischarge,
 }
 
-impl BatteryState {
+impl LocalBatteryState {
     fn from_u32(v: u32) -> Self {
         match v {
             1 => Self::Charging,
@@ -49,15 +53,15 @@ impl BatteryState {
         }
     }
 
-    fn label(&self) -> &'static str {
+    fn to_protocol(&self) -> entity::power::BatteryState {
         match self {
-            Self::Unknown => "Unknown",
-            Self::Charging => "Charging",
-            Self::Discharging => "Discharging",
-            Self::Empty => "Empty",
-            Self::FullyCharged => "Fully charged",
-            Self::PendingCharge => "Pending charge",
-            Self::PendingDischarge => "Pending discharge",
+            Self::Unknown => entity::power::BatteryState::Unknown,
+            Self::Charging => entity::power::BatteryState::Charging,
+            Self::Discharging => entity::power::BatteryState::Discharging,
+            Self::Empty => entity::power::BatteryState::Empty,
+            Self::FullyCharged => entity::power::BatteryState::FullyCharged,
+            Self::PendingCharge => entity::power::BatteryState::PendingCharge,
+            Self::PendingDischarge => entity::power::BatteryState::PendingDischarge,
         }
     }
 }
@@ -67,51 +71,10 @@ impl BatteryState {
 struct BatteryInfo {
     present: bool,
     percentage: f64,
-    state: BatteryState,
+    state: LocalBatteryState,
     icon_name: String,
     time_to_empty: i64,
     time_to_full: i64,
-}
-
-impl BatteryInfo {
-    /// Human-readable status text for the sublabel.
-    fn status_text(&self) -> String {
-        match self.state {
-            BatteryState::Discharging if self.time_to_empty > 0 => {
-                format!("{} remaining", format_time_remaining(self.time_to_empty))
-            }
-            BatteryState::Charging if self.time_to_full > 0 => {
-                format!("{} to full", format_time_remaining(self.time_to_full))
-            }
-            _ => self.state.label().to_string(),
-        }
-    }
-}
-
-/// Format seconds into a human-readable duration like `"2h 30min"`.
-///
-/// Omits hours when 0, shows `"< 1min"` for values under 60 seconds.
-fn format_time_remaining(seconds: i64) -> String {
-    if seconds <= 0 {
-        return "< 1min".to_string();
-    }
-
-    let hours = seconds / 3600;
-    let minutes = (seconds % 3600) / 60;
-
-    if hours == 0 && minutes == 0 {
-        return "< 1min".to_string();
-    }
-
-    if hours == 0 {
-        return format!("{}min", minutes);
-    }
-
-    if minutes == 0 {
-        return format!("{}h", hours);
-    }
-
-    format!("{}h {}min", hours, minutes)
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +133,7 @@ async fn get_battery_info(conn: &Connection) -> Result<BatteryInfo> {
     Ok(BatteryInfo {
         present,
         percentage,
-        state: BatteryState::from_u32(state_u32),
+        state: LocalBatteryState::from_u32(state_u32),
         icon_name,
         time_to_empty,
         time_to_full,
@@ -178,22 +141,20 @@ async fn get_battery_info(conn: &Connection) -> Result<BatteryInfo> {
 }
 
 // ---------------------------------------------------------------------------
-// Daemon
+// Plugin
 // ---------------------------------------------------------------------------
 
-struct BatteryDaemon {
+struct BatteryPlugin {
     info: Arc<StdMutex<BatteryInfo>>,
     conn: Connection,
 }
 
-impl BatteryDaemon {
+impl BatteryPlugin {
     async fn new() -> Result<Self> {
-        // Connect to system bus (UPower lives on system bus)
         let conn = Connection::system()
             .await
             .context("Failed to connect to system bus")?;
 
-        // Get initial battery info
         let info = match get_battery_info(&conn).await {
             Ok(info) => {
                 log::info!(
@@ -217,48 +178,53 @@ impl BatteryDaemon {
     }
 
     fn current_info(&self) -> BatteryInfo {
-        self.info.lock().unwrap().clone()
+        match self.info.lock() {
+            Ok(g) => g.clone(),
+            Err(e) => {
+                log::warn!("[battery] mutex poisoned, recovering: {e}");
+                e.into_inner().clone()
+            }
+        }
     }
 
     fn shared_info(&self) -> Arc<StdMutex<BatteryInfo>> {
         self.info.clone()
     }
-
-    fn build_battery_widget(&self) -> Widget {
-        let info = self.current_info();
-
-        let icon = if info.icon_name.is_empty() {
-            "battery-symbolic".to_string()
-        } else {
-            info.icon_name.clone()
-        };
-
-        InfoCardBuilder::new(format!("{:.0}%", info.percentage))
-            .icon(icon)
-            .description(info.status_text())
-            .build()
-    }
 }
 
 #[async_trait::async_trait]
-impl PluginDaemon for BatteryDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget> {
+impl Plugin for BatteryPlugin {
+    fn get_entities(&self) -> Vec<Entity> {
         let info = self.current_info();
         if !info.present {
             return vec![];
         }
 
-        vec![NamedWidget {
-            id: "battery:main".to_string(),
-            weight: 30,
-            widget: self.build_battery_widget(),
-        }]
+        let battery = entity::power::Battery {
+            present: info.present,
+            percentage: info.percentage,
+            state: info.state.to_protocol(),
+            icon_name: if info.icon_name.is_empty() {
+                "battery-symbolic".to_string()
+            } else {
+                info.icon_name
+            },
+            time_to_empty: info.time_to_empty,
+            time_to_full: info.time_to_full,
+        };
+
+        vec![Entity::new(
+            Urn::new("battery", entity::power::ENTITY_TYPE, "BAT0"),
+            entity::power::ENTITY_TYPE,
+            &battery,
+        )]
     }
 
     async fn handle_action(
         &self,
-        _widget_id: String,
-        _action: Action,
+        _urn: Urn,
+        _action: String,
+        _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Battery is display-only, no actions to handle
         Ok(())
@@ -274,7 +240,7 @@ impl PluginDaemon for BatteryDaemon {
 async fn monitor_battery_signals(
     conn: Connection,
     info: Arc<StdMutex<BatteryInfo>>,
-    notifier: WidgetNotifier,
+    notifier: EntityNotifier,
 ) -> Result<()> {
     let config = SignalMonitorConfig::builder()
         .sender("org.freedesktop.DBus")
@@ -316,28 +282,35 @@ async fn monitor_battery_signals(
 // Main
 // ---------------------------------------------------------------------------
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    waft_plugin_sdk::init_daemon_logger("info");
+fn main() -> Result<()> {
+    // Handle `provides` CLI command before starting runtime
+    if waft_plugin::manifest::handle_provides(&[entity::power::ENTITY_TYPE]) {
+        return Ok(());
+    }
 
-    log::info!("Starting battery daemon...");
+    // Initialize logging
+    waft_plugin::init_plugin_logger("info");
 
-    let daemon = BatteryDaemon::new().await?;
+    log::info!("Starting battery plugin...");
 
-    // Grab shared handles before daemon is moved into the server
-    let shared_info = daemon.shared_info();
-    let monitor_conn = daemon.conn.clone();
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(async {
+        let plugin = BatteryPlugin::new().await?;
 
-    let (server, notifier) = PluginServer::new("battery-daemon", daemon);
+        // Grab shared handles before plugin is moved into the runtime
+        let shared_info = plugin.shared_info();
+        let monitor_conn = plugin.conn.clone();
 
-    // Listen for D-Bus PropertiesChanged signals (instant, no polling)
-    tokio::spawn(async move {
-        if let Err(e) = monitor_battery_signals(monitor_conn, shared_info, notifier).await {
-            log::error!("D-Bus signal monitoring failed: {}", e);
-        }
-    });
+        let (runtime, notifier) = PluginRuntime::new("battery", plugin);
 
-    server.run().await?;
+        // Listen for D-Bus PropertiesChanged signals (instant, no polling)
+        tokio::spawn(async move {
+            if let Err(e) = monitor_battery_signals(monitor_conn, shared_info, notifier).await {
+                log::error!("D-Bus signal monitoring failed: {e}");
+            }
+        });
 
-    Ok(())
+        runtime.run().await?;
+        Ok(())
+    })
 }

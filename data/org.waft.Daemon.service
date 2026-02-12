@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.waft.Daemon
+Exec=/usr/bin/waft

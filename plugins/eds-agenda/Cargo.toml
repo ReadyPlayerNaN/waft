@@ -3,17 +3,11 @@ name = "waft-plugin-agenda"
 version = "0.1.0"
 edition = "2024"
 
-[[bin]]
-name = "waft-eds-agenda-daemon"
-path = "bin/main.rs"
-
 [lib]
 crate-type = ["rlib"]
 
 [dependencies]
-waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
 waft-core = { path = "../../crates/core" }
-waft-ipc = { path = "../../crates/ipc" }
 async-trait = "0.1"
 anyhow = "1"
 log = "0.4"
