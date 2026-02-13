@@ -68,6 +68,8 @@ pub struct MainWindowWidget {
     pub animation: adw::TimedAnimation,
     pub animation_progress: Rc<Cell<f64>>,
     pub animating_hide: Rc<Cell<bool>>,
+    /// Root content frame. Call `set_sensitive(false)` to disable all interactive children.
+    pub clip: gtk::Frame,
     on_stop: VoidCallback,
     on_hide_complete: VoidCallback,
 }
@@ -273,6 +275,7 @@ impl MainWindowWidget {
             animation,
             animation_progress,
             animating_hide,
+            clip,
             on_stop,
             on_hide_complete,
         }
