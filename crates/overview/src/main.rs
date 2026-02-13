@@ -2,6 +2,7 @@ use anyhow::Result;
 use gtk::prelude::ApplicationExtManual;
 use log::debug;
 mod app;
+mod calendar_selection;
 mod common;
 mod components;
 mod dbus;

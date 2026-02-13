@@ -137,19 +137,52 @@ impl Plugin for SyncthingPlugin {
         action: String,
         _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if action == "toggle" {
-            let was_enabled = self.lock_state().enabled;
-            let result = SyncthingPlugin::set_service_enabled(!was_enabled).await;
+        match action.as_str() {
+            "toggle" => {
+                let was_enabled = self.lock_state().enabled;
+                let result = SyncthingPlugin::set_service_enabled(!was_enabled).await;
 
-            match result {
-                Ok(()) => {
-                    self.lock_state().enabled = !was_enabled;
-                    log::debug!("Syncthing toggled to: {}", !was_enabled);
+                match result {
+                    Ok(()) => {
+                        self.lock_state().enabled = !was_enabled;
+                        log::debug!("Syncthing toggled to: {}", !was_enabled);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to toggle syncthing: {e}");
+                        return Err(e.into());
+                    }
                 }
-                Err(e) => {
-                    log::error!("Failed to toggle syncthing: {e}");
-                    return Err(e.into());
+            }
+            "enable" => {
+                if !self.lock_state().enabled {
+                    match SyncthingPlugin::set_service_enabled(true).await {
+                        Ok(()) => {
+                            self.lock_state().enabled = true;
+                            log::debug!("Syncthing enabled");
+                        }
+                        Err(e) => {
+                            log::error!("Failed to enable syncthing: {e}");
+                            return Err(e.into());
+                        }
+                    }
                 }
+            }
+            "disable" => {
+                if self.lock_state().enabled {
+                    match SyncthingPlugin::set_service_enabled(false).await {
+                        Ok(()) => {
+                            self.lock_state().enabled = false;
+                            log::debug!("Syncthing disabled");
+                        }
+                        Err(e) => {
+                            log::error!("Failed to disable syncthing: {e}");
+                            return Err(e.into());
+                        }
+                    }
+                }
+            }
+            other => {
+                log::debug!("[syncthing] Unknown action: {other}");
             }
         }
         Ok(())

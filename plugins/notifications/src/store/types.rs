@@ -24,6 +24,7 @@ pub struct Notification {
     pub title: Arc<str>,
     pub ttl: Option<u64>,
     pub urgency: NotificationUrgency,
+    pub workspace: Option<Arc<str>>,
 }
 
 impl Notification {

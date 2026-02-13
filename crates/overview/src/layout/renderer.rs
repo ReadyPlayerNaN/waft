@@ -10,10 +10,13 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use log::{debug, warn};
 
+use crate::calendar_selection::CalendarSelectionStore;
 use crate::components::agenda::AgendaComponent;
 use crate::components::audio_sliders::AudioSlidersComponent;
+use crate::components::events::EventsComponent;
 use crate::components::battery::BatteryComponent;
 use crate::components::brightness_sliders::BrightnessSlidersComponent;
+use crate::components::calendar_grid::CalendarComponent;
 use crate::components::clock::ClockComponent;
 use crate::components::keyboard_layout::KeyboardLayoutComponent;
 use crate::components::notification_list::NotificationsComponent;
@@ -44,15 +47,21 @@ use waft_ui_gtk::widgets::feature_grid::{FeatureGridItem, FeatureGridWidget};
 pub struct RenderContext {
     pub store: Rc<EntityStore>,
     pub action_callback: EntityActionCallback,
+    pub calendar_selection: Rc<CalendarSelectionStore>,
     /// Keeps components alive (entity subscriptions, toggle state).
     keep_alive: RefCell<Vec<Box<dyn std::any::Any>>>,
 }
 
 impl RenderContext {
-    pub fn new(store: Rc<EntityStore>, action_callback: EntityActionCallback) -> Self {
+    pub fn new(
+        store: Rc<EntityStore>,
+        action_callback: EntityActionCallback,
+        calendar_selection: Rc<CalendarSelectionStore>,
+    ) -> Self {
         Self {
             store,
             action_callback,
+            calendar_selection,
             keep_alive: RefCell::new(Vec::new()),
         }
     }
@@ -348,8 +357,20 @@ fn render_component(name: &str, ctx: &Rc<RenderContext>, menu_store: &Rc<MenuSto
             keep.push(Box::new(c));
             w
         }
+        "Calendar" => {
+            let c = CalendarComponent::new(&ctx.store, &ctx.calendar_selection);
+            let w = c.widget().clone();
+            keep.push(Box::new(c));
+            w
+        }
         "Agenda" => {
-            let c = AgendaComponent::new(&ctx.store, menu_store);
+            let c = AgendaComponent::new(&ctx.store, menu_store, &ctx.calendar_selection, true);
+            let w = c.widget().clone();
+            keep.push(Box::new(c));
+            w
+        }
+        "Events" => {
+            let c = EventsComponent::new(&ctx.store, menu_store, &ctx.calendar_selection);
             let w = c.widget().clone();
             keep.push(Box::new(c));
             w
@@ -506,6 +527,7 @@ fn render_feature_toggle_grid(
                         let t = Rc::new(BackupToggle::new(
                             &ctx.store,
                             &ctx.action_callback,
+                            menu_store,
                             dynamic_rebuild.clone(),
                         ));
                         dynamic_sources.push(t.clone());

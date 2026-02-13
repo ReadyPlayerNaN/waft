@@ -12,6 +12,7 @@ use gtk::prelude::*;
 use waft_protocol::entity;
 use waft_protocol::Urn;
 use waft_ui_gtk::backup::method_row::{BackupMethodRow, BackupMethodRowProps};
+use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
 use crate::entity_store::{EntityActionCallback, EntityStore};
@@ -39,8 +40,10 @@ impl BackupToggle {
     pub fn new(
         store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
+        menu_store: &Rc<waft_core::menu_state::MenuStore>,
         rebuild_callback: Rc<dyn Fn()>,
     ) -> Self {
+        let menu_id = menu_id_for_widget("backup-toggle");
         let available = Rc::new(Cell::new(false));
 
         let menu_box = gtk::Box::builder()
@@ -56,22 +59,29 @@ impl BackupToggle {
                 expandable: true,
                 icon: "drive-harddisk-symbolic".to_string(),
                 title: i18n::t("backup-title"),
-                menu_id: None,
+                menu_id: Some(menu_id.clone()),
             },
-            None,
+            Some(menu_store.clone()),
         ));
 
         let entries: Rc<RefCell<Vec<MethodEntry>>> = Rc::new(RefCell::new(Vec::new()));
+        let any_enabled = Rc::new(Cell::new(false));
 
-        // Connect toggle output: toggle the first method when the main toggle is clicked
+        // Connect toggle output: enable all or disable all methods
         let cb = action_callback.clone();
         let entries_ref = entries.clone();
+        let any_enabled_ref = any_enabled.clone();
         toggle.connect_output(move |_output| {
+            let action = if any_enabled_ref.get() {
+                "disable"
+            } else {
+                "enable"
+            };
             let borrowed = entries_ref.borrow();
-            if let Some(entry) = borrowed.first() {
+            for entry in borrowed.iter() {
                 cb(
                     entry.urn.clone(),
-                    "toggle".to_string(),
+                    action.to_string(),
                     serde_json::Value::Null,
                 );
             }
@@ -81,6 +91,7 @@ impl BackupToggle {
         let store_ref = store.clone();
         let toggle_ref = toggle.clone();
         let available_ref = available.clone();
+        let any_enabled_ref = any_enabled.clone();
         let entries_ref = entries.clone();
         let menu_box_ref = menu_box.clone();
         let cb = action_callback.clone();
@@ -93,11 +104,12 @@ impl BackupToggle {
             let now_available = !entities.is_empty();
 
             // Update toggle active state: active if any method is enabled
-            let any_enabled = entities.iter().any(|(_, m)| m.enabled);
-            toggle_ref.set_active(any_enabled);
+            let currently_enabled = entities.iter().any(|(_, m)| m.enabled);
+            any_enabled_ref.set(currently_enabled);
+            toggle_ref.set_active(currently_enabled);
 
             let count = entities.len();
-            toggle_ref.set_details(if any_enabled {
+            toggle_ref.set_details(if currently_enabled {
                 Some(format!(
                     "{count} {}",
                     if count == 1 { "service" } else { "services" }

@@ -635,6 +635,8 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
     use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 
     // DATE format: YYYYMMDD
+    // All-day events use local midnight, not UTC midnight, so that a
+    // "Feb 14" all-day event spans [Feb 14 00:00 local, Feb 15 00:00 local).
     if params.contains("VALUE=DATE") && !params.contains("VALUE=DATE-TIME") {
         if value.len() >= 8 {
             let year: i32 = value[0..4].parse().ok()?;
@@ -642,7 +644,12 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
             let day: u32 = value[6..8].parse().ok()?;
             let date = NaiveDate::from_ymd_opt(year, month, day)?;
             let datetime = date.and_time(NaiveTime::from_hms_opt(0, 0, 0)?);
-            return Some(datetime.and_utc().timestamp());
+            return Some(
+                chrono::Local
+                    .from_local_datetime(&datetime)
+                    .earliest()?
+                    .timestamp(),
+            );
         }
     }
 
@@ -665,8 +672,8 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
         let time = NaiveTime::from_hms_opt(hour, min, sec)?;
         let datetime = NaiveDateTime::new(date, time);
 
-        // If ends with Z or no TZID, treat as UTC
-        if value.ends_with('Z') || !params.contains("TZID=") {
+        // Ends with Z → UTC
+        if value.ends_with('Z') {
             return Some(datetime.and_utc().timestamp());
         }
 
@@ -681,8 +688,14 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
             }
         }
 
-        // Fallback: treat as UTC
-        return Some(datetime.and_utc().timestamp());
+        // No Z, no TZID → floating time (RFC 5545), interpret as local
+        return Some(
+            chrono::Local
+                .from_local_datetime(&datetime)
+                .earliest()
+                .map(|dt| dt.timestamp())
+                .unwrap_or_else(|| datetime.and_utc().timestamp()),
+        );
     }
 
     None

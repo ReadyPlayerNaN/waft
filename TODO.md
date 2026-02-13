@@ -1,26 +1,74 @@
-# 1. Audio device icons
+# 1. Reconnecting to socket
 
-The audio device icons are not right. Currently only the selected default device has an icon. When I switch the device to another, the previously default device now displays the generic fallback icon.
+When `waft` crashes, but the `waft-overview` is still running, it needs to:
 
-The audio devices should have icons based on their type. For example headphones should have headphone icon. Headset microphone should have headset icon. Standalone microphone should have microphone icon...
+- Let user know that the UI is disconnected by disabling all buttons
+- Attempt reconnection once per second
 
-# 2. Audio device menu row icons
+# 6. Drop nmrs in favor of pure D-Bus for NetworkManager
 
-The audio device menu is not showing connection icon. I have a bluetooth headset connected, but the menu is not showing the bluetooth icon next to the device type icon.
+The `nmrs` crate produces `!Send` futures, which forces the networkmanager plugin to spawn a dedicated OS thread with a single-threaded tokio runtime + `LocalSet` just for WiFi scanning. The rest of the plugin already uses pure `zbus` D-Bus calls. Removing `nmrs` eliminates the threading workaround, simplifies the architecture, and unblocks support for additional device types (tethering, mobile broadband) that nmrs does not expose.
 
-# 3. Backup widget
+## Current nmrs usage
 
-The overlay UI should display feature toggle "Backup" with menu, that lists all backup methods and enables stopping/starting them.
+### `src/device_discovery.rs` — `discover_devices(nm: &nmrs::NetworkManager)`
 
-# 4. Calendar widget
+- Calls `nm.list_devices()` to enumerate network devices
+- Maps `nmrs::DeviceType::{Ethernet, Wifi}` to u32 device type constants
+- Maps `nmrs::DeviceState::{Unmanaged, Unavailable, Disconnected, Prepare, Config, Activated, Deactivating, Failed, Other(code)}` to u32 state codes
+- Reads `device.interface`, `device.managed`, `device.path`, `device.state`
+- **Already has a pure D-Bus alternative:** `get_device_info_dbus()` in the same file reads the same properties via `zbus`
 
-The EDS plugin must be able to supply events both for agenda widget and for a calendar. The consumers must be able to add a filter to their subscription. For example: Overview is only interested in agenda events (that means today and tomorrow). Calendar widget is going to be interested in entire month of events.
+### `src/wifi.rs` — `scan_and_list_known_networks(nm: &nmrs::NetworkManager, conn: &Connection)`
 
-# 5. Tethering support in networkmanager
+- Calls `nm.scan_networks()` to trigger a WiFi scan
+- Calls `nm.list_networks()` to read scan results
+- Reads `network.ssid`, `network.strength`, `network.secured`
+- This is the **only** function that produces `!Send` futures
 
-Network manager supposedly supports tethering. When I connect my phone to the pc over USB or Bluetooth, the network manager should provide this as a tethering NetworkAdapter
+### `src/wifi_scan.rs` — `wifi_scan_task(scan_rx, nm: nmrs::NetworkManager, conn, state, notifier)`
 
-The overlay should render these as a separate feature toggle with similar logic to Wi-Fi, just isolated. Clicking on a connection row in tethering feature toggle menu will connect or disconnect it.
+- Background task that receives scan requests via channel
+- Passes the `nmrs::NetworkManager` instance to `scan_and_list_known_networks()`
+
+### `bin/waft-networkmanager-daemon.rs` — `NetworkManagerPlugin::new()`
+
+- Creates `nmrs::NetworkManager::new()` at startup
+- Passes `nm` to `discover_devices()` for initial device enumeration
+- Passes `nm` to the WiFi scan thread (lines 949-966)
+- **The !Send workaround (lines 949-966):** spawns `std::thread::Builder::new("nm-wifi-scan")` with `tokio::runtime::Builder::new_current_thread()` + `LocalSet::block_on()` solely because nmrs futures are `!Send`
+
+## Migration phases
+
+### Phase 1: Replace device listing with pure D-Bus
+
+- Replace `discover_devices(nm)` with a new function that calls `GetDevices()` on `org.freedesktop.NetworkManager` via zbus and reads device properties with the existing `get_property()` helper (the pattern already exists in `get_device_info_dbus()`)
+- Remove `nmrs::NetworkManager` parameter from `NetworkManagerPlugin::new()` return type
+- This phase alone unblocks new device types: tethering (DeviceType 10/11), mobile broadband (DeviceType 8), etc.
+
+### Phase 2: Replace WiFi scanning with pure D-Bus
+
+- Replace `nm.scan_networks()` with `RequestScan` method call on `org.freedesktop.NetworkManager.Device.Wireless` interface
+- Replace `nm.list_networks()` with `GetAllAccessPoints` method call on the same interface, then read each access point's `Ssid`, `Strength`, `Flags`, `WpaFlags`, `RsnFlags` properties
+- Rewrite `scan_and_list_known_networks()` to use only `zbus::Connection`
+- Rewrite `wifi_scan_task()` to accept `Connection` instead of `nmrs::NetworkManager`
+- Remove the dedicated OS thread + single-threaded runtime workaround in `bin/waft-networkmanager-daemon.rs` — WiFi scanning can run as a normal `tokio::spawn` task on the multi-threaded runtime
+
+### Phase 3: Remove nmrs dependency
+
+- Remove `nmrs = "2.0"` from `plugins/networkmanager/Cargo.toml`
+- Verify all `nmrs::` references are gone
+- The plugin now depends only on `zbus` for all NetworkManager communication
+
+### Phase 4 (future): Add tethering device type support
+
+- With pure D-Bus device listing, add DeviceType constants for tethering-relevant types (USB=Ethernet with tethering flag, Bluetooth NAP, etc.)
+- Expose tethering adapters as `NetworkAdapter` entities with `AdapterKind::Tethering` (or similar)
+- Render as a separate feature toggle in the overlay with connect/disconnect actions
+
+## Key benefit
+
+Removing `nmrs` eliminates the dedicated `nm-wifi-scan` OS thread and its single-threaded tokio runtime. All NetworkManager communication runs on the shared multi-threaded tokio runtime via `zbus`, matching every other D-Bus plugin in the project.
 
 # Notification sounds
 

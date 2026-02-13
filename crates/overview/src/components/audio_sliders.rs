@@ -284,12 +284,13 @@ fn update_device_rows(
             // Update in place
             existing.row.set_name(&device.name);
             existing.row.set_device_icon(&device.icon);
+            existing.row.set_connection_icon(device.connection_icon.as_deref());
             existing.row.set_active(device.default);
         } else {
             // Create new row
             let device_row = Rc::new(AudioDeviceRow::new(AudioDeviceRowProps {
                 device_icon: device.icon.clone(),
-                connection_icon: None,
+                connection_icon: device.connection_icon.clone(),
                 name: device.name.clone(),
                 active: device.default,
             }));
@@ -313,14 +314,36 @@ fn update_device_rows(
     }
 }
 
-/// Select the appropriate icon for an audio device slider.
+/// Compute the volume-level icon for an audio device slider.
+///
+/// The slider icon reflects the current volume level and mute state rather than
+/// the device type. This keeps the device-type icon stable on the device itself
+/// while the slider icon dynamically tracks volume changes.
 fn slider_icon(device: &entity::audio::AudioDevice) -> String {
-    if device.muted {
-        match device.kind {
-            AudioDeviceKind::Output => "audio-volume-muted-symbolic".to_string(),
-            AudioDeviceKind::Input => "microphone-sensitivity-muted-symbolic".to_string(),
+    match device.kind {
+        AudioDeviceKind::Output => {
+            if device.muted || device.volume < 0.01 {
+                "audio-volume-muted-symbolic".to_string()
+            } else if device.volume < 0.34 {
+                "audio-volume-low-symbolic".to_string()
+            } else if device.volume < 0.67 {
+                "audio-volume-medium-symbolic".to_string()
+            } else {
+                "audio-volume-high-symbolic".to_string()
+            }
         }
-    } else {
-        device.icon.clone()
+        AudioDeviceKind::Input => {
+            if device.muted {
+                "microphone-disabled-symbolic".to_string()
+            } else if device.volume < 0.01 {
+                "audio-input-microphone-symbolic".to_string()
+            } else if device.volume < 0.34 {
+                "microphone-sensitivity-low-symbolic".to_string()
+            } else if device.volume < 0.67 {
+                "microphone-sensitivity-medium-symbolic".to_string()
+            } else {
+                "microphone-sensitivity-high-symbolic".to_string()
+            }
+        }
     }
 }

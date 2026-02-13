@@ -387,6 +387,7 @@ pub async fn setup() -> Result<adw::Application> {
                                 entity::notification::NOTIFICATION_ENTITY_TYPE,
                                 entity::notification::DND_ENTITY_TYPE,
                                 entity::calendar::ENTITY_TYPE,
+                                entity::storage::BACKUP_METHOD_ENTITY_TYPE,
                             ];
                             for et in &entity_types {
                                 client.subscribe(et);

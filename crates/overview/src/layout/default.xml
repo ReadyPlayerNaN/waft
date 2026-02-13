@@ -14,7 +14,7 @@
   <Divider />
   <TwoColumns>
     <Col>
-      <Agenda />
+      <Events />
       <NotificationList />
     </Col>
     <Col>

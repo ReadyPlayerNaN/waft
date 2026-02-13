@@ -58,9 +58,10 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
         }
         "Unmatched" => Ok(LayoutNode::Unmatched),
         tag @ ("Clock" | "Battery" | "Weather" | "KeyboardLayout" | "SessionActions"
-        | "SystemActions" | "Agenda" | "NotificationList" | "AudioSliders"
-        | "BrightnessSliders" | "DndToggle" | "CaffeineToggle" | "DarkModeToggle"
-        | "NightLightToggle" | "BluetoothToggles" | "NetworkToggles" | "BackupToggle") => {
+        | "SystemActions" | "Calendar" | "Agenda" | "Events" | "NotificationList"
+        | "AudioSliders" | "BrightnessSliders" | "DndToggle" | "CaffeineToggle"
+        | "DarkModeToggle" | "NightLightToggle" | "BluetoothToggles" | "NetworkToggles"
+        | "BackupToggle") => {
             Ok(LayoutNode::Component {
                 name: tag.to_string(),
             })
@@ -148,10 +149,10 @@ mod tests {
                 // TwoColumns should contain Cols
                 if let LayoutNode::TwoColumns { children: col_children } = &children[2] {
                     assert_eq!(col_children.len(), 2);
-                    // Left column: Agenda, NotificationList
+                    // Left column: Events, NotificationList
                     if let LayoutNode::Col { children, .. } = &col_children[0] {
                         assert_eq!(children.len(), 2);
-                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "Agenda"));
+                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "Events"));
                         assert!(matches!(&children[1], LayoutNode::Component { name } if name == "NotificationList"));
                     }
                     // Right column: AudioSliders, BrightnessSliders, FeatureToggleGrid, Unmatched

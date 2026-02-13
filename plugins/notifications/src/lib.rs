@@ -148,6 +148,7 @@ impl Plugin for NotificationsPlugin {
                     .map(|d| d.as_millis() as i64)
                     .unwrap_or(0),
                 resident: notif.resident,
+                workspace: notif.workspace.as_ref().map(|w| w.to_string()),
             };
 
             entities.push(Entity::new(

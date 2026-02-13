@@ -9,6 +9,7 @@ use adw::prelude::*;
 use gtk4_layer_shell::LayerShell;
 use log::debug;
 
+use crate::calendar_selection::create_calendar_selection_store;
 use crate::common::VoidCallback;
 use crate::entity_store::{EntityActionCallback, EntityStore};
 use crate::layout::load_layout;
@@ -803,6 +804,82 @@ impl MainWindowWidget {
                 opacity: 1.0;
             }}
 
+            /* Calendar month grid */
+            .calendar-container {{
+                margin-bottom: 4px;
+            }}
+
+            .calendar-month-label {{
+                font-weight: 600;
+                font-size: 14px;
+                min-width: 140px;
+            }}
+
+            .calendar-nav-btn {{
+                min-width: 32px;
+                min-height: 32px;
+                padding: 0;
+                border-radius: 50%;
+            }}
+
+            .calendar-weekday-header {{
+                font-size: 11px;
+                font-weight: 600;
+                opacity: 0.5;
+                min-height: 24px;
+            }}
+
+            .calendar-day-cell {{
+                background: transparent;
+                border: none;
+                border-radius: 8px;
+                min-width: 36px;
+                min-height: 36px;
+                padding: 2px;
+                font-size: 13px;
+            }}
+
+            .calendar-day-cell:hover {{
+                background-color: alpha(@window_fg_color, 0.08);
+            }}
+
+            .calendar-day-cell.other-month {{
+                opacity: 0.3;
+            }}
+
+            .calendar-day-cell.today {{
+                font-weight: 700;
+                color: @accent_bg_color;
+            }}
+
+            .calendar-day-cell.selected {{
+                background-color: @accent_bg_color;
+                color: @accent_fg_color;
+            }}
+
+            .calendar-day-cell.selected:hover {{
+                background-color: color-mix(
+                  in srgb,
+                  @accent_bg_color 80%,
+                  @window_fg_color
+                );
+            }}
+
+            .calendar-event-dot {{
+                background-color: @accent_bg_color;
+                border-radius: 50%;
+                min-width: 4px;
+                min-height: 4px;
+            }}
+
+            .calendar-day-cell.selected .calendar-event-dot {{
+                background-color: @accent_fg_color;
+            }}
+
+            .calendar-day-cell.other-month .calendar-event-dot {{
+                opacity: 0;
+            }}
+
             "#,
             OVERLAY_CORNER_RADIUS_PX
         );
@@ -827,9 +904,12 @@ impl MainWindowWidget {
     ) -> gtk::Frame {
         let tree = load_layout().expect("failed to load layout");
 
+        let calendar_selection = Rc::new(create_calendar_selection_store());
+
         let ctx = Rc::new(RenderContext::new(
             store.clone(),
             action_callback.clone(),
+            calendar_selection,
         ));
 
         let rendered = Rc::new(render_layout(&tree, &ctx, &menu_store));

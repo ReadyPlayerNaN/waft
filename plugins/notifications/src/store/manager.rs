@@ -148,7 +148,7 @@ fn reconcile_group_on_ingress(
 }
 
 fn create_notification(n: &IngressedNotification) -> Notification {
-    Notification {
+    let mut notification = Notification {
         actions: derive_actions(n),
         app: derive_app_ident(n),
         created_at: n.created_at,
@@ -160,7 +160,30 @@ fn create_notification(n: &IngressedNotification) -> Notification {
         title: n.title.clone(),
         ttl: derive_panel_ttl(n),
         urgency: n.hints.urgency,
+        workspace: None,
+    };
+
+    if let Some(app_name) = n.app_name.as_deref() {
+        if let Some(extraction) =
+            super::workspace_extract::extract_workspace(app_name, &n.title)
+        {
+            notification.title = extraction.cleaned_title;
+            notification.workspace = Some(extraction.workspace.clone());
+
+            if let Some(ref mut app) = notification.app {
+                let workspace_suffix = format!(
+                    "_{}",
+                    extraction.workspace.to_lowercase().replace(' ', "_")
+                );
+                app.ident = Arc::from(format!("{}{}", app.ident, workspace_suffix));
+                if let Some(ref title) = app.title {
+                    app.title = Some(Arc::from(format!("{} [{}]", title, extraction.workspace)));
+                }
+            }
+        }
     }
+
+    notification
 }
 
 fn normalize_app_ident(app_ident: &str) -> Arc<str> {

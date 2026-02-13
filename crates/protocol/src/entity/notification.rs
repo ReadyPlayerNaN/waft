@@ -18,6 +18,8 @@ pub struct Notification {
     pub icon_hints: Vec<NotificationIconHint>,
     pub created_at_ms: i64,
     pub resident: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
 }
 
 /// Notification urgency level per the freedesktop specification.
@@ -79,10 +81,48 @@ mod tests {
             ],
             created_at_ms: 1707753600000,
             resident: false,
+            workspace: None,
         };
         let json = serde_json::to_value(&notification).unwrap();
         let decoded: Notification = serde_json::from_value(json).unwrap();
         assert_eq!(notification, decoded);
+    }
+
+    #[test]
+    fn notification_with_workspace_serde_roundtrip() {
+        let notification = Notification {
+            title: "New message from Alice".to_string(),
+            description: "Hey, are you there?".to_string(),
+            app_name: Some("Slack [Engineering]".to_string()),
+            app_id: Some("slack_engineering".to_string()),
+            urgency: NotificationUrgency::Normal,
+            actions: vec![],
+            icon_hints: vec![NotificationIconHint::Themed("slack".to_string())],
+            created_at_ms: 1707753600000,
+            resident: false,
+            workspace: Some("Engineering".to_string()),
+        };
+        let json = serde_json::to_value(&notification).unwrap();
+        let decoded: Notification = serde_json::from_value(json).unwrap();
+        assert_eq!(notification, decoded);
+    }
+
+    #[test]
+    fn notification_without_workspace_deserializes_from_old_json() {
+        // Simulate JSON from before the workspace field was added
+        let json = serde_json::json!({
+            "title": "Test",
+            "description": "Body",
+            "app_name": null,
+            "app_id": null,
+            "urgency": "Normal",
+            "actions": [],
+            "icon_hints": [],
+            "created_at_ms": 1707753600000_i64,
+            "resident": false
+        });
+        let decoded: Notification = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.workspace, None);
     }
 
     #[test]
@@ -97,6 +137,7 @@ mod tests {
             icon_hints: vec![NotificationIconHint::Bytes(vec![0x89, 0x50, 0x4E, 0x47])],
             created_at_ms: 1707753600000,
             resident: true,
+            workspace: None,
         };
         let json = serde_json::to_value(&notification).unwrap();
         let decoded: Notification = serde_json::from_value(json).unwrap();

@@ -38,6 +38,15 @@ agenda-show-past-tooltip = Zobrazit uplynulé události
 agenda-today = Dnes
 agenda-tomorrow = Zítra
 
+# Events
+events-title = Události
+events-show-calendar-tooltip = Zobrazit kalendář
+events-hide-calendar-tooltip = Skrýt kalendář
+
+# Calendar
+calendar-prev-month = Předchozí měsíc
+calendar-next-month = Další měsíc
+
 # Weather
 weather-placeholder = --
 weather-loading = Načítání...

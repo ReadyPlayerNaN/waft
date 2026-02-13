@@ -163,34 +163,6 @@ async fn reload_sources(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPort
     }
 }
 
-/// Compute the icon for an output device based on volume and mute state.
-fn output_icon(volume: f64, muted: bool) -> String {
-    if muted || volume < 0.01 {
-        "audio-volume-muted-symbolic".to_string()
-    } else if volume < 0.34 {
-        "audio-volume-low-symbolic".to_string()
-    } else if volume < 0.67 {
-        "audio-volume-medium-symbolic".to_string()
-    } else {
-        "audio-volume-high-symbolic".to_string()
-    }
-}
-
-/// Compute the icon for an input device based on volume and mute state.
-fn input_icon(volume: f64, muted: bool) -> String {
-    if muted {
-        "microphone-disabled-symbolic".to_string()
-    } else if volume < 0.01 {
-        "audio-input-microphone-symbolic".to_string()
-    } else if volume < 0.34 {
-        "microphone-sensitivity-low-symbolic".to_string()
-    } else if volume < 0.67 {
-        "microphone-sensitivity-medium-symbolic".to_string()
-    } else {
-        "microphone-sensitivity-high-symbolic".to_string()
-    }
-}
-
 #[async_trait::async_trait]
 impl Plugin for AudioPlugin {
     fn get_entities(&self) -> Vec<Entity> {
@@ -213,15 +185,10 @@ impl Plugin for AudioPlugin {
                 (state.output_volume, state.output_muted)
             };
 
-            let icon = if is_default {
-                output_icon(volume, muted)
-            } else {
-                device.icon.clone()
-            };
-
             let audio_device = entity::audio::AudioDevice {
                 name: device.name.clone(),
-                icon,
+                icon: device.icon.clone(),
+                connection_icon: device.secondary_icon.clone(),
                 volume,
                 muted,
                 default: is_default,
@@ -243,15 +210,10 @@ impl Plugin for AudioPlugin {
                 (state.input_volume, state.input_muted)
             };
 
-            let icon = if is_default {
-                input_icon(volume, muted)
-            } else {
-                device.icon.clone()
-            };
-
             let audio_device = entity::audio::AudioDevice {
                 name: device.name.clone(),
-                icon,
+                icon: device.icon.clone(),
+                connection_icon: device.secondary_icon.clone(),
                 volume,
                 muted,
                 default: is_default,

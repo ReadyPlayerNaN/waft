@@ -38,6 +38,15 @@ agenda-show-past-tooltip = Show past events
 agenda-today = Today
 agenda-tomorrow = Tomorrow
 
+# Events
+events-title = Events
+events-show-calendar-tooltip = Show calendar
+events-hide-calendar-tooltip = Hide calendar
+
+# Calendar
+calendar-prev-month = Previous month
+calendar-next-month = Next month
+
 # Weather
 weather-placeholder = --
 weather-loading = Loading...
