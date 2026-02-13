@@ -360,7 +360,7 @@ fn render_component(name: &str, ctx: &Rc<RenderContext>, menu_store: &Rc<MenuSto
             w
         }
         "AudioSliders" => {
-            let c = AudioSlidersComponent::new(&ctx.store, &ctx.action_callback);
+            let c = AudioSlidersComponent::new(&ctx.store, &ctx.action_callback, menu_store);
             let w = c.widget().clone();
             keep.push(Box::new(c));
             w

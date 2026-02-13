@@ -1,6 +1,7 @@
 // Widgets module - GTK widget renderers
 
 pub mod button;
+pub mod connection_row;
 pub mod checkmark;
 pub mod col;
 pub mod details;

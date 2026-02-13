@@ -26,6 +26,7 @@ use crate::menu_state::{MenuOp, MenuStore};
 /// - Show/hide past events toggle with animation
 /// - Smart meeting buttons (1 link = button, 2+ = popover)
 /// - Incremental HashMap-based updates (no full rebuild)
+/// - Future events grouped by day with date section headers
 pub struct AgendaComponent {
     container: gtk::Box,
     content_box: gtk::Box,
@@ -269,10 +270,8 @@ impl AgendaComponent {
 
                 // Connect toggle handler
                 let menu_store_toggle = menu_store.clone();
-                new_card.connect_output(move |output| {
-                    if let AgendaCardOutput::ToggleExpand(menu_id) = output {
-                        menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
-                    }
+                new_card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
+                    menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
                 });
 
                 new_card
@@ -294,29 +293,65 @@ impl AgendaComponent {
             *now_divider.borrow_mut() = None;
         }
 
-        // Render current/future events
-        for (_urn, event) in &future_events {
-            let occurrence_key = format!("{}@{}", event.uid, event.start_time);
-            let is_ongoing = event.start_time <= now && now < event.end_time;
+        // Group future events by calendar day
+        let today_date = local_now.date_naive();
+        let tomorrow_date = today_date + chrono::Duration::days(1);
 
-            let card = if let Some(existing) = cards_map.get(&occurrence_key) {
-                existing.clone()
+        let mut day_groups: Vec<(chrono::NaiveDate, Vec<(&Urn, &entity::calendar::CalendarEvent)>)> = Vec::new();
+
+        for (urn, event) in &future_events {
+            let event_date = chrono::DateTime::from_timestamp(event.start_time, 0)
+                .map(|dt| dt.with_timezone(&chrono::Local).date_naive())
+                .unwrap_or(today_date);
+
+            if let Some(group) = day_groups.iter_mut().find(|(date, _)| *date == event_date) {
+                group.1.push((urn, event));
             } else {
-                let new_card = Rc::new(AgendaCard::new(event, false, is_ongoing, menu_store));
+                day_groups.push((event_date, vec![(urn, event)]));
+            }
+        }
 
-                // Connect toggle handler
-                let menu_store_toggle = menu_store.clone();
-                new_card.connect_output(move |output| {
-                    if let AgendaCardOutput::ToggleExpand(menu_id) = output {
-                        menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
-                    }
-                });
-
-                new_card
+        // Render future events grouped by day
+        for (date, day_events) in &day_groups {
+            // Add day header label
+            let day_label_text = if *date == today_date {
+                crate::i18n::t("agenda-today")
+            } else if *date == tomorrow_date {
+                crate::i18n::t("agenda-tomorrow")
+            } else {
+                // Format as weekday + date (e.g. "Monday, Feb 17")
+                date.format("%A, %b %e").to_string()
             };
 
-            content_box.append(&card.root);
-            new_cards.insert(occurrence_key, card);
+            let day_label = gtk::Label::builder()
+                .label(&day_label_text)
+                .xalign(0.0)
+                .css_classes(["dim-label", "agenda-day-header"])
+                .build();
+            content_box.append(&day_label);
+
+            // Render events for this day
+            for (_urn, event) in day_events {
+                let occurrence_key = format!("{}@{}", event.uid, event.start_time);
+                let is_ongoing = event.start_time <= now && now < event.end_time;
+
+                let card = if let Some(existing) = cards_map.get(&occurrence_key) {
+                    existing.clone()
+                } else {
+                    let new_card = Rc::new(AgendaCard::new(event, false, is_ongoing, menu_store));
+
+                    // Connect toggle handler
+                    let menu_store_toggle = menu_store.clone();
+                    new_card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
+                        menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
+                    });
+
+                    new_card
+                };
+
+                content_box.append(&card.root);
+                new_cards.insert(occurrence_key, card);
+            }
         }
 
         content_box.set_visible(!future_events.is_empty());

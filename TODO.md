@@ -1,75 +1,78 @@
-# 1. Bluetooth device row
+# 1. Audio slider menus random close
 
-Extract the `BluetoothDeviceRow` component into `waft-ui-gtk/src/bluetooth`. This is the component, that renders bluetooth device menu row.
+Selecting default input or output device works only once per open menu.
 
-# 2. Bluetooth device menu row spinner
+## Reproduction scenario
 
-When the bluetooth device is connecting or disconnecting, it MUST display spinner left of the switch.
+1. Open audio output menu
+2. See output 1 (default) and output 2
+3. Click output 2
+4. Output 2 is now default as expected
+5. Click output 1
 
-# 3. Bluetooth device menu states
+Expected: Output 1 is default, menu is still open and visible, the menu chevron is marked as open
 
-When a bluetooth device starts connecting somewhere, the bluetooth daemon is supposed to send status update. This does not happen and UI does not have an opportunity to respond to it.
+Actual: Output 1 is default, menu disappears (as if it had no outputs), the menu chevron is marked as open
+Workaround: Close the menu, Re-open the menu. It is now visible.
 
-When a bluetooth device connection fails, the bluetooth daemon is supposed to send status update. This does not happen and UI does not have an opportunity to respond to it.
+# 2. Labels not translated
 
-# 4. VPN menu row
+- Do Not Disturb
+- Wired
+- Caffeine (In Czech should be "Nezamykat", also translate this to english)
+- Night Light
+- Cloudy (and possibly all other weather conditions)
 
-Extract the VPN menu row component into `waft-ui-gtk`. It is going to look very much like the bluetooth device row. The layout is going to be simplified, see below. It is going to have the same behaviour about status, connecting and spinner..
+# 3. Audio device menu row appearence
+
+Extract the `AudioDeviceRow` component into `waft-ui-gtk/src/audio/device_row.rs`.
+
+Re-export the component from bluetooth mod.rs.
+
+The ConnectionIcon is going to show bluetooth icon for bluetooth devices, otherwise nothing.
+
+The layout should be:
 
 ```
 <Row>
+    <Box>
+        <DeviceTypeIcon />
+        <ConnectionIcon />
+    </Box>
     <Box>{label}</Box>
     <Box>
-        <Spinner />
+        <CheckMark />
+    </Box>
+</Row>
+```
+
+# 4. Caffeine icon broken
+
+The feature toggle should use an unlocked lock icon
+
+# 5. Syncthing plugin
+
+The plugin should detect if the syncthing is available and configured. It should provide entity `BackupMethod` with name=syncthing.
+
+The overlay UI should display feature toggle "Backup" with menu, that lists all backup methods. The backup method row component is going to be looking like bluetooth device row item and extracted into `waft-ui-gtk/src/backup`. The layout of row item will be:
+
+```
+<Row>
+    <Box>
+        <MethodIcon />
+    </Box>
+    <Box>{label}</Box>
+    <Box>
         <gtk::Switch />
     </Box>
 </Row>
 ```
 
-# 5. Wired menu profiles
-
-The wired adapter menu must provide list of profiles and allow switching the profiles.
-
-# 6. VPN menu
-
-If at least a single VPN is configured, then the VPN feature toggle will be expandable with a menu. The menu will list all available VPN configurations as MenuRows. Clicking the menu row dis/connects the VPN. Clicking the feature toggle toggle disconnects all VPNs.
-
-The VPN feature toggle menu is still not showing up.
-
-# 7. Agenda divider
-
-The agenda must have a divider between today's events and tomorrow's events. The layout should look like this:
-
-```
-<>
-    <Revealer>
-        <PastEvents />
-        <Divider />
-    </Revealer>
-    <Revealer>
-        <FutureEventsGrouppedByDay />
-    </Revealer>
-</>
-```
-
-and `FutureEventsGrouppedByDay` should look like this
-
-```
-<>
-    <Label>{date}
-    <Box>
-        <Events />
-    </Box>
-</>
-```
+The Method icon will be either the app icon (syncthing in our case) or some default
 
 # Calendar widget
 
 The EDS plugin must be able to supply events both for agenda widget and for a calendar. The consumers must be able to add a filter to their subscription. For example: Overview is only interested in agenda events (that means today and tomorrow). Calendar widget is going to be interested in entire month of events.
-
-# Syncthing plugin
-
-Provides overlay feature toggle, that enables/pauses user's Syncthing.
 
 # Notification sounds
 

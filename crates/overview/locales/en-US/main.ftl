@@ -32,6 +32,9 @@ agenda-next-period = Next period
 agenda-all-day = All day
 agenda-no-title = (No title)
 agenda-hide-past-tooltip = Hide past events
+agenda-show-past-tooltip = Show past events
+agenda-today = Today
+agenda-tomorrow = Tomorrow
 
 # Weather
 weather-placeholder = --

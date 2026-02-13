@@ -21,7 +21,7 @@ use waft_plugin::*;
 use waft_plugin_bluetooth::dbus;
 use waft_plugin_bluetooth::signal_monitor::monitor_bluez_signals;
 use waft_plugin_bluetooth::state::State;
-use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
+use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice, ConnectionState};
 use zbus::Connection;
 
 /// Extract a stable adapter ID from the D-Bus object path.
@@ -45,6 +45,7 @@ fn device_id(path: &str) -> String {
 struct BluemanPlugin {
     conn: Connection,
     state: Arc<StdMutex<State>>,
+    notifier: Arc<StdMutex<Option<EntityNotifier>>>,
 }
 
 impl BluemanPlugin {
@@ -78,6 +79,7 @@ impl BluemanPlugin {
         Ok(Self {
             conn,
             state: Arc::new(StdMutex::new(state)),
+            notifier: Arc::new(StdMutex::new(None)),
         })
     }
 
@@ -92,6 +94,20 @@ impl BluemanPlugin {
                 warn!("[bluetooth] mutex poisoned, recovering: {e}");
                 e.into_inner()
             }
+        }
+    }
+
+    /// Push entity updates to the overview via the notifier (if set).
+    fn notify(&self) {
+        let slot = match self.notifier.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("[bluetooth] notifier mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        if let Some(ref notifier) = *slot {
+            notifier.notify();
         }
     }
 }
@@ -129,7 +145,7 @@ impl Plugin for BluemanPlugin {
                 let device_entity = BluetoothDevice {
                     name: device.name.clone(),
                     device_type: device.icon.clone(),
-                    connected: device.connected,
+                    connection_state: device.connection_state,
                     battery_percentage: device.battery_percentage,
                 };
                 entities.push(Entity::new(
@@ -206,14 +222,14 @@ impl Plugin for BluemanPlugin {
                 let did = urn.id().to_string();
                 debug!("[bluetooth] Toggle device connection: {}", did);
 
-                // Find the device path from the MAC-address-based ID
-                let (device_path, currently_connected) = {
+                // Find the device path and current connection state
+                let (device_path, current_state) = {
                     let state = self.lock_state();
                     let mut found = None;
                     for adapter in &state.adapters {
                         for device in &adapter.devices {
                             if device_id(&device.path) == did {
-                                found = Some((device.path.clone(), device.connected));
+                                found = Some((device.path.clone(), device.connection_state));
                                 break;
                             }
                         }
@@ -230,36 +246,57 @@ impl Plugin for BluemanPlugin {
                     }
                 };
 
-                let result = if currently_connected {
-                    dbus::disconnect_device(&self.conn, &device_path).await
-                } else {
-                    dbus::connect_device(&self.conn, &device_path).await
+                // Set intermediate state
+                let intermediate_state = match current_state {
+                    ConnectionState::Connected => ConnectionState::Disconnecting,
+                    _ => ConnectionState::Connecting,
                 };
-
-                if let Err(e) = result {
-                    error!(
-                        "[bluetooth] Failed to {} device: {}",
-                        if currently_connected {
-                            "disconnect"
-                        } else {
-                            "connect"
-                        },
-                        e
-                    );
-                    return Err(e.into());
-                }
-
-                // Optimistic update (signal will confirm)
                 {
                     let mut state = self.lock_state();
                     for adapter in &mut state.adapters {
                         if let Some(device) =
                             adapter.devices.iter_mut().find(|d| d.path == device_path)
                         {
-                            device.connected = !currently_connected;
+                            device.connection_state = intermediate_state;
                         }
                     }
                 }
+                self.notify(); // Push intermediate state to UI
+
+                // Perform the D-Bus operation
+                let result = match current_state {
+                    ConnectionState::Connected => {
+                        dbus::disconnect_device(&self.conn, &device_path).await
+                    }
+                    _ => dbus::connect_device(&self.conn, &device_path).await,
+                };
+
+                if let Err(e) = result {
+                    error!(
+                        "[bluetooth] Failed to {} device: {}",
+                        if current_state == ConnectionState::Connected {
+                            "disconnect"
+                        } else {
+                            "connect"
+                        },
+                        e
+                    );
+                    // Revert to previous state on failure
+                    {
+                        let mut state = self.lock_state();
+                        for adapter in &mut state.adapters {
+                            if let Some(device) =
+                                adapter.devices.iter_mut().find(|d| d.path == device_path)
+                            {
+                                device.connection_state = current_state;
+                            }
+                        }
+                    }
+                    self.notify(); // Push reverted state to UI
+                    return Err(e.into());
+                }
+                // On success: signal monitor will catch the Connected property change
+                // and update the state to Connected/Disconnected
             } else {
                 debug!("[bluetooth] Unknown device action: {}", action);
             }
@@ -292,8 +329,21 @@ fn main() -> Result<()> {
 
         let shared_state = plugin.shared_state();
         let monitor_conn = plugin.conn.clone();
+        let notifier_slot = plugin.notifier.clone();
 
         let (runtime, notifier) = PluginRuntime::new("blueman", plugin);
+
+        // Fill the notifier slot so handle_action can push intermediate states
+        {
+            let mut slot = match notifier_slot.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    warn!("[bluetooth] notifier mutex poisoned, recovering: {e}");
+                    e.into_inner()
+                }
+            };
+            *slot = Some(notifier.clone());
+        }
 
         // Monitor BlueZ D-Bus signals
         tokio::spawn(async move {

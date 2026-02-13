@@ -32,6 +32,9 @@ agenda-next-period = Další období
 agenda-all-day = Celý den
 agenda-no-title = (Bez názvu)
 agenda-hide-past-tooltip = Skrýt uplynulé události
+agenda-show-past-tooltip = Zobrazit uplynulé události
+agenda-today = Dnes
+agenda-tomorrow = Zítra
 
 # Weather
 weather-placeholder = --

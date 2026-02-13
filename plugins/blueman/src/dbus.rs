@@ -7,6 +7,8 @@ use log::info;
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
+use waft_protocol::entity::bluetooth::ConnectionState;
+
 use crate::state::{AdapterState, DeviceState, State};
 
 pub const BLUEZ_DEST: &str = "org.bluez";
@@ -117,7 +119,12 @@ pub async fn load_state(conn: &Connection) -> Result<State> {
                     "Icon",
                     "bluetooth-symbolic".to_string(),
                 );
-                let connected = extract_prop(device_props, "Connected", false);
+                let connected_bool = extract_prop(device_props, "Connected", false);
+                let connection_state = if connected_bool {
+                    ConnectionState::Connected
+                } else {
+                    ConnectionState::Disconnected
+                };
                 let battery_percentage: Option<u8> = device_props
                     .get("Percentage")
                     .and_then(|v| u8::try_from(v.clone()).ok())
@@ -127,7 +134,7 @@ pub async fn load_state(conn: &Connection) -> Result<State> {
                     path: path_str,
                     name,
                     icon,
-                    connected,
+                    connection_state,
                     battery_percentage,
                 });
             }

@@ -10,6 +10,8 @@ use waft_plugin::EntityNotifier;
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
+use waft_protocol::entity::bluetooth::ConnectionState;
+
 use crate::dbus::{BLUEZ_DEST, IFACE_ADAPTER1, IFACE_DEVICE1};
 use crate::state::State;
 
@@ -96,6 +98,11 @@ pub async fn monitor_bluez_signals(
         } else if iface == IFACE_DEVICE1 {
             if let Some(connected_val) = props.get("Connected") {
                 if let Ok(connected) = <bool>::try_from(connected_val.clone()) {
+                    let new_state = if connected {
+                        ConnectionState::Connected
+                    } else {
+                        ConnectionState::Disconnected
+                    };
                     let mut st = match state.lock() {
                         Ok(g) => g,
                         Err(e) => {
@@ -107,12 +114,12 @@ pub async fn monitor_bluez_signals(
                         if let Some(device) =
                             adapter.devices.iter_mut().find(|d| d.path == obj_path)
                         {
-                            if device.connected != connected {
+                            if device.connection_state != new_state {
                                 info!(
-                                    "[bluetooth] Device {} connected: {}",
-                                    obj_path, connected
+                                    "[bluetooth] Device {} connection_state: {:?}",
+                                    obj_path, new_state
                                 );
-                                device.connected = connected;
+                                device.connection_state = new_state;
                                 changed = true;
                             }
                         }

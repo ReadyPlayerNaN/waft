@@ -11,6 +11,7 @@ use gtk::prelude::*;
 use waft_protocol::entity;
 use waft_protocol::Urn;
 use waft_ui_gtk::menu_state::menu_id_for_widget;
+use waft_ui_gtk::widgets::connection_row::{ConnectionRow, ConnectionRowOutput, ConnectionRowProps};
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 use waft_ui_gtk::widgets::icon::IconWidget;
 
@@ -27,10 +28,35 @@ struct ToggleEntry {
     weight: i32,
 }
 
-/// A single network row in the menu.
-struct NetworkRow {
-    urn_str: String,
-    root: gtk::Box,
+/// A single network row in the menu — either a plain box (WiFi/Ethernet)
+/// or a ConnectionRow widget (VPN).
+enum NetworkRow {
+    /// WiFi/Ethernet rows using plain gtk::Box layout.
+    Plain {
+        urn_str: String,
+        root: gtk::Box,
+    },
+    /// VPN rows using the extracted ConnectionRow widget.
+    Connection {
+        urn_str: String,
+        row: Rc<ConnectionRow>,
+    },
+}
+
+impl NetworkRow {
+    fn urn_str(&self) -> &str {
+        match self {
+            NetworkRow::Plain { urn_str, .. } => urn_str,
+            NetworkRow::Connection { urn_str, .. } => urn_str,
+        }
+    }
+
+    fn remove_from(&self, parent: &gtk::Box) {
+        match self {
+            NetworkRow::Plain { root, .. } => parent.remove(root),
+            NetworkRow::Connection { row, .. } => parent.remove(&row.root),
+        }
+    }
 }
 
 /// Dynamic set of toggles for network adapters and VPN connections.
@@ -250,8 +276,7 @@ impl NetworkManagerToggles {
                 let details = vpns
                     .iter()
                     .find(|(_, vpn)| vpn.state == entity::network::VpnState::Connected)
-                    .map(|(_, vpn)| vpn.name.clone())
-                    .unwrap_or_else(|| "Disconnected".to_string());
+                    .map(|(_, vpn)| vpn.name.clone());
 
                 if let Some(entry) = entries_mut
                     .iter()
@@ -260,7 +285,7 @@ impl NetworkManagerToggles {
                     // Update existing consolidated toggle
                     entry.toggle.set_active(any_active);
                     entry.toggle.set_busy(any_busy);
-                    entry.toggle.set_details(Some(details));
+                    entry.toggle.set_details(details.clone());
                     entry.toggle.set_expandable(!vpns.is_empty());
 
                     // Update VPN menu rows
@@ -280,7 +305,7 @@ impl NetworkManagerToggles {
                         FeatureToggleProps {
                             active: any_active,
                             busy: any_busy,
-                            details: Some(details),
+                            details,
                             expandable: !vpns.is_empty(),
                             icon: "network-vpn-symbolic".to_string(),
                             title: "VPN".to_string(),
@@ -380,15 +405,21 @@ impl NetworkManagerToggles {
                 .iter()
                 .map(|(urn, _)| urn.as_str().to_string())
                 .collect();
-            network_rows.retain(|row| current_network_urns.contains(&row.urn_str));
+            network_rows.retain(|row| {
+                if current_network_urns.iter().any(|u| u == row.urn_str()) {
+                    true
+                } else {
+                    row.remove_from(&entry.menu);
+                    false
+                }
+            });
 
             // Update or create rows for each network
             for (network_urn, network) in &adapter_networks {
                 let network_urn_str = network_urn.as_str().to_string();
 
-                if network_rows.iter().any(|r| r.urn_str == network_urn_str) {
+                if network_rows.iter().any(|r| r.urn_str() == network_urn_str) {
                     // Network row already exists - no update needed for now
-                    // TODO: Update signal strength icon if needed
                 } else {
                     // Create new network row
                     let row_box = gtk::Box::builder()
@@ -444,7 +475,7 @@ impl NetworkManagerToggles {
 
                     entry.menu.append(&row_box);
 
-                    network_rows.push(NetworkRow {
+                    network_rows.push(NetworkRow::Plain {
                         urn_str: network_urn_str,
                         root: row_box,
                     });
@@ -454,6 +485,9 @@ impl NetworkManagerToggles {
     }
 
     /// Update VPN menu rows inside the consolidated VPN toggle.
+    ///
+    /// Uses ConnectionRow widgets with incremental updates instead of
+    /// full drain+recreate.
     fn update_vpn_menu_rows(
         entry: &ToggleEntry,
         vpns: &[(Urn, entity::network::Vpn)],
@@ -461,70 +495,68 @@ impl NetworkManagerToggles {
     ) {
         let mut network_rows = entry.network_rows.borrow_mut();
 
-        // Remove all existing rows and rebuild
-        for row in network_rows.drain(..) {
-            entry.menu.remove(&row.root);
-        }
-
-        for (vpn_urn, vpn) in vpns {
-            let row_box = gtk::Box::builder()
-                .orientation(gtk::Orientation::Horizontal)
-                .spacing(12)
-                .css_classes(["menu-row", "clickable"])
-                .build();
-
-            // VPN name label
-            let name_label = gtk::Label::builder()
-                .label(&vpn.name)
-                .hexpand(true)
-                .xalign(0.0)
-                .build();
-            row_box.append(&name_label);
-
-            // Trailing indicator: spinner for transitional states, checkmark for connected
-            match vpn.state {
-                entity::network::VpnState::Connecting
-                | entity::network::VpnState::Disconnecting => {
-                    let spinner = gtk::Spinner::builder()
-                        .spinning(true)
-                        .width_request(24)
-                        .height_request(24)
-                        .build();
-                    row_box.append(&spinner);
-                }
-                entity::network::VpnState::Connected => {
-                    let check_icon = IconWidget::from_name("object-select-symbolic", 24);
-                    row_box.append(check_icon.widget());
-                }
-                entity::network::VpnState::Disconnected => {}
+        // Remove rows for VPNs that no longer exist
+        let current_vpn_urns: Vec<String> = vpns
+            .iter()
+            .map(|(urn, _)| urn.as_str().to_string())
+            .collect();
+        network_rows.retain(|row| {
+            if current_vpn_urns.iter().any(|u| u == row.urn_str()) {
+                true
+            } else {
+                row.remove_from(&entry.menu);
+                false
             }
+        });
 
-            // Make row clickable
-            let gesture = gtk::GestureClick::new();
-            let action_cb = action_callback.clone();
-            let urn_for_click = vpn_urn.clone();
-            let vpn_state = vpn.state;
-            gesture.connect_released(move |_, _, _, _| {
-                let action = match vpn_state {
-                    entity::network::VpnState::Connected => "disconnect",
-                    entity::network::VpnState::Disconnected => "connect",
-                    // Don't send actions during transitions
-                    _ => return,
-                };
-                action_cb(
-                    urn_for_click.clone(),
-                    action.to_string(),
-                    serde_json::Value::Null,
-                );
-            });
-            row_box.add_controller(gesture);
+        // Update existing or create new rows
+        for (vpn_urn, vpn) in vpns {
+            let vpn_urn_str = vpn_urn.as_str().to_string();
+            let active = vpn.state == entity::network::VpnState::Connected;
+            let transitioning = matches!(
+                vpn.state,
+                entity::network::VpnState::Connecting | entity::network::VpnState::Disconnecting
+            );
 
-            entry.menu.append(&row_box);
+            if let Some(existing) = network_rows.iter().find(|r| r.urn_str() == vpn_urn_str) {
+                // Update existing ConnectionRow
+                if let NetworkRow::Connection { row, .. } = existing {
+                    row.set_name(&vpn.name);
+                    row.set_active(active);
+                    row.set_transitioning(transitioning);
+                }
+            } else {
+                // Create new ConnectionRow
+                let conn_row = Rc::new(ConnectionRow::new(ConnectionRowProps {
+                    name: vpn.name.clone(),
+                    active,
+                    transitioning,
+                }));
 
-            network_rows.push(NetworkRow {
-                urn_str: vpn_urn.as_str().to_string(),
-                root: row_box,
-            });
+                let action_cb = action_callback.clone();
+                let urn_for_click = vpn_urn.clone();
+                let vpn_state = vpn.state;
+                conn_row.connect_output(move |ConnectionRowOutput::Toggle| {
+                    let action = match vpn_state {
+                        entity::network::VpnState::Connected => "disconnect",
+                        entity::network::VpnState::Disconnected => "connect",
+                        // Don't send actions during transitions
+                        _ => return,
+                    };
+                    action_cb(
+                        urn_for_click.clone(),
+                        action.to_string(),
+                        serde_json::Value::Null,
+                    );
+                });
+
+                entry.menu.append(&conn_row.root);
+
+                network_rows.push(NetworkRow::Connection {
+                    urn_str: vpn_urn_str,
+                    row: conn_row,
+                });
+            }
         }
     }
 
@@ -561,7 +593,7 @@ impl NetworkManagerToggles {
             if !show_profiles {
                 // Remove any existing profile rows
                 for row in network_rows.drain(..) {
-                    entry.menu.remove(&row.root);
+                    row.remove_from(&entry.menu);
                 }
                 // Don't change expandable here - info rows may still warrant it
                 return;
@@ -578,10 +610,10 @@ impl NetworkManagerToggles {
 
             // Remove stale rows from both the menu widget and our tracking
             network_rows.retain(|row| {
-                if current_conn_urns.contains(&row.urn_str) {
+                if current_conn_urns.iter().any(|u| u == row.urn_str()) {
                     true
                 } else {
-                    entry.menu.remove(&row.root);
+                    row.remove_from(&entry.menu);
                     false
                 }
             });
@@ -589,11 +621,11 @@ impl NetworkManagerToggles {
             for (conn_urn, conn) in &adapter_connections {
                 let conn_urn_str = conn_urn.as_str().to_string();
 
-                if let Some(existing) = network_rows.iter().find(|r| r.urn_str == conn_urn_str) {
+                if let Some(existing) = network_rows.iter().find(|r| r.urn_str() == conn_urn_str) {
                     // Update existing row - rebuild checkmark state
                     // Remove old row and recreate (simple approach for state updates)
-                    entry.menu.remove(&existing.root);
-                    network_rows.retain(|r| r.urn_str != conn_urn_str);
+                    existing.remove_from(&entry.menu);
+                    network_rows.retain(|r| r.urn_str() != conn_urn_str);
                 }
 
                 // Create connection profile row
@@ -634,7 +666,7 @@ impl NetworkManagerToggles {
 
                 entry.menu.append(&row_box);
 
-                network_rows.push(NetworkRow {
+                network_rows.push(NetworkRow::Plain {
                     urn_str: conn_urn_str,
                     root: row_box,
                 });
@@ -704,7 +736,12 @@ fn update_wired_info_rows(
     let ip = match &adapter.ip {
         Some(ip) if adapter.connected => ip,
         _ => {
-            entry.toggle.set_expandable(false);
+            // Don't unconditionally set expandable to false — ethernet profiles
+            // or other content may still require the menu to be expandable.
+            let has_profiles = entry.network_rows.borrow().len() >= 2;
+            if !has_profiles {
+                entry.toggle.set_expandable(false);
+            }
             return;
         }
     };

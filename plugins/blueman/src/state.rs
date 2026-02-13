@@ -1,11 +1,13 @@
 //! Bluetooth adapter and device state types.
 
+use waft_protocol::entity::bluetooth::ConnectionState;
+
 #[derive(Debug, Clone)]
 pub struct DeviceState {
     pub path: String,
     pub name: String,
     pub icon: String,
-    pub connected: bool,
+    pub connection_state: ConnectionState,
     pub battery_percentage: Option<u8>,
 }
 
