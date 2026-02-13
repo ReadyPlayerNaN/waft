@@ -132,8 +132,11 @@ impl MainWindowWidget {
         let on_hide_complete_ref = on_hide_complete.clone();
         animation.connect_done(move |_| {
             if animating_hide_ref.get() {
-                animating_hide_ref.set(false);
+                // Hide window BEFORE clearing animating_hide.
+                // set_visible(false) may synchronously trigger is_active_notify;
+                // the flag must still be true so that handler returns early.
                 window_ref.set_visible(false);
+                animating_hide_ref.set(false);
                 if let Some(ref cb) = *on_hide_complete_ref.borrow() {
                     cb();
                 }
@@ -145,9 +148,11 @@ impl MainWindowWidget {
         let animation_ref = animation.clone();
         let progress_ref = animation_progress.clone();
         let animating_hide_ref = animating_hide.clone();
+        let menu_store_for_escape = menu_store.clone();
         let controller = gtk::EventControllerKey::new();
         controller.connect_key_pressed(move |_c, key, _code, _state| {
             if key == gtk::gdk::Key::Escape {
+                menu_store_for_escape.emit(waft_core::menu_state::MenuOp::CloseAll);
                 animating_hide_ref.set(true);
                 animation_ref.set_value_from(progress_ref.get());
                 animation_ref.set_value_to(0.0);
@@ -193,6 +198,7 @@ impl MainWindowWidget {
                 let recently_closed_flag = popover_recently_closed_for_sub.clone();
 
                 // Defer to let focus settle
+                let menu_store_for_deferred = menu_store_for_popover.clone();
                 gtk::glib::idle_add_local_once(move || {
                     // Clear the flag - we're now handling the deferred decision
                     recently_closed_flag.set(false);
@@ -201,7 +207,8 @@ impl MainWindowWidget {
                     if window_ref.is_active() || animating_hide.get() {
                         return;
                     }
-                    // Window lost focus to external app, hide overlay
+                    // Window lost focus to external app, hide overlay.
+                    menu_store_for_deferred.emit(waft_core::menu_state::MenuOp::CloseAll);
                     animating_hide.set(true);
                     animation.set_value_from(progress.get());
                     animation.set_value_to(0.0);
@@ -229,17 +236,20 @@ impl MainWindowWidget {
             }
 
             // Check if any popover is open - if so, let the popover close handler deal with it
-            let state = menu_store_for_focus.get_state();
-            if state.active_popover_id.is_some() {
-                return;
-            }
+            {
+                let state = menu_store_for_focus.get_state();
+                if state.active_popover_id.is_some() {
+                    return;
+                }
+            } // drop RwLockReadGuard before emit() to avoid deadlock
 
             // Check if a popover just closed - let the deferred handler deal with it
             if popover_recently_closed_for_focus.get() {
                 return;
             }
 
-            // No popovers involved, hide immediately
+            // No popovers involved, hide immediately.
+            menu_store_for_focus.emit(waft_core::menu_state::MenuOp::CloseAll);
             animating_hide_ref.set(true);
             animation_ref.set_value_from(progress_ref.get());
             animation_ref.set_value_to(0.0);

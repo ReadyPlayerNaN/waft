@@ -1,40 +1,30 @@
-# 1. `BluetoothDeviceRow`
+# 1. Bluetooth device row
 
-Create a device row component, that displays icons, name, spinner and connection toggle. Then integrate it in waft-overview
+Extract the `BluetoothDeviceRow` component into `waft-ui-gtk/src/bluetooth`. This is the component, that renders bluetooth device menu row.
 
-The layout:
+# 2. Bluetooth device menu row spinner
+
+When the bluetooth device is connecting or disconnecting, it MUST display spinner left of the switch.
+
+# 3. Bluetooth device menu states
+
+When a bluetooth device starts connecting somewhere, the bluetooth daemon is supposed to send status update. This does not happen and UI does not have an opportunity to respond to it.
+
+When a bluetooth device connection fails, the bluetooth daemon is supposed to send status update. This does not happen and UI does not have an opportunity to respond to it.
+
+# 4. VPN menu row
+
+Extract the VPN menu row component into `waft-ui-gtk`. It is going to look very much like the bluetooth device row. The layout is going to be simplified, see below. It is going to have the same behaviour about status, connecting and spinner..
 
 ```
-<Row class="bluetooth-device-row">
-    <Box>
-        <DeviceTypeIcon />
-        <DeviceBatteryStatusIcon />
-    </Box>
-    <Box>
-        {device_name}
-    </Box>
+<Row>
+    <Box>{label}</Box>
     <Box>
         <Spinner />
-        <ToggleButton />
+        <gtk::Switch />
     </Box>
-</Box>
+</Row>
 ```
-
-The spinner is visible only when the device is changing state (connecting, disconnecting, ...)
-The device type icon must be derived from the device type and provided as a set of icon hints to the icon widget.
-The device battery status icon is a new widget. It will receive the device battery percentage.
-Toggle button serves as a static display-only widget.
-Everything is vertically centered.
-
-While connecting, the row is functionally and visually disabled. Clicking it does not produce any events.
-
-## Integration inside `waft-overview`
-
-Clicking the row when disconnected will start connecting the device. The row becomes connecting until the ocnnecting status is resolved. Clicking the row when connected will start disconnecting the device.
-
-# 2. Close menu on hide
-
-The waft overview must collapse open menu on close.
 
 # 5. Wired menu profiles
 
@@ -42,15 +32,36 @@ The wired adapter menu must provide list of profiles and allow switching the pro
 
 # 6. VPN menu
 
-If at least a single VPN is configured, then the VPN feature toggle will be displayed with a menu. The menu will list all available VPN configurations as MenuRows. Clicking the menu row dis/connects the VPN. Clicking the feature toggle toggle disconnects all VPNs
+If at least a single VPN is configured, then the VPN feature toggle will be expandable with a menu. The menu will list all available VPN configurations as MenuRows. Clicking the menu row dis/connects the VPN. Clicking the feature toggle toggle disconnects all VPNs.
 
-# 7. Sunsetr plugin persistence
+The VPN feature toggle menu is still not showing up.
 
-Sunsetr plugin must always return night light entity even when sunsetr is not running. The only time the sunsetr plugin returns nothing is when the `sunsetr` binary is not found.
+# 7. Agenda divider
 
-# 8. Agenda is empty
+The agenda must have a divider between today's events and tomorrow's events. The layout should look like this:
 
-For unknown reason, the agenda plugin displays nothing. I definitely have at least one event in one of my calendars for tomorrow and for today.
+```
+<>
+    <Revealer>
+        <PastEvents />
+        <Divider />
+    </Revealer>
+    <Revealer>
+        <FutureEventsGrouppedByDay />
+    </Revealer>
+</>
+```
+
+and `FutureEventsGrouppedByDay` should look like this
+
+```
+<>
+    <Label>{date}
+    <Box>
+        <Events />
+    </Box>
+</>
+```
 
 # Calendar widget
 

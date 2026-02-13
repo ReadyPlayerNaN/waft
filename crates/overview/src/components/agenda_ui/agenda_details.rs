@@ -62,7 +62,12 @@ impl AgendaDetails {
                 };
 
                 let truncated = if display_text.len() > 300 {
-                    format!("{}…", &display_text[..300])
+                    let end = display_text
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .find(|&i| i >= 300)
+                        .unwrap_or(display_text.len());
+                    format!("{}…", &display_text[..end])
                 } else {
                     display_text
                 };

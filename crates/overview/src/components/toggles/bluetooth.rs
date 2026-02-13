@@ -5,6 +5,7 @@
 //! tracked and the toggle set is kept in sync.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -25,13 +26,44 @@ struct ToggleEntry {
     device_rows: RefCell<Vec<DeviceRow>>,
 }
 
-/// A single device row in the menu — a clickable button row.
+/// A single device row in the menu with device type icon, battery icon,
+/// name label, spinner for transitioning state, and a connection switch.
 struct DeviceRow {
     urn_str: String,
     root: gtk::Button,
     name_label: gtk::Label,
-    battery_label: gtk::Label,
-    connected_icon: gtk::Widget,
+    device_icon: IconWidget,
+    battery_icon: IconWidget,
+    battery_icon_widget: gtk::Widget,
+    spinner: gtk::Spinner,
+    switch: gtk::Switch,
+    /// Last known connected state, used to detect transition completion.
+    last_connected: RefCell<bool>,
+}
+
+/// Resolve device_type string to a themed icon name.
+fn device_type_icon(device_type: &str) -> &'static str {
+    match device_type {
+        "audio-headphones" => "audio-headphones-symbolic",
+        "audio-headset" => "audio-headset-symbolic",
+        "input-mouse" => "input-mouse-symbolic",
+        "input-keyboard" => "input-keyboard-symbolic",
+        "phone" => "phone-symbolic",
+        "computer" => "computer-symbolic",
+        _ => "bluetooth-symbolic",
+    }
+}
+
+/// Pick a battery icon name based on percentage.
+fn battery_icon_name(pct: u8) -> &'static str {
+    match pct {
+        0..=10 => "battery-level-0-symbolic",
+        11..=30 => "battery-caution-symbolic",
+        31..=50 => "battery-level-30-symbolic",
+        51..=70 => "battery-level-50-symbolic",
+        71..=90 => "battery-level-70-symbolic",
+        _ => "battery-full-symbolic",
+    }
 }
 
 /// Dynamic set of toggles for Bluetooth adapters (0..N).
@@ -58,6 +90,9 @@ impl BluetoothToggles {
         rebuild_callback: Rc<dyn Fn()>,
     ) -> Self {
         let entries: Rc<RefCell<Vec<ToggleEntry>>> = Rc::new(RefCell::new(Vec::new()));
+        // URNs currently transitioning (connecting or disconnecting).
+        let transitioning: Rc<RefCell<HashSet<String>>> =
+            Rc::new(RefCell::new(HashSet::new()));
 
         let store_ref = store.clone();
         let entries_ref = entries.clone();
@@ -116,7 +151,7 @@ impl BluetoothToggles {
                             active: adapter.powered,
                             busy: false,
                             details: Some(adapter.name.clone()),
-                            expandable: false,  // Will be updated based on device count
+                            expandable: false, // Will be updated based on device count
                             icon: icon.to_string(),
                             title: "Bluetooth".to_string(),
                             menu_id: Some(menu_id.clone()),
@@ -155,8 +190,14 @@ impl BluetoothToggles {
         let entries_ref_devices = entries.clone();
         let store_ref_devices = store.clone();
         let cb_devices = action_callback.clone();
+        let transitioning_devices = transitioning.clone();
         store.subscribe_type(entity::bluetooth::BluetoothDevice::ENTITY_TYPE, move || {
-            Self::update_device_menus(&entries_ref_devices, &store_ref_devices, &cb_devices);
+            Self::update_device_menus(
+                &entries_ref_devices,
+                &store_ref_devices,
+                &cb_devices,
+                &transitioning_devices,
+            );
         });
 
         Self {
@@ -172,6 +213,7 @@ impl BluetoothToggles {
         entries: &Rc<RefCell<Vec<ToggleEntry>>>,
         store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
+        transitioning: &Rc<RefCell<HashSet<String>>>,
     ) {
         let devices: Vec<(Urn, entity::bluetooth::BluetoothDevice)> =
             store.get_entities_typed(entity::bluetooth::BluetoothDevice::ENTITY_TYPE);
@@ -192,9 +234,13 @@ impl BluetoothToggles {
             // Update details text
             let connected_count = adapter_devices.iter().filter(|(_, d)| d.connected).count();
             if connected_count > 0 {
-                entry.toggle.set_details(Some(format!("{} connected", connected_count)));
+                entry
+                    .toggle
+                    .set_details(Some(format!("{} connected", connected_count)));
             } else if !adapter_devices.is_empty() {
-                entry.toggle.set_details(Some(format!("{} paired", adapter_devices.len())));
+                entry
+                    .toggle
+                    .set_details(Some(format!("{} paired", adapter_devices.len())));
             } else {
                 entry.toggle.set_details(None);
             }
@@ -211,6 +257,7 @@ impl BluetoothToggles {
                 if current_device_urns.contains(&row.urn_str) {
                     true
                 } else {
+                    transitioning.borrow_mut().remove(&row.urn_str);
                     row.root.unparent();
                     false
                 }
@@ -221,87 +268,149 @@ impl BluetoothToggles {
                 let device_urn_str = device_urn.as_str().to_string();
 
                 if let Some(row) = device_rows.iter().find(|r| r.urn_str == device_urn_str) {
+                    // Check if connected state changed while transitioning
+                    let prev_connected = *row.last_connected.borrow();
+                    if prev_connected != device.connected {
+                        transitioning.borrow_mut().remove(&device_urn_str);
+                    }
+                    *row.last_connected.borrow_mut() = device.connected;
+
+                    let is_transitioning = transitioning.borrow().contains(&device_urn_str);
+
                     // Update existing row
                     row.name_label.set_label(&device.name);
-                    row.connected_icon.set_visible(device.connected);
+                    row.device_icon.set_icon(device_type_icon(&device.device_type));
+
+                    // Battery icon
                     if let Some(pct) = device.battery_percentage {
-                        row.battery_label.set_label(&format!("{}%", pct));
-                        row.battery_label.set_visible(true);
+                        row.battery_icon.set_icon(battery_icon_name(pct));
+                        row.battery_icon_widget.set_visible(true);
                     } else {
-                        row.battery_label.set_visible(false);
+                        row.battery_icon_widget.set_visible(false);
                     }
+
+                    // Spinner and switch visibility based on transitioning state
+                    row.spinner.set_visible(is_transitioning);
+                    row.spinner.set_spinning(is_transitioning);
+                    row.switch.set_visible(!is_transitioning);
+                    row.switch.set_active(device.connected);
+                    row.root.set_sensitive(!is_transitioning);
                 } else {
-                    // Create new clickable button row
-                    let inner = gtk::Box::builder()
-                        .orientation(gtk::Orientation::Horizontal)
-                        .spacing(8)
-                        .margin_start(4)
-                        .margin_end(4)
-                        .build();
-
-                    // Device icon
-                    let icon_name = match device.device_type.as_str() {
-                        "audio-headphones" => "audio-headphones-symbolic",
-                        "audio-headset" => "audio-headset-symbolic",
-                        "input-mouse" => "input-mouse-symbolic",
-                        "input-keyboard" => "input-keyboard-symbolic",
-                        "phone" => "phone-symbolic",
-                        "computer" => "computer-symbolic",
-                        _ => "bluetooth-symbolic",
-                    };
-                    let icon_widget = IconWidget::from_name(icon_name, 16);
-                    inner.append(icon_widget.widget());
-
-                    // Device name
-                    let name_label = gtk::Label::builder()
-                        .label(&device.name)
-                        .hexpand(true)
-                        .xalign(0.0)
-                        .build();
-                    inner.append(&name_label);
-
-                    // Battery indicator (always created, visibility toggled)
-                    let battery_label = gtk::Label::builder()
-                        .css_classes(["dim-label"])
-                        .visible(device.battery_percentage.is_some())
-                        .build();
-                    if let Some(pct) = device.battery_percentage {
-                        battery_label.set_label(&format!("{}%", pct));
-                    }
-                    inner.append(&battery_label);
-
-                    // Connected indicator (checkmark)
-                    let connected_icon = IconWidget::from_name("object-select-symbolic", 16);
-                    let connected_widget = connected_icon.widget().clone().upcast::<gtk::Widget>();
-                    connected_widget.set_visible(device.connected);
-                    inner.append(&connected_widget);
-
-                    let button = gtk::Button::builder()
-                        .child(&inner)
-                        .css_classes(["flat"])
-                        .build();
-
-                    let action_cb = action_callback.clone();
-                    let urn_for_click = device_urn.clone();
-                    button.connect_clicked(move |_| {
-                        action_cb(
-                            urn_for_click.clone(),
-                            "toggle-connect".to_string(),
-                            serde_json::Value::Null,
-                        );
-                    });
-
-                    entry.menu.append(&button);
-
-                    device_rows.push(DeviceRow {
-                        urn_str: device_urn_str,
-                        root: button,
-                        name_label,
-                        battery_label,
-                        connected_icon: connected_widget,
-                    });
+                    // Create new device row
+                    let row = Self::create_device_row(
+                        device_urn,
+                        device,
+                        action_callback,
+                        transitioning,
+                    );
+                    entry.menu.append(&row.root);
+                    device_rows.push(row);
                 }
             }
+        }
+    }
+
+    /// Build a single device row widget.
+    fn create_device_row(
+        device_urn: &Urn,
+        device: &entity::bluetooth::BluetoothDevice,
+        action_callback: &EntityActionCallback,
+        transitioning: &Rc<RefCell<HashSet<String>>>,
+    ) -> DeviceRow {
+        let device_urn_str = device_urn.as_str().to_string();
+
+        let inner = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(8)
+            .build();
+
+        // Left box: device type icon + battery icon
+        let icon_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(4)
+            .valign(gtk::Align::Center)
+            .build();
+
+        let device_icon = IconWidget::from_name(device_type_icon(&device.device_type), 16);
+        icon_box.append(device_icon.widget());
+
+        let battery_icon = IconWidget::from_name(
+            battery_icon_name(device.battery_percentage.unwrap_or(0)),
+            16,
+        );
+        let battery_icon_widget = battery_icon.widget().clone().upcast::<gtk::Widget>();
+        battery_icon_widget.set_visible(device.battery_percentage.is_some());
+        icon_box.append(&battery_icon_widget);
+
+        inner.append(&icon_box);
+
+        // Center: device name (expands to fill)
+        let name_label = gtk::Label::builder()
+            .label(&device.name)
+            .hexpand(true)
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .build();
+        inner.append(&name_label);
+
+        // Right box: spinner (hidden by default) + connection switch
+        let right_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(4)
+            .valign(gtk::Align::Center)
+            .build();
+
+        let spinner = gtk::Spinner::builder()
+            .visible(false)
+            .spinning(false)
+            .build();
+        right_box.append(&spinner);
+
+        let switch = gtk::Switch::builder()
+            .active(device.connected)
+            .sensitive(false) // display-only
+            .valign(gtk::Align::Center)
+            .css_classes(["device-switch"])
+            .build();
+        right_box.append(&switch);
+
+        inner.append(&right_box);
+
+        let button = gtk::Button::builder()
+            .child(&inner)
+            .css_classes(["flat", "device-row"])
+            .build();
+
+        let action_cb = action_callback.clone();
+        let urn_for_click = device_urn.clone();
+        let urn_str_for_click = device_urn_str.clone();
+        let transitioning_for_click = transitioning.clone();
+        button.connect_clicked(move |btn| {
+            // Ignore clicks while transitioning
+            if transitioning_for_click.borrow().contains(&urn_str_for_click) {
+                return;
+            }
+            transitioning_for_click
+                .borrow_mut()
+                .insert(urn_str_for_click.clone());
+            btn.set_sensitive(false);
+            action_cb(
+                urn_for_click.clone(),
+                "toggle-connect".to_string(),
+                serde_json::Value::Null,
+            );
+        });
+
+        DeviceRow {
+            urn_str: device_urn_str,
+            root: button,
+            name_label,
+            device_icon,
+            battery_icon,
+            battery_icon_widget,
+            spinner,
+            switch,
+            last_connected: RefCell::new(device.connected),
         }
     }
 

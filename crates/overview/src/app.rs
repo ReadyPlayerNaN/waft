@@ -253,7 +253,9 @@ pub async fn setup() -> Result<adw::Application> {
             // When the overlay finishes hiding, notify plugins so
             // secondary windows (e.g. toasts) can reappear.
             let registry_for_hide = registry.clone();
+            let menu_store_for_hide = registry.menu_store();
             main_window.connect_hide_complete(move || {
+                menu_store_for_hide.emit(waft_core::menu_state::MenuOp::CloseAll);
                 registry_for_hide.notify_overlay_visible(false);
             });
 
@@ -377,11 +379,14 @@ pub async fn setup() -> Result<adw::Application> {
                                 entity::bluetooth::BluetoothAdapter::ENTITY_TYPE,
                                 entity::bluetooth::BluetoothDevice::ENTITY_TYPE,
                                 entity::network::ADAPTER_ENTITY_TYPE,
+                                entity::network::WIFI_NETWORK_ENTITY_TYPE,
+                                entity::network::ETHERNET_CONNECTION_ENTITY_TYPE,
                                 entity::network::VPN_ENTITY_TYPE,
                                 entity::weather::ENTITY_TYPE,
                                 entity::session::SESSION_ENTITY_TYPE,
                                 entity::notification::NOTIFICATION_ENTITY_TYPE,
                                 entity::notification::DND_ENTITY_TYPE,
+                                entity::calendar::ENTITY_TYPE,
                             ];
                             for et in &entity_types {
                                 client.subscribe(et);

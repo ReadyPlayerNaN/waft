@@ -541,8 +541,17 @@ fn main() -> Result<()> {
         let plugin = SunsetrPlugin::new(state.clone());
         let (runtime, notifier) = PluginRuntime::new("sunsetr", plugin);
 
-        // Spawn follow task to monitor sunsetr events
-        spawn_follow_task(state, notifier);
+        // Spawn follow task to monitor sunsetr events.
+        // Clone the notifier: the follow task's clone will be dropped when sunsetr
+        // stops, but the original keeps the watch channel open so the runtime
+        // doesn't interpret a closed channel as a shutdown signal.
+        spawn_follow_task(state, notifier.clone());
+
+        // Keep `notifier` alive for the duration of the runtime. When the user
+        // toggles sunsetr off, the follow subprocess exits and drops its clone,
+        // but the runtime continues because this reference still holds the
+        // watch::Sender open.
+        let _notifier = notifier;
 
         runtime.run().await?;
         Ok(())

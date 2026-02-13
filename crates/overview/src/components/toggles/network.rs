@@ -261,7 +261,7 @@ impl NetworkManagerToggles {
                     entry.toggle.set_active(any_active);
                     entry.toggle.set_busy(any_busy);
                     entry.toggle.set_details(Some(details));
-                    entry.toggle.set_expandable(vpns.len() >= 2);
+                    entry.toggle.set_expandable(!vpns.is_empty());
 
                     // Update VPN menu rows
                     Self::update_vpn_menu_rows(entry, &vpns, &cb);
@@ -281,7 +281,7 @@ impl NetworkManagerToggles {
                             active: any_active,
                             busy: any_busy,
                             details: Some(details),
-                            expandable: vpns.len() >= 2,
+                            expandable: !vpns.is_empty(),
                             icon: "network-vpn-symbolic".to_string(),
                             title: "VPN".to_string(),
                             menu_id: Some(menu_id.clone()),

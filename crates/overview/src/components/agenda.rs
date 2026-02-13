@@ -192,8 +192,37 @@ impl AgendaComponent {
         menu_store: &Rc<MenuStore>,
         now_divider: &RefCell<Option<gtk::Separator>>,
     ) {
-        let mut entities: Vec<(Urn, entity::calendar::CalendarEvent)> =
+        let entities: Vec<(Urn, entity::calendar::CalendarEvent)> =
             store.get_entities_typed(entity::calendar::ENTITY_TYPE);
+
+        let local_now = chrono::Local::now();
+        let now = local_now.timestamp();
+
+        // Filter to today and tomorrow only: keep events that overlap [start_of_today, end_of_tomorrow)
+        let today_midnight = local_now
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always valid");
+        let start_of_today = today_midnight
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .unwrap_or(local_now)
+            .timestamp();
+        let day_after_tomorrow = (local_now.date_naive() + chrono::Duration::days(2))
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always valid");
+        let end_of_tomorrow = day_after_tomorrow
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .unwrap_or(local_now)
+            .timestamp();
+
+        let mut entities: Vec<_> = entities
+            .into_iter()
+            .filter(|(_, event)| {
+                event.start_time < end_of_tomorrow && event.end_time > start_of_today
+            })
+            .collect();
 
         // Sort by start_time, then end_time
         entities.sort_by(|a, b| {
@@ -201,8 +230,6 @@ impl AgendaComponent {
                 .cmp(&b.1.start_time)
                 .then(a.1.end_time.cmp(&b.1.end_time))
         });
-
-        let now = chrono::Local::now().timestamp();
 
         // Split into past and current/future
         let (past_events, future_events): (Vec<_>, Vec<_>) = entities
