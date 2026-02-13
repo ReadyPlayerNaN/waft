@@ -99,7 +99,7 @@ Central daemon that manages the plugin lifecycle and routes messages between plu
 
 ### Responsibilities
 
-- **Plugin discovery** — locates plugin binaries via `WAFT_PATH` environment variable at startup
+- **Plugin discovery** — locates plugin binaries (`waft-*-daemon`) in a directory determined by `WAFT_DAEMON_DIR` env var, or auto-detected from `./target/{debug,release}`, falling back to `/usr/bin`
 - **Plugin registry** — runs `{binary} provides` on each discovered plugin to learn which entity types and schemas it provides; caches the result
 - **Schema serving** — provides entity type schemas to apps on request (apps never interact with plugin binaries directly)
 - **Plugin spawning** — starts plugin daemons on demand when an app first subscribes to an entity type the plugin provides. On-demand spawning means apps may experience initial latency while a plugin starts and gathers state (e.g. D-Bus enumeration, network scanning). This is acceptable — apps are responsible for showing appropriate loading UI until the initial state arrives
@@ -111,13 +111,11 @@ Central daemon that manages the plugin lifecycle and routes messages between plu
 
 ### Plugin Discovery
 
-At startup, `waft` scans `WAFT_PATH` for plugin binaries and runs `{binary} provides` on each. The output is a JSON document listing entity types and their schemas.
+At startup, `waft` scans the daemon directory for `waft-*-daemon` binaries and runs `{binary} provides` on each. The output is a JSON document listing entity types. The daemon directory is determined by: `WAFT_DAEMON_DIR` env var, then `./target/debug` or `./target/release` (if they contain plugin binaries), then `/usr/bin`.
 
 Discovery details:
 - All binaries are scanned in parallel with a 5-second timeout per binary
 - If a binary fails, hangs, or times out, it provides nothing and `waft` logs a warning — other plugins are not affected
-- Results are cached to a file keyed by binary path and mtime. On subsequent startups, `waft` skips binaries whose mtime has not changed and uses the cached result
-- Cache is invalidated when a binary's mtime changes or the binary is removed from `WAFT_PATH`
 
 ### D-Bus Activation
 
@@ -158,11 +156,11 @@ Wayland layer-shell overlay providing a quick overview and management panel.
 - Audio output volume and default target
 - Quick actions: do not disturb, bluetooth, VPN, dark mode, night light, caffeine
 
-### `waft-notifications`
+### `waft-notifications` (planned)
 
-Standalone app for notification toasts that pop up on screen. Subscribes to notification entities provided by the notifications plugin and renders toast popups. DND (Do Not Disturb) state is managed by the notifications plugin as an entity — apps subscribe to it and adjust their behavior accordingly (e.g. `waft-notifications` suppresses toasts, `waft-overview` shows a DND indicator). Each app owns its own layer-shell window and theme context independently.
+Standalone app for notification toasts that pop up on screen. Will subscribe to notification entities and render toast popups in its own layer-shell window. DND state is managed by the notifications plugin as an entity.
 
-### `waft-settings`
+### `waft-settings` (planned)
 
 Configuration app for managing waft features based on registered domain entities.
 

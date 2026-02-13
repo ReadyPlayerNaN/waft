@@ -18,14 +18,14 @@ cargo test notifications_store # Run specific test module
 WAFT_DAEMON_DIR=./target/debug cargo run
 
 # Run a single daemon standalone (for development/debugging)
-cargo run -p waft-plugin-clock --bin waft-clock-daemon
+cargo run --bin waft-clock-daemon
 ```
 
 ---
 
 ## OpenSpec & Project Specifications
 
-**This project uses OpenSpec for specification-driven development.** All changes are documented with structured specifications in the `specs/` directory. Each change includes:
+**This project uses OpenSpec for specification-driven development.** All changes are documented with structured specifications in the `openspec/` directory. Each change includes:
 
 - **proposal.md** - Rationale: why this change is needed
 - **design.md** - Implementation details and technical decisions
@@ -45,7 +45,7 @@ cargo run -p waft-plugin-clock --bin waft-clock-daemon
 - Notification store reducer pattern
 
 When implementing features:
-1. Check `specs/` for existing specifications
+1. Check `openspec/` for existing specifications
 2. Review related `proposal.md` and `design.md` for context
 3. Follow tasks outlined in `tasks.md`
 4. Keep specifications up-to-date with implementation
@@ -54,128 +54,149 @@ When implementing features:
 
 ## Architecture Overview
 
-**Waft** (formerly sacrebleui) is a Wayland-only overlay UI application using Rust, GTK4, and libadwaita. It acts as a notification server (owns `org.freedesktop.Notifications` on DBus) and provides an extensible overlay panel with feature toggles and a plugin-based architecture.
-
-All plugins run as **daemon binaries** communicating with the overview app via Unix socket IPC.
+**Waft** (formerly sacrebleui) is a Wayland-only overlay UI application using Rust, GTK4, and libadwaita. A central daemon (`waft`) discovers, spawns, and supervises plugin daemons, routing entity data and actions between plugins and apps via Unix sockets. The overview app (`waft-overview`) subscribes to entity types and renders UI.
 
 ### Technology Stack
 
 - **UI:** GTK4, libadwaita, gtk4-layer-shell (Wayland layer-shell protocol)
 - **Async:** Tokio (multi-threaded runtime), flume (executor-agnostic channels)
 - **System:** zbus 5.0 (DBus), nmrs 2.0 (NetworkManager bindings)
-- **Plugin SDK:** waft-plugin-sdk (daemon binaries with IPC)
+- **Plugin SDK:** waft-plugin (`Plugin` trait, `PluginRuntime`, `EntityNotifier`)
 - **Widget rendering:** waft-ui-gtk (GTK widget implementations with `WidgetBase`, `Child`, `Children` types)
 - **Config:** TOML (`~/.config/waft/config.toml`)
 - **Localization:** waft-i18n (Fluent internationalization)
 
 ### Core Components
 
-- **`waft-core`** - Shared infrastructure: store pattern (`PluginStore`, `StoreOp`, `StoreState`, `set_field!`), menu state (`MenuStore`, `MenuOp`), `DbusHandle` (zbus wrapper), `Callback<T>`, `VoidCallback`. Re-exports `waft-config` and `waft-ipc`.
+- **`waft-protocol`** - Entity types (domain-organized), messages (`AppMessage`, `PluginMessage`, `AppNotification`, `PluginCommand`), URN format and parsing, transport (length-prefixed JSON).
+- **`waft-plugin`** - Plugin SDK: `Plugin` trait (Send+Sync), `PluginRuntime`, `EntityNotifier`, manifest handling (`handle_provides`), D-Bus monitoring helpers.
+- **`waft`** - Central daemon: plugin discovery, on-demand spawning, entity routing, action tracking, crash recovery, D-Bus activation (`org.waft.Daemon`).
+- **`waft-overview`** - Main GTK4 overlay application binary. Connects to daemon via `WaftClient`, subscribes to entity types, renders entities via `EntityRenderer` and `WidgetReconciler`.
+- **`waft-ui-gtk`** - GTK4 widget library: `WidgetBase` trait, `Child`/`Children` container types, `WidgetReconciler`, widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`).
 - **`waft-config`** - Configuration loading from `~/.config/waft/config.toml`
-- **`waft-ipc`** - IPC protocol types: `OverviewMessage`, `PluginMessage`, `Widget`, `Action`, `ActionParams`, `NamedWidget`, `Node`, `Orientation`, `WidgetSet`. Also CLI command parsing (`IpcCommand`) and socket path helpers.
 - **`waft-i18n`** - Fluent localization: `system_locale()` returns BCP47 locale, `I18n` struct for translations with `t()` and `t_args()`.
-- **`waft-plugin-sdk`** - Daemon plugin SDK: `PluginDaemon` trait (Send+Sync), `PluginServer`, `WidgetNotifier`, widget builders (`FeatureToggleBuilder`, `SliderBuilder`, `MenuRowBuilder`, `ContainerBuilder`, `ButtonBuilder`, `LabelBuilder`, `InfoCardBuilder`, `SwitchBuilder`), testing utilities.
-- **`waft-ui-gtk`** - GTK4 widget library: `WidgetBase` trait, `Child`/`Children` container types, `ActionCallback` (in `types`), widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`).
-- **`waft-overview`** - Main GTK4 overlay application binary. Spawns daemon plugins via `DaemonSpawner`, manages IPC connections via `PluginManager`, reconciles daemon widgets via `DaemonWidgetReconciler`, manages the layer-shell window.
+- **`waft-core`** - Common types: `Callback<T>`, `VoidCallback`, `DbusHandle` (zbus wrapper). Re-exports `waft-config`.
+- **`waft-ipc`** - Legacy widget protocol types (being phased out).
 
-### Plugin Architecture
+### Plugins
 
-The application has 14 plugins plus 1 internal feature:
+All 15 plugins are standalone daemon binaries implementing the `Plugin` trait from `waft-plugin`. They provide domain entities to the central daemon, which routes updates to subscribed apps.
 
-| Plugin | Architecture | Purpose |
+| Plugin | Entity Types | Purpose |
 |--------|-------------|---------|
-| **clock** | Daemon | Current time and date with locale support |
-| **darkman** | Daemon | Dark mode toggle via darkman D-Bus |
-| **caffeine** | Daemon | Prevent sleep/screensaver (Portal/ScreenSaver) |
-| **battery** | Daemon | Battery percentage, health, charging (UPower D-Bus) |
-| **brightness** | Daemon | Display brightness (brightnessctl/ddcutil) |
-| **keyboard-layout** | Daemon | Input method display/switch (Niri/Sway/Hyprland/localed) |
-| **systemd-actions** | Daemon | Shutdown, lock, logout via systemd login1 |
-| **blueman** | Daemon | Bluetooth device management (BlueZ D-Bus) |
-| **audio** | Daemon | Volume sliders, device selection (pactl) |
-| **networkmanager** | Daemon | WiFi/Ethernet/VPN management (nmrs + zbus) |
-| **weather** | Daemon | Weather information via HTTP API |
-| **notifications** | Daemon | D-Bus notification server, toasts, DND |
-| **eds** | Daemon (entity-based) | EDS calendar integration |
-| **sunsetr** | Daemon | Night light control via sunsetr CLI |
-| *session* | Internal | Session lock detection (in overview/src/features/) |
+| **clock** | `clock` | Current time and date with locale support |
+| **darkman** | `dark-mode` | Dark mode toggle via darkman D-Bus |
+| **caffeine** | `sleep-inhibitor` | Prevent sleep/screensaver (Portal/ScreenSaver) |
+| **battery** | `battery` | Battery percentage, health, charging (UPower D-Bus) |
+| **brightness** | `display` | Display brightness (brightnessctl/ddcutil) |
+| **keyboard-layout** | `keyboard-layout` | Input method display/switch (Niri/Sway/Hyprland/localed) |
+| **systemd-actions** | `session` | Lock, logout, reboot, shutdown, suspend via systemd login1 |
+| **blueman** | `bluetooth-adapter`, `bluetooth-device` | Bluetooth device management (BlueZ D-Bus) |
+| **audio** | `audio-device` | Volume sliders, device selection (pactl) |
+| **networkmanager** | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn` | WiFi/Ethernet/VPN management (nmrs + zbus) |
+| **weather** | `weather` | Weather information via HTTP API |
+| **notifications** | `notification`, `dnd` | D-Bus notification server, toasts, DND |
+| **eds** | `calendar-event` | EDS calendar integration |
+| **sunsetr** | `night-light` | Night light control via sunsetr CLI |
+| **syncthing** | `backup-method` | Syncthing service toggle |
 
-### Daemon Architecture
+Additionally, *session lock detection* is an internal feature in `crates/overview/src/features/session/`.
 
-The primary plugin pattern. Daemon plugins are standalone tokio binaries that communicate with waft-overview via Unix socket IPC.
+### Entity-Based Architecture
 
-**Components:**
-- **`DaemonSpawner`** (`crates/overview/src/daemon_spawner.rs`) - Spawns all daemon binaries at startup. Discovers binaries via `WAFT_DAEMON_DIR` env var or standard paths.
-- **`PluginManager`** (`crates/overview/src/plugin_manager/`) - IPC client that connects to daemon sockets, sends `GetWidgets`/`TriggerAction` messages, receives `SetWidgets` pushes. Submodules: `client.rs`, `router.rs`, `discovery.rs`, `registry.rs`.
-- **`DaemonWidgetReconciler`** (`crates/overview/src/daemon_widget_reconciler.rs`) - Converts declarative `Widget` descriptions from daemons into actual GTK widgets.
-- **`PluginServer`** (`crates/plugin-sdk/src/server.rs`) - Daemon-side socket server. Handles connections, message routing, and push notifications via `WidgetNotifier`.
+All communication flows through the central `waft` daemon via Unix sockets using length-prefixed JSON.
 
-**IPC Protocol:**
-- Transport: Unix sockets at `/run/user/{uid}/waft/plugins/{name}.sock`
-- Framing: 4-byte big-endian length prefix + JSON payload
-- Messages: `OverviewMessage` (GetWidgets, TriggerAction) -> `PluginMessage` (SetWidgets)
-- Push updates: `WidgetNotifier::notify()` triggers `SetWidgets` to all connected clients
-
-**Daemon Pattern:**
-```rust
-#[async_trait::async_trait]
-impl PluginDaemon for MyDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget>;
-    async fn handle_action(&mut self, widget_id: String, action: Action) -> Result<...>;
-}
-let (server, notifier) = PluginServer::new("name", daemon);
-server.run().await?;
+```
+Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK app)
 ```
 
-For creating new daemon plugins, use the `create-daemon-plugin` skill. For debugging IPC issues, use the `debug-daemon-ipc` skill.
+**Central daemon (`waft`):**
+- Discovers plugin binaries (`waft-*-daemon`) via `WAFT_DAEMON_DIR` env var or auto-detection (`./target/{debug,release}`, `/usr/bin`)
+- Spawns plugins on demand when an app first subscribes to their entity types
+- Routes entity updates from plugins to subscribed apps, actions from apps to plugins
+- Tracks actions by UUID with configurable timeouts
+- Detects crashes: sends `EntityStale` on restart, `EntityOutdated` after 5 crashes in 60s
+- Graceful shutdown via `CanStop` when no subscribers remain
+
+**Plugin SDK (`waft-plugin`):**
+- `Plugin` trait (Send+Sync): `get_entities()`, `handle_action()`, `can_stop()`
+- `PluginRuntime` manages socket connection and message handling
+- `EntityNotifier` pushes updates via `notify()`
+
+**Protocol (`waft-protocol`):**
+- Entity types organized by domain (e.g. `entity::display::DarkMode`, `entity::audio::AudioDevice`)
+- URN format: `{plugin}/{entity-type}/{id}[/{entity-type}/{id}]*`
+- Messages: `AppMessage` (Subscribe, TriggerAction), `PluginMessage` (EntityUpdated, EntityRemoved, ActionSuccess/Error)
+- Transport: 4-byte big-endian length prefix + JSON payload over Unix sockets
+
+**Overview app (`waft-overview`):**
+- `WaftClient` connects to `$XDG_RUNTIME_DIR/waft/daemon.sock` with retry + D-Bus activation
+- `EntityRenderer` maps entity types to GTK widgets via `WidgetReconciler`
+- Write path: `std::sync::mpsc` + OS thread (GTK->daemon, bypasses tokio)
+- Read path: tokio task -> flume -> `glib::spawn_future_local`
+
+**Plugin Pattern:**
+```rust
+#[async_trait::async_trait]
+impl Plugin for MyPlugin {
+    fn get_entities(&self) -> Vec<Entity>;
+    async fn handle_action(&self, urn: Urn, action: String, params: serde_json::Value)
+        -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    fn can_stop(&self) -> bool { true }
+}
+let (runtime, notifier) = PluginRuntime::new("name", plugin);
+runtime.run().await?;
+```
+
+**Main function pattern:**
+```rust
+fn main() -> Result<()> {
+    if waft_plugin::manifest::handle_provides(&[ENTITY_TYPE]) { return Ok(()); }
+    waft_plugin::init_plugin_logger("info");
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async { /* create plugin, runtime, spawn tasks */ })
+}
+```
 
 ### Directory Structure
 
 ```
 Cargo.toml                        # Workspace root
 crates/
-    config/                       # waft-config: TOML config loading
-    core/                         # waft-core: store, menu_state, DbusHandle, Callback
-    i18n/                         # waft-i18n: Fluent localization, system_locale()
-    ipc/                          # waft-ipc: Widget protocol, IPC message types, socket path
+    protocol/                     # waft-protocol: entity types, messages, URN, transport
+    plugin/                       # waft-plugin: Plugin trait, PluginRuntime, EntityNotifier
+    waft/                         # waft: central daemon (routing, discovery, lifecycle)
     overview/                     # waft-overview: main GTK4 overlay binary
         src/
             main.rs               # Tokio entrypoint
-            app.rs                # Plugin loading, IPC, window
-            daemon_spawner.rs     # Spawns daemon binaries
-            daemon_widget_reconciler.rs  # Widget desc -> GTK widgets
-            plugin_manager/       # IPC client (manager, client, router, discovery, registry)
-            plugin.rs             # Plugin type definitions
-            plugin_registry.rs    # Plugin lifecycle
-            ui/                   # UI components (main_window, feature_grid, feature_toggle, icon)
+            app.rs                # Window setup, entity event loop
+            waft_client.rs        # WaftClient, daemon_connection_task, OverviewEvent
+            ui/                   # UI components (main_window, feature_grid, etc.)
             features/
-                session/          # Session lock detection (internal, not a user plugin)
-    plugin-sdk/                   # waft-plugin-sdk: daemon SDK
+                session/          # Session lock detection (internal, not a plugin)
+    waft-ui-gtk/                  # GTK4 widget library
         src/
-            lib.rs                # Re-exports PluginDaemon, PluginServer, builders, IPC types
-            daemon.rs             # PluginDaemon trait (Send + Sync)
-            server.rs             # PluginServer, WidgetNotifier, socket handling
-            builder.rs            # Widget builders (FeatureToggle, Slider, MenuRow, etc.)
-            testing.rs            # MockPluginDaemon, TestPlugin, test socket helpers
-    waft-ui-gtk/                  # GTK4 renderer library
-        src/
-            lib.rs                # renderer, widgets
             widgets/              # FeatureToggleWidget, SliderWidget, IconWidget, etc.
+    config/                       # waft-config: TOML config loading
+    core/                         # waft-core: Callback, DbusHandle (legacy, being reduced)
+    i18n/                         # waft-i18n: Fluent localization
+    ipc/                          # waft-ipc: legacy widget protocol (being phased out)
 plugins/
-    clock/          bin/          # Daemon: time/date display
-    darkman/        bin/          # Daemon: dark mode toggle (D-Bus)
-    caffeine/       bin/          # Daemon: prevent sleep (Portal/ScreenSaver)
-    battery/        bin/          # Daemon: battery status (UPower D-Bus)
-    brightness/     bin/          # Daemon: display brightness (brightnessctl/ddcutil)
-    keyboard-layout/ bin/         # Daemon: input method (multi-backend)
-    systemd-actions/ bin/         # Daemon: session + power menus (login1 D-Bus)
-    blueman/        bin/          # Daemon: Bluetooth management (BlueZ D-Bus)
-    audio/          bin/          # Daemon: volume + device selection (pactl)
-    networkmanager/ bin/          # Daemon: WiFi/Ethernet/VPN (nmrs + zbus)
-    weather/        bin/          # Daemon: weather info (HTTP API)
-    notifications/  bin/          # Daemon: notification server + toasts
-    eds/            bin/          # Daemon: EDS calendar integration
-    sunsetr/        bin/          # Daemon: night light control
+    clock/          bin/          # Entity types: clock
+    darkman/        bin/          # Entity types: dark-mode
+    caffeine/       bin/          # Entity types: sleep-inhibitor
+    battery/        bin/          # Entity types: battery
+    brightness/     bin/          # Entity types: display
+    keyboard-layout/ bin/         # Entity types: keyboard-layout
+    systemd-actions/ bin/         # Entity types: session
+    blueman/        bin/          # Entity types: bluetooth-adapter, bluetooth-device
+    audio/          bin/          # Entity types: audio-device
+    networkmanager/ bin/          # Entity types: network-adapter, wifi-network, etc.
+    weather/        bin/          # Entity types: weather
+    notifications/  bin/          # Entity types: notification, dnd
+    eds/            bin/          # Entity types: calendar-event
+    sunsetr/        bin/          # Entity types: night-light
+    syncthing/      bin/          # Entity types: backup-method
 ```
 
 ### Key Architectural Patterns
@@ -276,9 +297,9 @@ When a widget has no events (purely presentational), skip the `Output` enum and 
 - Anything moved into `tokio::spawn(...)` must be `Send`
 
 **Daemon plugins:**
-- All `Send + Sync` (enforced by `PluginDaemon` trait)
+- All `Send + Sync` (enforced by `Plugin` trait)
 - Pure tokio context -- no GTK, no glib
-- Shared state: `Arc<StdMutex<T>>` between daemon struct and monitoring tasks
+- Shared state: `Arc<StdMutex<T>>` between plugin struct and monitoring tasks
 - D-Bus signal monitoring: `tokio::spawn` + `zbus::MessageStream` + `notifier.notify()`
 
 ### Runtime Mixing: Never Run Tokio Futures in glib Context
@@ -348,12 +369,13 @@ Non-goals: No `gio`/`GDesktopAppInfo` dependency for `.desktop` file resolution.
 
 ### Architecture Terms
 
-- **Daemon Plugin** - A standalone tokio binary implementing `PluginDaemon` (Send+Sync) from `waft-plugin-sdk`. Communicates with overview via Unix socket IPC.
-- **Widget Protocol** - The `Widget` enum (in `waft-ipc`) that daemon plugins use to describe their UI declaratively. Variants: `FeatureToggle`, `Slider`, `MenuRow`, `Container`, `Button`, `Label`, `InfoCard`, `Switch`, `Spinner`, `Checkmark`.
-- **NamedWidget** - A `Widget` with an `id` (string) and `weight` (i32 for sort order). The unit of plugin-to-overview communication.
-- **PluginManager** - Overview component that manages IPC connections to all daemon plugins (`crates/overview/src/plugin_manager/`).
-- **DaemonSpawner** - Overview component that spawns all daemon binaries at startup (`crates/overview/src/daemon_spawner.rs`).
-- **WidgetNotifier** - Daemon-side mechanism to push updated widgets to all connected overview clients when state changes.
+- **Plugin** - A standalone tokio binary implementing the `Plugin` trait (Send+Sync) from `waft-plugin`. Provides domain entities to the central daemon.
+- **Entity** - A typed piece of domain data (e.g. `DarkMode`, `AudioDevice`, `Battery`) defined in `waft-protocol`. Plugins produce entities; apps consume them.
+- **URN** - Hierarchical entity identifier: `{plugin}/{entity-type}/{id}[/{entity-type}/{id}]*`.
+- **Central Daemon (`waft`)** - Routes entities between plugins and apps, manages plugin lifecycle.
+- **WaftClient** - Overview component that connects to the central daemon and manages subscriptions (`crates/overview/src/waft_client.rs`).
+- **EntityNotifier** - Plugin-side mechanism to push entity updates to the central daemon.
+- **PluginRuntime** - Plugin-side socket server that handles the connection to the central daemon and routes messages.
 - **Overlay** - The main layer-shell window that appears on top of other applications.
 
 ### System Integration
@@ -519,7 +541,7 @@ let handle = match self.field.as_ref() {
 
 ## Design Principles
 
-1. **Plugins describe UI via Widget protocol** -- Daemon plugins return `Vec<NamedWidget>` declarative descriptions; overview renders them via `waft-ui-gtk`
+1. **Plugins provide entities, apps render UI** -- Plugins return domain entities via `get_entities()`; apps map entity types to GTK widgets independently
 2. **NEVER do exceptional programming. ALWAYS select the systemic approach** -- Define general mechanisms first, then use for specific cases
 3. **NO POLLING** -- Sleep to next event boundary (D-Bus signals, timer boundaries)
 4. **Plugin state is plugin-local** -- Each plugin owns domain state; UI composes what plugins provide
@@ -528,20 +550,16 @@ let handle = match self.field.as_ref() {
 
 ---
 
-## Migration Status
+## Current Status
 
-### Phase 5: Daemon Architecture (Complete)
+**All 15 plugins use the entity-based architecture** with central daemon routing.
 
-**All 14 plugins migrated to daemon architecture.**
+- `waft-protocol` with entity types, messages, URN, transport
+- `waft-plugin` with `Plugin` trait, `PluginRuntime`, `EntityNotifier`
+- `waft` central daemon with discovery, spawning, routing, crash recovery
+- `waft-overview` with `WaftClient`, `EntityRenderer`, socket reconnection
 
-- `waft-plugin-sdk` with `PluginDaemon` trait, `PluginServer`, `WidgetNotifier`, builders
-- `waft-ui-gtk` widget library with `WidgetBase` trait, `Child`/`Children` types
-- `waft-ipc` Widget protocol with all widget types
-- `DaemonSpawner` and `PluginManager` in overview
-
-**Next:**
-- Arch Linux split packaging (PKGBUILD)
-- New apps (`waft-settings`, `waft-palette`, etc.)
+**Legacy crates** (`waft-ipc`, parts of `waft-core`) are still in the workspace but being phased out.
 
 **Main Branch:** `relm4` (integration target)
 **Active Branch:** `larger-larger-picture`
