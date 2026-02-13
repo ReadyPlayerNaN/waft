@@ -36,8 +36,8 @@ impl CaffeineToggle {
                 busy: false,
                 details: None,
                 expandable: false,
-                icon: "preferences-system-power-symbolic".to_string(),
-                title: "Caffeine".to_string(),
+                icon: "changes-allow-symbolic".to_string(),
+                title: crate::i18n::t("caffeine-title"),
                 menu_id: None,
             },
             None,
@@ -64,7 +64,7 @@ impl CaffeineToggle {
             if let Some((_urn, inhibitor)) = entities.first() {
                 toggle_ref.set_active(inhibitor.active);
                 toggle_ref.set_details(if inhibitor.active {
-                    Some("Screen will stay on".to_string())
+                    Some(crate::i18n::t("caffeine-active"))
                 } else {
                     None
                 });

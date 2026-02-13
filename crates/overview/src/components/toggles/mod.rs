@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod bluetooth;
 pub mod caffeine;
 pub mod dark_mode;

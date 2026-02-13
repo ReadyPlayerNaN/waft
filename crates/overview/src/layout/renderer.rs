@@ -19,6 +19,7 @@ use crate::components::keyboard_layout::KeyboardLayoutComponent;
 use crate::components::notification_list::NotificationsComponent;
 use crate::components::session_actions::SessionActionsComponent;
 use crate::components::system_actions::SystemActionsComponent;
+use crate::components::toggles::backup::BackupToggle;
 use crate::components::toggles::bluetooth::BluetoothToggles;
 use crate::components::toggles::caffeine::CaffeineToggle;
 use crate::components::toggles::dark_mode::DarkModeToggle;
@@ -501,6 +502,15 @@ fn render_feature_toggle_grid(
                         dynamic_sources.push(net.clone());
                         keep.push(Box::new(net));
                     }
+                    "BackupToggle" => {
+                        let t = Rc::new(BackupToggle::new(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
+                        keep.push(Box::new(t));
+                    }
                     _ => warn!(
                         "[renderer] Unknown toggle component in FeatureToggleGrid: {name}"
                     ),
@@ -606,5 +616,11 @@ impl DynamicToggleSource for CaffeineToggle {
 impl DynamicToggleSource for DoNotDisturbToggle {
     fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
         DoNotDisturbToggle::as_feature_toggles(self)
+    }
+}
+
+impl DynamicToggleSource for BackupToggle {
+    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        BackupToggle::as_feature_toggles(self)
     }
 }

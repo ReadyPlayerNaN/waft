@@ -36,4 +36,5 @@ pub mod network;
 pub mod notification;
 pub mod power;
 pub mod session;
+pub mod storage;
 pub mod weather;

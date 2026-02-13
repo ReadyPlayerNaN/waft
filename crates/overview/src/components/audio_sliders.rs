@@ -14,7 +14,7 @@ use waft_protocol::entity;
 use waft_protocol::entity::audio::AudioDeviceKind;
 use waft_protocol::Urn;
 use waft_ui_gtk::menu_state::menu_id_for_widget;
-use waft_ui_gtk::widgets::connection_row::{ConnectionRow, ConnectionRowOutput, ConnectionRowProps};
+use waft_ui_gtk::audio::device_row::{AudioDeviceRow, AudioDeviceRowOutput, AudioDeviceRowProps};
 use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
 
 use crate::entity_store::{EntityActionCallback, EntityStore};
@@ -22,7 +22,7 @@ use crate::entity_store::{EntityActionCallback, EntityStore};
 /// A device row in the expandable menu.
 struct DeviceMenuRow {
     urn_str: String,
-    row: Rc<ConnectionRow>,
+    row: Rc<AudioDeviceRow>,
 }
 
 /// A slider entry keyed by device kind (output or input).
@@ -213,12 +213,17 @@ impl AudioSlidersComponent {
 
                         sliders.insert(kind_key.to_string(), entry);
                     }
-                } else {
-                    // No default device for this kind -- remove the slider if present
+                } else if devices.is_empty() {
+                    // No devices at all for this kind -- remove the slider
                     if let Some(entry) = sliders.remove(kind_key) {
                         container_ref.remove(&entry.wrapper);
                     }
                 }
+                // When devices exist but none is marked default, keep the
+                // existing slider as-is. This avoids destroying and recreating
+                // the widget (and its MenuStore subscription) during the
+                // transient state between individual entity updates when the
+                // default device changes.
             }
 
             // Re-sort children: output (weight 60) before input (weight 65)
@@ -278,18 +283,20 @@ fn update_device_rows(
         if let Some(existing) = rows.iter().find(|r| r.urn_str == urn_str) {
             // Update in place
             existing.row.set_name(&device.name);
+            existing.row.set_device_icon(&device.icon);
             existing.row.set_active(device.default);
         } else {
             // Create new row
-            let conn_row = Rc::new(ConnectionRow::new(ConnectionRowProps {
+            let device_row = Rc::new(AudioDeviceRow::new(AudioDeviceRowProps {
+                device_icon: device.icon.clone(),
+                connection_icon: None,
                 name: device.name.clone(),
                 active: device.default,
-                transitioning: false,
             }));
 
             let action_cb = action_callback.clone();
             let urn_for_action = (*urn).clone();
-            conn_row.connect_output(move |ConnectionRowOutput::Toggle| {
+            device_row.connect_output(move |AudioDeviceRowOutput::SelectAsDefault| {
                 action_cb(
                     urn_for_action.clone(),
                     "set-default".to_string(),
@@ -297,10 +304,10 @@ fn update_device_rows(
                 );
             });
 
-            entry.menu_box.append(&conn_row.root);
+            entry.menu_box.append(&device_row.root);
             rows.push(DeviceMenuRow {
                 urn_str,
-                row: conn_row,
+                row: device_row,
             });
         }
     }

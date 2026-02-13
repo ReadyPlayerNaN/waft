@@ -37,7 +37,7 @@ impl NightLightToggle {
                 details: None,
                 expandable: false,
                 icon: "night-light-symbolic".to_string(),
-                title: "Night Light".to_string(),
+                title: crate::i18n::t("nightlight-title"),
                 menu_id: None,
             },
             None,

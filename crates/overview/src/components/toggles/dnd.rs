@@ -37,7 +37,7 @@ impl DoNotDisturbToggle {
                 details: None,
                 expandable: false,
                 icon: "preferences-system-notifications-symbolic".to_string(),
-                title: "Do Not Disturb".to_string(),
+                title: crate::i18n::t("dnd-title"),
                 menu_id: None,
             },
             None,
@@ -69,7 +69,7 @@ impl DoNotDisturbToggle {
                     "preferences-system-notifications-symbolic"
                 });
                 toggle_ref.set_details(if dnd.active {
-                    Some("Notifications silenced".to_string())
+                    Some(crate::i18n::t("dnd-silenced"))
                 } else {
                     None
                 });

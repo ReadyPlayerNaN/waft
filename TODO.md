@@ -1,78 +1,26 @@
-# 1. Audio slider menus random close
+# 1. Audio device icons
 
-Selecting default input or output device works only once per open menu.
+The audio device icons are not right. Currently only the selected default device has an icon. When I switch the device to another, the previously default device now displays the generic fallback icon.
 
-## Reproduction scenario
+The audio devices should have icons based on their type. For example headphones should have headphone icon. Headset microphone should have headset icon. Standalone microphone should have microphone icon...
 
-1. Open audio output menu
-2. See output 1 (default) and output 2
-3. Click output 2
-4. Output 2 is now default as expected
-5. Click output 1
+# 2. Audio device menu row icons
 
-Expected: Output 1 is default, menu is still open and visible, the menu chevron is marked as open
+The audio device menu is not showing connection icon. I have a bluetooth headset connected, but the menu is not showing the bluetooth icon next to the device type icon.
 
-Actual: Output 1 is default, menu disappears (as if it had no outputs), the menu chevron is marked as open
-Workaround: Close the menu, Re-open the menu. It is now visible.
+# 3. Backup widget
 
-# 2. Labels not translated
+The overlay UI should display feature toggle "Backup" with menu, that lists all backup methods and enables stopping/starting them.
 
-- Do Not Disturb
-- Wired
-- Caffeine (In Czech should be "Nezamykat", also translate this to english)
-- Night Light
-- Cloudy (and possibly all other weather conditions)
-
-# 3. Audio device menu row appearence
-
-Extract the `AudioDeviceRow` component into `waft-ui-gtk/src/audio/device_row.rs`.
-
-Re-export the component from bluetooth mod.rs.
-
-The ConnectionIcon is going to show bluetooth icon for bluetooth devices, otherwise nothing.
-
-The layout should be:
-
-```
-<Row>
-    <Box>
-        <DeviceTypeIcon />
-        <ConnectionIcon />
-    </Box>
-    <Box>{label}</Box>
-    <Box>
-        <CheckMark />
-    </Box>
-</Row>
-```
-
-# 4. Caffeine icon broken
-
-The feature toggle should use an unlocked lock icon
-
-# 5. Syncthing plugin
-
-The plugin should detect if the syncthing is available and configured. It should provide entity `BackupMethod` with name=syncthing.
-
-The overlay UI should display feature toggle "Backup" with menu, that lists all backup methods. The backup method row component is going to be looking like bluetooth device row item and extracted into `waft-ui-gtk/src/backup`. The layout of row item will be:
-
-```
-<Row>
-    <Box>
-        <MethodIcon />
-    </Box>
-    <Box>{label}</Box>
-    <Box>
-        <gtk::Switch />
-    </Box>
-</Row>
-```
-
-The Method icon will be either the app icon (syncthing in our case) or some default
-
-# Calendar widget
+# 4. Calendar widget
 
 The EDS plugin must be able to supply events both for agenda widget and for a calendar. The consumers must be able to add a filter to their subscription. For example: Overview is only interested in agenda events (that means today and tomorrow). Calendar widget is going to be interested in entire month of events.
+
+# 5. Tethering support in networkmanager
+
+Network manager supposedly supports tethering. When I connect my phone to the pc over USB or Bluetooth, the network manager should provide this as a tethering NetworkAdapter
+
+The overlay should render these as a separate feature toggle with similar logic to Wi-Fi, just isolated. Clicking on a connection row in tethering feature toggle menu will connect or disconnect it.
 
 # Notification sounds
 
@@ -81,12 +29,6 @@ Configure sounds=disabled/enabled
 Configure sound based on urgency
 Configure sound based on notification matching
 Sounds are off in Do Not Disturb mode
-
-# Tethering
-
-Add to networkmanager plugin?
-
-Whenever tethering device is detected, display it as a feature toggle
 
 # Auxiliary notification group splits
 

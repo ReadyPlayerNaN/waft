@@ -9,9 +9,11 @@ notifications-empty = Žádná oznámení
 
 # Do Not Disturb
 dnd-title = Nerušit
+dnd-silenced = Oznámení ztlumena
 
 # Caffeine
 caffeine-title = Nezamykat
+caffeine-active = Obrazovka zůstane zapnutá
 
 # Dark Mode
 darkman-title = Tmavý režim
@@ -55,6 +57,8 @@ bluetooth-title = Bluetooth
 bluetooth-unknown-device = Neznámé zařízení
 
 # Network
+network-wired = Kabelové
+network-wired-connection = Kabelové připojení
 network-disabled = Vypnuto
 network-connected = Připojeno
 network-disconnected = Odpojeno
@@ -75,6 +79,9 @@ vpn-connected = Připojeno
 vpn-disconnected = Odpojeno
 vpn-connecting = Připojování...
 vpn-disconnecting = Odpojování...
+
+# Backup
+backup-title = Záloha
 
 # Battery states
 battery-unknown = Neznámý stav

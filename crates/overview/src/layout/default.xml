@@ -27,6 +27,7 @@
         <NightLightToggle />
         <BluetoothToggles />
         <NetworkToggles />
+        <BackupToggle />
       </FeatureToggleGrid>
       <Unmatched />
     </Col>

@@ -2,6 +2,8 @@
 //
 // This library converts declarative Widget descriptions into actual GTK widgets.
 
+pub mod audio;
+pub mod backup;
 pub mod bluetooth;
 pub mod css;
 pub mod menu_state;

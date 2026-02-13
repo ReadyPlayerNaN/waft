@@ -9,9 +9,11 @@ notifications-empty = No notifications
 
 # Do Not Disturb
 dnd-title = Do not disturb
+dnd-silenced = Notifications silenced
 
 # Caffeine
 caffeine-title = Keep Awake
+caffeine-active = Screen will stay on
 
 # Dark Mode
 darkman-title = Dark Mode
@@ -55,6 +57,8 @@ bluetooth-title = Bluetooth
 bluetooth-unknown-device = Unknown Device
 
 # Network
+network-wired = Wired
+network-wired-connection = Wired Connection
 network-disabled = Disabled
 network-connected = Connected
 network-disconnected = Disconnected
@@ -75,6 +79,9 @@ vpn-connected = Connected
 vpn-disconnected = Disconnected
 vpn-connecting = Connecting...
 vpn-disconnecting = Disconnecting...
+
+# Backup
+backup-title = Backup
 
 # Battery states
 battery-unknown = Unknown

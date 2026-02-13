@@ -715,7 +715,7 @@ fn adapter_icon(adapter: &entity::network::NetworkAdapter) -> String {
 /// Determine the title for a network adapter based on its kind.
 fn adapter_title(adapter: &entity::network::NetworkAdapter) -> String {
     match &adapter.kind {
-        entity::network::AdapterKind::Wired => "Wired".to_string(),
+        entity::network::AdapterKind::Wired => crate::i18n::t("network-wired"),
         entity::network::AdapterKind::Wireless => "Wi-Fi".to_string(),
     }
 }
