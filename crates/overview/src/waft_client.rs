@@ -11,12 +11,14 @@
 
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
 use tokio::time::timeout;
 use uuid::Uuid;
+use waft_protocol::entity;
 use waft_protocol::transport::write_framed;
 use waft_protocol::{AppMessage, AppNotification, TransportError};
 
@@ -37,6 +39,33 @@ const RETRY_MAX_ATTEMPTS: u32 = 10;
 
 /// D-Bus well-known name of the waft daemon.
 const DAEMON_DBUS_NAME: &str = "org.waft.Daemon";
+
+/// Delay between reconnection attempts after the daemon disconnects.
+const RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
+
+/// All entity types the overview subscribes to.
+pub const ENTITY_TYPES: &[&str] = &[
+    entity::clock::ENTITY_TYPE,
+    entity::display::DARK_MODE_ENTITY_TYPE,
+    entity::display::DISPLAY_ENTITY_TYPE,
+    entity::display::NIGHT_LIGHT_ENTITY_TYPE,
+    entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
+    entity::power::ENTITY_TYPE,
+    entity::keyboard::ENTITY_TYPE,
+    entity::audio::ENTITY_TYPE,
+    entity::bluetooth::BluetoothAdapter::ENTITY_TYPE,
+    entity::bluetooth::BluetoothDevice::ENTITY_TYPE,
+    entity::network::ADAPTER_ENTITY_TYPE,
+    entity::network::WIFI_NETWORK_ENTITY_TYPE,
+    entity::network::ETHERNET_CONNECTION_ENTITY_TYPE,
+    entity::network::VPN_ENTITY_TYPE,
+    entity::weather::ENTITY_TYPE,
+    entity::session::SESSION_ENTITY_TYPE,
+    entity::notification::NOTIFICATION_ENTITY_TYPE,
+    entity::notification::DND_ENTITY_TYPE,
+    entity::calendar::ENTITY_TYPE,
+    entity::storage::BACKUP_METHOD_ENTITY_TYPE,
+];
 
 /// Errors that can occur during WaftClient operations.
 #[derive(Debug)]
@@ -76,6 +105,19 @@ impl std::error::Error for WaftClientError {
             _ => None,
         }
     }
+}
+
+/// Events delivered to the overview's glib main loop.
+///
+/// Wraps daemon notifications with connection lifecycle signals so the UI
+/// can react to daemon crashes and reconnections.
+pub enum OverviewEvent {
+    /// A notification forwarded from the daemon.
+    Notification(AppNotification),
+    /// Successfully connected (or reconnected) to the daemon.
+    Connected,
+    /// Lost connection to the daemon.
+    Disconnected,
 }
 
 /// Client for the central waft daemon.
@@ -278,6 +320,106 @@ impl WaftClient {
             log::warn!("[waft-client] failed to send TriggerAction: {e}");
         }
         action_id
+    }
+}
+
+/// Long-running tokio task that manages the daemon connection lifecycle.
+///
+/// Connects to the daemon, subscribes to all entity types, and forwards
+/// notifications through `event_tx`. On disconnect, sends `Disconnected`,
+/// clears the client handle, and retries every second.
+///
+/// The task exits when the `event_tx` receiver is dropped (overview closed).
+pub async fn daemon_connection_task(
+    event_tx: flume::Sender<OverviewEvent>,
+    client_handle: Arc<std::sync::Mutex<Option<WaftClient>>>,
+) {
+    let mut activation_requested = false;
+
+    loop {
+        // Request D-Bus activation on first attempt to auto-start the daemon
+        if !activation_requested {
+            activation_requested = true;
+            if let Err(e) = request_dbus_activation().await {
+                log::warn!("[waft-client] D-Bus activation failed: {e}");
+            } else {
+                log::info!(
+                    "[waft-client] requested D-Bus activation for {DAEMON_DBUS_NAME}"
+                );
+            }
+        }
+
+        match WaftClient::connect().await {
+            Ok((client, notification_rx)) => {
+                log::info!("[waft-client] connected to daemon");
+
+                // Subscribe to all entity types and request cached state
+                for et in ENTITY_TYPES {
+                    client.subscribe(et);
+                }
+                for et in ENTITY_TYPES {
+                    client.request_status(et);
+                }
+                log::info!(
+                    "[waft-client] subscribed to {} entity types",
+                    ENTITY_TYPES.len()
+                );
+
+                // Store client for write path (actions from GTK thread)
+                match client_handle.lock() {
+                    Ok(mut guard) => *guard = Some(client),
+                    Err(e) => {
+                        log::warn!("[waft-client] client handle poisoned: {e}");
+                        *e.into_inner() = Some(client);
+                    }
+                }
+
+                // Signal connected
+                if event_tx.send(OverviewEvent::Connected).is_err() {
+                    log::debug!("[waft-client] overview closed, stopping connection task");
+                    return;
+                }
+
+                // Forward notifications until disconnect
+                // Reset activation flag so we re-request on next reconnect cycle
+                activation_requested = false;
+
+                while let Ok(notification) = notification_rx.recv_async().await {
+                    if event_tx
+                        .send(OverviewEvent::Notification(notification))
+                        .is_err()
+                    {
+                        log::debug!(
+                            "[waft-client] overview closed, stopping connection task"
+                        );
+                        return;
+                    }
+                }
+
+                // Notification channel closed = daemon disconnected
+                log::info!("[waft-client] daemon disconnected, will retry");
+
+                // Clear write path so actions are dropped during disconnect
+                match client_handle.lock() {
+                    Ok(mut guard) => *guard = None,
+                    Err(e) => {
+                        log::warn!("[waft-client] client handle poisoned: {e}");
+                        *e.into_inner() = None;
+                    }
+                }
+
+                // Signal disconnected
+                if event_tx.send(OverviewEvent::Disconnected).is_err() {
+                    log::debug!("[waft-client] overview closed, stopping connection task");
+                    return;
+                }
+            }
+            Err(e) => {
+                log::debug!("[waft-client] connection attempt failed: {e}");
+            }
+        }
+
+        tokio::time::sleep(RECONNECT_INTERVAL).await;
     }
 }
 
