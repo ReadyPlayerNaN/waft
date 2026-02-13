@@ -28,14 +28,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Maximum allowed frame size (10 MB), matching waft_protocol.
 const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
 
-/// Initial retry delay for exponential backoff.
-const RETRY_INITIAL_DELAY: Duration = Duration::from_millis(100);
-
-/// Maximum retry delay cap.
-const RETRY_MAX_DELAY: Duration = Duration::from_secs(10);
-
-/// Maximum number of retry attempts before giving up.
-const RETRY_MAX_ATTEMPTS: u32 = 10;
 
 /// D-Bus well-known name of the waft daemon.
 const DAEMON_DBUS_NAME: &str = "org.waft.Daemon";
@@ -78,8 +70,7 @@ pub enum WaftClientError {
     Transport(TransportError),
     /// Daemon disconnected.
     Disconnected,
-    /// Write channel closed.
-    SendFailed,
+
     /// Daemon socket does not exist.
     SocketNotFound,
 }
@@ -91,7 +82,6 @@ impl std::fmt::Display for WaftClientError {
             WaftClientError::Timeout => write!(f, "connection timed out"),
             WaftClientError::Transport(e) => write!(f, "transport error: {e}"),
             WaftClientError::Disconnected => write!(f, "daemon disconnected"),
-            WaftClientError::SendFailed => write!(f, "write channel closed"),
             WaftClientError::SocketNotFound => write!(f, "daemon socket not found"),
         }
     }
@@ -129,50 +119,6 @@ pub struct WaftClient {
 }
 
 impl WaftClient {
-    /// Connect to the waft daemon with retry and D-Bus activation.
-    ///
-    /// If the daemon socket is not available, requests D-Bus activation for
-    /// `org.waft.Daemon` and retries with exponential backoff (100ms to 10s,
-    /// up to 10 attempts). This handles the case where the overview starts
-    /// before the daemon is ready.
-    ///
-    /// Returns a `(WaftClient, flume::Receiver<AppNotification>)` pair.
-    pub async fn connect_with_retry(
-    ) -> Result<(Self, flume::Receiver<AppNotification>), WaftClientError> {
-        let mut delay = RETRY_INITIAL_DELAY;
-        let mut activation_requested = false;
-
-        for attempt in 1..=RETRY_MAX_ATTEMPTS {
-            match Self::connect().await {
-                Ok(result) => return Ok(result),
-                Err(WaftClientError::SocketNotFound) | Err(WaftClientError::ConnectionFailed(_))
-                    if attempt < RETRY_MAX_ATTEMPTS =>
-                {
-                    // Request D-Bus activation on first failure to auto-start the daemon
-                    if !activation_requested {
-                        activation_requested = true;
-                        if let Err(e) = request_dbus_activation().await {
-                            log::warn!("[waft-client] D-Bus activation failed: {e}");
-                        } else {
-                            log::info!("[waft-client] requested D-Bus activation for {DAEMON_DBUS_NAME}");
-                        }
-                    }
-
-                    log::debug!(
-                        "[waft-client] connection attempt {attempt}/{RETRY_MAX_ATTEMPTS} failed, retrying in {}ms",
-                        delay.as_millis()
-                    );
-                    tokio::time::sleep(delay).await;
-                    delay = (delay * 2).min(RETRY_MAX_DELAY);
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        // Final attempt (already exhausted retries above)
-        Self::connect().await
-    }
-
     /// Connect to the waft daemon socket.
     ///
     /// Returns a `(WaftClient, flume::Receiver<AppNotification>)` pair. The
@@ -281,18 +227,6 @@ impl WaftClient {
         };
         if let Err(e) = self.write_tx.send(msg) {
             log::warn!("[waft-client] failed to send Status: {e}");
-        }
-    }
-
-    /// Unsubscribe from updates for an entity type.
-    ///
-    /// Safe to call from the GTK main thread.
-    pub fn unsubscribe(&self, entity_type: &str) {
-        let msg = AppMessage::Unsubscribe {
-            entity_type: entity_type.to_string(),
-        };
-        if let Err(e) = self.write_tx.send(msg) {
-            log::warn!("[waft-client] failed to send Unsubscribe: {e}");
         }
     }
 
@@ -536,8 +470,6 @@ mod tests {
         let err = WaftClientError::Disconnected;
         assert_eq!(err.to_string(), "daemon disconnected");
 
-        let err = WaftClientError::SendFailed;
-        assert_eq!(err.to_string(), "write channel closed");
     }
 
     #[test]
@@ -567,27 +499,4 @@ mod tests {
         assert!(matches!(result, Err(WaftClientError::SocketNotFound)));
     }
 
-    #[test]
-    fn retry_backoff_caps_at_max_delay() {
-        // Verify that exponential backoff doubles each time and caps at RETRY_MAX_DELAY
-        let mut delay = RETRY_INITIAL_DELAY;
-        let delays: Vec<Duration> = (0..15)
-            .map(|_| {
-                let current = delay;
-                delay = (delay * 2).min(RETRY_MAX_DELAY);
-                current
-            })
-            .collect();
-
-        assert_eq!(delays[0], Duration::from_millis(100));
-        assert_eq!(delays[1], Duration::from_millis(200));
-        assert_eq!(delays[2], Duration::from_millis(400));
-        assert_eq!(delays[3], Duration::from_millis(800));
-        assert_eq!(delays[4], Duration::from_millis(1600));
-        assert_eq!(delays[5], Duration::from_millis(3200));
-        assert_eq!(delays[6], Duration::from_millis(6400));
-        // After 6400ms * 2 = 12800ms > 10s cap
-        assert_eq!(delays[7], RETRY_MAX_DELAY);
-        assert_eq!(delays[8], RETRY_MAX_DELAY);
-    }
 }

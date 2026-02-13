@@ -211,14 +211,17 @@ pub async fn setup() -> Result<adw::Application> {
             let entity_action_callback: EntityActionCallback =
                 Rc::new(move |urn, action_name, params| {
                     debug!("[entity] Entity action on {}: {}", urn, action_name);
-                    if let Ok(guard) = waft_client_for_entity_actions.lock() {
-                        if let Some(ref client) = *guard {
-                            client.trigger_action(urn, &action_name, params);
-                        } else {
-                            warn!("[entity] WaftClient not available for entity action");
+                    let guard = match waft_client_for_entity_actions.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[entity] WaftClient mutex poisoned, recovering: {e}");
+                            e.into_inner()
                         }
+                    };
+                    if let Some(ref client) = *guard {
+                        client.trigger_action(urn, &action_name, params);
                     } else {
-                        warn!("[entity] Failed to lock WaftClient for entity action");
+                        warn!("[entity] WaftClient not available for entity action");
                     }
                 });
 
