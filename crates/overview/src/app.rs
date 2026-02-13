@@ -17,11 +17,9 @@ use crate::menu_state::create_menu_store;
 use crate::plugin::PluginResources;
 use crate::plugin_registry::PluginRegistry;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
-use crate::waft_client::WaftClient;
-use waft_config::Config;
+use crate::waft_client::{self, WaftClient, OverviewEvent};
 use waft_ipc::net as ipc_net;
 use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
-use waft_protocol::entity;
 
 /// Set up the overlay host app and return the GTK Application.
 ///
@@ -114,9 +112,6 @@ pub async fn setup() -> Result<adw::Application> {
     // Store the IPC receiver for use in the app
     let ipc_rx = Arc::new(Mutex::new(Some(ipc_rx)));
 
-    // Load configuration
-    let config = Config::load();
-
     // Initialize i18n system
     crate::i18n::init();
 
@@ -129,32 +124,24 @@ pub async fn setup() -> Result<adw::Application> {
 
     let registry = PluginRegistry::new(menu_store);
 
-    // Connect to the central waft daemon via WaftClient.
-    // Uses D-Bus activation + exponential backoff retry if the daemon isn't ready yet.
-    let waft_client = match WaftClient::connect_with_retry().await {
-        Ok((client, notification_rx)) => {
-            info!("[app] connected to waft daemon");
-            Some((client, notification_rx))
-        }
-        Err(e) => {
-            warn!("[app] failed to connect to waft daemon: {e}");
-            warn!("[app] daemon-based plugins will not be available");
-            None
-        }
-    };
+    // Persistent channel for daemon events (notifications + connection state).
+    // Survives daemon crashes and reconnections.
+    let (daemon_event_tx, daemon_event_rx) = flume::unbounded::<OverviewEvent>();
+    let daemon_event_rx = Arc::new(Mutex::new(Some(daemon_event_rx)));
 
-    // Wrap the notification receiver for transfer into the GTK startup closure
-    let daemon_notification_rx = Arc::new(Mutex::new(
-        waft_client
-            .as_ref()
-            .map(|(_, rx)| rx.clone()),
-    ));
+    // WaftClient handle: set to Some on connect, None on disconnect.
+    // The entity_action_callback locks this to send actions.
+    let waft_client_handle: Arc<Mutex<Option<WaftClient>>> = Arc::new(Mutex::new(None));
 
-    // Keep the WaftClient alive and accessible from the GTK thread.
-    // WaftClient::subscribe/trigger_action are safe to call from the main thread
-    // because they use std::sync::mpsc internally.
-    let waft_client_handle: Arc<Mutex<Option<WaftClient>>> =
-        Arc::new(Mutex::new(waft_client.map(|(client, _)| client)));
+    // Spawn the long-running connection management task on tokio.
+    // Handles initial connection, reconnection, subscription, and notification forwarding.
+    {
+        let client_handle = waft_client_handle.clone();
+        tokio::spawn(waft_client::daemon_connection_task(
+            daemon_event_tx,
+            client_handle,
+        ));
+    }
 
     // Create plugin resources to pass to all plugins
     let plugin_resources = PluginResources {
@@ -194,7 +181,7 @@ pub async fn setup() -> Result<adw::Application> {
         .build();
 
     let ipc_rx_for_startup = ipc_rx.clone();
-    let daemon_notification_rx_for_startup = daemon_notification_rx.clone();
+    let daemon_event_rx_for_startup = daemon_event_rx.clone();
     let waft_client_for_startup = waft_client_handle.clone();
     let registry_for_startup = registry_rc.clone();
     let session_event_rx_for_startup = session_event_rx;
@@ -204,7 +191,7 @@ pub async fn setup() -> Result<adw::Application> {
 
         let registry = registry_for_startup.clone();
         let ipc_rx_slot = ipc_rx_for_startup.clone();
-        let daemon_notification_rx_slot = daemon_notification_rx_for_startup.clone();
+        let daemon_event_rx_slot = daemon_event_rx_for_startup.clone();
         let waft_client_slot = waft_client_for_startup.clone();
         let session_event_rx = session_event_rx_for_startup.clone();
         let app = app.clone();
@@ -358,53 +345,33 @@ pub async fn setup() -> Result<adw::Application> {
                 });
             }
 
-            // Setup entity-based daemon notification receiver.
-            // WaftClient reads AppNotification from the daemon via tokio and forwards
-            // through a flume channel. We consume it here on the glib main context
-            // and feed it into the EntityStore which distributes to components.
-            if let Ok(mut rx_slot) = daemon_notification_rx_slot.lock()
-                && let Some(notification_rx) = rx_slot.take() {
-                    // Subscribe to all known entity types so the daemon spawns plugins on demand
-                    if let Ok(guard) = waft_client_slot.lock() {
-                        if let Some(ref client) = *guard {
-                            let entity_types = [
-                                entity::clock::ENTITY_TYPE,
-                                entity::display::DARK_MODE_ENTITY_TYPE,
-                                entity::display::DISPLAY_ENTITY_TYPE,
-                                entity::display::NIGHT_LIGHT_ENTITY_TYPE,
-                                entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
-                                entity::power::ENTITY_TYPE,
-                                entity::keyboard::ENTITY_TYPE,
-                                entity::audio::ENTITY_TYPE,
-                                entity::bluetooth::BluetoothAdapter::ENTITY_TYPE,
-                                entity::bluetooth::BluetoothDevice::ENTITY_TYPE,
-                                entity::network::ADAPTER_ENTITY_TYPE,
-                                entity::network::WIFI_NETWORK_ENTITY_TYPE,
-                                entity::network::ETHERNET_CONNECTION_ENTITY_TYPE,
-                                entity::network::VPN_ENTITY_TYPE,
-                                entity::weather::ENTITY_TYPE,
-                                entity::session::SESSION_ENTITY_TYPE,
-                                entity::notification::NOTIFICATION_ENTITY_TYPE,
-                                entity::notification::DND_ENTITY_TYPE,
-                                entity::calendar::ENTITY_TYPE,
-                                entity::storage::BACKUP_METHOD_ENTITY_TYPE,
-                            ];
-                            for et in &entity_types {
-                                client.subscribe(et);
-                            }
-                            for et in &entity_types {
-                                client.request_status(et);
-                            }
-                            info!("[app] Subscribed to {} entity types", entity_types.len());
-                        }
-                    }
-
-                    let store_for_notifications = entity_store.clone();
+            // Setup daemon event receiver.
+            // The daemon_connection_task sends OverviewEvent through a persistent
+            // flume channel that survives daemon crashes and reconnections.
+            if let Ok(mut rx_slot) = daemon_event_rx_slot.lock()
+                && let Some(event_rx) = rx_slot.take() {
+                    let store_for_events = entity_store.clone();
+                    let clip_for_events = main_window.clip.clone();
+                    // Start with UI disabled — the connection task will send Connected
+                    // once the daemon is reachable.
+                    clip_for_events.set_sensitive(false);
                     glib::spawn_future_local(async move {
-                        while let Ok(notification) = notification_rx.recv_async().await {
-                            store_for_notifications.handle_notification(notification);
+                        while let Ok(event) = event_rx.recv_async().await {
+                            match event {
+                                OverviewEvent::Notification(notification) => {
+                                    store_for_events.handle_notification(notification);
+                                }
+                                OverviewEvent::Connected => {
+                                    log::info!("[app] daemon connected, enabling UI");
+                                    clip_for_events.set_sensitive(true);
+                                }
+                                OverviewEvent::Disconnected => {
+                                    log::info!("[app] daemon disconnected, disabling UI");
+                                    clip_for_events.set_sensitive(false);
+                                }
+                            }
                         }
-                        warn!("[entity] Entity notification receiver loop exited");
+                        log::warn!("[app] daemon event receiver loop exited");
                     });
                 }
 
