@@ -1,3 +1,7 @@
+# Tethering support in networkmanager
+
+When I connect my phone to the pc over USB or Bluetooth, the network manager should provide this as a tethering NetworkAdapter. The overlay should render these as a separate feature toggle with similar logic to Wi-Fi, just isolated. Clicking on a connection row in tethering feature toggle menu will connect or disconnect it.
+
 # Notification sounds
 
 Play a sound when a notification pops up. Configure sounds=disabled/enabled, sound based on urgency, sound based on notification matching. Sounds are off in Do Not Disturb mode.
