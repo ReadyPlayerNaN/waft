@@ -3100,7 +3100,6 @@ dependencies = [
  "async-trait",
  "futures-util",
  "log",
- "nmrs",
  "serde_json",
  "tokio",
  "waft-plugin",

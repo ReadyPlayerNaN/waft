@@ -7,71 +7,189 @@ use log::{debug, warn};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::Connection;
 
-use crate::dbus_property::{NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_SETTINGS_INTERFACE, NM_SETTINGS_PATH};
+use crate::dbus_property::{
+    NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_SETTINGS_INTERFACE,
+    NM_SETTINGS_PATH, NM_WIRELESS_INTERFACE,
+};
 use crate::state::AccessPointInfo;
+use crate::AccessPoint;
 
-/// Scan and list known WiFi networks using nmrs (called from background task, not Send-required).
+/// Scan WiFi networks and list known ones via D-Bus.
+///
+/// Calls `RequestScan` on each adapter, waits for results, then reads access points
+/// via `GetAllAccessPoints`. Only returns networks with saved connection profiles.
 pub async fn scan_and_list_known_networks(
-    nm: &nmrs::NetworkManager,
     conn: &Connection,
+    adapter_paths: &[String],
 ) -> Result<Vec<AccessPointInfo>> {
-    // Trigger scan
-    if let Err(e) = nm
-        .scan_networks()
+    // Trigger scan on each WiFi adapter
+    for adapter_path in adapter_paths {
+        let proxy = match zbus::Proxy::new(
+            conn,
+            NM_SERVICE,
+            adapter_path.as_str(),
+            NM_WIRELESS_INTERFACE,
+        )
         .await
-        .map_err(|e| anyhow::anyhow!("{}", e))
-    {
-        warn!("[nm] Failed to trigger scan: {}", e);
+        {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(
+                    "[nm] Failed to create Wireless proxy for {}: {}",
+                    adapter_path, e
+                );
+                continue;
+            }
+        };
+
+        let options: HashMap<String, zbus::zvariant::Value<'_>> = HashMap::new();
+        let scan_result: Result<(), _> = proxy.call("RequestScan", &(options,)).await;
+        if let Err(e) = scan_result {
+            warn!("[nm] Failed to trigger scan on {}: {}", adapter_path, e);
+        }
     }
 
     // Wait for scan results
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-    let networks = nm
-        .list_networks()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to list networks: {}", e))?;
-
+    // Collect access points from all adapters
     let mut by_ssid: HashMap<String, AccessPointInfo> = HashMap::new();
 
-    for network in &networks {
-        if network.ssid.is_empty() {
-            continue;
-        }
-
-        // Only include networks with saved connection profiles
-        match get_connections_for_ssid(conn, &network.ssid).await {
-            Ok(connections) if !connections.is_empty() => {}
-            _ => {
-                debug!("[nm] Skipping network {} (no saved profile)", network.ssid);
+    for adapter_path in adapter_paths {
+        let proxy = match zbus::Proxy::new(
+            conn,
+            NM_SERVICE,
+            adapter_path.as_str(),
+            NM_WIRELESS_INTERFACE,
+        )
+        .await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(
+                    "[nm] Failed to create Wireless proxy for {}: {}",
+                    adapter_path, e
+                );
                 continue;
             }
-        }
+        };
 
-        let strength = network.strength.unwrap_or(0);
-        let secure = network.secured;
+        let ap_paths: (Vec<OwnedObjectPath>,) =
+            match proxy.call("GetAllAccessPoints", &()).await {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!(
+                        "[nm] Failed to get access points from {}: {}",
+                        adapter_path, e
+                    );
+                    continue;
+                }
+            };
 
-        match by_ssid.get(&network.ssid) {
-            Some(existing) if existing.strength >= strength => {
-                // Keep existing (stronger or equal)
+        for ap_path in &ap_paths.0 {
+            let ap = match read_access_point(conn, ap_path.as_str()).await {
+                Ok(ap) => ap,
+                Err(e) => {
+                    debug!("[nm] Failed to read AP {}: {}", ap_path, e);
+                    continue;
+                }
+            };
+
+            if ap.ssid.is_empty() {
+                continue;
             }
-            _ => {
-                by_ssid.insert(
-                    network.ssid.clone(),
-                    AccessPointInfo {
-                        ssid: network.ssid.clone(),
-                        strength,
-                        secure,
-                    },
-                );
+
+            // Only include networks with saved connection profiles
+            match get_connections_for_ssid(conn, &ap.ssid).await {
+                Ok(connections) if !connections.is_empty() => {}
+                _ => {
+                    debug!("[nm] Skipping network {} (no saved profile)", ap.ssid);
+                    continue;
+                }
+            }
+
+            let secure = ap.is_secure();
+
+            match by_ssid.get(&ap.ssid) {
+                Some(existing) if existing.strength >= ap.strength => {}
+                _ => {
+                    by_ssid.insert(
+                        ap.ssid.clone(),
+                        AccessPointInfo {
+                            ssid: ap.ssid,
+                            strength: ap.strength,
+                            secure,
+                        },
+                    );
+                }
             }
         }
     }
 
     let mut result: Vec<AccessPointInfo> = by_ssid.into_values().collect();
-    // Sort by signal strength (strongest first)
     result.sort_by(|a, b| b.strength.cmp(&a.strength));
     Ok(result)
+}
+
+/// Read access point properties from D-Bus.
+async fn read_access_point(conn: &Connection, ap_path: &str) -> Result<AccessPoint> {
+    use crate::dbus_property::get_property;
+
+    let ssid_bytes: Vec<u8> = get_property(
+        conn,
+        ap_path,
+        "org.freedesktop.NetworkManager.AccessPoint",
+        "Ssid",
+    )
+    .await
+    .unwrap_or_default();
+
+    let ssid = String::from_utf8_lossy(&ssid_bytes).to_string();
+
+    let strength: u8 = get_property(
+        conn,
+        ap_path,
+        "org.freedesktop.NetworkManager.AccessPoint",
+        "Strength",
+    )
+    .await
+    .unwrap_or(0);
+
+    let flags: u32 = get_property(
+        conn,
+        ap_path,
+        "org.freedesktop.NetworkManager.AccessPoint",
+        "Flags",
+    )
+    .await
+    .unwrap_or(0);
+
+    let wpa_flags: u32 = get_property(
+        conn,
+        ap_path,
+        "org.freedesktop.NetworkManager.AccessPoint",
+        "WpaFlags",
+    )
+    .await
+    .unwrap_or(0);
+
+    let rsn_flags: u32 = get_property(
+        conn,
+        ap_path,
+        "org.freedesktop.NetworkManager.AccessPoint",
+        "RsnFlags",
+    )
+    .await
+    .unwrap_or(0);
+
+    Ok(AccessPoint {
+        path: ap_path.to_string(),
+        ssid,
+        strength,
+        flags,
+        wpa_flags,
+        rsn_flags,
+    })
 }
 
 /// Find saved WiFi connections matching the given SSID.
@@ -152,7 +270,7 @@ pub async fn disconnect_device(conn: &Connection, device_path: &str) -> Result<(
     Ok(())
 }
 
-/// Set WiFi enabled via raw D-Bus (avoids nmrs non-Send futures).
+/// Set WiFi enabled via D-Bus.
 pub async fn set_wifi_enabled_dbus(conn: &Connection, enabled: bool) -> Result<()> {
     let proxy = zbus::Proxy::new(
         conn,

@@ -18,6 +18,8 @@ pub const NM_VPN_CONNECTION_INTERFACE: &str =
 pub const DEVICE_TYPE_ETHERNET: u32 = 1;
 pub const DEVICE_TYPE_WIFI: u32 = 2;
 
+pub const NM_WIRELESS_INTERFACE: &str = "org.freedesktop.NetworkManager.Device.Wireless";
+
 /// Read a single D-Bus property via the org.freedesktop.DBus.Properties interface.
 pub async fn get_property<T>(
     conn: &Connection,

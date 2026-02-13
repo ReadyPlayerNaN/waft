@@ -1,7 +1,4 @@
-//! WiFi scan background task using nmrs (non-Send).
-//!
-//! Runs on a dedicated thread with a single-threaded tokio runtime + LocalSet
-//! because nmrs futures are !Send and cannot be spawned on the multi-threaded runtime.
+//! WiFi scan background task using pure D-Bus.
 
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -22,11 +19,10 @@ fn lock_state(state: &StdMutex<NmState>) -> std::sync::MutexGuard<'_, NmState> {
     }
 }
 
-/// Background task: handles WiFi scanning using nmrs (non-Send).
+/// Background task: handles WiFi scanning via D-Bus.
 /// Receives scan requests via channel and updates shared state.
 pub async fn wifi_scan_task(
     mut scan_rx: tokio::sync::mpsc::Receiver<()>,
-    nm: nmrs::NetworkManager,
     conn: Connection,
     state: Arc<StdMutex<NmState>>,
     notifier: EntityNotifier,
@@ -34,16 +30,17 @@ pub async fn wifi_scan_task(
     while let Some(()) = scan_rx.recv().await {
         debug!("[nm] WiFi scan requested");
 
-        // Set scanning state
-        {
+        // Read adapter paths and set scanning state
+        let adapter_paths: Vec<String> = {
             let mut st = lock_state(&state);
             for adapter in &mut st.wifi_adapters {
                 adapter.scanning = true;
             }
-        }
+            st.wifi_adapters.iter().map(|a| a.path.clone()).collect()
+        };
         notifier.notify();
 
-        match scan_and_list_known_networks(&nm, &conn).await {
+        match scan_and_list_known_networks(&conn, &adapter_paths).await {
             Ok(networks) => {
                 info!("[nm] WiFi scan found {} known networks", networks.len());
                 let mut st = lock_state(&state);

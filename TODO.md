@@ -1,25 +1,3 @@
-# Drop nmrs in favor of pure D-Bus for NetworkManager
-
-The `nmrs` crate produces `!Send` futures, which forces the networkmanager plugin to spawn a dedicated OS thread with a single-threaded tokio runtime + `LocalSet` just for WiFi scanning. The rest of the plugin already uses pure `zbus` D-Bus calls. Removing `nmrs` eliminates the threading workaround, simplifies the architecture, and unblocks support for additional device types (tethering, mobile broadband) that nmrs does not expose.
-
-## Migration phases
-
-### Phase 1: Replace device listing with pure D-Bus
-
-- Replace device enumeration with `GetDevices()` on `org.freedesktop.NetworkManager` via zbus and read device properties with the existing `get_property()` helper
-- This phase alone unblocks new device types: tethering, mobile broadband, etc.
-
-### Phase 2: Replace WiFi scanning with pure D-Bus
-
-- Replace WiFi scan with `RequestScan` method call on `org.freedesktop.NetworkManager.Device.Wireless`
-- Replace network listing with `GetAllAccessPoints` and read each access point's properties
-- Remove the dedicated OS thread + single-threaded runtime workaround
-
-### Phase 3: Remove nmrs dependency
-
-- Remove `nmrs = "2.0"` from `plugins/networkmanager/Cargo.toml`
-- Plugin depends only on `zbus` for all NetworkManager communication
-
 # Notification sounds
 
 Play a sound when a notification pops up. Configure sounds=disabled/enabled, sound based on urgency, sound based on notification matching. Sounds are off in Do Not Disturb mode.

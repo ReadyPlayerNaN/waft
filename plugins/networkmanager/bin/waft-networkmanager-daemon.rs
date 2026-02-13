@@ -50,11 +50,7 @@ struct NetworkManagerPlugin {
 impl NetworkManagerPlugin {
     async fn new(
         scan_tx: tokio::sync::mpsc::Sender<()>,
-    ) -> Result<(Self, nmrs::NetworkManager)> {
-        let nm = nmrs::NetworkManager::new()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to create NetworkManager: {}", e))?;
-
+    ) -> Result<Self> {
         let conn = Connection::system()
             .await
             .context("Failed to connect to system bus")?;
@@ -62,7 +58,7 @@ impl NetworkManagerPlugin {
         let mut state = NmState::default();
 
         // Discover devices
-        match discover_devices(&nm).await {
+        match discover_devices(&conn).await {
             Ok(devices) => {
                 info!("[nm] Found {} network devices", devices.len());
                 for device in devices {
@@ -205,7 +201,7 @@ impl NetworkManagerPlugin {
             scan_tx,
         };
 
-        Ok((plugin, nm))
+        Ok(plugin)
     }
 
     fn shared_state(&self) -> Arc<StdMutex<NmState>> {
@@ -921,10 +917,9 @@ fn main() -> Result<()> {
     // Build the tokio runtime manually so `handle_provides` runs without it
     let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
     rt.block_on(async {
-        // Create scan channel for WiFi scanning (uses nmrs which has non-Send futures)
         let (scan_tx, scan_rx) = tokio::sync::mpsc::channel::<()>(4);
 
-        let (plugin, nm) = NetworkManagerPlugin::new(scan_tx).await?;
+        let plugin = NetworkManagerPlugin::new(scan_tx).await?;
 
         let shared_state = plugin.shared_state();
         let monitor_conn = plugin.conn.clone();
@@ -946,24 +941,11 @@ fn main() -> Result<()> {
             warn!("[nm] D-Bus signal monitoring task stopped");
         });
 
-        // WiFi scan background task (runs nmrs which has non-Send futures).
-        // Use a dedicated thread with a single-threaded runtime + LocalSet
-        // because nmrs futures are !Send and cannot be spawned on the multi-threaded runtime.
+        // WiFi scan background task — pure D-Bus, runs on main tokio runtime
         let scan_state = shared_state.clone();
-        std::thread::Builder::new()
-            .name("nm-wifi-scan".into())
-            .spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("Failed to create scan runtime");
-
-                let local = tokio::task::LocalSet::new();
-                local.block_on(&rt, async move {
-                    wifi_scan_task(scan_rx, nm, scan_conn, scan_state, scan_notifier).await;
-                });
-            })
-            .expect("Failed to spawn WiFi scan thread");
+        tokio::spawn(async move {
+            wifi_scan_task(scan_rx, scan_conn, scan_state, scan_notifier).await;
+        });
 
         runtime.run().await?;
         Ok(())

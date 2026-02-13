@@ -1,11 +1,13 @@
-//! Network device discovery via nmrs and raw D-Bus.
+//! Network device discovery via D-Bus.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::dbus_property::{
-    get_property, DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI, NM_DEVICE_INTERFACE,
+    get_property, NM_INTERFACE, NM_PATH, NM_SERVICE, DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI,
+    NM_DEVICE_INTERFACE,
 };
 use crate::is_virtual_interface;
+use zbus::zvariant::OwnedObjectPath;
 use zbus::Connection;
 
 /// Basic information about a network device.
@@ -17,48 +19,26 @@ pub struct DeviceInfo {
     pub device_state: u32,
 }
 
-/// Discover managed Ethernet and WiFi devices using nmrs.
-pub async fn discover_devices(nm: &nmrs::NetworkManager) -> Result<Vec<DeviceInfo>> {
-    let devices = nm
-        .list_devices()
+/// Discover managed Ethernet and WiFi devices via D-Bus.
+pub async fn discover_devices(conn: &Connection) -> Result<Vec<DeviceInfo>> {
+    let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to list devices: {}", e))?;
+        .context("Failed to create NM proxy")?;
+
+    let (device_paths,): (Vec<OwnedObjectPath>,) = proxy
+        .call("GetDevices", &())
+        .await
+        .context("Failed to call GetDevices")?;
 
     let mut result = Vec::new();
-    for device in devices {
-        let device_type = match device.device_type {
-            nmrs::DeviceType::Ethernet => DEVICE_TYPE_ETHERNET,
-            nmrs::DeviceType::Wifi => DEVICE_TYPE_WIFI,
-            _ => continue,
-        };
-
-        if is_virtual_interface(&device.interface) {
-            continue;
+    for device_path in device_paths {
+        match get_device_info_dbus(conn, device_path.as_str()).await {
+            Ok(Some(info)) => result.push(info),
+            Ok(None) => {} // filtered out (not ethernet/wifi, virtual, or unmanaged)
+            Err(e) => {
+                log::warn!("[nm] Failed to read device {}: {}", device_path, e);
+            }
         }
-
-        if !device.managed.unwrap_or(false) {
-            continue;
-        }
-
-        let device_state = match device.state {
-            nmrs::DeviceState::Unmanaged => 10,
-            nmrs::DeviceState::Unavailable => 20,
-            nmrs::DeviceState::Disconnected => 30,
-            nmrs::DeviceState::Prepare => 40,
-            nmrs::DeviceState::Config => 50,
-            nmrs::DeviceState::Activated => 100,
-            nmrs::DeviceState::Deactivating => 110,
-            nmrs::DeviceState::Failed => 120,
-            nmrs::DeviceState::Other(code) => code,
-            _ => 0,
-        };
-
-        result.push(DeviceInfo {
-            path: device.path.clone(),
-            device_type,
-            interface_name: device.interface.clone(),
-            device_state,
-        });
     }
 
     Ok(result)
