@@ -18,4 +18,3 @@ pub type VoidCallback = Rc<RefCell<Option<Box<dyn Fn()>>>>;
 
 // Re-export commonly used types from sub-crates
 pub use waft_config;
-pub use waft_ipc;

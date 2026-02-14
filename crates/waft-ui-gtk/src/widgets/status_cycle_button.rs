@@ -1,10 +1,21 @@
 //! StatusCycleButton widget — displays current option and cycles to next on click.
 
+use std::rc::Rc;
+
 use gtk::prelude::*;
 
-use crate::types::ActionCallback;
 use crate::widgets::icon::IconWidget;
-use waft_ipc::widget::{Action, ActionParams, StatusOption};
+
+/// An option for StatusCycleButton.
+#[derive(Clone, Debug)]
+pub struct StatusOption {
+    pub id: String,
+    pub label: String,
+}
+
+/// Callback type for cycle events — receives the next option ID.
+pub type CycleCallback = Rc<dyn Fn(String)>;
+
 /// GTK4 status cycle button widget.
 #[derive(Clone)]
 pub struct StatusCycleButtonWidget {
@@ -20,9 +31,7 @@ impl StatusCycleButtonWidget {
         value: &str,
         icon: &str,
         options: &[StatusOption],
-        callback: &ActionCallback,
-        on_cycle: &Action,
-        widget_id: &str,
+        on_cycle: CycleCallback,
     ) -> Self {
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -43,16 +52,11 @@ impl StatusCycleButtonWidget {
             .sensitive(options.len() >= 2)
             .build();
 
-        let cb = callback.clone();
-        let wid = widget_id.to_string();
-        let action = on_cycle.clone();
         let opts = options.to_vec();
         let current_value = value.to_string();
         root.connect_clicked(move |_| {
             let next_id = Self::next_option_id(&current_value, &opts);
-            let mut a = action.clone();
-            a.params = ActionParams::String(next_id);
-            cb(wid.clone(), a);
+            on_cycle(next_id);
         });
 
         Self {

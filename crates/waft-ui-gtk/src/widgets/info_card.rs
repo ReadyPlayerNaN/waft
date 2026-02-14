@@ -1,14 +1,12 @@
 //! Pure GTK4 InfoCard widget.
 //!
-//! A card with icon, title, optional description, and optional click action.
+//! A card with icon, title, and optional description.
 //! Layout: `[Icon 32x32] [Title (bold) / Description (dim)]`
-//! When on_click is Some, the card is wrapped in a flat button.
 
 use gtk::prelude::*;
 
-use crate::types::ActionCallback;
 use crate::widgets::icon::IconWidget;
-use waft_ipc::widget::Action;
+
 /// Pure GTK4 info card widget.
 #[derive(Clone)]
 pub struct InfoCardWidget {
@@ -21,51 +19,6 @@ pub struct InfoCardWidget {
 impl InfoCardWidget {
     /// Create a new info card widget.
     pub fn new(icon: &str, title: &str, description: Option<&str>) -> Self {
-        let (root, icon_widget, title_label, description_label) =
-            Self::build_content(icon, title, description, false);
-
-        Self {
-            root,
-            icon_widget,
-            title_label,
-            description_label,
-        }
-    }
-
-    /// Create a new clickable info card widget.
-    pub fn new_clickable(
-        icon: &str,
-        title: &str,
-        description: Option<&str>,
-        callback: &ActionCallback,
-        on_click: &Action,
-        widget_id: &str,
-    ) -> Self {
-        let (root, icon_widget, title_label, description_label) =
-            Self::build_content(icon, title, description, true);
-
-        let cb = callback.clone();
-        let wid = widget_id.to_string();
-        let action = on_click.clone();
-        let button: gtk::Button = root.clone().downcast().unwrap();
-        button.connect_clicked(move |_| {
-            cb(wid.clone(), action.clone());
-        });
-
-        Self {
-            root,
-            icon_widget,
-            title_label,
-            description_label,
-        }
-    }
-
-    fn build_content(
-        icon: &str,
-        title: &str,
-        description: Option<&str>,
-        clickable: bool,
-    ) -> (gtk::Widget, IconWidget, gtk::Label, gtk::Label) {
         let content_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
@@ -99,17 +52,12 @@ impl InfoCardWidget {
         content_box.append(icon_widget.widget());
         content_box.append(&labels_box);
 
-        let root: gtk::Widget = if clickable {
-            let button = gtk::Button::builder()
-                .css_classes(["flat", "info-card"])
-                .child(&content_box)
-                .build();
-            button.upcast()
-        } else {
-            content_box.upcast()
-        };
-
-        (root, icon_widget, title_label, description_label)
+        Self {
+            root: content_box.upcast(),
+            icon_widget,
+            title_label,
+            description_label,
+        }
     }
 
     /// Update the icon.
