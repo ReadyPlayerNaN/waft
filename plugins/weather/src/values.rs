@@ -84,7 +84,7 @@ pub enum TemperatureUnit {
 }
 
 impl TemperatureUnit {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "fahrenheit" | "f" => Self::Fahrenheit,
             _ => Self::Celsius,
@@ -256,26 +256,26 @@ mod tests {
     // TemperatureUnit tests
     #[test]
     fn test_temperature_unit_from_str_celsius() {
-        assert_eq!(TemperatureUnit::from_str("celsius"), TemperatureUnit::Celsius);
-        assert_eq!(TemperatureUnit::from_str("Celsius"), TemperatureUnit::Celsius);
-        assert_eq!(TemperatureUnit::from_str("CELSIUS"), TemperatureUnit::Celsius);
-        assert_eq!(TemperatureUnit::from_str("c"), TemperatureUnit::Celsius);
+        assert_eq!(TemperatureUnit::parse("celsius"), TemperatureUnit::Celsius);
+        assert_eq!(TemperatureUnit::parse("Celsius"), TemperatureUnit::Celsius);
+        assert_eq!(TemperatureUnit::parse("CELSIUS"), TemperatureUnit::Celsius);
+        assert_eq!(TemperatureUnit::parse("c"), TemperatureUnit::Celsius);
     }
 
     #[test]
     fn test_temperature_unit_from_str_fahrenheit() {
-        assert_eq!(TemperatureUnit::from_str("fahrenheit"), TemperatureUnit::Fahrenheit);
-        assert_eq!(TemperatureUnit::from_str("Fahrenheit"), TemperatureUnit::Fahrenheit);
-        assert_eq!(TemperatureUnit::from_str("FAHRENHEIT"), TemperatureUnit::Fahrenheit);
-        assert_eq!(TemperatureUnit::from_str("f"), TemperatureUnit::Fahrenheit);
-        assert_eq!(TemperatureUnit::from_str("F"), TemperatureUnit::Fahrenheit);
+        assert_eq!(TemperatureUnit::parse("fahrenheit"), TemperatureUnit::Fahrenheit);
+        assert_eq!(TemperatureUnit::parse("Fahrenheit"), TemperatureUnit::Fahrenheit);
+        assert_eq!(TemperatureUnit::parse("FAHRENHEIT"), TemperatureUnit::Fahrenheit);
+        assert_eq!(TemperatureUnit::parse("f"), TemperatureUnit::Fahrenheit);
+        assert_eq!(TemperatureUnit::parse("F"), TemperatureUnit::Fahrenheit);
     }
 
     #[test]
     fn test_temperature_unit_from_str_defaults_to_celsius() {
-        assert_eq!(TemperatureUnit::from_str("invalid"), TemperatureUnit::Celsius);
-        assert_eq!(TemperatureUnit::from_str(""), TemperatureUnit::Celsius);
-        assert_eq!(TemperatureUnit::from_str("kelvin"), TemperatureUnit::Celsius);
+        assert_eq!(TemperatureUnit::parse("invalid"), TemperatureUnit::Celsius);
+        assert_eq!(TemperatureUnit::parse(""), TemperatureUnit::Celsius);
+        assert_eq!(TemperatureUnit::parse("kelvin"), TemperatureUnit::Celsius);
     }
 
     #[test]

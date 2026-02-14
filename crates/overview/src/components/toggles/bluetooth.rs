@@ -41,8 +41,11 @@ struct DeviceRow {
 /// or stale ones removed.
 pub struct BluetoothToggles {
     entries: Rc<RefCell<Vec<ToggleEntry>>>,
+    #[allow(dead_code)]
     store: Rc<EntityStore>,
+    #[allow(dead_code)]
     action_callback: EntityActionCallback,
+    #[allow(dead_code)]
     menu_store: Rc<waft_core::menu_state::MenuStore>,
 }
 

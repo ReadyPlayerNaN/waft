@@ -68,8 +68,11 @@ impl NetworkRow {
 /// in sync as entities appear, change, or are removed.
 pub struct NetworkManagerToggles {
     entries: Rc<RefCell<Vec<ToggleEntry>>>,
+    #[allow(dead_code)]
     store: Rc<EntityStore>,
+    #[allow(dead_code)]
     action_callback: EntityActionCallback,
+    #[allow(dead_code)]
     menu_store: Rc<waft_core::menu_state::MenuStore>,
 }
 

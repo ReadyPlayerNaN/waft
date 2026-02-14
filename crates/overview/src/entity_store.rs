@@ -18,6 +18,9 @@ use waft_protocol::Urn;
 /// Parameters: (urn, action_name, params)
 pub type EntityActionCallback = Rc<dyn Fn(Urn, String, serde_json::Value)>;
 
+/// Type alias for subscriber map to reduce complexity.
+type SubscriberMap = RefCell<HashMap<String, Vec<Rc<dyn Fn()>>>>;
+
 /// A cached entity: URN, entity type, and raw JSON data.
 #[derive(Clone)]
 struct CachedEntity {
@@ -35,7 +38,7 @@ pub struct EntityStore {
     /// Cached entity data: URN string -> CachedEntity
     cache: RefCell<HashMap<String, CachedEntity>>,
     /// Per-entity-type subscribers: entity_type -> list of callbacks
-    subscribers: RefCell<HashMap<String, Vec<Rc<dyn Fn()>>>>,
+    subscribers: SubscriberMap,
 }
 
 impl EntityStore {
@@ -121,6 +124,7 @@ impl EntityStore {
     }
 
     /// Get a single entity by URN as a typed value.
+    #[allow(dead_code)]
     pub fn get_entity_typed<T: serde::de::DeserializeOwned>(&self, urn: &Urn) -> Option<T> {
         let cache = self.cache.borrow();
         cache.get(urn.as_str()).and_then(|e| {
@@ -139,6 +143,7 @@ impl EntityStore {
     }
 
     /// Get all cached entities of a given type as raw (Urn, Value) pairs.
+    #[allow(dead_code)]
     pub fn get_entities_raw(&self, entity_type: &str) -> Vec<(Urn, serde_json::Value)> {
         let cache = self.cache.borrow();
         cache
@@ -159,11 +164,10 @@ impl EntityStore {
         // Skip if data unchanged
         {
             let cache = self.cache.borrow();
-            if let Some(cached) = cache.get(&urn_str) {
-                if cached.data == data {
+            if let Some(cached) = cache.get(&urn_str)
+                && cached.data == data {
                     return;
                 }
-            }
         }
 
         self.cache.borrow_mut().insert(

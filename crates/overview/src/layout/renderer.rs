@@ -8,6 +8,9 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use log::{debug, warn};
 
+/// Type alias for rebuild callback slot to reduce complexity.
+type RebuildSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
 use crate::calendar_selection::CalendarSelectionStore;
 use crate::components::agenda::AgendaComponent;
 use crate::components::audio_sliders::AudioSlidersComponent;
@@ -320,7 +323,7 @@ fn render_feature_toggle_grid(
     let grid = Rc::new(FeatureGridWidget::new(Vec::new(), menu_store.clone(), Some(resize_cb)));
 
     // Two-phase init for dynamic toggle rebuild cycle
-    let rebuild_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let rebuild_slot: RebuildSlot = Rc::new(RefCell::new(None));
 
     let slot_for_dynamic = rebuild_slot.clone();
     let dynamic_rebuild: Rc<dyn Fn()> = Rc::new(move || {

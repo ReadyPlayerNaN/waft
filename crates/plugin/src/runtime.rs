@@ -95,12 +95,14 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                         Ok(Some(cmd)) => {
                             match cmd {
                                 PluginCommand::TriggerAction { urn, action, action_id, params } => {
-                                    let plugin = self.plugin.clone();
-                                    let tx = write_tx.clone();
-                                    let name = self.name.clone();
-                                    let prev = previous.clone();
+                                    let ctx = ActionContext {
+                                        plugin: self.plugin.clone(),
+                                        tx: write_tx.clone(),
+                                        name: self.name.clone(),
+                                        previous: previous.clone(),
+                                    };
                                     tokio::spawn(async move {
-                                        handle_action(plugin, &name, &tx, &prev, urn, action, action_id, params).await;
+                                        handle_action(ctx, urn, action, action_id, params).await;
                                     });
                                 }
                                 PluginCommand::CanStop => {
@@ -129,34 +131,39 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
     }
 }
 
+/// Context for handling plugin actions.
+struct ActionContext<P: Plugin> {
+    plugin: Arc<P>,
+    name: String,
+    tx: mpsc::Sender<PluginMessage>,
+    previous: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+}
+
 /// Handle an incoming action: run plugin handler, send success/error, re-send entities.
 async fn handle_action<P: Plugin>(
-    plugin: Arc<P>,
-    name: &str,
-    tx: &mpsc::Sender<PluginMessage>,
-    previous: &Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    ctx: ActionContext<P>,
     urn: Urn,
     action: String,
     action_id: Uuid,
     params: serde_json::Value,
 ) {
-    match plugin.handle_action(urn, action, params).await {
+    match ctx.plugin.handle_action(urn, action, params).await {
         Ok(()) => {
-            if let Err(e) = tx.send(PluginMessage::ActionSuccess { action_id }).await {
-                log::warn!("[{name}] failed to send ActionSuccess: {e}");
+            if let Err(e) = ctx.tx.send(PluginMessage::ActionSuccess { action_id }).await {
+                log::warn!("[{}] failed to send ActionSuccess: {e}", ctx.name);
                 return;
             }
         }
         Err(e) => {
-            log::error!("[{name}] action {action_id} failed: {e}");
-            if let Err(send_err) = tx
+            log::error!("[{}] action {action_id} failed: {e}", ctx.name);
+            if let Err(send_err) = ctx.tx
                 .send(PluginMessage::ActionError {
                     action_id,
                     error: e.to_string(),
                 })
                 .await
             {
-                log::warn!("[{name}] failed to send ActionError: {send_err}");
+                log::warn!("[{}] failed to send ActionError: {send_err}", ctx.name);
                 return;
             }
         }
@@ -164,7 +171,7 @@ async fn handle_action<P: Plugin>(
 
     // Re-send entities after action, diffing against previous state
     // so that removed entities get EntityRemoved messages.
-    send_all_entities(&*plugin, tx, name, previous).await;
+    send_all_entities(&*ctx.plugin, &ctx.tx, &ctx.name, &ctx.previous).await;
 }
 
 /// Send all current entities to the daemon, diffing against previous state.
@@ -206,7 +213,7 @@ async fn send_all_entities<P: Plugin>(
     }
 
     // Send EntityRemoved for entities that no longer exist
-    for (prev_key, _) in &prev_snapshot {
+    for prev_key in prev_snapshot.keys() {
         if !current.contains_key(prev_key) {
             let urn = match Urn::parse(prev_key) {
                 Ok(u) => u,

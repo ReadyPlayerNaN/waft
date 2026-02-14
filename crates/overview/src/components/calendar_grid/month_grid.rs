@@ -13,6 +13,9 @@ use gtk::prelude::*;
 
 use super::day_cell::{DayCell, DayCellOutput, DayCellProps};
 
+/// Type alias for output callback to reduce complexity.
+type OutputCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
+
 /// Input properties for the month grid.
 pub struct MonthGridProps {
     /// Year to display.
@@ -36,7 +39,7 @@ pub enum MonthGridOutput {
 /// A month grid showing 7 columns (Mon-Sun) and 6 rows of day cells.
 pub struct MonthGrid {
     pub root: gtk::Box,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(MonthGridOutput)>>>>,
+    on_output: OutputCallback<MonthGridOutput>,
 }
 
 impl MonthGrid {
@@ -64,8 +67,7 @@ impl MonthGrid {
             grid.attach(&lbl, col as i32, 0, 1, 1);
         }
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(MonthGridOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: OutputCallback<MonthGridOutput> = Rc::new(RefCell::new(None));
 
         // Compute first day of the month and its weekday
         let first_of_month = match NaiveDate::from_ymd_opt(props.year, props.month, 1) {

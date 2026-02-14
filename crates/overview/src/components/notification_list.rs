@@ -24,8 +24,11 @@ use crate::menu_state::MenuStore;
 /// clear-all, and action invocation via entity callbacks.
 pub struct NotificationsComponent {
     container: gtk::Box,
+    #[allow(dead_code)]
     groups_container: gtk::Box,
+    #[allow(dead_code)]
     empty_placeholder: gtk::Box,
+    #[allow(dead_code)]
     groups: Rc<RefCell<HashMap<String, NotificationGroup>>>,
 }
 
@@ -38,7 +41,7 @@ impl NotificationsComponent {
         let container = gtk::Box::new(gtk::Orientation::Vertical, 8);
 
         let header = gtk::Label::builder()
-            .label(&i18n::t("notifications-title"))
+            .label(i18n::t("notifications-title"))
             .css_classes(["title-2"])
             .xalign(0.0)
             .build();
@@ -50,7 +53,7 @@ impl NotificationsComponent {
         // Empty placeholder
         let empty_placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let placeholder_label = gtk::Label::builder()
-            .label(&i18n::t("notifications-empty"))
+            .label(i18n::t("notifications-empty"))
             .css_classes(["dim-label"])
             .xalign(0.0)
             .build();
@@ -94,11 +97,10 @@ impl NotificationsComponent {
             let current_group_keys: Vec<String> =
                 groups_ref.borrow().keys().cloned().collect();
             for key in &current_group_keys {
-                if !grouped.contains_key(key) {
-                    if let Some(group) = groups_ref.borrow_mut().remove(key) {
+                if !grouped.contains_key(key)
+                    && let Some(group) = groups_ref.borrow_mut().remove(key) {
                         groups_container_ref.remove(group.widget());
                     }
-                }
             }
 
             // Create or update groups

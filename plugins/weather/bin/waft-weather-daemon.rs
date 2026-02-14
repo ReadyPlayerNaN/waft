@@ -122,7 +122,7 @@ fn main() -> Result<()> {
         waft_plugin::config::load_plugin_config("weather").unwrap_or_default();
     let lat = config.latitude;
     let lon = config.longitude;
-    let units = TemperatureUnit::from_str(&config.units);
+    let units = TemperatureUnit::parse(&config.units);
     let interval = config.update_interval;
 
     log::debug!("Weather config: lat={lat}, lon={lon}, units={units:?}, interval={interval}s");

@@ -81,6 +81,7 @@ fn parse_children(node: &roxmltree::Node) -> Result<Vec<LayoutNode>> {
 ///
 /// `brightness:*` matches `brightness:control`, `brightness:intel_backlight`, etc.
 /// `clock:main` matches only `clock:main`.
+#[allow(dead_code)]
 pub fn glob_match(text: &str, pattern: &str) -> bool {
     if let Some(prefix) = pattern.strip_suffix('*') {
         text.starts_with(prefix)

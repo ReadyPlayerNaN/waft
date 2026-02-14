@@ -1,1 +1,1 @@
-pub use waft_core::dbus::*;
+// Re-export removed - no longer needed

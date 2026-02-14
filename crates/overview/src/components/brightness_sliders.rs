@@ -25,6 +25,7 @@ struct SliderEntry {
 /// dynamically as displays appear or disappear.
 pub struct BrightnessSlidersComponent {
     container: gtk::Box,
+    #[allow(dead_code)]
     sliders: Rc<RefCell<HashMap<String, SliderEntry>>>,
 }
 

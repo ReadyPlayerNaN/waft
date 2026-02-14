@@ -57,11 +57,6 @@ impl PluginDiscoveryCache {
             .map(|(name, path)| (name.as_str(), path))
     }
 
-    /// Get all known entity types.
-    #[cfg(test)]
-    pub fn entity_types(&self) -> Vec<&str> {
-        self.type_to_binary.keys().map(|s| s.as_str()).collect()
-    }
 }
 
 pub fn print_plugin_list() {

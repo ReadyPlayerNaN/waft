@@ -35,13 +35,19 @@ use crate::menu_state::{MenuOp, MenuStore};
 /// - Calendar selection filtering: single-day or today+tomorrow
 pub struct AgendaComponent {
     container: gtk::Box,
+    #[allow(dead_code)]
     content_box: gtk::Box,
+    #[allow(dead_code)]
     empty_label: gtk::Label,
+    #[allow(dead_code)]
     past_revealer: gtk::Revealer,
+    #[allow(dead_code)]
     past_box: gtk::Box,
     show_past_btn: gtk::ToggleButton,
     /// Map of occurrence keys to card widgets
+    #[allow(dead_code)]
     event_cards: Rc<RefCell<HashMap<String, Rc<AgendaCard>>>>,
+    #[allow(dead_code)]
     now_divider: RefCell<Option<gtk::Separator>>,
     _store: Rc<EntityStore>,
     _menu_store: Rc<MenuStore>,
@@ -223,6 +229,7 @@ impl AgendaComponent {
     /// - **Date selected**: Flat chronological list of ALL events for that day in
     ///   `content_box`. Past events are dimmed, ongoing highlighted, but no
     ///   past/future split. The past revealer is unused.
+    #[allow(clippy::too_many_arguments)]
     fn update_events(
         store: &Rc<EntityStore>,
         event_cards: &Rc<RefCell<HashMap<String, Rc<AgendaCard>>>>,

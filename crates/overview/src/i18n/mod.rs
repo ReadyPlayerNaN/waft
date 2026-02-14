@@ -45,6 +45,7 @@ pub fn t(id: &str) -> String {
 /// Translate a message with arguments.
 ///
 /// Returns the message ID if translation is not found.
+#[allow(dead_code)]
 pub fn t_args(id: &str, args: &[(&str, &str)]) -> String {
     let bundle = BUNDLE.get_or_init(|| {
         let locale = detect_locale();

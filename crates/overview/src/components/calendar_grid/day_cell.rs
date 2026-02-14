@@ -9,6 +9,9 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
+/// Type alias for output callback to reduce complexity.
+type OutputCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
+
 /// Input properties for a day cell.
 pub struct DayCellProps {
     /// Day number (1-31).
@@ -26,13 +29,14 @@ pub struct DayCellProps {
 /// Output events emitted by the day cell.
 pub enum DayCellOutput {
     /// The day was clicked. Contains the day number.
+    #[allow(dead_code)]
     Clicked(u32),
 }
 
 /// A single day cell in the calendar grid.
 pub struct DayCell {
     pub root: gtk::Button,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(DayCellOutput)>>>>,
+    on_output: OutputCallback<DayCellOutput>,
 }
 
 impl DayCell {
@@ -45,7 +49,7 @@ impl DayCell {
             .build();
 
         let label = gtk::Label::builder()
-            .label(&props.day.to_string())
+            .label(props.day.to_string())
             .halign(gtk::Align::Center)
             .build();
         content.append(&label);
@@ -90,8 +94,7 @@ impl DayCell {
             button.add_css_class("has-events");
         }
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(DayCellOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: OutputCallback<DayCellOutput> = Rc::new(RefCell::new(None));
 
         let day = props.day;
         let on_output_ref = on_output.clone();

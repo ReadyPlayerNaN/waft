@@ -48,10 +48,10 @@ pub async fn get_vpn_profiles(conn: &Connection) -> Result<Vec<VpnProfileInfo>> 
         let (settings,): (HashMap<String, HashMap<String, OwnedValue>>,) =
             conn_proxy.call("GetSettings", &()).await?;
 
-        if let Some(connection) = settings.get("connection") {
-            if let Some(conn_type) = connection.get("type") {
-                if let Ok(type_str) = String::try_from(conn_type.clone()) {
-                    if type_str == "vpn" {
+        if let Some(connection) = settings.get("connection")
+            && let Some(conn_type) = connection.get("type")
+                && let Ok(type_str) = String::try_from(conn_type.clone())
+                    && type_str == "vpn" {
                         let name = connection
                             .get("id")
                             .and_then(|v| String::try_from(v.clone()).ok())
@@ -67,9 +67,6 @@ pub async fn get_vpn_profiles(conn: &Connection) -> Result<Vec<VpnProfileInfo>> 
                             name,
                         });
                     }
-                }
-            }
-        }
     }
 
     Ok(vpn_profiles)
@@ -124,11 +121,9 @@ pub async fn get_active_vpn_connections(
                 Err(_) => continue,
             };
 
-        let state: u32 =
-            match get_property(conn, path_str, NM_CONNECTION_ACTIVE_INTERFACE, "State").await {
-                Ok(s) => s,
-                Err(_) => 0,
-            };
+        let state: u32 = get_property(conn, path_str, NM_CONNECTION_ACTIVE_INTERFACE, "State")
+            .await
+            .unwrap_or_default();
 
         vpn_active.push((
             path_str.to_string(),

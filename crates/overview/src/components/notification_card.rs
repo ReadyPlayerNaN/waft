@@ -18,6 +18,9 @@ use waft_ui_gtk::widgets::icon::{Icon, IconWidget};
 use super::notification_markup;
 use crate::ui::main_window::trigger_window_resize;
 
+/// Type alias for output callback to reduce complexity.
+type OutputCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
+
 /// Output events from a notification card.
 #[derive(Debug, Clone)]
 pub enum NotificationCardOutput {
@@ -32,7 +35,8 @@ pub struct NotificationCard {
     revealer: gtk::Revealer,
     title_label: gtk::Label,
     description_label: gtk::Label,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationCardOutput)>>>>,
+    on_output: OutputCallback<NotificationCardOutput>,
+    #[allow(dead_code)]
     hidden: Rc<RefCell<bool>>,
 }
 
@@ -52,8 +56,7 @@ impl NotificationCard {
             .reveal_child(false)
             .build();
 
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationCardOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: OutputCallback<NotificationCardOutput> = Rc::new(RefCell::new(None));
         let hidden = Rc::new(RefCell::new(false));
 
         // Card box
@@ -235,8 +238,8 @@ impl NotificationCard {
                 }
 
                 // Don't fire default action when clicking interactive elements
-                if let Some(widget) = gesture.widget() {
-                    if let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT) {
+                if let Some(widget) = gesture.widget()
+                    && let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT) {
                         let mut current: Option<gtk::Widget> = Some(picked);
                         while let Some(ref w) = current {
                             if w.downcast_ref::<gtk::Button>().is_some() {
@@ -245,7 +248,6 @@ impl NotificationCard {
                             current = w.parent();
                         }
                     }
-                }
 
                 *hidden_ref.borrow_mut() = true;
                 if let Some(ref cb) = *on_output_ref.borrow() {
@@ -297,6 +299,7 @@ impl NotificationCard {
         &self.urn
     }
 
+    #[allow(dead_code)]
     pub fn widget(&self) -> &gtk::Box {
         &self.root
     }

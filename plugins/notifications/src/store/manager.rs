@@ -163,8 +163,8 @@ fn create_notification(n: &IngressedNotification) -> Notification {
         workspace: None,
     };
 
-    if let Some(app_name) = n.app_name.as_deref() {
-        if let Some(extraction) =
+    if let Some(app_name) = n.app_name.as_deref()
+        && let Some(extraction) =
             super::workspace_extract::extract_workspace(app_name, &n.title)
         {
             notification.title = extraction.cleaned_title;
@@ -181,7 +181,6 @@ fn create_notification(n: &IngressedNotification) -> Notification {
                 }
             }
         }
-    }
 
     notification
 }
@@ -541,6 +540,8 @@ mod tests {
         }
     }
 
+    #[cfg(test)]
+    #[allow(dead_code)]
     fn make_notification_with_category(
         id: u64,
         category: crate::types::NotificationCategory,

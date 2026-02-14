@@ -184,12 +184,11 @@ async fn discover_calendar_sources(conn: &Connection) -> Result<Vec<CalendarSour
                 }
             });
 
-            if let (Some(uid), Some(data)) = (uid, data) {
-                if data.contains("[Calendar]") {
+            if let (Some(uid), Some(data)) = (uid, data)
+                && data.contains("[Calendar]") {
                     let display_name = extract_display_name(&data).unwrap_or_else(|| uid.clone());
                     sources.push(CalendarSource { uid, display_name });
                 }
-            }
         }
     }
 
@@ -577,11 +576,10 @@ fn parse_vevent(ical_str: &str) -> Option<entity::calendar::CalendarEvent> {
             if !value.is_empty() {
                 location = Some(unescape_ical(&value));
             }
-        } else if line.starts_with("ATTENDEE") {
-            if let Some(attendee) = parse_attendee_line(line) {
+        } else if line.starts_with("ATTENDEE")
+            && let Some(attendee) = parse_attendee_line(line) {
                 attendees.push(attendee);
             }
-        }
     }
 
     let uid = uid?;
@@ -637,8 +635,8 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
     // DATE format: YYYYMMDD
     // All-day events use local midnight, not UTC midnight, so that a
     // "Feb 14" all-day event spans [Feb 14 00:00 local, Feb 15 00:00 local).
-    if params.contains("VALUE=DATE") && !params.contains("VALUE=DATE-TIME") {
-        if value.len() >= 8 {
+    if params.contains("VALUE=DATE") && !params.contains("VALUE=DATE-TIME")
+        && value.len() >= 8 {
             let year: i32 = value[0..4].parse().ok()?;
             let month: u32 = value[4..6].parse().ok()?;
             let day: u32 = value[6..8].parse().ok()?;
@@ -651,11 +649,10 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
                     .timestamp(),
             );
         }
-    }
 
     // DATETIME format: YYYYMMDDTHHmmss[Z] or with TZID
-    let dt_str = if value.ends_with('Z') {
-        &value[..value.len() - 1]
+    let dt_str = if let Some(stripped) = value.strip_suffix('Z') {
+        stripped
     } else {
         value
     };
@@ -681,11 +678,10 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
         if let Some(tzid_start) = params.find("TZID=") {
             let tzid = &params[tzid_start + 5..];
             let tzid = tzid.split(';').next().unwrap_or(tzid);
-            if let Ok(tz) = tzid.parse::<chrono_tz::Tz>() {
-                if let Some(dt) = tz.from_local_datetime(&datetime).single() {
+            if let Ok(tz) = tzid.parse::<chrono_tz::Tz>()
+                && let Some(dt) = tz.from_local_datetime(&datetime).single() {
                     return Some(dt.timestamp());
                 }
-            }
         }
 
         // No Z, no TZID → floating time (RFC 5545), interpret as local
@@ -723,9 +719,9 @@ fn parse_attendee_line(line: &str) -> Option<entity::calendar::CalendarEventAtte
     let name = if let Some(cn_start) = params.find("CN=") {
         let cn = &params[cn_start + 3..];
         // CN value might be quoted
-        let cn = if cn.starts_with('"') {
-            if let Some(end_quote) = cn[1..].find('"') {
-                &cn[1..end_quote + 1]
+        let cn = if let Some(stripped) = cn.strip_prefix('"') {
+            if let Some(end_quote) = stripped.find('"') {
+                &stripped[..end_quote]
             } else {
                 cn
             }

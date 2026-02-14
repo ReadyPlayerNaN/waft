@@ -44,7 +44,7 @@ pub fn extract_workspace(app_name: &str, title: &str) -> Option<WorkspaceExtract
 
     Some(WorkspaceExtraction {
         workspace: Arc::from(workspace.trim()),
-        cleaned_title: Arc::from(cleaned_title),
+        cleaned_title,
     })
 }
 

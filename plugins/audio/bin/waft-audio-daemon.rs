@@ -204,11 +204,7 @@ impl Plugin for AudioPlugin {
         // Input devices
         for device in &state.input_devices {
             let is_default = state.default_input.as_deref() == Some(&device.id);
-            let (volume, muted) = if is_default {
-                (state.input_volume, state.input_muted)
-            } else {
-                (state.input_volume, state.input_muted)
-            };
+            let (volume, muted) = (state.input_volume, state.input_muted);
 
             let audio_device = entity::audio::AudioDevice {
                 name: device.name.clone(),

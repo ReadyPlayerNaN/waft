@@ -33,6 +33,7 @@ pub struct BackupToggle {
     toggle: Rc<FeatureToggleWidget>,
     menu_box: gtk::Box,
     available: Rc<Cell<bool>>,
+    #[allow(dead_code)]
     entries: Rc<RefCell<Vec<MethodEntry>>>,
 }
 

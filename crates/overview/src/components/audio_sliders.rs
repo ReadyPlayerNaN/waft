@@ -29,6 +29,7 @@ struct DeviceMenuRow {
 struct SliderEntry {
     widget: Rc<SliderWidget>,
     kind: AudioDeviceKind,
+    #[allow(dead_code)]
     menu_revealer: gtk::Revealer,
     menu_box: gtk::Box,
     device_rows: RefCell<Vec<DeviceMenuRow>>,
@@ -43,6 +44,7 @@ struct SliderEntry {
 /// lists all devices of the same kind, allowing the user to switch defaults.
 pub struct AudioSlidersComponent {
     container: gtk::Box,
+    #[allow(dead_code)]
     sliders: Rc<RefCell<HashMap<String, SliderEntry>>>,
 }
 

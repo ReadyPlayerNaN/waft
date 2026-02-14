@@ -21,6 +21,9 @@ use super::notification_card::{NotificationCard, NotificationCardOutput};
 use crate::menu_state::{MenuOp, MenuStore};
 use crate::ui::main_window::trigger_window_resize;
 
+/// Type alias for output callback to reduce complexity.
+type OutputCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
+
 /// Output events from a notification group.
 #[derive(Debug, Clone)]
 pub enum NotificationGroupOutput {
@@ -40,17 +43,21 @@ pub struct NotificationData {
 
 /// A group of notifications from the same application.
 pub struct NotificationGroup {
+    #[allow(dead_code)]
     app_id: String,
     root: gtk::Box,
     top_card_container: gtk::Box,
+    #[allow(dead_code)]
     hidden_cards_revealer: gtk::Revealer,
     hidden_cards_container: gtk::Box,
     cards: Rc<RefCell<HashMap<String, NotificationCard>>>,
     clear_btn: gtk::Button,
     count_label: gtk::Label,
     expand_btn: gtk::Button,
+    #[allow(dead_code)]
     menu_chevron: MenuChevronWidget,
-    on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationGroupOutput)>>>>,
+    on_output: OutputCallback<NotificationGroupOutput>,
+    #[allow(dead_code)]
     menu_id: String,
 }
 
@@ -144,8 +151,7 @@ impl NotificationGroup {
 
         let cards: Rc<RefCell<HashMap<String, NotificationCard>>> =
             Rc::new(RefCell::new(HashMap::new()));
-        let on_output: Rc<RefCell<Option<Box<dyn Fn(NotificationGroupOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_output: OutputCallback<NotificationGroupOutput> = Rc::new(RefCell::new(None));
 
         // Expand button → toggle via MenuStore
         {
@@ -239,15 +245,12 @@ impl NotificationGroup {
 
         // Remove cards no longer present — remove from DOM directly
         for key in &current_keys {
-            if !new_keys.contains(key) {
-                if let Some(card) = self.cards.borrow_mut().remove(key) {
-                    if let Some(parent) = card.root.parent() {
-                        if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+            if !new_keys.contains(key)
+                && let Some(card) = self.cards.borrow_mut().remove(key)
+                    && let Some(parent) = card.root.parent()
+                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
                             parent_box.remove(&card.root);
                         }
-                    }
-                }
-            }
         }
 
         // Create or update cards
@@ -261,23 +264,21 @@ impl NotificationGroup {
 
                 // Check if card needs to move between containers
                 let should_be_top = index == 0;
-                let is_in_top = existing.root.parent().map_or(false, |p| {
+                let is_in_top = existing.root.parent().is_some_and(|p| {
                     p.eq(&self.top_card_container.clone().upcast::<gtk::Widget>())
                 });
 
                 if should_be_top && !is_in_top {
-                    if let Some(parent) = existing.root.parent() {
-                        if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+                    if let Some(parent) = existing.root.parent()
+                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
                             parent_box.remove(&existing.root);
                         }
-                    }
                     self.top_card_container.prepend(&existing.root);
                 } else if !should_be_top && is_in_top {
-                    if let Some(parent) = existing.root.parent() {
-                        if let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
+                    if let Some(parent) = existing.root.parent()
+                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
                             parent_box.remove(&existing.root);
                         }
-                    }
                     self.hidden_cards_container.append(&existing.root);
                 }
             } else {
@@ -322,6 +323,7 @@ impl NotificationGroup {
         &self.root
     }
 
+    #[allow(dead_code)]
     pub fn app_id(&self) -> &str {
         &self.app_id
     }
