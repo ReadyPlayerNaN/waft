@@ -345,9 +345,10 @@ pub fn subscribe_events() -> Result<tokio::sync::mpsc::Receiver<AudioEvent>> {
             match line {
                 Ok(line) => {
                     if let Some(event) = parse_event_line(&line)
-                        && tx.blocking_send(event).is_err() {
-                            break;
-                        }
+                        && tx.blocking_send(event).is_err()
+                    {
+                        break;
+                    }
                 }
                 Err(_) => break,
             }
@@ -943,12 +944,7 @@ pub fn compute_primary_icon_source(
 
 /// Compute the secondary icon based on device properties.
 pub fn compute_secondary_icon(icon_name: &Option<String>, bus: &Option<String>) -> Option<String> {
-    if icon_name
-        .as_deref()
-        .map(strip_icon_suffix)
-        .as_deref()
-        == Some("video-display")
-    {
+    if icon_name.as_deref().map(strip_icon_suffix).as_deref() == Some("video-display") {
         Some("video-joined-displays-symbolic".to_string())
     } else if bus.as_deref() == Some("bluetooth") {
         Some("bluetooth-symbolic".to_string())
@@ -997,16 +993,14 @@ pub fn compute_label(
     let has_bt_secondary = bus.as_deref() == Some("bluetooth");
 
     // 4. Strip "HDMI / " prefix for HDMI devices (but keep "DisplayPort N")
-    if has_hdmi_secondary
-        && let Some(stripped) = label.strip_prefix("HDMI / ") {
-            label = stripped.to_string();
-        }
+    if has_hdmi_secondary && let Some(stripped) = label.strip_prefix("HDMI / ") {
+        label = stripped.to_string();
+    }
 
     // 5. Strip "Bluetooth " prefix for Bluetooth devices
-    if has_bt_secondary
-        && let Some(stripped) = label.strip_prefix("Bluetooth ") {
-            label = stripped.to_string();
-        }
+    if has_bt_secondary && let Some(stripped) = label.strip_prefix("Bluetooth ") {
+        label = stripped.to_string();
+    }
 
     // 6. Fall back to description if result is empty
     if label.is_empty() {

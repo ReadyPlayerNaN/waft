@@ -234,10 +234,7 @@ pub(crate) async fn request_dbus_activation() -> Result<(), Box<dyn std::error::
     // StartServiceByName(name, flags) -> returns a status code
     // flags=0 means no special flags
     dbus_proxy
-        .start_service_by_name(
-            DAEMON_DBUS_NAME.try_into()?,
-            0,
-        )
+        .start_service_by_name(DAEMON_DBUS_NAME.try_into()?, 0)
         .await?;
 
     Ok(())

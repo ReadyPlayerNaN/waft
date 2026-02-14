@@ -9,15 +9,15 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::prelude::*;
-use waft_protocol::entity;
 use waft_protocol::Urn;
+use waft_protocol::entity;
 use waft_ui_gtk::backup::method_row::{BackupMethodRow, BackupMethodRowProps};
 use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
-use waft_client::{EntityActionCallback, EntityStore};
 use crate::i18n;
 use crate::layout::types::WidgetFeatureToggle;
+use waft_client::{EntityActionCallback, EntityStore};
 
 /// A backup method row with its associated URN for action routing.
 struct MethodEntry {

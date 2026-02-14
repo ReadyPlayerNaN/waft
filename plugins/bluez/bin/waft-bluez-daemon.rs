@@ -145,11 +145,7 @@ impl Plugin for BluezPlugin {
 
         for adapter in &state.adapters {
             let aid = adapter_id(&adapter.path);
-            let adapter_urn = Urn::new(
-                "bluez",
-                BluetoothAdapter::ENTITY_TYPE,
-                aid,
-            );
+            let adapter_urn = Urn::new("bluez", BluetoothAdapter::ENTITY_TYPE, aid);
 
             // Adapter entity
             let adapter_entity = BluetoothAdapter {
@@ -298,8 +294,7 @@ impl Plugin for BluezPlugin {
                         }
                     };
 
-                    if let Err(e) =
-                        dbus::set_adapter_alias(&self.conn, &adapter_path, &alias).await
+                    if let Err(e) = dbus::set_adapter_alias(&self.conn, &adapter_path, &alias).await
                     {
                         error!("[bluetooth] Failed to set alias: {}", e);
                         return Err(e.into());
@@ -388,8 +383,7 @@ impl Plugin for BluezPlugin {
                         for adapter in &state.adapters {
                             for device in &adapter.devices {
                                 if device_id(&device.path) == did {
-                                    found =
-                                        Some((device.path.clone(), device.connection_state));
+                                    found = Some((device.path.clone(), device.connection_state));
                                     break;
                                 }
                             }

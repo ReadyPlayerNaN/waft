@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use gtk::prelude::*;
 use waft_client::{ClientEvent, WaftClient, daemon_connection_task};
 use waft_config::ToastPosition;
-use waft_protocol::entity::notification::{Dnd, Notification};
 use waft_protocol::AppNotification;
+use waft_protocol::entity::notification::{Dnd, Notification};
 
 use crate::toast_manager::ToastManager;
 use crate::ui::toast_window::ToastWindow;
@@ -18,17 +18,24 @@ const ENTITY_TYPES: &[&str] = &[
     waft_protocol::entity::notification::DND_ENTITY_TYPE,
 ];
 
-pub async fn setup(position: ToastPosition) -> Result<adw::Application, Box<dyn std::error::Error>> {
+pub async fn setup(
+    position: ToastPosition,
+) -> Result<adw::Application, Box<dyn std::error::Error>> {
     // 1. Create channels
     let (event_tx, event_rx) = flume::unbounded::<ClientEvent>();
-    let (action_tx, action_rx) = std::sync::mpsc::channel::<(waft_protocol::Urn, String, serde_json::Value)>();
+    let (action_tx, action_rx) =
+        std::sync::mpsc::channel::<(waft_protocol::Urn, String, serde_json::Value)>();
 
     // 2. Create client handle for write path
     let client_handle: Arc<Mutex<Option<WaftClient>>> = Arc::new(Mutex::new(None));
 
     // 3. Spawn daemon connection task (tokio)
     let client_handle_clone = client_handle.clone();
-    tokio::spawn(daemon_connection_task(event_tx, client_handle_clone, ENTITY_TYPES));
+    tokio::spawn(daemon_connection_task(
+        event_tx,
+        client_handle_clone,
+        ENTITY_TYPES,
+    ));
 
     // 4. Spawn action writer thread (OS thread for GTK->daemon)
     let client_handle_writer = client_handle.clone();

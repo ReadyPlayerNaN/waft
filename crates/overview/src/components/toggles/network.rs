@@ -8,15 +8,17 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::prelude::*;
-use waft_protocol::entity;
 use waft_protocol::Urn;
+use waft_protocol::entity;
 use waft_ui_gtk::menu_state::menu_id_for_widget;
-use waft_ui_gtk::widgets::connection_row::{ConnectionRow, ConnectionRowOutput, ConnectionRowProps};
+use waft_ui_gtk::widgets::connection_row::{
+    ConnectionRow, ConnectionRowOutput, ConnectionRowProps,
+};
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 use waft_ui_gtk::widgets::icon::IconWidget;
 
-use waft_client::{EntityActionCallback, EntityStore};
 use crate::layout::types::WidgetFeatureToggle;
+use waft_client::{EntityActionCallback, EntityStore};
 
 /// A tracked toggle entry for a network adapter or VPN.
 struct ToggleEntry {
@@ -34,10 +36,7 @@ struct ToggleEntry {
 /// or a ConnectionRow widget (VPN).
 enum NetworkRow {
     /// WiFi/Ethernet rows using plain gtk::Box layout.
-    Plain {
-        urn_str: String,
-        root: gtk::Box,
-    },
+    Plain { urn_str: String, root: gtk::Box },
     /// VPN rows using the extracted ConnectionRow widget.
     Connection {
         urn_str: String,
@@ -114,7 +113,8 @@ impl NetworkManagerToggles {
                 let before_len = entries_mut.len();
                 entries_mut.retain(|entry| {
                     // Keep VPN entries (not our responsibility) and current adapter entries
-                    !entry.urn_str.contains("/network-adapter/") || current_urns.contains(&entry.urn_str)
+                    !entry.urn_str.contains("/network-adapter/")
+                        || current_urns.contains(&entry.urn_str)
                 });
                 if entries_mut.len() != before_len {
                     changed = true;
@@ -156,7 +156,7 @@ impl NetworkManagerToggles {
                                 active: adapter.connected,
                                 busy: false,
                                 details: None,
-                                expandable: false,  // Will be updated based on child count
+                                expandable: false, // Will be updated based on child count
                                 icon,
                                 title,
                                 menu_id: Some(menu_id.clone()),
@@ -295,10 +295,7 @@ impl NetworkManagerToggles {
                     .find(|(_, vpn)| vpn.state == entity::network::VpnState::Connected)
                     .map(|(_, vpn)| vpn.name.clone());
 
-                if let Some(entry) = entries_mut
-                    .iter()
-                    .find(|e| e.urn_str == "vpn-consolidated")
-                {
+                if let Some(entry) = entries_mut.iter().find(|e| e.urn_str == "vpn-consolidated") {
                     // Update existing consolidated toggle
                     entry.toggle.set_active(any_active);
                     entry.toggle.set_busy(any_busy);
@@ -420,10 +417,15 @@ impl NetworkManagerToggles {
             entry.toggle.set_expandable(!adapter_networks.is_empty());
 
             // Update details text
-            if let Some((_, connected_network)) = adapter_networks.iter().find(|(_, n)| n.connected) {
-                entry.toggle.set_details(Some(connected_network.ssid.clone()));
+            if let Some((_, connected_network)) = adapter_networks.iter().find(|(_, n)| n.connected)
+            {
+                entry
+                    .toggle
+                    .set_details(Some(connected_network.ssid.clone()));
             } else if !adapter_networks.is_empty() {
-                entry.toggle.set_details(Some(format!("{} networks", adapter_networks.len())));
+                entry
+                    .toggle
+                    .set_details(Some(format!("{} networks", adapter_networks.len())));
             } else {
                 entry.toggle.set_details(None);
             }
@@ -495,7 +497,11 @@ impl NetworkManagerToggles {
                     let urn_for_click = network_urn.clone();
                     let is_connected = network.connected;
                     gesture.connect_released(move |_, _, _, _| {
-                        let action = if is_connected { "disconnect" } else { "connect" };
+                        let action = if is_connected {
+                            "disconnect"
+                        } else {
+                            "connect"
+                        };
                         action_cb(
                             urn_for_click.clone(),
                             action.to_string(),
@@ -759,9 +765,7 @@ impl NetworkManagerToggles {
             for (conn_urn, conn) in &adapter_connections {
                 let conn_urn_str = conn_urn.as_str().to_string();
 
-                if let Some(existing) =
-                    network_rows.iter().find(|r| r.urn_str() == conn_urn_str)
-                {
+                if let Some(existing) = network_rows.iter().find(|r| r.urn_str() == conn_urn_str) {
                     existing.remove_from(&entry.menu);
                     network_rows.retain(|r| r.urn_str() != conn_urn_str);
                 }
@@ -843,10 +847,7 @@ fn adapter_title(adapter: &entity::network::NetworkAdapter) -> String {
 }
 
 /// Update IP info rows in a wired adapter's menu.
-fn update_wired_info_rows(
-    entry: &ToggleEntry,
-    adapter: &entity::network::NetworkAdapter,
-) {
+fn update_wired_info_rows(entry: &ToggleEntry, adapter: &entity::network::NetworkAdapter) {
     let mut info_rows = entry.info_rows.borrow_mut();
 
     // Remove old info rows
@@ -884,10 +885,7 @@ fn update_wired_info_rows(
     }
 
     // Public IP row
-    let public_text = adapter
-        .public_ip
-        .as_deref()
-        .unwrap_or("Unavailable");
+    let public_text = adapter.public_ip.as_deref().unwrap_or("Unavailable");
     let public_row = build_info_row("Public IP", public_text);
     entry.menu.append(&public_row);
     info_rows.push(public_row);

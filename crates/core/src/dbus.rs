@@ -170,9 +170,10 @@ impl DbusHandle {
     {
         for name in property_names {
             if let Some(v) = props.get(*name)
-                && let Ok(value) = T::try_from(v.clone()) {
-                    return value;
-                }
+                && let Ok(value) = T::try_from(v.clone())
+            {
+                return value;
+            }
         }
         default
     }
@@ -249,11 +250,10 @@ impl DbusHandle {
         destination: &str,
         path: &str,
         interface: &str,
-        on_change: impl FnMut(String, std::collections::HashMap<String, OwnedValue>)
-        + Send
-        + 'static,
+        on_change: impl FnMut(String, std::collections::HashMap<String, OwnedValue>) + Send + 'static,
     ) -> Result<()> {
-        self.listen_properties_changed_with_handle(destination, path, interface, on_change, None).await
+        self.listen_properties_changed_with_handle(destination, path, interface, on_change, None)
+            .await
     }
 
     /// Listen for DBus signals matching a match rule.
@@ -333,10 +333,9 @@ impl DbusHandle {
                         .map(|m| rule_str.contains(&format!("member='{}'", m)))
                         .unwrap_or(false);
 
-                if iface_ok && member_ok
-                    && tx.send(msg).is_err() {
-                        break;
-                    }
+                if iface_ok && member_ok && tx.send(msg).is_err() {
+                    break;
+                }
             }
             debug!("[dbus] signal listener stopped for rule: {rule_str}");
         };

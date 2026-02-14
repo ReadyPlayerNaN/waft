@@ -125,9 +125,10 @@ fn find_ftl(locale: &LanguageIdentifier, translations: &[(&str, &str)]) -> Optio
     let lang = locale.language.as_str();
     for (loc, content) in translations {
         if let Ok(candidate) = loc.parse::<LanguageIdentifier>()
-            && candidate.language.as_str() == lang {
-                return Some(content.to_string());
-            }
+            && candidate.language.as_str() == lang
+        {
+            return Some(content.to_string());
+        }
     }
 
     None

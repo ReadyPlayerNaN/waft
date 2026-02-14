@@ -30,7 +30,10 @@ impl fmt::Display for UrnError {
         match self {
             UrnError::Empty => write!(f, "URN is empty"),
             UrnError::TooFewSegments => {
-                write!(f, "URN must have at least 3 segments: plugin/entity-type/id")
+                write!(
+                    f,
+                    "URN must have at least 3 segments: plugin/entity-type/id"
+                )
             }
             UrnError::IncompleteSegment => {
                 write!(f, "URN has incomplete segment: entity-type without id")
@@ -104,7 +107,10 @@ impl Urn {
 
     /// The plugin name (first segment).
     pub fn plugin(&self) -> &str {
-        self.raw.split('/').next().expect("URN always has a plugin segment")
+        self.raw
+            .split('/')
+            .next()
+            .expect("URN always has a plugin segment")
     }
 
     /// The root entity type (first entity-type after plugin).
@@ -184,8 +190,7 @@ mod tests {
 
     #[test]
     fn parse_nested_urn() {
-        let urn =
-            Urn::parse("blueman/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC").unwrap();
+        let urn = Urn::parse("blueman/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC").unwrap();
         assert_eq!(urn.plugin(), "blueman");
         assert_eq!(urn.root_entity_type(), "bluetooth-adapter");
         assert_eq!(urn.entity_type(), "bluetooth-device");
@@ -229,8 +234,8 @@ mod tests {
 
     #[test]
     fn display_roundtrip_nested() {
-        let urn = Urn::new("blueman", "bluetooth-adapter", "hci0")
-            .child("bluetooth-device", "AA:BB:CC");
+        let urn =
+            Urn::new("blueman", "bluetooth-adapter", "hci0").child("bluetooth-device", "AA:BB:CC");
         let displayed = urn.to_string();
         let parsed = Urn::parse(&displayed).unwrap();
         assert_eq!(urn, parsed);

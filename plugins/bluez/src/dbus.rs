@@ -40,25 +40,25 @@ pub fn extract_prop_or(
     for key in keys {
         if let Some(v) = props.get(*key)
             && let Ok(s) = String::try_from(v.clone())
-                && !s.is_empty() {
-                    return s;
-                }
+            && !s.is_empty()
+        {
+            return s;
+        }
     }
     default
 }
 
 /// Parse device properties into a DeviceState.
-pub fn parse_device_props(path_str: String, device_props: &HashMap<String, OwnedValue>) -> DeviceState {
+pub fn parse_device_props(
+    path_str: String,
+    device_props: &HashMap<String, OwnedValue>,
+) -> DeviceState {
     let name = extract_prop_or(
         device_props,
         &["Alias", "Name"],
         "Unknown Device".to_string(),
     );
-    let icon = extract_prop(
-        device_props,
-        "Icon",
-        "bluetooth-symbolic".to_string(),
-    );
+    let icon = extract_prop(device_props, "Icon", "bluetooth-symbolic".to_string());
     let connected_bool = extract_prop(device_props, "Connected", false);
     let connection_state = if connected_bool {
         ConnectionState::Connected
@@ -177,7 +177,11 @@ pub async fn set_powered(conn: &Connection, adapter_path: &str, powered: bool) -
     Ok(())
 }
 
-pub async fn set_discoverable(conn: &Connection, adapter_path: &str, discoverable: bool) -> Result<()> {
+pub async fn set_discoverable(
+    conn: &Connection,
+    adapter_path: &str,
+    discoverable: bool,
+) -> Result<()> {
     let proxy = zbus::Proxy::new(conn, BLUEZ_DEST, adapter_path, IFACE_PROPERTIES)
         .await
         .context("Failed to create Properties proxy")?;
@@ -207,10 +211,7 @@ pub async fn set_adapter_alias(conn: &Connection, adapter_path: &str, alias: &st
         .await
         .context("Failed to set Alias property")?;
 
-    info!(
-        "[bluetooth] Set adapter {} alias: {}",
-        adapter_path, alias
-    );
+    info!("[bluetooth] Set adapter {} alias: {}", adapter_path, alias);
 
     Ok(())
 }
@@ -265,8 +266,8 @@ pub async fn remove_device(conn: &Connection, adapter_path: &str, device_path: &
         .await
         .context("Failed to create Adapter1 proxy")?;
 
-    let device_obj_path = zbus::zvariant::ObjectPath::try_from(device_path)
-        .context("Invalid device object path")?;
+    let device_obj_path =
+        zbus::zvariant::ObjectPath::try_from(device_path).context("Invalid device object path")?;
     let _: () = proxy
         .call("RemoveDevice", &(device_obj_path,))
         .await

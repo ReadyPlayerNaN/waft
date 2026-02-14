@@ -8,17 +8,17 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk::prelude::*;
-use waft_protocol::entity;
 use waft_protocol::Urn;
-use waft_ui_gtk::menu_state::menu_id_for_widget;
+use waft_protocol::entity;
 use waft_ui_gtk::bluetooth::device_row::{
-    battery_icon_name, device_type_icon, BluetoothDeviceRow, BluetoothDeviceRowOutput,
-    BluetoothDeviceRowProps,
+    BluetoothDeviceRow, BluetoothDeviceRowOutput, BluetoothDeviceRowProps, battery_icon_name,
+    device_type_icon,
 };
+use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
-use waft_client::{EntityActionCallback, EntityStore};
 use crate::layout::types::WidgetFeatureToggle;
+use waft_client::{EntityActionCallback, EntityStore};
 
 /// A tracked toggle entry for a single Bluetooth adapter.
 struct ToggleEntry {
@@ -68,102 +68,101 @@ impl BluetoothToggles {
         let rebuild = rebuild_callback.clone();
         let menu_store_ref = menu_store.clone();
 
-        store.subscribe_type(entity::bluetooth::BluetoothAdapter::ENTITY_TYPE, move || {
-            let adapters: Vec<(Urn, entity::bluetooth::BluetoothAdapter)> =
-                store_ref.get_entities_typed(entity::bluetooth::BluetoothAdapter::ENTITY_TYPE);
+        store.subscribe_type(
+            entity::bluetooth::BluetoothAdapter::ENTITY_TYPE,
+            move || {
+                let adapters: Vec<(Urn, entity::bluetooth::BluetoothAdapter)> =
+                    store_ref.get_entities_typed(entity::bluetooth::BluetoothAdapter::ENTITY_TYPE);
 
-            let mut entries_mut = entries_ref.borrow_mut();
-            let mut changed = false;
+                let mut entries_mut = entries_ref.borrow_mut();
+                let mut changed = false;
 
-            // Build a set of current URN strings for quick lookup
-            let current_urns: Vec<String> = adapters
-                .iter()
-                .map(|(urn, _)| urn.as_str().to_string())
-                .collect();
+                // Build a set of current URN strings for quick lookup
+                let current_urns: Vec<String> = adapters
+                    .iter()
+                    .map(|(urn, _)| urn.as_str().to_string())
+                    .collect();
 
-            // Remove toggles for adapters that no longer exist
-            let before_len = entries_mut.len();
-            entries_mut.retain(|entry| current_urns.contains(&entry.urn_str));
-            if entries_mut.len() != before_len {
-                changed = true;
-            }
-
-            // Update existing or create new toggles
-            for (urn, adapter) in &adapters {
-                let urn_str = urn.as_str().to_string();
-                let icon = if adapter.powered {
-                    "bluetooth-active-symbolic"
-                } else {
-                    "bluetooth-disabled-symbolic"
-                };
-
-                if let Some(entry) = entries_mut.iter().find(|e| e.urn_str == urn_str) {
-                    // Update existing toggle
-                    entry.toggle.set_active(adapter.powered);
-                    entry.toggle.set_icon(icon);
-                    entry.toggle.set_details(Some(adapter.name.clone()));
-                } else {
-                    // Create new toggle for this adapter
-                    let widget_id = format!("bluetooth-toggle-{}", urn_str);
-                    let menu_id = menu_id_for_widget(&widget_id);
-
-                    // Create menu container for devices
-                    let menu = gtk::Box::builder()
-                        .orientation(gtk::Orientation::Vertical)
-                        .spacing(0)
-                        .css_classes(["menu-content"])
-                        .build();
-
-                    let toggle = Rc::new(FeatureToggleWidget::new(
-                        FeatureToggleProps {
-                            active: adapter.powered,
-                            busy: false,
-                            details: Some(adapter.name.clone()),
-                            expandable: false, // Will be updated based on device count
-                            icon: icon.to_string(),
-                            title: "Bluetooth".to_string(),
-                            menu_id: Some(menu_id.clone()),
-                        },
-                        Some(menu_store_ref.clone()),
-                    ));
-
-                    let action_cb = cb.clone();
-                    let action_urn = urn.clone();
-                    toggle.connect_output(move |_output| {
-                        action_cb(
-                            action_urn.clone(),
-                            "toggle-power".to_string(),
-                            serde_json::Value::Null,
-                        );
-                    });
-
-                    entries_mut.push(ToggleEntry {
-                        urn_str,
-                        toggle,
-                        menu,
-                        device_rows: RefCell::new(Vec::new()),
-                    });
+                // Remove toggles for adapters that no longer exist
+                let before_len = entries_mut.len();
+                entries_mut.retain(|entry| current_urns.contains(&entry.urn_str));
+                if entries_mut.len() != before_len {
                     changed = true;
                 }
-            }
 
-            // Notify the parent grid if the toggle set changed
-            if changed {
-                drop(entries_mut);
-                rebuild();
-            }
-        });
+                // Update existing or create new toggles
+                for (urn, adapter) in &adapters {
+                    let urn_str = urn.as_str().to_string();
+                    let icon = if adapter.powered {
+                        "bluetooth-active-symbolic"
+                    } else {
+                        "bluetooth-disabled-symbolic"
+                    };
+
+                    if let Some(entry) = entries_mut.iter().find(|e| e.urn_str == urn_str) {
+                        // Update existing toggle
+                        entry.toggle.set_active(adapter.powered);
+                        entry.toggle.set_icon(icon);
+                        entry.toggle.set_details(Some(adapter.name.clone()));
+                    } else {
+                        // Create new toggle for this adapter
+                        let widget_id = format!("bluetooth-toggle-{}", urn_str);
+                        let menu_id = menu_id_for_widget(&widget_id);
+
+                        // Create menu container for devices
+                        let menu = gtk::Box::builder()
+                            .orientation(gtk::Orientation::Vertical)
+                            .spacing(0)
+                            .css_classes(["menu-content"])
+                            .build();
+
+                        let toggle = Rc::new(FeatureToggleWidget::new(
+                            FeatureToggleProps {
+                                active: adapter.powered,
+                                busy: false,
+                                details: Some(adapter.name.clone()),
+                                expandable: false, // Will be updated based on device count
+                                icon: icon.to_string(),
+                                title: "Bluetooth".to_string(),
+                                menu_id: Some(menu_id.clone()),
+                            },
+                            Some(menu_store_ref.clone()),
+                        ));
+
+                        let action_cb = cb.clone();
+                        let action_urn = urn.clone();
+                        toggle.connect_output(move |_output| {
+                            action_cb(
+                                action_urn.clone(),
+                                "toggle-power".to_string(),
+                                serde_json::Value::Null,
+                            );
+                        });
+
+                        entries_mut.push(ToggleEntry {
+                            urn_str,
+                            toggle,
+                            menu,
+                            device_rows: RefCell::new(Vec::new()),
+                        });
+                        changed = true;
+                    }
+                }
+
+                // Notify the parent grid if the toggle set changed
+                if changed {
+                    drop(entries_mut);
+                    rebuild();
+                }
+            },
+        );
 
         // Subscribe to device entity changes
         let entries_ref_devices = entries.clone();
         let store_ref_devices = store.clone();
         let cb_devices = action_callback.clone();
         store.subscribe_type(entity::bluetooth::BluetoothDevice::ENTITY_TYPE, move || {
-            Self::update_device_menus(
-                &entries_ref_devices,
-                &store_ref_devices,
-                &cb_devices,
-            );
+            Self::update_device_menus(&entries_ref_devices, &store_ref_devices, &cb_devices);
         });
 
         Self {
@@ -198,7 +197,10 @@ impl BluetoothToggles {
             entry.toggle.set_expandable(!adapter_devices.is_empty());
 
             // Update details text
-            let connected_count = adapter_devices.iter().filter(|(_, d)| d.connected()).count();
+            let connected_count = adapter_devices
+                .iter()
+                .filter(|(_, d)| d.connected())
+                .count();
             if connected_count > 0 {
                 entry
                     .toggle
@@ -235,10 +237,10 @@ impl BluetoothToggles {
                 if let Some(row) = device_rows.iter().find(|r| r.urn_str == device_urn_str) {
                     // Update existing row via setters
                     row.row.set_name(&device.name);
-                    row.row.set_device_icon(device_type_icon(&device.device_type));
-                    row.row.set_battery_icon(
-                        device.battery_percentage.map(battery_icon_name),
-                    );
+                    row.row
+                        .set_device_icon(device_type_icon(&device.device_type));
+                    row.row
+                        .set_battery_icon(device.battery_percentage.map(battery_icon_name));
                     row.row.set_connected(device.connected());
                     row.row.set_transitioning(device.transitioning());
                 } else {

@@ -19,7 +19,7 @@ use log::{debug, warn};
 use serde::Deserialize;
 use std::process::Stdio;
 
-use super::{extract_abbreviation, KeyboardLayoutBackend, LayoutEvent, LayoutInfo};
+use super::{KeyboardLayoutBackend, LayoutEvent, LayoutInfo, extract_abbreviation};
 
 /// Hyprland devices response from `hyprctl devices -j`.
 #[derive(Debug, Deserialize)]
@@ -59,9 +59,7 @@ async fn run_hyprctl(args: &[&str]) -> Result<std::process::Output> {
             .context("Failed to execute hyprctl");
         let _ = tx.send(result);
     });
-    rx.recv_async()
-        .await
-        .context("hyprctl thread cancelled")?
+    rx.recv_async().await.context("hyprctl thread cancelled")?
 }
 
 impl HyprlandBackend {
@@ -260,14 +258,16 @@ impl KeyboardLayoutBackend for HyprlandBackend {
                     );
 
                     let available: Vec<String> = if !layout_names.is_empty() {
-                        layout_names.iter().map(|n| extract_abbreviation(n)).collect()
+                        layout_names
+                            .iter()
+                            .map(|n| extract_abbreviation(n))
+                            .collect()
                     } else {
                         vec![extract_abbreviation(layout_name)]
                     };
 
                     let current = extract_abbreviation(layout_name);
-                    let current_index =
-                        available.iter().position(|a| a == &current).unwrap_or(0);
+                    let current_index = available.iter().position(|a| a == &current).unwrap_or(0);
 
                     let info = LayoutInfo {
                         current,

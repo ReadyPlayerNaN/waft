@@ -21,37 +21,25 @@ fn test_parse_volume_percent_returns_none_for_invalid() {
 #[test]
 fn test_parse_event_line_sink_change() {
     let line = "Event 'change' on sink #0";
-    assert!(matches!(
-        parse_event_line(line),
-        Some(AudioEvent::Sink)
-    ));
+    assert!(matches!(parse_event_line(line), Some(AudioEvent::Sink)));
 }
 
 #[test]
 fn test_parse_event_line_source_change() {
     let line = "Event 'change' on source #1";
-    assert!(matches!(
-        parse_event_line(line),
-        Some(AudioEvent::Source)
-    ));
+    assert!(matches!(parse_event_line(line), Some(AudioEvent::Source)));
 }
 
 #[test]
 fn test_parse_event_line_server_change() {
     let line = "Event 'change' on server";
-    assert!(matches!(
-        parse_event_line(line),
-        Some(AudioEvent::Server)
-    ));
+    assert!(matches!(parse_event_line(line), Some(AudioEvent::Server)));
 }
 
 #[test]
 fn test_parse_event_line_card_change() {
     let line = "Event 'change' on card #2";
-    assert!(matches!(
-        parse_event_line(line),
-        Some(AudioEvent::Card)
-    ));
+    assert!(matches!(parse_event_line(line), Some(AudioEvent::Card)));
 }
 
 #[test]
@@ -445,9 +433,11 @@ Sink #75
 
 #[test]
 fn test_parse_sinks_all_devices_get_icon_name_and_active_port() {
-    let sinks =
-        parse_sinks(MULTI_SINK_OUTPUT, Some("alsa_output.pci-0000_00_1f.3.analog-stereo"))
-            .unwrap();
+    let sinks = parse_sinks(
+        MULTI_SINK_OUTPUT,
+        Some("alsa_output.pci-0000_00_1f.3.analog-stereo"),
+    )
+    .unwrap();
 
     assert_eq!(sinks.len(), 3);
 
@@ -476,9 +466,11 @@ fn test_parse_sinks_all_devices_get_icon_name_and_active_port() {
 
 #[test]
 fn test_non_default_sink_icons_computed_correctly() {
-    let sinks =
-        parse_sinks(MULTI_SINK_OUTPUT, Some("alsa_output.pci-0000_00_1f.3.analog-stereo"))
-            .unwrap();
+    let sinks = parse_sinks(
+        MULTI_SINK_OUTPUT,
+        Some("alsa_output.pci-0000_00_1f.3.analog-stereo"),
+    )
+    .unwrap();
 
     let card_ports = CardPortMap::new();
 
@@ -508,11 +500,7 @@ fn test_non_default_sink_icons_computed_correctly() {
 fn test_non_default_sink_icons_after_switching_default() {
     // After switching default to the bluetooth device, the old default should
     // still have correct icon_name parsed from pactl output
-    let sinks = parse_sinks(
-        MULTI_SINK_OUTPUT,
-        Some("bluez_output.AA_BB_CC_DD_EE_FF.1"),
-    )
-    .unwrap();
+    let sinks = parse_sinks(MULTI_SINK_OUTPUT, Some("bluez_output.AA_BB_CC_DD_EE_FF.1")).unwrap();
 
     let card_ports = CardPortMap::new();
 
@@ -638,9 +626,11 @@ fn test_non_default_source_icons_computed_correctly() {
 
 #[test]
 fn test_port_availability_parsed_for_all_sinks() {
-    let sinks =
-        parse_sinks(MULTI_SINK_OUTPUT, Some("alsa_output.pci-0000_00_1f.3.analog-stereo"))
-            .unwrap();
+    let sinks = parse_sinks(
+        MULTI_SINK_OUTPUT,
+        Some("alsa_output.pci-0000_00_1f.3.analog-stereo"),
+    )
+    .unwrap();
 
     // Default sink has active port "analog-output-speaker" which is "available"
     assert_eq!(sinks[0].active_port_available, Some(true));

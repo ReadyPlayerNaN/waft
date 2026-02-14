@@ -11,7 +11,7 @@
 
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_plugin::dbus_monitor::{monitor_signal_async, SignalMonitorConfig};
+use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal_async};
 use waft_plugin::*;
 use zbus::Connection;
 
@@ -112,9 +112,7 @@ async fn get_battery_info(conn: &Connection) -> Result<BatteryInfo> {
     let icon_name = props
         .get("IconName")
         .and_then(|v| {
-            if let zbus::zvariant::Value::Str(s) =
-                zbus::zvariant::Value::from(v.clone())
-            {
+            if let zbus::zvariant::Value::Str(s) = zbus::zvariant::Value::from(v.clone()) {
                 Some(s.to_string())
             } else {
                 None

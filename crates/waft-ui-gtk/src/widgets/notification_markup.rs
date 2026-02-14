@@ -155,8 +155,7 @@ fn find_url_end(s: &str) -> usize {
 
     let url = &s[..end];
     // Strip trailing punctuation that is commonly not part of URLs
-    let trimmed =
-        url.trim_end_matches(['.', ',', ')', '!', '?', ';', ':']);
+    let trimmed = url.trim_end_matches(['.', ',', ')', '!', '?', ';', ':']);
     if trimmed.is_empty() {
         end
     } else {
@@ -289,7 +288,10 @@ mod tests {
 
     #[test]
     fn domain_https_with_www_and_path() {
-        assert_eq!(extract_domain("https://www.youtube.com/path"), "youtube.com");
+        assert_eq!(
+            extract_domain("https://www.youtube.com/path"),
+            "youtube.com"
+        );
     }
 
     #[test]

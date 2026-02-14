@@ -16,6 +16,7 @@ use super::device_row::{DeviceRow, DeviceRowOutput, DeviceRowProps};
 /// Group displaying discovered (unpaired) Bluetooth devices.
 pub struct DiscoveredDevicesGroup {
     pub root: adw::PreferencesGroup,
+    spinner: gtk::Spinner,
     rows: HashMap<String, DeviceRow>,
 }
 
@@ -26,8 +27,12 @@ impl DiscoveredDevicesGroup {
             .visible(false)
             .build();
 
+        let spinner = gtk::Spinner::new();
+        group.set_header_suffix(Some(&spinner));
+
         Self {
             root: group,
+            spinner,
             rows: HashMap::new(),
         }
     }
@@ -89,7 +94,19 @@ impl DiscoveredDevicesGroup {
             }
         }
 
-        self.root
-            .set_visible(any_discovering && !self.rows.is_empty());
+        if any_discovering {
+            self.root.set_visible(true);
+            self.spinner.start();
+            if self.rows.is_empty() {
+                self.root
+                    .set_description(Some("Searching for devices\u{2026}"));
+            } else {
+                self.root.set_description(None::<&str>);
+            }
+        } else {
+            self.root.set_visible(false);
+            self.spinner.stop();
+            self.root.set_description(None::<&str>);
+        }
     }
 }

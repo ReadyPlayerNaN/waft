@@ -15,7 +15,7 @@ use log::{debug, warn};
 use serde::Deserialize;
 use std::process::Stdio;
 
-use super::{extract_abbreviation, KeyboardLayoutBackend, LayoutEvent, LayoutInfo};
+use super::{KeyboardLayoutBackend, LayoutEvent, LayoutInfo, extract_abbreviation};
 
 /// Sway input device from `swaymsg -t get_inputs`.
 #[derive(Debug, Deserialize)]
@@ -77,9 +77,7 @@ impl SwayBackend {
                 .context("Failed to execute swaymsg");
             let _ = tx.send(result);
         });
-        rx.recv_async()
-            .await
-            .context("swaymsg thread cancelled")?
+        rx.recv_async().await.context("swaymsg thread cancelled")?
     }
 
     /// Query keyboard info from the first keyboard device.
@@ -104,9 +102,9 @@ impl SwayBackend {
             if input.input_type == "keyboard"
                 && let (Some(names), Some(index)) =
                     (&input.xkb_layout_names, input.xkb_active_layout_index)
-                {
-                    return Ok((names.clone(), index));
-                }
+            {
+                return Ok((names.clone(), index));
+            }
         }
 
         anyhow::bail!("No keyboard with layout info found");
@@ -224,10 +222,7 @@ impl KeyboardLayoutBackend for SwayBackend {
                                 event.input.xkb_active_layout_index,
                             )
                         {
-                            debug!(
-                                "[keyboard-layout:sway] Layout changed to index {}",
-                                index
-                            );
+                            debug!("[keyboard-layout:sway] Layout changed to index {}", index);
                             let info = Self::to_layout_info(names, index);
                             if sender.send(LayoutEvent::Changed(info)).is_err() {
                                 break;

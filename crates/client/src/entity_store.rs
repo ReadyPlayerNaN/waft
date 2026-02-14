@@ -11,8 +11,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use waft_protocol::message::AppNotification;
 use waft_protocol::Urn;
+use waft_protocol::message::AppNotification;
 
 /// Callback for entity actions routed back to the daemon.
 /// Parameters: (urn, action_name, params)
@@ -107,17 +107,15 @@ impl EntityStore {
         cache
             .values()
             .filter(|e| e.entity_type == entity_type)
-            .filter_map(|e| {
-                match serde_json::from_value(e.data.clone()) {
-                    Ok(typed) => Some((e.urn.clone(), typed)),
-                    Err(err) => {
-                        log::warn!(
-                            "[entity-store] failed to deserialize {} ({}): {err}",
-                            e.urn,
-                            e.entity_type,
-                        );
-                        None
-                    }
+            .filter_map(|e| match serde_json::from_value(e.data.clone()) {
+                Ok(typed) => Some((e.urn.clone(), typed)),
+                Err(err) => {
+                    log::warn!(
+                        "[entity-store] failed to deserialize {} ({}): {err}",
+                        e.urn,
+                        e.entity_type,
+                    );
+                    None
                 }
             })
             .collect()
@@ -126,8 +124,9 @@ impl EntityStore {
     /// Get a single entity by URN as a typed value.
     pub fn get_entity_typed<T: serde::de::DeserializeOwned>(&self, urn: &Urn) -> Option<T> {
         let cache = self.cache.borrow();
-        cache.get(urn.as_str()).and_then(|e| {
-            match serde_json::from_value(e.data.clone()) {
+        cache
+            .get(urn.as_str())
+            .and_then(|e| match serde_json::from_value(e.data.clone()) {
                 Ok(typed) => Some(typed),
                 Err(err) => {
                     log::warn!(
@@ -137,8 +136,7 @@ impl EntityStore {
                     );
                     None
                 }
-            }
-        })
+            })
     }
 
     /// Get all cached entities of a given type as raw (Urn, Value) pairs.
@@ -151,21 +149,17 @@ impl EntityStore {
             .collect()
     }
 
-    fn handle_entity_updated(
-        &self,
-        urn: Urn,
-        entity_type: String,
-        data: serde_json::Value,
-    ) {
+    fn handle_entity_updated(&self, urn: Urn, entity_type: String, data: serde_json::Value) {
         let urn_str = urn.as_str().to_string();
 
         // Skip if data unchanged
         {
             let cache = self.cache.borrow();
             if let Some(cached) = cache.get(&urn_str)
-                && cached.data == data {
-                    return;
-                }
+                && cached.data == data
+            {
+                return;
+            }
         }
 
         self.cache.borrow_mut().insert(
@@ -256,9 +250,17 @@ mod tests {
         })
         .unwrap();
 
-        store.handle_notification(make_updated(urn.clone(), entity::clock::ENTITY_TYPE, data.clone()));
+        store.handle_notification(make_updated(
+            urn.clone(),
+            entity::clock::ENTITY_TYPE,
+            data.clone(),
+        ));
         store.handle_notification(make_updated(urn, entity::clock::ENTITY_TYPE, data));
-        assert_eq!(called.get(), 1, "identical data should not trigger notification");
+        assert_eq!(
+            called.get(),
+            1,
+            "identical data should not trigger notification"
+        );
     }
 
     #[test]
@@ -364,7 +366,11 @@ mod tests {
 
         store.handle_notification(make_updated(urn, entity::clock::ENTITY_TYPE, data));
         assert_eq!(clock_called.get(), 1);
-        assert_eq!(audio_called.get(), 0, "audio subscriber should not be triggered by clock update");
+        assert_eq!(
+            audio_called.get(),
+            0,
+            "audio subscriber should not be triggered by clock update"
+        );
     }
 
     #[test]
@@ -378,13 +384,23 @@ mod tests {
         .unwrap();
 
         store.handle_notification(make_updated(urn.clone(), entity::clock::ENTITY_TYPE, data));
-        assert_eq!(store.get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE).len(), 1);
+        assert_eq!(
+            store
+                .get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE)
+                .len(),
+            1
+        );
 
         store.handle_notification(AppNotification::EntityStale {
             urn,
             entity_type: entity::clock::ENTITY_TYPE.to_string(),
         });
-        assert_eq!(store.get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE).len(), 0);
+        assert_eq!(
+            store
+                .get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE)
+                .len(),
+            0
+        );
     }
 
     #[test]
@@ -398,12 +414,22 @@ mod tests {
         .unwrap();
 
         store.handle_notification(make_updated(urn.clone(), entity::clock::ENTITY_TYPE, data));
-        assert_eq!(store.get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE).len(), 1);
+        assert_eq!(
+            store
+                .get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE)
+                .len(),
+            1
+        );
 
         store.handle_notification(AppNotification::EntityOutdated {
             urn,
             entity_type: entity::clock::ENTITY_TYPE.to_string(),
         });
-        assert_eq!(store.get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE).len(), 0);
+        assert_eq!(
+            store
+                .get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE)
+                .len(),
+            0
+        );
     }
 }

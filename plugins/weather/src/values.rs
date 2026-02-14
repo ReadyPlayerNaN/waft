@@ -118,8 +118,14 @@ mod tests {
 
     #[test]
     fn test_wmo_codes_1_2_are_partly_cloudy() {
-        assert_eq!(WeatherCondition::from_wmo_code(1), WeatherCondition::PartlyCloudy);
-        assert_eq!(WeatherCondition::from_wmo_code(2), WeatherCondition::PartlyCloudy);
+        assert_eq!(
+            WeatherCondition::from_wmo_code(1),
+            WeatherCondition::PartlyCloudy
+        );
+        assert_eq!(
+            WeatherCondition::from_wmo_code(2),
+            WeatherCondition::PartlyCloudy
+        );
     }
 
     #[test]
@@ -135,17 +141,38 @@ mod tests {
 
     #[test]
     fn test_wmo_codes_drizzle() {
-        assert_eq!(WeatherCondition::from_wmo_code(51), WeatherCondition::Drizzle);
-        assert_eq!(WeatherCondition::from_wmo_code(53), WeatherCondition::Drizzle);
-        assert_eq!(WeatherCondition::from_wmo_code(55), WeatherCondition::Drizzle);
+        assert_eq!(
+            WeatherCondition::from_wmo_code(51),
+            WeatherCondition::Drizzle
+        );
+        assert_eq!(
+            WeatherCondition::from_wmo_code(53),
+            WeatherCondition::Drizzle
+        );
+        assert_eq!(
+            WeatherCondition::from_wmo_code(55),
+            WeatherCondition::Drizzle
+        );
     }
 
     #[test]
     fn test_wmo_codes_freezing_rain() {
-        assert_eq!(WeatherCondition::from_wmo_code(56), WeatherCondition::FreezingRain);
-        assert_eq!(WeatherCondition::from_wmo_code(57), WeatherCondition::FreezingRain);
-        assert_eq!(WeatherCondition::from_wmo_code(66), WeatherCondition::FreezingRain);
-        assert_eq!(WeatherCondition::from_wmo_code(67), WeatherCondition::FreezingRain);
+        assert_eq!(
+            WeatherCondition::from_wmo_code(56),
+            WeatherCondition::FreezingRain
+        );
+        assert_eq!(
+            WeatherCondition::from_wmo_code(57),
+            WeatherCondition::FreezingRain
+        );
+        assert_eq!(
+            WeatherCondition::from_wmo_code(66),
+            WeatherCondition::FreezingRain
+        );
+        assert_eq!(
+            WeatherCondition::from_wmo_code(67),
+            WeatherCondition::FreezingRain
+        );
     }
 
     #[test]
@@ -170,16 +197,31 @@ mod tests {
 
     #[test]
     fn test_wmo_codes_thunderstorm() {
-        assert_eq!(WeatherCondition::from_wmo_code(95), WeatherCondition::Thunderstorm);
-        assert_eq!(WeatherCondition::from_wmo_code(96), WeatherCondition::Thunderstorm);
-        assert_eq!(WeatherCondition::from_wmo_code(99), WeatherCondition::Thunderstorm);
+        assert_eq!(
+            WeatherCondition::from_wmo_code(95),
+            WeatherCondition::Thunderstorm
+        );
+        assert_eq!(
+            WeatherCondition::from_wmo_code(96),
+            WeatherCondition::Thunderstorm
+        );
+        assert_eq!(
+            WeatherCondition::from_wmo_code(99),
+            WeatherCondition::Thunderstorm
+        );
     }
 
     #[test]
     fn test_wmo_code_unknown_defaults_to_clear() {
-        assert_eq!(WeatherCondition::from_wmo_code(100), WeatherCondition::Clear);
+        assert_eq!(
+            WeatherCondition::from_wmo_code(100),
+            WeatherCondition::Clear
+        );
         assert_eq!(WeatherCondition::from_wmo_code(-1), WeatherCondition::Clear);
-        assert_eq!(WeatherCondition::from_wmo_code(999), WeatherCondition::Clear);
+        assert_eq!(
+            WeatherCondition::from_wmo_code(999),
+            WeatherCondition::Clear
+        );
     }
 
     // WeatherCondition::icon_name tests
@@ -221,7 +263,10 @@ mod tests {
 
     #[test]
     fn test_fog_icon() {
-        assert_eq!(WeatherCondition::Fog.icon_name(true), "weather-fog-symbolic");
+        assert_eq!(
+            WeatherCondition::Fog.icon_name(true),
+            "weather-fog-symbolic"
+        );
     }
 
     #[test]
@@ -242,7 +287,10 @@ mod tests {
 
     #[test]
     fn test_snow_icon() {
-        assert_eq!(WeatherCondition::Snow.icon_name(true), "weather-snow-symbolic");
+        assert_eq!(
+            WeatherCondition::Snow.icon_name(true),
+            "weather-snow-symbolic"
+        );
     }
 
     #[test]
@@ -264,9 +312,18 @@ mod tests {
 
     #[test]
     fn test_temperature_unit_from_str_fahrenheit() {
-        assert_eq!(TemperatureUnit::parse("fahrenheit"), TemperatureUnit::Fahrenheit);
-        assert_eq!(TemperatureUnit::parse("Fahrenheit"), TemperatureUnit::Fahrenheit);
-        assert_eq!(TemperatureUnit::parse("FAHRENHEIT"), TemperatureUnit::Fahrenheit);
+        assert_eq!(
+            TemperatureUnit::parse("fahrenheit"),
+            TemperatureUnit::Fahrenheit
+        );
+        assert_eq!(
+            TemperatureUnit::parse("Fahrenheit"),
+            TemperatureUnit::Fahrenheit
+        );
+        assert_eq!(
+            TemperatureUnit::parse("FAHRENHEIT"),
+            TemperatureUnit::Fahrenheit
+        );
         assert_eq!(TemperatureUnit::parse("f"), TemperatureUnit::Fahrenheit);
         assert_eq!(TemperatureUnit::parse("F"), TemperatureUnit::Fahrenheit);
     }

@@ -29,19 +29,15 @@ impl BatteryComponent {
             .visible(false)
             .build();
 
-        let widget = Rc::new(InfoCardWidget::new(
-            "battery-symbolic",
-            "",
-            None,
-        ));
+        let widget = Rc::new(InfoCardWidget::new("battery-symbolic", "", None));
         container.append(&widget.widget());
 
         let store_ref = store.clone();
         let widget_ref = widget.clone();
         let container_ref = container.clone();
         store.subscribe_type(entity::power::ENTITY_TYPE, move || {
-            let entities = store_ref
-                .get_entities_typed::<entity::power::Battery>(entity::power::ENTITY_TYPE);
+            let entities =
+                store_ref.get_entities_typed::<entity::power::Battery>(entity::power::ENTITY_TYPE);
             match entities.first() {
                 Some((_urn, battery)) if battery.present => {
                     widget_ref.set_icon(&battery.icon_name);
@@ -55,7 +51,10 @@ impl BatteryComponent {
             }
         });
 
-        Self { container, _widget: widget }
+        Self {
+            container,
+            _widget: widget,
+        }
     }
 
     pub fn widget(&self) -> gtk::Widget {

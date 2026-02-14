@@ -11,10 +11,10 @@ use log::debug;
 
 use crate::calendar_selection::create_calendar_selection_store;
 use crate::common::VoidCallback;
-use waft_client::{EntityActionCallback, EntityStore};
 use crate::layout::load_layout;
 use crate::layout::renderer::{RenderContext, render_layout};
 use crate::menu_state::MenuStore;
+use waft_client::{EntityActionCallback, EntityStore};
 
 const OVERLAY_WIDTH_PX: i32 = 920;
 
@@ -48,7 +48,6 @@ const OVERLAY_BOTTOM_OFFSET_PX: i32 = 16;
 const OVERLAY_CORNER_RADIUS_PX: i32 = 8;
 const OVERLAY_SLIDE_OFFSET_PX: f64 = 20.0;
 const OVERLAY_ANIM_DURATION_MS: u32 = 200;
-
 
 /// Input messages for the main window.
 #[derive(Debug, Clone, PartialEq, Eq)]

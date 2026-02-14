@@ -9,8 +9,8 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
-use waft_protocol::entity;
 use waft_protocol::Urn;
+use waft_protocol::entity;
 use waft_ui_gtk::widgets::status_cycle_button::{StatusCycleButtonWidget, StatusOption};
 
 use waft_client::{EntityActionCallback, EntityStore};
@@ -61,10 +61,9 @@ impl KeyboardLayoutComponent {
         let container_ref = container.clone();
         let urn_for_sub = current_urn;
         store.subscribe_type(entity::keyboard::ENTITY_TYPE, move || {
-            let entities = store_ref
-                .get_entities_typed::<entity::keyboard::KeyboardLayout>(
-                    entity::keyboard::ENTITY_TYPE,
-                );
+            let entities = store_ref.get_entities_typed::<entity::keyboard::KeyboardLayout>(
+                entity::keyboard::ENTITY_TYPE,
+            );
             match entities.first() {
                 Some((urn, layout)) => {
                     *urn_for_sub.borrow_mut() = Some(urn.clone());

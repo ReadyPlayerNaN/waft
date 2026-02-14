@@ -4,12 +4,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{Context, Result};
-use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
 use zbus::Connection;
+use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
 
 use crate::dbus_property::{
-    get_property, NM_CONNECTION_ACTIVE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE,
-    NM_SETTINGS_INTERFACE, NM_SETTINGS_PATH,
+    NM_CONNECTION_ACTIVE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_SETTINGS_INTERFACE,
+    NM_SETTINGS_PATH, get_property,
 };
 use crate::state::{NmState, VpnConnectionInfo, VpnState};
 
@@ -50,23 +50,24 @@ pub async fn get_vpn_profiles(conn: &Connection) -> Result<Vec<VpnProfileInfo>> 
 
         if let Some(connection) = settings.get("connection")
             && let Some(conn_type) = connection.get("type")
-                && let Ok(type_str) = String::try_from(conn_type.clone())
-                    && type_str == "vpn" {
-                        let name = connection
-                            .get("id")
-                            .and_then(|v| String::try_from(v.clone()).ok())
-                            .unwrap_or_else(|| "Unknown VPN".to_string());
-                        let uuid = connection
-                            .get("uuid")
-                            .and_then(|v| String::try_from(v.clone()).ok())
-                            .unwrap_or_default();
+            && let Ok(type_str) = String::try_from(conn_type.clone())
+            && type_str == "vpn"
+        {
+            let name = connection
+                .get("id")
+                .and_then(|v| String::try_from(v.clone()).ok())
+                .unwrap_or_else(|| "Unknown VPN".to_string());
+            let uuid = connection
+                .get("uuid")
+                .and_then(|v| String::try_from(v.clone()).ok())
+                .unwrap_or_default();
 
-                        vpn_profiles.push(VpnProfileInfo {
-                            path: path_str.to_string(),
-                            uuid,
-                            name,
-                        });
-                    }
+            vpn_profiles.push(VpnProfileInfo {
+                path: path_str.to_string(),
+                uuid,
+                name,
+            });
+        }
     }
 
     Ok(vpn_profiles)
@@ -76,17 +77,11 @@ pub async fn get_vpn_profiles(conn: &Connection) -> Result<Vec<VpnProfileInfo>> 
 pub async fn get_active_vpn_connections(
     conn: &Connection,
 ) -> Result<Vec<(String, String, String, u32)>> {
-    let active_connections: Vec<OwnedObjectPath> = match get_property(
-        conn,
-        NM_PATH,
-        NM_INTERFACE,
-        "ActiveConnections",
-    )
-    .await
-    {
-        Ok(v) => v,
-        Err(_) => return Ok(Vec::new()),
-    };
+    let active_connections: Vec<OwnedObjectPath> =
+        match get_property(conn, NM_PATH, NM_INTERFACE, "ActiveConnections").await {
+            Ok(v) => v,
+            Err(_) => return Ok(Vec::new()),
+        };
 
     let mut vpn_active = Vec::new();
 

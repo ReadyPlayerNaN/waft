@@ -28,11 +28,7 @@ impl WeatherComponent {
             .visible(false)
             .build();
 
-        let widget = Rc::new(InfoCardWidget::new(
-            "weather-clear-symbolic",
-            "",
-            None,
-        ));
+        let widget = Rc::new(InfoCardWidget::new("weather-clear-symbolic", "", None));
         container.append(&widget.widget());
 
         let store_ref = store.clone();
@@ -54,7 +50,10 @@ impl WeatherComponent {
             }
         });
 
-        Self { container, _widget: widget }
+        Self {
+            container,
+            _widget: widget,
+        }
     }
 
     pub fn widget(&self) -> gtk::Widget {

@@ -56,7 +56,6 @@ impl PluginDiscoveryCache {
             .get(entity_type)
             .map(|(name, path)| (name.as_str(), path))
     }
-
 }
 
 pub fn print_plugin_list() {
@@ -107,7 +106,10 @@ fn discover_plugins(dir: &PathBuf) -> Vec<DiscoveredPlugin> {
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().to_string();
-            let plugin_name = name.strip_prefix("waft-")?.strip_suffix("-daemon")?.to_string();
+            let plugin_name = name
+                .strip_prefix("waft-")?
+                .strip_suffix("-daemon")?
+                .to_string();
             Some((plugin_name, entry.path()))
         })
         .collect();
@@ -128,10 +130,8 @@ fn discover_plugins(dir: &PathBuf) -> Vec<DiscoveredPlugin> {
         })
         .collect();
 
-    let mut plugins: Vec<DiscoveredPlugin> = handles
-        .into_iter()
-        .filter_map(|h| h.join().ok()?)
-        .collect();
+    let mut plugins: Vec<DiscoveredPlugin> =
+        handles.into_iter().filter_map(|h| h.join().ok()?).collect();
 
     plugins.sort_by(|a, b| a.name.cmp(&b.name));
     plugins
@@ -183,7 +183,10 @@ fn query_manifest(binary: &PathBuf) -> Option<Vec<String>> {
             use std::io::Read;
             let mut buf = String::new();
             if let Err(e) = pipe.read_to_string(&mut buf) {
-                eprintln!("[waft] failed to read stdout from {}: {e}", binary.display());
+                eprintln!(
+                    "[waft] failed to read stdout from {}: {e}",
+                    binary.display()
+                );
                 return None;
             }
             buf

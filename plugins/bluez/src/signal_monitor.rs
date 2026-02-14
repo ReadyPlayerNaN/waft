@@ -12,7 +12,9 @@ use zbus::zvariant::OwnedValue;
 
 use waft_protocol::entity::bluetooth::ConnectionState;
 
-use crate::dbus::{self, BLUEZ_DEST, IFACE_ADAPTER1, IFACE_DEVICE1, IFACE_OBJECT_MANAGER, IFACE_PROPERTIES};
+use crate::dbus::{
+    self, BLUEZ_DEST, IFACE_ADAPTER1, IFACE_DEVICE1, IFACE_OBJECT_MANAGER, IFACE_PROPERTIES,
+};
 use crate::state::State;
 
 pub async fn monitor_bluez_signals(
@@ -77,11 +79,10 @@ pub async fn monitor_bluez_signals(
         let mut changed = false;
 
         if iface == IFACE_PROPERTIES && member == "PropertiesChanged" {
-            let Ok((prop_iface, props, _invalidated)) = msg.body().deserialize::<(
-                String,
-                HashMap<String, OwnedValue>,
-                Vec<String>,
-            )>() else {
+            let Ok((prop_iface, props, _invalidated)) =
+                msg.body()
+                    .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+            else {
                 continue;
             };
 
@@ -159,8 +160,7 @@ fn handle_adapter_properties_changed(
     }
 
     // Alias or Name change
-    if let Some(name_val) = props.get("Alias")
-        .or_else(|| props.get("Name"))
+    if let Some(name_val) = props.get("Alias").or_else(|| props.get("Name"))
         && let Ok(name) = String::try_from(name_val.clone())
         && !name.is_empty()
         && adapter.name != name
@@ -244,8 +244,7 @@ fn handle_device_properties_changed(
         }
 
         // Alias or Name change (prefer Alias, matching parse_device_props)
-        if let Some(name_val) = props.get("Alias")
-            .or_else(|| props.get("Name"))
+        if let Some(name_val) = props.get("Alias").or_else(|| props.get("Name"))
             && let Ok(name) = String::try_from(name_val.clone())
             && !name.is_empty()
             && device.name != name
@@ -323,10 +322,10 @@ fn handle_interfaces_added(state: &Arc<StdMutex<State>>, msg: &zbus::Message) ->
 
 /// Handle InterfacesRemoved: remove devices when Device1 interface disappears.
 fn handle_interfaces_removed(state: &Arc<StdMutex<State>>, msg: &zbus::Message) -> bool {
-    let Ok((path, interfaces)) = msg.body().deserialize::<(
-        zbus::zvariant::OwnedObjectPath,
-        Vec<String>,
-    )>() else {
+    let Ok((path, interfaces)) = msg
+        .body()
+        .deserialize::<(zbus::zvariant::OwnedObjectPath, Vec<String>)>()
+    else {
         return false;
     };
 

@@ -13,7 +13,7 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_plugin::dbus_monitor::{monitor_signal, SignalMonitorConfig};
+use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal};
 use waft_plugin::*;
 use zbus::Connection;
 
@@ -22,8 +22,7 @@ const DARKMAN_PATH: &str = "/nl/whynothugo/darkman";
 const DARKMAN_INTERFACE: &str = "nl.whynothugo.darkman";
 
 /// Darkman mode enumeration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum DarkmanMode {
     Dark,
     #[default]
@@ -50,7 +49,6 @@ impl DarkmanMode {
         matches!(self, Self::Dark)
     }
 }
-
 
 /// Darkman configuration from config file.
 #[derive(Debug, Clone, Deserialize, Default)]

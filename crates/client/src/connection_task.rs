@@ -45,9 +45,7 @@ pub async fn daemon_connection_task(
             if let Err(e) = request_dbus_activation().await {
                 log::warn!("[waft-client] D-Bus activation failed: {e}");
             } else {
-                log::info!(
-                    "[waft-client] requested D-Bus activation for {DAEMON_DBUS_NAME}"
-                );
+                log::info!("[waft-client] requested D-Bus activation for {DAEMON_DBUS_NAME}");
             }
         }
 
@@ -91,9 +89,7 @@ pub async fn daemon_connection_task(
                         .send(ClientEvent::Notification(notification))
                         .is_err()
                     {
-                        log::debug!(
-                            "[waft-client] app closed, stopping connection task"
-                        );
+                        log::debug!("[waft-client] app closed, stopping connection task");
                         return;
                     }
                 }

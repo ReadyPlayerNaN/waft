@@ -53,45 +53,46 @@ impl AgendaDetails {
 
         // Description - strip HTML if present
         if let Some(ref desc) = event.description
-            && !desc.trim().is_empty() {
-                // Check if it looks like HTML
-                let display_text = if desc.contains('<') && desc.contains('>') {
-                    strip_html_tags(desc)
-                } else {
-                    desc.clone()
-                };
+            && !desc.trim().is_empty()
+        {
+            // Check if it looks like HTML
+            let display_text = if desc.contains('<') && desc.contains('>') {
+                strip_html_tags(desc)
+            } else {
+                desc.clone()
+            };
 
-                let truncated = if display_text.len() > 300 {
-                    let end = display_text
-                        .char_indices()
-                        .map(|(i, _)| i)
-                        .find(|&i| i >= 300)
-                        .unwrap_or(display_text.len());
-                    format!("{}…", &display_text[..end])
-                } else {
-                    display_text
-                };
+            let truncated = if display_text.len() > 300 {
+                let end = display_text
+                    .char_indices()
+                    .map(|(i, _)| i)
+                    .find(|&i| i >= 300)
+                    .unwrap_or(display_text.len());
+                format!("{}…", &display_text[..end])
+            } else {
+                display_text
+            };
 
-                let row = gtk::Box::builder()
-                    .orientation(gtk::Orientation::Horizontal)
-                    .spacing(8)
-                    .build();
+            let row = gtk::Box::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .spacing(8)
+                .build();
 
-                let icon = IconWidget::from_name("text-x-generic-symbolic", 16);
-                icon.widget().set_valign(gtk::Align::Start);
+            let icon = IconWidget::from_name("text-x-generic-symbolic", 16);
+            icon.widget().set_valign(gtk::Align::Start);
 
-                let label = gtk::Label::builder()
-                    .label(&truncated)
-                    .xalign(0.0)
-                    .wrap(true)
-                    .wrap_mode(gtk::pango::WrapMode::WordChar)
-                    .css_classes(["dim-label"])
-                    .build();
+            let label = gtk::Label::builder()
+                .label(&truncated)
+                .xalign(0.0)
+                .wrap(true)
+                .wrap_mode(gtk::pango::WrapMode::WordChar)
+                .css_classes(["dim-label"])
+                .build();
 
-                row.append(icon.widget());
-                row.append(&label);
-                root.append(&row);
-            }
+            row.append(icon.widget());
+            row.append(&label);
+            root.append(&row);
+        }
 
         Self { root }
     }

@@ -12,11 +12,20 @@ pub enum LayoutNode {
     /// Two-column layout (horizontal box, spacing 24, two 480px children + spacer)
     TwoColumns { children: Vec<LayoutNode> },
     /// Layout-neutral box (vertical by default, spacing 12, optional halign)
-    Box { halign: Option<String>, children: Vec<LayoutNode> },
+    Box {
+        halign: Option<String>,
+        children: Vec<LayoutNode>,
+    },
     /// Horizontal layout box (spacing 12, optional halign)
-    Row { halign: Option<String>, children: Vec<LayoutNode> },
+    Row {
+        halign: Option<String>,
+        children: Vec<LayoutNode>,
+    },
     /// Vertical layout box (spacing 12, optional halign)
-    Col { halign: Option<String>, children: Vec<LayoutNode> },
+    Col {
+        halign: Option<String>,
+        children: Vec<LayoutNode>,
+    },
     /// Horizontal separator
     Divider,
     /// Groups child Widget patterns into a feature toggle grid

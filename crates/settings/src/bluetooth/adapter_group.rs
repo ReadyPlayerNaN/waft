@@ -49,20 +49,14 @@ pub struct AdapterGroup {
 
 impl AdapterGroup {
     pub fn new(props: &AdapterGroupProps) -> Self {
-        let group = adw::PreferencesGroup::builder()
-            .title(&props.name)
-            .build();
+        let group = adw::PreferencesGroup::builder().title(&props.name).build();
 
         // Power switch
-        let power_row = adw::SwitchRow::builder()
-            .title("Enabled")
-            .build();
+        let power_row = adw::SwitchRow::builder().title("Enabled").build();
         group.add(&power_row);
 
         // Discoverable switch
-        let discoverable_row = adw::SwitchRow::builder()
-            .title("Discoverable")
-            .build();
+        let discoverable_row = adw::SwitchRow::builder().title("Discoverable").build();
         group.add(&discoverable_row);
 
         // Alias entry

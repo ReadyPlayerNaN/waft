@@ -342,12 +342,18 @@ mod tests {
     // DbusExpireTimeout tests
     #[test]
     fn test_dbus_timeout_negative_one_is_default() {
-        assert_eq!(DbusExpireTimeout::from_dbus_i32(-1), DbusExpireTimeout::Default);
+        assert_eq!(
+            DbusExpireTimeout::from_dbus_i32(-1),
+            DbusExpireTimeout::Default
+        );
     }
 
     #[test]
     fn test_dbus_timeout_zero_is_never() {
-        assert_eq!(DbusExpireTimeout::from_dbus_i32(0), DbusExpireTimeout::Never);
+        assert_eq!(
+            DbusExpireTimeout::from_dbus_i32(0),
+            DbusExpireTimeout::Never
+        );
     }
 
     #[test]
@@ -369,9 +375,18 @@ mod tests {
     #[test]
     fn test_dbus_timeout_nonstandard_negative_is_default() {
         // Non-standard negative values (other than -1) should be treated as default
-        assert_eq!(DbusExpireTimeout::from_dbus_i32(-2), DbusExpireTimeout::Default);
-        assert_eq!(DbusExpireTimeout::from_dbus_i32(-100), DbusExpireTimeout::Default);
-        assert_eq!(DbusExpireTimeout::from_dbus_i32(i32::MIN), DbusExpireTimeout::Default);
+        assert_eq!(
+            DbusExpireTimeout::from_dbus_i32(-2),
+            DbusExpireTimeout::Default
+        );
+        assert_eq!(
+            DbusExpireTimeout::from_dbus_i32(-100),
+            DbusExpireTimeout::Default
+        );
+        assert_eq!(
+            DbusExpireTimeout::from_dbus_i32(i32::MIN),
+            DbusExpireTimeout::Default
+        );
     }
 
     // NotificationCategory parsing tests
@@ -402,7 +417,10 @@ mod tests {
     #[test]
     fn test_category_call_unknown_status() {
         let result = NotificationCategory::from_str("call.custom");
-        assert!(matches!(result, Ok(NotificationCategory::Call(CallStatus::Unknown(_)))));
+        assert!(matches!(
+            result,
+            Ok(NotificationCategory::Call(CallStatus::Unknown(_)))
+        ));
     }
 
     #[test]

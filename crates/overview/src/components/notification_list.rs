@@ -9,13 +9,13 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
-use waft_protocol::entity;
 use waft_protocol::Urn;
+use waft_protocol::entity;
 
 use super::notification_group::{NotificationData, NotificationGroup, NotificationGroupOutput};
-use waft_client::{EntityActionCallback, EntityStore};
 use crate::i18n;
 use crate::menu_state::MenuStore;
+use waft_client::{EntityActionCallback, EntityStore};
 
 /// Displays grouped desktop notifications sorted newest first.
 ///
@@ -82,11 +82,7 @@ impl NotificationsComponent {
             let mut grouped: HashMap<String, Vec<(Urn, entity::notification::Notification)>> =
                 HashMap::new();
             for (urn, notif) in &entities {
-                let group_key = notif
-                    .app_id
-                    .as_deref()
-                    .unwrap_or("unknown")
-                    .to_string();
+                let group_key = notif.app_id.as_deref().unwrap_or("unknown").to_string();
                 grouped
                     .entry(group_key)
                     .or_default()
@@ -94,13 +90,13 @@ impl NotificationsComponent {
             }
 
             // Remove groups no longer present
-            let current_group_keys: Vec<String> =
-                groups_ref.borrow().keys().cloned().collect();
+            let current_group_keys: Vec<String> = groups_ref.borrow().keys().cloned().collect();
             for key in &current_group_keys {
                 if !grouped.contains_key(key)
-                    && let Some(group) = groups_ref.borrow_mut().remove(key) {
-                        groups_container_ref.remove(group.widget());
-                    }
+                    && let Some(group) = groups_ref.borrow_mut().remove(key)
+                {
+                    groups_container_ref.remove(group.widget());
+                }
             }
 
             // Create or update groups
@@ -123,10 +119,7 @@ impl NotificationsComponent {
                 } else {
                     // Determine app title and icon from first notification
                     let first = &notifs[0].1;
-                    let app_title = first
-                        .app_name
-                        .as_deref()
-                        .unwrap_or(group_key);
+                    let app_title = first.app_name.as_deref().unwrap_or(group_key);
 
                     let group = NotificationGroup::new(
                         group_key,
@@ -150,11 +143,7 @@ impl NotificationsComponent {
                         }
                         NotificationGroupOutput::ClearAll(urns) => {
                             for urn in urns {
-                                entity_cb_ref(
-                                    urn,
-                                    "dismiss".to_string(),
-                                    serde_json::Value::Null,
-                                );
+                                entity_cb_ref(urn, "dismiss".to_string(), serde_json::Value::Null);
                             }
                         }
                     });

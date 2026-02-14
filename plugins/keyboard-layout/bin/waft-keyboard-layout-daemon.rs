@@ -14,9 +14,7 @@
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::*;
-use waft_plugin_keyboard_layout::backends::{
-    detect_backend, KeyboardLayoutBackend, LayoutEvent,
-};
+use waft_plugin_keyboard_layout::backends::{KeyboardLayoutBackend, LayoutEvent, detect_backend};
 use zbus::Connection;
 
 /// Shared layout state.
@@ -39,10 +37,7 @@ impl KeyboardLayoutPlugin {
             .await
             .context("No keyboard layout backend available")?;
 
-        log::info!(
-            "Using {} backend for keyboard layout",
-            backend.name()
-        );
+        log::info!("Using {} backend for keyboard layout", backend.name());
 
         let info = backend
             .get_layout_info()
@@ -152,9 +147,7 @@ fn main() -> Result<()> {
                                 state.available = info.available;
                             }
                             Err(e) => {
-                                log::warn!(
-                                    "[keyboard-layout] mutex poisoned, recovering: {e}"
-                                );
+                                log::warn!("[keyboard-layout] mutex poisoned, recovering: {e}");
                                 let mut state = e.into_inner();
                                 state.current = info.current;
                                 state.available = info.available;

@@ -91,9 +91,8 @@ impl LocaledBackend {
         .await
         .context("Failed to create D-Bus proxy")?;
 
-        let result: std::result::Result<(zbus::zvariant::OwnedValue,), _> = proxy
-            .call("Get", &(LOCALE1_INTERFACE, "X11Layout"))
-            .await;
+        let result: std::result::Result<(zbus::zvariant::OwnedValue,), _> =
+            proxy.call("Get", &(LOCALE1_INTERFACE, "X11Layout")).await;
 
         match result {
             Ok((value,)) => {
@@ -117,14 +116,9 @@ impl LocaledBackend {
     async fn set_layout(&self, layout: &str) -> Result<()> {
         let layout_lower = layout.to_lowercase();
 
-        let proxy = zbus::Proxy::new(
-            &self.conn,
-            LOCALE1_SERVICE,
-            LOCALE1_PATH,
-            LOCALE1_INTERFACE,
-        )
-        .await
-        .context("Failed to create D-Bus proxy")?;
+        let proxy = zbus::Proxy::new(&self.conn, LOCALE1_SERVICE, LOCALE1_PATH, LOCALE1_INTERFACE)
+            .await
+            .context("Failed to create D-Bus proxy")?;
 
         let _: () = proxy
             .call(
@@ -267,9 +261,7 @@ impl KeyboardLayoutBackend for LocaledBackend {
             };
 
             if let Err(e) = dbus_proxy.add_match_rule(rule).await {
-                let _ = sender.send(LayoutEvent::Error(format!(
-                    "Failed to add match rule: {e}"
-                )));
+                let _ = sender.send(LayoutEvent::Error(format!("Failed to add match rule: {e}")));
                 return;
             }
 
@@ -299,28 +291,27 @@ impl KeyboardLayoutBackend for LocaledBackend {
                     String,
                     std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
                     Vec<String>,
-                )>()
-                    && iface == LOCALE1_INTERFACE
-                        && let Some(value) = changed.get("X11Layout")
-                            && let Ok(layout_str) = <String>::try_from(value.clone())
-                        {
-                            debug!(
-                                "[keyboard-layout:localed] Configuration changed: {}",
-                                layout_str
-                            );
-                            let available = Self::parse_xkb_layouts(&layout_str);
-                            if !available.is_empty() {
-                                let current = available[0].clone();
-                                let info = LayoutInfo {
-                                    current,
-                                    available,
-                                    current_index: 0,
-                                };
-                                if sender.send(LayoutEvent::Changed(info)).is_err() {
-                                    break;
-                                }
-                            }
+                )>() && iface == LOCALE1_INTERFACE
+                    && let Some(value) = changed.get("X11Layout")
+                    && let Ok(layout_str) = <String>::try_from(value.clone())
+                {
+                    debug!(
+                        "[keyboard-layout:localed] Configuration changed: {}",
+                        layout_str
+                    );
+                    let available = Self::parse_xkb_layouts(&layout_str);
+                    if !available.is_empty() {
+                        let current = available[0].clone();
+                        let info = LayoutInfo {
+                            current,
+                            available,
+                            current_index: 0,
+                        };
+                        if sender.send(LayoutEvent::Changed(info)).is_err() {
+                            break;
                         }
+                    }
+                }
             }
         });
     }

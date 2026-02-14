@@ -10,9 +10,9 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use uuid::Uuid;
 
+use crate::widgets::icon::IconWidget;
 use crate::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use waft_core::Callback;
-use crate::widgets::icon::IconWidget;
 use waft_core::menu_state::{MenuOp, MenuStore};
 
 /// Properties for initializing a feature toggle.
@@ -64,7 +64,10 @@ impl FeatureToggleWidget {
     pub fn new(props: FeatureToggleProps, menu_store: Option<Rc<MenuStore>>) -> Self {
         // Use provided deterministic menu ID, or fall back to random UUID
         let menu_id = menu_store.as_ref().map(|_| {
-            props.menu_id.clone().unwrap_or_else(|| Uuid::new_v4().to_string())
+            props
+                .menu_id
+                .clone()
+                .unwrap_or_else(|| Uuid::new_v4().to_string())
         });
 
         // Root container: horizontal box containing main button + expand button

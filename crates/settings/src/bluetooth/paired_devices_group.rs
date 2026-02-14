@@ -23,7 +23,8 @@ impl PairedDevicesGroup {
     pub fn new() -> Self {
         let group = adw::PreferencesGroup::builder()
             .title("Paired Devices")
-            .visible(false)
+            .visible(true)
+            .description("No paired devices")
             .build();
 
         Self {
@@ -90,6 +91,10 @@ impl PairedDevicesGroup {
             }
         }
 
-        self.root.set_visible(!self.rows.is_empty());
+        if self.rows.is_empty() {
+            self.root.set_description(Some("No paired devices"));
+        } else {
+            self.root.set_description(None::<&str>);
+        }
     }
 }

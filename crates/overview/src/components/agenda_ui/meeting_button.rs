@@ -48,9 +48,7 @@ impl MeetingButton {
                     }
                 });
 
-                Some(Self {
-                    root: btn.upcast(),
-                })
+                Some(Self { root: btn.upcast() })
             }
             _ => {
                 let popover_box = gtk::Box::builder()

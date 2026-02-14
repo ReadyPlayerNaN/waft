@@ -49,8 +49,12 @@ pub mod close_reasons {
 /// - wiring UI callbacks that send "outbound" events back to the DBus server
 #[derive(Clone, Debug)]
 pub enum IngressEvent {
-    CloseNotification { id: u32 },
-    Notify { notification: Box<IngressedNotification> },
+    CloseNotification {
+        id: u32,
+    },
+    Notify {
+        notification: Box<IngressedNotification>,
+    },
 }
 
 /// Outbound events from UI/controller -> DBus server.

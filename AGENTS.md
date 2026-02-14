@@ -75,6 +75,7 @@ When implementing features:
 - **`waft-ui-gtk`** - GTK4 widget library: `WidgetBase` trait, `Child`/`Children` container types, `WidgetReconciler`, widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`).
 - **`waft-config`** - Configuration loading from `~/.config/waft/config.toml`
 - **`waft-i18n`** - Fluent localization: `system_locale()` returns BCP47 locale, `I18n` struct for translations with `t()` and `t_args()`.
+- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with sidebar and `gtk::Stack` for page switching. Pages: Bluetooth (adapter controls, paired/discovered devices), WiFi (adapter toggle, scan, known/available networks), Wired (adapter status, IP info, connection profiles). Uses same `WaftClient` + `EntityStore` pattern as overview.
 - **`waft-core`** - Common types: `Callback<T>`, `VoidCallback`, `DbusHandle` (zbus wrapper). Re-exports `waft-config`.
 - **`waft-ipc`** - Legacy widget protocol types (being phased out).
 
@@ -107,7 +108,8 @@ Additionally, *session lock detection* is an internal feature in `crates/overvie
 All communication flows through the central `waft` daemon via Unix sockets using length-prefixed JSON.
 
 ```
-Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK app)
+Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK overlay)
+                                               <-->  waft-settings (GTK settings app)
 ```
 
 **Central daemon (`waft`):**
@@ -197,6 +199,20 @@ plugins/
     eds/            bin/          # Entity types: calendar-event
     sunsetr/        bin/          # Entity types: night-light
     syncthing/      bin/          # Entity types: backup-method
+crates/
+    settings/                     # waft-settings: standalone settings application
+        src/
+            main.rs               # GTK entrypoint
+            app.rs                # Entity subscriptions, action writer, client setup
+            window.rs             # AdwNavigationSplitView with gtk::Stack page switching
+            sidebar.rs            # Category navigation (Bluetooth, WiFi, Wired, Display)
+            pages/
+                bluetooth.rs      # Smart container: adapter groups + device lists
+                wifi.rs           # Smart container: WiFi adapters + network lists
+                wired.rs          # Smart container: Ethernet adapters + connection profiles
+            bluetooth/            # Dumb widgets: adapter_group, device_row, paired/discovered groups
+            wifi/                 # Dumb widgets: adapter_group, network_row, known/available groups
+            wired/                # Dumb widgets: adapter_group, connection_row
 ```
 
 ### Key Architectural Patterns
@@ -287,6 +303,39 @@ Structure UI as presentational (dumb) widgets orchestrated by smart containers:
 Naming conventions: `*Props` for input structs, `*Output` for event enums, `connect_output()` for callback registration, `pub root` for the GTK root widget, `widget()` accessor.
 
 When a widget has no events (purely presentational), skip the `Output` enum and `connect_output`.
+
+### EntityStore Subscription Pattern with Initial Reconciliation
+
+**Problem:** `EntityStore::subscribe_type()` only calls callbacks when entities change, not on initial subscription. If `EntityUpdated` notifications arrive before subscriptions are registered, the UI never reconciles with cached data.
+
+**Solution:** Always trigger manual reconciliation after setting up subscriptions:
+
+```rust
+// 1. Set up subscriptions
+entity_store.subscribe_type(EntityType::ENTITY_TYPE, move || {
+    let entities = store.get_entities_typed(EntityType::ENTITY_TYPE);
+    Self::reconcile(&state, &entities, &callback);
+});
+
+// 2. Trigger initial reconciliation with cached data
+{
+    let state_clone = state.clone();
+    let store_clone = entity_store.clone();
+    let cb_clone = action_callback.clone();
+
+    gtk::glib::idle_add_local_once(move || {
+        let entities = store_clone.get_entities_typed(EntityType::ENTITY_TYPE);
+        if !entities.is_empty() {
+            log::debug!("[component] Initial reconciliation: {} entities", entities.len());
+            Self::reconcile(&state_clone, &entities, &cb_clone);
+        }
+    });
+}
+```
+
+**Why `idle_add_local_once`?** Defers execution until after current GTK event processing completes, ensures all subscription setup is complete, and prevents RefCell borrow conflicts.
+
+**Examples:** See `crates/settings/src/pages/bluetooth.rs`, `wifi.rs`, `wired.rs`
 
 ### Threading Model
 
@@ -558,6 +607,7 @@ let handle = match self.field.as_ref() {
 - `waft-plugin` with `Plugin` trait, `PluginRuntime`, `EntityNotifier`
 - `waft` central daemon with discovery, spawning, routing, crash recovery
 - `waft-overview` with `WaftClient`, `EntityRenderer`, socket reconnection
+- `waft-settings` with Bluetooth, WiFi, and Wired settings pages
 
 **Legacy crates** (`waft-ipc`, parts of `waft-core`) are still in the workspace but being phased out.
 
@@ -571,7 +621,6 @@ let handle = match self.field.as_ref() {
 ### Planned Features
 
 - **SNI (Status Notifier Items) support** -- Systray compatibility
-- **Settings app (`waft-settings`)** -- Standalone preferences/control center
 - **Arch Linux split packaging** -- Independent packages per plugin
 
 ### Known Limitations

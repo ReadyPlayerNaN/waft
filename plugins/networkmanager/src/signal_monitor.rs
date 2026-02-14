@@ -6,13 +6,13 @@ use std::sync::{Arc, Mutex as StdMutex};
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use log::{debug, error, info, warn};
-use zbus::zvariant::{ObjectPath, OwnedValue};
 use zbus::Connection;
+use zbus::zvariant::{ObjectPath, OwnedValue};
 
 use crate::dbus_property::{
-    get_property, NM_CONNECTION_ACTIVE_INTERFACE, NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH,
-    NM_SERVICE, NM_VPN_CONNECTION_INTERFACE, DEVICE_TYPE_BLUETOOTH, DEVICE_TYPE_ETHERNET,
-    DEVICE_TYPE_WIFI,
+    DEVICE_TYPE_BLUETOOTH, DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI, NM_CONNECTION_ACTIVE_INTERFACE,
+    NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_VPN_CONNECTION_INTERFACE,
+    get_property,
 };
 use crate::device_discovery::get_device_info_dbus;
 use crate::ethernet::refresh_ethernet_state;
@@ -94,11 +94,10 @@ pub async fn monitor_nm_signals(
 
         match (iface, member) {
             ("org.freedesktop.DBus.Properties", "PropertiesChanged") => {
-                let Ok((prop_iface, props, _invalidated)) = msg.body().deserialize::<(
-                    String,
-                    HashMap<String, OwnedValue>,
-                    Vec<String>,
-                )>() else {
+                let Ok((prop_iface, props, _invalidated)) =
+                    msg.body()
+                        .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+                else {
                     continue;
                 };
 
@@ -108,51 +107,53 @@ pub async fn monitor_nm_signals(
                 if obj_path.contains("/ActiveConnection/")
                     && prop_iface == NM_CONNECTION_ACTIVE_INTERFACE
                     && let Some(state_val) = props.get("State")
-                        && let Ok(state_code) = u32::try_from(state_val.clone()) {
-                            let conn_type = if let Some(type_val) = props.get("Type") {
-                                String::try_from(type_val.clone()).unwrap_or_default()
-                            } else {
-                                get_property::<String>(
-                                    &conn,
-                                    &obj_path,
-                                    NM_CONNECTION_ACTIVE_INTERFACE,
-                                    "Type",
-                                )
-                                .await
-                                .unwrap_or_default()
-                            };
+                    && let Ok(state_code) = u32::try_from(state_val.clone())
+                {
+                    let conn_type = if let Some(type_val) = props.get("Type") {
+                        String::try_from(type_val.clone()).unwrap_or_default()
+                    } else {
+                        get_property::<String>(
+                            &conn,
+                            &obj_path,
+                            NM_CONNECTION_ACTIVE_INTERFACE,
+                            "Type",
+                        )
+                        .await
+                        .unwrap_or_default()
+                    };
 
-                            if conn_type == "vpn" {
-                                debug!(
-                                    "[nm] VPN state changed: path={}, state={}",
-                                    obj_path, state_code
-                                );
-                                if let Err(e) = refresh_vpn_states(&conn, &state).await {
-                                    error!("[nm] Failed to refresh VPN states: {}", e);
-                                }
-                                changed = true;
-                            } else if conn_type == "bluetooth" {
-                                debug!(
-                                    "[nm] Tethering state changed: path={}, state={}",
-                                    obj_path, state_code
-                                );
-                                if let Err(e) = refresh_tethering_states(&conn, &state).await {
-                                    error!("[nm] Failed to refresh tethering states: {}", e);
-                                }
-                                changed = true;
-                            }
-                        }
-
-                // Handle VPN.Connection.VpnState changes
-                if obj_path.contains("/ActiveConnection/")
-                    && prop_iface == NM_VPN_CONNECTION_INTERFACE
-                    && props.contains_key("VpnState") {
-                        debug!("[nm] VPN.Connection state changed: {}", obj_path);
+                    if conn_type == "vpn" {
+                        debug!(
+                            "[nm] VPN state changed: path={}, state={}",
+                            obj_path, state_code
+                        );
                         if let Err(e) = refresh_vpn_states(&conn, &state).await {
                             error!("[nm] Failed to refresh VPN states: {}", e);
                         }
                         changed = true;
+                    } else if conn_type == "bluetooth" {
+                        debug!(
+                            "[nm] Tethering state changed: path={}, state={}",
+                            obj_path, state_code
+                        );
+                        if let Err(e) = refresh_tethering_states(&conn, &state).await {
+                            error!("[nm] Failed to refresh tethering states: {}", e);
+                        }
+                        changed = true;
                     }
+                }
+
+                // Handle VPN.Connection.VpnState changes
+                if obj_path.contains("/ActiveConnection/")
+                    && prop_iface == NM_VPN_CONNECTION_INTERFACE
+                    && props.contains_key("VpnState")
+                {
+                    debug!("[nm] VPN.Connection state changed: {}", obj_path);
+                    if let Err(e) = refresh_vpn_states(&conn, &state).await {
+                        error!("[nm] Failed to refresh VPN states: {}", e);
+                    }
+                    changed = true;
+                }
 
                 if changed {
                     notifier.notify();
@@ -165,19 +166,14 @@ pub async fn monitor_nm_signals(
                     info!("[nm] Device added: {}", device_path);
 
                     // Read device type first, then branch without holding locks across awaits
-                    let device_type: u32 = get_property(
-                        &conn,
-                        &device_path,
-                        NM_DEVICE_INTERFACE,
-                        "DeviceType",
-                    )
-                    .await
-                    .unwrap_or(0);
+                    let device_type: u32 =
+                        get_property(&conn, &device_path, NM_DEVICE_INTERFACE, "DeviceType")
+                            .await
+                            .unwrap_or(0);
 
                     match device_type {
                         DEVICE_TYPE_ETHERNET | DEVICE_TYPE_WIFI => {
-                            if let Ok(Some(info)) =
-                                get_device_info_dbus(&conn, &device_path).await
+                            if let Ok(Some(info)) = get_device_info_dbus(&conn, &device_path).await
                             {
                                 let mut st = match state.lock() {
                                     Ok(g) => g,
@@ -188,10 +184,7 @@ pub async fn monitor_nm_signals(
                                 };
                                 match info.device_type {
                                     DEVICE_TYPE_ETHERNET => {
-                                        if !st
-                                            .ethernet_adapters
-                                            .iter()
-                                            .any(|a| a.path == info.path)
+                                        if !st.ethernet_adapters.iter().any(|a| a.path == info.path)
                                         {
                                             st.ethernet_adapters.push(EthernetAdapterState {
                                                 path: info.path,
@@ -204,11 +197,7 @@ pub async fn monitor_nm_signals(
                                         }
                                     }
                                     DEVICE_TYPE_WIFI => {
-                                        if !st
-                                            .wifi_adapters
-                                            .iter()
-                                            .any(|a| a.path == info.path)
-                                        {
+                                        if !st.wifi_adapters.iter().any(|a| a.path == info.path) {
                                             st.wifi_adapters.push(WiFiAdapterState {
                                                 path: info.path,
                                                 interface_name: info.interface_name,
@@ -225,14 +214,10 @@ pub async fn monitor_nm_signals(
                             }
                         }
                         DEVICE_TYPE_BLUETOOTH => {
-                            let bt_state: u32 = get_property(
-                                &conn,
-                                &device_path,
-                                NM_DEVICE_INTERFACE,
-                                "State",
-                            )
-                            .await
-                            .unwrap_or(0);
+                            let bt_state: u32 =
+                                get_property(&conn, &device_path, NM_DEVICE_INTERFACE, "State")
+                                    .await
+                                    .unwrap_or(0);
                             info!(
                                 "[nm] Bluetooth device added: {} state={}",
                                 device_path, bt_state
@@ -303,24 +288,25 @@ pub async fn monitor_nm_signals(
                         // Update ethernet adapter state
                         if let Some(adapter) =
                             st.ethernet_adapters.iter_mut().find(|a| a.path == obj_path)
-                            && adapter.device_state != new_state {
-                                let was_connected = adapter.is_connected();
-                                info!(
-                                    "[nm] Ethernet {} state: {} -> {}",
-                                    adapter.interface_name, adapter.device_state, new_state
-                                );
-                                adapter.device_state = new_state;
-                                changed = true;
+                            && adapter.device_state != new_state
+                        {
+                            let was_connected = adapter.is_connected();
+                            info!(
+                                "[nm] Ethernet {} state: {} -> {}",
+                                adapter.interface_name, adapter.device_state, new_state
+                            );
+                            adapter.device_state = new_state;
+                            changed = true;
 
-                                if adapter.is_connected() && !was_connected {
-                                    // Just connected - schedule IP config refresh
-                                    refresh_ip_for_device = Some(obj_path.clone());
-                                } else if !adapter.is_connected() && was_connected {
-                                    // Disconnected - clear IP config
-                                    adapter.ip_config = None;
-                                    clear_ip = true;
-                                }
+                            if adapter.is_connected() && !was_connected {
+                                // Just connected - schedule IP config refresh
+                                refresh_ip_for_device = Some(obj_path.clone());
+                            } else if !adapter.is_connected() && was_connected {
+                                // Disconnected - clear IP config
+                                adapter.ip_config = None;
+                                clear_ip = true;
                             }
+                        }
 
                         // Update WiFi adapter state
                         if let Some(adapter) =
@@ -344,14 +330,15 @@ pub async fn monitor_nm_signals(
                         // Update bluetooth device state (affects tethering visibility)
                         if let Some(bt_dev) =
                             st.bluetooth_devices.iter_mut().find(|d| d.path == obj_path)
-                            && bt_dev.device_state != new_state {
-                                debug!(
-                                    "[nm] Bluetooth device {} state: {} -> {}",
-                                    obj_path, bt_dev.device_state, new_state
-                                );
-                                bt_dev.device_state = new_state;
-                                changed = true;
-                            }
+                            && bt_dev.device_state != new_state
+                        {
+                            debug!(
+                                "[nm] Bluetooth device {} state: {} -> {}",
+                                obj_path, bt_dev.device_state, new_state
+                            );
+                            bt_dev.device_state = new_state;
+                            changed = true;
+                        }
                     }
 
                     // Refresh IP config outside the lock
@@ -367,8 +354,10 @@ pub async fn monitor_nm_signals(
                                     e.into_inner()
                                 }
                             };
-                            if let Some(adapter) =
-                                st.ethernet_adapters.iter_mut().find(|a| a.path == device_path)
+                            if let Some(adapter) = st
+                                .ethernet_adapters
+                                .iter_mut()
+                                .find(|a| a.path == device_path)
                             {
                                 adapter.ip_config = Some(CachedIpConfig {
                                     address: ip.address,

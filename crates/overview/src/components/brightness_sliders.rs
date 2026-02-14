@@ -9,8 +9,8 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
-use waft_protocol::entity;
 use waft_protocol::Urn;
+use waft_protocol::entity;
 use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
 
 use waft_client::{EntityActionCallback, EntityStore};
@@ -104,9 +104,7 @@ impl BrightnessSlidersComponent {
 
                     container_ref.append(&slider.widget());
 
-                    sliders.insert(urn_str, SliderEntry {
-                        widget: slider,
-                    });
+                    sliders.insert(urn_str, SliderEntry { widget: slider });
                 }
             }
 

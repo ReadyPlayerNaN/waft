@@ -34,8 +34,8 @@ impl ClockComponent {
         let widget_ref = widget.clone();
         let container_ref = container.clone();
         store.subscribe_type(entity::clock::ENTITY_TYPE, move || {
-            let entities = store_ref
-                .get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE);
+            let entities =
+                store_ref.get_entities_typed::<entity::clock::Clock>(entity::clock::ENTITY_TYPE);
             match entities.first() {
                 Some((_urn, clock)) => {
                     widget_ref.set_title(&clock.time);

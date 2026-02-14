@@ -56,7 +56,10 @@ impl AudioDeviceRow {
         icon_box.append(device_icon.widget());
 
         let connection_icon = IconWidget::from_name(
-            props.connection_icon.as_deref().unwrap_or("bluetooth-symbolic"),
+            props
+                .connection_icon
+                .as_deref()
+                .unwrap_or("bluetooth-symbolic"),
             16,
         );
         let connection_icon_widget = connection_icon.widget().clone().upcast::<gtk::Widget>();

@@ -5,12 +5,12 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{Context, Result};
 use log::{debug, warn};
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::Connection;
+use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 use crate::dbus_property::{
-    get_property, NM_CONNECTION_ACTIVE_INTERFACE, NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH,
-    NM_SERVICE, NM_SETTINGS_INTERFACE, NM_SETTINGS_PATH,
+    NM_CONNECTION_ACTIVE_INTERFACE, NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE,
+    NM_SETTINGS_INTERFACE, NM_SETTINGS_PATH, get_property,
 };
 use crate::state::{EthernetProfileInfo, NmState};
 
@@ -43,23 +43,24 @@ pub async fn get_ethernet_profiles(conn: &Connection) -> Result<Vec<EthernetProf
 
         if let Some(connection) = settings.get("connection")
             && let Some(conn_type) = connection.get("type")
-                && let Ok(type_str) = String::try_from(conn_type.clone())
-                    && type_str == "802-3-ethernet" {
-                        let name = connection
-                            .get("id")
-                            .and_then(|v| String::try_from(v.clone()).ok())
-                            .unwrap_or_else(|| "Wired Connection".to_string());
-                        let uuid = connection
-                            .get("uuid")
-                            .and_then(|v| String::try_from(v.clone()).ok())
-                            .unwrap_or_default();
+            && let Ok(type_str) = String::try_from(conn_type.clone())
+            && type_str == "802-3-ethernet"
+        {
+            let name = connection
+                .get("id")
+                .and_then(|v| String::try_from(v.clone()).ok())
+                .unwrap_or_else(|| "Wired Connection".to_string());
+            let uuid = connection
+                .get("uuid")
+                .and_then(|v| String::try_from(v.clone()).ok())
+                .unwrap_or_default();
 
-                        profiles.push(EthernetProfileInfo {
-                            path: path_str.to_string(),
-                            uuid,
-                            name,
-                        });
-                    }
+            profiles.push(EthernetProfileInfo {
+                path: path_str.to_string(),
+                uuid,
+                name,
+            });
+        }
     }
 
     Ok(profiles)
@@ -117,10 +118,7 @@ pub async fn activate_ethernet_connection(
 }
 
 /// Deactivate the active connection on a device.
-pub async fn deactivate_ethernet_connection(
-    conn: &Connection,
-    device_path: &str,
-) -> Result<()> {
+pub async fn deactivate_ethernet_connection(conn: &Connection, device_path: &str) -> Result<()> {
     use zbus::zvariant::ObjectPath;
 
     // Get the active connection path
@@ -148,7 +146,10 @@ pub async fn deactivate_ethernet_connection(
 }
 
 /// Refresh ethernet profiles and active connection state for all adapters.
-pub async fn refresh_ethernet_state(conn: &Connection, state: &Arc<StdMutex<NmState>>) -> Result<()> {
+pub async fn refresh_ethernet_state(
+    conn: &Connection,
+    state: &Arc<StdMutex<NmState>>,
+) -> Result<()> {
     let profiles = get_ethernet_profiles(conn).await?;
 
     // Get device paths for active connection UUID lookup
@@ -178,13 +179,20 @@ pub async fn refresh_ethernet_state(conn: &Connection, state: &Arc<StdMutex<NmSt
                 e.into_inner()
             }
         };
-        if let Some(adapter) = st.ethernet_adapters.iter_mut().find(|a| a.path == *device_path) {
+        if let Some(adapter) = st
+            .ethernet_adapters
+            .iter_mut()
+            .find(|a| a.path == *device_path)
+        {
             adapter.active_connection_uuid = active_uuid;
             adapter.profiles = profiles.clone();
         }
     }
 
-    debug!("[nm] Refreshed ethernet profiles: {} profiles", profiles.len());
+    debug!(
+        "[nm] Refreshed ethernet profiles: {} profiles",
+        profiles.len()
+    );
 
     Ok(())
 }

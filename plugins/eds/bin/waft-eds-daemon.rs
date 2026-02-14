@@ -52,8 +52,7 @@ struct EdsPlugin {
 
 impl EdsPlugin {
     async fn new() -> Result<Self> {
-        let config: EdsConfig =
-            waft_plugin::config::load_plugin_config("eds").unwrap_or_default();
+        let config: EdsConfig = waft_plugin::config::load_plugin_config("eds").unwrap_or_default();
         log::debug!("EDS config: {config:?}");
 
         let conn = Connection::session()
@@ -185,10 +184,11 @@ async fn discover_calendar_sources(conn: &Connection) -> Result<Vec<CalendarSour
             });
 
             if let (Some(uid), Some(data)) = (uid, data)
-                && data.contains("[Calendar]") {
-                    let display_name = extract_display_name(&data).unwrap_or_else(|| uid.clone());
-                    sources.push(CalendarSource { uid, display_name });
-                }
+                && data.contains("[Calendar]")
+            {
+                let display_name = extract_display_name(&data).unwrap_or_else(|| uid.clone());
+                sources.push(CalendarSource { uid, display_name });
+            }
         }
     }
 
@@ -307,8 +307,7 @@ async fn monitor_eds_calendars(
         tokio::spawn(async move {
             match open_calendar(&conn_clone, &source_uid).await {
                 Ok((calendar_path, bus_name)) => {
-                    match create_view(&conn_clone, &bus_name, &calendar_path, &query_clone).await
-                    {
+                    match create_view(&conn_clone, &bus_name, &calendar_path, &query_clone).await {
                         Ok(view_path) => {
                             // Track this view path
                             {
@@ -458,8 +457,7 @@ async fn spawn_view_monitor(
                         if !events.is_empty() {
                             debug!("[eds] ObjectsModified: {} events", events.len());
                             // For modified events, remove old occurrences then add new
-                            let uids: Vec<String> =
-                                events.iter().map(|e| e.uid.clone()).collect();
+                            let uids: Vec<String> = events.iter().map(|e| e.uid.clone()).collect();
                             update_state_remove_events(&state, &uids);
                             update_state_add_events(&state, events);
                             notifier.notify();
@@ -577,9 +575,10 @@ fn parse_vevent(ical_str: &str) -> Option<entity::calendar::CalendarEvent> {
                 location = Some(unescape_ical(&value));
             }
         } else if line.starts_with("ATTENDEE")
-            && let Some(attendee) = parse_attendee_line(line) {
-                attendees.push(attendee);
-            }
+            && let Some(attendee) = parse_attendee_line(line)
+        {
+            attendees.push(attendee);
+        }
     }
 
     let uid = uid?;
@@ -635,20 +634,19 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
     // DATE format: YYYYMMDD
     // All-day events use local midnight, not UTC midnight, so that a
     // "Feb 14" all-day event spans [Feb 14 00:00 local, Feb 15 00:00 local).
-    if params.contains("VALUE=DATE") && !params.contains("VALUE=DATE-TIME")
-        && value.len() >= 8 {
-            let year: i32 = value[0..4].parse().ok()?;
-            let month: u32 = value[4..6].parse().ok()?;
-            let day: u32 = value[6..8].parse().ok()?;
-            let date = NaiveDate::from_ymd_opt(year, month, day)?;
-            let datetime = date.and_time(NaiveTime::from_hms_opt(0, 0, 0)?);
-            return Some(
-                chrono::Local
-                    .from_local_datetime(&datetime)
-                    .earliest()?
-                    .timestamp(),
-            );
-        }
+    if params.contains("VALUE=DATE") && !params.contains("VALUE=DATE-TIME") && value.len() >= 8 {
+        let year: i32 = value[0..4].parse().ok()?;
+        let month: u32 = value[4..6].parse().ok()?;
+        let day: u32 = value[6..8].parse().ok()?;
+        let date = NaiveDate::from_ymd_opt(year, month, day)?;
+        let datetime = date.and_time(NaiveTime::from_hms_opt(0, 0, 0)?);
+        return Some(
+            chrono::Local
+                .from_local_datetime(&datetime)
+                .earliest()?
+                .timestamp(),
+        );
+    }
 
     // DATETIME format: YYYYMMDDTHHmmss[Z] or with TZID
     let dt_str = if let Some(stripped) = value.strip_suffix('Z') {
@@ -679,9 +677,10 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
             let tzid = &params[tzid_start + 5..];
             let tzid = tzid.split(';').next().unwrap_or(tzid);
             if let Ok(tz) = tzid.parse::<chrono_tz::Tz>()
-                && let Some(dt) = tz.from_local_datetime(&datetime).single() {
-                    return Some(dt.timestamp());
-                }
+                && let Some(dt) = tz.from_local_datetime(&datetime).single()
+            {
+                return Some(dt.timestamp());
+            }
         }
 
         // No Z, no TZID → floating time (RFC 5545), interpret as local

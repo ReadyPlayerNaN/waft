@@ -49,13 +49,8 @@ async fn probe_backend(conn: &Connection) -> Result<Backend> {
 
     // Try ScreenSaver
     for path in SCREENSAVER_PATHS {
-        let proxy = zbus::Proxy::new(
-            conn,
-            SCREENSAVER_DESTINATION,
-            *path,
-            SCREENSAVER_INTERFACE,
-        )
-        .await?;
+        let proxy =
+            zbus::Proxy::new(conn, SCREENSAVER_DESTINATION, *path, SCREENSAVER_INTERFACE).await?;
         if proxy.call::<_, _, (bool,)>("GetActive", &()).await.is_ok() {
             info!("[caffeine] ScreenSaver backend available at {}", path);
             return Ok(Backend::ScreenSaver { path });
@@ -135,7 +130,10 @@ impl CaffeinePlugin {
                 .await?;
 
                 let (cookie,): (u32,) = proxy
-                    .call("Inhibit", &("waft-overview", "User activated caffeine mode"))
+                    .call(
+                        "Inhibit",
+                        &("waft-overview", "User activated caffeine mode"),
+                    )
                     .await?;
 
                 self.lock_state().screensaver_cookie = Some(cookie);

@@ -48,7 +48,7 @@ pub mod transport;
 
 pub use notifier::EntityNotifier;
 pub use plugin::{Entity, Plugin};
-pub use runtime::{daemon_socket_path, PluginRuntime};
+pub use runtime::{PluginRuntime, daemon_socket_path};
 
 // Re-export serde_json for plugin action params
 pub use serde_json;

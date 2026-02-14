@@ -126,9 +126,10 @@ impl<'a, W: IsA<gtk::Widget>> CssStateBuilder<'a, W> {
 
         // Ensure base class exists
         if let Some(base) = self.base_class
-            && !self.widget.has_css_class(base) {
-                self.widget.add_css_class(base);
-            }
+            && !self.widget.has_css_class(base)
+        {
+            self.widget.add_css_class(base);
+        }
 
         // Add back only active state classes
         for (class, condition) in self.states {
@@ -177,9 +178,10 @@ pub fn apply_state_classes(
 
     // Ensure base class exists
     if let Some(base) = base_class
-        && !widget.has_css_class(base) {
-            widget.add_css_class(base);
-        }
+        && !widget.has_css_class(base)
+    {
+        widget.add_css_class(base);
+    }
 
     // Add back only active state classes
     for (class, condition) in state_classes {
@@ -211,7 +213,11 @@ mod tests {
         init_gtk_for_tests();
         let label = gtk::Label::new(Some("Test"));
 
-        let classes = vec!["class1".to_string(), "class2".to_string(), "class3".to_string()];
+        let classes = vec![
+            "class1".to_string(),
+            "class2".to_string(),
+            "class3".to_string(),
+        ];
         apply_css_classes(&label, &classes);
 
         assert!(label.has_css_class("class1"));

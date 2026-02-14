@@ -40,7 +40,8 @@ pub fn process_op(state: &mut State, op: NotificationOp) -> bool {
 fn process_ingress(state: &mut State, n: IngressedNotification) {
     // Handle replaces_id: remove the old notification if it exists
     if let Some(old_id) = n.replaces_id
-        && old_id != 0 && state.notifications.contains_key(&old_id)
+        && old_id != 0
+        && state.notifications.contains_key(&old_id)
     {
         log::debug!("[store] Replacing notification {} with {}", old_id, n.id);
         remove_notification(state, old_id);
@@ -164,23 +165,20 @@ fn create_notification(n: &IngressedNotification) -> Notification {
     };
 
     if let Some(app_name) = n.app_name.as_deref()
-        && let Some(extraction) =
-            super::workspace_extract::extract_workspace(app_name, &n.title)
-        {
-            notification.title = extraction.cleaned_title;
-            notification.workspace = Some(extraction.workspace.clone());
+        && let Some(extraction) = super::workspace_extract::extract_workspace(app_name, &n.title)
+    {
+        notification.title = extraction.cleaned_title;
+        notification.workspace = Some(extraction.workspace.clone());
 
-            if let Some(ref mut app) = notification.app {
-                let workspace_suffix = format!(
-                    "_{}",
-                    extraction.workspace.to_lowercase().replace(' ', "_")
-                );
-                app.ident = Arc::from(format!("{}{}", app.ident, workspace_suffix));
-                if let Some(ref title) = app.title {
-                    app.title = Some(Arc::from(format!("{} [{}]", title, extraction.workspace)));
-                }
+        if let Some(ref mut app) = notification.app {
+            let workspace_suffix =
+                format!("_{}", extraction.workspace.to_lowercase().replace(' ', "_"));
+            app.ident = Arc::from(format!("{}{}", app.ident, workspace_suffix));
+            if let Some(ref title) = app.title {
+                app.title = Some(Arc::from(format!("{} [{}]", title, extraction.workspace)));
             }
         }
+    }
 
     notification
 }
@@ -402,9 +400,21 @@ mod tests {
     fn test_batch_ingress_adds_multiple_notifications() {
         let mut state = State::new();
         let ops = vec![
-            NotificationOp::Ingress(Box::new(make_notification(1, NotificationUrgency::Normal, false))),
-            NotificationOp::Ingress(Box::new(make_notification(2, NotificationUrgency::Normal, false))),
-            NotificationOp::Ingress(Box::new(make_notification(3, NotificationUrgency::Normal, false))),
+            NotificationOp::Ingress(Box::new(make_notification(
+                1,
+                NotificationUrgency::Normal,
+                false,
+            ))),
+            NotificationOp::Ingress(Box::new(make_notification(
+                2,
+                NotificationUrgency::Normal,
+                false,
+            ))),
+            NotificationOp::Ingress(Box::new(make_notification(
+                3,
+                NotificationUrgency::Normal,
+                false,
+            ))),
         ];
 
         process_op(&mut state, NotificationOp::Batch(ops));
@@ -431,9 +441,30 @@ mod tests {
     #[test]
     fn test_ttl_expiry_removes_notifications() {
         let mut state = State::new();
-        process_op(&mut state, NotificationOp::Ingress(Box::new(make_notification(1, NotificationUrgency::Normal, false))));
-        process_op(&mut state, NotificationOp::Ingress(Box::new(make_notification(2, NotificationUrgency::Normal, false))));
-        process_op(&mut state, NotificationOp::Ingress(Box::new(make_notification(3, NotificationUrgency::Normal, false))));
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(make_notification(
+                1,
+                NotificationUrgency::Normal,
+                false,
+            ))),
+        );
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(make_notification(
+                2,
+                NotificationUrgency::Normal,
+                false,
+            ))),
+        );
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(make_notification(
+                3,
+                NotificationUrgency::Normal,
+                false,
+            ))),
+        );
 
         assert_eq!(state.notifications.len(), 3);
 
@@ -462,7 +493,14 @@ mod tests {
     #[test]
     fn test_replaces_id_removes_old_notification() {
         let mut state = State::new();
-        process_op(&mut state, NotificationOp::Ingress(Box::new(make_notification(1, NotificationUrgency::Normal, false))));
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(make_notification(
+                1,
+                NotificationUrgency::Normal,
+                false,
+            ))),
+        );
 
         let mut replacement = make_notification(2, NotificationUrgency::Normal, false);
         replacement.replaces_id = Some(1);
@@ -476,7 +514,14 @@ mod tests {
     #[test]
     fn test_dismiss_cleans_up_empty_group() {
         let mut state = State::new();
-        process_op(&mut state, NotificationOp::Ingress(Box::new(make_notification(1, NotificationUrgency::Normal, false))));
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(make_notification(
+                1,
+                NotificationUrgency::Normal,
+                false,
+            ))),
+        );
 
         assert!(!state.groups.is_empty());
 
@@ -488,8 +533,22 @@ mod tests {
     #[test]
     fn test_dismiss_keeps_group_with_remaining_notifications() {
         let mut state = State::new();
-        process_op(&mut state, NotificationOp::Ingress(Box::new(make_notification(1, NotificationUrgency::Normal, false))));
-        process_op(&mut state, NotificationOp::Ingress(Box::new(make_notification(2, NotificationUrgency::Normal, false))));
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(make_notification(
+                1,
+                NotificationUrgency::Normal,
+                false,
+            ))),
+        );
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(make_notification(
+                2,
+                NotificationUrgency::Normal,
+                false,
+            ))),
+        );
 
         process_op(&mut state, NotificationOp::NotificationDismiss(1));
 

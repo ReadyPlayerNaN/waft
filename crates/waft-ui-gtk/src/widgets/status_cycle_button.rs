@@ -27,12 +27,7 @@ pub struct StatusCycleButtonWidget {
 }
 
 impl StatusCycleButtonWidget {
-    pub fn new(
-        value: &str,
-        icon: &str,
-        options: &[StatusOption],
-        on_cycle: CycleCallback,
-    ) -> Self {
+    pub fn new(value: &str, icon: &str, options: &[StatusOption], on_cycle: CycleCallback) -> Self {
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)

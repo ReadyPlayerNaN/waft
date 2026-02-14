@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::UnixStream;
+use tokio::net::unix::OwnedWriteHalf;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -42,7 +42,13 @@ impl Connection {
             tx,
         };
 
-        (conn, ReadHalf { id, reader: read_half })
+        (
+            conn,
+            ReadHalf {
+                id,
+                reader: read_half,
+            },
+        )
     }
 
     /// Queue a serialized message to send to this client.

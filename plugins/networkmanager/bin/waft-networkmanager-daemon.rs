@@ -10,9 +10,9 @@ use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::entity::network::{
-    AdapterKind, NetworkAdapter, TetheringConnection, VpnState as EntityVpnState, WiFiNetwork,
-    ADAPTER_ENTITY_TYPE, ETHERNET_CONNECTION_ENTITY_TYPE, TETHERING_CONNECTION_ENTITY_TYPE,
-    VPN_ENTITY_TYPE, WIFI_NETWORK_ENTITY_TYPE,
+    ADAPTER_ENTITY_TYPE, AdapterKind, ETHERNET_CONNECTION_ENTITY_TYPE, NetworkAdapter,
+    TETHERING_CONNECTION_ENTITY_TYPE, TetheringConnection, VPN_ENTITY_TYPE,
+    VpnState as EntityVpnState, WIFI_NETWORK_ENTITY_TYPE, WiFiNetwork,
 };
 use waft_plugin::*;
 use zbus::Connection;
@@ -55,9 +55,7 @@ struct NetworkManagerPlugin {
 }
 
 impl NetworkManagerPlugin {
-    async fn new(
-        scan_tx: tokio::sync::mpsc::Sender<()>,
-    ) -> Result<Self> {
+    async fn new(scan_tx: tokio::sync::mpsc::Sender<()>) -> Result<Self> {
         let conn = Connection::system()
             .await
             .context("Failed to connect to system bus")?;
@@ -133,11 +131,10 @@ impl NetworkManagerPlugin {
         // Fetch public IP if any adapter is connected
         let any_connected = state.ethernet_adapters.iter().any(|a| a.is_connected())
             || state.wifi_adapters.iter().any(|a| a.active_ssid.is_some());
-        if any_connected
-            && let Some(public_ip) = fetch_public_ip().await {
-                debug!("[nm] Public IP: {}", public_ip);
-                state.public_ip = Some(public_ip);
-            }
+        if any_connected && let Some(public_ip) = fetch_public_ip().await {
+            debug!("[nm] Public IP: {}", public_ip);
+            state.public_ip = Some(public_ip);
+        }
 
         // Discover ethernet connection profiles
         match waft_plugin_networkmanager::ethernet::get_ethernet_profiles(&conn).await {
@@ -185,15 +182,15 @@ impl NetworkManagerPlugin {
                         profile.name, profile.path, vpn_state
                     );
 
-                    state
-                        .vpn_connections
-                        .push(waft_plugin_networkmanager::state::VpnConnectionInfo {
+                    state.vpn_connections.push(
+                        waft_plugin_networkmanager::state::VpnConnectionInfo {
                             path: profile.path,
                             uuid: profile.uuid,
                             name: profile.name,
                             state: vpn_state,
                             active_path,
-                        });
+                        },
+                    );
                 }
             }
             Err(e) => {
@@ -309,7 +306,11 @@ fn wifi_adapter_to_entities(adapter: &WiFiAdapterState) -> Vec<Entity> {
     let mut entities = Vec::new();
 
     // Adapter entity
-    let adapter_urn = Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, &adapter.interface_name);
+    let adapter_urn = Urn::new(
+        "networkmanager",
+        ADAPTER_ENTITY_TYPE,
+        &adapter.interface_name,
+    );
     let adapter_entity = NetworkAdapter {
         name: adapter.interface_name.clone(),
         enabled: adapter.enabled,
@@ -351,15 +352,20 @@ fn ethernet_adapter_to_entities(
     let mut entities = Vec::new();
 
     // Adapter entity
-    let adapter_urn = Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, &adapter.interface_name);
+    let adapter_urn = Urn::new(
+        "networkmanager",
+        ADAPTER_ENTITY_TYPE,
+        &adapter.interface_name,
+    );
 
-    let ip = adapter.ip_config.as_ref().map(|c| {
-        waft_plugin::entity::network::IpInfo {
+    let ip = adapter
+        .ip_config
+        .as_ref()
+        .map(|c| waft_plugin::entity::network::IpInfo {
             address: c.address.clone(),
             prefix: c.prefix,
             gateway: c.gateway.clone(),
-        }
-    });
+        });
 
     let adapter_entity = NetworkAdapter {
         name: adapter.interface_name.clone(),
@@ -381,8 +387,7 @@ fn ethernet_adapter_to_entities(
 
     // Ethernet connection profile child entities
     for profile in &adapter.profiles {
-        let conn_urn =
-            adapter_urn.child(ETHERNET_CONNECTION_ENTITY_TYPE, &profile.uuid);
+        let conn_urn = adapter_urn.child(ETHERNET_CONNECTION_ENTITY_TYPE, &profile.uuid);
         let conn_entity = waft_plugin::entity::network::EthernetConnection {
             name: profile.name.clone(),
             uuid: profile.uuid.clone(),
@@ -504,7 +509,8 @@ impl Plugin for NetworkManagerPlugin {
             }
             "ethernet-connection" => {
                 let uuid = urn.id();
-                self.handle_ethernet_connection_action(&urn, uuid, &action).await?
+                self.handle_ethernet_connection_action(&urn, uuid, &action)
+                    .await?
             }
             "vpn" => {
                 let vpn_id = urn.id();
@@ -632,7 +638,10 @@ impl NetworkManagerPlugin {
                 if let Some(path) = device_path {
                     disconnect_device(&self.conn, &path).await?;
                 } else {
-                    warn!("[nm] Cannot disconnect - WiFi adapter not found for: {}", ssid);
+                    warn!(
+                        "[nm] Cannot disconnect - WiFi adapter not found for: {}",
+                        ssid
+                    );
                 }
             }
             _ => {
@@ -666,8 +675,7 @@ impl NetworkManagerPlugin {
                 };
 
                 if let (Some(conn_path), Some(device_path)) = (conn_path, device_path) {
-                    match activate_ethernet_connection(&self.conn, &conn_path, &device_path).await
-                    {
+                    match activate_ethernet_connection(&self.conn, &conn_path, &device_path).await {
                         Ok(_) => {
                             info!("[nm] Ethernet connection activated: {}", uuid);
                             let mut state = self.lock_state();
@@ -772,9 +780,7 @@ impl NetworkManagerPlugin {
         Ok(())
     }
 
-    async fn handle_toggle_wifi_on(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_toggle_wifi_on(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         {
             let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
@@ -807,9 +813,7 @@ impl NetworkManagerPlugin {
         Ok(())
     }
 
-    async fn handle_toggle_wifi_off(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_toggle_wifi_off(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         {
             let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
@@ -1093,7 +1097,11 @@ impl NetworkManagerPlugin {
                     .tethering_connections
                     .iter()
                     .filter(|c| c.active)
-                    .filter_map(|c| c.active_path.as_ref().map(|ap| (ap.clone(), c.uuid.clone())))
+                    .filter_map(|c| {
+                        c.active_path
+                            .as_ref()
+                            .map(|ap| (ap.clone(), c.uuid.clone()))
+                    })
                     .collect()
             };
             for (active_path, uuid) in active_connections {
@@ -1205,8 +1213,7 @@ fn main() -> Result<()> {
         let monitor_state = shared_state.clone();
         let monitor_notifier = notifier.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                monitor_nm_signals(monitor_conn, monitor_state, monitor_notifier).await
+            if let Err(e) = monitor_nm_signals(monitor_conn, monitor_state, monitor_notifier).await
             {
                 error!("[nm] D-Bus signal monitoring failed: {e}");
             }
@@ -1226,9 +1233,7 @@ fn main() -> Result<()> {
                     return;
                 }
             };
-            if let Err(e) =
-                monitor_bluez_signals(bluez_conn, bluez_state, bluez_notifier).await
-            {
+            if let Err(e) = monitor_bluez_signals(bluez_conn, bluez_state, bluez_notifier).await {
                 error!("[nm] BlueZ signal monitoring failed: {e}");
             }
             warn!("[nm] BlueZ signal monitoring task stopped");

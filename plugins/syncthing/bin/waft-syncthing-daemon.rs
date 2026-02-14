@@ -36,9 +36,7 @@ impl SyncthingPlugin {
             false
         };
 
-        log::info!(
-            "Syncthing plugin: available={available}, enabled={enabled}"
-        );
+        log::info!("Syncthing plugin: available={available}, enabled={enabled}");
 
         Ok(Self {
             state: Arc::new(StdMutex::new(SyncthingState { enabled, available })),
@@ -197,10 +195,7 @@ impl Plugin for SyncthingPlugin {
 ///
 /// Checks every 30 seconds whether the service state has changed (e.g. user
 /// started/stopped it via systemctl directly).
-async fn monitor_service_state(
-    state: Arc<StdMutex<SyncthingState>>,
-    notifier: EntityNotifier,
-) {
+async fn monitor_service_state(state: Arc<StdMutex<SyncthingState>>, notifier: EntityNotifier) {
     loop {
         tokio::time::sleep(Duration::from_secs(30)).await;
 

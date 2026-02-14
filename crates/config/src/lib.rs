@@ -314,11 +314,26 @@ daemon_mode = "opt-in"
     #[test]
     fn test_toast_position_anchors() {
         assert_eq!(ToastPosition::TopLeft.anchors(), (true, false, true, false));
-        assert_eq!(ToastPosition::TopCenter.anchors(), (true, false, false, false));
-        assert_eq!(ToastPosition::TopRight.anchors(), (true, false, false, true));
-        assert_eq!(ToastPosition::BottomLeft.anchors(), (false, true, true, false));
-        assert_eq!(ToastPosition::BottomCenter.anchors(), (false, true, false, false));
-        assert_eq!(ToastPosition::BottomRight.anchors(), (false, true, false, true));
+        assert_eq!(
+            ToastPosition::TopCenter.anchors(),
+            (true, false, false, false)
+        );
+        assert_eq!(
+            ToastPosition::TopRight.anchors(),
+            (true, false, false, true)
+        );
+        assert_eq!(
+            ToastPosition::BottomLeft.anchors(),
+            (false, true, true, false)
+        );
+        assert_eq!(
+            ToastPosition::BottomCenter.anchors(),
+            (false, true, false, false)
+        );
+        assert_eq!(
+            ToastPosition::BottomRight.anchors(),
+            (false, true, false, true)
+        );
     }
 
     #[test]

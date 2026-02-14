@@ -10,11 +10,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
+use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_protocol::entity::audio::AudioDeviceKind;
-use waft_protocol::Urn;
-use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::audio::device_row::{AudioDeviceRow, AudioDeviceRowOutput, AudioDeviceRowProps};
+use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
 
 use waft_client::{EntityActionCallback, EntityStore};
@@ -188,8 +188,7 @@ impl AudioSlidersComponent {
                         let rev = menu_revealer.clone();
                         menu_store_ref.subscribe(move || {
                             let state = store_sub.get_state();
-                            let open =
-                                state.active_menu_id.as_deref() == Some(mid.as_str());
+                            let open = state.active_menu_id.as_deref() == Some(mid.as_str());
                             rev.set_reveal_child(open);
                         });
 
@@ -286,7 +285,9 @@ fn update_device_rows(
             // Update in place
             existing.row.set_name(&device.name);
             existing.row.set_device_icon(&device.icon);
-            existing.row.set_connection_icon(device.connection_icon.as_deref());
+            existing
+                .row
+                .set_connection_icon(device.connection_icon.as_deref());
             existing.row.set_active(device.default);
         } else {
             // Create new row

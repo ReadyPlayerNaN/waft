@@ -135,8 +135,7 @@ impl SliderWidget {
         });
 
         // Connect scale value change — store handler ID so set_value() can block it
-        let last_user_change: Rc<RefCell<Option<std::time::Instant>>> =
-            Rc::new(RefCell::new(None));
+        let last_user_change: Rc<RefCell<Option<std::time::Instant>>> = Rc::new(RefCell::new(None));
         let is_dragging = Rc::new(RefCell::new(false));
         let on_value_change_ref = on_value_change.clone();
         let last_user_change_ref = last_user_change.clone();
@@ -156,9 +155,10 @@ impl SliderWidget {
         let last_change_monitor = last_user_change.clone();
         glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
             if let Some(last) = *last_change_monitor.borrow()
-                && last.elapsed() > std::time::Duration::from_millis(150) {
-                    *is_dragging_monitor.borrow_mut() = false;
-                }
+                && last.elapsed() > std::time::Duration::from_millis(150)
+            {
+                *is_dragging_monitor.borrow_mut() = false;
+            }
             glib::ControlFlow::Continue
         });
 

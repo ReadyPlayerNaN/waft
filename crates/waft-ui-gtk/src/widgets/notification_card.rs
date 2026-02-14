@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
-use waft_protocol::entity::notification::{NotificationAction, NotificationIconHint};
 use waft_protocol::Urn;
+use waft_protocol::entity::notification::{NotificationAction, NotificationIconHint};
 
 use super::icon::{Icon, IconWidget};
 use super::notification_markup;
@@ -132,8 +132,7 @@ impl NotificationCard {
         card_box.append(&header);
 
         // Action buttons
-        let non_default_actions: Vec<_> =
-            actions.iter().filter(|a| a.key != "default").collect();
+        let non_default_actions: Vec<_> = actions.iter().filter(|a| a.key != "default").collect();
 
         if !non_default_actions.is_empty() {
             let actions_box = gtk::Box::builder()
@@ -241,15 +240,16 @@ impl NotificationCard {
 
                 // Don't fire default action when clicking interactive elements
                 if let Some(widget) = gesture.widget()
-                    && let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT) {
-                        let mut current: Option<gtk::Widget> = Some(picked);
-                        while let Some(ref w) = current {
-                            if w.downcast_ref::<gtk::Button>().is_some() {
-                                return;
-                            }
-                            current = w.parent();
+                    && let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT)
+                {
+                    let mut current: Option<gtk::Widget> = Some(picked);
+                    while let Some(ref w) = current {
+                        if w.downcast_ref::<gtk::Button>().is_some() {
+                            return;
                         }
+                        current = w.parent();
                     }
+                }
 
                 *hidden_ref.borrow_mut() = true;
                 if let Some(ref cb) = *on_output_ref.borrow() {

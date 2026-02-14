@@ -4,15 +4,15 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use log::{debug, warn};
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::Connection;
+use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
+use crate::AccessPoint;
 use crate::dbus_property::{
     NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_SETTINGS_INTERFACE,
     NM_SETTINGS_PATH, NM_WIRELESS_INTERFACE,
 };
 use crate::state::AccessPointInfo;
-use crate::AccessPoint;
 
 /// Scan WiFi networks and list known ones via D-Bus.
 ///
@@ -74,17 +74,16 @@ pub async fn scan_and_list_known_networks(
             }
         };
 
-        let ap_paths: (Vec<OwnedObjectPath>,) =
-            match proxy.call("GetAllAccessPoints", &()).await {
-                Ok(p) => p,
-                Err(e) => {
-                    warn!(
-                        "[nm] Failed to get access points from {}: {}",
-                        adapter_path, e
-                    );
-                    continue;
-                }
-            };
+        let ap_paths: (Vec<OwnedObjectPath>,) = match proxy.call("GetAllAccessPoints", &()).await {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(
+                    "[nm] Failed to get access points from {}: {}",
+                    adapter_path, e
+                );
+                continue;
+            }
+        };
 
         for ap_path in &ap_paths.0 {
             let ap = match read_access_point(conn, ap_path.as_str()).await {
@@ -221,12 +220,13 @@ pub async fn get_connections_for_ssid(conn: &Connection, ssid: &str) -> Result<V
 
         if let Some(wireless) = settings.get("802-11-wireless")
             && let Some(ssid_value) = wireless.get("ssid")
-                && let Ok(ssid_bytes) = <Vec<u8>>::try_from(ssid_value.clone()) {
-                    let connection_ssid = String::from_utf8_lossy(&ssid_bytes);
-                    if connection_ssid == ssid {
-                        matching.push(path_str.to_string());
-                    }
-                }
+            && let Ok(ssid_bytes) = <Vec<u8>>::try_from(ssid_value.clone())
+        {
+            let connection_ssid = String::from_utf8_lossy(&ssid_bytes);
+            if connection_ssid == ssid {
+                matching.push(path_str.to_string());
+            }
+        }
     }
 
     Ok(matching)
@@ -270,14 +270,9 @@ pub async fn disconnect_device(conn: &Connection, device_path: &str) -> Result<(
 
 /// Set WiFi enabled via D-Bus.
 pub async fn set_wifi_enabled_dbus(conn: &Connection, enabled: bool) -> Result<()> {
-    let proxy = zbus::Proxy::new(
-        conn,
-        NM_SERVICE,
-        NM_PATH,
-        "org.freedesktop.DBus.Properties",
-    )
-    .await
-    .context("Failed to create Properties proxy")?;
+    let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, "org.freedesktop.DBus.Properties")
+        .await
+        .context("Failed to create Properties proxy")?;
 
     let v = zbus::zvariant::Value::from(enabled);
     let _: () = proxy
@@ -307,15 +302,11 @@ pub async fn connect_wired_dbus(conn: &Connection, device_path: &str) -> Result<
     .context("Failed to create Properties proxy")?;
 
     let (raw_value,): (OwnedValue,) = props_proxy
-        .call(
-            "Get",
-            &(NM_DEVICE_INTERFACE, "AvailableConnections"),
-        )
+        .call("Get", &(NM_DEVICE_INTERFACE, "AvailableConnections"))
         .await
         .context("Failed to get AvailableConnections property")?;
 
-    let available: Vec<OwnedObjectPath> = Vec::try_from(raw_value)
-        .unwrap_or_default();
+    let available: Vec<OwnedObjectPath> = Vec::try_from(raw_value).unwrap_or_default();
 
     let connection_path: ObjectPath = if let Some(first) = available.first() {
         log::debug!(
@@ -323,10 +314,12 @@ pub async fn connect_wired_dbus(conn: &Connection, device_path: &str) -> Result<
             first.as_str(),
             device_path
         );
-        ObjectPath::try_from(first.as_str())
-            .unwrap_or(ObjectPath::from_static_str_unchecked("/"))
+        ObjectPath::try_from(first.as_str()).unwrap_or(ObjectPath::from_static_str_unchecked("/"))
     } else {
-        log::debug!("[nm] No available connections for {}, using auto-detect", device_path);
+        log::debug!(
+            "[nm] No available connections for {}, using auto-detect",
+            device_path
+        );
         ObjectPath::from_static_str_unchecked("/")
     };
 

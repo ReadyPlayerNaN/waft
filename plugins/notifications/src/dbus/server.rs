@@ -286,7 +286,9 @@ impl NotificationsService {
             },
         };
 
-        let _ = self.inner.ingress_tx.send(IngressEvent::Notify { notification: Box::new(notification) });
+        let _ = self.inner.ingress_tx.send(IngressEvent::Notify {
+            notification: Box::new(notification),
+        });
 
         Ok(id)
     }

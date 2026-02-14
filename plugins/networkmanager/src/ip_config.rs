@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use log::debug;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::Connection;
+use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
-use crate::dbus_property::{get_property, NM_DEVICE_INTERFACE};
+use crate::dbus_property::{NM_DEVICE_INTERFACE, get_property};
 
 const NM_IP4CONFIG_INTERFACE: &str = "org.freedesktop.NetworkManager.IP4Config";
 
@@ -39,20 +39,14 @@ pub async fn get_device_ip4_config(
     }
 
     // Read AddressData - array of dicts with "address" (string) and "prefix" (u32)
-    let address_data: Vec<HashMap<String, OwnedValue>> = match get_property(
-        conn,
-        path_str,
-        NM_IP4CONFIG_INTERFACE,
-        "AddressData",
-    )
-    .await
-    {
-        Ok(data) => data,
-        Err(e) => {
-            debug!("[nm] Failed to read AddressData from {}: {}", path_str, e);
-            return Ok(None);
-        }
-    };
+    let address_data: Vec<HashMap<String, OwnedValue>> =
+        match get_property(conn, path_str, NM_IP4CONFIG_INTERFACE, "AddressData").await {
+            Ok(data) => data,
+            Err(e) => {
+                debug!("[nm] Failed to read AddressData from {}: {}", path_str, e);
+                return Ok(None);
+            }
+        };
 
     let first = match address_data.first() {
         Some(entry) => entry,
@@ -60,15 +54,14 @@ pub async fn get_device_ip4_config(
     };
 
     let address = match first.get("address") {
-        Some(v) => String::try_from(v.clone())
-            .context("Failed to parse address from AddressData")?,
+        Some(v) => {
+            String::try_from(v.clone()).context("Failed to parse address from AddressData")?
+        }
         None => return Ok(None),
     };
 
     let prefix = match first.get("prefix") {
-        Some(v) => u32::try_from(v.clone())
-            .map(|p| p as u8)
-            .unwrap_or(24),
+        Some(v) => u32::try_from(v.clone()).map(|p| p as u8).unwrap_or(24),
         None => 24,
     };
 
@@ -93,11 +86,8 @@ pub async fn get_device_ip4_config(
 pub async fn fetch_public_ip() -> Option<String> {
     // Use a simple TCP connection to avoid adding reqwest dependency.
     // Connect to ifconfig.me on port 80 with a plain HTTP request.
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        fetch_public_ip_inner(),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), fetch_public_ip_inner()).await;
 
     match result {
         Ok(Some(ip)) => Some(ip),

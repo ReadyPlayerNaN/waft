@@ -5,8 +5,8 @@
 
 use gtk::prelude::*;
 
-use waft_protocol::entity;
 use waft_protocol::Urn;
+use waft_protocol::entity;
 use waft_ui_gtk::widgets::icon::IconWidget;
 
 use waft_client::EntityActionCallback;

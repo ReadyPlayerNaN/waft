@@ -131,7 +131,10 @@ mod tests {
         let (mut client, mut server) = duplex(1024);
         let oversized_len = (MAX_FRAME_SIZE + 1) as u32;
         use tokio::io::AsyncWriteExt;
-        client.write_all(&oversized_len.to_be_bytes()).await.unwrap();
+        client
+            .write_all(&oversized_len.to_be_bytes())
+            .await
+            .unwrap();
 
         let result: Result<Option<TestMsg>, _> = read_framed(&mut server).await;
         assert!(matches!(result, Err(TransportError::FrameTooLarge(_))));

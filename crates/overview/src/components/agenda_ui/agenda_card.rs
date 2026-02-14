@@ -25,7 +25,11 @@ fn occurrence_key(event: &CalendarEvent) -> String {
 fn has_details(event: &CalendarEvent) -> bool {
     event.location.is_some()
         || !event.attendees.is_empty()
-        || event.description.as_ref().map(|d| !d.trim().is_empty()).unwrap_or(false)
+        || event
+            .description
+            .as_ref()
+            .map(|d| !d.trim().is_empty())
+            .unwrap_or(false)
 }
 
 /// Output events from an agenda card.

@@ -290,7 +290,11 @@ impl Plugin for SunsetrPlugin {
             active_preset: state.active_preset,
         };
         vec![Entity::new(
-            Urn::new("sunsetr", entity::display::NIGHT_LIGHT_ENTITY_TYPE, "default"),
+            Urn::new(
+                "sunsetr",
+                entity::display::NIGHT_LIGHT_ENTITY_TYPE,
+                "default",
+            ),
             entity::display::NIGHT_LIGHT_ENTITY_TYPE,
             &night_light,
         )]
@@ -348,17 +352,16 @@ impl Plugin for SunsetrPlugin {
                 };
 
                 // Refresh presets when becoming active (lock dropped above)
-                if became_active
-                    && let Ok(presets) = query_presets().await {
-                        let mut state = match self.state.lock() {
-                            Ok(g) => g,
-                            Err(e) => {
-                                warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                                e.into_inner()
-                            }
-                        };
-                        state.presets = presets;
-                    }
+                if became_active && let Ok(presets) = query_presets().await {
+                    let mut state = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    state.presets = presets;
+                }
             }
             "select_preset" => {
                 let preset_name = params

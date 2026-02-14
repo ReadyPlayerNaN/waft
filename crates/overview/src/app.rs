@@ -13,7 +13,9 @@ use adw::prelude::*;
 use crate::features::session::SessionEvent;
 use crate::menu_state::create_menu_store;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
-use waft_client::{ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task};
+use waft_client::{
+    ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
+};
 use waft_ipc::net as ipc_net;
 use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
 use waft_protocol::entity;

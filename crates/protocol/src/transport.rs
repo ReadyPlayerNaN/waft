@@ -39,7 +39,11 @@ impl std::fmt::Display for TransportError {
             TransportError::Io(e) => write!(f, "I/O error: {}", e),
             TransportError::Serialization(e) => write!(f, "serialization error: {}", e),
             TransportError::FrameTooLarge(size) => {
-                write!(f, "frame too large: {} bytes (max: {} bytes)", size, MAX_FRAME_SIZE)
+                write!(
+                    f,
+                    "frame too large: {} bytes (max: {} bytes)",
+                    size, MAX_FRAME_SIZE
+                )
             }
         }
     }
@@ -77,10 +81,7 @@ impl From<serde_json::Error> for TransportError {
 ///
 /// Returns `TransportError::Serialization` if JSON serialization fails.
 /// Returns `TransportError::Io` if writing to the stream fails.
-pub fn write_framed<W: Write, T: Serialize>(
-    writer: &mut W,
-    msg: &T,
-) -> Result<(), TransportError> {
+pub fn write_framed<W: Write, T: Serialize>(writer: &mut W, msg: &T) -> Result<(), TransportError> {
     // Serialize message to JSON
     let payload = serde_json::to_vec(msg)?;
     let len = payload.len();
@@ -162,9 +163,18 @@ mod tests {
     #[test]
     fn round_trip_multiple_messages() {
         let messages = vec![
-            TestMessage { id: 1, text: "first".to_string() },
-            TestMessage { id: 2, text: "second".to_string() },
-            TestMessage { id: 3, text: "third".to_string() },
+            TestMessage {
+                id: 1,
+                text: "first".to_string(),
+            },
+            TestMessage {
+                id: 2,
+                text: "second".to_string(),
+            },
+            TestMessage {
+                id: 3,
+                text: "third".to_string(),
+            },
         ];
 
         // Write all messages
@@ -272,10 +282,8 @@ mod tests {
 
     #[test]
     fn transport_error_display() {
-        let io_err = TransportError::Io(std::io::Error::new(
-            std::io::ErrorKind::BrokenPipe,
-            "test",
-        ));
+        let io_err =
+            TransportError::Io(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "test"));
         assert!(io_err.to_string().contains("I/O error"));
 
         let large_err = TransportError::FrameTooLarge(20_000_000);

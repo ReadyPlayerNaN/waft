@@ -82,7 +82,10 @@ impl BluetoothDeviceRow {
         icon_box.append(device_icon.widget());
 
         let battery_icon = IconWidget::from_name(
-            props.battery_icon.as_deref().unwrap_or("battery-full-symbolic"),
+            props
+                .battery_icon
+                .as_deref()
+                .unwrap_or("battery-full-symbolic"),
             16,
         );
         let battery_icon_widget = battery_icon.widget().clone().upcast::<gtk::Widget>();

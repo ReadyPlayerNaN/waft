@@ -14,11 +14,11 @@ type RebuildSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 use crate::calendar_selection::CalendarSelectionStore;
 use crate::components::agenda::AgendaComponent;
 use crate::components::audio_sliders::AudioSlidersComponent;
-use crate::components::events::EventsComponent;
 use crate::components::battery::BatteryComponent;
 use crate::components::brightness_sliders::BrightnessSlidersComponent;
 use crate::components::calendar_grid::CalendarComponent;
 use crate::components::clock::ClockComponent;
+use crate::components::events::EventsComponent;
 use crate::components::keyboard_layout::KeyboardLayoutComponent;
 use crate::components::notification_list::NotificationsComponent;
 use crate::components::session_actions::SessionActionsComponent;
@@ -31,11 +31,11 @@ use crate::components::toggles::dnd::DoNotDisturbToggle;
 use crate::components::toggles::network::NetworkManagerToggles;
 use crate::components::toggles::night_light::NightLightToggle;
 use crate::components::weather::WeatherComponent;
-use waft_client::{EntityActionCallback, EntityStore};
 use crate::layout::model::LayoutNode;
 use crate::layout::types::WidgetFeatureToggle;
 use crate::menu_state::MenuStore;
 use crate::ui::main_window::trigger_window_resize;
+use waft_client::{EntityActionCallback, EntityStore};
 use waft_ui_gtk::widgets::feature_grid::{FeatureGridItem, FeatureGridWidget};
 
 /// Shared context for the layout renderer, providing access to entity store,
@@ -218,7 +218,10 @@ fn render_node(
 
         // Legacy Widget and Unmatched nodes are no longer supported
         LayoutNode::Widget { id } => {
-            warn!("[renderer] Legacy <Widget id=\"{}\"> elements are no longer supported", id);
+            warn!(
+                "[renderer] Legacy <Widget id=\"{}\"> elements are no longer supported",
+                id
+            );
             gtk::Box::new(gtk::Orientation::Vertical, 0).upcast()
         }
 
@@ -230,7 +233,11 @@ fn render_node(
 }
 
 /// Create a purpose-built entity component by name.
-fn render_component(name: &str, ctx: &Rc<RenderContext>, menu_store: &Rc<MenuStore>) -> gtk::Widget {
+fn render_component(
+    name: &str,
+    ctx: &Rc<RenderContext>,
+    menu_store: &Rc<MenuStore>,
+) -> gtk::Widget {
     let mut keep = ctx.keep_alive.borrow_mut();
     match name {
         "Clock" => {
@@ -320,7 +327,11 @@ fn render_feature_toggle_grid(
 ) -> gtk::Widget {
     // Create toggle components and wire into a grid
     let resize_cb: Rc<dyn Fn()> = Rc::new(trigger_window_resize);
-    let grid = Rc::new(FeatureGridWidget::new(Vec::new(), menu_store.clone(), Some(resize_cb)));
+    let grid = Rc::new(FeatureGridWidget::new(
+        Vec::new(),
+        menu_store.clone(),
+        Some(resize_cb),
+    ));
 
     // Two-phase init for dynamic toggle rebuild cycle
     let rebuild_slot: RebuildSlot = Rc::new(RefCell::new(None));
@@ -406,15 +417,10 @@ fn render_feature_toggle_grid(
                         dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
                     }
-                    _ => warn!(
-                        "[renderer] Unknown toggle component in FeatureToggleGrid: {name}"
-                    ),
+                    _ => warn!("[renderer] Unknown toggle component in FeatureToggleGrid: {name}"),
                 },
                 LayoutNode::Widget { id } => {
-                    debug!(
-                        "[renderer] FeatureToggleGrid legacy Widget child: {}",
-                        id
-                    );
+                    debug!("[renderer] FeatureToggleGrid legacy Widget child: {}", id);
                     // Legacy Widget children in a mixed grid are not supported.
                     // They should use a separate FeatureToggleGrid with only Widget children.
                     warn!(

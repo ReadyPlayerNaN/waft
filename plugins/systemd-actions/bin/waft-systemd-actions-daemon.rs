@@ -113,11 +113,7 @@ impl SystemdActionsPlugin {
             .await
             .with_context(|| format!("Failed to call Manager.{}", method))?;
 
-        log::info!(
-            "Manager.{}(interactive={}) executed",
-            method,
-            interactive
-        );
+        log::info!("Manager.{}(interactive={}) executed", method, interactive);
         Ok(())
     }
 }

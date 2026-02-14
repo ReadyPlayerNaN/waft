@@ -20,5 +20,5 @@ pub mod transport;
 pub mod urn;
 
 pub use message::{AppMessage, AppNotification, PluginCommand, PluginMessage};
-pub use transport::{read_framed, write_framed, TransportError};
+pub use transport::{TransportError, read_framed, write_framed};
 pub use urn::{Urn, UrnError};

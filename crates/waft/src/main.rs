@@ -39,10 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let socket_path = daemon_socket_path()?;
 
-        eprintln!(
-            "[waft] starting daemon at {}",
-            socket_path.display()
-        );
+        eprintln!("[waft] starting daemon at {}", socket_path.display());
 
         let daemon = WaftDaemon::new(socket_path)?;
         daemon.run().await?;
@@ -82,8 +79,7 @@ async fn register_dbus_name() -> Result<zbus::Connection, Box<dyn std::error::Er
 }
 
 fn daemon_socket_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-        .map_err(|_| "XDG_RUNTIME_DIR not set")?;
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").map_err(|_| "XDG_RUNTIME_DIR not set")?;
 
     let mut path = PathBuf::from(runtime_dir);
     path.push("waft");

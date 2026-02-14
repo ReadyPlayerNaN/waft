@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime};
 use gtk::prelude::*;
 use serde_json::Value;
 use waft_config::ToastPosition;
-use waft_protocol::entity::notification::{Dnd, Notification, NotificationUrgency};
 use waft_protocol::Urn;
+use waft_protocol::entity::notification::{Dnd, Notification, NotificationUrgency};
 use waft_ui_gtk::widgets::notification_card::{NotificationCard, NotificationCardOutput};
 
 struct ToastItem {
@@ -25,8 +25,7 @@ impl ToastItem {
     fn from_notification(urn: Urn, notification: Notification) -> Self {
         // Use default TTL since the notification entity doesn't include TTL
         // (deprioritization is handled by the notification plugin before sending)
-        let expires_at = SystemTime::now()
-            .checked_add(Duration::from_millis(DEFAULT_TOAST_TTL_MS));
+        let expires_at = SystemTime::now().checked_add(Duration::from_millis(DEFAULT_TOAST_TTL_MS));
 
         Self {
             urn,
@@ -91,7 +90,9 @@ impl ToastManager {
     /// Handle entity removal (notification retracted).
     pub fn handle_entity_removed(&self, urn: &Urn) {
         self.dismiss_toast(urn);
-        self.pending_queue.borrow_mut().retain(|item| &item.urn != urn);
+        self.pending_queue
+            .borrow_mut()
+            .retain(|item| &item.urn != urn);
         self.show_next_pending();
     }
 
@@ -131,9 +132,7 @@ impl ToastManager {
         }
         card.show();
 
-        self.widgets
-            .borrow_mut()
-            .insert(item.urn.clone(), card);
+        self.widgets.borrow_mut().insert(item.urn.clone(), card);
         self.active_toasts.borrow_mut().push(item);
         (self.window_resize_callback)();
     }

@@ -14,13 +14,13 @@ use std::rc::Rc;
 use chrono::NaiveDate;
 use gtk::prelude::*;
 
-use waft_protocol::entity;
 use waft_protocol::Urn;
+use waft_protocol::entity;
 
 use crate::calendar_selection::CalendarSelectionStore;
 use crate::components::agenda_ui::agenda_card::{AgendaCard, AgendaCardOutput};
-use waft_client::EntityStore;
 use crate::menu_state::{MenuOp, MenuStore};
+use waft_client::EntityStore;
 
 /// Displays upcoming calendar events with sophisticated UI.
 ///
@@ -288,9 +288,7 @@ impl AgendaComponent {
 
         let mut entities: Vec<_> = entities
             .into_iter()
-            .filter(|(_, event)| {
-                event.start_time < filter_end && event.end_time > filter_start
-            })
+            .filter(|(_, event)| event.start_time < filter_end && event.end_time > filter_start)
             .collect();
 
         // Sort by start_time, then end_time
@@ -340,8 +338,7 @@ impl AgendaComponent {
                 let card = if let Some(existing) = cards_map.get(&occurrence_key) {
                     existing.clone()
                 } else {
-                    let new_card =
-                        Rc::new(AgendaCard::new(event, is_past, is_ongoing, menu_store));
+                    let new_card = Rc::new(AgendaCard::new(event, is_past, is_ongoing, menu_store));
 
                     let menu_store_toggle = menu_store.clone();
                     new_card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
@@ -408,9 +405,7 @@ impl AgendaComponent {
                     .map(|dt| dt.with_timezone(&chrono::Local).date_naive())
                     .unwrap_or(today_date);
 
-                if let Some(group) =
-                    day_groups.iter_mut().find(|(date, _)| *date == event_date)
-                {
+                if let Some(group) = day_groups.iter_mut().find(|(date, _)| *date == event_date) {
                     group.1.push((urn, event));
                 } else {
                     day_groups.push((event_date, vec![(urn, event)]));
@@ -445,10 +440,9 @@ impl AgendaComponent {
                             Rc::new(AgendaCard::new(event, false, is_ongoing, menu_store));
 
                         let menu_store_toggle = menu_store.clone();
-                        new_card
-                            .connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
-                                menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
-                            });
+                        new_card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
+                            menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
+                        });
 
                         new_card
                     };

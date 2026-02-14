@@ -33,14 +33,8 @@ impl NotificationsPlugin {
     ///
     /// Returns the plugin and the receiver for outbound D-Bus events
     /// (to be consumed by the D-Bus server's signal loop).
-    pub fn new(
-        state: Arc<StdMutex<State>>,
-        outbound_tx: flume::Sender<OutboundEvent>,
-    ) -> Self {
-        Self {
-            state,
-            outbound_tx,
-        }
+    pub fn new(state: Arc<StdMutex<State>>, outbound_tx: flume::Sender<OutboundEvent>) -> Self {
+        Self { state, outbound_tx }
     }
 
     /// Ingest a notification from the D-Bus server into the store.
@@ -54,10 +48,7 @@ impl NotificationsPlugin {
                 e.into_inner()
             }
         };
-        process_op(
-            &mut guard,
-            NotificationOp::Ingress(Box::new(notification)),
-        );
+        process_op(&mut guard, NotificationOp::Ingress(Box::new(notification)));
     }
 
     /// Process a CloseNotification D-Bus call.
@@ -114,7 +105,11 @@ impl Plugin for NotificationsPlugin {
             let proto_notif = proto::Notification {
                 title: notif.title.to_string(),
                 description: notif.description.to_string(),
-                app_name: notif.app.as_ref().and_then(|a| a.title.as_ref()).map(|t| t.to_string()),
+                app_name: notif
+                    .app
+                    .as_ref()
+                    .and_then(|a| a.title.as_ref())
+                    .map(|t| t.to_string()),
                 app_id: notif.app.as_ref().map(|a| a.ident.to_string()),
                 urgency: match notif.urgency {
                     NotificationUrgency::Low => proto::NotificationUrgency::Low,
@@ -152,7 +147,11 @@ impl Plugin for NotificationsPlugin {
             };
 
             entities.push(Entity::new(
-                Urn::new("notifications", proto::NOTIFICATION_ENTITY_TYPE, &id.to_string()),
+                Urn::new(
+                    "notifications",
+                    proto::NOTIFICATION_ENTITY_TYPE,
+                    &id.to_string(),
+                ),
                 proto::NOTIFICATION_ENTITY_TYPE,
                 &proto_notif,
             ));
@@ -198,7 +197,9 @@ impl Plugin for NotificationsPlugin {
                     let mut guard = match self.state.lock() {
                         Ok(g) => g,
                         Err(e) => {
-                            warn!("[notifications] mutex poisoned in handle_action, recovering: {e}");
+                            warn!(
+                                "[notifications] mutex poisoned in handle_action, recovering: {e}"
+                            );
                             e.into_inner()
                         }
                     };
@@ -236,7 +237,9 @@ impl Plugin for NotificationsPlugin {
                     let mut guard = match self.state.lock() {
                         Ok(g) => g,
                         Err(e) => {
-                            warn!("[notifications] mutex poisoned in handle_action, recovering: {e}");
+                            warn!(
+                                "[notifications] mutex poisoned in handle_action, recovering: {e}"
+                            );
                             e.into_inner()
                         }
                     };
@@ -333,7 +336,10 @@ mod tests {
             .filter(|e| e.entity_type == "notification")
             .collect();
         assert_eq!(notif_entities.len(), 1);
-        assert_eq!(notif_entities[0].urn.as_str(), "notifications/notification/42");
+        assert_eq!(
+            notif_entities[0].urn.as_str(),
+            "notifications/notification/42"
+        );
     }
 
     #[test]

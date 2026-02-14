@@ -353,7 +353,7 @@ mod tests {
     fn test_category_precedence_over_app() {
         // Even with a power app name, category rules should apply first
         let notif = make_notification(
-            Some("upower"), // Would suppress toast
+            Some("upower"),                                          // Would suppress toast
             Some(NotificationCategory::Device(DeviceStatus::Added)), // But category wins
         );
         let result = check_deprioritize(&notif).expect("should match");

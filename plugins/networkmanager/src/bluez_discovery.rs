@@ -9,8 +9,8 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use log::debug;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::Connection;
+use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 use crate::state::BluezPairedDevice;
 
@@ -18,13 +18,10 @@ const BLUEZ_DEST: &str = "org.bluez";
 const IFACE_OBJECT_MANAGER: &str = "org.freedesktop.DBus.ObjectManager";
 pub const IFACE_DEVICE1: &str = "org.bluez.Device1";
 
-type ManagedObjects =
-    HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
+type ManagedObjects = HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
 
 /// Discover all paired BlueZ devices and their connection state.
-pub async fn discover_bluez_paired_devices(
-    conn: &Connection,
-) -> Result<Vec<BluezPairedDevice>> {
+pub async fn discover_bluez_paired_devices(conn: &Connection) -> Result<Vec<BluezPairedDevice>> {
     let proxy = zbus::Proxy::new(conn, BLUEZ_DEST, "/", IFACE_OBJECT_MANAGER)
         .await
         .context("Failed to create BlueZ ObjectManager proxy")?;
@@ -52,10 +49,7 @@ pub async fn discover_bluez_paired_devices(
                 .and_then(|v| bool::try_from(v.clone()).ok())
                 .unwrap_or(false);
 
-            debug!(
-                "[nm] BlueZ paired device: {} connected={}",
-                path, connected
-            );
+            debug!("[nm] BlueZ paired device: {} connected={}", path, connected);
 
             devices.push(BluezPairedDevice {
                 path: path.to_string(),

@@ -129,10 +129,7 @@ mod tests {
             assert_eq!(tracker.record_crash("weather"), CrashOutcome::Restart);
         }
         // The MAX_CRASHES-th crash trips the breaker
-        assert_eq!(
-            tracker.record_crash("weather"),
-            CrashOutcome::CircuitBroken
-        );
+        assert_eq!(tracker.record_crash("weather"), CrashOutcome::CircuitBroken);
         assert!(tracker.circuit_broken("weather"));
     }
 
@@ -142,10 +139,7 @@ mod tests {
         for _ in 0..MAX_CRASHES {
             tracker.record_crash("weather");
         }
-        assert_eq!(
-            tracker.record_crash("weather"),
-            CrashOutcome::CircuitBroken
-        );
+        assert_eq!(tracker.record_crash("weather"), CrashOutcome::CircuitBroken);
     }
 
     #[test]
@@ -181,7 +175,9 @@ mod tests {
         // The last old crash is at `past + (MAX_CRASHES - 2)`, so push past far enough.
         let past = Instant::now() - CRASH_WINDOW - Duration::from_secs(MAX_CRASHES as u64);
         for i in 0..MAX_CRASHES - 1 {
-            history.crashes.push_back(past + Duration::from_secs(i as u64));
+            history
+                .crashes
+                .push_back(past + Duration::from_secs(i as u64));
         }
 
         // A new crash should evict the old ones and return Restart

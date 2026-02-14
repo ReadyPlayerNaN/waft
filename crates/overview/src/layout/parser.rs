@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::layout::model::LayoutNode;
 
@@ -52,20 +52,16 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
             let id = node
                 .attribute("id")
                 .ok_or_else(|| anyhow!("Widget element missing 'id' attribute"))?;
-            Ok(LayoutNode::Widget {
-                id: id.to_string(),
-            })
+            Ok(LayoutNode::Widget { id: id.to_string() })
         }
         "Unmatched" => Ok(LayoutNode::Unmatched),
         tag @ ("Clock" | "Battery" | "Weather" | "KeyboardLayout" | "SessionActions"
         | "SystemActions" | "Calendar" | "Agenda" | "Events" | "NotificationList"
         | "AudioSliders" | "BrightnessSliders" | "DndToggle" | "CaffeineToggle"
         | "DarkModeToggle" | "NightLightToggle" | "BluetoothToggles" | "NetworkToggles"
-        | "BackupToggle") => {
-            Ok(LayoutNode::Component {
-                name: tag.to_string(),
-            })
-        }
+        | "BackupToggle") => Ok(LayoutNode::Component {
+            name: tag.to_string(),
+        }),
         tag => Err(anyhow!("Unknown layout tag: {}", tag)),
     }
 }
@@ -124,52 +120,91 @@ mod tests {
         let root = parse_layout(DEFAULT_LAYOUT).expect("default layout should parse");
         match &root {
             LayoutNode::Overview { children } => {
-                assert_eq!(children.len(), 3, "Overview should have Header, Divider, TwoColumns");
+                assert_eq!(
+                    children.len(),
+                    3,
+                    "Overview should have Header, Divider, TwoColumns"
+                );
                 assert!(matches!(&children[0], LayoutNode::Header { .. }));
                 assert!(matches!(&children[1], LayoutNode::Divider));
                 assert!(matches!(&children[2], LayoutNode::TwoColumns { .. }));
 
                 // Header should contain Rows with Component children
-                if let LayoutNode::Header { children: header_children } = &children[0] {
+                if let LayoutNode::Header {
+                    children: header_children,
+                } = &children[0]
+                {
                     assert_eq!(header_children.len(), 2);
                     if let LayoutNode::Row { children, .. } = &header_children[0] {
                         assert_eq!(children.len(), 3);
-                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "Clock"));
-                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "Battery"));
-                        assert!(matches!(&children[2], LayoutNode::Component { name } if name == "Weather"));
+                        assert!(
+                            matches!(&children[0], LayoutNode::Component { name } if name == "Clock")
+                        );
+                        assert!(
+                            matches!(&children[1], LayoutNode::Component { name } if name == "Battery")
+                        );
+                        assert!(
+                            matches!(&children[2], LayoutNode::Component { name } if name == "Weather")
+                        );
                     }
                     if let LayoutNode::Row { halign, children } = &header_children[1] {
                         assert_eq!(halign.as_deref(), Some("end"));
                         assert_eq!(children.len(), 3);
-                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "KeyboardLayout"));
-                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "SessionActions"));
-                        assert!(matches!(&children[2], LayoutNode::Component { name } if name == "SystemActions"));
+                        assert!(
+                            matches!(&children[0], LayoutNode::Component { name } if name == "KeyboardLayout")
+                        );
+                        assert!(
+                            matches!(&children[1], LayoutNode::Component { name } if name == "SessionActions")
+                        );
+                        assert!(
+                            matches!(&children[2], LayoutNode::Component { name } if name == "SystemActions")
+                        );
                     }
                 }
 
                 // TwoColumns should contain Cols
-                if let LayoutNode::TwoColumns { children: col_children } = &children[2] {
+                if let LayoutNode::TwoColumns {
+                    children: col_children,
+                } = &children[2]
+                {
                     assert_eq!(col_children.len(), 2);
                     // Left column: Events, NotificationList
                     if let LayoutNode::Col { children, .. } = &col_children[0] {
                         assert_eq!(children.len(), 2);
-                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "Events"));
-                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "NotificationList"));
+                        assert!(
+                            matches!(&children[0], LayoutNode::Component { name } if name == "Events")
+                        );
+                        assert!(
+                            matches!(&children[1], LayoutNode::Component { name } if name == "NotificationList")
+                        );
                     }
                     // Right column: AudioSliders, BrightnessSliders, FeatureToggleGrid, Unmatched
                     if let LayoutNode::Col { children, .. } = &col_children[1] {
                         assert_eq!(children.len(), 4);
-                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "AudioSliders"));
-                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "BrightnessSliders"));
+                        assert!(
+                            matches!(&children[0], LayoutNode::Component { name } if name == "AudioSliders")
+                        );
+                        assert!(
+                            matches!(&children[1], LayoutNode::Component { name } if name == "BrightnessSliders")
+                        );
                         assert!(matches!(&children[2], LayoutNode::FeatureToggleGrid { .. }));
                         assert!(matches!(&children[3], LayoutNode::Unmatched));
 
                         // FeatureToggleGrid children
-                        if let LayoutNode::FeatureToggleGrid { children: toggle_children } = &children[2] {
+                        if let LayoutNode::FeatureToggleGrid {
+                            children: toggle_children,
+                        } = &children[2]
+                        {
                             assert_eq!(toggle_children.len(), 7);
-                            assert!(matches!(&toggle_children[0], LayoutNode::Component { name } if name == "DndToggle"));
-                            assert!(matches!(&toggle_children[5], LayoutNode::Component { name } if name == "NetworkToggles"));
-                            assert!(matches!(&toggle_children[6], LayoutNode::Component { name } if name == "BackupToggle"));
+                            assert!(
+                                matches!(&toggle_children[0], LayoutNode::Component { name } if name == "DndToggle")
+                            );
+                            assert!(
+                                matches!(&toggle_children[5], LayoutNode::Component { name } if name == "NetworkToggles")
+                            );
+                            assert!(
+                                matches!(&toggle_children[6], LayoutNode::Component { name } if name == "BackupToggle")
+                            );
                         }
                     }
                 }
@@ -197,15 +232,13 @@ mod tests {
         let xml = r#"<Overview><Box halign="end"><Widget id="test:a" /></Box></Overview>"#;
         let root = parse_layout(xml).expect("should parse");
         match root {
-            LayoutNode::Overview { children } => {
-                match &children[0] {
-                    LayoutNode::Box { halign, children } => {
-                        assert_eq!(halign.as_deref(), Some("end"));
-                        assert_eq!(children.len(), 1);
-                    }
-                    _ => panic!("expected Box"),
+            LayoutNode::Overview { children } => match &children[0] {
+                LayoutNode::Box { halign, children } => {
+                    assert_eq!(halign.as_deref(), Some("end"));
+                    assert_eq!(children.len(), 1);
                 }
-            }
+                _ => panic!("expected Box"),
+            },
             _ => panic!("root should be Overview"),
         }
     }
@@ -215,14 +248,12 @@ mod tests {
         let xml = r#"<Overview><Box><Widget id="test:a" /></Box></Overview>"#;
         let root = parse_layout(xml).expect("should parse");
         match root {
-            LayoutNode::Overview { children } => {
-                match &children[0] {
-                    LayoutNode::Box { halign, .. } => {
-                        assert!(halign.is_none());
-                    }
-                    _ => panic!("expected Box"),
+            LayoutNode::Overview { children } => match &children[0] {
+                LayoutNode::Box { halign, .. } => {
+                    assert!(halign.is_none());
                 }
-            }
+                _ => panic!("expected Box"),
+            },
             _ => panic!("root should be Overview"),
         }
     }
@@ -232,15 +263,13 @@ mod tests {
         let xml = r#"<Overview><Row><Widget id="a:b" /><Widget id="c:d" /></Row></Overview>"#;
         let root = parse_layout(xml).expect("should parse");
         match root {
-            LayoutNode::Overview { children } => {
-                match &children[0] {
-                    LayoutNode::Row { halign, children } => {
-                        assert!(halign.is_none());
-                        assert_eq!(children.len(), 2);
-                    }
-                    _ => panic!("expected Row"),
+            LayoutNode::Overview { children } => match &children[0] {
+                LayoutNode::Row { halign, children } => {
+                    assert!(halign.is_none());
+                    assert_eq!(children.len(), 2);
                 }
-            }
+                _ => panic!("expected Row"),
+            },
             _ => panic!("root should be Overview"),
         }
     }
@@ -250,15 +279,13 @@ mod tests {
         let xml = r#"<Overview><Row halign="end"><Widget id="a:b" /></Row></Overview>"#;
         let root = parse_layout(xml).expect("should parse");
         match root {
-            LayoutNode::Overview { children } => {
-                match &children[0] {
-                    LayoutNode::Row { halign, children } => {
-                        assert_eq!(halign.as_deref(), Some("end"));
-                        assert_eq!(children.len(), 1);
-                    }
-                    _ => panic!("expected Row"),
+            LayoutNode::Overview { children } => match &children[0] {
+                LayoutNode::Row { halign, children } => {
+                    assert_eq!(halign.as_deref(), Some("end"));
+                    assert_eq!(children.len(), 1);
                 }
-            }
+                _ => panic!("expected Row"),
+            },
             _ => panic!("root should be Overview"),
         }
     }
@@ -268,15 +295,13 @@ mod tests {
         let xml = r#"<Overview><Col><Widget id="a:b" /><Widget id="c:d" /></Col></Overview>"#;
         let root = parse_layout(xml).expect("should parse");
         match root {
-            LayoutNode::Overview { children } => {
-                match &children[0] {
-                    LayoutNode::Col { halign, children } => {
-                        assert!(halign.is_none());
-                        assert_eq!(children.len(), 2);
-                    }
-                    _ => panic!("expected Col"),
+            LayoutNode::Overview { children } => match &children[0] {
+                LayoutNode::Col { halign, children } => {
+                    assert!(halign.is_none());
+                    assert_eq!(children.len(), 2);
                 }
-            }
+                _ => panic!("expected Col"),
+            },
             _ => panic!("root should be Overview"),
         }
     }
@@ -308,14 +333,12 @@ mod tests {
         let xml = r#"<Overview><FeatureToggleGrid><Widget id="a:b" /><Widget id="c:d" /></FeatureToggleGrid></Overview>"#;
         let root = parse_layout(xml).expect("should parse");
         match root {
-            LayoutNode::Overview { children } => {
-                match &children[0] {
-                    LayoutNode::FeatureToggleGrid { children } => {
-                        assert_eq!(children.len(), 2);
-                    }
-                    _ => panic!("expected FeatureToggleGrid"),
+            LayoutNode::Overview { children } => match &children[0] {
+                LayoutNode::FeatureToggleGrid { children } => {
+                    assert_eq!(children.len(), 2);
                 }
-            }
+                _ => panic!("expected FeatureToggleGrid"),
+            },
             _ => panic!("root should be Overview"),
         }
     }
@@ -325,17 +348,21 @@ mod tests {
         let xml = r#"<Overview><FeatureToggleGrid><DndToggle /><CaffeineToggle /><BluetoothToggles /></FeatureToggleGrid></Overview>"#;
         let root = parse_layout(xml).expect("should parse");
         match root {
-            LayoutNode::Overview { children } => {
-                match &children[0] {
-                    LayoutNode::FeatureToggleGrid { children } => {
-                        assert_eq!(children.len(), 3);
-                        assert!(matches!(&children[0], LayoutNode::Component { name } if name == "DndToggle"));
-                        assert!(matches!(&children[1], LayoutNode::Component { name } if name == "CaffeineToggle"));
-                        assert!(matches!(&children[2], LayoutNode::Component { name } if name == "BluetoothToggles"));
-                    }
-                    _ => panic!("expected FeatureToggleGrid"),
+            LayoutNode::Overview { children } => match &children[0] {
+                LayoutNode::FeatureToggleGrid { children } => {
+                    assert_eq!(children.len(), 3);
+                    assert!(
+                        matches!(&children[0], LayoutNode::Component { name } if name == "DndToggle")
+                    );
+                    assert!(
+                        matches!(&children[1], LayoutNode::Component { name } if name == "CaffeineToggle")
+                    );
+                    assert!(
+                        matches!(&children[2], LayoutNode::Component { name } if name == "BluetoothToggles")
+                    );
                 }
-            }
+                _ => panic!("expected FeatureToggleGrid"),
+            },
             _ => panic!("root should be Overview"),
         }
     }

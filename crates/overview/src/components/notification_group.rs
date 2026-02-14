@@ -12,8 +12,8 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
-use waft_protocol::entity::notification::{NotificationAction, NotificationIconHint};
 use waft_protocol::Urn;
+use waft_protocol::entity::notification::{NotificationAction, NotificationIconHint};
 use waft_ui_gtk::widgets::icon::{Icon, IconWidget};
 use waft_ui_gtk::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use waft_ui_gtk::widgets::notification_card::{NotificationCard, NotificationCardOutput};
@@ -247,10 +247,11 @@ impl NotificationGroup {
         for key in &current_keys {
             if !new_keys.contains(key)
                 && let Some(card) = self.cards.borrow_mut().remove(key)
-                    && let Some(parent) = card.root.parent()
-                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
-                            parent_box.remove(&card.root);
-                        }
+                && let Some(parent) = card.root.parent()
+                && let Some(parent_box) = parent.downcast_ref::<gtk::Box>()
+            {
+                parent_box.remove(&card.root);
+            }
         }
 
         // Create or update cards
@@ -270,15 +271,17 @@ impl NotificationGroup {
 
                 if should_be_top && !is_in_top {
                     if let Some(parent) = existing.root.parent()
-                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
-                            parent_box.remove(&existing.root);
-                        }
+                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>()
+                    {
+                        parent_box.remove(&existing.root);
+                    }
                     self.top_card_container.prepend(&existing.root);
                 } else if !should_be_top && is_in_top {
                     if let Some(parent) = existing.root.parent()
-                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>() {
-                            parent_box.remove(&existing.root);
-                        }
+                        && let Some(parent_box) = parent.downcast_ref::<gtk::Box>()
+                    {
+                        parent_box.remove(&existing.root);
+                    }
                     self.hidden_cards_container.append(&existing.root);
                 }
             } else {

@@ -12,8 +12,8 @@ use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use log::{info, warn};
 use waft_plugin::EntityNotifier;
-use zbus::zvariant::OwnedValue;
 use zbus::Connection;
+use zbus::zvariant::OwnedValue;
 
 use crate::bluez_discovery::IFACE_DEVICE1;
 use crate::state::{BluezPairedDevice, NmState};
@@ -56,8 +56,7 @@ pub async fn monitor_bluez_signals(
 
         let header = msg.header();
         if header.member().map(|m| m.as_str()) != Some("PropertiesChanged")
-            || header.interface().map(|i| i.as_str())
-                != Some("org.freedesktop.DBus.Properties")
+            || header.interface().map(|i| i.as_str()) != Some("org.freedesktop.DBus.Properties")
         {
             continue;
         }
@@ -67,11 +66,10 @@ pub async fn monitor_bluez_signals(
             None => continue,
         };
 
-        let Ok((iface, props, _invalidated)) = msg.body().deserialize::<(
-            String,
-            HashMap<String, OwnedValue>,
-            Vec<String>,
-        )>() else {
+        let Ok((iface, props, _invalidated)) =
+            msg.body()
+                .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+        else {
             continue;
         };
 
@@ -83,82 +81,78 @@ pub async fn monitor_bluez_signals(
 
         // Handle Paired property changes (device paired/unpaired)
         if let Some(paired_val) = props.get("Paired")
-            && let Ok(paired) = bool::try_from(paired_val.clone()) {
-                let mut st = match state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[nm] Mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
-                if paired {
-                    // Newly paired — add to tracking if not already present
-                    if !st.bluez_paired_devices.iter().any(|d| d.path == obj_path) {
-                        let connected = props
-                            .get("Connected")
-                            .and_then(|v| bool::try_from(v.clone()).ok())
-                            .unwrap_or(false);
-                        info!(
-                            "[nm] BlueZ device paired: {} connected={}",
-                            obj_path, connected
-                        );
-                        st.bluez_paired_devices.push(BluezPairedDevice {
-                            path: obj_path.clone(),
-                            connected,
-                        });
-                        changed = true;
-                    }
-                } else {
-                    // Unpaired — remove from tracking
-                    let before = st.bluez_paired_devices.len();
-                    st.bluez_paired_devices.retain(|d| d.path != obj_path);
-                    if st.bluez_paired_devices.len() != before {
-                        info!("[nm] BlueZ device unpaired: {}", obj_path);
-                        changed = true;
-                    }
+            && let Ok(paired) = bool::try_from(paired_val.clone())
+        {
+            let mut st = match state.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    warn!("[nm] Mutex poisoned, recovering: {e}");
+                    e.into_inner()
                 }
-            }
-
-        // Handle Connected property changes
-        if let Some(connected_val) = props.get("Connected")
-            && let Ok(connected) = bool::try_from(connected_val.clone()) {
-                let mut st = match state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[nm] Mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
-
-                if let Some(device) = st
-                    .bluez_paired_devices
-                    .iter_mut()
-                    .find(|d| d.path == obj_path)
-                {
-                    // Known paired device — update connection state
-                    if device.connected != connected {
-                        info!(
-                            "[nm] BlueZ device {} connected: {}",
-                            obj_path, connected
-                        );
-                        device.connected = connected;
-                        changed = true;
-                    }
-                } else if connected {
-                    // Unknown device connecting — might be newly paired while running.
-                    // Add to tracking (we only care about connected devices here;
-                    // the Paired signal handler above catches the pairing event).
+            };
+            if paired {
+                // Newly paired — add to tracking if not already present
+                if !st.bluez_paired_devices.iter().any(|d| d.path == obj_path) {
+                    let connected = props
+                        .get("Connected")
+                        .and_then(|v| bool::try_from(v.clone()).ok())
+                        .unwrap_or(false);
                     info!(
-                        "[nm] BlueZ unknown device connected, adding: {}",
-                        obj_path
+                        "[nm] BlueZ device paired: {} connected={}",
+                        obj_path, connected
                     );
                     st.bluez_paired_devices.push(BluezPairedDevice {
                         path: obj_path.clone(),
-                        connected: true,
+                        connected,
                     });
                     changed = true;
                 }
+            } else {
+                // Unpaired — remove from tracking
+                let before = st.bluez_paired_devices.len();
+                st.bluez_paired_devices.retain(|d| d.path != obj_path);
+                if st.bluez_paired_devices.len() != before {
+                    info!("[nm] BlueZ device unpaired: {}", obj_path);
+                    changed = true;
+                }
             }
+        }
+
+        // Handle Connected property changes
+        if let Some(connected_val) = props.get("Connected")
+            && let Ok(connected) = bool::try_from(connected_val.clone())
+        {
+            let mut st = match state.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    warn!("[nm] Mutex poisoned, recovering: {e}");
+                    e.into_inner()
+                }
+            };
+
+            if let Some(device) = st
+                .bluez_paired_devices
+                .iter_mut()
+                .find(|d| d.path == obj_path)
+            {
+                // Known paired device — update connection state
+                if device.connected != connected {
+                    info!("[nm] BlueZ device {} connected: {}", obj_path, connected);
+                    device.connected = connected;
+                    changed = true;
+                }
+            } else if connected {
+                // Unknown device connecting — might be newly paired while running.
+                // Add to tracking (we only care about connected devices here;
+                // the Paired signal handler above catches the pairing event).
+                info!("[nm] BlueZ unknown device connected, adding: {}", obj_path);
+                st.bluez_paired_devices.push(BluezPairedDevice {
+                    path: obj_path.clone(),
+                    connected: true,
+                });
+                changed = true;
+            }
+        }
 
         if changed {
             notifier.notify();

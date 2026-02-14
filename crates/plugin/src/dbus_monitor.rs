@@ -213,19 +213,17 @@ where
             && header.interface().map(|i| i.as_str()) == Some(&config.interface)
         {
             match handler(&msg, state.clone()).await {
-                Ok(Some(new_state)) => {
-                    match state.lock() {
-                        Ok(mut guard) => {
-                            *guard = new_state;
-                            notifier.notify();
-                        }
-                        Err(e) => {
-                            log::warn!("Mutex poisoned, recovering: {e}");
-                            *e.into_inner() = new_state;
-                            notifier.notify();
-                        }
+                Ok(Some(new_state)) => match state.lock() {
+                    Ok(mut guard) => {
+                        *guard = new_state;
+                        notifier.notify();
                     }
-                }
+                    Err(e) => {
+                        log::warn!("Mutex poisoned, recovering: {e}");
+                        *e.into_inner() = new_state;
+                        notifier.notify();
+                    }
+                },
                 Ok(None) => {}
                 Err(e) => {
                     log::warn!(

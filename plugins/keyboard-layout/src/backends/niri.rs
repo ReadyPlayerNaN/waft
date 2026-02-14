@@ -16,7 +16,7 @@ use log::{debug, warn};
 use serde::Deserialize;
 use std::process::Stdio;
 
-use super::{extract_abbreviation, KeyboardLayoutBackend, LayoutEvent, LayoutInfo};
+use super::{KeyboardLayoutBackend, LayoutEvent, LayoutInfo, extract_abbreviation};
 
 /// Response from `niri msg --json keyboard-layouts`.
 #[derive(Debug, Deserialize)]
@@ -245,10 +245,11 @@ impl KeyboardLayoutBackend for NiriBackend {
                                 payload.keyboard_layouts.current_idx
                             );
                             cached_layouts = payload.keyboard_layouts.names.clone();
-                            let info =
-                                Self::response_to_layout_info(&payload.keyboard_layouts);
+                            let info = Self::response_to_layout_info(&payload.keyboard_layouts);
                             if sender.send(LayoutEvent::Changed(info)).is_err() {
-                                log::warn!("[keyboard-layout:niri] Failed to send event, receiver dropped");
+                                log::warn!(
+                                    "[keyboard-layout:niri] Failed to send event, receiver dropped"
+                                );
                                 break;
                             }
                         }
@@ -276,7 +277,9 @@ impl KeyboardLayoutBackend for NiriBackend {
                                     current_index,
                                 };
                                 if sender.send(LayoutEvent::Changed(info)).is_err() {
-                                    log::warn!("[keyboard-layout:niri] Failed to send event, receiver dropped");
+                                    log::warn!(
+                                        "[keyboard-layout:niri] Failed to send event, receiver dropped"
+                                    );
                                     break;
                                 }
                             } else {
@@ -335,7 +338,9 @@ mod tests {
         let json = r#"{"KeyboardLayoutsChanged":{"keyboard_layouts":{"names":["English (US)","Czech"],"current_idx":1}}}"#;
         let event: NiriEvent = serde_json::from_str(json).unwrap();
 
-        let payload = event.keyboard_layouts_changed.expect("Expected KeyboardLayoutsChanged");
+        let payload = event
+            .keyboard_layouts_changed
+            .expect("Expected KeyboardLayoutsChanged");
         assert_eq!(payload.keyboard_layouts.current_idx, 1);
         assert_eq!(payload.keyboard_layouts.names.len(), 2);
     }
@@ -345,7 +350,9 @@ mod tests {
         let json = r#"{"KeyboardLayoutSwitched":{"idx":1}}"#;
         let event: NiriEvent = serde_json::from_str(json).unwrap();
 
-        let payload = event.keyboard_layout_switched.expect("Expected KeyboardLayoutSwitched");
+        let payload = event
+            .keyboard_layout_switched
+            .expect("Expected KeyboardLayoutSwitched");
         assert_eq!(payload.idx, 1);
         assert!(event.keyboard_layouts_changed.is_none());
     }

@@ -130,16 +130,16 @@ async fn discover_ddc_monitors() -> Result<Vec<Display>> {
 
         if trimmed.starts_with("Display ") {
             // Flush previous display
-            if let (Some(display_num), Some(model)) =
-                (current_display.take(), current_model.take())
-                && let Ok(brightness) = get_ddc_brightness(display_num).await {
-                    displays.push(Display {
-                        id: format!("ddc:{}", display_num),
-                        name: model,
-                        display_type: DisplayType::External,
-                        brightness,
-                    });
-                }
+            if let (Some(display_num), Some(model)) = (current_display.take(), current_model.take())
+                && let Ok(brightness) = get_ddc_brightness(display_num).await
+            {
+                displays.push(Display {
+                    id: format!("ddc:{}", display_num),
+                    name: model,
+                    display_type: DisplayType::External,
+                    brightness,
+                });
+            }
 
             if let Some(num_str) = trimmed.strip_prefix("Display ") {
                 current_display = num_str.trim().parse().ok();
@@ -154,14 +154,15 @@ async fn discover_ddc_monitors() -> Result<Vec<Display>> {
 
     // Flush last display
     if let (Some(display_num), Some(model)) = (current_display, current_model)
-        && let Ok(brightness) = get_ddc_brightness(display_num).await {
-            displays.push(Display {
-                id: format!("ddc:{}", display_num),
-                name: model,
-                display_type: DisplayType::External,
-                brightness,
-            });
-        }
+        && let Ok(brightness) = get_ddc_brightness(display_num).await
+    {
+        displays.push(Display {
+            id: format!("ddc:{}", display_num),
+            name: model,
+            display_type: DisplayType::External,
+            brightness,
+        });
+    }
 
     Ok(displays)
 }
@@ -466,7 +467,10 @@ mod tests {
 
     #[test]
     fn test_humanize_backlight_name_intel() {
-        assert_eq!(humanize_backlight_name("intel_backlight"), "Built-in Display");
+        assert_eq!(
+            humanize_backlight_name("intel_backlight"),
+            "Built-in Display"
+        );
     }
 
     #[test]

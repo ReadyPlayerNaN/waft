@@ -9,11 +9,11 @@ use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use waft_plugin::PluginRuntime;
+use waft_plugin_notifications::NotificationsPlugin;
 use waft_plugin_notifications::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
 use waft_plugin_notifications::dbus::server::NotificationsDbusServer;
 use waft_plugin_notifications::store::{NotificationOp, State, process_op};
 use waft_plugin_notifications::ttl;
-use waft_plugin_notifications::NotificationsPlugin;
 use waft_protocol::entity::notification::{DND_ENTITY_TYPE, NOTIFICATION_ENTITY_TYPE};
 
 fn main() -> Result<()> {
@@ -66,14 +66,13 @@ fn main() -> Result<()> {
                             let mut guard = match ingress_state.lock() {
                                 Ok(g) => g,
                                 Err(e) => {
-                                    log::warn!("[notifications/ingress] mutex poisoned, recovering: {e}");
+                                    log::warn!(
+                                        "[notifications/ingress] mutex poisoned, recovering: {e}"
+                                    );
                                     e.into_inner()
                                 }
                             };
-                            process_op(
-                                &mut guard,
-                                NotificationOp::Ingress(notification),
-                            );
+                            process_op(&mut guard, NotificationOp::Ingress(notification));
                         }
                         ingress_notifier.notify();
                         // Wake TTL timer in case this notification has an earlier deadline
@@ -84,14 +83,13 @@ fn main() -> Result<()> {
                             let mut guard = match ingress_state.lock() {
                                 Ok(g) => g,
                                 Err(e) => {
-                                    log::warn!("[notifications/ingress] mutex poisoned, recovering: {e}");
+                                    log::warn!(
+                                        "[notifications/ingress] mutex poisoned, recovering: {e}"
+                                    );
                                     e.into_inner()
                                 }
                             };
-                            process_op(
-                                &mut guard,
-                                NotificationOp::NotificationRetract(id as u64),
-                            );
+                            process_op(&mut guard, NotificationOp::NotificationRetract(id as u64));
                         }
                         if ingress_outbound_tx
                             .send(OutboundEvent::NotificationClosed {

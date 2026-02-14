@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::net::UnixStream;
-use tokio::sync::{mpsc, watch, Mutex};
+use tokio::sync::{Mutex, mpsc, watch};
 use uuid::Uuid;
 use waft_protocol::urn::Urn;
 use waft_protocol::{PluginCommand, PluginMessage};
@@ -149,14 +149,19 @@ async fn handle_action<P: Plugin>(
 ) {
     match ctx.plugin.handle_action(urn, action, params).await {
         Ok(()) => {
-            if let Err(e) = ctx.tx.send(PluginMessage::ActionSuccess { action_id }).await {
+            if let Err(e) = ctx
+                .tx
+                .send(PluginMessage::ActionSuccess { action_id })
+                .await
+            {
                 log::warn!("[{}] failed to send ActionSuccess: {e}", ctx.name);
                 return;
             }
         }
         Err(e) => {
             log::error!("[{}] action {action_id} failed: {e}", ctx.name);
-            if let Err(send_err) = ctx.tx
+            if let Err(send_err) = ctx
+                .tx
                 .send(PluginMessage::ActionError {
                     action_id,
                     error: e.to_string(),

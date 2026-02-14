@@ -75,12 +75,13 @@ where
         for plugin in plugins {
             if let Some(table) = plugin.as_table()
                 && let Some(id) = table.get("id").and_then(|v| v.as_str())
-                    && (id == plugin_id || id == format!("waft::{plugin_id}")) {
-                        log::debug!("Found config for plugin '{plugin_id}'");
-                        return toml::Value::Table(table.clone())
-                            .try_into()
-                            .map_err(|e| ConfigError::Deserialize(format!("{e}")));
-                    }
+                && (id == plugin_id || id == format!("waft::{plugin_id}"))
+            {
+                log::debug!("Found config for plugin '{plugin_id}'");
+                return toml::Value::Table(table.clone())
+                    .try_into()
+                    .map_err(|e| ConfigError::Deserialize(format!("{e}")));
+            }
         }
     }
 

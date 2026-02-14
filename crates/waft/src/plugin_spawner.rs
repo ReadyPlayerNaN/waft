@@ -46,13 +46,14 @@ impl PluginSpawner {
             return;
         }
 
-        let (plugin_name, binary_path) = match self.discovery_cache.binary_for_entity_type(entity_type) {
-            Some((name, path)) => (name.to_string(), path.clone()),
-            None => {
-                eprintln!("[waft] no plugin known for entity type '{entity_type}'");
-                return;
-            }
-        };
+        let (plugin_name, binary_path) =
+            match self.discovery_cache.binary_for_entity_type(entity_type) {
+                Some((name, path)) => (name.to_string(), path.clone()),
+                None => {
+                    eprintln!("[waft] no plugin known for entity type '{entity_type}'");
+                    return;
+                }
+            };
 
         // Already spawned this plugin (it may provide multiple entity types)
         if self.spawned.contains_key(&plugin_name) {
@@ -81,9 +82,7 @@ impl PluginSpawner {
                 let pid = child.id();
                 eprintln!("[waft] spawned plugin '{}' (pid {})", plugin_name, pid);
 
-                let mut spawned = SpawnedPlugin {
-                    child: Some(child),
-                };
+                let mut spawned = SpawnedPlugin { child: Some(child) };
 
                 // Spawn a reaper thread so we don't create zombie processes
                 if let Some(child) = spawned.child.take() {
@@ -102,7 +101,9 @@ impl PluginSpawner {
                             }
                         })
                         .unwrap_or_else(|e| {
-                            eprintln!("[waft] failed to spawn reaper thread for '{plugin_name}': {e}");
+                            eprintln!(
+                                "[waft] failed to spawn reaper thread for '{plugin_name}': {e}"
+                            );
                             // At minimum, we tried. The child will be reaped on daemon exit.
                             std::thread::spawn(|| {})
                         });
@@ -111,10 +112,7 @@ impl PluginSpawner {
                 self.spawned.insert(plugin_name.to_string(), spawned);
             }
             Err(e) => {
-                eprintln!(
-                    "[waft] failed to spawn plugin '{}': {e}",
-                    plugin_name,
-                );
+                eprintln!("[waft] failed to spawn plugin '{}': {e}", plugin_name,);
             }
         }
     }

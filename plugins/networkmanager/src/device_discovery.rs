@@ -3,12 +3,12 @@
 use anyhow::{Context, Result};
 
 use crate::dbus_property::{
-    get_property, NM_INTERFACE, NM_PATH, NM_SERVICE, DEVICE_TYPE_BLUETOOTH, DEVICE_TYPE_ETHERNET,
-    DEVICE_TYPE_WIFI, NM_DEVICE_INTERFACE,
+    DEVICE_TYPE_BLUETOOTH, DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI, NM_DEVICE_INTERFACE,
+    NM_INTERFACE, NM_PATH, NM_SERVICE, get_property,
 };
 use crate::is_virtual_interface;
-use zbus::zvariant::OwnedObjectPath;
 use zbus::Connection;
+use zbus::zvariant::OwnedObjectPath;
 
 /// Basic information about a network device.
 #[derive(Debug, Clone)]

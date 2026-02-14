@@ -99,5 +99,4 @@ mod tests {
         assert!(!is_menu_open(&store, "menu1"));
         assert!(is_menu_open(&store, "menu2"));
     }
-
 }

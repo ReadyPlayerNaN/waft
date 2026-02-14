@@ -47,9 +47,7 @@ impl DeviceRow {
     pub fn new(props: &DeviceRowProps) -> Self {
         let icon = IconWidget::from_name(&props.device_icon, 16);
 
-        let row = adw::ActionRow::builder()
-            .title(&props.name)
-            .build();
+        let row = adw::ActionRow::builder().title(&props.name).build();
 
         row.add_prefix(icon.widget());
 

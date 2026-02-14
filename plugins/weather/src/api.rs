@@ -20,14 +20,13 @@ struct ApiResponse {
 }
 
 /// Fetch current weather data from Open-Meteo API.
-pub async fn fetch_weather(
-    lat: f64,
-    lon: f64,
-    units: TemperatureUnit,
-) -> Result<WeatherData> {
+pub async fn fetch_weather(lat: f64, lon: f64, units: TemperatureUnit) -> Result<WeatherData> {
     let url = format!(
         "{}?latitude={}&longitude={}&current=temperature_2m,weather_code,is_day&temperature_unit={}",
-        API_BASE, lat, lon, units.api_value()
+        API_BASE,
+        lat,
+        lon,
+        units.api_value()
     );
 
     let response = reqwest::get(&url)

@@ -1,6 +1,6 @@
 pub mod dbus;
-pub mod store;
 pub mod menu_state;
+pub mod store;
 
 use std::cell::RefCell;
 use std::rc::Rc;
