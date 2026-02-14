@@ -15,7 +15,6 @@ use crate::entity_store::{EntityActionCallback, EntityStore};
 use crate::layout::load_layout;
 use crate::layout::renderer::{RenderContext, render_layout};
 use crate::menu_state::MenuStore;
-use crate::plugin_registry::PluginRegistry;
 
 const OVERLAY_WIDTH_PX: i32 = 920;
 
@@ -75,10 +74,10 @@ pub struct MainWindowWidget {
 }
 
 impl MainWindowWidget {
-    /// Create a new main window with the given registry.
+    /// Create a new main window.
     pub fn new(
         app: &adw::Application,
-        registry: &Rc<PluginRegistry>,
+        menu_store: &Rc<MenuStore>,
         store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
     ) -> Self {
@@ -97,8 +96,7 @@ impl MainWindowWidget {
         Self::configure_layer_shell(&window);
 
         // Build content from layout XML with entity components
-        let menu_store = registry.menu_store();
-        let clip = Self::build_content(&window, registry, store, action_callback, menu_store.clone());
+        let clip = Self::build_content(&window, store, action_callback, menu_store.clone());
 
         // Start in hidden state (fully transparent)
         clip.set_opacity(0.0);
@@ -227,7 +225,7 @@ impl MainWindowWidget {
         let animation_ref = animation.clone();
         let progress_ref = animation_progress.clone();
         let animating_hide_ref = animating_hide.clone();
-        let menu_store_for_focus = menu_store;
+        let menu_store_for_focus = menu_store.clone();
         let popover_recently_closed_for_focus = popover_recently_closed;
         window.connect_is_active_notify(move |w| {
             if w.is_active() {
@@ -900,7 +898,6 @@ impl MainWindowWidget {
 
     fn build_content(
         window: &adw::ApplicationWindow,
-        registry: &Rc<PluginRegistry>,
         store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
         menu_store: Rc<MenuStore>,
@@ -916,13 +913,6 @@ impl MainWindowWidget {
         ));
 
         let rendered = Rc::new(render_layout(&tree, &ctx, &menu_store));
-
-        // Subscribe for legacy <Widget id="..."> bindings (cdylib plugins)
-        let rendered_ref = rendered.clone();
-        let registry_ref = registry.clone();
-        registry.subscribe_widgets(move || {
-            rendered_ref.sync(&registry_ref);
-        });
 
         // Calculate max height based on monitor size
         let max_height = match gtk::gdk::Display::default() {

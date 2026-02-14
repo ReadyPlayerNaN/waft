@@ -13,7 +13,7 @@ use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidg
 
 use crate::entity_store::{EntityActionCallback, EntityStore};
 use crate::i18n;
-use crate::plugin::WidgetFeatureToggle;
+use crate::layout::types::WidgetFeatureToggle;
 
 /// Toggle for enabling/disabling dark mode via the darkman daemon.
 ///

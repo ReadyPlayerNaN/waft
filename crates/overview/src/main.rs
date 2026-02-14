@@ -11,8 +11,6 @@ mod features;
 mod i18n;
 mod layout;
 mod menu_state;
-mod plugin;
-mod plugin_registry;
 pub mod store;
 mod ui;
 mod waft_client;

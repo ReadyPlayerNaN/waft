@@ -16,7 +16,7 @@ use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidg
 use waft_ui_gtk::widgets::icon::IconWidget;
 
 use crate::entity_store::{EntityActionCallback, EntityStore};
-use crate::plugin::WidgetFeatureToggle;
+use crate::layout::types::WidgetFeatureToggle;
 
 /// A tracked toggle entry for a network adapter or VPN.
 struct ToggleEntry {

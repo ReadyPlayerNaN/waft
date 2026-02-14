@@ -1,10 +1,8 @@
-//! Layout renderer -- converts a LayoutNode tree into a GTK widget tree with bindings.
+//! Layout renderer -- converts a LayoutNode tree into a GTK widget tree.
 //!
-//! Handles purpose-built entity components (`LayoutNode::Component`) and
-//! legacy Widget/Unmatched nodes for backward compatibility.
+//! Handles purpose-built entity components (`LayoutNode::Component`).
 
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -31,14 +29,9 @@ use crate::components::toggles::network::NetworkManagerToggles;
 use crate::components::toggles::night_light::NightLightToggle;
 use crate::components::weather::WeatherComponent;
 use crate::entity_store::{EntityActionCallback, EntityStore};
-use crate::layout::compositor::{
-    FeatureToggleGridCompositor, FragmentCompositor, WidgetCompositor,
-};
 use crate::layout::model::LayoutNode;
-use crate::layout::parser::glob_match;
+use crate::layout::types::WidgetFeatureToggle;
 use crate::menu_state::MenuStore;
-use crate::plugin::WidgetFeatureToggle;
-use crate::plugin_registry::{PluginRegistry, SlotItem};
 use crate::ui::main_window::trigger_window_resize;
 use waft_ui_gtk::widgets::feature_grid::{FeatureGridItem, FeatureGridWidget};
 
@@ -67,84 +60,24 @@ impl RenderContext {
     }
 }
 
-/// A binding between widget ID patterns and a compositor.
-struct WidgetBinding {
-    patterns: Vec<String>,
-    compositor: Box<dyn WidgetCompositor>,
-}
-
 /// The result of rendering a layout tree into GTK widgets.
 ///
-/// Holds the root GTK widget, the bindings that map widget IDs to compositors,
-/// and the render context that keeps entity components alive.
-/// Call `sync()` to update the layout with current registry contents.
+/// Holds the root GTK widget and the render context that keeps entity components alive.
 pub struct RenderedLayout {
     pub root: gtk::Widget,
-    bindings: Vec<WidgetBinding>,
-    unmatched: Option<Box<dyn WidgetCompositor>>,
     _context: Rc<RenderContext>,
 }
 
-impl RenderedLayout {
-    /// Synchronize all bindings with the current registry state.
-    ///
-    /// Each binding's patterns are matched against all items. First match wins.
-    /// Unmatched items go to the `<Unmatched>` compositor if present.
-    pub fn sync(&self, registry: &PluginRegistry) {
-        let all_items = registry.all_items();
-        let mut matched_ids: HashSet<String> = HashSet::new();
-
-        for binding in &self.bindings {
-            let mut items: Vec<SlotItem> = all_items
-                .iter()
-                .filter(|item: &&SlotItem| {
-                    binding
-                        .patterns
-                        .iter()
-                        .any(|p| glob_match(item.id(), p))
-                })
-                .filter(|item: &&SlotItem| !matched_ids.contains(item.id()))
-                .cloned()
-                .collect();
-
-            // Sort by weight within each binding
-            items.sort_by_key(|item: &SlotItem| item.weight());
-
-            for item in &items {
-                matched_ids.insert(item.id().to_string());
-            }
-            binding.compositor.sync(&items);
-        }
-
-        if let Some(ref unmatched) = self.unmatched {
-            let mut remaining: Vec<SlotItem> = all_items
-                .iter()
-                .filter(|item: &&SlotItem| !matched_ids.contains(item.id()))
-                .cloned()
-                .collect();
-            remaining.sort_by_key(|item: &SlotItem| item.weight());
-            unmatched.sync(&remaining);
-        }
-
-        trigger_window_resize();
-    }
-}
-
-/// Render a LayoutNode tree into a GTK widget tree with bindings.
+/// Render a LayoutNode tree into a GTK widget tree.
 pub fn render_layout(
     tree: &LayoutNode,
     ctx: &Rc<RenderContext>,
     menu_store: &Rc<MenuStore>,
 ) -> RenderedLayout {
-    let mut bindings = Vec::new();
-    let mut unmatched: Option<Box<dyn WidgetCompositor>> = None;
-
-    let root = render_node(tree, ctx, menu_store, &mut bindings, &mut unmatched);
+    let root = render_node(tree, ctx, menu_store);
 
     RenderedLayout {
         root,
-        bindings,
-        unmatched,
         _context: ctx.clone(),
     }
 }
@@ -155,8 +88,6 @@ fn render_layout_box(
     children: &[LayoutNode],
     ctx: &Rc<RenderContext>,
     menu_store: &Rc<MenuStore>,
-    bindings: &mut Vec<WidgetBinding>,
-    unmatched: &mut Option<Box<dyn WidgetCompositor>>,
 ) -> gtk::Widget {
     let container = gtk::Box::new(orientation, 12);
 
@@ -178,7 +109,7 @@ fn render_layout_box(
     }
 
     for child in children {
-        let widget = render_node(child, ctx, menu_store, bindings, unmatched);
+        let widget = render_node(child, ctx, menu_store);
         container.append(&widget);
     }
     container.upcast()
@@ -188,14 +119,12 @@ fn render_node(
     node: &LayoutNode,
     ctx: &Rc<RenderContext>,
     menu_store: &Rc<MenuStore>,
-    bindings: &mut Vec<WidgetBinding>,
-    unmatched: &mut Option<Box<dyn WidgetCompositor>>,
 ) -> gtk::Widget {
     match node {
         LayoutNode::Overview { children } => {
             let vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
             for child in children {
-                let widget = render_node(child, ctx, menu_store, bindings, unmatched);
+                let widget = render_node(child, ctx, menu_store);
                 vbox.append(&widget);
             }
             vbox.upcast()
@@ -208,7 +137,7 @@ fn render_node(
                 .hexpand(true)
                 .build();
             for child in children {
-                let widget = render_node(child, ctx, menu_store, bindings, unmatched);
+                let widget = render_node(child, ctx, menu_store);
                 hbox.append(&widget);
             }
             hbox.upcast()
@@ -222,7 +151,7 @@ fn render_node(
 
             // First column
             if let Some(child) = col_iter.next() {
-                let widget = render_node(child, ctx, menu_store, bindings, unmatched);
+                let widget = render_node(child, ctx, menu_store);
                 if let Some(w) = widget.downcast_ref::<gtk::Box>() {
                     w.set_hexpand(true);
                     w.set_width_request(480);
@@ -237,7 +166,7 @@ fn render_node(
 
             // Second column
             if let Some(child) = col_iter.next() {
-                let widget = render_node(child, ctx, menu_store, bindings, unmatched);
+                let widget = render_node(child, ctx, menu_store);
                 if let Some(w) = widget.downcast_ref::<gtk::Box>() {
                     w.set_hexpand(true);
                     w.set_width_request(480);
@@ -254,8 +183,6 @@ fn render_node(
             children,
             ctx,
             menu_store,
-            bindings,
-            unmatched,
         ),
 
         LayoutNode::Row { halign, children } => render_layout_box(
@@ -264,8 +191,6 @@ fn render_node(
             children,
             ctx,
             menu_store,
-            bindings,
-            unmatched,
         ),
 
         LayoutNode::Col { halign, children } => render_layout_box(
@@ -274,8 +199,6 @@ fn render_node(
             children,
             ctx,
             menu_store,
-            bindings,
-            unmatched,
         ),
 
         LayoutNode::Divider => {
@@ -287,32 +210,18 @@ fn render_node(
         LayoutNode::Component { name } => render_component(name, ctx, menu_store),
 
         LayoutNode::FeatureToggleGrid { children } => {
-            render_feature_toggle_grid(children, ctx, menu_store, bindings)
+            render_feature_toggle_grid(children, ctx, menu_store)
         }
 
+        // Legacy Widget and Unmatched nodes are no longer supported
         LayoutNode::Widget { id } => {
-            let compositor = FragmentCompositor::new();
-            let widget = compositor.widget().clone();
-
-            debug!("[renderer] Widget placeholder for pattern: {}", id);
-
-            bindings.push(WidgetBinding {
-                patterns: vec![id.clone()],
-                compositor: Box::new(compositor),
-            });
-
-            widget
+            warn!("[renderer] Legacy <Widget id=\"{}\"> elements are no longer supported", id);
+            gtk::Box::new(gtk::Orientation::Vertical, 0).upcast()
         }
 
         LayoutNode::Unmatched => {
-            let compositor = FragmentCompositor::new();
-            let widget = compositor.widget().clone();
-
-            debug!("[renderer] Unmatched catch-all");
-
-            *unmatched = Some(Box::new(compositor));
-
-            widget
+            // Legacy unmatched catch-all no longer functional
+            gtk::Box::new(gtk::Orientation::Vertical, 0).upcast()
         }
     }
 }
@@ -400,53 +309,14 @@ fn render_component(name: &str, ctx: &Rc<RenderContext>, menu_store: &Rc<MenuSto
     }
 }
 
-/// Render a FeatureToggleGrid that may contain Component children, Widget children, or both.
+/// Render a FeatureToggleGrid with Component children.
 fn render_feature_toggle_grid(
     children: &[LayoutNode],
     ctx: &Rc<RenderContext>,
     menu_store: &Rc<MenuStore>,
-    bindings: &mut Vec<WidgetBinding>,
 ) -> gtk::Widget {
-    // Separate component children from legacy Widget children
-    let has_components = children
-        .iter()
-        .any(|c| matches!(c, LayoutNode::Component { .. }));
-    let has_widgets = children
-        .iter()
-        .any(|c| matches!(c, LayoutNode::Widget { .. }));
-
-    if !has_components {
-        // Pure legacy mode: all Widget children — use FeatureToggleGridCompositor
-        let compositor = FeatureToggleGridCompositor::new(menu_store.clone());
-        let widget = compositor.widget().clone();
-
-        let patterns: Vec<String> = children
-            .iter()
-            .filter_map(|child| {
-                if let LayoutNode::Widget { id } = child {
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        debug!(
-            "[renderer] FeatureToggleGrid (legacy) with {} patterns: {:?}",
-            patterns.len(),
-            patterns
-        );
-
-        bindings.push(WidgetBinding {
-            patterns,
-            compositor: Box::new(compositor),
-        });
-
-        return widget;
-    }
-
-    // Entity component mode: create toggle components and wire into a grid
-    let resize_cb: Rc<dyn Fn()> = Rc::new(|| trigger_window_resize());
+    // Create toggle components and wire into a grid
+    let resize_cb: Rc<dyn Fn()> = Rc::new(trigger_window_resize);
     let grid = Rc::new(FeatureGridWidget::new(Vec::new(), menu_store.clone(), Some(resize_cb)));
 
     // Two-phase init for dynamic toggle rebuild cycle
@@ -576,26 +446,6 @@ fn render_feature_toggle_grid(
 
     // Initial sync
     rebuild();
-
-    // If there are also Widget children, create a legacy compositor for them
-    if has_widgets {
-        let compositor = FeatureToggleGridCompositor::new(menu_store.clone());
-        let patterns: Vec<String> = children
-            .iter()
-            .filter_map(|child| {
-                if let LayoutNode::Widget { id } = child {
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        bindings.push(WidgetBinding {
-            patterns,
-            compositor: Box::new(compositor),
-        });
-    }
 
     grid.widget().clone().upcast()
 }

@@ -3,19 +3,16 @@
 //! This module provides the main application entry point and window management.
 
 use anyhow::Result;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use adw::prelude::*;
 
-use crate::dbus::DbusHandle;
 use crate::entity_store::{EntityActionCallback, EntityStore};
 use crate::features::session::SessionEvent;
 use crate::menu_state::create_menu_store;
-use crate::plugin::PluginResources;
-use crate::plugin_registry::PluginRegistry;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
 use crate::waft_client::{self, WaftClient, OverviewEvent};
 use waft_ipc::net as ipc_net;
@@ -115,14 +112,8 @@ pub async fn setup() -> Result<adw::Application> {
     // Initialize i18n system
     crate::i18n::init();
 
-    // Initialize DBus connections
-    let session_dbus = Arc::new(DbusHandle::connect().await?);
-    let system_dbus = Arc::new(DbusHandle::connect_system().await?);
-
     // Create menu store for coordinating expandable menus
     let menu_store = Rc::new(create_menu_store());
-
-    let registry = PluginRegistry::new(menu_store);
 
     // Persistent channel for daemon events (notifications + connection state).
     // Survives daemon crashes and reconnections.
@@ -142,18 +133,6 @@ pub async fn setup() -> Result<adw::Application> {
             client_handle,
         ));
     }
-
-    // Create plugin resources to pass to all plugins
-    let plugin_resources = PluginResources {
-        session_dbus: Some(session_dbus),
-        system_dbus: Some(system_dbus),
-        tokio_handle: Some(tokio::runtime::Handle::current()),
-    };
-
-    registry.init(&plugin_resources).await?;
-    debug!("Initialized plugins {:?}", registry.len());
-
-    let registry_rc = Rc::new(registry);
 
     // Spawn session monitor in background — avoid blocking startup on system D-Bus
     let (session_event_tx, session_event_rx) = async_channel::unbounded::<SessionEvent>();
@@ -183,13 +162,13 @@ pub async fn setup() -> Result<adw::Application> {
     let ipc_rx_for_startup = ipc_rx.clone();
     let daemon_event_rx_for_startup = daemon_event_rx.clone();
     let waft_client_for_startup = waft_client_handle.clone();
-    let registry_for_startup = registry_rc.clone();
+    let menu_store_for_startup = menu_store.clone();
     let session_event_rx_for_startup = session_event_rx;
 
     app.connect_startup(move |app| {
         debug!("Started gtk app");
 
-        let registry = registry_for_startup.clone();
+        let menu_store = menu_store_for_startup.clone();
         let ipc_rx_slot = ipc_rx_for_startup.clone();
         let daemon_event_rx_slot = daemon_event_rx_for_startup.clone();
         let waft_client_slot = waft_client_for_startup.clone();
@@ -198,8 +177,6 @@ pub async fn setup() -> Result<adw::Application> {
 
         // Block the startup signal until async work completes
         glib::MainContext::default().block_on(async move {
-            let gtk_app = app.upcast_ref::<gtk::Application>();
-
             // Apply CSS before creating any windows so they get correct styling
             MainWindowWidget::apply_css();
 
@@ -225,11 +202,10 @@ pub async fn setup() -> Result<adw::Application> {
                     }
                 });
 
-            // Create the main window BEFORE creating plugin elements
-            // This allows IPC commands to be processed even while plugins are still initializing
+            // Create the main window
             let main_window = MainWindowWidget::new(
                 &app,
-                &registry,
+                &menu_store,
                 &entity_store,
                 &entity_action_callback,
             );
@@ -240,13 +216,10 @@ pub async fn setup() -> Result<adw::Application> {
                 app_for_stop.quit();
             });
 
-            // When the overlay finishes hiding, notify plugins so
-            // secondary windows (e.g. toasts) can reappear.
-            let registry_for_hide = registry.clone();
-            let menu_store_for_hide = registry.menu_store();
+            // When the overlay finishes hiding, close all menus.
+            let menu_store_for_hide = menu_store.clone();
             main_window.connect_hide_complete(move || {
                 menu_store_for_hide.emit(waft_core::menu_state::MenuOp::CloseAll);
-                registry_for_hide.notify_overlay_visible(false);
             });
 
             // Setup IPC receiver BEFORE plugin widget creation
@@ -257,12 +230,10 @@ pub async fn setup() -> Result<adw::Application> {
                     let animation = main_window.animation.clone();
                     let progress = main_window.animation_progress.clone();
                     let animating_hide = main_window.animating_hide.clone();
-                    let registry_for_ipc = registry.clone();
                     glib::spawn_future_local(async move {
                         while let Ok(input) = rx.recv().await {
                             match input {
                                 MainWindowInput::ShowOverlay => {
-                                    registry_for_ipc.notify_overlay_visible(true);
                                     animating_hide.set(false);
                                     window.set_visible(true);
                                     window.present();
@@ -288,7 +259,6 @@ pub async fn setup() -> Result<adw::Application> {
                                         animation.set_easing(adw::Easing::EaseInCubic);
                                         animation.play();
                                     } else {
-                                        registry_for_ipc.notify_overlay_visible(true);
                                         animating_hide.set(false);
                                         window.set_visible(true);
                                         window.present();
@@ -320,7 +290,6 @@ pub async fn setup() -> Result<adw::Application> {
 
             // Setup session lock/unlock receiver (from background tokio task)
             {
-                let registry_for_session = registry.clone();
                 let window_for_session = main_window.window.clone();
                 let animation_for_session = main_window.animation.clone();
                 let progress_for_session = main_window.animation_progress.clone();
@@ -334,13 +303,11 @@ pub async fn setup() -> Result<adw::Application> {
                                 animation_for_session.pause();
                                 animating_hide_for_session.set(false);
                                 window_for_session.set_visible(false);
-                                registry_for_session.notify_session_locked();
                             }
                             SessionEvent::Unlock => {
                                 debug!("[app] Session unlock detected");
                                 progress_for_session.set(0.0);
                                 animating_hide_for_session.set(false);
-                                registry_for_session.notify_session_unlocked();
                             }
                         }
                     }
@@ -377,13 +344,6 @@ pub async fn setup() -> Result<adw::Application> {
                         log::warn!("[app] daemon event receiver loop exited");
                     });
                 }
-
-            // Create plugin elements AFTER IPC receiver is set up
-            // This allows the overlay to respond to toggle commands even while plugins are initializing
-            debug!("Creating plugin elements...");
-            let registrar = Rc::new(crate::plugin_registry::RegistrarHandle::new(registry.clone()));
-            let _ = registry.create_elements(gtk_app, registrar).await;
-            debug!("Plugin elements created");
 
             // Keep the main window alive by leaking it
             std::mem::forget(main_window);

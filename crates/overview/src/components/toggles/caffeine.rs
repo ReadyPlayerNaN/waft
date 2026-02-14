@@ -12,7 +12,7 @@ use waft_protocol::Urn;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
 use crate::entity_store::{EntityActionCallback, EntityStore};
-use crate::plugin::WidgetFeatureToggle;
+use crate::layout::types::WidgetFeatureToggle;
 
 /// Toggle for enabling/disabling screen sleep inhibition (caffeine mode).
 ///

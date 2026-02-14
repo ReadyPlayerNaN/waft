@@ -18,7 +18,7 @@ use waft_ui_gtk::bluetooth::device_row::{
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
 use crate::entity_store::{EntityActionCallback, EntityStore};
-use crate::plugin::WidgetFeatureToggle;
+use crate::layout::types::WidgetFeatureToggle;
 
 /// A tracked toggle entry for a single Bluetooth adapter.
 struct ToggleEntry {
