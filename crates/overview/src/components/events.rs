@@ -11,7 +11,7 @@ use gtk::prelude::*;
 use crate::calendar_selection::{CalendarSelectionOp, CalendarSelectionStore};
 use crate::components::agenda::AgendaComponent;
 use crate::components::calendar_grid::CalendarComponent;
-use crate::entity_store::EntityStore;
+use waft_client::EntityStore;
 use crate::menu_state::MenuStore;
 use crate::ui::main_window::trigger_window_resize;
 

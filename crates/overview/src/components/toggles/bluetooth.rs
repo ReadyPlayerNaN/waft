@@ -17,7 +17,7 @@ use waft_ui_gtk::bluetooth::device_row::{
 };
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
-use crate::entity_store::{EntityActionCallback, EntityStore};
+use waft_client::{EntityActionCallback, EntityStore};
 use crate::layout::types::WidgetFeatureToggle;
 
 /// A tracked toggle entry for a single Bluetooth adapter.

@@ -11,7 +11,7 @@ use log::debug;
 
 use crate::calendar_selection::create_calendar_selection_store;
 use crate::common::VoidCallback;
-use crate::entity_store::{EntityActionCallback, EntityStore};
+use waft_client::{EntityActionCallback, EntityStore};
 use crate::layout::load_layout;
 use crate::layout::renderer::{RenderContext, render_layout};
 use crate::menu_state::MenuStore;

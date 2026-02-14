@@ -1,11 +1,13 @@
 //! Client for communicating with the central waft daemon.
 //!
-//! This is a simplified version of the overview's WaftClient, tailored for
-//! the toasts app which only needs to subscribe to notification and DND entities.
+//! `WaftClient` connects to ONE central daemon socket and uses entity-based
+//! subscriptions. The write path uses a dedicated OS thread with
+//! `std::sync::mpsc` so that sends from the application main thread wake immediately
+//! via OS condvar, bypassing the tokio scheduler entirely. The read path is a
+//! tokio task that forwards `AppNotification` messages via a flume channel.
 
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
@@ -13,7 +15,7 @@ use tokio::net::UnixStream;
 use tokio::time::timeout;
 use uuid::Uuid;
 use waft_protocol::transport::write_framed;
-use waft_protocol::{AppMessage, AppNotification, TransportError, Urn};
+use waft_protocol::{AppMessage, AppNotification, TransportError};
 
 /// Default timeout for a single connection attempt (5 seconds).
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -22,16 +24,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
 
 /// D-Bus well-known name of the waft daemon.
-const DAEMON_DBUS_NAME: &str = "org.waft.Daemon";
+pub(crate) const DAEMON_DBUS_NAME: &str = "org.waft.Daemon";
 
 /// Delay between reconnection attempts after the daemon disconnects.
-const RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
-
-/// Entity types the toasts app subscribes to.
-const ENTITY_TYPES: &[&str] = &[
-    waft_protocol::entity::notification::NOTIFICATION_ENTITY_TYPE,
-    waft_protocol::entity::notification::DND_ENTITY_TYPE,
-];
+pub(crate) const RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Errors that can occur during WaftClient operations.
 #[derive(Debug)]
@@ -70,36 +66,21 @@ impl std::error::Error for WaftClientError {
     }
 }
 
-/// Events delivered to the toasts app's glib main loop.
-#[derive(Debug, Clone)]
-pub enum ToastEvent {
-    /// Successfully connected (or reconnected) to the daemon.
-    Connected,
-    /// Lost connection to the daemon.
-    Disconnected,
-    /// Entity updated notification.
-    EntityUpdated {
-        urn: Urn,
-        entity_type: String,
-        data: serde_json::Value,
-    },
-    /// Entity removed notification.
-    EntityRemoved { urn: Urn, entity_type: String },
-    /// Entity marked as stale (plugin crashed/restarted).
-    EntityStale { urn: Urn, entity_type: String },
-}
-
 /// Client for the central waft daemon.
 ///
-/// Safe to call `trigger_action` from the GTK main thread — all writes go
-/// through a dedicated OS thread.
+/// Safe to call `subscribe`, `request_status`, and `trigger_action` from the
+/// GTK main thread -- all writes go through a dedicated OS thread.
 pub struct WaftClient {
     write_tx: std::sync::mpsc::Sender<AppMessage>,
 }
 
 impl WaftClient {
     /// Connect to the waft daemon socket.
-    async fn connect() -> Result<(Self, flume::Receiver<AppNotification>), WaftClientError> {
+    ///
+    /// Returns a `(WaftClient, flume::Receiver<AppNotification>)` pair. The
+    /// receiver delivers notifications from the daemon and should be consumed
+    /// in `glib::spawn_future_local`.
+    pub async fn connect() -> Result<(Self, flume::Receiver<AppNotification>), WaftClientError> {
         let socket_path = daemon_socket_path()?;
 
         if !socket_path.exists() {
@@ -133,20 +114,20 @@ impl WaftClient {
         // Spawn writer OS thread: wakes immediately via condvar when GTK thread sends
         let (write_tx, write_rx) = std::sync::mpsc::channel::<AppMessage>();
         std::thread::Builder::new()
-            .name("waft-toasts-writer".to_string())
+            .name("waft-daemon-writer".to_string())
             .spawn(move || {
                 while let Ok(msg) = write_rx.recv() {
                     let mut buffer = Vec::new();
                     if write_framed(&mut buffer, &msg).is_err() {
-                        log::warn!("[waft-toasts] serialization failed, stopping writer");
+                        log::warn!("[waft-client] serialization failed, stopping writer");
                         break;
                     }
                     if write_with_poll(&mut write_stream, &buffer).is_err() {
-                        log::warn!("[waft-toasts] write failed, stopping writer");
+                        log::warn!("[waft-client] write failed, stopping writer");
                         break;
                     }
                 }
-                log::debug!("[waft-toasts] writer thread exiting");
+                log::debug!("[waft-client] writer thread exiting");
             })
             .map_err(WaftClientError::ConnectionFailed)?;
 
@@ -162,175 +143,78 @@ impl WaftClient {
                         }
                     }
                     Err(WaftClientError::Disconnected) => {
-                        log::info!("[waft-toasts] daemon disconnected");
+                        log::info!("[waft-client] daemon disconnected");
                         break;
                     }
                     Err(e) => {
-                        log::warn!("[waft-toasts] read error: {e}");
+                        log::warn!("[waft-client] read error: {e}");
                         break;
                     }
                 }
             }
-            log::debug!("[waft-toasts] read task stopped");
+            log::debug!("[waft-client] read task stopped");
         });
 
         Ok((Self { write_tx }, notification_rx))
     }
 
     /// Subscribe to updates for an entity type.
-    fn subscribe(&self, entity_type: &str) {
+    ///
+    /// Safe to call from the GTK main thread.
+    pub fn subscribe(&self, entity_type: &str) {
         let msg = AppMessage::Subscribe {
             entity_type: entity_type.to_string(),
         };
         if let Err(e) = self.write_tx.send(msg) {
-            log::warn!("[waft-toasts] failed to send Subscribe: {e}");
+            log::warn!("[waft-client] failed to send Subscribe: {e}");
         }
     }
 
     /// Request cached entity state for an entity type.
-    fn request_status(&self, entity_type: &str) {
+    ///
+    /// The daemon responds with `EntityUpdated` for each cached entity of
+    /// the given type. Use after subscribing to populate initial UI state
+    /// when reconnecting to a running daemon.
+    ///
+    /// Safe to call from the GTK main thread.
+    pub fn request_status(&self, entity_type: &str) {
         let msg = AppMessage::Status {
             entity_type: entity_type.to_string(),
         };
         if let Err(e) = self.write_tx.send(msg) {
-            log::warn!("[waft-toasts] failed to send Status: {e}");
+            log::warn!("[waft-client] failed to send Status: {e}");
         }
     }
 
     /// Trigger an action on a specific entity.
     ///
+    /// Returns the action ID that can be matched against `ActionSuccess`/`ActionError`
+    /// notifications from the daemon.
+    ///
     /// Safe to call from the GTK main thread.
     pub fn trigger_action(
         &self,
-        urn: Urn,
-        action: String,
+        urn: waft_protocol::Urn,
+        action: &str,
         params: serde_json::Value,
     ) -> Uuid {
         let action_id = Uuid::new_v4();
         let msg = AppMessage::TriggerAction {
             urn,
-            action,
+            action: action.to_string(),
             action_id,
             params,
             timeout_ms: None,
         };
         if let Err(e) = self.write_tx.send(msg) {
-            log::warn!("[waft-toasts] failed to send TriggerAction: {e}");
+            log::warn!("[waft-client] failed to send TriggerAction: {e}");
         }
         action_id
     }
 }
 
-/// Long-running tokio task that manages the daemon connection lifecycle.
-pub async fn daemon_connection_task(
-    event_tx: flume::Sender<ToastEvent>,
-    client_handle: Arc<std::sync::Mutex<Option<WaftClient>>>,
-) {
-    let mut activation_requested = false;
-
-    loop {
-        // Request D-Bus activation on first attempt to auto-start the daemon
-        if !activation_requested {
-            activation_requested = true;
-            if let Err(e) = request_dbus_activation().await {
-                log::warn!("[waft-toasts] D-Bus activation failed: {e}");
-            } else {
-                log::info!(
-                    "[waft-toasts] requested D-Bus activation for {DAEMON_DBUS_NAME}"
-                );
-            }
-        }
-
-        match WaftClient::connect().await {
-            Ok((client, notification_rx)) => {
-                log::info!("[waft-toasts] connected to daemon");
-
-                // Subscribe to notification and DND entity types
-                for et in ENTITY_TYPES {
-                    client.subscribe(et);
-                }
-                for et in ENTITY_TYPES {
-                    client.request_status(et);
-                }
-                log::info!(
-                    "[waft-toasts] subscribed to {} entity types",
-                    ENTITY_TYPES.len()
-                );
-
-                // Store client for write path (actions from GTK thread)
-                match client_handle.lock() {
-                    Ok(mut guard) => *guard = Some(client),
-                    Err(e) => {
-                        log::warn!("[waft-toasts] client handle poisoned: {e}");
-                        *e.into_inner() = Some(client);
-                    }
-                }
-
-                // Signal connected
-                if event_tx.send(ToastEvent::Connected).is_err() {
-                    log::debug!("[waft-toasts] app closed, stopping connection task");
-                    return;
-                }
-
-                // Reset activation flag for next reconnect cycle
-                activation_requested = false;
-
-                // Forward notifications until disconnect
-                while let Ok(notification) = notification_rx.recv_async().await {
-                    let event = match notification {
-                        AppNotification::EntityUpdated {
-                            urn,
-                            entity_type,
-                            data,
-                        } => ToastEvent::EntityUpdated {
-                            urn,
-                            entity_type,
-                            data,
-                        },
-                        AppNotification::EntityRemoved { urn, entity_type } => {
-                            ToastEvent::EntityRemoved { urn, entity_type }
-                        }
-                        AppNotification::EntityStale { urn, entity_type } => {
-                            ToastEvent::EntityStale { urn, entity_type }
-                        }
-                        _ => continue, // Ignore other notifications
-                    };
-
-                    if event_tx.send(event).is_err() {
-                        log::debug!("[waft-toasts] app closed, stopping connection task");
-                        return;
-                    }
-                }
-
-                // Notification channel closed = daemon disconnected
-                log::info!("[waft-toasts] daemon disconnected, will retry");
-
-                // Clear write path so actions are dropped during disconnect
-                match client_handle.lock() {
-                    Ok(mut guard) => *guard = None,
-                    Err(e) => {
-                        log::warn!("[waft-toasts] client handle poisoned: {e}");
-                        *e.into_inner() = None;
-                    }
-                }
-
-                // Signal disconnected
-                if event_tx.send(ToastEvent::Disconnected).is_err() {
-                    log::debug!("[waft-toasts] app closed, stopping connection task");
-                    return;
-                }
-            }
-            Err(e) => {
-                log::debug!("[waft-toasts] connection attempt failed: {e}");
-            }
-        }
-
-        tokio::time::sleep(RECONNECT_INTERVAL).await;
-    }
-}
-
 /// Resolve the daemon socket path from `$XDG_RUNTIME_DIR/waft/daemon.sock`.
-fn daemon_socket_path() -> Result<PathBuf, WaftClientError> {
+pub(crate) fn daemon_socket_path() -> Result<PathBuf, WaftClientError> {
     let runtime_dir =
         std::env::var("XDG_RUNTIME_DIR").map_err(|_| WaftClientError::SocketNotFound)?;
     let mut path = PathBuf::from(runtime_dir);
@@ -340,12 +224,20 @@ fn daemon_socket_path() -> Result<PathBuf, WaftClientError> {
 }
 
 /// Request D-Bus activation for the waft daemon.
-async fn request_dbus_activation() -> Result<(), Box<dyn std::error::Error>> {
+///
+/// Asks the D-Bus broker to start the service identified by `org.waft.Daemon`.
+/// The broker looks up the corresponding `.service` file and spawns the binary.
+pub(crate) async fn request_dbus_activation() -> Result<(), Box<dyn std::error::Error>> {
     let conn = zbus::Connection::session().await?;
     let dbus_proxy = zbus::fdo::DBusProxy::new(&conn).await?;
 
+    // StartServiceByName(name, flags) -> returns a status code
+    // flags=0 means no special flags
     dbus_proxy
-        .start_service_by_name(DAEMON_DBUS_NAME.try_into()?, 0)
+        .start_service_by_name(
+            DAEMON_DBUS_NAME.try_into()?,
+            0,
+        )
         .await?;
 
     Ok(())
@@ -353,10 +245,7 @@ async fn request_dbus_activation() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Write a buffer to a non-blocking socket, using `libc::poll` to wait for
 /// writability if the kernel buffer is full.
-fn write_with_poll(
-    stream: &mut std::os::unix::net::UnixStream,
-    buf: &[u8],
-) -> std::io::Result<()> {
+fn write_with_poll(stream: &mut std::os::unix::net::UnixStream, buf: &[u8]) -> std::io::Result<()> {
     use std::os::unix::io::AsRawFd;
 
     let mut written = 0;
@@ -420,4 +309,48 @@ async fn read_notification(
         .map_err(|e| WaftClientError::Transport(TransportError::Serialization(e)))?;
 
     Ok(notification)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_display() {
+        let err = WaftClientError::Timeout;
+        assert_eq!(err.to_string(), "connection timed out");
+
+        let err = WaftClientError::SocketNotFound;
+        assert_eq!(err.to_string(), "daemon socket not found");
+
+        let err = WaftClientError::Disconnected;
+        assert_eq!(err.to_string(), "daemon disconnected");
+    }
+
+    #[test]
+    fn daemon_socket_path_from_env() {
+        // This test just validates the path construction logic.
+        // In real use, XDG_RUNTIME_DIR is always set on Linux.
+        let path = daemon_socket_path();
+        if std::env::var("XDG_RUNTIME_DIR").is_ok() {
+            let path = path.unwrap();
+            assert!(path.to_string_lossy().contains("waft/daemon.sock"));
+        } else {
+            assert!(matches!(path, Err(WaftClientError::SocketNotFound)));
+        }
+    }
+
+    #[test]
+    fn socket_not_found_when_no_runtime_dir() {
+        // Verify that a missing runtime dir yields SocketNotFound
+        let saved = std::env::var("XDG_RUNTIME_DIR").ok();
+        // Safety: test-only, single-threaded context
+        unsafe { std::env::remove_var("XDG_RUNTIME_DIR") };
+        let result = daemon_socket_path();
+        if let Some(dir) = saved {
+            // Safety: restoring the original value
+            unsafe { std::env::set_var("XDG_RUNTIME_DIR", dir) };
+        }
+        assert!(matches!(result, Err(WaftClientError::SocketNotFound)));
+    }
 }

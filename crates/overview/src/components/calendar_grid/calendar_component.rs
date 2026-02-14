@@ -15,7 +15,7 @@ use gtk::prelude::*;
 use waft_protocol::entity;
 
 use crate::calendar_selection::{CalendarSelectionOp, CalendarSelectionStore};
-use crate::entity_store::EntityStore;
+use waft_client::EntityStore;
 
 use super::month_grid::{MonthGrid, MonthGridOutput, MonthGridProps};
 

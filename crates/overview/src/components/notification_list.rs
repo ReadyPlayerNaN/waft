@@ -13,7 +13,7 @@ use waft_protocol::entity;
 use waft_protocol::Urn;
 
 use super::notification_group::{NotificationData, NotificationGroup, NotificationGroupOutput};
-use crate::entity_store::{EntityActionCallback, EntityStore};
+use waft_client::{EntityActionCallback, EntityStore};
 use crate::i18n;
 use crate::menu_state::MenuStore;
 

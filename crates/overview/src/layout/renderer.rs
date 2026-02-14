@@ -31,7 +31,7 @@ use crate::components::toggles::dnd::DoNotDisturbToggle;
 use crate::components::toggles::network::NetworkManagerToggles;
 use crate::components::toggles::night_light::NightLightToggle;
 use crate::components::weather::WeatherComponent;
-use crate::entity_store::{EntityActionCallback, EntityStore};
+use waft_client::{EntityActionCallback, EntityStore};
 use crate::layout::model::LayoutNode;
 use crate::layout::types::WidgetFeatureToggle;
 use crate::menu_state::MenuStore;

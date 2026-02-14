@@ -9,7 +9,7 @@ use waft_protocol::entity;
 use waft_protocol::Urn;
 use waft_ui_gtk::widgets::icon::IconWidget;
 
-use crate::entity_store::EntityActionCallback;
+use waft_client::EntityActionCallback;
 
 const SESSION_URN_PLUGIN: &str = "systemd-actions";
 const SESSION_URN_ID: &str = "default";

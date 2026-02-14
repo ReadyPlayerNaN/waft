@@ -13,7 +13,7 @@ use waft_protocol::entity;
 use waft_protocol::Urn;
 use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
 
-use crate::entity_store::{EntityActionCallback, EntityStore};
+use waft_client::{EntityActionCallback, EntityStore};
 
 struct SliderEntry {
     widget: Rc<SliderWidget>,

@@ -10,13 +10,38 @@ use std::thread;
 
 use adw::prelude::*;
 
-use crate::entity_store::{EntityActionCallback, EntityStore};
 use crate::features::session::SessionEvent;
 use crate::menu_state::create_menu_store;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
-use crate::waft_client::{self, WaftClient, OverviewEvent};
+use waft_client::{ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task};
 use waft_ipc::net as ipc_net;
 use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
+use waft_protocol::entity;
+
+/// All entity types the overview subscribes to.
+const ENTITY_TYPES: &[&str] = &[
+    entity::clock::ENTITY_TYPE,
+    entity::display::DARK_MODE_ENTITY_TYPE,
+    entity::display::DISPLAY_ENTITY_TYPE,
+    entity::display::NIGHT_LIGHT_ENTITY_TYPE,
+    entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
+    entity::power::ENTITY_TYPE,
+    entity::keyboard::ENTITY_TYPE,
+    entity::audio::ENTITY_TYPE,
+    entity::bluetooth::BluetoothAdapter::ENTITY_TYPE,
+    entity::bluetooth::BluetoothDevice::ENTITY_TYPE,
+    entity::network::ADAPTER_ENTITY_TYPE,
+    entity::network::WIFI_NETWORK_ENTITY_TYPE,
+    entity::network::ETHERNET_CONNECTION_ENTITY_TYPE,
+    entity::network::VPN_ENTITY_TYPE,
+    entity::network::TETHERING_CONNECTION_ENTITY_TYPE,
+    entity::weather::ENTITY_TYPE,
+    entity::session::SESSION_ENTITY_TYPE,
+    entity::notification::NOTIFICATION_ENTITY_TYPE,
+    entity::notification::DND_ENTITY_TYPE,
+    entity::calendar::ENTITY_TYPE,
+    entity::storage::BACKUP_METHOD_ENTITY_TYPE,
+];
 
 /// Set up the overlay host app and return the GTK Application.
 ///
@@ -117,7 +142,7 @@ pub async fn setup() -> Result<adw::Application> {
 
     // Persistent channel for daemon events (notifications + connection state).
     // Survives daemon crashes and reconnections.
-    let (daemon_event_tx, daemon_event_rx) = flume::unbounded::<OverviewEvent>();
+    let (daemon_event_tx, daemon_event_rx) = flume::unbounded::<ClientEvent>();
     let daemon_event_rx = Arc::new(Mutex::new(Some(daemon_event_rx)));
 
     // WaftClient handle: set to Some on connect, None on disconnect.
@@ -128,9 +153,10 @@ pub async fn setup() -> Result<adw::Application> {
     // Handles initial connection, reconnection, subscription, and notification forwarding.
     {
         let client_handle = waft_client_handle.clone();
-        tokio::spawn(waft_client::daemon_connection_task(
+        tokio::spawn(daemon_connection_task(
             daemon_event_tx,
             client_handle,
+            ENTITY_TYPES,
         ));
     }
 
@@ -316,7 +342,7 @@ pub async fn setup() -> Result<adw::Application> {
             }
 
             // Setup daemon event receiver.
-            // The daemon_connection_task sends OverviewEvent through a persistent
+            // The daemon_connection_task sends ClientEvent through a persistent
             // flume channel that survives daemon crashes and reconnections.
             if let Ok(mut rx_slot) = daemon_event_rx_slot.lock()
                 && let Some(event_rx) = rx_slot.take() {
@@ -328,14 +354,14 @@ pub async fn setup() -> Result<adw::Application> {
                     glib::spawn_future_local(async move {
                         while let Ok(event) = event_rx.recv_async().await {
                             match event {
-                                OverviewEvent::Notification(notification) => {
+                                ClientEvent::Notification(notification) => {
                                     store_for_events.handle_notification(notification);
                                 }
-                                OverviewEvent::Connected => {
+                                ClientEvent::Connected => {
                                     log::info!("[app] daemon connected, enabling UI");
                                     clip_for_events.set_sensitive(true);
                                 }
-                                OverviewEvent::Disconnected => {
+                                ClientEvent::Disconnected => {
                                     log::info!("[app] daemon disconnected, disabling UI");
                                     clip_for_events.set_sensitive(false);
                                 }

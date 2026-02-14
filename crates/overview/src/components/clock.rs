@@ -10,7 +10,7 @@ use gtk::prelude::*;
 use waft_protocol::entity;
 use waft_ui_gtk::widgets::info_card::InfoCardWidget;
 
-use crate::entity_store::EntityStore;
+use waft_client::EntityStore;
 
 /// Displays current time as title and date as description.
 ///

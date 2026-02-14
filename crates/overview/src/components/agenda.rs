@@ -19,7 +19,7 @@ use waft_protocol::Urn;
 
 use crate::calendar_selection::CalendarSelectionStore;
 use crate::components::agenda_ui::agenda_card::{AgendaCard, AgendaCardOutput};
-use crate::entity_store::EntityStore;
+use waft_client::EntityStore;
 use crate::menu_state::{MenuOp, MenuStore};
 
 /// Displays upcoming calendar events with sophisticated UI.

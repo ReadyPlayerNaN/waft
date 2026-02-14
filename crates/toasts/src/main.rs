@@ -3,7 +3,6 @@
 mod app;
 mod toast_manager;
 mod ui;
-mod waft_client;
 
 use gtk::prelude::*;
 use waft_config::Config;

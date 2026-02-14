@@ -15,7 +15,7 @@ use waft_ui_gtk::backup::method_row::{BackupMethodRow, BackupMethodRowProps};
 use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
-use crate::entity_store::{EntityActionCallback, EntityStore};
+use waft_client::{EntityActionCallback, EntityStore};
 use crate::i18n;
 use crate::layout::types::WidgetFeatureToggle;
 

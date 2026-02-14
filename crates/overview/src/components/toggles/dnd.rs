@@ -11,7 +11,7 @@ use waft_protocol::entity;
 use waft_protocol::Urn;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
-use crate::entity_store::{EntityActionCallback, EntityStore};
+use waft_client::{EntityActionCallback, EntityStore};
 use crate::layout::types::WidgetFeatureToggle;
 
 /// Toggle for enabling/disabling Do Not Disturb mode.

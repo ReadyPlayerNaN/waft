@@ -11,7 +11,7 @@ use waft_protocol::entity;
 use waft_protocol::entity::weather::WeatherCondition;
 use waft_ui_gtk::widgets::info_card::InfoCardWidget;
 
-use crate::entity_store::EntityStore;
+use waft_client::EntityStore;
 
 /// Displays temperature as title, weather condition as description.
 ///

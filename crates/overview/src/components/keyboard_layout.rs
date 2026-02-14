@@ -13,7 +13,7 @@ use waft_protocol::entity;
 use waft_protocol::Urn;
 use waft_ui_gtk::widgets::status_cycle_button::{StatusCycleButtonWidget, StatusOption};
 
-use crate::entity_store::{EntityActionCallback, EntityStore};
+use waft_client::{EntityActionCallback, EntityStore};
 
 /// Displays the current keyboard layout and cycles to the next on click.
 ///

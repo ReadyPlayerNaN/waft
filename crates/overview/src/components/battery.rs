@@ -11,7 +11,7 @@ use waft_protocol::entity;
 use waft_protocol::entity::power::BatteryState;
 use waft_ui_gtk::widgets::info_card::InfoCardWidget;
 
-use crate::entity_store::EntityStore;
+use waft_client::EntityStore;
 
 /// Displays battery percentage as title, charge state as description.
 ///

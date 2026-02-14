@@ -43,6 +43,7 @@ roxmltree = "0.20"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
 uuid = { version = "1.0", features = ["v4"] }
+waft-client = { path = "../client" }
 waft-config = { path = "../config" }
 waft-core = { path = "../core" }
 waft-ipc = { path = "../ipc" }

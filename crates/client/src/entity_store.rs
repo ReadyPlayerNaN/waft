@@ -124,7 +124,6 @@ impl EntityStore {
     }
 
     /// Get a single entity by URN as a typed value.
-    #[allow(dead_code)]
     pub fn get_entity_typed<T: serde::de::DeserializeOwned>(&self, urn: &Urn) -> Option<T> {
         let cache = self.cache.borrow();
         cache.get(urn.as_str()).and_then(|e| {
@@ -143,7 +142,6 @@ impl EntityStore {
     }
 
     /// Get all cached entities of a given type as raw (Urn, Value) pairs.
-    #[allow(dead_code)]
     pub fn get_entities_raw(&self, entity_type: &str) -> Vec<(Urn, serde_json::Value)> {
         let cache = self.cache.borrow();
         cache

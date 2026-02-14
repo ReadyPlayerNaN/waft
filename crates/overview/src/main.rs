@@ -6,15 +6,12 @@ mod calendar_selection;
 mod common;
 mod components;
 mod dbus;
-mod entity_store;
 mod features;
 mod i18n;
 mod layout;
 mod menu_state;
 pub mod store;
 mod ui;
-mod waft_client;
-
 // Re-export the set_field! macro from waft-core so feature plugins
 // can continue to use `use crate::set_field;`.
 pub use waft_core::set_field;

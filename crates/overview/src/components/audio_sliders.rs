@@ -17,7 +17,7 @@ use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::audio::device_row::{AudioDeviceRow, AudioDeviceRowOutput, AudioDeviceRowProps};
 use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
 
-use crate::entity_store::{EntityActionCallback, EntityStore};
+use waft_client::{EntityActionCallback, EntityStore};
 
 /// A device row in the expandable menu.
 struct DeviceMenuRow {
