@@ -4,7 +4,7 @@
 //! entity types. Dynamically creates FeatureToggleWidget per adapter/VPN with expandable
 //! menus showing child networks/connections.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -26,6 +26,8 @@ struct ToggleEntry {
     network_rows: RefCell<Vec<NetworkRow>>,
     info_rows: RefCell<Vec<gtk::Box>>,
     weight: i32,
+    /// Tracks connected state for click handler closures that need fresh state.
+    connected: Rc<Cell<bool>>,
 }
 
 /// A single network row in the menu — either a plain box (WiFi/Ethernet)
@@ -126,6 +128,7 @@ impl NetworkManagerToggles {
                         entry.toggle.set_active(adapter.connected);
                         entry.toggle.set_busy(false);
                         entry.toggle.set_icon(&icon);
+                        entry.connected.set(adapter.connected);
 
                         // Update IP info rows for wired adapters
                         if matches!(adapter.kind, entity::network::AdapterKind::Wired) {
@@ -143,6 +146,8 @@ impl NetworkManagerToggles {
                             .css_classes(["menu-content"])
                             .build();
 
+                        let connected = Rc::new(Cell::new(adapter.connected));
+
                         let toggle = Rc::new(FeatureToggleWidget::new(
                             FeatureToggleProps {
                                 active: adapter.connected,
@@ -159,10 +164,18 @@ impl NetworkManagerToggles {
                         let action_cb = cb.clone();
                         let action_urn = urn.clone();
                         let adapter_kind = adapter.kind.clone();
+                        let connected_for_click = connected.clone();
                         toggle.connect_output(move |_output| {
                             let action = match adapter_kind {
                                 entity::network::AdapterKind::Wireless => "activate",
                                 entity::network::AdapterKind::Wired => "activate",
+                                entity::network::AdapterKind::Tethering => {
+                                    if connected_for_click.get() {
+                                        "deactivate"
+                                    } else {
+                                        "activate"
+                                    }
+                                }
                             };
                             action_cb(
                                 action_urn.clone(),
@@ -178,6 +191,7 @@ impl NetworkManagerToggles {
                             network_rows: RefCell::new(Vec::new()),
                             info_rows: RefCell::new(Vec::new()),
                             weight: 150,
+                            connected,
                         };
 
                         // Initialize IP info rows for wired adapters
@@ -341,6 +355,7 @@ impl NetworkManagerToggles {
                         network_rows: RefCell::new(Vec::new()),
                         info_rows: RefCell::new(Vec::new()),
                         weight: 160,
+                        connected: Rc::new(Cell::new(any_active)),
                     };
 
                     // Populate VPN menu rows
@@ -351,6 +366,19 @@ impl NetworkManagerToggles {
                     rebuild();
                 }
             });
+        }
+
+        // Subscribe to tethering connection changes
+        {
+            let entries_ref = entries.clone();
+            let store_ref = store.clone();
+            let cb = action_callback.clone();
+            store.subscribe_type(
+                entity::network::TETHERING_CONNECTION_ENTITY_TYPE,
+                move || {
+                    Self::update_tethering_menus(&entries_ref, &store_ref, &cb);
+                },
+            );
         }
 
         Self {
@@ -674,6 +702,95 @@ impl NetworkManagerToggles {
         }
     }
 
+    /// Update tethering connection rows in the tethering adapter toggle.
+    fn update_tethering_menus(
+        entries: &Rc<RefCell<Vec<ToggleEntry>>>,
+        store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+    ) {
+        let connections: Vec<(Urn, entity::network::TetheringConnection)> =
+            store.get_entities_typed(entity::network::TETHERING_CONNECTION_ENTITY_TYPE);
+
+        let entries_mut = entries.borrow();
+
+        // Find the tethering adapter toggle
+        let tethering_urn_suffix = "/network-adapter/tethering";
+        for entry in entries_mut.iter() {
+            if !entry.urn_str.ends_with(tethering_urn_suffix) {
+                continue;
+            }
+
+            // Find connections for this adapter by checking URN prefix
+            let adapter_urn_prefix = format!("{}/", entry.urn_str);
+            let adapter_connections: Vec<_> = connections
+                .iter()
+                .filter(|(urn, _)| urn.as_str().starts_with(&adapter_urn_prefix))
+                .collect();
+
+            entry.toggle.set_expandable(!adapter_connections.is_empty());
+
+            // Update details text
+            if let Some((_, active_conn)) = adapter_connections.iter().find(|(_, c)| c.active) {
+                entry.toggle.set_details(Some(active_conn.name.clone()));
+            } else {
+                entry.toggle.set_details(None);
+            }
+
+            let mut network_rows = entry.network_rows.borrow_mut();
+
+            // Remove rows for connections that no longer exist
+            let current_urns: Vec<String> = adapter_connections
+                .iter()
+                .map(|(urn, _)| urn.as_str().to_string())
+                .collect();
+            network_rows.retain(|row| {
+                if current_urns.iter().any(|u| u == row.urn_str()) {
+                    true
+                } else {
+                    row.remove_from(&entry.menu);
+                    false
+                }
+            });
+
+            // Remove-and-recreate rows on state change so click closures have fresh state
+            for (conn_urn, conn) in &adapter_connections {
+                let conn_urn_str = conn_urn.as_str().to_string();
+
+                if let Some(existing) =
+                    network_rows.iter().find(|r| r.urn_str() == conn_urn_str)
+                {
+                    existing.remove_from(&entry.menu);
+                    network_rows.retain(|r| r.urn_str() != conn_urn_str);
+                }
+
+                let conn_row = Rc::new(ConnectionRow::new(ConnectionRowProps {
+                    name: conn.name.clone(),
+                    active: conn.active,
+                    transitioning: false,
+                }));
+
+                let action_cb = action_callback.clone();
+                let urn_for_click = (*conn_urn).clone();
+                let is_active = conn.active;
+                conn_row.connect_output(move |ConnectionRowOutput::Toggle| {
+                    let action = if is_active { "disconnect" } else { "connect" };
+                    action_cb(
+                        urn_for_click.clone(),
+                        action.to_string(),
+                        serde_json::Value::Null,
+                    );
+                });
+
+                entry.menu.append(&conn_row.root);
+
+                network_rows.push(NetworkRow::Connection {
+                    urn_str: conn_urn_str,
+                    row: conn_row,
+                });
+            }
+        }
+    }
+
     /// Return all current toggles as feature toggle widgets for the grid.
     pub fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
         self.entries
@@ -708,6 +825,7 @@ fn adapter_icon(adapter: &entity::network::NetworkAdapter) -> String {
                 "network-wireless-offline-symbolic"
             }
         }
+        entity::network::AdapterKind::Tethering => "network-cellular-symbolic",
     }
     .to_string()
 }
@@ -717,6 +835,7 @@ fn adapter_title(adapter: &entity::network::NetworkAdapter) -> String {
     match &adapter.kind {
         entity::network::AdapterKind::Wired => crate::i18n::t("network-wired"),
         entity::network::AdapterKind::Wireless => "Wi-Fi".to_string(),
+        entity::network::AdapterKind::Tethering => "Tethering".to_string(),
     }
 }
 

@@ -12,6 +12,9 @@ pub const ETHERNET_CONNECTION_ENTITY_TYPE: &str = "ethernet-connection";
 /// Entity type identifier for VPN connections.
 pub const VPN_ENTITY_TYPE: &str = "vpn";
 
+/// Entity type identifier for tethering connections (nested under tethering adapter).
+pub const TETHERING_CONNECTION_ENTITY_TYPE: &str = "tethering-connection";
+
 /// A network adapter (wired or wireless).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetworkAdapter {
@@ -37,6 +40,7 @@ pub struct IpInfo {
 pub enum AdapterKind {
     Wired,
     Wireless,
+    Tethering,
 }
 
 /// A WiFi network (child entity of wireless adapter).
@@ -85,6 +89,21 @@ pub enum VpnState {
     Connecting,
     Connected,
     Disconnecting,
+}
+
+/// A tethering connection profile (child entity of tethering adapter).
+///
+/// URN: `networkmanager/network-adapter/tethering/tethering-connection/{uuid}`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TetheringConnection {
+    pub name: String,
+    pub uuid: String,
+    pub active: bool,
+}
+
+impl TetheringConnection {
+    /// Entity type identifier for tethering connections.
+    pub const ENTITY_TYPE: &str = TETHERING_CONNECTION_ENTITY_TYPE;
 }
 
 #[cfg(test)]
@@ -160,6 +179,33 @@ mod tests {
         let json = serde_json::to_value(&vpn).unwrap();
         let decoded: Vpn = serde_json::from_value(json).unwrap();
         assert_eq!(vpn, decoded);
+    }
+
+    #[test]
+    fn serde_roundtrip_tethering_adapter() {
+        let adapter = NetworkAdapter {
+            name: "tethering".to_string(),
+            enabled: true,
+            connected: true,
+            ip: None,
+            public_ip: None,
+            kind: AdapterKind::Tethering,
+        };
+        let json = serde_json::to_value(&adapter).unwrap();
+        let decoded: NetworkAdapter = serde_json::from_value(json).unwrap();
+        assert_eq!(adapter, decoded);
+    }
+
+    #[test]
+    fn serde_roundtrip_tethering_connection() {
+        let conn = TetheringConnection {
+            name: "Nokia 3310 Network".to_string(),
+            uuid: "abc-123-def".to_string(),
+            active: false,
+        };
+        let json = serde_json::to_value(&conn).unwrap();
+        let decoded: TetheringConnection = serde_json::from_value(json).unwrap();
+        assert_eq!(conn, decoded);
     }
 
     #[test]

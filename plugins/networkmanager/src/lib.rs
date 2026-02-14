@@ -2,12 +2,15 @@
 //!
 //! Domain modules for WiFi, VPN, Ethernet network management via D-Bus.
 
+pub mod bluez_discovery;
+pub mod bluez_signal_monitor;
 pub mod dbus_property;
 pub mod device_discovery;
 pub mod ethernet;
 pub mod ip_config;
 pub mod signal_monitor;
 pub mod state;
+pub mod tethering;
 pub mod vpn;
 pub mod wifi;
 pub mod wifi_scan;

@@ -93,12 +93,84 @@ pub struct VpnConnectionInfo {
     pub active_path: Option<String>,
 }
 
+/// A saved Bluetooth tethering connection profile.
+#[derive(Debug, Clone)]
+pub struct TetheringProfileInfo {
+    pub path: String,
+    pub uuid: String,
+    pub name: String,
+    /// Bluetooth device address from the NM connection's `bluetooth.bdaddr` setting.
+    pub bdaddr: Option<String>,
+}
+
+/// Runtime state of a tethering connection.
+#[derive(Debug, Clone)]
+pub struct TetheringConnectionState {
+    pub path: String,
+    pub uuid: String,
+    pub name: String,
+    pub active: bool,
+    /// Active connection D-Bus path when connected.
+    pub active_path: Option<String>,
+    /// Bluetooth device address (e.g. "14:3F:A6:40:FA:0B").
+    pub bdaddr: Option<String>,
+}
+
+/// Tracked NM bluetooth device (for tethering availability).
+#[derive(Debug, Clone)]
+pub struct BluetoothDeviceInfo {
+    pub path: String,
+    pub device_state: u32,
+}
+
+impl BluetoothDeviceInfo {
+    /// Device is usable for tethering (state >= 40 means preparing or connected).
+    pub fn ready(&self) -> bool {
+        self.device_state >= 40
+    }
+}
+
+/// A paired BlueZ device tracked for tethering availability.
+///
+/// Unlike NM's bluetooth device state (which stays "disconnected" even when the
+/// phone is physically connected via Bluetooth), BlueZ's `Device1.Connected`
+/// property reflects the actual Bluetooth link state.
+#[derive(Debug, Clone)]
+pub struct BluezPairedDevice {
+    pub path: String,
+    pub connected: bool,
+}
+
 /// Aggregate network state for all adapters and VPN connections.
 #[derive(Debug, Clone, Default)]
 pub struct NmState {
     pub wifi_adapters: Vec<WiFiAdapterState>,
     pub ethernet_adapters: Vec<EthernetAdapterState>,
     pub vpn_connections: Vec<VpnConnectionInfo>,
+    pub tethering_connections: Vec<TetheringConnectionState>,
+    /// NM bluetooth devices — kept for DeviceAdded/DeviceRemoved lifecycle.
+    pub bluetooth_devices: Vec<BluetoothDeviceInfo>,
+    /// BlueZ paired devices — tethering is shown when at least one is connected.
+    pub bluez_paired_devices: Vec<BluezPairedDevice>,
     /// Cached public IP address (shared across all adapters).
     pub public_ip: Option<String>,
+}
+
+impl NmState {
+    /// Returns true if a BlueZ device matching a tethering profile is connected.
+    ///
+    /// Only devices that have a corresponding NM bluetooth tethering connection
+    /// profile count — other paired devices (headphones, mice, etc.) are ignored.
+    pub fn any_tethering_device_connected(&self) -> bool {
+        self.tethering_connections.iter().any(|conn| {
+            let Some(ref bdaddr) = conn.bdaddr else {
+                return false;
+            };
+            // BlueZ device path ends with dev_XX_XX_XX_XX_XX_XX
+            let path_suffix = format!("dev_{}", bdaddr.replace(':', "_"));
+            self.bluez_paired_devices
+                .iter()
+                .any(|d| d.connected && d.path.ends_with(&path_suffix))
+        })
+    }
 }

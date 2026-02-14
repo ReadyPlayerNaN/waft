@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 
 use crate::dbus_property::{
-    get_property, NM_INTERFACE, NM_PATH, NM_SERVICE, DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI,
-    NM_DEVICE_INTERFACE,
+    get_property, NM_INTERFACE, NM_PATH, NM_SERVICE, DEVICE_TYPE_BLUETOOTH, DEVICE_TYPE_ETHERNET,
+    DEVICE_TYPE_WIFI, NM_DEVICE_INTERFACE,
 };
 use crate::is_virtual_interface;
 use zbus::zvariant::OwnedObjectPath;
@@ -38,6 +38,48 @@ pub async fn discover_devices(conn: &Connection) -> Result<Vec<DeviceInfo>> {
             Err(e) => {
                 log::warn!("[nm] Failed to read device {}: {}", device_path, e);
             }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Discover bluetooth NM devices (type 5) with their state.
+pub async fn discover_bluetooth_devices(
+    conn: &Connection,
+) -> Result<Vec<crate::state::BluetoothDeviceInfo>> {
+    let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
+        .await
+        .context("Failed to create NM proxy")?;
+
+    let (device_paths,): (Vec<OwnedObjectPath>,) = proxy
+        .call("GetDevices", &())
+        .await
+        .context("Failed to call GetDevices")?;
+
+    let mut result = Vec::new();
+    for device_path in device_paths {
+        let device_type: u32 = match get_property(
+            conn,
+            device_path.as_str(),
+            NM_DEVICE_INTERFACE,
+            "DeviceType",
+        )
+        .await
+        {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        if device_type == DEVICE_TYPE_BLUETOOTH {
+            let device_state: u32 =
+                get_property(conn, device_path.as_str(), NM_DEVICE_INTERFACE, "State")
+                    .await
+                    .unwrap_or(0);
+            result.push(crate::state::BluetoothDeviceInfo {
+                path: device_path.to_string(),
+                device_state,
+            });
         }
     }
 

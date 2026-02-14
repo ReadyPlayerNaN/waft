@@ -17,6 +17,7 @@ pub const NM_VPN_CONNECTION_INTERFACE: &str =
 
 pub const DEVICE_TYPE_ETHERNET: u32 = 1;
 pub const DEVICE_TYPE_WIFI: u32 = 2;
+pub const DEVICE_TYPE_BLUETOOTH: u32 = 5;
 
 pub const NM_WIRELESS_INTERFACE: &str = "org.freedesktop.NetworkManager.Device.Wireless";
 

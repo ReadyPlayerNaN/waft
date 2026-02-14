@@ -11,12 +11,16 @@ use zbus::Connection;
 
 use crate::dbus_property::{
     get_property, NM_CONNECTION_ACTIVE_INTERFACE, NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH,
-    NM_SERVICE, NM_VPN_CONNECTION_INTERFACE, DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI,
+    NM_SERVICE, NM_VPN_CONNECTION_INTERFACE, DEVICE_TYPE_BLUETOOTH, DEVICE_TYPE_ETHERNET,
+    DEVICE_TYPE_WIFI,
 };
 use crate::device_discovery::get_device_info_dbus;
 use crate::ethernet::refresh_ethernet_state;
 use crate::ip_config::{fetch_public_ip, get_device_ip4_config};
-use crate::state::{CachedIpConfig, EthernetAdapterState, NmState, WiFiAdapterState};
+use crate::state::{
+    BluetoothDeviceInfo, CachedIpConfig, EthernetAdapterState, NmState, WiFiAdapterState,
+};
+use crate::tethering::refresh_tethering_states;
 use crate::vpn::refresh_vpn_states;
 use waft_plugin::EntityNotifier;
 
@@ -100,19 +104,15 @@ pub async fn monitor_nm_signals(
 
                 let mut changed = false;
 
-                // Handle VPN ActiveConnection state changes
+                // Handle VPN and tethering ActiveConnection state changes
                 if obj_path.contains("/ActiveConnection/")
                     && prop_iface == NM_CONNECTION_ACTIVE_INTERFACE
                 {
                     if let Some(state_val) = props.get("State") {
                         if let Ok(state_code) = u32::try_from(state_val.clone()) {
-                            // Check if this is a VPN connection
-                            let is_vpn = if let Some(type_val) = props.get("Type") {
-                                String::try_from(type_val.clone())
-                                    .map(|t| t == "vpn")
-                                    .unwrap_or(false)
+                            let conn_type = if let Some(type_val) = props.get("Type") {
+                                String::try_from(type_val.clone()).unwrap_or_default()
                             } else {
-                                // Query the type
                                 get_property::<String>(
                                     &conn,
                                     &obj_path,
@@ -120,17 +120,25 @@ pub async fn monitor_nm_signals(
                                     "Type",
                                 )
                                 .await
-                                .map(|t| t == "vpn")
-                                .unwrap_or(false)
+                                .unwrap_or_default()
                             };
 
-                            if is_vpn {
+                            if conn_type == "vpn" {
                                 debug!(
                                     "[nm] VPN state changed: path={}, state={}",
                                     obj_path, state_code
                                 );
                                 if let Err(e) = refresh_vpn_states(&conn, &state).await {
                                     error!("[nm] Failed to refresh VPN states: {}", e);
+                                }
+                                changed = true;
+                            } else if conn_type == "bluetooth" {
+                                debug!(
+                                    "[nm] Tethering state changed: path={}, state={}",
+                                    obj_path, state_code
+                                );
+                                if let Err(e) = refresh_tethering_states(&conn, &state).await {
+                                    error!("[nm] Failed to refresh tethering states: {}", e);
                                 }
                                 changed = true;
                             }
@@ -161,42 +169,99 @@ pub async fn monitor_nm_signals(
                     let device_path = path.to_string();
                     info!("[nm] Device added: {}", device_path);
 
-                    if let Ok(Some(info)) = get_device_info_dbus(&conn, &device_path).await {
-                        let mut st = match state.lock() {
-                            Ok(g) => g,
-                            Err(e) => {
-                                warn!("[nm] Mutex poisoned, recovering: {e}");
-                                e.into_inner()
-                            }
-                        };
-                        match info.device_type {
-                            DEVICE_TYPE_ETHERNET => {
-                                if !st.ethernet_adapters.iter().any(|a| a.path == info.path) {
-                                    st.ethernet_adapters.push(EthernetAdapterState {
-                                        path: info.path,
-                                        interface_name: info.interface_name,
-                                        device_state: info.device_state,
-                                        ip_config: None,
-                                        active_connection_uuid: None,
-                                        profiles: Vec::new(),
-                                    });
+                    // Read device type first, then branch without holding locks across awaits
+                    let device_type: u32 = get_property(
+                        &conn,
+                        &device_path,
+                        NM_DEVICE_INTERFACE,
+                        "DeviceType",
+                    )
+                    .await
+                    .unwrap_or(0);
+
+                    match device_type {
+                        DEVICE_TYPE_ETHERNET | DEVICE_TYPE_WIFI => {
+                            if let Ok(Some(info)) =
+                                get_device_info_dbus(&conn, &device_path).await
+                            {
+                                let mut st = match state.lock() {
+                                    Ok(g) => g,
+                                    Err(e) => {
+                                        warn!("[nm] Mutex poisoned, recovering: {e}");
+                                        e.into_inner()
+                                    }
+                                };
+                                match info.device_type {
+                                    DEVICE_TYPE_ETHERNET => {
+                                        if !st
+                                            .ethernet_adapters
+                                            .iter()
+                                            .any(|a| a.path == info.path)
+                                        {
+                                            st.ethernet_adapters.push(EthernetAdapterState {
+                                                path: info.path,
+                                                interface_name: info.interface_name,
+                                                device_state: info.device_state,
+                                                ip_config: None,
+                                                active_connection_uuid: None,
+                                                profiles: Vec::new(),
+                                            });
+                                        }
+                                    }
+                                    DEVICE_TYPE_WIFI => {
+                                        if !st
+                                            .wifi_adapters
+                                            .iter()
+                                            .any(|a| a.path == info.path)
+                                        {
+                                            st.wifi_adapters.push(WiFiAdapterState {
+                                                path: info.path,
+                                                interface_name: info.interface_name,
+                                                enabled: true,
+                                                busy: false,
+                                                active_ssid: None,
+                                                access_points: Vec::new(),
+                                                scanning: false,
+                                            });
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
-                            DEVICE_TYPE_WIFI => {
-                                if !st.wifi_adapters.iter().any(|a| a.path == info.path) {
-                                    st.wifi_adapters.push(WiFiAdapterState {
-                                        path: info.path,
-                                        interface_name: info.interface_name,
-                                        enabled: true,
-                                        busy: false,
-                                        active_ssid: None,
-                                        access_points: Vec::new(),
-                                        scanning: false,
-                                    });
-                                }
-                            }
-                            _ => {}
                         }
+                        DEVICE_TYPE_BLUETOOTH => {
+                            let bt_state: u32 = get_property(
+                                &conn,
+                                &device_path,
+                                NM_DEVICE_INTERFACE,
+                                "State",
+                            )
+                            .await
+                            .unwrap_or(0);
+                            info!(
+                                "[nm] Bluetooth device added: {} state={}",
+                                device_path, bt_state
+                            );
+                            {
+                                let mut st = match state.lock() {
+                                    Ok(g) => g,
+                                    Err(e) => {
+                                        warn!("[nm] Mutex poisoned, recovering: {e}");
+                                        e.into_inner()
+                                    }
+                                };
+                                if !st.bluetooth_devices.iter().any(|d| d.path == device_path) {
+                                    st.bluetooth_devices.push(BluetoothDeviceInfo {
+                                        path: device_path.clone(),
+                                        device_state: bt_state,
+                                    });
+                                }
+                            }
+                            if let Err(e) = refresh_tethering_states(&conn, &state).await {
+                                error!("[nm] Failed to refresh tethering states: {}", e);
+                            }
+                        }
+                        _ => {}
                     }
 
                     notifier.notify();
@@ -217,6 +282,7 @@ pub async fn monitor_nm_signals(
                     };
                     st.ethernet_adapters.retain(|a| a.path != device_path);
                     st.wifi_adapters.retain(|a| a.path != device_path);
+                    st.bluetooth_devices.retain(|d| d.path != device_path);
 
                     notifier.notify();
                 }
@@ -278,6 +344,20 @@ pub async fn monitor_nm_signals(
                             }
                             // If device becomes activated, mark as changed (scan will update SSID)
                             if new_state == 100 && adapter.active_ssid.is_none() {
+                                changed = true;
+                            }
+                        }
+
+                        // Update bluetooth device state (affects tethering visibility)
+                        if let Some(bt_dev) =
+                            st.bluetooth_devices.iter_mut().find(|d| d.path == obj_path)
+                        {
+                            if bt_dev.device_state != new_state {
+                                debug!(
+                                    "[nm] Bluetooth device {} state: {} -> {}",
+                                    obj_path, bt_dev.device_state, new_state
+                                );
+                                bt_dev.device_state = new_state;
                                 changed = true;
                             }
                         }

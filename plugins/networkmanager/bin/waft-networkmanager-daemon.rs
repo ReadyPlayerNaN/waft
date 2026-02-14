@@ -10,22 +10,29 @@ use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::entity::network::{
-    AdapterKind, NetworkAdapter, VpnState as EntityVpnState, WiFiNetwork,
-    ADAPTER_ENTITY_TYPE, ETHERNET_CONNECTION_ENTITY_TYPE, VPN_ENTITY_TYPE,
-    WIFI_NETWORK_ENTITY_TYPE,
+    AdapterKind, NetworkAdapter, TetheringConnection, VpnState as EntityVpnState, WiFiNetwork,
+    ADAPTER_ENTITY_TYPE, ETHERNET_CONNECTION_ENTITY_TYPE, TETHERING_CONNECTION_ENTITY_TYPE,
+    VPN_ENTITY_TYPE, WIFI_NETWORK_ENTITY_TYPE,
 };
 use waft_plugin::*;
 use zbus::Connection;
 
+use waft_plugin_networkmanager::bluez_discovery::discover_bluez_paired_devices;
+use waft_plugin_networkmanager::bluez_signal_monitor::monitor_bluez_signals;
 use waft_plugin_networkmanager::dbus_property::{DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI};
-use waft_plugin_networkmanager::device_discovery::discover_devices;
+use waft_plugin_networkmanager::device_discovery::{discover_bluetooth_devices, discover_devices};
 use waft_plugin_networkmanager::ethernet::{
     activate_ethernet_connection, deactivate_ethernet_connection,
 };
 use waft_plugin_networkmanager::ip_config::{fetch_public_ip, get_device_ip4_config};
 use waft_plugin_networkmanager::signal_monitor::monitor_nm_signals;
 use waft_plugin_networkmanager::state::{
-    CachedIpConfig, EthernetAdapterState, NmState, VpnState, WiFiAdapterState,
+    CachedIpConfig, EthernetAdapterState, NmState, TetheringConnectionState, VpnState,
+    WiFiAdapterState,
+};
+use waft_plugin_networkmanager::tethering::{
+    activate_tethering, deactivate_tethering, get_active_tethering_connections,
+    get_tethering_profiles,
 };
 use waft_plugin_networkmanager::vpn::{
     activate_vpn, deactivate_vpn, get_active_vpn_connections, get_vpn_profiles,
@@ -195,6 +202,73 @@ impl NetworkManagerPlugin {
             }
         }
 
+        // Discover bluetooth NM devices (tethering is only visible when one is ready)
+        match discover_bluetooth_devices(&conn).await {
+            Ok(devices) => {
+                let ready_count = devices.iter().filter(|d| d.ready()).count();
+                info!(
+                    "[nm] Found {} bluetooth NM devices ({} ready)",
+                    devices.len(),
+                    ready_count
+                );
+                state.bluetooth_devices = devices;
+            }
+            Err(e) => {
+                warn!("[nm] Failed to discover bluetooth devices: {}", e);
+            }
+        }
+
+        // Discover BlueZ paired devices (source of truth for tethering visibility)
+        match discover_bluez_paired_devices(&conn).await {
+            Ok(devices) => {
+                let connected_count = devices.iter().filter(|d| d.connected).count();
+                info!(
+                    "[nm] Found {} BlueZ paired devices ({} connected)",
+                    devices.len(),
+                    connected_count
+                );
+                state.bluez_paired_devices = devices;
+            }
+            Err(e) => {
+                warn!("[nm] Failed to discover BlueZ paired devices: {}", e);
+            }
+        }
+
+        // Discover tethering (bluetooth) connections
+        match get_tethering_profiles(&conn).await {
+            Ok(profiles) => {
+                info!("[nm] Found {} tethering profiles", profiles.len());
+
+                let active = get_active_tethering_connections(&conn)
+                    .await
+                    .unwrap_or_default();
+
+                for profile in profiles {
+                    let active_info = active.iter().find(|(_, uuid)| *uuid == profile.uuid);
+
+                    debug!(
+                        "[nm] Tethering {}: path={}, active={}, bdaddr={:?}",
+                        profile.name,
+                        profile.path,
+                        active_info.is_some(),
+                        profile.bdaddr
+                    );
+
+                    state.tethering_connections.push(TetheringConnectionState {
+                        path: profile.path,
+                        uuid: profile.uuid,
+                        name: profile.name,
+                        active: active_info.is_some(),
+                        active_path: active_info.map(|(ap, _)| ap.clone()),
+                        bdaddr: profile.bdaddr,
+                    });
+                }
+            }
+            Err(e) => {
+                error!("[nm] Failed to get tethering profiles: {}", e);
+            }
+        }
+
         let plugin = Self {
             conn,
             state: Arc::new(StdMutex::new(state)),
@@ -341,6 +415,45 @@ fn vpn_to_entity(vpn: &waft_plugin_networkmanager::state::VpnConnectionInfo) -> 
     )
 }
 
+fn tethering_adapter_to_entities(
+    tethering_connections: &[TetheringConnectionState],
+) -> Vec<Entity> {
+    let mut entities = Vec::new();
+
+    let any_active = tethering_connections.iter().any(|c| c.active);
+
+    let adapter_urn = Urn::new("networkmanager", ADAPTER_ENTITY_TYPE, "tethering");
+    let adapter_entity = NetworkAdapter {
+        name: "tethering".to_string(),
+        enabled: true,
+        connected: any_active,
+        ip: None,
+        public_ip: None,
+        kind: AdapterKind::Tethering,
+    };
+    entities.push(Entity::new(
+        adapter_urn.clone(),
+        ADAPTER_ENTITY_TYPE,
+        &adapter_entity,
+    ));
+
+    for conn in tethering_connections {
+        let conn_urn = adapter_urn.child(TETHERING_CONNECTION_ENTITY_TYPE, &conn.uuid);
+        let conn_entity = TetheringConnection {
+            name: conn.name.clone(),
+            uuid: conn.uuid.clone(),
+            active: conn.active,
+        };
+        entities.push(Entity::new(
+            conn_urn,
+            TETHERING_CONNECTION_ENTITY_TYPE,
+            &conn_entity,
+        ));
+    }
+
+    entities
+}
+
 // ---------------------------------------------------------------------------
 // Plugin implementation
 // ---------------------------------------------------------------------------
@@ -361,6 +474,12 @@ impl Plugin for NetworkManagerPlugin {
 
         for vpn in &state.vpn_connections {
             entities.push(vpn_to_entity(vpn));
+        }
+
+        let bluez_connected = state.any_tethering_device_connected();
+        let tethering_active = state.tethering_connections.iter().any(|c| c.active);
+        if (bluez_connected || tethering_active) && !state.tethering_connections.is_empty() {
+            entities.extend(tethering_adapter_to_entities(&state.tethering_connections));
         }
 
         entities
@@ -392,6 +511,11 @@ impl Plugin for NetworkManagerPlugin {
                 let vpn_id = urn.id();
                 self.handle_vpn_action(vpn_id, &action).await?
             }
+            "tethering-connection" => {
+                let uuid = urn.id();
+                self.handle_tethering_connection_action(uuid, &action)
+                    .await?
+            }
             _ => {
                 debug!("[nm] Unknown entity type: {}", entity_type);
             }
@@ -412,16 +536,25 @@ impl NetworkManagerPlugin {
         action: &str,
         params: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Determine if this is a WiFi or Ethernet adapter
-        let is_wifi = {
+        // Determine adapter type
+        let (is_wifi, is_tethering) = {
             let state = self.lock_state();
-            state
-                .wifi_adapters
-                .iter()
-                .any(|a| a.interface_name == adapter_name)
+            (
+                state
+                    .wifi_adapters
+                    .iter()
+                    .any(|a| a.interface_name == adapter_name),
+                adapter_name == "tethering",
+            )
         };
 
-        if is_wifi {
+        if is_tethering {
+            match action {
+                "activate" => self.handle_tethering_smart_toggle(true).await?,
+                "deactivate" => self.handle_tethering_smart_toggle(false).await?,
+                _ => debug!("[nm] Unknown tethering adapter action: {action}"),
+            }
+        } else if is_wifi {
             match action {
                 "activate" => self.handle_toggle_wifi_on().await?,
                 "deactivate" => self.handle_toggle_wifi_off().await?,
@@ -892,6 +1025,145 @@ impl NetworkManagerPlugin {
 
         Ok(())
     }
+
+    async fn handle_tethering_connection_action(
+        &self,
+        uuid: &str,
+        action: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match action {
+            "connect" => {
+                let conn_path = {
+                    let state = self.lock_state();
+                    state
+                        .tethering_connections
+                        .iter()
+                        .find(|c| c.uuid == uuid)
+                        .map(|c| c.path.clone())
+                };
+                if let Some(path) = conn_path {
+                    self.handle_connect_tethering(&path).await?;
+                } else {
+                    warn!("[nm] Tethering connection not found: {uuid}");
+                }
+            }
+            "disconnect" => {
+                let active_path = {
+                    let state = self.lock_state();
+                    state
+                        .tethering_connections
+                        .iter()
+                        .find(|c| c.uuid == uuid)
+                        .and_then(|c| c.active_path.clone())
+                };
+                if let Some(path) = active_path {
+                    self.handle_disconnect_tethering(&path, uuid).await?;
+                } else {
+                    warn!("[nm] No active tethering connection for: {uuid}");
+                }
+            }
+            _ => debug!("[nm] Unknown tethering-connection action: {action}"),
+        }
+        Ok(())
+    }
+
+    async fn handle_tethering_smart_toggle(
+        &self,
+        connect: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if connect {
+            // Connect the first available tethering profile
+            let conn_path = {
+                let state = self.lock_state();
+                state
+                    .tethering_connections
+                    .iter()
+                    .find(|c| !c.active)
+                    .map(|c| c.path.clone())
+            };
+            if let Some(path) = conn_path {
+                self.handle_connect_tethering(&path).await?;
+            } else {
+                debug!("[nm] No inactive tethering connections to activate");
+            }
+        } else {
+            // Disconnect all active tethering connections
+            let active_connections: Vec<(String, String)> = {
+                let state = self.lock_state();
+                state
+                    .tethering_connections
+                    .iter()
+                    .filter(|c| c.active)
+                    .filter_map(|c| c.active_path.as_ref().map(|ap| (ap.clone(), c.uuid.clone())))
+                    .collect()
+            };
+            for (active_path, uuid) in active_connections {
+                self.handle_disconnect_tethering(&active_path, &uuid)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_connect_tethering(
+        &self,
+        conn_path: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        info!("[nm] Connecting tethering: {}", conn_path);
+
+        match activate_tethering(&self.conn, conn_path).await {
+            Ok(active_path) => {
+                info!(
+                    "[nm] Tethering connection initiated: {} -> {}",
+                    conn_path, active_path
+                );
+                let mut state = self.lock_state();
+                if let Some(conn) = state
+                    .tethering_connections
+                    .iter_mut()
+                    .find(|c| c.path == conn_path)
+                {
+                    conn.active = true;
+                    conn.active_path = Some(active_path);
+                }
+            }
+            Err(e) => {
+                error!("[nm] Failed to connect tethering: {}", e);
+                return Err(e.into());
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_disconnect_tethering(
+        &self,
+        active_path: &str,
+        uuid: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        info!("[nm] Disconnecting tethering: {}", active_path);
+
+        match deactivate_tethering(&self.conn, active_path).await {
+            Ok(()) => {
+                info!("[nm] Tethering disconnected: {}", uuid);
+                let mut state = self.lock_state();
+                if let Some(conn) = state
+                    .tethering_connections
+                    .iter_mut()
+                    .find(|c| c.uuid == uuid)
+                {
+                    conn.active = false;
+                    conn.active_path = None;
+                }
+            }
+            Err(e) => {
+                error!("[nm] Failed to disconnect tethering: {}", e);
+                return Err(e.into());
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -905,6 +1177,7 @@ fn main() -> Result<()> {
         WIFI_NETWORK_ENTITY_TYPE,
         ETHERNET_CONNECTION_ENTITY_TYPE,
         VPN_ENTITY_TYPE,
+        TETHERING_CONNECTION_ENTITY_TYPE,
     ]) {
         return Ok(());
     }
@@ -939,6 +1212,27 @@ fn main() -> Result<()> {
                 error!("[nm] D-Bus signal monitoring failed: {e}");
             }
             warn!("[nm] D-Bus signal monitoring task stopped");
+        });
+
+        // Monitor BlueZ D-Bus signals (paired device connection state for tethering).
+        // Uses a dedicated system bus connection — sharing the NM connection causes
+        // missed signals due to match rule/stream contention in zbus.
+        let bluez_state = shared_state.clone();
+        let bluez_notifier = notifier.clone();
+        tokio::spawn(async move {
+            let bluez_conn = match Connection::system().await {
+                Ok(c) => c,
+                Err(e) => {
+                    error!("[nm] Failed to connect to system bus for BlueZ: {e}");
+                    return;
+                }
+            };
+            if let Err(e) =
+                monitor_bluez_signals(bluez_conn, bluez_state, bluez_notifier).await
+            {
+                error!("[nm] BlueZ signal monitoring failed: {e}");
+            }
+            warn!("[nm] BlueZ signal monitoring task stopped");
         });
 
         // WiFi scan background task — pure D-Bus, runs on main tokio runtime
