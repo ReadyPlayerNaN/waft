@@ -182,6 +182,7 @@ impl BluetoothToggles {
     ) {
         let devices: Vec<(Urn, entity::bluetooth::BluetoothDevice)> =
             store.get_entities_typed(entity::bluetooth::BluetoothDevice::ENTITY_TYPE);
+        let devices: Vec<_> = devices.into_iter().filter(|(_, d)| d.paired).collect();
 
         let entries_mut = entries.borrow();
 

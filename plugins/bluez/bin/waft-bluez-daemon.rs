@@ -1,12 +1,14 @@
-//! Bluetooth daemon -- adapter power toggle with paired device management.
+//! Bluetooth daemon -- adapter and device management with full settings support.
 //!
 //! Connects to the system bus and monitors BlueZ for adapter/device state changes.
 //! Exposes BluetoothAdapter entities (one per adapter) and BluetoothDevice entities
-//! (nested under their adapter, one per paired device).
+//! (nested under their adapter).
 //!
 //! Entity types:
-//! - `bluetooth-adapter` with actions: `toggle-power`
-//! - `bluetooth-device` (nested under adapter) with actions: `toggle-connect`
+//! - `bluetooth-adapter` with actions: `toggle-power`, `toggle-discoverable`,
+//!   `set-alias`, `start-discovery`, `stop-discovery`
+//! - `bluetooth-device` (nested under adapter) with actions: `toggle-connect`,
+//!   `pair-device`, `remove-device`
 //!
 //! Configuration (in ~/.config/waft/config.toml):
 //! ```toml
@@ -61,7 +63,7 @@ impl BluezPlugin {
                 }
                 for adapter in &s.adapters {
                     info!(
-                        "[bluetooth] Adapter: {} at {} (powered: {}, {} paired devices)",
+                        "[bluetooth] Adapter: {} at {} (powered: {}, {} devices)",
                         adapter.name,
                         adapter.path,
                         adapter.powered,
@@ -110,6 +112,29 @@ impl BluezPlugin {
             notifier.notify();
         }
     }
+
+    /// Find the adapter D-Bus path for a given adapter ID.
+    fn find_adapter_path(&self, aid: &str) -> Option<String> {
+        let state = self.lock_state();
+        state
+            .adapters
+            .iter()
+            .find(|a| adapter_id(&a.path) == aid)
+            .map(|a| a.path.clone())
+    }
+
+    /// Find the device D-Bus path and its parent adapter path for a given device ID.
+    fn find_device_paths(&self, did: &str) -> Option<(String, String)> {
+        let state = self.lock_state();
+        for adapter in &state.adapters {
+            for device in &adapter.devices {
+                if device_id(&device.path) == did {
+                    return Some((device.path.clone(), adapter.path.clone()));
+                }
+            }
+        }
+        None
+    }
 }
 
 #[async_trait::async_trait]
@@ -130,8 +155,8 @@ impl Plugin for BluezPlugin {
             let adapter_entity = BluetoothAdapter {
                 name: adapter.name.clone(),
                 powered: adapter.powered,
-                discoverable: false,
-                discovering: false,
+                discoverable: adapter.discoverable,
+                discovering: adapter.discovering,
             };
             entities.push(Entity::new(
                 adapter_urn.clone(),
@@ -149,9 +174,9 @@ impl Plugin for BluezPlugin {
                     device_type: device.icon.clone(),
                     connection_state: device.connection_state,
                     battery_percentage: device.battery_percentage,
-                    paired: false,
-                    trusted: false,
-                    rssi: None,
+                    paired: device.paired,
+                    trusted: device.trusted,
+                    rssi: device.rssi,
                 };
                 entities.push(Entity::new(
                     device_urn,
@@ -168,142 +193,321 @@ impl Plugin for BluezPlugin {
         &self,
         urn: Urn,
         action: String,
-        _params: serde_json::Value,
+        params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let entity_type = urn.entity_type();
 
         if entity_type == BluetoothAdapter::ENTITY_TYPE {
-            if action == "toggle-power" {
-                let aid = urn.id().to_string();
-                debug!("[bluetooth] Toggle adapter power: {}", aid);
+            let aid = urn.id().to_string();
 
-                let adapter_path = {
-                    let state = self.lock_state();
-                    state
-                        .adapters
-                        .iter()
-                        .find(|a| adapter_id(&a.path) == aid)
-                        .map(|a| a.path.clone())
-                };
+            match action.as_str() {
+                "toggle-power" => {
+                    debug!("[bluetooth] Toggle adapter power: {}", aid);
 
-                let adapter_path = match adapter_path {
-                    Some(p) => p,
-                    None => {
-                        warn!("[bluetooth] Adapter not found: {}", aid);
-                        return Ok(());
-                    }
-                };
+                    let adapter_path = match self.find_adapter_path(&aid) {
+                        Some(p) => p,
+                        None => {
+                            warn!("[bluetooth] Adapter not found: {}", aid);
+                            return Ok(());
+                        }
+                    };
 
-                let current_powered = {
-                    let state = self.lock_state();
-                    state
-                        .adapters
-                        .iter()
-                        .find(|a| a.path == adapter_path)
-                        .map(|a| a.powered)
-                        .unwrap_or(false)
-                };
+                    let current_powered = {
+                        let state = self.lock_state();
+                        state
+                            .adapters
+                            .iter()
+                            .find(|a| a.path == adapter_path)
+                            .map(|a| a.powered)
+                            .unwrap_or(false)
+                    };
 
-                let new_powered = !current_powered;
-                if let Err(e) = dbus::set_powered(&self.conn, &adapter_path, new_powered).await {
-                    error!("[bluetooth] Failed to set powered: {}", e);
-                    return Err(e.into());
-                }
-
-                // Optimistic update (signal monitoring will also catch this)
-                {
-                    let mut state = self.lock_state();
-                    if let Some(adapter) =
-                        state.adapters.iter_mut().find(|a| a.path == adapter_path)
+                    let new_powered = !current_powered;
+                    if let Err(e) = dbus::set_powered(&self.conn, &adapter_path, new_powered).await
                     {
-                        adapter.powered = new_powered;
+                        error!("[bluetooth] Failed to set powered: {}", e);
+                        return Err(e.into());
+                    }
+
+                    // Optimistic update (signal monitoring will also catch this)
+                    {
+                        let mut state = self.lock_state();
+                        if let Some(adapter) =
+                            state.adapters.iter_mut().find(|a| a.path == adapter_path)
+                        {
+                            adapter.powered = new_powered;
+                        }
                     }
                 }
-            } else {
-                debug!("[bluetooth] Unknown adapter action: {}", action);
+
+                "toggle-discoverable" => {
+                    debug!("[bluetooth] Toggle adapter discoverable: {}", aid);
+
+                    let adapter_path = match self.find_adapter_path(&aid) {
+                        Some(p) => p,
+                        None => {
+                            warn!("[bluetooth] Adapter not found: {}", aid);
+                            return Ok(());
+                        }
+                    };
+
+                    let current_discoverable = {
+                        let state = self.lock_state();
+                        state
+                            .adapters
+                            .iter()
+                            .find(|a| a.path == adapter_path)
+                            .map(|a| a.discoverable)
+                            .unwrap_or(false)
+                    };
+
+                    let new_discoverable = !current_discoverable;
+                    if let Err(e) =
+                        dbus::set_discoverable(&self.conn, &adapter_path, new_discoverable).await
+                    {
+                        error!("[bluetooth] Failed to set discoverable: {}", e);
+                        return Err(e.into());
+                    }
+
+                    // Optimistic update
+                    {
+                        let mut state = self.lock_state();
+                        if let Some(adapter) =
+                            state.adapters.iter_mut().find(|a| a.path == adapter_path)
+                        {
+                            adapter.discoverable = new_discoverable;
+                        }
+                    }
+                }
+
+                "set-alias" => {
+                    let alias = match params["alias"].as_str() {
+                        Some(a) => a.to_string(),
+                        None => {
+                            warn!("[bluetooth] set-alias action missing 'alias' param");
+                            return Ok(());
+                        }
+                    };
+                    debug!("[bluetooth] Set adapter alias: {} -> {}", aid, alias);
+
+                    let adapter_path = match self.find_adapter_path(&aid) {
+                        Some(p) => p,
+                        None => {
+                            warn!("[bluetooth] Adapter not found: {}", aid);
+                            return Ok(());
+                        }
+                    };
+
+                    if let Err(e) =
+                        dbus::set_adapter_alias(&self.conn, &adapter_path, &alias).await
+                    {
+                        error!("[bluetooth] Failed to set alias: {}", e);
+                        return Err(e.into());
+                    }
+
+                    // Optimistic update
+                    {
+                        let mut state = self.lock_state();
+                        if let Some(adapter) =
+                            state.adapters.iter_mut().find(|a| a.path == adapter_path)
+                        {
+                            adapter.name = alias;
+                        }
+                    }
+                }
+
+                "start-discovery" => {
+                    debug!("[bluetooth] Start discovery: {}", aid);
+
+                    let adapter_path = match self.find_adapter_path(&aid) {
+                        Some(p) => p,
+                        None => {
+                            warn!("[bluetooth] Adapter not found: {}", aid);
+                            return Ok(());
+                        }
+                    };
+
+                    if let Err(e) = dbus::start_discovery(&self.conn, &adapter_path).await {
+                        error!("[bluetooth] Failed to start discovery: {}", e);
+                        return Err(e.into());
+                    }
+
+                    // Optimistic update
+                    {
+                        let mut state = self.lock_state();
+                        if let Some(adapter) =
+                            state.adapters.iter_mut().find(|a| a.path == adapter_path)
+                        {
+                            adapter.discovering = true;
+                        }
+                    }
+                }
+
+                "stop-discovery" => {
+                    debug!("[bluetooth] Stop discovery: {}", aid);
+
+                    let adapter_path = match self.find_adapter_path(&aid) {
+                        Some(p) => p,
+                        None => {
+                            warn!("[bluetooth] Adapter not found: {}", aid);
+                            return Ok(());
+                        }
+                    };
+
+                    if let Err(e) = dbus::stop_discovery(&self.conn, &adapter_path).await {
+                        error!("[bluetooth] Failed to stop discovery: {}", e);
+                        return Err(e.into());
+                    }
+
+                    // Optimistic update
+                    {
+                        let mut state = self.lock_state();
+                        if let Some(adapter) =
+                            state.adapters.iter_mut().find(|a| a.path == adapter_path)
+                        {
+                            adapter.discovering = false;
+                        }
+                    }
+                }
+
+                _ => {
+                    debug!("[bluetooth] Unknown adapter action: {}", action);
+                }
             }
         } else if entity_type == BluetoothDevice::ENTITY_TYPE {
-            if action == "toggle-connect" {
-                let did = urn.id().to_string();
-                debug!("[bluetooth] Toggle device connection: {}", did);
+            let did = urn.id().to_string();
 
-                // Find the device path and current connection state
-                let (device_path, current_state) = {
-                    let state = self.lock_state();
-                    let mut found = None;
-                    for adapter in &state.adapters {
-                        for device in &adapter.devices {
-                            if device_id(&device.path) == did {
-                                found = Some((device.path.clone(), device.connection_state));
+            match action.as_str() {
+                "toggle-connect" => {
+                    debug!("[bluetooth] Toggle device connection: {}", did);
+
+                    // Find the device path and current connection state
+                    let (device_path, current_state) = {
+                        let state = self.lock_state();
+                        let mut found = None;
+                        for adapter in &state.adapters {
+                            for device in &adapter.devices {
+                                if device_id(&device.path) == did {
+                                    found =
+                                        Some((device.path.clone(), device.connection_state));
+                                    break;
+                                }
+                            }
+                            if found.is_some() {
                                 break;
                             }
                         }
-                        if found.is_some() {
-                            break;
+                        match found {
+                            Some(f) => f,
+                            None => {
+                                warn!("[bluetooth] Device not found: {}", did);
+                                return Ok(());
+                            }
                         }
-                    }
-                    match found {
-                        Some(f) => f,
-                        None => {
-                            warn!("[bluetooth] Device not found: {}", did);
-                            return Ok(());
-                        }
-                    }
-                };
+                    };
 
-                // Set intermediate state
-                let intermediate_state = match current_state {
-                    ConnectionState::Connected => ConnectionState::Disconnecting,
-                    _ => ConnectionState::Connecting,
-                };
-                {
-                    let mut state = self.lock_state();
-                    for adapter in &mut state.adapters {
-                        if let Some(device) =
-                            adapter.devices.iter_mut().find(|d| d.path == device_path)
-                        {
-                            device.connection_state = intermediate_state;
-                        }
-                    }
-                }
-                self.notify(); // Push intermediate state to UI
-
-                // Perform the D-Bus operation
-                let result = match current_state {
-                    ConnectionState::Connected => {
-                        dbus::disconnect_device(&self.conn, &device_path).await
-                    }
-                    _ => dbus::connect_device(&self.conn, &device_path).await,
-                };
-
-                if let Err(e) = result {
-                    error!(
-                        "[bluetooth] Failed to {} device: {}",
-                        if current_state == ConnectionState::Connected {
-                            "disconnect"
-                        } else {
-                            "connect"
-                        },
-                        e
-                    );
-                    // Revert to previous state on failure
+                    // Set intermediate state
+                    let intermediate_state = match current_state {
+                        ConnectionState::Connected => ConnectionState::Disconnecting,
+                        _ => ConnectionState::Connecting,
+                    };
                     {
                         let mut state = self.lock_state();
                         for adapter in &mut state.adapters {
                             if let Some(device) =
                                 adapter.devices.iter_mut().find(|d| d.path == device_path)
                             {
-                                device.connection_state = current_state;
+                                device.connection_state = intermediate_state;
                             }
                         }
                     }
-                    self.notify(); // Push reverted state to UI
-                    return Err(e.into());
+                    self.notify(); // Push intermediate state to UI
+
+                    // Perform the D-Bus operation
+                    let result = match current_state {
+                        ConnectionState::Connected => {
+                            dbus::disconnect_device(&self.conn, &device_path).await
+                        }
+                        _ => dbus::connect_device(&self.conn, &device_path).await,
+                    };
+
+                    if let Err(e) = result {
+                        error!(
+                            "[bluetooth] Failed to {} device: {}",
+                            if current_state == ConnectionState::Connected {
+                                "disconnect"
+                            } else {
+                                "connect"
+                            },
+                            e
+                        );
+                        // Revert to previous state on failure
+                        {
+                            let mut state = self.lock_state();
+                            for adapter in &mut state.adapters {
+                                if let Some(device) =
+                                    adapter.devices.iter_mut().find(|d| d.path == device_path)
+                                {
+                                    device.connection_state = current_state;
+                                }
+                            }
+                        }
+                        self.notify(); // Push reverted state to UI
+                        return Err(e.into());
+                    }
+                    // On success: signal monitor will catch the Connected property change
+                    // and update the state to Connected/Disconnected
                 }
-                // On success: signal monitor will catch the Connected property change
-                // and update the state to Connected/Disconnected
-            } else {
-                debug!("[bluetooth] Unknown device action: {}", action);
+
+                "pair-device" => {
+                    debug!("[bluetooth] Pair device: {}", did);
+
+                    let device_path = match self.find_device_paths(&did) {
+                        Some((dp, _)) => dp,
+                        None => {
+                            warn!("[bluetooth] Device not found: {}", did);
+                            return Ok(());
+                        }
+                    };
+
+                    if let Err(e) = dbus::pair_device(&self.conn, &device_path).await {
+                        error!("[bluetooth] Failed to pair device: {}", e);
+                        return Err(e.into());
+                    }
+                    // Signal monitor will catch the Paired property change
+                }
+
+                "remove-device" => {
+                    debug!("[bluetooth] Remove device: {}", did);
+
+                    let (device_path, adapter_path) = match self.find_device_paths(&did) {
+                        Some(paths) => paths,
+                        None => {
+                            warn!("[bluetooth] Device not found: {}", did);
+                            return Ok(());
+                        }
+                    };
+
+                    if let Err(e) =
+                        dbus::remove_device(&self.conn, &adapter_path, &device_path).await
+                    {
+                        error!("[bluetooth] Failed to remove device: {}", e);
+                        return Err(e.into());
+                    }
+
+                    // Remove device from state
+                    {
+                        let mut state = self.lock_state();
+                        for adapter in &mut state.adapters {
+                            adapter.devices.retain(|d| d.path != device_path);
+                        }
+                    }
+                    self.notify();
+                }
+
+                _ => {
+                    debug!("[bluetooth] Unknown device action: {}", action);
+                }
             }
         } else {
             debug!(

@@ -15,7 +15,7 @@ pub const BLUEZ_DEST: &str = "org.bluez";
 pub const IFACE_ADAPTER1: &str = "org.bluez.Adapter1";
 pub const IFACE_DEVICE1: &str = "org.bluez.Device1";
 pub const IFACE_PROPERTIES: &str = "org.freedesktop.DBus.Properties";
-const IFACE_OBJECT_MANAGER: &str = "org.freedesktop.DBus.ObjectManager";
+pub const IFACE_OBJECT_MANAGER: &str = "org.freedesktop.DBus.ObjectManager";
 
 // ---------------------------------------------------------------------------
 // Property extraction
@@ -45,6 +45,46 @@ pub fn extract_prop_or(
                 }
     }
     default
+}
+
+/// Parse device properties into a DeviceState.
+pub fn parse_device_props(path_str: String, device_props: &HashMap<String, OwnedValue>) -> DeviceState {
+    let name = extract_prop_or(
+        device_props,
+        &["Alias", "Name"],
+        "Unknown Device".to_string(),
+    );
+    let icon = extract_prop(
+        device_props,
+        "Icon",
+        "bluetooth-symbolic".to_string(),
+    );
+    let connected_bool = extract_prop(device_props, "Connected", false);
+    let connection_state = if connected_bool {
+        ConnectionState::Connected
+    } else {
+        ConnectionState::Disconnected
+    };
+    let battery_percentage: Option<u8> = device_props
+        .get("Percentage")
+        .and_then(|v| u8::try_from(v.clone()).ok())
+        .filter(|&p| p > 0);
+    let paired = extract_prop(device_props, "Paired", false);
+    let trusted = extract_prop(device_props, "Trusted", false);
+    let rssi: Option<i16> = device_props
+        .get("RSSI")
+        .and_then(|v| i16::try_from(v.clone()).ok());
+
+    DeviceState {
+        path: path_str,
+        name,
+        icon,
+        connection_state,
+        battery_percentage,
+        paired,
+        trusted,
+        rssi,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -77,11 +117,15 @@ pub async fn load_state(conn: &Connection) -> Result<State> {
         if let Some(adapter_props) = interfaces.get(IFACE_ADAPTER1) {
             let name = extract_prop_or(adapter_props, &["Alias", "Name"], "Bluetooth".to_string());
             let powered = extract_prop(adapter_props, "Powered", false);
+            let discoverable = extract_prop(adapter_props, "Discoverable", false);
+            let discovering = extract_prop(adapter_props, "Discovering", false);
 
             adapters.push(AdapterState {
                 path: path.to_string(),
                 name,
                 powered,
+                discoverable,
+                discovering,
                 devices: Vec::new(),
             });
         }
@@ -90,7 +134,7 @@ pub async fn load_state(conn: &Connection) -> Result<State> {
     // Sort adapters by path for stable ordering
     adapters.sort_by(|a, b| a.path.cmp(&b.path));
 
-    // Second pass: find paired devices for each adapter
+    // Second pass: find all devices for each adapter
     for adapter in &mut adapters {
         let mut devices: Vec<DeviceState> = Vec::new();
 
@@ -102,39 +146,7 @@ pub async fn load_state(conn: &Connection) -> Result<State> {
             }
 
             if let Some(device_props) = interfaces.get(IFACE_DEVICE1) {
-                let paired = extract_prop(device_props, "Paired", false);
-                if !paired {
-                    continue;
-                }
-
-                let name = extract_prop_or(
-                    device_props,
-                    &["Alias", "Name"],
-                    "Unknown Device".to_string(),
-                );
-                let icon = extract_prop(
-                    device_props,
-                    "Icon",
-                    "bluetooth-symbolic".to_string(),
-                );
-                let connected_bool = extract_prop(device_props, "Connected", false);
-                let connection_state = if connected_bool {
-                    ConnectionState::Connected
-                } else {
-                    ConnectionState::Disconnected
-                };
-                let battery_percentage: Option<u8> = device_props
-                    .get("Percentage")
-                    .and_then(|v| u8::try_from(v.clone()).ok())
-                    .filter(|&p| p > 0);
-
-                devices.push(DeviceState {
-                    path: path_str,
-                    name,
-                    icon,
-                    connection_state,
-                    battery_percentage,
-                });
+                devices.push(parse_device_props(path_str, device_props));
             }
         }
 
@@ -160,6 +172,109 @@ pub async fn set_powered(conn: &Connection, adapter_path: &str, powered: bool) -
     info!(
         "[bluetooth] Set adapter {} powered: {}",
         adapter_path, powered
+    );
+
+    Ok(())
+}
+
+pub async fn set_discoverable(conn: &Connection, adapter_path: &str, discoverable: bool) -> Result<()> {
+    let proxy = zbus::Proxy::new(conn, BLUEZ_DEST, adapter_path, IFACE_PROPERTIES)
+        .await
+        .context("Failed to create Properties proxy")?;
+
+    let v = zbus::zvariant::Value::from(discoverable);
+    let _: () = proxy
+        .call("Set", &(IFACE_ADAPTER1, "Discoverable", v))
+        .await
+        .context("Failed to set Discoverable property")?;
+
+    info!(
+        "[bluetooth] Set adapter {} discoverable: {}",
+        adapter_path, discoverable
+    );
+
+    Ok(())
+}
+
+pub async fn set_adapter_alias(conn: &Connection, adapter_path: &str, alias: &str) -> Result<()> {
+    let proxy = zbus::Proxy::new(conn, BLUEZ_DEST, adapter_path, IFACE_PROPERTIES)
+        .await
+        .context("Failed to create Properties proxy")?;
+
+    let v = zbus::zvariant::Value::from(alias);
+    let _: () = proxy
+        .call("Set", &(IFACE_ADAPTER1, "Alias", v))
+        .await
+        .context("Failed to set Alias property")?;
+
+    info!(
+        "[bluetooth] Set adapter {} alias: {}",
+        adapter_path, alias
+    );
+
+    Ok(())
+}
+
+pub async fn start_discovery(conn: &Connection, adapter_path: &str) -> Result<()> {
+    let proxy = zbus::Proxy::new(conn, BLUEZ_DEST, adapter_path, IFACE_ADAPTER1)
+        .await
+        .context("Failed to create Adapter1 proxy")?;
+
+    let _: () = proxy
+        .call("StartDiscovery", &())
+        .await
+        .context("Failed to start discovery")?;
+
+    info!("[bluetooth] Started discovery on {}", adapter_path);
+
+    Ok(())
+}
+
+pub async fn stop_discovery(conn: &Connection, adapter_path: &str) -> Result<()> {
+    let proxy = zbus::Proxy::new(conn, BLUEZ_DEST, adapter_path, IFACE_ADAPTER1)
+        .await
+        .context("Failed to create Adapter1 proxy")?;
+
+    let _: () = proxy
+        .call("StopDiscovery", &())
+        .await
+        .context("Failed to stop discovery")?;
+
+    info!("[bluetooth] Stopped discovery on {}", adapter_path);
+
+    Ok(())
+}
+
+pub async fn pair_device(conn: &Connection, device_path: &str) -> Result<()> {
+    let proxy = zbus::Proxy::new(conn, BLUEZ_DEST, device_path, IFACE_DEVICE1)
+        .await
+        .context("Failed to create Device1 proxy")?;
+
+    let _: () = proxy
+        .call("Pair", &())
+        .await
+        .context("Failed to pair device")?;
+
+    info!("[bluetooth] Paired device {}", device_path);
+
+    Ok(())
+}
+
+pub async fn remove_device(conn: &Connection, adapter_path: &str, device_path: &str) -> Result<()> {
+    let proxy = zbus::Proxy::new(conn, BLUEZ_DEST, adapter_path, IFACE_ADAPTER1)
+        .await
+        .context("Failed to create Adapter1 proxy")?;
+
+    let device_obj_path = zbus::zvariant::ObjectPath::try_from(device_path)
+        .context("Invalid device object path")?;
+    let _: () = proxy
+        .call("RemoveDevice", &(device_obj_path,))
+        .await
+        .context("Failed to remove device")?;
+
+    info!(
+        "[bluetooth] Removed device {} from adapter {}",
+        device_path, adapter_path
     );
 
     Ok(())
