@@ -82,8 +82,8 @@ pub async fn monitor_bluez_signals(
         let mut changed = false;
 
         // Handle Paired property changes (device paired/unpaired)
-        if let Some(paired_val) = props.get("Paired") {
-            if let Ok(paired) = bool::try_from(paired_val.clone()) {
+        if let Some(paired_val) = props.get("Paired")
+            && let Ok(paired) = bool::try_from(paired_val.clone()) {
                 let mut st = match state.lock() {
                     Ok(g) => g,
                     Err(e) => {
@@ -118,11 +118,10 @@ pub async fn monitor_bluez_signals(
                     }
                 }
             }
-        }
 
         // Handle Connected property changes
-        if let Some(connected_val) = props.get("Connected") {
-            if let Ok(connected) = bool::try_from(connected_val.clone()) {
+        if let Some(connected_val) = props.get("Connected")
+            && let Ok(connected) = bool::try_from(connected_val.clone()) {
                 let mut st = match state.lock() {
                     Ok(g) => g,
                     Err(e) => {
@@ -160,7 +159,6 @@ pub async fn monitor_bluez_signals(
                     changed = true;
                 }
             }
-        }
 
         if changed {
             notifier.notify();

@@ -133,12 +133,11 @@ impl NetworkManagerPlugin {
         // Fetch public IP if any adapter is connected
         let any_connected = state.ethernet_adapters.iter().any(|a| a.is_connected())
             || state.wifi_adapters.iter().any(|a| a.active_ssid.is_some());
-        if any_connected {
-            if let Some(public_ip) = fetch_public_ip().await {
+        if any_connected
+            && let Some(public_ip) = fetch_public_ip().await {
                 debug!("[nm] Public IP: {}", public_ip);
                 state.public_ip = Some(public_ip);
             }
-        }
 
         // Discover ethernet connection profiles
         match waft_plugin_networkmanager::ethernet::get_ethernet_profiles(&conn).await {

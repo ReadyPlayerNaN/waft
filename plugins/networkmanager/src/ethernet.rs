@@ -41,10 +41,10 @@ pub async fn get_ethernet_profiles(conn: &Connection) -> Result<Vec<EthernetProf
         let (settings,): (HashMap<String, HashMap<String, OwnedValue>>,) =
             conn_proxy.call("GetSettings", &()).await?;
 
-        if let Some(connection) = settings.get("connection") {
-            if let Some(conn_type) = connection.get("type") {
-                if let Ok(type_str) = String::try_from(conn_type.clone()) {
-                    if type_str == "802-3-ethernet" {
+        if let Some(connection) = settings.get("connection")
+            && let Some(conn_type) = connection.get("type")
+                && let Ok(type_str) = String::try_from(conn_type.clone())
+                    && type_str == "802-3-ethernet" {
                         let name = connection
                             .get("id")
                             .and_then(|v| String::try_from(v.clone()).ok())
@@ -60,9 +60,6 @@ pub async fn get_ethernet_profiles(conn: &Connection) -> Result<Vec<EthernetProf
                             name,
                         });
                     }
-                }
-            }
-        }
     }
 
     Ok(profiles)

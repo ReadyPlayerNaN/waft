@@ -66,6 +66,7 @@ impl CrashHistory {
     }
 
     /// Whether the circuit breaker has tripped for this plugin.
+    #[allow(dead_code)]
     fn circuit_broken(&self) -> bool {
         self.broken
     }
@@ -96,6 +97,7 @@ impl CrashTracker {
     }
 
     /// Check whether a plugin's circuit breaker has tripped.
+    #[allow(dead_code)]
     pub fn circuit_broken(&self, plugin_name: &str) -> bool {
         self.history
             .get(plugin_name)

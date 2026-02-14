@@ -38,13 +38,11 @@ pub fn extract_prop_or(
     default: String,
 ) -> String {
     for key in keys {
-        if let Some(v) = props.get(*key) {
-            if let Ok(s) = String::try_from(v.clone()) {
-                if !s.is_empty() {
+        if let Some(v) = props.get(*key)
+            && let Ok(s) = String::try_from(v.clone())
+                && !s.is_empty() {
                     return s;
                 }
-            }
-        }
     }
     default
 }

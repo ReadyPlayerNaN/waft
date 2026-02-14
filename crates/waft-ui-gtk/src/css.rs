@@ -125,11 +125,10 @@ impl<'a, W: IsA<gtk::Widget>> CssStateBuilder<'a, W> {
         }
 
         // Ensure base class exists
-        if let Some(base) = self.base_class {
-            if !self.widget.has_css_class(base) {
+        if let Some(base) = self.base_class
+            && !self.widget.has_css_class(base) {
                 self.widget.add_css_class(base);
             }
-        }
 
         // Add back only active state classes
         for (class, condition) in self.states {
@@ -177,11 +176,10 @@ pub fn apply_state_classes(
     }
 
     // Ensure base class exists
-    if let Some(base) = base_class {
-        if !widget.has_css_class(base) {
+    if let Some(base) = base_class
+        && !widget.has_css_class(base) {
             widget.add_css_class(base);
         }
-    }
 
     // Add back only active state classes
     for (class, condition) in state_classes {

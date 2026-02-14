@@ -299,9 +299,9 @@ impl KeyboardLayoutBackend for LocaledBackend {
                     String,
                     std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
                     Vec<String>,
-                )>() {
-                    if iface == LOCALE1_INTERFACE {
-                        if let Some(value) = changed.get("X11Layout")
+                )>()
+                    && iface == LOCALE1_INTERFACE
+                        && let Some(value) = changed.get("X11Layout")
                             && let Ok(layout_str) = <String>::try_from(value.clone())
                         {
                             debug!(
@@ -321,8 +321,6 @@ impl KeyboardLayoutBackend for LocaledBackend {
                                 }
                             }
                         }
-                    }
-                }
             }
         });
     }

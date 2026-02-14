@@ -41,10 +41,10 @@ pub async fn get_tethering_profiles(conn: &Connection) -> Result<Vec<TetheringPr
         let (settings,): (HashMap<String, HashMap<String, OwnedValue>>,) =
             conn_proxy.call("GetSettings", &()).await?;
 
-        if let Some(connection) = settings.get("connection") {
-            if let Some(conn_type) = connection.get("type") {
-                if let Ok(type_str) = String::try_from(conn_type.clone()) {
-                    if type_str == "bluetooth" {
+        if let Some(connection) = settings.get("connection")
+            && let Some(conn_type) = connection.get("type")
+                && let Ok(type_str) = String::try_from(conn_type.clone())
+                    && type_str == "bluetooth" {
                         let name = connection
                             .get("id")
                             .and_then(|v| String::try_from(v.clone()).ok())
@@ -61,15 +61,14 @@ pub async fn get_tethering_profiles(conn: &Connection) -> Result<Vec<TetheringPr
                                 if let Ok(s) = String::try_from(v.clone()) {
                                     return Some(s);
                                 }
-                                if let Ok(bytes) = <Vec<u8>>::try_from(v.clone()) {
-                                    if bytes.len() == 6 {
+                                if let Ok(bytes) = <Vec<u8>>::try_from(v.clone())
+                                    && bytes.len() == 6 {
                                         return Some(format!(
                                             "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
                                             bytes[0], bytes[1], bytes[2],
                                             bytes[3], bytes[4], bytes[5]
                                         ));
                                     }
-                                }
                                 None
                             });
                         if bdaddr.is_none() {
@@ -87,9 +86,6 @@ pub async fn get_tethering_profiles(conn: &Connection) -> Result<Vec<TetheringPr
                             bdaddr,
                         });
                     }
-                }
-            }
-        }
     }
 
     Ok(profiles)

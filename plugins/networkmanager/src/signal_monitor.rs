@@ -107,9 +107,8 @@ pub async fn monitor_nm_signals(
                 // Handle VPN and tethering ActiveConnection state changes
                 if obj_path.contains("/ActiveConnection/")
                     && prop_iface == NM_CONNECTION_ACTIVE_INTERFACE
-                {
-                    if let Some(state_val) = props.get("State") {
-                        if let Ok(state_code) = u32::try_from(state_val.clone()) {
+                    && let Some(state_val) = props.get("State")
+                        && let Ok(state_code) = u32::try_from(state_val.clone()) {
                             let conn_type = if let Some(type_val) = props.get("Type") {
                                 String::try_from(type_val.clone()).unwrap_or_default()
                             } else {
@@ -143,21 +142,17 @@ pub async fn monitor_nm_signals(
                                 changed = true;
                             }
                         }
-                    }
-                }
 
                 // Handle VPN.Connection.VpnState changes
                 if obj_path.contains("/ActiveConnection/")
                     && prop_iface == NM_VPN_CONNECTION_INTERFACE
-                {
-                    if props.contains_key("VpnState") {
+                    && props.contains_key("VpnState") {
                         debug!("[nm] VPN.Connection state changed: {}", obj_path);
                         if let Err(e) = refresh_vpn_states(&conn, &state).await {
                             error!("[nm] Failed to refresh VPN states: {}", e);
                         }
                         changed = true;
                     }
-                }
 
                 if changed {
                     notifier.notify();
@@ -308,8 +303,7 @@ pub async fn monitor_nm_signals(
                         // Update ethernet adapter state
                         if let Some(adapter) =
                             st.ethernet_adapters.iter_mut().find(|a| a.path == obj_path)
-                        {
-                            if adapter.device_state != new_state {
+                            && adapter.device_state != new_state {
                                 let was_connected = adapter.is_connected();
                                 info!(
                                     "[nm] Ethernet {} state: {} -> {}",
@@ -327,7 +321,6 @@ pub async fn monitor_nm_signals(
                                     clear_ip = true;
                                 }
                             }
-                        }
 
                         // Update WiFi adapter state
                         if let Some(adapter) =
@@ -351,8 +344,7 @@ pub async fn monitor_nm_signals(
                         // Update bluetooth device state (affects tethering visibility)
                         if let Some(bt_dev) =
                             st.bluetooth_devices.iter_mut().find(|d| d.path == obj_path)
-                        {
-                            if bt_dev.device_state != new_state {
+                            && bt_dev.device_state != new_state {
                                 debug!(
                                     "[nm] Bluetooth device {} state: {} -> {}",
                                     obj_path, bt_dev.device_state, new_state
@@ -360,7 +352,6 @@ pub async fn monitor_nm_signals(
                                 bt_dev.device_state = new_state;
                                 changed = true;
                             }
-                        }
                     }
 
                     // Refresh IP config outside the lock

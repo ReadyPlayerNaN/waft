@@ -23,8 +23,10 @@ const DARKMAN_INTERFACE: &str = "nl.whynothugo.darkman";
 
 /// Darkman mode enumeration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 enum DarkmanMode {
     Dark,
+    #[default]
     Light,
 }
 
@@ -49,11 +51,6 @@ impl DarkmanMode {
     }
 }
 
-impl Default for DarkmanMode {
-    fn default() -> Self {
-        Self::Light
-    }
-}
 
 /// Darkman configuration from config file.
 #[derive(Debug, Clone, Deserialize, Default)]

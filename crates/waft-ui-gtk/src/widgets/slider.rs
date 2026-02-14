@@ -155,11 +155,10 @@ impl SliderWidget {
         let is_dragging_monitor = is_dragging.clone();
         let last_change_monitor = last_user_change.clone();
         glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
-            if let Some(last) = *last_change_monitor.borrow() {
-                if last.elapsed() > std::time::Duration::from_millis(150) {
+            if let Some(last) = *last_change_monitor.borrow()
+                && last.elapsed() > std::time::Duration::from_millis(150) {
                     *is_dragging_monitor.borrow_mut() = false;
                 }
-            }
             glib::ControlFlow::Continue
         });
 
@@ -222,7 +221,7 @@ impl SliderWidget {
     /// Update the icon name.
     pub fn set_icon(&self, icon: &str) {
         *self.icon.borrow_mut() = icon.to_string();
-        self.icon_widget.set_icon(&icon);
+        self.icon_widget.set_icon(icon);
     }
 
     /// Update the expandable state.

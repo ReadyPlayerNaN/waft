@@ -219,16 +219,14 @@ pub async fn get_connections_for_ssid(conn: &Connection, ssid: &str) -> Result<V
         let (settings,): (HashMap<String, HashMap<String, OwnedValue>>,) =
             conn_proxy.call("GetSettings", &()).await?;
 
-        if let Some(wireless) = settings.get("802-11-wireless") {
-            if let Some(ssid_value) = wireless.get("ssid") {
-                if let Ok(ssid_bytes) = <Vec<u8>>::try_from(ssid_value.clone()) {
+        if let Some(wireless) = settings.get("802-11-wireless")
+            && let Some(ssid_value) = wireless.get("ssid")
+                && let Ok(ssid_bytes) = <Vec<u8>>::try_from(ssid_value.clone()) {
                     let connection_ssid = String::from_utf8_lossy(&ssid_bytes);
                     if connection_ssid == ssid {
                         matching.push(path_str.to_string());
                     }
                 }
-            }
-        }
     }
 
     Ok(matching)

@@ -124,11 +124,10 @@ fn find_ftl(locale: &LanguageIdentifier, translations: &[(&str, &str)]) -> Optio
     // Language-only match (e.g. "cs" matches "cs-CZ")
     let lang = locale.language.as_str();
     for (loc, content) in translations {
-        if let Ok(candidate) = loc.parse::<LanguageIdentifier>() {
-            if candidate.language.as_str() == lang {
+        if let Ok(candidate) = loc.parse::<LanguageIdentifier>()
+            && candidate.language.as_str() == lang {
                 return Some(content.to_string());
             }
-        }
     }
 
     None

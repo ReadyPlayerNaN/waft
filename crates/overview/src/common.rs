@@ -1,1 +1,1 @@
-pub use waft_core::{Callback, VoidCallback};
+pub use waft_core::VoidCallback;

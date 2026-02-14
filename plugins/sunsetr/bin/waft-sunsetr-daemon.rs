@@ -348,8 +348,8 @@ impl Plugin for SunsetrPlugin {
                 };
 
                 // Refresh presets when becoming active (lock dropped above)
-                if became_active {
-                    if let Ok(presets) = query_presets().await {
+                if became_active
+                    && let Ok(presets) = query_presets().await {
                         let mut state = match self.state.lock() {
                             Ok(g) => g,
                             Err(e) => {
@@ -359,7 +359,6 @@ impl Plugin for SunsetrPlugin {
                         };
                         state.presets = presets;
                     }
-                }
             }
             "select_preset" => {
                 let preset_name = params

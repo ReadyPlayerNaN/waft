@@ -132,8 +132,7 @@ async fn discover_ddc_monitors() -> Result<Vec<Display>> {
             // Flush previous display
             if let (Some(display_num), Some(model)) =
                 (current_display.take(), current_model.take())
-            {
-                if let Ok(brightness) = get_ddc_brightness(display_num).await {
+                && let Ok(brightness) = get_ddc_brightness(display_num).await {
                     displays.push(Display {
                         id: format!("ddc:{}", display_num),
                         name: model,
@@ -141,7 +140,6 @@ async fn discover_ddc_monitors() -> Result<Vec<Display>> {
                         brightness,
                     });
                 }
-            }
 
             if let Some(num_str) = trimmed.strip_prefix("Display ") {
                 current_display = num_str.trim().parse().ok();
@@ -155,8 +153,8 @@ async fn discover_ddc_monitors() -> Result<Vec<Display>> {
     }
 
     // Flush last display
-    if let (Some(display_num), Some(model)) = (current_display, current_model) {
-        if let Ok(brightness) = get_ddc_brightness(display_num).await {
+    if let (Some(display_num), Some(model)) = (current_display, current_model)
+        && let Ok(brightness) = get_ddc_brightness(display_num).await {
             displays.push(Display {
                 id: format!("ddc:{}", display_num),
                 name: model,
@@ -164,7 +162,6 @@ async fn discover_ddc_monitors() -> Result<Vec<Display>> {
                 brightness,
             });
         }
-    }
 
     Ok(displays)
 }

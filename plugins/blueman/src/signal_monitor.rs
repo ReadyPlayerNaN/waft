@@ -72,8 +72,8 @@ pub async fn monitor_bluez_signals(
         let mut changed = false;
 
         if iface == IFACE_ADAPTER1 {
-            if let Some(powered_val) = props.get("Powered") {
-                if let Ok(powered) = <bool>::try_from(powered_val.clone()) {
+            if let Some(powered_val) = props.get("Powered")
+                && let Ok(powered) = <bool>::try_from(powered_val.clone()) {
                     let mut st = match state.lock() {
                         Ok(g) => g,
                         Err(e) => {
@@ -83,8 +83,7 @@ pub async fn monitor_bluez_signals(
                     };
                     if let Some(adapter) =
                         st.adapters.iter_mut().find(|a| a.path == obj_path)
-                    {
-                        if adapter.powered != powered {
+                        && adapter.powered != powered {
                             info!(
                                 "[bluetooth] Adapter {} powered: {}",
                                 obj_path, powered
@@ -92,12 +91,10 @@ pub async fn monitor_bluez_signals(
                             adapter.powered = powered;
                             changed = true;
                         }
-                    }
                 }
-            }
-        } else if iface == IFACE_DEVICE1 {
-            if let Some(connected_val) = props.get("Connected") {
-                if let Ok(connected) = <bool>::try_from(connected_val.clone()) {
+        } else if iface == IFACE_DEVICE1
+            && let Some(connected_val) = props.get("Connected")
+                && let Ok(connected) = <bool>::try_from(connected_val.clone()) {
                     let new_state = if connected {
                         ConnectionState::Connected
                     } else {
@@ -113,8 +110,7 @@ pub async fn monitor_bluez_signals(
                     for adapter in &mut st.adapters {
                         if let Some(device) =
                             adapter.devices.iter_mut().find(|d| d.path == obj_path)
-                        {
-                            if device.connection_state != new_state {
+                            && device.connection_state != new_state {
                                 info!(
                                     "[bluetooth] Device {} connection_state: {:?}",
                                     obj_path, new_state
@@ -122,11 +118,8 @@ pub async fn monitor_bluez_signals(
                                 device.connection_state = new_state;
                                 changed = true;
                             }
-                        }
                     }
                 }
-            }
-        }
 
         if changed {
             notifier.notify();

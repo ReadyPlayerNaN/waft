@@ -52,8 +52,8 @@ impl AgendaDetails {
         }
 
         // Description - strip HTML if present
-        if let Some(ref desc) = event.description {
-            if !desc.trim().is_empty() {
+        if let Some(ref desc) = event.description
+            && !desc.trim().is_empty() {
                 // Check if it looks like HTML
                 let display_text = if desc.contains('<') && desc.contains('>') {
                     strip_html_tags(desc)
@@ -92,7 +92,6 @@ impl AgendaDetails {
                 row.append(&label);
                 root.append(&row);
             }
-        }
 
         Self { root }
     }

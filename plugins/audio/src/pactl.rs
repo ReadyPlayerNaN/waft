@@ -344,11 +344,10 @@ pub fn subscribe_events() -> Result<tokio::sync::mpsc::Receiver<AudioEvent>> {
         for line in reader.lines() {
             match line {
                 Ok(line) => {
-                    if let Some(event) = parse_event_line(&line) {
-                        if tx.blocking_send(event).is_err() {
+                    if let Some(event) = parse_event_line(&line)
+                        && tx.blocking_send(event).is_err() {
                             break;
                         }
-                    }
                 }
                 Err(_) => break,
             }
@@ -998,18 +997,16 @@ pub fn compute_label(
     let has_bt_secondary = bus.as_deref() == Some("bluetooth");
 
     // 4. Strip "HDMI / " prefix for HDMI devices (but keep "DisplayPort N")
-    if has_hdmi_secondary {
-        if let Some(stripped) = label.strip_prefix("HDMI / ") {
+    if has_hdmi_secondary
+        && let Some(stripped) = label.strip_prefix("HDMI / ") {
             label = stripped.to_string();
         }
-    }
 
     // 5. Strip "Bluetooth " prefix for Bluetooth devices
-    if has_bt_secondary {
-        if let Some(stripped) = label.strip_prefix("Bluetooth ") {
+    if has_bt_secondary
+        && let Some(stripped) = label.strip_prefix("Bluetooth ") {
             label = stripped.to_string();
         }
-    }
 
     // 6. Fall back to description if result is empty
     if label.is_empty() {

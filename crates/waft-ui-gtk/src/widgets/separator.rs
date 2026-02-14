@@ -7,6 +7,12 @@ pub struct SeparatorWidget {
     separator: gtk::Separator,
 }
 
+impl Default for SeparatorWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SeparatorWidget {
     pub fn new() -> Self {
         let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
