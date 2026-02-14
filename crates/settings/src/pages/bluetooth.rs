@@ -68,12 +68,20 @@ impl BluetoothPage {
         // Subscribe to adapter changes
         {
             let store = entity_store.clone();
+            let device_store = entity_store.clone();
             let cb = action_callback.clone();
             let state = state.clone();
             entity_store.subscribe_type(BluetoothAdapter::ENTITY_TYPE, move || {
                 let adapters: Vec<(Urn, BluetoothAdapter)> =
                     store.get_entities_typed(BluetoothAdapter::ENTITY_TYPE);
+                log::debug!(
+                    "[bluetooth-page] Adapter subscription triggered: {} adapters",
+                    adapters.len()
+                );
                 Self::reconcile_adapters(&state, &adapters, &cb);
+                let devices: Vec<(Urn, BluetoothDevice)> =
+                    device_store.get_entities_typed(BluetoothDevice::ENTITY_TYPE);
+                Self::reconcile_devices(&state, &devices, &adapters, &cb);
             });
         }
 
@@ -86,9 +94,40 @@ impl BluetoothPage {
             entity_store.subscribe_type(BluetoothDevice::ENTITY_TYPE, move || {
                 let devices: Vec<(Urn, BluetoothDevice)> =
                     store.get_entities_typed(BluetoothDevice::ENTITY_TYPE);
+                log::debug!(
+                    "[bluetooth-page] Device subscription triggered: {} devices",
+                    devices.len()
+                );
                 let adapters: Vec<(Urn, BluetoothAdapter)> =
                     adapter_store.get_entities_typed(BluetoothAdapter::ENTITY_TYPE);
                 Self::reconcile_devices(&state, &devices, &adapters, &cb);
+            });
+        }
+
+        // Trigger initial reconciliation with current cached data.
+        // EntityStore::subscribe_type() only fires on changes, not on initial
+        // subscription. If EntityUpdated notifications arrived before subscriptions
+        // were registered, the UI never reconciles with cached data.
+        {
+            let state_clone = state.clone();
+            let cb_clone = action_callback.clone();
+            let store_clone = entity_store.clone();
+
+            gtk::glib::idle_add_local_once(move || {
+                let adapters: Vec<(Urn, BluetoothAdapter)> =
+                    store_clone.get_entities_typed(BluetoothAdapter::ENTITY_TYPE);
+                let devices: Vec<(Urn, BluetoothDevice)> =
+                    store_clone.get_entities_typed(BluetoothDevice::ENTITY_TYPE);
+
+                if !adapters.is_empty() || !devices.is_empty() {
+                    log::debug!(
+                        "[bluetooth-page] Initial reconciliation: {} adapters, {} devices",
+                        adapters.len(),
+                        devices.len()
+                    );
+                    Self::reconcile_adapters(&state_clone, &adapters, &cb_clone);
+                    Self::reconcile_devices(&state_clone, &devices, &adapters, &cb_clone);
+                }
             });
         }
 
@@ -129,10 +168,9 @@ impl BluetoothPage {
                         AdapterGroupOutput::ToggleDiscoverable => {
                             ("toggle-discoverable", serde_json::Value::Null)
                         }
-                        AdapterGroupOutput::SetAlias(alias) => (
-                            "set-alias",
-                            serde_json::json!({ "alias": alias }),
-                        ),
+                        AdapterGroupOutput::SetAlias(alias) => {
+                            ("set-alias", serde_json::json!({ "alias": alias }))
+                        }
                         AdapterGroupOutput::StartDiscovery => {
                             ("start-discovery", serde_json::Value::Null)
                         }
@@ -171,18 +209,17 @@ impl BluetoothPage {
     ) {
         let mut state = state.borrow_mut();
 
-        // Partition devices into paired and discovered
-        let paired: Vec<(Urn, BluetoothDevice)> = devices
-            .iter()
-            .filter(|(_, d)| d.paired)
-            .cloned()
-            .collect();
+        log::debug!(
+            "[bluetooth-page] reconcile_devices: {} total devices",
+            devices.len()
+        );
 
-        let discovered: Vec<(Urn, BluetoothDevice)> = devices
-            .iter()
-            .filter(|(_, d)| !d.paired)
-            .cloned()
-            .collect();
+        // Partition devices into paired and discovered
+        let paired: Vec<(Urn, BluetoothDevice)> =
+            devices.iter().filter(|(_, d)| d.paired).cloned().collect();
+
+        let discovered: Vec<(Urn, BluetoothDevice)> =
+            devices.iter().filter(|(_, d)| !d.paired).cloned().collect();
 
         let any_discovering = adapters.iter().any(|(_, a)| a.discovering);
 

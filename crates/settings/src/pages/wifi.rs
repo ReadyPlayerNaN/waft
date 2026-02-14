@@ -1,0 +1,211 @@
+//! WiFi settings page -- smart container.
+//!
+//! Subscribes to `EntityStore` for `network-adapter` (wireless) and `wifi-network`
+//! entity types. On entity changes, reconciles adapter groups and network lists.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use gtk::prelude::*;
+use waft_client::{EntityActionCallback, EntityStore};
+use waft_protocol::Urn;
+use waft_protocol::entity::network::{
+    ADAPTER_ENTITY_TYPE, AdapterKind, NetworkAdapter, WiFiNetwork,
+};
+
+use crate::wifi::adapter_group::{WifiAdapterGroup, WifiAdapterGroupOutput, WifiAdapterGroupProps};
+use crate::wifi::available_networks_group::AvailableNetworksGroup;
+use crate::wifi::known_networks_group::KnownNetworksGroup;
+
+/// Smart container for the WiFi settings page.
+pub struct WiFiPage {
+    pub root: gtk::Box,
+}
+
+struct WiFiPageState {
+    adapter_groups: HashMap<String, WifiAdapterGroup>,
+    known_group: KnownNetworksGroup,
+    available_group: AvailableNetworksGroup,
+    adapters_box: gtk::Box,
+}
+
+impl WiFiPage {
+    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+        let root = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(24)
+            .margin_top(24)
+            .margin_bottom(24)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+
+        let adapters_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(24)
+            .build();
+        root.append(&adapters_box);
+
+        let known_group = KnownNetworksGroup::new();
+        root.append(&known_group.root);
+
+        let available_group = AvailableNetworksGroup::new();
+        root.append(&available_group.root);
+
+        let state = Rc::new(RefCell::new(WiFiPageState {
+            adapter_groups: HashMap::new(),
+            known_group,
+            available_group,
+            adapters_box,
+        }));
+
+        // Subscribe to adapter changes
+        {
+            let store = entity_store.clone();
+            let network_store = entity_store.clone();
+            let cb = action_callback.clone();
+            let state = state.clone();
+            entity_store.subscribe_type(ADAPTER_ENTITY_TYPE, move || {
+                let adapters: Vec<(Urn, NetworkAdapter)> =
+                    store.get_entities_typed(ADAPTER_ENTITY_TYPE);
+                Self::reconcile_adapters(&state, &adapters, &cb);
+                // Also reconcile networks when adapter state changes (e.g. scanning state)
+                let networks: Vec<(Urn, WiFiNetwork)> =
+                    network_store.get_entities_typed(WiFiNetwork::ENTITY_TYPE);
+                Self::reconcile_networks(&state, &networks, &adapters, &cb);
+            });
+        }
+
+        // Subscribe to network changes
+        {
+            let store = entity_store.clone();
+            let adapter_store = entity_store.clone();
+            let cb = action_callback.clone();
+            let state = state.clone();
+            entity_store.subscribe_type(WiFiNetwork::ENTITY_TYPE, move || {
+                let networks: Vec<(Urn, WiFiNetwork)> =
+                    store.get_entities_typed(WiFiNetwork::ENTITY_TYPE);
+                let adapters: Vec<(Urn, NetworkAdapter)> =
+                    adapter_store.get_entities_typed(ADAPTER_ENTITY_TYPE);
+                Self::reconcile_networks(&state, &networks, &adapters, &cb);
+            });
+        }
+
+        // Trigger initial reconciliation with current cached data
+        {
+            let state_clone = state.clone();
+            let cb_clone = action_callback.clone();
+            let store_clone = entity_store.clone();
+
+            gtk::glib::idle_add_local_once(move || {
+                let adapters: Vec<(Urn, NetworkAdapter)> =
+                    store_clone.get_entities_typed(ADAPTER_ENTITY_TYPE);
+                let networks: Vec<(Urn, WiFiNetwork)> =
+                    store_clone.get_entities_typed(WiFiNetwork::ENTITY_TYPE);
+
+                if !adapters.is_empty() || !networks.is_empty() {
+                    log::debug!(
+                        "[wifi-page] Initial reconciliation: {} adapters, {} networks",
+                        adapters.len(),
+                        networks.len()
+                    );
+                    Self::reconcile_adapters(&state_clone, &adapters, &cb_clone);
+                    Self::reconcile_networks(&state_clone, &networks, &adapters, &cb_clone);
+                }
+            });
+        }
+
+        Self { root }
+    }
+
+    fn reconcile_adapters(
+        state: &Rc<RefCell<WiFiPageState>>,
+        adapters: &[(Urn, NetworkAdapter)],
+        action_callback: &EntityActionCallback,
+    ) {
+        let mut state = state.borrow_mut();
+        let mut seen = std::collections::HashSet::new();
+
+        let wireless_adapters: Vec<_> = adapters
+            .iter()
+            .filter(|(_, a)| a.kind == AdapterKind::Wireless)
+            .collect();
+
+        for (urn, adapter) in &wireless_adapters {
+            let urn_str = urn.as_str().to_string();
+            seen.insert(urn_str.clone());
+
+            let props = WifiAdapterGroupProps {
+                name: adapter.name.clone(),
+                enabled: adapter.enabled,
+            };
+
+            if let Some(existing) = state.adapter_groups.get(&urn_str) {
+                existing.apply_props(&props);
+            } else {
+                let group = WifiAdapterGroup::new(&props);
+                let urn_clone = (*urn).clone();
+                let cb = action_callback.clone();
+                group.connect_output(move |output| {
+                    let action = match output {
+                        WifiAdapterGroupOutput::Enable => "activate",
+                        WifiAdapterGroupOutput::Disable => "deactivate",
+                        WifiAdapterGroupOutput::Scan => "scan",
+                    };
+                    cb(
+                        urn_clone.clone(),
+                        action.to_string(),
+                        serde_json::Value::Null,
+                    );
+                });
+                state.adapters_box.append(&group.root);
+                state.adapter_groups.insert(urn_str, group);
+            }
+        }
+
+        // Remove adapter groups no longer present
+        let to_remove: Vec<String> = state
+            .adapter_groups
+            .keys()
+            .filter(|k| !seen.contains(*k))
+            .cloned()
+            .collect();
+
+        for key in to_remove {
+            if let Some(group) = state.adapter_groups.remove(&key) {
+                state.adapters_box.remove(&group.root);
+            }
+        }
+    }
+
+    fn reconcile_networks(
+        state: &Rc<RefCell<WiFiPageState>>,
+        networks: &[(Urn, WiFiNetwork)],
+        adapters: &[(Urn, NetworkAdapter)],
+        action_callback: &EntityActionCallback,
+    ) {
+        let mut state = state.borrow_mut();
+
+        let known: Vec<(Urn, WiFiNetwork)> =
+            networks.iter().filter(|(_, n)| n.known).cloned().collect();
+
+        let mut available: Vec<(Urn, WiFiNetwork)> = networks
+            .iter()
+            .filter(|(_, n)| !n.known && !n.connected)
+            .cloned()
+            .collect();
+
+        // Sort available networks by strength descending
+        available.sort_by(|(_, a), (_, b)| b.strength.cmp(&a.strength));
+
+        let any_wireless_enabled = adapters
+            .iter()
+            .any(|(_, a)| a.kind == AdapterKind::Wireless && a.enabled);
+
+        state.known_group.reconcile(&known, action_callback);
+        state
+            .available_group
+            .reconcile(&available, any_wireless_enabled, action_callback);
+    }
+}

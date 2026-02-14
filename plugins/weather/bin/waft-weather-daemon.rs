@@ -8,6 +8,7 @@
 //! ```toml
 //! [[plugins]]
 //! id = "weather"
+//! location_name = "Prague, Czechia"
 //! latitude = 50.0755
 //! longitude = 14.4378
 //! units = "celsius"
@@ -20,7 +21,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use waft_plugin::*;
 
-use waft_plugin_weather::{WeatherConfig, WeatherData, TemperatureUnit, fetch_weather};
+use waft_plugin_weather::{TemperatureUnit, WeatherConfig, WeatherData, fetch_weather};
 
 /// Convert local WeatherCondition to protocol WeatherCondition.
 fn to_protocol_condition(
@@ -50,12 +51,16 @@ fn to_protocol_condition(
 /// Weather plugin state.
 struct WeatherPlugin {
     state: Arc<StdMutex<Option<Result<WeatherData, String>>>>,
+    config: Arc<StdMutex<WeatherConfig>>,
+    wake: Arc<tokio::sync::Notify>,
 }
 
 impl WeatherPlugin {
-    fn new() -> Self {
+    fn new(config: WeatherConfig) -> Self {
         Self {
             state: Arc::new(StdMutex::new(None)),
+            config: Arc::new(StdMutex::new(config)),
+            wake: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -99,11 +104,45 @@ impl Plugin for WeatherPlugin {
     async fn handle_action(
         &self,
         _urn: Urn,
-        _action: String,
-        _params: serde_json::Value,
+        action: String,
+        params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Display-only, no actions
-        Ok(())
+        match action.as_str() {
+            "update-config" => {
+                let new_config: WeatherConfig = serde_json::from_value(params)?;
+
+                // Validate
+                if new_config.latitude < -90.0 || new_config.latitude > 90.0 {
+                    return Err("Invalid latitude (must be -90 to 90)".into());
+                }
+                if new_config.longitude < -180.0 || new_config.longitude > 180.0 {
+                    return Err("Invalid longitude (must be -180 to 180)".into());
+                }
+
+                log::info!(
+                    "[weather] Config update: lat={}, lon={}, units={}, interval={}s",
+                    new_config.latitude,
+                    new_config.longitude,
+                    new_config.units,
+                    new_config.update_interval,
+                );
+
+                // Update in-memory config
+                match self.config.lock() {
+                    Ok(mut guard) => *guard = new_config,
+                    Err(e) => {
+                        log::warn!("[weather] config mutex poisoned, recovering: {e}");
+                        *e.into_inner() = new_config;
+                    }
+                }
+
+                // Wake the fetch task to use new config immediately
+                self.wake.notify_one();
+
+                Ok(())
+            }
+            _ => Err(format!("Unknown action: {action}").into()),
+        }
     }
 }
 
@@ -120,34 +159,50 @@ fn main() -> Result<()> {
 
     let config: WeatherConfig =
         waft_plugin::config::load_plugin_config("weather").unwrap_or_default();
-    let lat = config.latitude;
-    let lon = config.longitude;
-    let units = TemperatureUnit::parse(&config.units);
-    let interval = config.update_interval;
 
-    log::debug!("Weather config: lat={lat}, lon={lon}, units={units:?}, interval={interval}s");
+    log::debug!(
+        "Weather config: lat={}, lon={}, units={}, interval={}s",
+        config.latitude,
+        config.longitude,
+        config.units,
+        config.update_interval,
+    );
 
     let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
     rt.block_on(async {
-        let plugin = WeatherPlugin::new();
+        let plugin = WeatherPlugin::new(config);
         let state = plugin.state.clone();
+        let config_ref = plugin.config.clone();
+        let wake = plugin.wake.clone();
 
         let (runtime, notifier) = PluginRuntime::new("weather", plugin);
 
         // Spawn periodic weather fetch task
         tokio::spawn(async move {
             loop {
-                log::debug!("Fetching weather update");
-                match fetch_weather(lat, lon, units).await {
-                    Ok(data) => {
-                        match state.lock() {
-                            Ok(mut guard) => *guard = Some(Ok(data)),
-                            Err(e) => {
-                                log::warn!("[weather] mutex poisoned, recovering: {e}");
-                                *e.into_inner() = Some(Ok(data));
-                            }
-                        }
+                let cfg = match config_ref.lock() {
+                    Ok(g) => g.clone(),
+                    Err(e) => {
+                        log::warn!("[weather] config mutex poisoned, recovering: {e}");
+                        e.into_inner().clone()
                     }
+                };
+
+                let units = TemperatureUnit::parse(&cfg.units);
+                log::debug!(
+                    "Fetching weather update for ({}, {})",
+                    cfg.latitude,
+                    cfg.longitude
+                );
+
+                match fetch_weather(cfg.latitude, cfg.longitude, units).await {
+                    Ok(data) => match state.lock() {
+                        Ok(mut guard) => *guard = Some(Ok(data)),
+                        Err(e) => {
+                            log::warn!("[weather] mutex poisoned, recovering: {e}");
+                            *e.into_inner() = Some(Ok(data));
+                        }
+                    },
                     Err(e) => {
                         log::error!("Failed to fetch weather: {e:?}");
                         match state.lock() {
@@ -168,7 +223,14 @@ fn main() -> Result<()> {
                     }
                 }
                 notifier.notify();
-                tokio::time::sleep(Duration::from_secs(interval)).await;
+
+                // Sleep for the configured interval, but wake early on config changes
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(cfg.update_interval)) => {},
+                    _ = wake.notified() => {
+                        log::debug!("[weather] Config changed, fetching immediately");
+                    }
+                }
             }
         });
 

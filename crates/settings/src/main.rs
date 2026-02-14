@@ -2,9 +2,13 @@
 
 mod app;
 mod bluetooth;
+mod display;
 mod pages;
 mod sidebar;
+mod weather;
+mod wifi;
 mod window;
+mod wired;
 
 use gtk::prelude::*;
 

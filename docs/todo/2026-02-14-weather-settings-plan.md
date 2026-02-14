@@ -1,7 +1,7 @@
 # Weather Settings Page Implementation Plan
 
 **Date:** 2026-02-14
-**Status:** Approved
+**Status:** Implemented
 
 ## Overview
 
@@ -320,19 +320,19 @@ cargo run --bin waft-settings
 
 ## Implementation Checklist
 
-- [ ] Add `location_name: Option<String>` to `WeatherConfig` in `plugins/weather/src/lib.rs`
-- [ ] Add `Serialize` derive to `WeatherConfig`
-- [ ] Implement `waft_plugin::config::save_plugin_config()` helper
-- [ ] Add `config: Arc<StdMutex<WeatherConfig>>` field to `WeatherPlugin`
-- [ ] Implement `update-config` action in weather plugin's `handle_action()`
-- [ ] Update periodic fetch task to read from `config` field
-- [ ] Create `crates/settings/src/weather/` module directory
-- [ ] Implement `geocoding.rs` with `search_cities()` function
-- [ ] Implement `location_settings_group.rs` dumb widget
-- [ ] Implement `weather_preview_group.rs` dumb widget
-- [ ] Create `crates/settings/src/pages/weather.rs` smart container
-- [ ] Add Weather row to sidebar in `crates/settings/src/sidebar.rs`
-- [ ] Add Weather page to stack in `crates/settings/src/window.rs`
+- [x] Add `location_name: Option<String>` to `WeatherConfig` in `plugins/weather/src/lib.rs`
+- [x] Add `Serialize` derive to `WeatherConfig`
+- [ ] Implement `waft_plugin::config::save_plugin_config()` helper (deferred — config updates are in-memory only for now)
+- [x] Add `config: Arc<StdMutex<WeatherConfig>>` field to `WeatherPlugin`
+- [x] Implement `update-config` action in weather plugin's `handle_action()`
+- [x] Update periodic fetch task to read from `config` field (uses `tokio::select!` with `Notify` for wake-on-change)
+- [x] Create `crates/settings/src/weather/` module directory
+- [x] Implement `geocoding.rs` with `search_cities()` function
+- [x] Implement `location_settings_group.rs` dumb widget
+- [x] Implement `weather_preview_group.rs` dumb widget
+- [x] Create `crates/settings/src/pages/weather.rs` smart container
+- [x] Add Weather row to sidebar in `crates/settings/src/sidebar.rs`
+- [x] Add Weather page to stack in `crates/settings/src/window.rs`
 - [ ] Update weather plugin README.md with action and config documentation
 - [ ] Write unit tests for `WeatherConfig` serialization
 - [ ] Write tests for geocoding API response parsing

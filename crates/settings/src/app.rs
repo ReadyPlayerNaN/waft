@@ -7,8 +7,15 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use gtk::prelude::*;
-use waft_client::{ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task};
+use waft_client::{
+    ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
+};
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
+use waft_protocol::entity::display::{
+    DARK_MODE_ENTITY_TYPE, DISPLAY_ENTITY_TYPE, NIGHT_LIGHT_ENTITY_TYPE,
+};
+use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, EthernetConnection, WiFiNetwork};
+use waft_protocol::entity::weather;
 
 use crate::window::SettingsWindow;
 
@@ -16,6 +23,13 @@ use crate::window::SettingsWindow;
 const ENTITY_TYPES: &[&str] = &[
     BluetoothAdapter::ENTITY_TYPE,
     BluetoothDevice::ENTITY_TYPE,
+    ADAPTER_ENTITY_TYPE,
+    WiFiNetwork::ENTITY_TYPE,
+    EthernetConnection::ENTITY_TYPE,
+    DISPLAY_ENTITY_TYPE,
+    DARK_MODE_ENTITY_TYPE,
+    NIGHT_LIGHT_ENTITY_TYPE,
+    weather::ENTITY_TYPE,
 ];
 
 pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
@@ -55,12 +69,11 @@ pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
     });
 
     // 5. Create entity action callback (routes to writer thread via mpsc)
-    let entity_action_callback: EntityActionCallback =
-        Rc::new(move |urn, action_name, params| {
-            if let Err(e) = action_tx.send((urn, action_name, params)) {
-                log::warn!("[settings] failed to send action: {e}");
-            }
-        });
+    let entity_action_callback: EntityActionCallback = Rc::new(move |urn, action_name, params| {
+        if let Err(e) = action_tx.send((urn, action_name, params)) {
+            log::warn!("[settings] failed to send action: {e}");
+        }
+    });
 
     // 6. Create GTK application
     let app = adw::Application::builder()
