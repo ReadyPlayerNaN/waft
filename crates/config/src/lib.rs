@@ -6,6 +6,46 @@
 use serde::Deserialize;
 use std::path::PathBuf;
 
+/// Position for toast notification overlay.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ToastPosition {
+    TopLeft,
+    #[default]
+    TopCenter,
+    TopRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
+}
+
+impl ToastPosition {
+    /// Layer-shell edge anchors: (top, bottom, left, right).
+    pub fn anchors(&self) -> (bool, bool, bool, bool) {
+        match self {
+            Self::TopLeft => (true, false, true, false),
+            Self::TopCenter => (true, false, false, false),
+            Self::TopRight => (true, false, false, true),
+            Self::BottomLeft => (false, true, true, false),
+            Self::BottomCenter => (false, true, false, false),
+            Self::BottomRight => (false, true, false, true),
+        }
+    }
+
+    /// Whether newest toasts should appear closest to the anchored screen edge.
+    /// Top positions: newest on top (prepend). Bottom positions: newest on bottom (append).
+    pub fn newest_on_top(&self) -> bool {
+        matches!(self, Self::TopLeft | Self::TopCenter | Self::TopRight)
+    }
+}
+
+/// Toast overlay configuration.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct ToastsConfig {
+    pub position: ToastPosition,
+}
+
 /// System-wide daemon configuration.
 ///
 /// Controls how plugins interact with daemon processes.
@@ -50,6 +90,8 @@ pub struct PluginConfigEntry {
 pub struct Config {
     #[serde(default)]
     pub system: SystemConfig,
+    #[serde(default)]
+    pub toasts: ToastsConfig,
     #[serde(default)]
     pub plugins: Vec<PluginConfigEntry>,
 }
@@ -97,6 +139,7 @@ mod tests {
 
         Config {
             system: SystemConfig::default(),
+            toasts: ToastsConfig::default(),
             plugins: vec![
                 PluginConfigEntry {
                     id: "clock".to_string(),
@@ -214,5 +257,77 @@ id = "battery"
 
         let battery = config.plugins.iter().find(|p| p.id == "battery").unwrap();
         assert_eq!(battery.use_daemon, None);
+    }
+
+    #[test]
+    fn test_toast_position_defaults_to_top_center() {
+        let config = Config::default();
+        assert_eq!(config.toasts.position, ToastPosition::TopCenter);
+    }
+
+    #[test]
+    fn test_parse_toast_position_top_right() {
+        let toml = r#"
+[toasts]
+position = "top-right"
+"#;
+        let config: Config = toml::from_str(toml).expect("Failed to parse");
+        assert_eq!(config.toasts.position, ToastPosition::TopRight);
+    }
+
+    #[test]
+    fn test_parse_toast_position_bottom_left() {
+        let toml = r#"
+[toasts]
+position = "bottom-left"
+"#;
+        let config: Config = toml::from_str(toml).expect("Failed to parse");
+        assert_eq!(config.toasts.position, ToastPosition::BottomLeft);
+    }
+
+    #[test]
+    fn test_parse_toast_position_all_variants() {
+        for (input, expected) in [
+            ("top-left", ToastPosition::TopLeft),
+            ("top-center", ToastPosition::TopCenter),
+            ("top-right", ToastPosition::TopRight),
+            ("bottom-left", ToastPosition::BottomLeft),
+            ("bottom-center", ToastPosition::BottomCenter),
+            ("bottom-right", ToastPosition::BottomRight),
+        ] {
+            let toml = format!("[toasts]\nposition = \"{input}\"");
+            let config: Config = toml::from_str(&toml).expect("Failed to parse");
+            assert_eq!(config.toasts.position, expected, "Failed for {input}");
+        }
+    }
+
+    #[test]
+    fn test_config_without_toasts_section_uses_defaults() {
+        let toml = r#"
+[system]
+daemon_mode = "opt-in"
+"#;
+        let config: Config = toml::from_str(toml).expect("Failed to parse");
+        assert_eq!(config.toasts.position, ToastPosition::TopCenter);
+    }
+
+    #[test]
+    fn test_toast_position_anchors() {
+        assert_eq!(ToastPosition::TopLeft.anchors(), (true, false, true, false));
+        assert_eq!(ToastPosition::TopCenter.anchors(), (true, false, false, false));
+        assert_eq!(ToastPosition::TopRight.anchors(), (true, false, false, true));
+        assert_eq!(ToastPosition::BottomLeft.anchors(), (false, true, true, false));
+        assert_eq!(ToastPosition::BottomCenter.anchors(), (false, true, false, false));
+        assert_eq!(ToastPosition::BottomRight.anchors(), (false, true, false, true));
+    }
+
+    #[test]
+    fn test_toast_position_newest_on_top() {
+        assert!(ToastPosition::TopLeft.newest_on_top());
+        assert!(ToastPosition::TopCenter.newest_on_top());
+        assert!(ToastPosition::TopRight.newest_on_top());
+        assert!(!ToastPosition::BottomLeft.newest_on_top());
+        assert!(!ToastPosition::BottomCenter.newest_on_top());
+        assert!(!ToastPosition::BottomRight.newest_on_top());
     }
 }
