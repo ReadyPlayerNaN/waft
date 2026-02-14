@@ -13,10 +13,9 @@ use gtk::prelude::*;
 
 use waft_protocol::entity::notification::{NotificationAction, NotificationIconHint};
 use waft_protocol::Urn;
-use waft_ui_gtk::widgets::icon::{Icon, IconWidget};
 
+use super::icon::{Icon, IconWidget};
 use super::notification_markup;
-use crate::ui::main_window::trigger_window_resize;
 
 /// Type alias for output callback to reduce complexity.
 type OutputCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
@@ -47,6 +46,7 @@ impl NotificationCard {
         description: &str,
         icon_hints: &[NotificationIconHint],
         actions: &[NotificationAction],
+        window_resize_callback: Option<Rc<dyn Fn()>>,
     ) -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -181,9 +181,11 @@ impl NotificationCard {
         // collapses to zero height when not revealing, so we don't need to
         // remove the card from the DOM here — that is handled by the group's
         // update() when the entity store confirms the removal.
-        revealer.connect_child_revealed_notify(move |_rev| {
-            trigger_window_resize();
-        });
+        if let Some(callback) = window_resize_callback {
+            revealer.connect_child_revealed_notify(move |_rev| {
+                callback();
+            });
+        }
 
         // Close button handler
         {

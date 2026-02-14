@@ -1,11 +1,3 @@
-# 1. Tethering availability
-
-The tethering connection MUST NOT be offered in the UI when the device (for example phone over bluetooth) is not connected. It MUST be provided (the feature toggle or the additional network appears) immediately after the device connects and the tethering becomes available.
-
-The current implementation is checking the networkmanager device state, which remains in state "disconnected" when a phone connects and the tethering remains unconnected.
-
-We need to invent better way to determine this. Explore the possibility of sharing information about available devices entity provided by blueman plugin to the networkmanager plugin.
-
 # Notification sounds
 
 Play a sound when a notification pops up. Configure sounds=disabled/enabled, sound based on urgency, sound based on notification matching. Sounds are off in Do Not Disturb mode.
@@ -20,13 +12,25 @@ See `docs/notification-grouping-research.md` for research.
 
 Currently WiFi only shows networks with saved connection profiles. Connecting to new networks requires a password prompt flow using `AddAndActivateConnection()` on the NetworkManager D-Bus Settings interface.
 
-# Notification toast bubbles
+# Notification toast bubbles (PARTIALLY DONE)
 
-Replace traditional toast notifications with bubble-style notifications. Needs design work.
+Basic toast application (`waft-toasts`) is now implemented with:
+- ✅ 3-toast limit with queue overflow
+- ✅ DND awareness (critical notifications bypass)
+- ✅ 5-second TTL with automatic expiry
+- ✅ Interactive (left-click action, right-click dismiss)
+- ✅ Top-center positioning on Layer::Top
+
+Still TODO:
+- [ ] Bubble-style visual design (currently uses card style)
+- [ ] Configurable toast limit and timeout
+- [ ] Per-app toast filtering
 
 # Notification toast position
 
 Support configurable toast position (top, bottom, corners). Fix toast ordering to match position (newest-on-top vs newest-on-bottom).
+
+Current implementation: Fixed top-center position.
 
 # SNI (Status Notifier Items)
 
@@ -37,6 +41,7 @@ Systray compatibility for applications that use the StatusNotifierItem protocol.
 The `blueman` plugin is misleadingly named - it talks directly to BlueZ via D-Bus, not to the Blueman application. Rename the plugin from `blueman` to `bluez` to accurately reflect what it does.
 
 This involves:
+
 - Renaming `plugins/blueman/` directory to `plugins/bluez/`
 - Renaming binary from `waft-blueman-daemon` to `waft-bluez-daemon`
 - Updating plugin name in `PluginRuntime::new("blueman", ...)` to `"bluez"`

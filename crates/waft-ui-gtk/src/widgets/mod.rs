@@ -12,6 +12,8 @@ pub mod info_card;
 pub mod label;
 pub mod list_row;
 pub mod menu_chevron;
+pub mod notification_card;
+pub mod notification_markup;
 pub mod row;
 pub mod separator;
 pub mod slider;

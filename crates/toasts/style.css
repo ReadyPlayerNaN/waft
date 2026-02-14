@@ -1,0 +1,37 @@
+/* Transparent window background */
+.transparent-window {
+    background: transparent;
+}
+
+/* Notification card styles for toasts */
+.notification-card {
+    background: @window_bg_color;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    margin-left: 8px;
+    margin-right: 8px;
+}
+
+.notification-card:first-child {
+    margin-top: 8px;
+}
+
+.notification-card:last-child {
+    margin-bottom: 8px;
+}
+
+.notification-card:hover {
+    background: color-mix(in srgb, @accent_bg_color 10%, @window_bg_color);
+}
+
+.notification-close {
+    opacity: 0.5;
+}
+
+.notification-close:hover {
+    opacity: 1.0;
+}
+
+.notification-action {
+    min-width: 80px;
+}

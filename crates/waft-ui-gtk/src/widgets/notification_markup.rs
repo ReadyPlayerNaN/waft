@@ -4,6 +4,8 @@
 //! invalid in Pango markup (e.g. bare `&`). This module provides functions to
 //! sanitize text before passing it to `Label::set_markup()`.
 
+use gtk::glib;
+
 /// Prepare a notification title for Pango markup display.
 ///
 /// Per the freedesktop notification spec, the summary (title) does not support

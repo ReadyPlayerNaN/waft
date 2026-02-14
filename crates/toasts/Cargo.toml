@@ -1,0 +1,24 @@
+[package]
+name = "waft-toasts"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "waft-toasts"
+path = "src/main.rs"
+
+[dependencies]
+gtk = { version = "0.10", package = "gtk4", features = ["v4_6"] }
+adw = { version = "0.8", package = "libadwaita", features = ["v1_5"] }
+gtk4-layer-shell = "0.7.1"
+tokio = { version = "1", features = ["full"] }
+flume = "0.11"
+waft-protocol = { path = "../protocol" }
+waft-ui-gtk = { path = "../waft-ui-gtk" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+env_logger = "0.11"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+uuid = { version = "1.0", features = ["v4"] }
+libc = "0.2"

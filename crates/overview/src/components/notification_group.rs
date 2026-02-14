@@ -16,8 +16,8 @@ use waft_protocol::entity::notification::{NotificationAction, NotificationIconHi
 use waft_protocol::Urn;
 use waft_ui_gtk::widgets::icon::{Icon, IconWidget};
 use waft_ui_gtk::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
+use waft_ui_gtk::widgets::notification_card::{NotificationCard, NotificationCardOutput};
 
-use super::notification_card::{NotificationCard, NotificationCardOutput};
 use crate::menu_state::{MenuOp, MenuStore};
 use crate::ui::main_window::trigger_window_resize;
 
@@ -289,6 +289,7 @@ impl NotificationGroup {
                     &notif.description,
                     &notif.icon_hints,
                     &notif.actions,
+                    Some(Rc::new(trigger_window_resize)),
                 );
 
                 let on_output_ref = self.on_output.clone();

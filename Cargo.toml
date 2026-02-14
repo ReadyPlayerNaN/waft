@@ -8,6 +8,7 @@ members = [
     "crates/core",
     "crates/plugin",
     "crates/protocol",
+    "crates/toasts",
     "crates/waft",
     "crates/waft-ui-gtk",
     "plugins/clock",
