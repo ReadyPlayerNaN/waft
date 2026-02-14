@@ -2,6 +2,7 @@
 
 use adw::prelude::*;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
+use waft_config::ToastPosition;
 
 pub struct ToastWindow {
     pub window: adw::ApplicationWindow,
@@ -9,7 +10,7 @@ pub struct ToastWindow {
 }
 
 impl ToastWindow {
-    pub fn new(app: &adw::Application) -> Self {
+    pub fn new(app: &adw::Application, position: ToastPosition) -> Self {
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("Waft Toasts")
@@ -23,7 +24,7 @@ impl ToastWindow {
         // Make window background transparent
         window.add_css_class("transparent-window");
 
-        Self::configure_layer_shell(&window);
+        Self::configure_layer_shell(&window, position);
 
         let container = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -35,7 +36,7 @@ impl ToastWindow {
         Self { window, container }
     }
 
-    fn configure_layer_shell(window: &adw::ApplicationWindow) {
+    fn configure_layer_shell(window: &adw::ApplicationWindow, position: ToastPosition) {
         window.set_decorated(false);
         window.set_hide_on_close(true);
         window.set_modal(false);
@@ -44,11 +45,11 @@ impl ToastWindow {
         window.set_layer(Layer::Top); // Below main overlay (which uses Layer::Overlay)
         window.set_keyboard_mode(KeyboardMode::None);
 
-        // Top-center anchor (no margins)
-        window.set_anchor(Edge::Top, true);
-        window.set_anchor(Edge::Left, false);
-        window.set_anchor(Edge::Right, false);
-        window.set_anchor(Edge::Bottom, false)
+        let (top, bottom, left, right) = position.anchors();
+        window.set_anchor(Edge::Top, top);
+        window.set_anchor(Edge::Bottom, bottom);
+        window.set_anchor(Edge::Left, left);
+        window.set_anchor(Edge::Right, right);
     }
 
     pub fn trigger_resize(&self) {

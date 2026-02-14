@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use gtk::prelude::*;
 use serde_json::Value;
+use waft_config::ToastPosition;
 use waft_protocol::entity::notification::{Dnd, Notification, NotificationUrgency};
 use waft_protocol::Urn;
 use waft_ui_gtk::widgets::notification_card::{NotificationCard, NotificationCardOutput};
@@ -37,6 +38,7 @@ impl ToastItem {
 
 pub struct ToastManager {
     container: gtk::Box,
+    position: ToastPosition,
     active_toasts: RefCell<Vec<ToastItem>>,
     pending_queue: RefCell<VecDeque<ToastItem>>,
     widgets: RefCell<HashMap<Urn, Rc<NotificationCard>>>,
@@ -50,9 +52,11 @@ impl ToastManager {
         container: gtk::Box,
         action_tx: std::sync::mpsc::Sender<(Urn, String, Value)>,
         window_resize_callback: Rc<dyn Fn()>,
+        position: ToastPosition,
     ) -> Self {
         Self {
             container,
+            position,
             active_toasts: RefCell::new(Vec::new()),
             pending_queue: RefCell::new(VecDeque::new()),
             widgets: RefCell::new(HashMap::new()),
@@ -120,7 +124,11 @@ impl ToastManager {
             }
         });
 
-        self.container.append(card.widget());
+        if self.position.newest_on_top() {
+            self.container.prepend(card.widget());
+        } else {
+            self.container.append(card.widget());
+        }
         card.show();
 
         self.widgets

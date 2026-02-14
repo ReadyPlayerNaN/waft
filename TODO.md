@@ -15,6 +15,7 @@ Currently WiFi only shows networks with saved connection profiles. Connecting to
 # Notification toast bubbles (PARTIALLY DONE)
 
 Basic toast application (`waft-toasts`) is now implemented with:
+
 - ✅ 3-toast limit with queue overflow
 - ✅ DND awareness (critical notifications bypass)
 - ✅ 5-second TTL with automatic expiry
@@ -22,15 +23,10 @@ Basic toast application (`waft-toasts`) is now implemented with:
 - ✅ Top-center positioning on Layer::Top
 
 Still TODO:
+
 - [ ] Bubble-style visual design (currently uses card style)
 - [ ] Configurable toast limit and timeout
 - [ ] Per-app toast filtering
-
-# Notification toast position
-
-Support configurable toast position (top, bottom, corners). Fix toast ordering to match position (newest-on-top vs newest-on-bottom).
-
-Current implementation: Fixed top-center position.
 
 # SNI (Status Notifier Items)
 

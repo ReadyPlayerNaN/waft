@@ -4,13 +4,14 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use gtk::prelude::*;
+use waft_config::ToastPosition;
 use waft_protocol::entity::notification::{Dnd, Notification};
 
 use crate::toast_manager::ToastManager;
 use crate::ui::toast_window::ToastWindow;
 use crate::waft_client::{daemon_connection_task, ToastEvent, WaftClient};
 
-pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
+pub async fn setup(position: ToastPosition) -> Result<adw::Application, Box<dyn std::error::Error>> {
     // 1. Create channels
     let (event_tx, event_rx) = flume::unbounded::<ToastEvent>();
     let (action_tx, action_rx) = std::sync::mpsc::channel();
@@ -57,7 +58,7 @@ pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
     app.connect_startup(move |app| {
         apply_css();
 
-        let toast_window = Rc::new(ToastWindow::new(app));
+        let toast_window = Rc::new(ToastWindow::new(app, position));
         let resize_callback = {
             let window = toast_window.clone();
             Rc::new(move || window.trigger_resize())
@@ -67,6 +68,7 @@ pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
             toast_window.container.clone(),
             action_tx.clone(),
             resize_callback,
+            position,
         ));
 
         // Spawn entity event handler (glib context)

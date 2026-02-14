@@ -3227,6 +3227,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+ "waft-config",
  "waft-protocol",
  "waft-ui-gtk",
  "zbus",
