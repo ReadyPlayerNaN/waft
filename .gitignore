@@ -6,5 +6,4 @@ pkg/
 *.pkg.tar.*
 .SRCINFO
 /*-git
-node_modules
 ralp-loop.local.md
