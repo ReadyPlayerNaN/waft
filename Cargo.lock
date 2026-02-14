@@ -3208,6 +3208,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-settings"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "flume",
+ "glib 0.21.5",
+ "gtk4",
+ "libadwaita",
+ "log",
+ "serde_json",
+ "tokio",
+ "waft-client",
+ "waft-protocol",
+ "waft-ui-gtk",
+]
+
+[[package]]
 name = "waft-toasts"
 version = "0.1.0"
 dependencies = [
