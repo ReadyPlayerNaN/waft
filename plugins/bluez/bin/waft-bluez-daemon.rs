@@ -130,6 +130,8 @@ impl Plugin for BluezPlugin {
             let adapter_entity = BluetoothAdapter {
                 name: adapter.name.clone(),
                 powered: adapter.powered,
+                discoverable: false,
+                discovering: false,
             };
             entities.push(Entity::new(
                 adapter_urn.clone(),
@@ -147,6 +149,9 @@ impl Plugin for BluezPlugin {
                     device_type: device.icon.clone(),
                     connection_state: device.connection_state,
                     battery_percentage: device.battery_percentage,
+                    paired: false,
+                    trusted: false,
+                    rssi: None,
                 };
                 entities.push(Entity::new(
                     device_urn,

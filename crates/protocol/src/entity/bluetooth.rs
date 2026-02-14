@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 pub struct BluetoothAdapter {
     pub name: String,
     pub powered: bool,
+    #[serde(default)]
+    pub discoverable: bool,
+    #[serde(default)]
+    pub discovering: bool,
 }
 
 impl BluetoothAdapter {
@@ -32,6 +36,12 @@ pub struct BluetoothDevice {
     pub device_type: String,
     pub connection_state: ConnectionState,
     pub battery_percentage: Option<u8>,
+    #[serde(default)]
+    pub paired: bool,
+    #[serde(default)]
+    pub trusted: bool,
+    #[serde(default)]
+    pub rssi: Option<i16>,
 }
 
 impl BluetoothDevice {
@@ -61,10 +71,38 @@ mod tests {
         let adapter = BluetoothAdapter {
             name: "hci0".to_string(),
             powered: true,
+            discoverable: false,
+            discovering: false,
         };
         let json = serde_json::to_value(&adapter).unwrap();
         let decoded: BluetoothAdapter = serde_json::from_value(json).unwrap();
         assert_eq!(adapter, decoded);
+    }
+
+    #[test]
+    fn adapter_serde_roundtrip_with_new_fields() {
+        let adapter = BluetoothAdapter {
+            name: "hci0".to_string(),
+            powered: true,
+            discoverable: true,
+            discovering: true,
+        };
+        let json = serde_json::to_value(&adapter).unwrap();
+        let decoded: BluetoothAdapter = serde_json::from_value(json).unwrap();
+        assert_eq!(adapter, decoded);
+    }
+
+    #[test]
+    fn adapter_backwards_compat_without_new_fields() {
+        let json = serde_json::json!({
+            "name": "hci0",
+            "powered": true
+        });
+        let adapter: BluetoothAdapter = serde_json::from_value(json).unwrap();
+        assert_eq!(adapter.name, "hci0");
+        assert!(adapter.powered);
+        assert!(!adapter.discoverable);
+        assert!(!adapter.discovering);
     }
 
     #[test]
@@ -74,10 +112,47 @@ mod tests {
             device_type: "audio-headphones".to_string(),
             connection_state: ConnectionState::Connected,
             battery_percentage: Some(85),
+            paired: false,
+            trusted: false,
+            rssi: None,
         };
         let json = serde_json::to_value(&device).unwrap();
         let decoded: BluetoothDevice = serde_json::from_value(json).unwrap();
         assert_eq!(device, decoded);
+    }
+
+    #[test]
+    fn device_serde_roundtrip_with_new_fields() {
+        let device = BluetoothDevice {
+            name: "WH-1000XM4".to_string(),
+            device_type: "audio-headphones".to_string(),
+            connection_state: ConnectionState::Connected,
+            battery_percentage: Some(85),
+            paired: true,
+            trusted: true,
+            rssi: Some(-42),
+        };
+        let json = serde_json::to_value(&device).unwrap();
+        let decoded: BluetoothDevice = serde_json::from_value(json).unwrap();
+        assert_eq!(device, decoded);
+    }
+
+    #[test]
+    fn device_backwards_compat_without_new_fields() {
+        let json = serde_json::json!({
+            "name": "WH-1000XM4",
+            "device_type": "audio-headphones",
+            "connection_state": "Connected",
+            "battery_percentage": 85
+        });
+        let device: BluetoothDevice = serde_json::from_value(json).unwrap();
+        assert_eq!(device.name, "WH-1000XM4");
+        assert_eq!(device.device_type, "audio-headphones");
+        assert_eq!(device.connection_state, ConnectionState::Connected);
+        assert_eq!(device.battery_percentage, Some(85));
+        assert!(!device.paired);
+        assert!(!device.trusted);
+        assert_eq!(device.rssi, None);
     }
 
     #[test]
@@ -87,6 +162,9 @@ mod tests {
             device_type: "input-mouse".to_string(),
             connection_state: ConnectionState::Disconnected,
             battery_percentage: None,
+            paired: false,
+            trusted: false,
+            rssi: None,
         };
         let json = serde_json::to_value(&device).unwrap();
         let decoded: BluetoothDevice = serde_json::from_value(json).unwrap();
@@ -100,6 +178,9 @@ mod tests {
             device_type: "audio-headphones".to_string(),
             connection_state: ConnectionState::Connected,
             battery_percentage: None,
+            paired: false,
+            trusted: false,
+            rssi: None,
         };
         assert!(connected.connected());
 
@@ -108,6 +189,9 @@ mod tests {
             device_type: "input-mouse".to_string(),
             connection_state: ConnectionState::Disconnected,
             battery_percentage: None,
+            paired: false,
+            trusted: false,
+            rssi: None,
         };
         assert!(!disconnected.connected());
 
@@ -116,6 +200,9 @@ mod tests {
             device_type: "input-keyboard".to_string(),
             connection_state: ConnectionState::Connecting,
             battery_percentage: None,
+            paired: false,
+            trusted: false,
+            rssi: None,
         };
         assert!(!connecting.connected());
     }
@@ -127,6 +214,9 @@ mod tests {
             device_type: "phone".to_string(),
             connection_state: ConnectionState::Connecting,
             battery_percentage: None,
+            paired: false,
+            trusted: false,
+            rssi: None,
         };
         assert!(connecting.transitioning());
 
@@ -135,6 +225,9 @@ mod tests {
             device_type: "phone".to_string(),
             connection_state: ConnectionState::Disconnecting,
             battery_percentage: None,
+            paired: false,
+            trusted: false,
+            rssi: None,
         };
         assert!(disconnecting.transitioning());
 
@@ -143,6 +236,9 @@ mod tests {
             device_type: "phone".to_string(),
             connection_state: ConnectionState::Connected,
             battery_percentage: None,
+            paired: false,
+            trusted: false,
+            rssi: None,
         };
         assert!(!connected.transitioning());
 
@@ -151,6 +247,9 @@ mod tests {
             device_type: "phone".to_string(),
             connection_state: ConnectionState::Disconnected,
             battery_percentage: None,
+            paired: false,
+            trusted: false,
+            rssi: None,
         };
         assert!(!disconnected.transitioning());
     }
