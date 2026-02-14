@@ -11,7 +11,7 @@
 //! Configuration (in ~/.config/waft/config.toml):
 //! ```toml
 //! [[plugins]]
-//! id = "blueman"
+//! id = "bluez"
 //! ```
 
 use anyhow::{Context, Result};
@@ -42,13 +42,13 @@ fn device_id(path: &str) -> String {
         .replace('_', ":")
 }
 
-struct BluemanPlugin {
+struct BluezPlugin {
     conn: Connection,
     state: Arc<StdMutex<State>>,
     notifier: Arc<StdMutex<Option<EntityNotifier>>>,
 }
 
-impl BluemanPlugin {
+impl BluezPlugin {
     async fn new() -> Result<Self> {
         let conn = Connection::system()
             .await
@@ -113,7 +113,7 @@ impl BluemanPlugin {
 }
 
 #[async_trait::async_trait]
-impl Plugin for BluemanPlugin {
+impl Plugin for BluezPlugin {
     fn get_entities(&self) -> Vec<Entity> {
         let state = self.lock_state();
         let mut entities = Vec::new();
@@ -121,7 +121,7 @@ impl Plugin for BluemanPlugin {
         for adapter in &state.adapters {
             let aid = adapter_id(&adapter.path);
             let adapter_urn = Urn::new(
-                "blueman",
+                "bluez",
                 BluetoothAdapter::ENTITY_TYPE,
                 aid,
             );
@@ -321,17 +321,17 @@ fn main() -> Result<()> {
 
     waft_plugin::init_plugin_logger("info");
 
-    info!("Starting blueman plugin...");
+    info!("Starting bluez plugin...");
 
     let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
     rt.block_on(async {
-        let plugin = BluemanPlugin::new().await?;
+        let plugin = BluezPlugin::new().await?;
 
         let shared_state = plugin.shared_state();
         let monitor_conn = plugin.conn.clone();
         let notifier_slot = plugin.notifier.clone();
 
-        let (runtime, notifier) = PluginRuntime::new("blueman", plugin);
+        let (runtime, notifier) = PluginRuntime::new("bluez", plugin);
 
         // Fill the notifier slot so handle_action can push intermediate states
         {

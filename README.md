@@ -57,7 +57,7 @@ All plugins are standalone daemon binaries implementing the `Plugin` trait from 
 | brightness | waft-brightness-daemon | `display` | Display brightness via brightnessctl/ddcutil |
 | keyboard-layout | waft-keyboard-layout-daemon | `keyboard-layout` | Input method display/switch (Niri/Sway/Hyprland/localed) |
 | systemd-actions | waft-systemd-actions-daemon | `session` | Lock, logout, reboot, shutdown, suspend |
-| blueman | waft-blueman-daemon | `bluetooth-adapter`, `bluetooth-device` | Bluetooth management via BlueZ D-Bus |
+| bluez | waft-bluez-daemon | `bluetooth-adapter`, `bluetooth-device` | Bluetooth management via BlueZ D-Bus |
 | audio | waft-audio-daemon | `audio-device` | Volume sliders and device selection via pactl |
 | networkmanager | waft-networkmanager-daemon | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn` | WiFi/Ethernet/VPN via NetworkManager |
 | weather | waft-weather-daemon | `weather` | Weather info via Open-Meteo API |

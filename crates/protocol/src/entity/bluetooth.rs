@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// A Bluetooth adapter (e.g. hci0).
 ///
-/// URN: `blueman/bluetooth-adapter/{adapter-id}`
+/// URN: `bluez/bluetooth-adapter/{adapter-id}`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BluetoothAdapter {
     pub name: String,
@@ -25,7 +25,7 @@ pub enum ConnectionState {
 
 /// A Bluetooth device paired or visible to an adapter.
 ///
-/// URN: `blueman/bluetooth-adapter/{adapter-id}/bluetooth-device/{mac-address}`
+/// URN: `bluez/bluetooth-adapter/{adapter-id}/bluetooth-device/{mac-address}`
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BluetoothDevice {
     pub name: String,

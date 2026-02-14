@@ -175,16 +175,16 @@ let urn = Urn::new("clock", "clock", "default");
 // => "clock/clock/default"
 
 // Nested entity (parent-child)
-let parent = Urn::new("blueman", "bluetooth-adapter", "hci0");
+let parent = Urn::new("bluez", "bluetooth-adapter", "hci0");
 let child = parent.child("bluetooth-device", "AA:BB:CC:DD:EE:FF");
-// => "blueman/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC:DD:EE:FF"
+// => "bluez/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC:DD:EE:FF"
 ```
 
 ### Accessors
 
 | Method | Returns | Example (nested URN above) |
 |--------|---------|---------------------------|
-| `plugin()` | First segment | `"blueman"` |
+| `plugin()` | First segment | `"bluez"` |
 | `root_entity_type()` | Second segment (subscription target) | `"bluetooth-adapter"` |
 | `entity_type()` | Last entity-type segment | `"bluetooth-device"` |
 | `id()` | Last segment | `"AA:BB:CC:DD:EE:FF"` |
@@ -205,8 +205,8 @@ let child = parent.child("bluetooth-device", "AA:BB:CC:DD:EE:FF");
 | battery | `battery/battery/BAT0` | Simple, hardware-based ID |
 | audio | `audio/audio-device/speakers` | Simple, device name ID |
 | darkman | `darkman/dark-mode/default` | Simple, singleton |
-| blueman | `blueman/bluetooth-adapter/hci0` | Simple, adapter |
-| blueman | `blueman/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC` | Nested, device under adapter |
+| bluez | `bluez/bluetooth-adapter/hci0` | Simple, adapter |
+| bluez | `bluez/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC` | Nested, device under adapter |
 | networkmanager | `networkmanager/network-adapter/wlan0` | Simple, interface name ID |
 
 ---

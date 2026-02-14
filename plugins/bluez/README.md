@@ -43,14 +43,14 @@ One entity per paired device, nested under its adapter.
 ### URN Format
 
 ```
-blueman/bluetooth-adapter/{adapter-id}
-blueman/bluetooth-adapter/{adapter-id}/bluetooth-device/{mac-address}
+bluez/bluetooth-adapter/{adapter-id}
+bluez/bluetooth-adapter/{adapter-id}/bluetooth-device/{mac-address}
 ```
 
 Examples:
 ```
-blueman/bluetooth-adapter/hci0
-blueman/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC:DD:EE:FF
+bluez/bluetooth-adapter/hci0
+bluez/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC:DD:EE:FF
 ```
 
 ## D-Bus Interfaces
@@ -70,7 +70,7 @@ blueman/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC:DD:EE:FF
 
 ```toml
 [[plugins]]
-id = "blueman"
+id = "bluez"
 ```
 
 No plugin-specific configuration options. Only paired devices are shown.

@@ -6,8 +6,8 @@ edition = "2024"
 [lib]
 
 [[bin]]
-name = "waft-blueman-daemon"
-path = "bin/waft-blueman-daemon.rs"
+name = "waft-bluez-daemon"
+path = "bin/waft-bluez-daemon.rs"
 
 [dependencies]
 waft-plugin = { path = "../../crates/plugin" }

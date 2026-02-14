@@ -15,7 +15,7 @@ members = [
     "plugins/darkman",
     "plugins/eds",
     "plugins/battery",
-    "plugins/blueman",
+    "plugins/bluez",
     "plugins/brightness",
     "plugins/caffeine",
     "plugins/sunsetr",

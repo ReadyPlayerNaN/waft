@@ -37,7 +37,7 @@ Nesting depth is not limited but typically one or two levels.
 
 Examples:
 - `networkmanager/network-adapter/wlan0`
-- `blueman/adapter/hci0/device/AA:BB:CC:DD:EE:FF`
+- `bluez/adapter/hci0/device/AA:BB:CC:DD:EE:FF`
 
 ### Subscription Model
 
@@ -48,8 +48,8 @@ Apps subscribe to root entity types (e.g. `adapter`). Subscribing delivers:
 
 Updates are typed and URN'd to their actual entity type, not the subscription root. For example, subscribing to `adapter` delivers both adapter updates and device updates as separate messages, each with its own URN and entity type:
 
-- `EntityUpdated { urn: "blueman/adapter/hci0", entity_type: "adapter", ... }`
-- `EntityUpdated { urn: "blueman/adapter/hci0/device/AA:BB:CC", entity_type: "device", ... }`
+- `EntityUpdated { urn: "bluez/adapter/hci0", entity_type: "adapter", ... }`
+- `EntityUpdated { urn: "bluez/adapter/hci0/device/AA:BB:CC", entity_type: "device", ... }`
 
 No polling — all updates are push-based.
 

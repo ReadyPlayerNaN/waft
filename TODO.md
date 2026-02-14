@@ -35,16 +35,3 @@ Current implementation: Fixed top-center position.
 # SNI (Status Notifier Items)
 
 Systray compatibility for applications that use the StatusNotifierItem protocol.
-
-# Rename blueman plugin to bluez
-
-The `blueman` plugin is misleadingly named - it talks directly to BlueZ via D-Bus, not to the Blueman application. Rename the plugin from `blueman` to `bluez` to accurately reflect what it does.
-
-This involves:
-
-- Renaming `plugins/blueman/` directory to `plugins/bluez/`
-- Renaming binary from `waft-blueman-daemon` to `waft-bluez-daemon`
-- Updating plugin name in `PluginRuntime::new("blueman", ...)` to `"bluez"`
-- Updating URN prefixes from `blueman/` to `bluez/`
-- Updating all documentation references
-- Updating Cargo.toml workspace members

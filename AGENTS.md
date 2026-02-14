@@ -91,7 +91,7 @@ All 15 plugins are standalone daemon binaries implementing the `Plugin` trait fr
 | **brightness** | `display` | Display brightness (brightnessctl/ddcutil) |
 | **keyboard-layout** | `keyboard-layout` | Input method display/switch (Niri/Sway/Hyprland/localed) |
 | **systemd-actions** | `session` | Lock, logout, reboot, shutdown, suspend via systemd login1 |
-| **blueman** | `bluetooth-adapter`, `bluetooth-device` | Bluetooth device management (BlueZ D-Bus) |
+| **bluez** | `bluetooth-adapter`, `bluetooth-device` | Bluetooth device management (BlueZ D-Bus) |
 | **audio** | `audio-device` | Volume sliders, device selection (pactl) |
 | **networkmanager** | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn` | WiFi/Ethernet/VPN management (nmrs + zbus) |
 | **weather** | `weather` | Weather information via HTTP API |
@@ -189,7 +189,7 @@ plugins/
     brightness/     bin/          # Entity types: display
     keyboard-layout/ bin/         # Entity types: keyboard-layout
     systemd-actions/ bin/         # Entity types: session
-    blueman/        bin/          # Entity types: bluetooth-adapter, bluetooth-device
+    bluez/          bin/          # Entity types: bluetooth-adapter, bluetooth-device
     audio/          bin/          # Entity types: audio-device
     networkmanager/ bin/          # Entity types: network-adapter, wifi-network, etc.
     weather/        bin/          # Entity types: weather
