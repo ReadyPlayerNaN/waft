@@ -191,9 +191,8 @@ impl From<TomlProfile> for NotificationProfile {
     }
 }
 
-/// Load notification groups and profiles from waft config.
-pub fn load_filter_config() -> (Vec<NotificationGroup>, Vec<NotificationProfile>) {
-    let config = waft_config::Config::load();
+/// Load notification groups and profiles from a given config.
+fn load_filter_config_from(config: &waft_config::Config) -> (Vec<NotificationGroup>, Vec<NotificationProfile>) {
     let Some(settings) = config.get_plugin_settings("plugin::notifications") else {
         log::debug!("[notifications/config] no plugin config found, using empty groups/profiles");
         return (Vec::new(), Vec::new());
@@ -218,6 +217,12 @@ pub fn load_filter_config() -> (Vec<NotificationGroup>, Vec<NotificationProfile>
     );
 
     (groups, profiles)
+}
+
+/// Load notification groups and profiles from waft config.
+pub fn load_filter_config() -> (Vec<NotificationGroup>, Vec<NotificationProfile>) {
+    let config = waft_config::Config::load();
+    load_filter_config_from(&config)
 }
 
 #[cfg(test)]
@@ -372,7 +377,8 @@ mod tests {
 
     #[test]
     fn load_filter_config_returns_empty_when_no_config_file() {
-        let (groups, profiles) = load_filter_config();
+        let config = waft_config::Config::default();
+        let (groups, profiles) = load_filter_config_from(&config);
         assert!(groups.is_empty());
         assert!(profiles.is_empty());
     }
