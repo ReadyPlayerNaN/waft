@@ -13,6 +13,7 @@ use waft_plugin::*;
 use waft_protocol::entity::notification as proto;
 use waft_protocol::entity::notification_filter::{
     self as filter_proto, ActiveProfile, NotificationGroup, NotificationProfile,
+    SoundConfigEntity, SOUND_CONFIG_ENTITY_TYPE,
 };
 
 use self::dbus::client::{OutboundEvent, close_reasons};
@@ -35,6 +36,7 @@ pub struct FilterActions {
     pub hide: bool,
     pub no_toast: bool,
     pub no_sound: bool,
+    pub sound: Option<String>,
 }
 
 /// Shareable handle for notification filtering in the ingress monitor.
@@ -105,6 +107,7 @@ impl FilterHandle {
             hide: rule.hide == filter_proto::RuleValue::On,
             no_toast: rule.no_toast == filter_proto::RuleValue::On,
             no_sound: rule.no_sound == filter_proto::RuleValue::On,
+            sound: rule.sound.clone(),
         }
     }
 }
@@ -117,18 +120,22 @@ pub struct NotificationsPlugin {
     profiles: Arc<StdMutex<Vec<NotificationProfile>>>,
     active_profile_id: Arc<StdMutex<String>>,
     compiled_matchers: Arc<StdMutex<Vec<CompiledGroup>>>,
+    sound_config: Arc<StdMutex<config::SoundConfig>>,
+    sound_policy: Arc<StdMutex<sound::policy::SoundPolicy>>,
 }
 
 impl NotificationsPlugin {
-    /// Create a new plugin instance with filter configuration.
+    /// Create a new plugin instance with filter and sound configuration.
     pub fn new(
         state: Arc<StdMutex<State>>,
         outbound_tx: flume::Sender<OutboundEvent>,
         groups: Vec<NotificationGroup>,
         profiles: Vec<NotificationProfile>,
         active_profile_id: String,
+        sound_cfg: config::SoundConfig,
     ) -> Self {
         let compiled_matchers = compile_groups(&groups);
+        let policy = sound::policy::SoundPolicy::new(sound_cfg.clone());
 
         Self {
             state,
@@ -137,7 +144,14 @@ impl NotificationsPlugin {
             profiles: Arc::new(StdMutex::new(profiles)),
             active_profile_id: Arc::new(StdMutex::new(active_profile_id)),
             compiled_matchers: Arc::new(StdMutex::new(compiled_matchers)),
+            sound_config: Arc::new(StdMutex::new(sound_cfg)),
+            sound_policy: Arc::new(StdMutex::new(policy)),
         }
+    }
+
+    /// Get a shareable sound policy handle for use in the ingress monitor task.
+    pub fn sound_policy_handle(&self) -> Arc<StdMutex<sound::policy::SoundPolicy>> {
+        self.sound_policy.clone()
     }
 
     /// Get a shareable filter handle for use in the ingress monitor task.
@@ -219,6 +233,19 @@ impl NotificationsPlugin {
             }
         };
         *matchers_guard = compiled;
+    }
+
+    /// Write current sound config to TOML config file.
+    fn sync_sound_config_to_toml(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let sound_cfg = match self.sound_config.lock() {
+            Ok(g) => g.clone(),
+            Err(e) => {
+                warn!("[notifications] mutex poisoned in sync_sound_config_to_toml: {e}");
+                e.into_inner().clone()
+            }
+        };
+
+        filter::toml_sync::write_sound_config(&sound_cfg)
     }
 
     /// Write current filter config to TOML config file.
@@ -328,6 +355,28 @@ impl Plugin for NotificationsPlugin {
 
         // Drop the state lock before acquiring filter locks
         drop(guard);
+
+        // Sound config entity
+        {
+            let sound_cfg = match self.sound_config.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    warn!("[notifications] mutex poisoned in get_entities: {e}");
+                    e.into_inner()
+                }
+            };
+
+            entities.push(Entity::new(
+                Urn::new("notifications", SOUND_CONFIG_ENTITY_TYPE, "default"),
+                SOUND_CONFIG_ENTITY_TYPE,
+                &SoundConfigEntity {
+                    enabled: sound_cfg.enabled,
+                    default_low: sound_cfg.urgency.low.clone(),
+                    default_normal: sound_cfg.urgency.normal.clone(),
+                    default_critical: sound_cfg.urgency.critical.clone(),
+                },
+            ));
+        }
 
         // Notification groups
         {
@@ -508,6 +557,61 @@ impl Plugin for NotificationsPlugin {
                 {
                     warn!("[notifications] outbound channel closed on invoke-action close");
                 }
+            }
+
+            // --- Sound config actions ---
+
+            ("sound-config", "update-sound-config") => {
+                let entity: SoundConfigEntity = serde_json::from_value(params)?;
+
+                let new_config = {
+                    let existing = match self.sound_config.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[notifications] mutex poisoned: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    config::SoundConfig {
+                        enabled: entity.enabled,
+                        urgency: config::UrgencySounds {
+                            low: entity.default_low,
+                            normal: entity.default_normal,
+                            critical: entity.default_critical,
+                        },
+                        rules: existing.rules.clone(),
+                    }
+                };
+
+                // Update sound config
+                {
+                    let mut guard = match self.sound_config.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[notifications] mutex poisoned: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    *guard = new_config.clone();
+                }
+
+                // Rebuild sound policy
+                {
+                    let mut guard = match self.sound_policy.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[notifications] mutex poisoned: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    *guard = sound::policy::SoundPolicy::new(new_config);
+                }
+
+                if let Err(e) = self.sync_sound_config_to_toml() {
+                    warn!("[notifications] failed to write sound config: {e}");
+                }
+
+                info!("[notifications] updated sound config");
             }
 
             // --- Filter config actions ---
@@ -733,7 +837,7 @@ mod tests {
     }
 
     fn make_plugin(state: Arc<StdMutex<State>>, tx: flume::Sender<OutboundEvent>) -> NotificationsPlugin {
-        NotificationsPlugin::new(state, tx, Vec::new(), Vec::new(), String::new())
+        NotificationsPlugin::new(state, tx, Vec::new(), Vec::new(), String::new(), config::SoundConfig::default())
     }
 
     #[test]
@@ -930,6 +1034,7 @@ mod tests {
             groups,
             Vec::new(),
             String::new(),
+            config::SoundConfig::default(),
         );
 
         let notif = make_notification(1); // app_name = "test-app"
@@ -966,6 +1071,7 @@ mod tests {
                 hide: RuleValue::On,
                 no_toast: RuleValue::Off,
                 no_sound: RuleValue::On,
+                sound: None,
             },
         );
 
@@ -981,11 +1087,13 @@ mod tests {
             Vec::new(),
             profiles,
             "work".to_string(),
+            config::SoundConfig::default(),
         );
 
         let actions = plugin.get_filter_actions(Some("test-group"));
         assert!(actions.hide);
         assert!(!actions.no_toast);
         assert!(actions.no_sound);
+        assert_eq!(actions.sound, None);
     }
 }

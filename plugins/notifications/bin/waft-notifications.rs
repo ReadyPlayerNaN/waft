@@ -15,12 +15,13 @@ use waft_plugin_notifications::dbus::client::{IngressEvent, OutboundEvent, close
 use waft_plugin_notifications::dbus::server::NotificationsDbusServer;
 use waft_plugin_notifications::filter;
 use waft_plugin_notifications::sound::player::SoundPlayer;
-use waft_plugin_notifications::sound::policy::{NotificationContext, SoundDecision, SoundPolicy};
+use waft_plugin_notifications::sound::policy::{NotificationContext, SoundDecision};
 use waft_plugin_notifications::store::{NotificationOp, State, process_op};
 use waft_plugin_notifications::ttl;
 use waft_protocol::entity::notification::{DND_ENTITY_TYPE, NOTIFICATION_ENTITY_TYPE};
 use waft_protocol::entity::notification_filter::{
     ACTIVE_PROFILE_ENTITY_TYPE, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE,
+    SOUND_CONFIG_ENTITY_TYPE,
 };
 
 fn main() -> Result<()> {
@@ -31,6 +32,7 @@ fn main() -> Result<()> {
         NOTIFICATION_GROUP_ENTITY_TYPE,
         NOTIFICATION_PROFILE_ENTITY_TYPE,
         ACTIVE_PROFILE_ENTITY_TYPE,
+        SOUND_CONFIG_ENTITY_TYPE,
     ]) {
         return Ok(());
     }
@@ -64,18 +66,23 @@ fn main() -> Result<()> {
             active_profile_id
         );
 
-        // Create the plugin with filter config
+        // Load sound configuration
+        let sound_config = config::load_sound_config();
+
+        // Create the plugin with filter and sound config
         let plugin = NotificationsPlugin::new(
             state.clone(),
             outbound_tx.clone(),
             groups,
             profiles,
             active_profile_id,
+            sound_config,
         );
 
-        // Get a filter handle BEFORE passing the plugin to the runtime
+        // Get handles BEFORE passing the plugin to the runtime
         // (the runtime consumes the plugin, so we extract shared state first)
         let filter_handle = plugin.filter_handle();
+        let sound_policy_handle = plugin.sound_policy_handle();
 
         // Create the plugin runtime (connects to waft daemon)
         let (runtime, notifier) = PluginRuntime::new("notifications", plugin);
@@ -90,16 +97,14 @@ fn main() -> Result<()> {
             .await
             .context("failed to start D-Bus server")?;
 
-        // Sound infrastructure (immutable after load)
-        let sound_config = config::load_sound_config();
-        let sound_policy = Arc::new(SoundPolicy::new(sound_config));
+        // Sound player
         let sound_player = Arc::new(SoundPlayer::new());
 
         // Spawn ingress monitor: D-Bus Notify/Close -> plugin state -> entity notify
         let ingress_state = state.clone();
         let ingress_notifier = notifier.clone();
         let ingress_outbound_tx = outbound_tx;
-        let ingress_sound_policy = sound_policy.clone();
+        let ingress_sound_policy = sound_policy_handle;
         let ingress_sound_player = sound_player.clone();
         let ttl_wake = Arc::new(tokio::sync::Notify::new());
         let ttl_wake_for_ingress = ttl_wake.clone();
@@ -124,9 +129,11 @@ fn main() -> Result<()> {
                             continue;
                         }
 
-                        // 4. Evaluate sound policy (check no_sound filter action)
+                        // 4. Evaluate sound policy (check no_sound filter action, per-group sound)
                         let sound_decision = if filter_actions.no_sound {
                             SoundDecision::Silent
+                        } else if let Some(ref custom_sound) = filter_actions.sound {
+                            SoundDecision::Play(custom_sound.clone())
                         } else {
                             let guard = match ingress_state.lock() {
                                 Ok(g) => g,
@@ -161,7 +168,16 @@ fn main() -> Result<()> {
                                     .map(|s| s.as_ref()),
                                 dnd_active: guard.dnd,
                             };
-                            ingress_sound_policy.evaluate(&ctx)
+                            let policy = match ingress_sound_policy.lock() {
+                                Ok(g) => g,
+                                Err(e) => {
+                                    log::warn!(
+                                        "[notifications/ingress] sound policy mutex poisoned, recovering: {e}"
+                                    );
+                                    e.into_inner()
+                                }
+                            };
+                            policy.evaluate(&ctx)
                         };
 
                         // 5. Mutate state and apply suppress_toast

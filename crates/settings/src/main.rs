@@ -3,6 +3,7 @@
 mod app;
 mod bluetooth;
 mod display;
+mod keyboard;
 mod notifications;
 mod pages;
 mod sidebar;

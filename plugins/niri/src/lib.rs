@@ -16,6 +16,7 @@
 //! IO reactor.
 
 pub mod commands;
+pub mod config;
 pub mod display;
 pub mod event_stream;
 pub mod keyboard;

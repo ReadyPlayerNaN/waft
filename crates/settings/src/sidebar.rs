@@ -79,6 +79,15 @@ impl Sidebar {
         disp_row.add_prefix(disp_icon.widget());
         list_box.append(&disp_row);
 
+        // Keyboard row
+        let kb_icon = IconWidget::from_name("input-keyboard-symbolic", 16);
+        let kb_row = adw::ActionRow::builder()
+            .title("Keyboard")
+            .activatable(true)
+            .build();
+        kb_row.add_prefix(kb_icon.widget());
+        list_box.append(&kb_row);
+
         // Notifications row
         let notif_icon =
             IconWidget::from_name("preferences-system-notifications-symbolic", 16);

@@ -1,0 +1,48 @@
+pkgname=waft-plugin-brightness-git
+pkgver=r0.0000000
+pkgrel=1
+pkgdesc="Waft display brightness control plugin (brightnessctl/ddcutil)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/readyplayernan/waft"
+license=('MIT')
+depends=('waft-git')
+makedepends=('cargo' 'git' 'rust')
+optdepends=(
+  'brightnessctl: laptop backlight control'
+  'ddcutil: external monitor brightness control'
+)
+provides=('waft-plugin-brightness')
+conflicts=('waft-plugin-brightness')
+source=("$pkgname::git+https://github.com/readyplayernan/waft.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$srcdir/$pkgname"
+  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+  cd "$srcdir/$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$srcdir/$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release --bin waft-brightness-daemon
+}
+
+check() {
+  cd "$srcdir/$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo test --frozen -p waft-plugin-brightness
+}
+
+package() {
+  cd "$srcdir/$pkgname"
+  install -Dm755 "target/release/waft-brightness-daemon" "$pkgdir/usr/bin/waft-brightness-daemon"
+  install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

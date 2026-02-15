@@ -11,6 +11,7 @@
 //! ```
 
 use anyhow::{Context, Result};
+use darkman::config;
 use serde::Deserialize;
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal};
@@ -66,6 +67,7 @@ struct DarkmanPlugin {
     config: DarkmanConfig,
     state: Arc<StdMutex<DarkmanState>>,
     conn: Connection,
+    yaml_config: Arc<StdMutex<config::DarkmanYamlConfig>>,
 }
 
 impl DarkmanPlugin {
@@ -81,10 +83,14 @@ impl DarkmanPlugin {
         let mode = Self::get_mode(&conn).await.unwrap_or_default();
         log::info!("Initial darkman mode: {mode:?}");
 
+        let yaml_config = config::parse_darkman_config().unwrap_or_default();
+        log::debug!("Darkman YAML config: {:?}", yaml_config);
+
         Ok(Self {
             config,
             state: Arc::new(StdMutex::new(DarkmanState { mode })),
             conn,
+            yaml_config: Arc::new(StdMutex::new(yaml_config)),
         })
     }
 
@@ -148,6 +154,90 @@ impl DarkmanPlugin {
     fn shared_state(&self) -> Arc<StdMutex<DarkmanState>> {
         self.state.clone()
     }
+
+    /// Build config entity from current YAML config.
+    fn config_entity(&self) -> Entity {
+        let yaml_config = match self.yaml_config.lock() {
+            Ok(guard) => guard.clone(),
+            Err(e) => {
+                log::warn!("Mutex poisoned, recovering: {e}");
+                e.into_inner().clone()
+            }
+        };
+
+        let schema = config::build_schema();
+        let config_data = entity::display::DarkModeAutomationConfig {
+            latitude: yaml_config.lat,
+            longitude: yaml_config.lng,
+            auto_location: yaml_config.usegeoclue,
+            dbus_api: yaml_config.dbusserver,
+            portal_api: yaml_config.portal,
+            schema,
+        };
+
+        Entity::new(
+            Urn::new(
+                "darkman",
+                entity::display::DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE,
+                "default",
+            ),
+            entity::display::DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE,
+            &config_data,
+        )
+    }
+
+    /// Update a config field and write to disk.
+    async fn update_config_field(
+        &self,
+        field: &str,
+        value: serde_json::Value,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        config::validate_field(field, &value)?;
+
+        // Scope the lock so it's dropped before the async restart call
+        {
+            let mut yaml_config = match self.yaml_config.lock() {
+                Ok(guard) => guard,
+                Err(e) => {
+                    log::warn!("Mutex poisoned, recovering: {e}");
+                    e.into_inner()
+                }
+            };
+
+            match field {
+                "latitude" => yaml_config.lat = Some(serde_json::from_value(value)?),
+                "longitude" => yaml_config.lng = Some(serde_json::from_value(value)?),
+                "auto_location" => yaml_config.usegeoclue = Some(serde_json::from_value(value)?),
+                "dbus_api" => yaml_config.dbusserver = Some(serde_json::from_value(value)?),
+                "portal_api" => yaml_config.portal = Some(serde_json::from_value(value)?),
+                _ => return Err(format!("Unknown field: {}", field).into()),
+            }
+
+            // Backup and write config
+            let config_path = dirs::config_dir()
+                .ok_or("No config directory")?
+                .join("darkman/config.yaml");
+
+            if config_path.exists() {
+                let backup_path = format!("{}.backup", config_path.display());
+                if let Err(e) = std::fs::copy(&config_path, &backup_path) {
+                    log::warn!("[darkman] Failed to create backup: {e}");
+                }
+            }
+
+            config::write_darkman_config(&yaml_config)?;
+            log::info!("[darkman] Config updated: {field}");
+        }
+
+        // Attempt restart (best-effort)
+        if let Err(e) = config::restart_darkman_service().await {
+            log::warn!(
+                "[darkman] Failed to restart service: {e}. Config saved, manual restart needed."
+            );
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -157,42 +247,66 @@ impl Plugin for DarkmanPlugin {
         let dark_mode = entity::display::DarkMode {
             active: mode.active(),
         };
-        vec![Entity::new(
-            Urn::new("darkman", entity::display::DARK_MODE_ENTITY_TYPE, "default"),
-            entity::display::DARK_MODE_ENTITY_TYPE,
-            &dark_mode,
-        )]
+        vec![
+            Entity::new(
+                Urn::new("darkman", entity::display::DARK_MODE_ENTITY_TYPE, "default"),
+                entity::display::DARK_MODE_ENTITY_TYPE,
+                &dark_mode,
+            ),
+            self.config_entity(),
+        ]
     }
 
     async fn handle_action(
         &self,
         _urn: Urn,
         action: String,
-        _params: serde_json::Value,
+        params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if action == "toggle" {
-            log::debug!("Toggle action received");
+        match action.as_str() {
+            "toggle" => {
+                log::debug!("Toggle action received");
 
-            let current = self.current_mode();
-            let new_mode = match current {
-                DarkmanMode::Dark => DarkmanMode::Light,
-                DarkmanMode::Light => DarkmanMode::Dark,
-            };
+                let current = self.current_mode();
+                let new_mode = match current {
+                    DarkmanMode::Dark => DarkmanMode::Light,
+                    DarkmanMode::Light => DarkmanMode::Dark,
+                };
 
-            if let Err(e) = self.set_mode(new_mode).await {
-                log::error!("Failed to set darkman mode: {e}");
-                return Err(e.into());
-            }
-
-            // Update shared state
-            match self.state.lock() {
-                Ok(mut guard) => guard.mode = new_mode,
-                Err(e) => {
-                    log::warn!("Mutex poisoned, recovering: {e}");
-                    e.into_inner().mode = new_mode;
+                if let Err(e) = self.set_mode(new_mode).await {
+                    log::error!("Failed to set darkman mode: {e}");
+                    return Err(e.into());
                 }
+
+                // Update shared state
+                match self.state.lock() {
+                    Ok(mut guard) => guard.mode = new_mode,
+                    Err(e) => {
+                        log::warn!("Mutex poisoned, recovering: {e}");
+                        e.into_inner().mode = new_mode;
+                    }
+                }
+                log::debug!("Mode toggled to: {new_mode:?}");
             }
-            log::debug!("Mode toggled to: {new_mode:?}");
+            "update_field" => {
+                log::debug!("Update field action received: {:?}", params);
+
+                let field: String = serde_json::from_value(
+                    params
+                        .get("field")
+                        .ok_or("Missing 'field' parameter")?
+                        .clone(),
+                )?;
+                let value = params
+                    .get("value")
+                    .ok_or("Missing 'value' parameter")?
+                    .clone();
+
+                self.update_config_field(&field, value).await?;
+            }
+            _ => {
+                log::warn!("Unknown action: {}", action);
+            }
         }
         Ok(())
     }
@@ -223,7 +337,10 @@ async fn monitor_mode_signals(
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[entity::display::DARK_MODE_ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides(&[
+        entity::display::DARK_MODE_ENTITY_TYPE,
+        entity::display::DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE,
+    ]) {
         return Ok(());
     }
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=Waft overlay daemon
+Documentation=https://github.com/readyplayernan/waft
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/waft
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

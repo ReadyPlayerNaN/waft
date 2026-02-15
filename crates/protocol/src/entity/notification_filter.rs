@@ -85,6 +85,8 @@ pub struct GroupRule {
     pub hide: RuleValue,
     pub no_toast: RuleValue,
     pub no_sound: RuleValue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sound: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -93,6 +95,17 @@ pub enum RuleValue {
     On,
     Off,
     Default,
+}
+
+pub const SOUND_CONFIG_ENTITY_TYPE: &str = "sound-config";
+
+/// Sound configuration exposed as an entity for the settings UI.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SoundConfigEntity {
+    pub enabled: bool,
+    pub default_low: String,
+    pub default_normal: String,
+    pub default_critical: String,
 }
 
 /// Active profile tracking.
@@ -165,6 +178,7 @@ mod tests {
                 hide: RuleValue::Off,
                 no_toast: RuleValue::On,
                 no_sound: RuleValue::Default,
+                sound: Some("bell".to_string()),
             },
         );
 
@@ -177,5 +191,29 @@ mod tests {
         let json = serde_json::to_string(&profile).unwrap();
         let deserialized: NotificationProfile = serde_json::from_str(&json).unwrap();
         assert_eq!(profile, deserialized);
+    }
+
+    #[test]
+    fn group_rule_without_sound_deserializes_to_none() {
+        let json = serde_json::json!({
+            "hide": "off",
+            "no_toast": "on",
+            "no_sound": "default"
+        });
+        let rule: GroupRule = serde_json::from_value(json).unwrap();
+        assert_eq!(rule.sound, None);
+    }
+
+    #[test]
+    fn sound_config_entity_serde_roundtrip() {
+        let entity = SoundConfigEntity {
+            enabled: true,
+            default_low: "message-new-instant".to_string(),
+            default_normal: "message-new-email".to_string(),
+            default_critical: "dialog-warning".to_string(),
+        };
+        let json = serde_json::to_value(&entity).unwrap();
+        let decoded: SoundConfigEntity = serde_json::from_value(json).unwrap();
+        assert_eq!(entity, decoded);
     }
 }

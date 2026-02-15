@@ -9,8 +9,10 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::notifications::active_profile_section::ActiveProfileSection;
+use crate::notifications::dnd_section::DndSection;
 use crate::notifications::groups_section::GroupsSection;
 use crate::notifications::profiles_section::ProfilesSection;
+use crate::notifications::sound_section::SoundSection;
 
 /// Notification filtering settings page composed of independent sections.
 pub struct NotificationsPage {
@@ -27,6 +29,12 @@ impl NotificationsPage {
             .margin_start(12)
             .margin_end(12)
             .build();
+
+        let dnd = DndSection::new(entity_store, action_callback);
+        root.append(&dnd.root);
+
+        let sounds = SoundSection::new(entity_store, action_callback);
+        root.append(&sounds.root);
 
         let active_profile = ActiveProfileSection::new(entity_store, action_callback);
         root.append(&active_profile.root);

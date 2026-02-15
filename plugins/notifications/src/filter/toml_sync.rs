@@ -1,7 +1,9 @@
-//! TOML configuration serialization for filter groups and profiles.
+//! TOML configuration serialization for filter groups, profiles, and sound config.
 
 use serde::Serialize;
 use waft_protocol::entity::notification_filter::{NotificationGroup, NotificationProfile};
+
+use crate::config::SoundConfig;
 
 /// Wrapper for serializing groups and profiles into the notifications plugin config section.
 #[derive(Debug, Serialize)]
@@ -12,28 +14,44 @@ struct FilterSection {
     profiles: Vec<NotificationProfile>,
 }
 
-/// Write filter config to the waft config file, preserving other settings.
-///
-/// Reads the existing config file as raw TOML, updates the notifications plugin
-/// section with the new groups/profiles, and writes back atomically.
-pub fn write_filter_config(
-    groups: &[NotificationGroup],
-    profiles: &[NotificationProfile],
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Wrapper for serializing sound config into the notifications plugin config section.
+#[derive(Debug, Serialize)]
+struct SoundSection {
+    enabled: bool,
+    urgency: UrgencySoundsToml,
+}
+
+#[derive(Debug, Serialize)]
+struct UrgencySoundsToml {
+    low: String,
+    normal: String,
+    critical: String,
+}
+
+/// Read the config file and return (root table, config path).
+fn read_config() -> Result<
+    (toml::Table, std::path::PathBuf),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let path = waft_config::Config::config_path().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::NotFound, "config path not found")
     })?;
 
-    // Read existing config as raw TOML table
-    let mut root: toml::Table = if path.exists() {
+    let root: toml::Table = if path.exists() {
         let content = std::fs::read_to_string(&path)?;
-        toml::from_str(&content)
-            .map_err(|e| format!("failed to parse existing config: {e}"))?
+        toml::from_str(&content).map_err(|e| format!("failed to parse existing config: {e}"))?
     } else {
         toml::Table::new()
     };
 
-    // Find the [[plugins]] array
+    Ok((root, path))
+}
+
+/// Get a mutable reference to the notifications plugin table within the root TOML,
+/// creating it if it doesn't exist.
+fn get_notifications_table(
+    root: &mut toml::Table,
+) -> Result<&mut toml::Table, Box<dyn std::error::Error + Send + Sync>> {
     let plugins = root
         .entry("plugins")
         .or_insert_with(|| toml::Value::Array(Vec::new()));
@@ -43,32 +61,62 @@ pub fn write_filter_config(
         _ => return Err("plugins is not an array".into()),
     };
 
-    // Find the notifications plugin entry
-    let notif_entry = plugins_array.iter_mut().find(|p| {
+    // Find the index of the notifications plugin entry, or create one
+    let idx = plugins_array.iter().position(|p| {
         p.get("id")
             .and_then(|v| v.as_str())
             .map(|id| id == "plugin::notifications")
             .unwrap_or(false)
     });
 
-    let notif_table = if let Some(entry) = notif_entry {
-        match entry {
-            toml::Value::Table(t) => t,
-            _ => return Err("plugin entry is not a table".into()),
-        }
-    } else {
-        // Create new entry
-        let mut new_entry = toml::Table::new();
-        new_entry.insert(
-            "id".to_string(),
-            toml::Value::String("plugin::notifications".to_string()),
-        );
-        plugins_array.push(toml::Value::Table(new_entry));
-        match plugins_array.last_mut().unwrap() {
-            toml::Value::Table(t) => t,
-            _ => unreachable!(),
+    let idx = match idx {
+        Some(i) => i,
+        None => {
+            let mut new_entry = toml::Table::new();
+            new_entry.insert(
+                "id".to_string(),
+                toml::Value::String("plugin::notifications".to_string()),
+            );
+            plugins_array.push(toml::Value::Table(new_entry));
+            plugins_array.len() - 1
         }
     };
+
+    match &mut plugins_array[idx] {
+        toml::Value::Table(t) => Ok(t),
+        _ => Err("plugin entry is not a table".into()),
+    }
+}
+
+/// Serialize and write the root TOML table atomically.
+fn write_config(
+    root: &toml::Table,
+    path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let toml_str =
+        toml::to_string_pretty(root).map_err(|e| format!("failed to serialize config: {e}"))?;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let tmp_path = path.with_extension("tmp");
+    std::fs::write(&tmp_path, &toml_str)?;
+    std::fs::rename(&tmp_path, path)?;
+
+    Ok(())
+}
+
+/// Write filter config to the waft config file, preserving other settings.
+///
+/// Reads the existing config file as raw TOML, updates the notifications plugin
+/// section with the new groups/profiles, and writes back atomically.
+pub fn write_filter_config(
+    groups: &[NotificationGroup],
+    profiles: &[NotificationProfile],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (mut root, path) = read_config()?;
+    let notif_table = get_notifications_table(&mut root)?;
 
     // Serialize filter section and merge into the plugin table
     let section = FilterSection {
@@ -93,19 +141,37 @@ pub fn write_filter_config(
         notif_table.remove("profiles");
     }
 
-    // Serialize and write atomically
-    let toml_str =
-        toml::to_string_pretty(&root).map_err(|e| format!("failed to serialize config: {e}"))?;
-
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    let tmp_path = path.with_extension("tmp");
-    std::fs::write(&tmp_path, &toml_str)?;
-    std::fs::rename(&tmp_path, &path)?;
+    write_config(&root, &path)?;
 
     log::debug!("[notifications/config] wrote filter config to disk");
+    Ok(())
+}
 
+/// Write sound config to the waft config file, preserving other settings.
+pub fn write_sound_config(
+    sound_config: &SoundConfig,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (mut root, path) = read_config()?;
+    let notif_table = get_notifications_table(&mut root)?;
+
+    let section = SoundSection {
+        enabled: sound_config.enabled,
+        urgency: UrgencySoundsToml {
+            low: sound_config.urgency.low.clone(),
+            normal: sound_config.urgency.normal.clone(),
+            critical: sound_config.urgency.critical.clone(),
+        },
+    };
+
+    let section_value = toml::Value::try_from(&section)
+        .map_err(|e| format!("failed to serialize sound section: {e}"))?;
+
+    if let toml::Value::Table(section_table) = section_value {
+        notif_table.insert("sounds".to_string(), toml::Value::Table(section_table));
+    }
+
+    write_config(&root, &path)?;
+
+    log::debug!("[notifications/config] wrote sound config to disk");
     Ok(())
 }

@@ -9,7 +9,9 @@ use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::display::brightness_section::BrightnessSection;
+use crate::display::dark_mode_automation_section::DarkModeAutomationSection;
 use crate::display::dark_mode_section::DarkModeSection;
+use crate::display::night_light_config_section::NightLightConfigSection;
 use crate::display::night_light_section::NightLightSection;
 use crate::display::output_section::OutputSection;
 
@@ -38,8 +40,16 @@ impl DisplayPage {
         let dark_mode = DarkModeSection::new(entity_store, action_callback);
         root.append(&dark_mode.root);
 
+        let dark_mode_automation =
+            DarkModeAutomationSection::new(entity_store, action_callback);
+        root.append(&dark_mode_automation.root);
+
         let night_light = NightLightSection::new(entity_store, action_callback);
         root.append(&night_light.root);
+
+        let night_light_config =
+            NightLightConfigSection::new(entity_store, action_callback);
+        root.append(&night_light_config.root);
 
         Self { root }
     }

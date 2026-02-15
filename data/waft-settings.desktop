@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Waft Settings
+Comment=Configure Waft overlay and plugins
+Exec=waft-settings
+Icon=preferences-system
+Terminal=false
+Categories=Settings;DesktopSettings;GTK;

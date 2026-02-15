@@ -15,10 +15,12 @@
 
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
+use std::collections::HashMap;
 use std::io::BufRead;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
+use sunsetr::config as sunsetr_config;
 use waft_plugin::*;
 
 const ERR_NO_PROCESS: &str = "no sunsetr process is running";
@@ -211,6 +213,42 @@ async fn set_preset(preset_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Query all config fields from sunsetr via `sunsetr get --json all`.
+async fn query_config(target: &str) -> Result<HashMap<String, String>> {
+    let (code, stdout, stderr) =
+        run_sunsetr(&["get", "--target", target, "--json", "all"]).await?;
+
+    if code != 0 {
+        anyhow::bail!("sunsetr get --json all failed (code {code}): {stderr}");
+    }
+
+    let json_start = match stdout.find('{') {
+        Some(idx) => &stdout[idx..],
+        None => {
+            anyhow::bail!("sunsetr get --json all returned no JSON payload");
+        }
+    };
+
+    let values: HashMap<String, serde_json::Value> = serde_json::from_str(json_start)
+        .map_err(|e| anyhow::anyhow!("Failed to parse sunsetr config JSON: {e}"))?;
+
+    // Convert all values to strings (sunsetr returns mixed types)
+    let string_values: HashMap<String, String> = values
+        .into_iter()
+        .map(|(k, v)| {
+            let s = match &v {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                other => other.to_string(),
+            };
+            (k, s)
+        })
+        .collect();
+
+    Ok(string_values)
+}
+
 fn backoff_duration(attempt: usize) -> Duration {
     let ms = match attempt {
         0 => 50,
@@ -260,11 +298,21 @@ async fn refresh_after_start() -> Result<(bool, Option<String>, Option<String>, 
 
 struct SunsetrPlugin {
     state: Arc<StdMutex<SunsetrState>>,
+    config_values: Arc<StdMutex<Option<HashMap<String, String>>>>,
+    current_target: Arc<StdMutex<String>>,
 }
 
 impl SunsetrPlugin {
-    fn new(state: Arc<StdMutex<SunsetrState>>) -> Self {
-        Self { state }
+    fn new(
+        state: Arc<StdMutex<SunsetrState>>,
+        config_values: Arc<StdMutex<Option<HashMap<String, String>>>>,
+        current_target: Arc<StdMutex<String>>,
+    ) -> Self {
+        Self {
+            state,
+            config_values,
+            current_target,
+        }
     }
 
     fn get_state(&self) -> SunsetrState {
@@ -275,6 +323,40 @@ impl SunsetrPlugin {
                 e.into_inner().clone()
             }
         }
+    }
+
+    fn get_target(&self) -> String {
+        match self.current_target.lock() {
+            Ok(g) => g.clone(),
+            Err(e) => {
+                warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                e.into_inner().clone()
+            }
+        }
+    }
+
+    fn config_entity(&self) -> Option<Entity> {
+        let values = match self.config_values.lock() {
+            Ok(g) => g.clone(),
+            Err(e) => {
+                warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                e.into_inner().clone()
+            }
+        };
+
+        let values = values?;
+        let target = self.get_target();
+        let config_data = sunsetr_config::build_config_entity(&target, &values);
+
+        Some(Entity::new(
+            Urn::new(
+                "sunsetr",
+                entity::display::NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
+                &target,
+            ),
+            entity::display::NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
+            &config_data,
+        ))
     }
 }
 
@@ -289,7 +371,7 @@ impl Plugin for SunsetrPlugin {
             presets: state.presets,
             active_preset: state.active_preset,
         };
-        vec![Entity::new(
+        let mut entities = vec![Entity::new(
             Urn::new(
                 "sunsetr",
                 entity::display::NIGHT_LIGHT_ENTITY_TYPE,
@@ -297,7 +379,13 @@ impl Plugin for SunsetrPlugin {
             ),
             entity::display::NIGHT_LIGHT_ENTITY_TYPE,
             &night_light,
-        )]
+        )];
+
+        if let Some(config_entity) = self.config_entity() {
+            entities.push(config_entity);
+        }
+
+        entities
     }
 
     async fn handle_action(
@@ -397,6 +485,192 @@ impl Plugin for SunsetrPlugin {
                         }
                     };
                     state.active_preset = Some(preset_name);
+                }
+            }
+            "update_config" => {
+                let field = params
+                    .get("field")
+                    .and_then(|v| v.as_str())
+                    .ok_or("update_config requires 'field' parameter")?
+                    .to_string();
+                let value = params
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .ok_or("update_config requires 'value' string parameter")?
+                    .to_string();
+
+                if !sunsetr_config::validate_field_name(&field) {
+                    return Err(format!("Unknown config field: {field}").into());
+                }
+
+                let target = self.get_target();
+                debug!("[sunsetr] Updating config: {field}={value} (target={target})");
+
+                let arg = format!("{field}={value}");
+                let (code, _stdout, stderr) =
+                    run_sunsetr(&["set", "--target", &target, &arg]).await?;
+
+                if code != 0 {
+                    return Err(
+                        format!("sunsetr set failed (code {code}): {stderr}").into()
+                    );
+                }
+
+                // Re-query config to capture side effects
+                match query_config(&target).await {
+                    Ok(values) => {
+                        match self.config_values.lock() {
+                            Ok(mut g) => *g = Some(values),
+                            Err(e) => {
+                                warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                                *e.into_inner() = Some(values);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("[sunsetr] Failed to re-query config after update: {e}");
+                    }
+                }
+            }
+            "load_preset" => {
+                let preset_name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or("load_preset requires 'name' parameter")?
+                    .to_string();
+
+                debug!("[sunsetr] Loading preset config: {preset_name}");
+
+                // Query the preset's config
+                match query_config(&preset_name).await {
+                    Ok(values) => {
+                        match self.current_target.lock() {
+                            Ok(mut g) => *g = preset_name.clone(),
+                            Err(e) => {
+                                warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                                *e.into_inner() = preset_name;
+                            }
+                        }
+                        match self.config_values.lock() {
+                            Ok(mut g) => *g = Some(values),
+                            Err(e) => {
+                                warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                                *e.into_inner() = Some(values);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        return Err(
+                            format!("Failed to load preset config: {e}").into()
+                        );
+                    }
+                }
+            }
+            "create_preset" => {
+                let name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or("create_preset requires 'name' parameter")?
+                    .to_string();
+
+                if name.is_empty() || name == "default" || name.contains(' ') {
+                    return Err("Invalid preset name".into());
+                }
+
+                debug!("[sunsetr] Creating preset: {name}");
+
+                let (code, _stdout, stderr) =
+                    run_sunsetr(&["preset", &name]).await?;
+
+                if code != 0 {
+                    return Err(
+                        format!("Failed to create preset (code {code}): {stderr}").into()
+                    );
+                }
+
+                // Refresh presets list
+                if let Ok(presets) = query_presets().await {
+                    let mut state = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    state.presets = presets;
+                }
+
+                // Query the new preset's config
+                if let Ok(values) = query_config(&name).await {
+                    match self.current_target.lock() {
+                        Ok(mut g) => *g = name,
+                        Err(e) => {
+                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                            *e.into_inner() = name;
+                        }
+                    }
+                    match self.config_values.lock() {
+                        Ok(mut g) => *g = Some(values),
+                        Err(e) => {
+                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                            *e.into_inner() = Some(values);
+                        }
+                    }
+                }
+            }
+            "delete_preset" => {
+                let name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or("delete_preset requires 'name' parameter")?
+                    .to_string();
+
+                if name == "default" {
+                    return Err("Cannot delete default preset".into());
+                }
+
+                debug!("[sunsetr] Deleting preset: {name}");
+
+                let preset_path = dirs::config_dir()
+                    .ok_or("No config directory")?
+                    .join(format!("sunsetr/presets/{name}.toml"));
+
+                if preset_path.exists() {
+                    std::fs::remove_file(&preset_path).map_err(|e| {
+                        format!("Failed to delete preset file: {e}")
+                    })?;
+                }
+
+                // Switch to default
+                match self.current_target.lock() {
+                    Ok(mut g) => *g = "default".to_string(),
+                    Err(e) => {
+                        warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                        *e.into_inner() = "default".to_string();
+                    }
+                }
+
+                // Refresh presets list
+                if let Ok(presets) = query_presets().await {
+                    let mut state = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    state.presets = presets;
+                }
+
+                // Query default config
+                if let Ok(values) = query_config("default").await {
+                    match self.config_values.lock() {
+                        Ok(mut g) => *g = Some(values),
+                        Err(e) => {
+                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
+                            *e.into_inner() = Some(values);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -504,7 +778,10 @@ fn binary_available() -> bool {
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[entity::display::NIGHT_LIGHT_ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides(&[
+        entity::display::NIGHT_LIGHT_ENTITY_TYPE,
+        entity::display::NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
+    ]) {
         return Ok(());
     }
 
@@ -532,6 +809,19 @@ fn main() -> Result<()> {
             Vec::new()
         };
 
+        // Query config if active
+        let config_values = if active {
+            match query_config("default").await {
+                Ok(vals) => Some(vals),
+                Err(e) => {
+                    warn!("[sunsetr] Failed to query initial config: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let state = Arc::new(StdMutex::new(SunsetrState {
             active,
             period,
@@ -540,7 +830,10 @@ fn main() -> Result<()> {
             active_preset,
         }));
 
-        let plugin = SunsetrPlugin::new(state.clone());
+        let config_values = Arc::new(StdMutex::new(config_values));
+        let current_target = Arc::new(StdMutex::new("default".to_string()));
+
+        let plugin = SunsetrPlugin::new(state.clone(), config_values, current_target);
         let (runtime, notifier) = PluginRuntime::new("sunsetr", plugin);
 
         // Spawn follow task to monitor sunsetr events.

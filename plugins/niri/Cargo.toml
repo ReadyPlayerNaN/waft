@@ -15,7 +15,11 @@ waft-protocol = { path = "../../crates/protocol" }
 async-trait = "0.1"
 anyhow = "1"
 flume = "0.12"
+kdl = { version = "6", features = ["v1"] }
 log = "0.4"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -2,10 +2,13 @@
 
 use std::collections::HashMap;
 
+use crate::config::KeyboardConfig;
+
 /// Combined plugin state for keyboard layouts and display outputs.
 #[derive(Debug, Default)]
 pub struct NiriState {
     pub keyboard: KeyboardLayoutState,
+    pub keyboard_config: KeyboardConfig,
     pub outputs: HashMap<String, DisplayOutputState>,
 }
 

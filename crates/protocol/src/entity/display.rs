@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Entity type identifier for displays.
@@ -11,6 +13,12 @@ pub const DARK_MODE_ENTITY_TYPE: &str = "dark-mode";
 
 /// Entity type identifier for night light state.
 pub const NIGHT_LIGHT_ENTITY_TYPE: &str = "night-light";
+
+/// Entity type identifier for dark mode automation configuration.
+pub const DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE: &str = "dark-mode-automation-config";
+
+/// Entity type identifier for night light configuration.
+pub const NIGHT_LIGHT_CONFIG_ENTITY_TYPE: &str = "night-light-config";
 
 /// A display with adjustable brightness.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -78,6 +86,97 @@ pub struct DisplayMode {
     pub refresh_rate: f64,
     /// Whether this is the preferred mode for the display.
     pub preferred: bool,
+}
+
+/// Dark mode automation configuration entity.
+/// Generalized across dark mode switching tools (darkman, Yin-Yang, Blueblack, etc.)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DarkModeAutomationConfig {
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub auto_location: Option<bool>,
+    pub dbus_api: Option<bool>,
+    pub portal_api: Option<bool>,
+    pub schema: ConfigSchema,
+}
+
+/// Night light configuration entity.
+/// Exposes all sunsetr configuration fields organized by category.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NightLightConfig {
+    pub target: String,
+
+    // Backend & Mode
+    pub backend: String,
+    pub transition_mode: String,
+
+    // Colors
+    pub night_temp: String,
+    pub night_gamma: String,
+    pub day_temp: String,
+    pub day_gamma: String,
+    pub static_temp: String,
+    pub static_gamma: String,
+
+    // Timing
+    pub sunset: String,
+    pub sunrise: String,
+    pub transition_duration: String,
+
+    // Location
+    pub latitude: String,
+    pub longitude: String,
+
+    // Advanced
+    pub smoothing: String,
+    pub startup_duration: String,
+    pub shutdown_duration: String,
+    pub adaptive_interval: String,
+    pub update_interval: String,
+
+    // Field availability metadata
+    pub field_state: HashMap<String, FieldState>,
+}
+
+/// Rich schema describing field availability and constraints.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConfigSchema {
+    pub fields: HashMap<String, FieldSchema>,
+}
+
+/// Schema metadata for a single configuration field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FieldSchema {
+    pub available: bool,
+    pub state: FieldState,
+    pub field_type: FieldType,
+    pub constraints: Option<Constraints>,
+    pub help_text: Option<String>,
+}
+
+/// Whether a field is editable, read-only, or disabled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FieldState {
+    Editable,
+    ReadOnly,
+    Disabled,
+}
+
+/// The data type of a configuration field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FieldType {
+    Bool,
+    Float { decimals: u8 },
+    String,
+    Enum { options: Vec<String> },
+}
+
+/// Numeric constraints for a field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Constraints {
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub step: Option<f64>,
 }
 
 #[cfg(test)]
@@ -189,5 +288,89 @@ mod tests {
         let json = serde_json::to_value(&mode).unwrap();
         let decoded: DisplayMode = serde_json::from_value(json).unwrap();
         assert_eq!(mode, decoded);
+    }
+
+    #[test]
+    fn dark_mode_automation_config_serde_roundtrip() {
+        let mut fields = HashMap::new();
+        fields.insert(
+            "latitude".into(),
+            FieldSchema {
+                available: true,
+                state: FieldState::Editable,
+                field_type: FieldType::Float { decimals: 2 },
+                constraints: Some(Constraints {
+                    min: Some(-90.0),
+                    max: Some(90.0),
+                    step: Some(0.01),
+                }),
+                help_text: Some("Test help".into()),
+            },
+        );
+
+        let config = DarkModeAutomationConfig {
+            latitude: Some(50.08),
+            longitude: Some(14.42),
+            auto_location: Some(true),
+            dbus_api: Some(true),
+            portal_api: Some(true),
+            schema: ConfigSchema { fields },
+        };
+
+        let json = serde_json::to_value(&config).unwrap();
+        let decoded: DarkModeAutomationConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn field_state_variants_serialize_distinctly() {
+        let editable = serde_json::to_string(&FieldState::Editable).unwrap();
+        let readonly = serde_json::to_string(&FieldState::ReadOnly).unwrap();
+        let disabled = serde_json::to_string(&FieldState::Disabled).unwrap();
+
+        assert_ne!(editable, readonly);
+        assert_ne!(readonly, disabled);
+    }
+
+    #[test]
+    fn field_type_serde_roundtrip() {
+        let float_type = FieldType::Float { decimals: 2 };
+        let json = serde_json::to_string(&float_type).unwrap();
+        let decoded: FieldType = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, float_type);
+    }
+
+    #[test]
+    fn night_light_config_serde_roundtrip() {
+        let mut field_state = HashMap::new();
+        field_state.insert("latitude".into(), FieldState::Editable);
+        field_state.insert("static_temp".into(), FieldState::Disabled);
+
+        let config = NightLightConfig {
+            target: "default".into(),
+            backend: "auto".into(),
+            transition_mode: "geo".into(),
+            night_temp: "3500".into(),
+            night_gamma: "100".into(),
+            day_temp: "6500".into(),
+            day_gamma: "100".into(),
+            static_temp: "4500".into(),
+            static_gamma: "100".into(),
+            sunset: "20:30:00".into(),
+            sunrise: "06:00:00".into(),
+            transition_duration: "30".into(),
+            latitude: "50.08".into(),
+            longitude: "14.42".into(),
+            smoothing: "true".into(),
+            startup_duration: "1.0".into(),
+            shutdown_duration: "1.0".into(),
+            adaptive_interval: "100".into(),
+            update_interval: "5".into(),
+            field_state,
+        };
+
+        let json = serde_json::to_value(&config).unwrap();
+        let decoded: NightLightConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(config, decoded);
     }
 }

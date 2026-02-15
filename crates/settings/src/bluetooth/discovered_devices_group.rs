@@ -1,7 +1,7 @@
 //! Discovered (unpaired) devices preferences group.
 //!
 //! Dumb widget displaying Bluetooth devices found during scanning.
-//! Visible only when any adapter is actively discovering.
+//! Always visible; scanning state controls spinner and description text.
 
 use std::collections::HashMap;
 
@@ -24,7 +24,6 @@ impl DiscoveredDevicesGroup {
     pub fn new() -> Self {
         let group = adw::PreferencesGroup::builder()
             .title("Available Devices")
-            .visible(false)
             .build();
 
         let spinner = gtk::Spinner::new();
@@ -40,7 +39,7 @@ impl DiscoveredDevicesGroup {
     /// Reconcile the discovered device list with new data.
     ///
     /// Adds, updates, or removes device rows to match the provided list.
-    /// The `any_discovering` flag controls group visibility.
+    /// The `any_discovering` flag controls the spinner and description text.
     pub fn reconcile(
         &mut self,
         devices: &[(Urn, BluetoothDevice)],
@@ -95,7 +94,6 @@ impl DiscoveredDevicesGroup {
         }
 
         if any_discovering {
-            self.root.set_visible(true);
             self.spinner.start();
             if self.rows.is_empty() {
                 self.root
@@ -104,9 +102,13 @@ impl DiscoveredDevicesGroup {
                 self.root.set_description(None::<&str>);
             }
         } else {
-            self.root.set_visible(false);
             self.spinner.stop();
-            self.root.set_description(None::<&str>);
+            if self.rows.is_empty() {
+                self.root
+                    .set_description(Some("Start scanning to discover nearby devices"));
+            } else {
+                self.root.set_description(None::<&str>);
+            }
         }
     }
 }

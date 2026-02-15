@@ -334,13 +334,42 @@ impl ProfilesSection {
 
         let no_sound_dropdown = Self::create_rule_dropdown();
         no_sound_dropdown.set_selected(rule_value_to_index(rule.no_sound));
-        let sound_row = adw::ActionRow::builder()
+        let suppress_sound_row = adw::ActionRow::builder()
             .title("Suppress Sound")
             .build();
-        sound_row.add_suffix(&no_sound_dropdown);
-        sub_group.add(&sound_row);
+        suppress_sound_row.add_suffix(&no_sound_dropdown);
+        sub_group.add(&suppress_sound_row);
+
+        let sound_entry = adw::EntryRow::builder()
+            .title("Custom Sound")
+            .text(rule.sound.as_deref().unwrap_or(""))
+            .show_apply_button(true)
+            .sensitive(rule.no_sound != RuleValue::On)
+            .build();
+        sub_group.add(&sound_entry);
 
         group_box.append(&sub_group);
+
+        // Wire custom sound entry
+        {
+            let prof = current_profile.clone();
+            let cb = action_callback.clone();
+            let urn = urn.clone();
+            let gid = group.id.clone();
+            let guard = updating.clone();
+            sound_entry.connect_apply(move |entry| {
+                if guard.get() {
+                    return;
+                }
+                let text = entry.text().to_string();
+                let mut current = prof.borrow().clone();
+                if let Some(rule) = current.rules.get_mut(&gid) {
+                    rule.sound = if text.is_empty() { None } else { Some(text) };
+                }
+                send_profile_update(&current, &cb, &urn);
+                *prof.borrow_mut() = current;
+            });
+        }
 
         // Wire rule dropdowns
         Self::wire_rule_dropdown(
@@ -361,7 +390,7 @@ impl ProfilesSection {
             current_profile,
             &group.id,
         );
-        Self::wire_rule_dropdown(
+        Self::wire_rule_dropdown_with_sound_entry(
             &no_sound_dropdown,
             "no_sound",
             updating,
@@ -369,6 +398,7 @@ impl ProfilesSection {
             urn,
             current_profile,
             &group.id,
+            &sound_entry,
         );
 
         gtk::ListBoxRow::builder()
@@ -409,12 +439,67 @@ impl ProfilesSection {
                     hide: RuleValue::Default,
                     no_toast: RuleValue::Default,
                     no_sound: RuleValue::Default,
+                    sound: None,
                 });
 
             match field {
                 "hide" => rule.hide = new_value,
                 "no_toast" => rule.no_toast = new_value,
                 "no_sound" => rule.no_sound = new_value,
+                _ => {}
+            }
+
+            send_profile_update(&current, &cb, &urn);
+            *prof.borrow_mut() = current;
+            guard.set(false);
+        });
+    }
+
+    /// Like `wire_rule_dropdown`, but also updates the sound entry sensitivity
+    /// when the no_sound dropdown changes.
+    fn wire_rule_dropdown_with_sound_entry(
+        dropdown: &gtk::DropDown,
+        field: &'static str,
+        guard: &Rc<Cell<bool>>,
+        action_callback: &EntityActionCallback,
+        urn: &Urn,
+        current_profile: &Rc<RefCell<NotificationProfile>>,
+        group_id: &str,
+        sound_entry: &adw::EntryRow,
+    ) {
+        let guard = guard.clone();
+        let cb = action_callback.clone();
+        let urn = urn.clone();
+        let prof = current_profile.clone();
+        let gid = group_id.to_string();
+        let entry_ref = sound_entry.clone();
+
+        dropdown.connect_selected_notify(move |dd| {
+            if guard.get() {
+                return;
+            }
+            guard.set(true);
+
+            let new_value = index_to_rule_value(dd.selected());
+            let mut current = prof.borrow().clone();
+
+            let rule = current
+                .rules
+                .entry(gid.clone())
+                .or_insert_with(|| GroupRule {
+                    hide: RuleValue::Default,
+                    no_toast: RuleValue::Default,
+                    no_sound: RuleValue::Default,
+                    sound: None,
+                });
+
+            match field {
+                "hide" => rule.hide = new_value,
+                "no_toast" => rule.no_toast = new_value,
+                "no_sound" => {
+                    rule.no_sound = new_value;
+                    entry_ref.set_sensitive(new_value != RuleValue::On);
+                }
                 _ => {}
             }
 
@@ -478,6 +563,7 @@ impl ProfilesSection {
                         hide: RuleValue::Default,
                         no_toast: RuleValue::Default,
                         no_sound: RuleValue::Default,
+                        sound: None,
                     });
 
                 send_profile_update(&current, &cb, &urn);

@@ -3,6 +3,10 @@ name = "waft-plugin-sunsetr"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "sunsetr"
+path = "src/lib.rs"
+
 [[bin]]
 name = "waft-sunsetr-daemon"
 path = "bin/waft-sunsetr-daemon.rs"
@@ -11,6 +15,7 @@ path = "bin/waft-sunsetr-daemon.rs"
 waft-plugin = { path = "../../crates/plugin" }
 waft-protocol = { path = "../../crates/protocol" }
 anyhow = "1"
+dirs = "5"
 log = "0.4"
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }

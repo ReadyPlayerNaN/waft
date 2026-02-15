@@ -5,9 +5,10 @@
 
 use anyhow::Result;
 use serde::Deserialize;
-use waft_protocol::entity::keyboard::KeyboardLayout;
+use waft_protocol::entity::keyboard::{KeyboardLayout, KeyboardLayoutConfig as ProtoConfig};
 
 use crate::commands;
+use crate::config::{KeyboardConfig, KeyboardConfigMode};
 use crate::state::KeyboardLayoutState;
 
 /// Response from `niri msg --json keyboard-layouts`.
@@ -50,6 +51,25 @@ pub fn to_entity(state: &KeyboardLayoutState) -> KeyboardLayout {
 pub fn update_state_from_response(state: &mut KeyboardLayoutState, response: &NiriLayoutsResponse) {
     state.names = response.names.clone();
     state.current_idx = response.current_idx;
+}
+
+/// Convert keyboard config state to a protocol entity.
+pub fn to_config_entity(config: &KeyboardConfig) -> ProtoConfig {
+    let mode_str = match config.mode {
+        KeyboardConfigMode::LayoutList => "editable",
+        KeyboardConfigMode::ExternalFile => "external-file",
+        KeyboardConfigMode::SystemDefault => "system-default",
+        KeyboardConfigMode::Malformed => "error",
+    };
+
+    ProtoConfig {
+        mode: mode_str.to_string(),
+        layouts: config.layouts.clone(),
+        variant: config.variant.clone(),
+        options: config.options.clone(),
+        file_path: config.file_path.clone(),
+        error_message: config.error_message.clone(),
+    }
 }
 
 /// Extract an abbreviation from a full keyboard layout name.
@@ -141,6 +161,64 @@ fn language_to_country_code(language: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_to_entity_editable_mode() {
+        let config = KeyboardConfig {
+            mode: KeyboardConfigMode::LayoutList,
+            layouts: vec!["us".into(), "de".into()],
+            variant: Some("dvorak".into()),
+            options: Some("grp:win_space_toggle".into()),
+            file_path: None,
+            error_message: None,
+        };
+
+        let entity = to_config_entity(&config);
+        assert_eq!(entity.mode, "editable");
+        assert_eq!(entity.layouts, vec!["us", "de"]);
+        assert_eq!(entity.variant, Some("dvorak".to_string()));
+        assert_eq!(entity.options, Some("grp:win_space_toggle".to_string()));
+    }
+
+    #[test]
+    fn config_to_entity_external_file_mode() {
+        let config = KeyboardConfig {
+            mode: KeyboardConfigMode::ExternalFile,
+            layouts: vec![],
+            variant: None,
+            options: None,
+            file_path: Some("~/.config/keymap.xkb".into()),
+            error_message: None,
+        };
+
+        let entity = to_config_entity(&config);
+        assert_eq!(entity.mode, "external-file");
+        assert_eq!(entity.file_path, Some("~/.config/keymap.xkb".to_string()));
+    }
+
+    #[test]
+    fn config_to_entity_error_mode() {
+        let config = KeyboardConfig {
+            mode: KeyboardConfigMode::Malformed,
+            layouts: vec![],
+            variant: None,
+            options: None,
+            file_path: None,
+            error_message: Some("Parse error".into()),
+        };
+
+        let entity = to_config_entity(&config);
+        assert_eq!(entity.mode, "error");
+        assert_eq!(entity.error_message, Some("Parse error".to_string()));
+    }
+
+    #[test]
+    fn config_to_entity_system_default_mode() {
+        let config = KeyboardConfig::default();
+        let entity = to_config_entity(&config);
+        assert_eq!(entity.mode, "system-default");
+        assert!(entity.layouts.is_empty());
+    }
 
     #[test]
     fn test_parse_niri_response() {
