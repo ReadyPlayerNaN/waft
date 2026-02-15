@@ -113,11 +113,13 @@ mod tests {
             order: 1,
             matcher: RuleCombinator {
                 operator: CombinatorOperator::And,
-                children: vec![RuleNode::Pattern(Pattern {
-                    field: MatchField::AppName,
-                    operator: MatchOperator::Contains,
-                    value: "slack".to_string(),
-                })],
+                children: vec![
+                    RuleNode::Pattern(Pattern {
+                        field: MatchField::AppName,
+                        operator: MatchOperator::Contains,
+                        value: "slack".to_string(),
+                    }),
+                ],
             },
         };
 
@@ -138,11 +140,13 @@ mod tests {
                 }),
                 RuleNode::Combinator(RuleCombinator {
                     operator: CombinatorOperator::Or,
-                    children: vec![RuleNode::Pattern(Pattern {
-                        field: MatchField::Urgency,
-                        operator: MatchOperator::Equals,
-                        value: "critical".to_string(),
-                    })],
+                    children: vec![
+                        RuleNode::Pattern(Pattern {
+                            field: MatchField::Urgency,
+                            operator: MatchOperator::Equals,
+                            value: "critical".to_string(),
+                        }),
+                    ],
                 }),
             ],
         };
