@@ -34,6 +34,7 @@ pub mod display;
 pub mod keyboard;
 pub mod network;
 pub mod notification;
+pub mod notification_filter;
 pub mod power;
 pub mod session;
 pub mod storage;

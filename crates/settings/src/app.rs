@@ -12,9 +12,13 @@ use waft_client::{
 };
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
 use waft_protocol::entity::display::{
-    DARK_MODE_ENTITY_TYPE, DISPLAY_ENTITY_TYPE, NIGHT_LIGHT_ENTITY_TYPE,
+    DARK_MODE_ENTITY_TYPE, DISPLAY_ENTITY_TYPE, DISPLAY_OUTPUT_ENTITY_TYPE,
+    NIGHT_LIGHT_ENTITY_TYPE,
 };
 use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, EthernetConnection, WiFiNetwork};
+use waft_protocol::entity::notification_filter::{
+    ACTIVE_PROFILE_ENTITY_TYPE, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE,
+};
 use waft_protocol::entity::weather;
 
 use crate::window::SettingsWindow;
@@ -27,9 +31,13 @@ const ENTITY_TYPES: &[&str] = &[
     WiFiNetwork::ENTITY_TYPE,
     EthernetConnection::ENTITY_TYPE,
     DISPLAY_ENTITY_TYPE,
+    DISPLAY_OUTPUT_ENTITY_TYPE,
     DARK_MODE_ENTITY_TYPE,
     NIGHT_LIGHT_ENTITY_TYPE,
     weather::ENTITY_TYPE,
+    NOTIFICATION_GROUP_ENTITY_TYPE,
+    NOTIFICATION_PROFILE_ENTITY_TYPE,
+    ACTIVE_PROFILE_ENTITY_TYPE,
 ];
 
 pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {

@@ -13,6 +13,7 @@
 ## Task 1: Define Entity Types in Protocol
 
 **Files:**
+
 - Create: `crates/protocol/src/entity/notification_filter.rs`
 - Modify: `crates/protocol/src/entity/mod.rs`
 - Modify: `crates/protocol/src/entity/notification.rs`
@@ -256,6 +257,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ## Task 2: Implement TOML Config Schema
 
 **Files:**
+
 - Modify: `plugins/notifications/src/config.rs`
 - Modify: `plugins/notifications/Cargo.toml`
 
@@ -522,6 +524,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ## Task 3: Implement Pattern Matching Engine
 
 **Files:**
+
 - Create: `plugins/notifications/src/filter/mod.rs`
 - Create: `plugins/notifications/src/filter/matcher.rs`
 - Create: `plugins/notifications/src/filter/compiler.rs`
@@ -916,6 +919,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ## Task 4: Implement Compiled Matcher Cache
 
 **Files:**
+
 - Create: `plugins/notifications/src/filter/compiler.rs`
 - Modify: `plugins/notifications/src/filter/mod.rs`
 
@@ -1166,6 +1170,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ## Task 5: Add Active Profile State Persistence
 
 **Files:**
+
 - Create: `plugins/notifications/src/filter/profile_state.rs`
 - Modify: `plugins/notifications/src/filter/mod.rs`
 
@@ -1293,6 +1298,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ## Task 6: Integrate Filtering into Plugin
 
 **Files:**
+
 - Modify: `plugins/notifications/src/lib.rs`
 - Modify: `plugins/notifications/bin/waft-notifications.rs`
 
@@ -1628,6 +1634,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ## Task 7: Remove Deprioritization Code
 
 **Files:**
+
 - Delete: `plugins/notifications/src/store/deprioritize.rs`
 - Modify: `plugins/notifications/src/store/mod.rs`
 - Modify: `plugins/notifications/src/store/manager.rs`
@@ -1677,6 +1684,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ## Task 8: Add Entity Actions for Config Management
 
 **Files:**
+
 - Modify: `plugins/notifications/src/lib.rs`
 - Create: `plugins/notifications/src/filter/toml_sync.rs`
 - Modify: `plugins/notifications/src/filter/mod.rs`
@@ -2101,15 +2109,3 @@ git commit -m "feat(notifications): add entity actions for config management
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
-
----
-
-**Plan saved. Ready to begin implementation?**
-
-Two execution options:
-
-**1. Subagent-Driven (this session)** - I dispatch fresh subagent per task, review between tasks, fast iteration
-
-**2. Parallel Session (separate)** - Open new session with executing-plans, batch execution with checkpoints
-
-Which approach?

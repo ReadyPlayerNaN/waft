@@ -158,6 +158,7 @@ fn create_notification(n: &IngressedNotification) -> Notification {
         id: n.id,
         replaces_id: n.replaces_id,
         resident: n.hints.resident,
+        suppress_toast: false,
         title: n.title.clone(),
         ttl: derive_panel_ttl(n),
         urgency: n.hints.urgency,
@@ -319,6 +320,7 @@ mod tests {
         Hints {
             action_icons: false,
             category: None,
+            category_raw: None,
             desktop_entry: None,
             image_data: None,
             image_path: None,
@@ -578,8 +580,6 @@ mod tests {
         assert_eq!(stored.ttl, None);
     }
 
-    // Deprioritization integration tests
-
     fn make_notification_with_app(
         id: u64,
         app_name: &str,
@@ -599,42 +599,8 @@ mod tests {
         }
     }
 
-    #[cfg(test)]
-    #[allow(dead_code)]
-    fn make_notification_with_category(
-        id: u64,
-        category: crate::types::NotificationCategory,
-    ) -> IngressedNotification {
-        let mut hints = make_hints(NotificationUrgency::Normal, false);
-        hints.category = Some(category);
-        IngressedNotification {
-            app_name: Some(Arc::from("test-app")),
-            actions: vec![],
-            created_at: SystemTime::now(),
-            description: Arc::from("Test description"),
-            icon: None,
-            id,
-            hints,
-            replaces_id: None,
-            title: Arc::from("Test title"),
-            ttl: None,
-        }
-    }
-
     #[test]
-    fn test_deprioritize_power_app_still_stored() {
-        let mut state = State::new();
-        let notif = make_notification_with_app(1, "upower", NotificationUrgency::Normal);
-
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)));
-
-        // Notification should be in store and panel (deprioritization only affected toasts)
-        assert!(state.notifications.contains_key(&1));
-        assert!(state.panel_notifications.contains_key(&1));
-    }
-
-    #[test]
-    fn test_normal_app_stored_in_panel() {
+    fn test_ingress_stores_any_app_in_panel() {
         let mut state = State::new();
         let notif = make_notification_with_app(1, "firefox", NotificationUrgency::Normal);
 

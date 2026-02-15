@@ -2,7 +2,6 @@
 //!
 //! Manages notification state with direct function calls.
 
-pub mod deprioritize;
 pub mod manager;
 pub mod types;
 pub mod workspace_extract;

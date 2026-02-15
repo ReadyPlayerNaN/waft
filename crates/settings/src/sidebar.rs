@@ -79,6 +79,16 @@ impl Sidebar {
         disp_row.add_prefix(disp_icon.widget());
         list_box.append(&disp_row);
 
+        // Notifications row
+        let notif_icon =
+            IconWidget::from_name("preferences-system-notifications-symbolic", 16);
+        let notif_row = adw::ActionRow::builder()
+            .title("Notifications")
+            .activatable(true)
+            .build();
+        notif_row.add_prefix(notif_icon.widget());
+        list_box.append(&notif_row);
+
         // Select Bluetooth by default
         if let Some(first_row) = list_box.row_at_index(0) {
             list_box.select_row(Some(&first_row));

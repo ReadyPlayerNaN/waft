@@ -1,0 +1,230 @@
+{
+    "DP-3": {
+        "name": "DP-3",
+        "make": "Samsung Electric Company",
+        "model": "LS49AG95",
+        "serial": "HNTW700722",
+        "physical_size": [
+            1190,
+            340
+        ],
+        "modes": [
+            {
+                "width": 5120,
+                "height": 1440,
+                "refresh_rate": 239761,
+                "is_preferred": true
+            },
+            {
+                "width": 3840,
+                "height": 1080,
+                "refresh_rate": 59968,
+                "is_preferred": true
+            },
+            {
+                "width": 5120,
+                "height": 1440,
+                "refresh_rate": 59977,
+                "is_preferred": false
+            },
+            {
+                "width": 3840,
+                "height": 1080,
+                "refresh_rate": 239969,
+                "is_preferred": false
+            },
+            {
+                "width": 2560,
+                "height": 1440,
+                "refresh_rate": 239901,
+                "is_preferred": false
+            },
+            {
+                "width": 2560,
+                "height": 1440,
+                "refresh_rate": 59951,
+                "is_preferred": false
+            },
+            {
+                "width": 1920,
+                "height": 1080,
+                "refresh_rate": 239759,
+                "is_preferred": false
+            },
+            {
+                "width": 1920,
+                "height": 1080,
+                "refresh_rate": 60000,
+                "is_preferred": false
+            },
+            {
+                "width": 1920,
+                "height": 1080,
+                "refresh_rate": 60000,
+                "is_preferred": false
+            },
+            {
+                "width": 1920,
+                "height": 1080,
+                "refresh_rate": 59940,
+                "is_preferred": false
+            },
+            {
+                "width": 1680,
+                "height": 1050,
+                "refresh_rate": 59954,
+                "is_preferred": false
+            },
+            {
+                "width": 1600,
+                "height": 900,
+                "refresh_rate": 60000,
+                "is_preferred": false
+            },
+            {
+                "width": 1280,
+                "height": 1024,
+                "refresh_rate": 75025,
+                "is_preferred": false
+            },
+            {
+                "width": 1280,
+                "height": 1024,
+                "refresh_rate": 60020,
+                "is_preferred": false
+            },
+            {
+                "width": 1440,
+                "height": 900,
+                "refresh_rate": 59887,
+                "is_preferred": false
+            },
+            {
+                "width": 1280,
+                "height": 800,
+                "refresh_rate": 59810,
+                "is_preferred": false
+            },
+            {
+                "width": 1152,
+                "height": 864,
+                "refresh_rate": 75000,
+                "is_preferred": false
+            },
+            {
+                "width": 1280,
+                "height": 720,
+                "refresh_rate": 60000,
+                "is_preferred": false
+            },
+            {
+                "width": 1280,
+                "height": 720,
+                "refresh_rate": 60000,
+                "is_preferred": false
+            },
+            {
+                "width": 1280,
+                "height": 720,
+                "refresh_rate": 59940,
+                "is_preferred": false
+            },
+            {
+                "width": 1024,
+                "height": 768,
+                "refresh_rate": 75029,
+                "is_preferred": false
+            },
+            {
+                "width": 1024,
+                "height": 768,
+                "refresh_rate": 70069,
+                "is_preferred": false
+            },
+            {
+                "width": 1024,
+                "height": 768,
+                "refresh_rate": 60004,
+                "is_preferred": false
+            },
+            {
+                "width": 832,
+                "height": 624,
+                "refresh_rate": 74551,
+                "is_preferred": false
+            },
+            {
+                "width": 800,
+                "height": 600,
+                "refresh_rate": 75000,
+                "is_preferred": false
+            },
+            {
+                "width": 800,
+                "height": 600,
+                "refresh_rate": 72188,
+                "is_preferred": false
+            },
+            {
+                "width": 800,
+                "height": 600,
+                "refresh_rate": 60317,
+                "is_preferred": false
+            },
+            {
+                "width": 800,
+                "height": 600,
+                "refresh_rate": 56250,
+                "is_preferred": false
+            },
+            {
+                "width": 640,
+                "height": 480,
+                "refresh_rate": 75000,
+                "is_preferred": false
+            },
+            {
+                "width": 640,
+                "height": 480,
+                "refresh_rate": 72809,
+                "is_preferred": false
+            },
+            {
+                "width": 640,
+                "height": 480,
+                "refresh_rate": 66667,
+                "is_preferred": false
+            },
+            {
+                "width": 640,
+                "height": 480,
+                "refresh_rate": 60000,
+                "is_preferred": false
+            },
+            {
+                "width": 640,
+                "height": 480,
+                "refresh_rate": 59940,
+                "is_preferred": false
+            },
+            {
+                "width": 720,
+                "height": 400,
+                "refresh_rate": 70082,
+                "is_preferred": false
+            }
+        ],
+        "current_mode": 0,
+        "is_custom_mode": false,
+        "vrr_supported": true,
+        "vrr_enabled": false,
+        "logical": {
+            "x": 0,
+            "y": 0,
+            "width": 5120,
+            "height": 1440,
+            "scale": 1.0,
+            "transform": "Normal"
+        }
+    }
+}

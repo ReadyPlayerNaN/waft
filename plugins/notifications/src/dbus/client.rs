@@ -16,10 +16,12 @@ pub mod capabilities {
     /// Supports clickable hyperlinks in body (`<a href="...">` tags).
     pub const BODY_HYPERLINKS: &str = "body-hyperlinks";
 
+    /// Supports notification sounds (via `sound-name` and `sound-file` hints).
+    pub const SOUND: &str = "sound";
+
     // Intentionally not supported / not advertised for now:
     // pub const PERSISTENCE: &str = "persistence";
     // pub const ICON_STATIC: &str = "icon-static";
-    // pub const SOUND: &str = "sound";
 }
 
 /// `NotificationClosed` reason codes (freedesktop.org spec).
@@ -90,5 +92,6 @@ pub fn advertised_capabilities() -> Vec<&'static str> {
         capabilities::BODY,
         capabilities::BODY_MARKUP,
         capabilities::BODY_HYPERLINKS,
+        capabilities::SOUND,
     ]
 }

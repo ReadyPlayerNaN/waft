@@ -218,8 +218,11 @@ impl ToastManager {
     }
 }
 
-/// DND filter logic.
+/// Filter logic: suppress toast if the notification is flagged or DND is active.
 fn should_show_toast(notification: &Notification, dnd_active: bool) -> bool {
+    if notification.suppress_toast {
+        return false;
+    }
     if !dnd_active {
         return true;
     }

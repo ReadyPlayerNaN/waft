@@ -11,6 +11,7 @@ use waft_client::{EntityActionCallback, EntityStore};
 use crate::display::brightness_section::BrightnessSection;
 use crate::display::dark_mode_section::DarkModeSection;
 use crate::display::night_light_section::NightLightSection;
+use crate::display::output_section::OutputSection;
 
 /// Display settings page composed of independent sections.
 pub struct DisplayPage {
@@ -30,6 +31,9 @@ impl DisplayPage {
 
         let brightness = BrightnessSection::new(entity_store, action_callback);
         root.append(&brightness.root);
+
+        let output = OutputSection::new(entity_store, action_callback);
+        root.append(&output.root);
 
         let dark_mode = DarkModeSection::new(entity_store, action_callback);
         root.append(&dark_mode.root);

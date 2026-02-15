@@ -209,11 +209,6 @@ impl BluetoothPage {
     ) {
         let mut state = state.borrow_mut();
 
-        log::debug!(
-            "[bluetooth-page] reconcile_devices: {} total devices",
-            devices.len()
-        );
-
         // Partition devices into paired and discovered
         let paired: Vec<(Urn, BluetoothDevice)> =
             devices.iter().filter(|(_, d)| d.paired).cloned().collect();
@@ -222,6 +217,14 @@ impl BluetoothPage {
             devices.iter().filter(|(_, d)| !d.paired).cloned().collect();
 
         let any_discovering = adapters.iter().any(|(_, a)| a.discovering);
+
+        log::debug!(
+            "[bluetooth-page] reconcile_devices: {} total, {} paired, {} discovered, discovering={}",
+            devices.len(),
+            paired.len(),
+            discovered.len(),
+            any_discovering,
+        );
 
         state.paired_group.reconcile(&paired, action_callback);
         state

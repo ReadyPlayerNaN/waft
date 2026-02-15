@@ -23,6 +23,7 @@ pub struct Notification {
     pub resident: bool,
     pub title: Arc<str>,
     pub ttl: Option<u64>,
+    pub suppress_toast: bool,
     pub urgency: NotificationUrgency,
     pub workspace: Option<Arc<str>>,
 }

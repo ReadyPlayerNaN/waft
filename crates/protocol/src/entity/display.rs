@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 /// Entity type identifier for displays.
 pub const DISPLAY_ENTITY_TYPE: &str = "display";
 
+/// Entity type identifier for display outputs (resolution/mode management).
+pub const DISPLAY_OUTPUT_ENTITY_TYPE: &str = "display-output";
+
 /// Entity type identifier for dark mode state.
 pub const DARK_MODE_ENTITY_TYPE: &str = "dark-mode";
 
@@ -38,6 +41,43 @@ pub struct NightLight {
     pub next_transition: Option<String>,
     pub presets: Vec<String>,
     pub active_preset: Option<String>,
+}
+
+/// A display output with configurable resolution and refresh rate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayOutput {
+    /// Output name (e.g., "DP-3", "HDMI-1", "eDP-1").
+    pub name: String,
+    /// Manufacturer name.
+    pub make: String,
+    /// Model name.
+    pub model: String,
+    /// Currently active display mode.
+    pub current_mode: DisplayMode,
+    /// All available display modes.
+    pub available_modes: Vec<DisplayMode>,
+    /// Whether variable refresh rate is supported by the hardware.
+    pub vrr_supported: bool,
+    /// Whether variable refresh rate is currently enabled.
+    pub vrr_enabled: bool,
+}
+
+impl DisplayOutput {
+    /// Entity type identifier for display outputs.
+    pub const ENTITY_TYPE: &'static str = DISPLAY_OUTPUT_ENTITY_TYPE;
+}
+
+/// A display mode (resolution + refresh rate).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayMode {
+    /// Horizontal resolution in pixels.
+    pub width: u32,
+    /// Vertical resolution in pixels.
+    pub height: u32,
+    /// Refresh rate in Hz (e.g., 60.0, 144.0, 239.761).
+    pub refresh_rate: f64,
+    /// Whether this is the preferred mode for the display.
+    pub preferred: bool,
 }
 
 #[cfg(test)]
@@ -102,5 +142,52 @@ mod tests {
         let json = serde_json::to_value(&night_light).unwrap();
         let decoded: NightLight = serde_json::from_value(json).unwrap();
         assert_eq!(night_light, decoded);
+    }
+
+    #[test]
+    fn display_output_serde_roundtrip() {
+        let output = DisplayOutput {
+            name: "DP-3".to_string(),
+            make: "Samsung Electric Company".to_string(),
+            model: "LS49AG95".to_string(),
+            current_mode: DisplayMode {
+                width: 5120,
+                height: 1440,
+                refresh_rate: 239.761,
+                preferred: true,
+            },
+            available_modes: vec![
+                DisplayMode {
+                    width: 5120,
+                    height: 1440,
+                    refresh_rate: 239.761,
+                    preferred: true,
+                },
+                DisplayMode {
+                    width: 1920,
+                    height: 1080,
+                    refresh_rate: 60.0,
+                    preferred: false,
+                },
+            ],
+            vrr_supported: true,
+            vrr_enabled: false,
+        };
+        let json = serde_json::to_value(&output).unwrap();
+        let decoded: DisplayOutput = serde_json::from_value(json).unwrap();
+        assert_eq!(output, decoded);
+    }
+
+    #[test]
+    fn display_mode_serde_roundtrip() {
+        let mode = DisplayMode {
+            width: 3840,
+            height: 2160,
+            refresh_rate: 59.94,
+            preferred: true,
+        };
+        let json = serde_json::to_value(&mode).unwrap();
+        let decoded: DisplayMode = serde_json::from_value(json).unwrap();
+        assert_eq!(mode, decoded);
     }
 }

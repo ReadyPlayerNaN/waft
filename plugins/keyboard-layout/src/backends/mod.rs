@@ -6,14 +6,15 @@
 //! ## Backend Priority
 //!
 //! Backends are detected in the following order:
-//! 1. **Niri** - Detected via `NIRI_SOCKET` environment variable
-//! 2. **Sway** - Detected via `SWAYSOCK` environment variable
-//! 3. **Hyprland** - Detected via `HYPRLAND_INSTANCE_SIGNATURE` environment variable
-//! 4. **systemd-localed** - Fallback for systems with D-Bus locale1 service
+//! 1. **Sway** - Detected via `SWAYSOCK` environment variable
+//! 2. **Hyprland** - Detected via `HYPRLAND_INSTANCE_SIGNATURE` environment variable
+//! 3. **systemd-localed** - Fallback for systems with D-Bus locale1 service
+//!
+//! Note: Niri keyboard layout support has been moved to the dedicated `niri` plugin
+//! (`waft-niri-daemon`), which provides both keyboard layout and display output entities.
 
 mod hyprland;
 mod localed;
-mod niri;
 mod sway;
 
 use anyhow::Result;
@@ -26,7 +27,6 @@ use zbus::Connection;
 
 pub use hyprland::HyprlandBackend;
 pub use localed::LocaledBackend;
-pub use niri::NiriBackend;
 pub use sway::SwayBackend;
 
 /// Event emitted when the keyboard layout changes.
@@ -204,21 +204,14 @@ fn language_to_country_code(language: &str) -> Option<&'static str> {
 /// Detect and create the appropriate keyboard layout backend.
 ///
 /// Checks for compositor-specific environment variables in order:
-/// 1. NIRI_SOCKET → Niri backend
-/// 2. SWAYSOCK → Sway backend
-/// 3. HYPRLAND_INSTANCE_SIGNATURE → Hyprland backend
-/// 4. D-Bus locale1 available → Localed backend
+/// 1. SWAYSOCK → Sway backend
+/// 2. HYPRLAND_INSTANCE_SIGNATURE → Hyprland backend
+/// 3. D-Bus locale1 available → Localed backend
+///
+/// Note: Niri keyboard layout support is provided by the dedicated `niri` plugin.
 ///
 /// Returns `None` if no backend is available.
 pub async fn detect_backend(conn: Option<Connection>) -> Option<Arc<dyn KeyboardLayoutBackend>> {
-    // Check for Niri compositor
-    if std::env::var("NIRI_SOCKET").is_ok()
-        && let Some(backend) = NiriBackend::new().await
-    {
-        info!("[keyboard-layout] Detected Niri compositor, using Niri backend");
-        return Some(Arc::new(backend));
-    }
-
     // Check for Sway compositor
     if std::env::var("SWAYSOCK").is_ok()
         && let Some(backend) = SwayBackend::new().await

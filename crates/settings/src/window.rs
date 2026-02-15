@@ -12,6 +12,7 @@ use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, AdapterKind, NetworkAd
 
 use crate::pages::bluetooth::BluetoothPage;
 use crate::pages::display::DisplayPage;
+use crate::pages::notifications::NotificationsPage;
 use crate::pages::weather::WeatherPage;
 use crate::pages::wifi::WiFiPage;
 use crate::pages::wired::WiredPage;
@@ -50,6 +51,7 @@ impl SettingsWindow {
         let wired_page = WiredPage::new(entity_store, action_callback);
         let weather_page = WeatherPage::new(entity_store, action_callback);
         let display_page = DisplayPage::new(entity_store, action_callback);
+        let notifications_page = NotificationsPage::new(entity_store, action_callback);
 
         // Wrap each page in a clamp for consistent max width
         let bt_clamp = adw::Clamp::builder()
@@ -72,6 +74,10 @@ impl SettingsWindow {
             .maximum_size(600)
             .child(&display_page.root)
             .build();
+        let notif_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&notifications_page.root)
+            .build();
 
         // Stack for page switching
         let stack = gtk::Stack::builder()
@@ -82,6 +88,7 @@ impl SettingsWindow {
         stack.add_named(&wired_clamp, Some("Wired"));
         stack.add_named(&weather_clamp, Some("Weather"));
         stack.add_named(&display_clamp, Some("Display"));
+        stack.add_named(&notif_clamp, Some("Notifications"));
         stack.set_visible_child_name("Bluetooth");
 
         let content_header = adw::HeaderBar::new();

@@ -20,6 +20,9 @@ pub struct Notification {
     pub resident: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
+    /// If true, suppress toast popup (still show in panel).
+    #[serde(default)]
+    pub suppress_toast: bool,
 }
 
 /// Notification urgency level per the freedesktop specification.
@@ -82,6 +85,7 @@ mod tests {
             created_at_ms: 1707753600000,
             resident: false,
             workspace: None,
+            suppress_toast: false,
         };
         let json = serde_json::to_value(&notification).unwrap();
         let decoded: Notification = serde_json::from_value(json).unwrap();
@@ -101,6 +105,7 @@ mod tests {
             created_at_ms: 1707753600000,
             resident: false,
             workspace: Some("Engineering".to_string()),
+            suppress_toast: false,
         };
         let json = serde_json::to_value(&notification).unwrap();
         let decoded: Notification = serde_json::from_value(json).unwrap();
@@ -123,6 +128,7 @@ mod tests {
         });
         let decoded: Notification = serde_json::from_value(json).unwrap();
         assert_eq!(decoded.workspace, None);
+        assert!(!decoded.suppress_toast);
     }
 
     #[test]
@@ -138,6 +144,7 @@ mod tests {
             created_at_ms: 1707753600000,
             resident: true,
             workspace: None,
+            suppress_toast: false,
         };
         let json = serde_json::to_value(&notification).unwrap();
         let decoded: Notification = serde_json::from_value(json).unwrap();

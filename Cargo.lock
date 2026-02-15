@@ -3256,18 +3256,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-plugin-niri"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "flume",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "waft-plugin",
+ "waft-protocol",
+]
+
+[[package]]
 name = "waft-plugin-notifications"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "dirs 5.0.1",
  "env_logger",
  "flume",
  "indexmap",
  "log",
+ "regex",
  "serde",
  "serde_json",
  "tokio",
+ "toml 0.8.23",
+ "waft-config",
  "waft-plugin",
  "waft-protocol",
  "zbus",

@@ -77,17 +77,15 @@ pub fn decode_hints(hints: HashMap<String, OwnedValue>) -> HashMap<String, HintV
 pub struct Hints {
     #[allow(dead_code)]
     pub action_icons: bool,
-    #[allow(dead_code)]
     pub category: Option<NotificationCategory>,
+    /// Raw category string preserved for sound policy rule matching.
+    pub category_raw: Option<Arc<str>>,
     pub desktop_entry: Option<Arc<str>>,
     pub image_data: Option<Vec<u8>>,
     pub image_path: Option<Arc<str>>,
     pub resident: bool,
-    #[allow(dead_code)]
     pub sound_file: Option<Arc<str>>,
-    #[allow(dead_code)]
     pub sound_name: Option<Arc<str>>,
-    #[allow(dead_code)]
     pub suppress_sound: bool,
     #[allow(dead_code)]
     pub transient: bool,
@@ -149,6 +147,7 @@ impl Default for Hints {
         Self {
             action_icons: false,
             category: None,
+            category_raw: None,
             desktop_entry: None,
             image_data: None,
             image_path: None,
@@ -165,12 +164,15 @@ impl Default for Hints {
 }
 
 pub fn parse_hints(hints: &HashMap<String, HintValue>) -> Result<Hints> {
+    let category_raw = get_str_hint(hints, "category");
     Ok(Hints {
         action_icons: get_bool_hint(hints, "action-icons"),
-        category: get_str_hint(hints, "category")
-            .map(|s| NotificationCategory::from_str(&s))
+        category: category_raw
+            .as_ref()
+            .map(|s| NotificationCategory::from_str(s))
             .transpose()
             .map_err(anyhow::Error::msg)?,
+        category_raw,
         desktop_entry: get_str_hint(hints, "desktop-entry"),
         image_data: get_bytes_hint(hints, "image-data"),
         image_path: get_str_hint(hints, "image-path"),
