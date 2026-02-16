@@ -161,6 +161,10 @@ fn load_css() {
           border-radius: 0 0 16px 16px;
         }
 
+        .ordered-list-row.first.last {
+          border-radius: 16px;
+        }
+
         /* Drag and drop visual feedback */
         .dragging {
             opacity: 0.6;

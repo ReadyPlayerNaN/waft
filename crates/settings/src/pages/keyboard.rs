@@ -24,6 +24,7 @@ pub struct KeyboardPage {
 /// Internal mutable state.
 struct KeyboardPageState {
     ordered_list: OrderedList,
+    empty_state: adw::StatusPage,
     add_button: gtk::Button,
     mode_banner: adw::Banner,
     /// Ordered list of layout codes.
@@ -63,7 +64,16 @@ impl KeyboardPage {
         let ordered_list = OrderedList::new(OrderedListProps {
             css_classes: vec!["boxed-list".to_string()],
         });
+        ordered_list.root.set_visible(false);
         list_group.add(&ordered_list.root);
+
+        // Empty state shown when no layouts are configured
+        let empty_state = adw::StatusPage::builder()
+            .icon_name("input-keyboard-symbolic")
+            .title("No Keyboard Layouts")
+            .description("Add a layout to start switching between keyboards.")
+            .build();
+        list_group.add(&empty_state);
 
         root.append(&list_group);
 
@@ -76,6 +86,7 @@ impl KeyboardPage {
 
         let state = Rc::new(RefCell::new(KeyboardPageState {
             ordered_list: ordered_list.clone(),
+            empty_state,
             add_button: add_button.clone(),
             mode_banner,
             layout_codes: Vec::new(),
@@ -356,6 +367,11 @@ impl KeyboardPage {
 
         // Store names for rename lookups
         s.layout_names = config.layout_names.clone();
+
+        // Toggle empty state vs list visibility
+        let has_layouts = !s.layout_codes.is_empty();
+        s.ordered_list.root.set_visible(has_layouts);
+        s.empty_state.set_visible(!has_layouts);
     }
 }
 
