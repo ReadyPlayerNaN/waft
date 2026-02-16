@@ -12,8 +12,7 @@ use waft_client::{
 };
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
 use waft_protocol::entity::display::{
-    DARK_MODE_ENTITY_TYPE, DISPLAY_ENTITY_TYPE, DISPLAY_OUTPUT_ENTITY_TYPE,
-    NIGHT_LIGHT_ENTITY_TYPE,
+    DARK_MODE_ENTITY_TYPE, DISPLAY_ENTITY_TYPE, DISPLAY_OUTPUT_ENTITY_TYPE, NIGHT_LIGHT_ENTITY_TYPE,
 };
 use waft_protocol::entity::keyboard::CONFIG_ENTITY_TYPE as KEYBOARD_CONFIG_ENTITY_TYPE;
 use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, EthernetConnection, WiFiNetwork};
@@ -103,6 +102,9 @@ pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
 
     // 8. Connect startup signal
     app.connect_startup(move |app| {
+        // Load custom CSS for drag-and-drop styling
+        load_css();
+
         let entity_store = Rc::new(EntityStore::new());
         let settings_window = SettingsWindow::new(app, &entity_store, &entity_action_callback);
 
@@ -134,4 +136,75 @@ pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
     });
 
     Ok(app)
+}
+
+/// Load custom CSS for the settings app.
+fn load_css() {
+    let css = r#"
+        /* Ordered list container - card appearance like boxed-list */
+        .ordered-list {
+            color: @card_fg_color;
+            border-radius: 16px;
+            box-shadow: 0 0 0 1px @card_shade_color;
+        }
+
+        /* Ordered list rows */
+        .ordered-list-row {
+          background: @card_bg_color;
+        }
+
+        .ordered-list-row.first {
+          border-radius: 16px 16px 0 0;
+        }
+
+        .ordered-list-row.last {
+          border-radius: 0 0 16px 16px;
+        }
+
+        /* Drag and drop visual feedback */
+        .dragging {
+            opacity: 0.6;
+        }
+
+        /* Drag handle */
+        .drag-handle {
+            opacity: 0.6;
+        }
+
+        .drag-handle:hover {
+            opacity: 1.0;
+        }
+
+        /* Drop zone - thin line between items */
+        .drop-zone {
+            background: alpha(@window_fg_color, 0.2);
+            border-radius: 8px;
+            min-height: 0;
+            transition: min-height 200ms, background-color 200ms;
+        }
+
+        .drop-zone.visible {
+          min-height: 24px;
+        }
+
+        .drop-zone.visible.hover {
+            background: @accent_bg_color;
+            min-height: 32px;
+            box-shadow: 0 0 8px alpha(@accent_bg_color, 0.6);
+        }
+    "#;
+
+    let provider = gtk::CssProvider::new();
+    provider.load_from_data(css);
+
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+        log::info!("[settings] CSS loaded successfully");
+    } else {
+        log::warn!("[settings] Failed to load CSS: no display found");
+    }
 }

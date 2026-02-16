@@ -880,6 +880,55 @@ impl MainWindowWidget {
                 opacity: 0;
             }}
 
+            /* Drag-and-drop styling */
+            .ordered-list-item {{
+                transition: opacity 150ms ease-in-out;
+            }}
+
+            .ordered-list-item.dragging {{
+                opacity: 0.5;
+            }}
+
+            .ordered-list-item.drop-target {{
+                background: alpha(@accent_bg_color, 0.15);
+                transition: background 150ms ease-in-out;
+            }}
+
+            .ordered-list-item .drag-handle {{
+                opacity: 0.5;
+                transition: opacity 150ms ease;
+            }}
+
+            .ordered-list-item .drag-handle:hover {{
+                opacity: 1.0;
+            }}
+
+            /* Drag and drop visual feedback - GTK CSS */
+            .dragging {{
+                opacity: 0.6;
+            }}
+
+            .drag-icon {{
+                background: @card_bg_color;
+                border-radius: 12px;
+                box-shadow: 0 8px 16px alpha(black, 0.3);
+                padding: 4px;
+            }}
+
+            .drop-target {{
+                border-top: 4px solid @accent_bg_color;
+                background: alpha(@accent_bg_color, 0.2);
+                box-shadow: inset 0 4px 8px -2px @accent_bg_color;
+            }}
+
+            .drag-handle {{
+                opacity: 0.6;
+            }}
+
+            .drag-handle:hover {{
+                opacity: 1.0;
+            }}
+
             "#,
             OVERLAY_CORNER_RADIUS_PX
         );

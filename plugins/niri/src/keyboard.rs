@@ -65,6 +65,7 @@ pub fn to_config_entity(config: &KeyboardConfig) -> ProtoConfig {
     ProtoConfig {
         mode: mode_str.to_string(),
         layouts: config.layouts.clone(),
+        layout_names: config.layout_names.clone(),
         variant: config.variant.clone(),
         options: config.options.clone(),
         file_path: config.file_path.clone(),
@@ -167,6 +168,7 @@ mod tests {
         let config = KeyboardConfig {
             mode: KeyboardConfigMode::LayoutList,
             layouts: vec!["us".into(), "de".into()],
+            layout_names: vec!["English (US)".into(), "German".into()],
             variant: Some("dvorak".into()),
             options: Some("grp:win_space_toggle".into()),
             file_path: None,
@@ -176,6 +178,7 @@ mod tests {
         let entity = to_config_entity(&config);
         assert_eq!(entity.mode, "editable");
         assert_eq!(entity.layouts, vec!["us", "de"]);
+        assert_eq!(entity.layout_names, vec!["English (US)", "German"]);
         assert_eq!(entity.variant, Some("dvorak".to_string()));
         assert_eq!(entity.options, Some("grp:win_space_toggle".to_string()));
     }
@@ -185,6 +188,7 @@ mod tests {
         let config = KeyboardConfig {
             mode: KeyboardConfigMode::ExternalFile,
             layouts: vec![],
+            layout_names: vec![],
             variant: None,
             options: None,
             file_path: Some("~/.config/keymap.xkb".into()),
@@ -201,6 +205,7 @@ mod tests {
         let config = KeyboardConfig {
             mode: KeyboardConfigMode::Malformed,
             layouts: vec![],
+            layout_names: vec![],
             variant: None,
             options: None,
             file_path: None,

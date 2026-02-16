@@ -1,7 +1,7 @@
 //! Keyboard settings page -- smart container.
 //!
 //! Subscribes to `EntityStore` for `keyboard-layout-config` entity type.
-//! On entity changes, reconciles keyboard layout list.
+//! On entity changes, reconciles keyboard layout list with drag-and-drop support.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -10,9 +10,11 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::keyboard::{CONFIG_ENTITY_TYPE, KeyboardLayoutConfig};
+use waft_ui_gtk::widgets::ordered_list::{OrderedList, OrderedListOutput, OrderedListProps};
+use waft_ui_gtk::widgets::ordered_list_row::{OrderedListRow, OrderedListRowProps};
 
 use crate::keyboard::add_layout_dialog;
-use crate::keyboard::layout_row::{LayoutRow, LayoutRowOutput};
+use crate::keyboard::rename_dialog;
 
 /// Smart container for the Keyboard settings page.
 pub struct KeyboardPage {
@@ -21,15 +23,17 @@ pub struct KeyboardPage {
 
 /// Internal mutable state.
 struct KeyboardPageState {
-    layout_list: gtk::ListBox,
+    ordered_list: OrderedList,
     add_button: gtk::Button,
     mode_banner: adw::Banner,
-    /// Ordered list of layout row codes, matching the ListBox order.
+    /// Ordered list of layout codes.
     layout_codes: Vec<String>,
-    /// Map from layout code to LayoutRow widget.
-    layout_rows: std::collections::HashMap<String, LayoutRow>,
+    /// Custom names parallel to layout_codes (empty string = no custom name).
+    layout_names: Vec<String>,
     /// Current entity URN (set on first reconcile).
     config_urn: Option<Urn>,
+    /// Whether rename is supported (external-file mode).
+    can_rename: bool,
 }
 
 impl KeyboardPage {
@@ -50,33 +54,68 @@ impl KeyboardPage {
         // Layout list group
         let list_group = adw::PreferencesGroup::builder()
             .title("Keyboard Layouts")
-            .description("Configure available keyboard layouts for switching")
+            .description(
+                "Configure available keyboard layouts for switching. Drag the handle to reorder.",
+            )
             .build();
 
-        let layout_list = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .css_classes(["boxed-list"])
-            .build();
-        list_group.add(&layout_list);
+        // Create OrderedList instead of manual ListBox
+        let ordered_list = OrderedList::new(OrderedListProps {
+            css_classes: vec!["boxed-list".to_string()],
+        });
+        list_group.add(&ordered_list.root);
 
         root.append(&list_group);
 
         // Add layout button
         let add_button = gtk::Button::builder()
             .label("Add Layout")
-            .css_classes(["suggested-action"])
             .halign(gtk::Align::Start)
             .build();
         root.append(&add_button);
 
         let state = Rc::new(RefCell::new(KeyboardPageState {
-            layout_list,
+            ordered_list: ordered_list.clone(),
             add_button: add_button.clone(),
             mode_banner,
             layout_codes: Vec::new(),
-            layout_rows: std::collections::HashMap::new(),
+            layout_names: Vec::new(),
             config_urn: None,
+            can_rename: false,
         }));
+
+        // Connect OrderedList reorder output
+        {
+            let state_ref = state.clone();
+            let cb_ref = action_callback.clone();
+
+            ordered_list.connect_output(move |output| {
+                if let OrderedListOutput::Reordered(layout_code, from_index, to_index) = output {
+                    log::debug!(
+                        "[keyboard-page] Layout '{}' reordered from {} to {}",
+                        layout_code,
+                        from_index,
+                        to_index
+                    );
+
+                    // Compute new order
+                    let new_order = {
+                        let s = state_ref.borrow();
+                        let mut new_order = s.layout_codes.clone();
+                        let item = new_order.remove(from_index);
+                        new_order.insert(to_index, item);
+                        new_order
+                    };
+
+                    // Send reorder action
+                    let urn = state_ref.borrow().config_urn.clone();
+                    if let Some(urn) = urn {
+                        let params = serde_json::json!({ "layouts": new_order });
+                        cb_ref(urn, "reorder".to_string(), params);
+                    }
+                }
+            });
+        }
 
         // Connect add button
         {
@@ -94,9 +133,14 @@ impl KeyboardPage {
                     let urn_clone = urn;
                     add_layout_dialog::show_add_layout_dialog(
                         &root_ref,
-                        move |layout_code| {
-                            log::debug!("[keyboard-page] Adding layout: {}", layout_code);
-                            let params = serde_json::json!({ "layout": layout_code });
+                        move |layout_code, layout_name| {
+                            log::debug!(
+                                "[keyboard-page] Adding layout: {} ({})",
+                                layout_code,
+                                layout_name
+                            );
+                            let params =
+                                serde_json::json!({ "layout": layout_code, "name": layout_name });
                             cb_clone(urn_clone.clone(), "add".to_string(), params);
                         },
                     );
@@ -159,24 +203,31 @@ impl KeyboardPage {
         // Store URN for action callbacks
         s.config_urn = Some(urn.clone());
 
+        let can_rename = config.mode == "external-file";
+        s.can_rename = can_rename;
+
         // Update mode banner
         match config.mode.as_str() {
             "external-file" => {
                 let msg = if let Some(path) = &config.file_path {
                     format!(
-                        "Using custom XKB file: {}. Remove the 'file' option from niri config to configure layouts here.",
+                        "Layouts configured via XKB file: {}. Changes require restarting the Niri session.",
                         path
                     )
                 } else {
-                    "Using custom XKB file. Remove the 'file' option from niri config to configure layouts here.".to_string()
+                    "Layouts configured via XKB file. Changes require restarting the Niri session."
+                        .to_string()
                 };
                 s.mode_banner.set_title(&msg);
                 s.mode_banner.set_revealed(true);
-                s.add_button.set_sensitive(false);
+                s.add_button.set_sensitive(true);
             }
             "error" => {
                 let msg = if let Some(error) = &config.error_message {
-                    format!("Configuration error: {}. Please check ~/.config/niri/config.kdl", error)
+                    format!(
+                        "Configuration error: {}. Please check ~/.config/niri/config.kdl",
+                        error
+                    )
                 } else {
                     "Configuration error. Please check ~/.config/niri/config.kdl".to_string()
                 };
@@ -201,95 +252,111 @@ impl KeyboardPage {
         }
 
         // Check if layout list actually changed
-        if s.layout_codes == config.layouts {
-            // Just update move button sensitivity (in case count didn't change but
-            // this is a different reconcile trigger)
-            Self::update_move_buttons(&s);
+        if s.layout_codes == config.layouts && s.layout_names == config.layout_names {
             return;
         }
 
         // Clear existing rows
-        let old_codes: Vec<String> = s.layout_codes.drain(..).collect();
-        for code in &old_codes {
-            if let Some(row) = s.layout_rows.remove(code) {
-                s.layout_list.remove(row.widget());
-            }
-        }
+        s.ordered_list.clear();
+        s.layout_codes.clear();
+        s.layout_names.clear();
 
         // Add rows in order
-        let layout_count = config.layouts.len();
-        for (i, layout_code) in config.layouts.iter().enumerate() {
-            let full_name = layout_code_to_name(layout_code);
-            let row = LayoutRow::new(layout_code, &full_name);
-
-            row.set_can_move_up(i > 0);
-            row.set_can_move_down(i < layout_count - 1);
-
-            // Connect output handlers
-            let urn_clone = urn.clone();
-            let cb_clone = action_callback.clone();
-            let state_clone = state.clone();
-            row.connect_output(move |output| match output {
-                LayoutRowOutput::Remove(code) => {
-                    log::debug!("[keyboard-page] Removing layout: {}", code);
-                    let params = serde_json::json!({ "layout": code });
-                    cb_clone(urn_clone.clone(), "remove".to_string(), params);
-                }
-                LayoutRowOutput::MoveUp(code) => {
-                    let s = state_clone.borrow();
-                    if let Some(new_order) = move_layout_up(&s.layout_codes, &code) {
-                        log::debug!("[keyboard-page] Moving layout up: {}", code);
-                        let params = serde_json::json!({ "layouts": new_order });
-                        cb_clone(urn_clone.clone(), "reorder".to_string(), params);
+        for layout_code in config.layouts.iter() {
+            let full_name = config
+                .layout_names
+                .iter()
+                .zip(config.layouts.iter())
+                .find(|(_, c)| *c == layout_code)
+                .and_then(|(name, _)| {
+                    if name.is_empty() {
+                        None
+                    } else {
+                        Some(name.clone())
                     }
-                }
-                LayoutRowOutput::MoveDown(code) => {
-                    let s = state_clone.borrow();
-                    if let Some(new_order) = move_layout_down(&s.layout_codes, &code) {
-                        log::debug!("[keyboard-page] Moving layout down: {}", code);
-                        let params = serde_json::json!({ "layouts": new_order });
-                        cb_clone(urn_clone.clone(), "reorder".to_string(), params);
-                    }
-                }
+                })
+                .unwrap_or_else(|| layout_code_to_name(layout_code));
+
+            // Create OrderedListRow with native ActionRow layout
+            let row = OrderedListRow::new(OrderedListRowProps {
+                id: layout_code.clone(),
+                draggable: true,
+                title: full_name,
+                subtitle: Some(layout_code.clone()),
             });
 
-            s.layout_list.append(row.widget());
-            s.layout_rows.insert(layout_code.clone(), row);
+            // Rename button (only if can_rename)
+            if can_rename {
+                let rename_btn = gtk::Button::builder()
+                    .icon_name("document-edit-symbolic")
+                    .tooltip_text("Rename layout")
+                    .valign(gtk::Align::Center)
+                    .css_classes(["flat"])
+                    .build();
+
+                let code_clone = layout_code.clone();
+                let state_clone = state.clone();
+                let cb_clone = action_callback.clone();
+                let urn_clone = urn.clone();
+                let list_widget = s.ordered_list.root.clone();
+
+                rename_btn.connect_clicked(move |_| {
+                    let current_name = {
+                        let s = state_clone.borrow();
+                        let idx = s.layout_codes.iter().position(|c| c == &code_clone);
+                        idx.and_then(|i| s.layout_names.get(i))
+                            .filter(|n| !n.is_empty())
+                            .cloned()
+                            .unwrap_or_else(|| layout_code_to_name(&code_clone))
+                    };
+
+                    let cb = cb_clone.clone();
+                    let urn = urn_clone.clone();
+                    let code = code_clone.clone();
+                    rename_dialog::show_rename_dialog(
+                        &list_widget,
+                        &current_name,
+                        move |new_name| {
+                            log::debug!(
+                                "[keyboard-page] Renaming layout '{}' to '{}'",
+                                code,
+                                new_name
+                            );
+                            let params = serde_json::json!({ "layout": code, "name": new_name });
+                            cb(urn.clone(), "rename".to_string(), params);
+                        },
+                    );
+                });
+
+                row.add_suffix(&rename_btn);
+            }
+
+            // Remove button
+            let remove_btn = gtk::Button::builder()
+                .icon_name("user-trash-symbolic")
+                .tooltip_text("Remove layout")
+                .valign(gtk::Align::Center)
+                .css_classes(["flat"])
+                .build();
+
+            let code_clone = layout_code.clone();
+            let cb_clone = action_callback.clone();
+            let urn_clone = urn.clone();
+            remove_btn.connect_clicked(move |_| {
+                log::debug!("[keyboard-page] Removing layout: {}", code_clone);
+                let params = serde_json::json!({ "layout": code_clone });
+                cb_clone(urn_clone.clone(), "remove".to_string(), params);
+            });
+
+            row.add_suffix(&remove_btn);
+
+            s.ordered_list.append_item(&row);
             s.layout_codes.push(layout_code.clone());
         }
-    }
 
-    fn update_move_buttons(s: &KeyboardPageState) {
-        let count = s.layout_codes.len();
-        for (i, code) in s.layout_codes.iter().enumerate() {
-            if let Some(row) = s.layout_rows.get(code) {
-                row.set_can_move_up(i > 0);
-                row.set_can_move_down(i < count - 1);
-            }
-        }
+        // Store names for rename lookups
+        s.layout_names = config.layout_names.clone();
     }
-}
-
-/// Move a layout code one position up in the list.
-fn move_layout_up(layouts: &[String], code: &str) -> Option<Vec<String>> {
-    let idx = layouts.iter().position(|c| c == code)?;
-    if idx == 0 {
-        return None;
-    }
-    let mut new_order = layouts.to_vec();
-    new_order.swap(idx, idx - 1);
-    Some(new_order)
-}
-
-/// Move a layout code one position down in the list.
-fn move_layout_down(layouts: &[String], code: &str) -> Option<Vec<String>> {
-    let idx = layouts.iter().position(|c| c == code)?;
-    if idx >= layouts.len() - 1 {
-        return None;
-    }
-    let mut new_order = layouts.to_vec();
-    new_order.swap(idx, idx + 1);
-    Some(new_order)
 }
 
 /// Map a layout code to a human-readable name.

@@ -48,19 +48,21 @@ impl NiriPlugin {
         params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Check if config is in an editable mode
-        let current_mode = {
+        let (current_mode, file_path) = {
             let state = self.lock_state();
-            state.keyboard_config.mode.clone()
+            (
+                state.keyboard_config.mode.clone(),
+                state.keyboard_config.file_path.clone(),
+            )
         };
 
         if !matches!(
             current_mode,
-            KeyboardConfigMode::LayoutList | KeyboardConfigMode::SystemDefault
+            KeyboardConfigMode::LayoutList
+                | KeyboardConfigMode::SystemDefault
+                | KeyboardConfigMode::ExternalFile
         ) {
             let help = match current_mode {
-                KeyboardConfigMode::ExternalFile => {
-                    "Remove the 'file' option from niri config to enable editing."
-                }
                 KeyboardConfigMode::Malformed => "Fix config file errors first.",
                 _ => "",
             };
@@ -80,21 +82,38 @@ impl NiriPlugin {
                         .ok_or("Missing 'layout' parameter")?,
                 )?;
 
-                let mut new_layouts = {
+                let name: String = params
+                    .get("name")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    .unwrap_or_else(|| layout.clone());
+
+                let (mut new_layouts, mut new_names) = {
                     let state = self.lock_state();
-                    state.keyboard_config.layouts.clone()
+                    (
+                        state.keyboard_config.layouts.clone(),
+                        state.keyboard_config.layout_names.clone(),
+                    )
                 };
 
                 if !new_layouts.contains(&layout) {
                     new_layouts.push(layout.clone());
-                    config::write_keyboard_layouts(new_layouts.clone())?;
+                    new_names.push(name);
+                    self.write_layouts(
+                        &current_mode,
+                        file_path.as_deref(),
+                        &new_layouts,
+                        &new_names,
+                    )?;
                     info!("[niri] Added keyboard layout: {}", layout);
 
                     // Update state
                     {
                         let mut s = self.lock_state();
                         s.keyboard_config.layouts = new_layouts;
-                        s.keyboard_config.mode = KeyboardConfigMode::LayoutList;
+                        s.keyboard_config.layout_names = new_names;
+                        if current_mode != KeyboardConfigMode::ExternalFile {
+                            s.keyboard_config.mode = KeyboardConfigMode::LayoutList;
+                        }
                     }
 
                     self.reload_niri_config().await;
@@ -108,19 +127,33 @@ impl NiriPlugin {
                         .ok_or("Missing 'layout' parameter")?,
                 )?;
 
-                let mut new_layouts = {
+                let (mut new_layouts, mut new_names) = {
                     let state = self.lock_state();
-                    state.keyboard_config.layouts.clone()
+                    (
+                        state.keyboard_config.layouts.clone(),
+                        state.keyboard_config.layout_names.clone(),
+                    )
                 };
 
-                new_layouts.retain(|l| l != &layout);
-                config::write_keyboard_layouts(new_layouts.clone())?;
+                if let Some(idx) = new_layouts.iter().position(|l| l == &layout) {
+                    new_layouts.remove(idx);
+                    if idx < new_names.len() {
+                        new_names.remove(idx);
+                    }
+                }
+                self.write_layouts(
+                    &current_mode,
+                    file_path.as_deref(),
+                    &new_layouts,
+                    &new_names,
+                )?;
                 info!("[niri] Removed keyboard layout: {}", layout);
 
                 // Update state
                 {
                     let mut s = self.lock_state();
                     s.keyboard_config.layouts = new_layouts;
+                    s.keyboard_config.layout_names = new_names;
                 }
 
                 self.reload_niri_config().await;
@@ -133,22 +166,124 @@ impl NiriPlugin {
                         .ok_or("Missing 'layouts' parameter")?,
                 )?;
 
-                config::write_keyboard_layouts(layouts.clone())?;
+                // Build code->name map from current state, then reorder names
+                let new_names = {
+                    let state = self.lock_state();
+                    let code_to_name: std::collections::HashMap<&str, &str> = state
+                        .keyboard_config
+                        .layouts
+                        .iter()
+                        .zip(state.keyboard_config.layout_names.iter())
+                        .map(|(c, n)| (c.as_str(), n.as_str()))
+                        .collect();
+                    layouts
+                        .iter()
+                        .map(|code| {
+                            code_to_name
+                                .get(code.as_str())
+                                .unwrap_or(&"")
+                                .to_string()
+                        })
+                        .collect::<Vec<_>>()
+                };
+
+                self.write_layouts(
+                    &current_mode,
+                    file_path.as_deref(),
+                    &layouts,
+                    &new_names,
+                )?;
                 info!("[niri] Reordered keyboard layouts");
 
                 // Update state
                 {
                     let mut s = self.lock_state();
                     s.keyboard_config.layouts = layouts;
+                    s.keyboard_config.layout_names = new_names;
                 }
 
                 self.reload_niri_config().await;
+            }
+            "rename" => {
+                if !matches!(current_mode, KeyboardConfigMode::ExternalFile) {
+                    return Err(
+                        "Rename is only supported in external-file mode".into()
+                    );
+                }
+
+                let layout: String = serde_json::from_value(
+                    params
+                        .get("layout")
+                        .cloned()
+                        .ok_or("Missing 'layout' parameter")?,
+                )?;
+
+                let name: String = serde_json::from_value(
+                    params
+                        .get("name")
+                        .cloned()
+                        .ok_or("Missing 'name' parameter")?,
+                )?;
+
+                let (layouts, mut names) = {
+                    let state = self.lock_state();
+                    (
+                        state.keyboard_config.layouts.clone(),
+                        state.keyboard_config.layout_names.clone(),
+                    )
+                };
+
+                if let Some(idx) = layouts.iter().position(|l| l == &layout) {
+                    // Extend names vec if needed
+                    while names.len() <= idx {
+                        names.push(String::new());
+                    }
+                    names[idx] = name.clone();
+
+                    self.write_layouts(
+                        &current_mode,
+                        file_path.as_deref(),
+                        &layouts,
+                        &names,
+                    )?;
+                    info!("[niri] Renamed keyboard layout '{}' to '{}'", layout, name);
+
+                    // Update state
+                    {
+                        let mut s = self.lock_state();
+                        s.keyboard_config.layout_names = names;
+                    }
+
+                    self.reload_niri_config().await;
+                } else {
+                    return Err(format!("Layout '{}' not found", layout).into());
+                }
             }
             _ => {
                 warn!("[niri] Unknown keyboard config action: {}", action);
             }
         }
 
+        Ok(())
+    }
+
+    /// Write layouts to the appropriate config file based on the current mode.
+    fn write_layouts(
+        &self,
+        mode: &KeyboardConfigMode,
+        file_path: Option<&str>,
+        layouts: &[String],
+        names: &[String],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match mode {
+            KeyboardConfigMode::ExternalFile => {
+                let path = file_path.ok_or("ExternalFile mode but no file path in config")?;
+                config::write_xkb_layouts(path, layouts, names)?;
+            }
+            _ => {
+                config::write_keyboard_layouts(layouts.to_vec())?;
+            }
+        }
         Ok(())
     }
 
@@ -416,6 +551,7 @@ fn main() -> Result<()> {
 
                                     let changed = s.keyboard_config.mode != new_config.mode
                                         || s.keyboard_config.layouts != new_config.layouts
+                                        || s.keyboard_config.layout_names != new_config.layout_names
                                         || s.keyboard_config.options != new_config.options
                                         || s.keyboard_config.variant != new_config.variant;
 

@@ -13,8 +13,8 @@ struct AvailableLayout {
 }
 
 /// Show the add layout dialog. Calls `on_add` with the selected layout code
-/// if the user confirms selection.
-pub fn show_add_layout_dialog(parent: &impl IsA<gtk::Widget>, on_add: impl Fn(String) + 'static) {
+/// and name if the user confirms selection.
+pub fn show_add_layout_dialog(parent: &impl IsA<gtk::Widget>, on_add: impl Fn(String, String) + 'static) {
     let dialog = adw::AlertDialog::builder()
         .heading("Add Keyboard Layout")
         .close_response("cancel")
@@ -90,14 +90,16 @@ pub fn show_add_layout_dialog(parent: &impl IsA<gtk::Widget>, on_add: impl Fn(St
 
     dialog.set_extra_child(Some(&content_box));
 
-    // Track selected row
-    let selected_code: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
-    let selected_code_for_select = selected_code.clone();
+    // Track selected row (code, name)
+    let selected: Rc<RefCell<Option<(String, String)>>> = Rc::new(RefCell::new(None));
+    let selected_for_select = selected.clone();
     list_box.connect_row_selected(move |_, row| {
         if let Some(row) = row {
             if let Some(action_row) = row.downcast_ref::<adw::ActionRow>() {
-                *selected_code_for_select.borrow_mut() =
-                    action_row.subtitle().map(|s| s.to_string());
+                if let Some(code) = action_row.subtitle() {
+                    let name = action_row.title().to_string();
+                    *selected_for_select.borrow_mut() = Some((code.to_string(), name));
+                }
             }
         }
     });
@@ -109,18 +111,19 @@ pub fn show_add_layout_dialog(parent: &impl IsA<gtk::Widget>, on_add: impl Fn(St
     list_box.connect_row_activated(move |_, row| {
         if let Some(action_row) = row.downcast_ref::<adw::ActionRow>() {
             if let Some(code) = action_row.subtitle() {
-                on_add_for_activate(code.to_string());
+                let name = action_row.title().to_string();
+                on_add_for_activate(code.to_string(), name);
                 dialog_for_activate.force_close();
             }
         }
     });
 
-    let selected_code_for_response = selected_code;
+    let selected_for_response = selected;
     let on_add_for_response = on_add;
     dialog.connect_response(None, move |_, response| {
         if response == "add" {
-            if let Some(code) = selected_code_for_response.borrow().clone() {
-                on_add_for_response(code);
+            if let Some((code, name)) = selected_for_response.borrow().clone() {
+                on_add_for_response(code, name);
             }
         }
     });

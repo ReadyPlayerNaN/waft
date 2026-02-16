@@ -21,6 +21,9 @@ pub struct KeyboardLayoutConfig {
     pub mode: String,
     /// Configured layout codes (e.g., ["us", "de", "cz"])
     pub layouts: Vec<String>,
+    /// Custom layout names, parallel to `layouts` (empty string = no custom name).
+    #[serde(default)]
+    pub layout_names: Vec<String>,
     /// XKB variant (e.g., "dvorak")
     pub variant: Option<String>,
     /// XKB options (e.g., "grp:win_space_toggle,compose:ralt")
@@ -51,6 +54,11 @@ mod tests {
         let config = KeyboardLayoutConfig {
             mode: "editable".to_string(),
             layouts: vec!["us".to_string(), "de".to_string(), "cz".to_string()],
+            layout_names: vec![
+                "English (US)".to_string(),
+                "German".to_string(),
+                "Czech".to_string(),
+            ],
             variant: Some("dvorak".to_string()),
             options: Some("grp:win_space_toggle".to_string()),
             file_path: None,
@@ -66,6 +74,7 @@ mod tests {
         let config = KeyboardLayoutConfig {
             mode: "external-file".to_string(),
             layouts: vec![],
+            layout_names: vec![],
             variant: None,
             options: None,
             file_path: Some("~/.config/keymap.xkb".to_string()),
@@ -81,6 +90,7 @@ mod tests {
         let config = KeyboardLayoutConfig {
             mode: "error".to_string(),
             layouts: vec![],
+            layout_names: vec![],
             variant: None,
             options: None,
             file_path: None,
@@ -89,5 +99,20 @@ mod tests {
         let json = serde_json::to_value(&config).unwrap();
         let decoded: KeyboardLayoutConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn keyboard_layout_config_serde_without_layout_names() {
+        // Backward compatibility: JSON without layout_names should deserialize fine
+        let json = serde_json::json!({
+            "mode": "editable",
+            "layouts": ["us", "de"],
+            "variant": null,
+            "options": null,
+            "file_path": null,
+            "error_message": null
+        });
+        let decoded: KeyboardLayoutConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.layout_names, Vec::<String>::new());
     }
 }
