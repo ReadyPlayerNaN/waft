@@ -260,6 +260,41 @@ async fn start_view(conn: &Connection, bus_name: &str, view_path: &str) -> Resul
     Ok(())
 }
 
+/// Time range (UTC timestamps) for the calendar query window.
+#[derive(Clone, Copy)]
+struct TimeRange {
+    start: i64,
+    end: i64,
+}
+
+/// Build the time range and `occur-in-time-range?` query string.
+///
+/// The window starts at today's local midnight (not `now`) so that events
+/// which began before the daemon was launched—but still fall within today—
+/// are not silently excluded from the view.
+fn build_time_range_query_from_today() -> (TimeRange, String) {
+    let local_now = chrono::Local::now();
+    let today_midnight = local_now
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is always valid")
+        .and_local_timezone(chrono::Local)
+        .earliest()
+        .expect("today midnight is a valid local time")
+        .to_utc();
+    let end = local_now.to_utc() + chrono::Duration::days(30);
+    let range = TimeRange {
+        start: today_midnight.timestamp(),
+        end: end.timestamp(),
+    };
+    let query = format!(
+        "(occur-in-time-range? (make-time \"{}\") (make-time \"{}\"))",
+        today_midnight.format("%Y%m%dT%H%M%SZ"),
+        end.format("%Y%m%dT%H%M%SZ")
+    );
+    (range, query)
+}
+
 /// Monitor EDS calendars and populate shared state.
 ///
 /// Discovers calendar sources, opens calendars, creates views,
@@ -286,14 +321,10 @@ async fn monitor_eds_calendars(
     // Track view paths for signal filtering
     let view_paths = Arc::new(StdMutex::new(HashSet::new()));
 
-    // Query for upcoming events (next 30 days)
-    let now = chrono::Utc::now();
-    let end = now + chrono::Duration::days(30);
-    let query = format!(
-        "(occur-in-time-range? (make-time \"{}\") (make-time \"{}\"))",
-        now.format("%Y%m%dT%H%M%SZ"),
-        end.format("%Y%m%dT%H%M%SZ")
-    );
+    // Query from today midnight through next 30 days.  Using today midnight
+    // (not now) ensures events that started before the daemon launched but
+    // still fall within today are included in the view.
+    let (time_range, query) = build_time_range_query_from_today();
 
     // Open calendars and create views
     for source in &sources {
@@ -335,6 +366,7 @@ async fn monitor_eds_calendars(
                                 state_clone,
                                 notifier_clone,
                                 view_paths_clone,
+                                time_range,
                             )
                             .await
                             {
@@ -367,6 +399,7 @@ async fn spawn_view_monitor(
     state: Arc<StdMutex<EdsState>>,
     notifier: EntityNotifier,
     view_paths: Arc<StdMutex<HashSet<String>>>,
+    time_range: TimeRange,
 ) -> Result<()> {
     // Get message stream
     let mut stream = MessageStream::from(&conn);
@@ -440,7 +473,7 @@ async fn spawn_view_monitor(
                 "ObjectsAdded" => {
                     let body = msg.body();
                     if let Ok((icals,)) = body.deserialize::<(Vec<String>,)>() {
-                        let events = parse_ical_events(&icals);
+                        let events = parse_ical_events(&icals, time_range);
                         if !events.is_empty() {
                             debug!("[eds] ObjectsAdded: {} events", events.len());
                             update_state_add_events(&state, events);
@@ -453,7 +486,7 @@ async fn spawn_view_monitor(
                 "ObjectsModified" => {
                     let body = msg.body();
                     if let Ok((icals,)) = body.deserialize::<(Vec<String>,)>() {
-                        let events = parse_ical_events(&icals);
+                        let events = parse_ical_events(&icals, time_range);
                         if !events.is_empty() {
                             debug!("[eds] ObjectsModified: {} events", events.len());
                             // For modified events, remove old occurrences then add new
@@ -501,28 +534,66 @@ async fn spawn_view_monitor(
 }
 
 /// Parse a list of iCalendar strings into CalendarEvent entities.
-fn parse_ical_events(icals: &[String]) -> Vec<entity::calendar::CalendarEvent> {
-    icals.iter().filter_map(|ical| parse_vevent(ical)).collect()
+///
+/// Recurring events (those with RRULE) are expanded into individual
+/// occurrences within `range`.  Non-recurring events pass through as-is.
+fn parse_ical_events(
+    icals: &[String],
+    range: TimeRange,
+) -> Vec<entity::calendar::CalendarEvent> {
+    icals
+        .iter()
+        .flat_map(|ical| expand_vevent(ical, range))
+        .collect()
 }
 
-/// Parse a single iCalendar VEVENT string into a CalendarEvent.
-///
-/// This is a simplified parser that extracts the essential fields.
-/// For a complete implementation, consider using the icalendar crate.
-fn parse_vevent(ical_str: &str) -> Option<entity::calendar::CalendarEvent> {
-    // Unfold continuation lines
+// ── Intermediate VEVENT representation ───────────────────────────────────
+
+/// Holds all raw fields extracted from a VEVENT, including recurrence info
+/// needed for RRULE expansion.
+struct RawVevent {
+    uid: String,
+    summary: String,
+    all_day: bool,
+    description: Option<String>,
+    location: Option<String>,
+    attendees: Vec<entity::calendar::CalendarEventAttendee>,
+    /// UTC timestamp of DTSTART.
+    start_time: i64,
+    /// UTC timestamp of DTEND (or DTSTART + 1h if absent).
+    end_time: i64,
+    /// Naive local datetime of DTSTART (needed for TZ-correct expansion).
+    dtstart_naive: chrono::NaiveDateTime,
+    /// TZID extracted from DTSTART params, if any.
+    tz: Option<chrono_tz::Tz>,
+    /// Whether DTSTART ends with Z (UTC).
+    utc: bool,
+    /// Raw RRULE value (e.g. "FREQ=WEEKLY;BYDAY=TU").
+    rrule: Option<String>,
+    /// EXDATE timestamps to exclude from recurrence.
+    exdates: HashSet<i64>,
+}
+
+/// Parse a single iCalendar VEVENT string into a `RawVevent`.
+fn parse_vevent_raw(ical_str: &str) -> Option<RawVevent> {
     let unfolded = unfold_ical(ical_str);
 
     let mut in_vevent = false;
     let mut nest_depth: u32 = 0;
     let mut uid = None;
     let mut summary = None;
-    let mut dtstart: Option<i64> = None;
-    let mut dtend: Option<i64> = None;
+    let mut dtstart_ts: Option<i64> = None;
+    let mut dtend_ts: Option<i64> = None;
     let mut all_day = false;
     let mut description = None;
     let mut location = None;
     let mut attendees: Vec<entity::calendar::CalendarEventAttendee> = Vec::new();
+    let mut rrule: Option<String> = None;
+    let mut exdates: HashSet<i64> = HashSet::new();
+    // Keep the raw DTSTART pieces for TZ-correct expansion.
+    let mut dtstart_naive: Option<chrono::NaiveDateTime> = None;
+    let mut dtstart_tz: Option<chrono_tz::Tz> = None;
+    let mut dtstart_utc_flag = false;
 
     for line in unfolded.lines() {
         let line = line.trim_end_matches('\r');
@@ -560,10 +631,22 @@ fn parse_vevent(ical_str: &str) -> Option<entity::calendar::CalendarEvent> {
             if params.contains("VALUE=DATE") && !params.contains("VALUE=DATE-TIME") {
                 all_day = true;
             }
-            dtstart = parse_ical_datetime(&value, &params);
+            dtstart_ts = parse_ical_datetime(&value, &params);
+            dtstart_naive = parse_ical_naive_datetime(&value);
+            dtstart_tz = extract_tzid(&params);
+            dtstart_utc_flag = value.ends_with('Z');
         } else if line.starts_with("DTEND") {
             let (params, value) = split_ical_property(line, "DTEND");
-            dtend = parse_ical_datetime(&value, &params);
+            dtend_ts = parse_ical_datetime(&value, &params);
+        } else if let Some(rest) = line.strip_prefix("RRULE:") {
+            rrule = Some(rest.to_string());
+        } else if line.starts_with("EXDATE") {
+            let (params, value) = split_ical_property(line, "EXDATE");
+            for part in value.split(',') {
+                if let Some(ts) = parse_ical_datetime(part.trim(), &params) {
+                    exdates.insert(ts);
+                }
+            }
         } else if line.starts_with("DESCRIPTION") {
             let (_params, value) = split_ical_property(line, "DESCRIPTION");
             if !value.is_empty() {
@@ -583,19 +666,323 @@ fn parse_vevent(ical_str: &str) -> Option<entity::calendar::CalendarEvent> {
 
     let uid = uid?;
     let summary = summary.unwrap_or_default();
-    let start_time = dtstart?;
-    let end_time = dtend.unwrap_or(start_time + 3600);
+    let start_time = dtstart_ts?;
+    let end_time = dtend_ts.unwrap_or(start_time + 3600);
+    let dtstart_naive = dtstart_naive?;
 
-    Some(entity::calendar::CalendarEvent {
+    Some(RawVevent {
         uid,
         summary,
-        start_time,
-        end_time,
         all_day,
         description,
         location,
         attendees,
+        start_time,
+        end_time,
+        dtstart_naive,
+        tz: dtstart_tz,
+        utc: dtstart_utc_flag,
+        rrule,
+        exdates,
     })
+}
+
+/// Convert a `RawVevent` to a single `CalendarEvent` (non-recurring path).
+fn raw_to_event(raw: &RawVevent) -> entity::calendar::CalendarEvent {
+    entity::calendar::CalendarEvent {
+        uid: raw.uid.clone(),
+        summary: raw.summary.clone(),
+        start_time: raw.start_time,
+        end_time: raw.end_time,
+        all_day: raw.all_day,
+        description: raw.description.clone(),
+        location: raw.location.clone(),
+        attendees: raw.attendees.clone(),
+    }
+}
+
+/// Entry point kept for existing tests (non-recurring path).
+#[cfg(test)]
+fn parse_vevent(ical_str: &str) -> Option<entity::calendar::CalendarEvent> {
+    parse_vevent_raw(ical_str).map(|raw| raw_to_event(&raw))
+}
+
+// ── RRULE parsing and expansion ──────────────────────────────────────────
+
+/// Parsed recurrence rule.
+struct RecurrenceRule {
+    freq: Frequency,
+    interval: u32,
+    by_day: Vec<chrono::Weekday>,
+    count: Option<u32>,
+    until: Option<i64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Frequency {
+    Daily,
+    Weekly,
+    Monthly,
+    Yearly,
+}
+
+/// Parse an RRULE value string (e.g. "FREQ=WEEKLY;BYDAY=TU;INTERVAL=2").
+fn parse_rrule(s: &str) -> Option<RecurrenceRule> {
+    let mut freq = None;
+    let mut interval = 1u32;
+    let mut by_day = Vec::new();
+    let mut count = None;
+    let mut until = None;
+
+    for part in s.split(';') {
+        if let Some(val) = part.strip_prefix("FREQ=") {
+            freq = match val {
+                "DAILY" => Some(Frequency::Daily),
+                "WEEKLY" => Some(Frequency::Weekly),
+                "MONTHLY" => Some(Frequency::Monthly),
+                "YEARLY" => Some(Frequency::Yearly),
+                _ => None,
+            };
+        } else if let Some(val) = part.strip_prefix("INTERVAL=") {
+            interval = val.parse().unwrap_or(1);
+        } else if let Some(val) = part.strip_prefix("COUNT=") {
+            count = val.parse().ok();
+        } else if let Some(val) = part.strip_prefix("UNTIL=") {
+            // UNTIL can be a date or datetime; parse as datetime with empty params (UTC)
+            until = parse_ical_datetime(val, "");
+        } else if let Some(val) = part.strip_prefix("BYDAY=") {
+            for day_str in val.split(',') {
+                // Strip optional ordinal prefix (e.g. "2MO" → "MO")
+                let weekday_str = day_str.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-');
+                if let Some(wd) = parse_weekday(weekday_str) {
+                    by_day.push(wd);
+                }
+            }
+        }
+    }
+
+    Some(RecurrenceRule {
+        freq: freq?,
+        interval,
+        by_day,
+        count,
+        until,
+    })
+}
+
+fn parse_weekday(s: &str) -> Option<chrono::Weekday> {
+    match s {
+        "MO" => Some(chrono::Weekday::Mon),
+        "TU" => Some(chrono::Weekday::Tue),
+        "WE" => Some(chrono::Weekday::Wed),
+        "TH" => Some(chrono::Weekday::Thu),
+        "FR" => Some(chrono::Weekday::Fri),
+        "SA" => Some(chrono::Weekday::Sat),
+        "SU" => Some(chrono::Weekday::Sun),
+        _ => None,
+    }
+}
+
+/// Convert a naive local datetime to a UTC timestamp, respecting timezone.
+fn naive_to_timestamp(
+    naive: chrono::NaiveDateTime,
+    tz: Option<chrono_tz::Tz>,
+    utc: bool,
+) -> Option<i64> {
+    use chrono::TimeZone;
+
+    if utc {
+        return Some(naive.and_utc().timestamp());
+    }
+    if let Some(tz) = tz {
+        // .earliest() picks the pre-DST side for ambiguous times.
+        return tz.from_local_datetime(&naive).earliest().map(|dt| dt.timestamp());
+    }
+    // Floating time → local.
+    chrono::Local
+        .from_local_datetime(&naive)
+        .earliest()
+        .map(|dt| dt.timestamp())
+}
+
+/// Parse a datetime value into a `NaiveDateTime` (without timezone conversion).
+fn parse_ical_naive_datetime(value: &str) -> Option<chrono::NaiveDateTime> {
+    use chrono::{NaiveDate, NaiveTime};
+
+    let s = value.strip_suffix('Z').unwrap_or(value);
+
+    // DATE only: YYYYMMDD
+    if s.len() == 8 && !s.contains('T') {
+        let year: i32 = s[0..4].parse().ok()?;
+        let month: u32 = s[4..6].parse().ok()?;
+        let day: u32 = s[6..8].parse().ok()?;
+        let d = NaiveDate::from_ymd_opt(year, month, day)?;
+        return Some(d.and_time(NaiveTime::from_hms_opt(0, 0, 0)?));
+    }
+
+    // DATETIME: YYYYMMDDTHHmmss
+    if s.len() >= 15 && s.contains('T') {
+        let year: i32 = s[0..4].parse().ok()?;
+        let month: u32 = s[4..6].parse().ok()?;
+        let day: u32 = s[6..8].parse().ok()?;
+        let hour: u32 = s[9..11].parse().ok()?;
+        let min: u32 = s[11..13].parse().ok()?;
+        let sec: u32 = s[13..15].parse().ok()?;
+        let d = NaiveDate::from_ymd_opt(year, month, day)?;
+        let t = NaiveTime::from_hms_opt(hour, min, sec)?;
+        return Some(chrono::NaiveDateTime::new(d, t));
+    }
+
+    None
+}
+
+/// Extract TZID from iCal property parameters (e.g. ";TZID=Europe/Prague").
+fn extract_tzid(params: &str) -> Option<chrono_tz::Tz> {
+    let start = params.find("TZID=")?;
+    let tzid = &params[start + 5..];
+    let tzid = tzid.split(';').next().unwrap_or(tzid);
+    tzid.parse().ok()
+}
+
+/// Expand a single iCal VEVENT into one or more `CalendarEvent` entities.
+///
+/// Non-recurring events produce a single entity.  Recurring events (RRULE)
+/// are expanded into individual occurrences within `range`, with EXDATE
+/// exclusions applied.
+fn expand_vevent(ical_str: &str, range: TimeRange) -> Vec<entity::calendar::CalendarEvent> {
+    let Some(raw) = parse_vevent_raw(ical_str) else {
+        return Vec::new();
+    };
+
+    let rrule_str = match &raw.rrule {
+        Some(r) => r.clone(),
+        None => return vec![raw_to_event(&raw)],
+    };
+
+    let Some(rule) = parse_rrule(&rrule_str) else {
+        warn!("[eds] unsupported RRULE: {rrule_str}");
+        return vec![raw_to_event(&raw)];
+    };
+
+    let duration = raw.end_time - raw.start_time;
+    let time_of_day = raw.dtstart_naive.time();
+
+    let mut occurrences = Vec::new();
+    let mut generated = 0u32;
+
+    // Walk candidate dates forward from DTSTART.
+    let mut cursor = raw.dtstart_naive.date();
+
+    // Iteration cap to prevent runaway loops.
+    const MAX_ITERATIONS: u32 = 10_000;
+    let mut iterations = 0u32;
+
+    loop {
+        iterations += 1;
+        if iterations > MAX_ITERATIONS {
+            break;
+        }
+
+        // For weekly recurrence with BYDAY: check every day of the current
+        // period (the week starting at cursor) against the day filter.
+        let candidates: Vec<chrono::NaiveDate> = match rule.freq {
+            Frequency::Weekly if !rule.by_day.is_empty() => {
+                use chrono::Datelike;
+                // Find the Monday of the week containing `cursor`.
+                let iso_week_start = cursor
+                    - chrono::Duration::days(cursor.weekday().num_days_from_monday() as i64);
+                rule.by_day
+                    .iter()
+                    .map(|wd| {
+                        iso_week_start
+                            + chrono::Duration::days(wd.num_days_from_monday() as i64)
+                    })
+                    .filter(|d| *d >= raw.dtstart_naive.date())
+                    .collect()
+            }
+            _ => vec![cursor],
+        };
+
+        for date in candidates {
+            let occ_naive = date.and_time(time_of_day);
+            let Some(occ_start) = naive_to_timestamp(occ_naive, raw.tz, raw.utc) else {
+                continue;
+            };
+            let occ_end = occ_start + duration;
+
+            // Check UNTIL / COUNT limits.
+            if let Some(until) = rule.until {
+                if occ_start > until {
+                    return occurrences;
+                }
+            }
+
+            // Past range end → done.
+            if occ_start >= range.end {
+                return occurrences;
+            }
+
+            // Skip if before range or excluded.
+            if occ_end > range.start && !raw.exdates.contains(&occ_start) {
+                occurrences.push(entity::calendar::CalendarEvent {
+                    uid: raw.uid.clone(),
+                    summary: raw.summary.clone(),
+                    start_time: occ_start,
+                    end_time: occ_end,
+                    all_day: raw.all_day,
+                    description: raw.description.clone(),
+                    location: raw.location.clone(),
+                    attendees: raw.attendees.clone(),
+                });
+            }
+
+            generated += 1;
+            if let Some(count) = rule.count {
+                if generated >= count {
+                    return occurrences;
+                }
+            }
+        }
+
+        // Advance cursor by one period.
+        cursor = advance_date(cursor, rule.freq, rule.interval);
+    }
+
+    occurrences
+}
+
+/// Advance a date by one recurrence period.
+fn advance_date(date: chrono::NaiveDate, freq: Frequency, interval: u32) -> chrono::NaiveDate {
+    use chrono::Datelike;
+    match freq {
+        Frequency::Daily => date + chrono::Duration::days(interval as i64),
+        Frequency::Weekly => date + chrono::Duration::weeks(interval as i64),
+        Frequency::Monthly => {
+            // Add `interval` months; clamp day to month length.
+            let total_months =
+                (date.year() as i32) * 12 + (date.month0() as i32) + (interval as i32);
+            let new_year = total_months / 12;
+            let new_month = (total_months % 12) as u32 + 1;
+            let max_day = days_in_month(new_year, new_month);
+            let day = date.day().min(max_day);
+            chrono::NaiveDate::from_ymd_opt(new_year, new_month, day).unwrap_or(date)
+        }
+        Frequency::Yearly => {
+            chrono::NaiveDate::from_ymd_opt(date.year() + interval as i32, date.month(), date.day())
+                .unwrap_or(date)
+        }
+    }
+}
+
+/// Number of days in a given month.
+fn days_in_month(year: i32, month: u32) -> u32 {
+    chrono::NaiveDate::from_ymd_opt(
+        if month == 12 { year + 1 } else { year },
+        if month == 12 { 1 } else { month + 1 },
+        1,
+    )
+    .map(|d| (d - chrono::NaiveDate::from_ymd_opt(year, month, 1).unwrap()).num_days() as u32)
+    .unwrap_or(30)
 }
 
 /// Unfold iCalendar continuation lines.
@@ -787,6 +1174,849 @@ fn update_state_remove_events(state: &Arc<StdMutex<EdsState>>, uids: &[String]) 
         let base_uid = key.split('@').next().unwrap_or("");
         !uids.contains(&base_uid.to_string())
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Minimal iCal for the "Daily - LabRulez" recurring Tuesday meeting.
+    ///
+    /// When EDS expands this to an occurrence on `date` (format "YYYYMMDD")
+    /// it sends a VEVENT with DTSTART set to that occurrence's date.
+    ///
+    /// Note: RFC 5545 folding uses `\r\n` + a leading space for continuation
+    /// lines.  Rust `\` string-literal line continuation strips leading
+    /// whitespace, so continuation lines are written as explicit string
+    /// concatenation to preserve the required leading space.
+    fn labrulez_ical(date: &str) -> String {
+        // Each piece is one iCal line (or folded continuation).
+        // Continuation lines intentionally start with a single space.
+        "BEGIN:VCALENDAR\r\n".to_string()
+            + "VERSION:2.0\r\n"
+            + "BEGIN:VEVENT\r\n"
+            + &format!("DTSTART;TZID=Europe/Prague:{date}T083000\r\n")
+            + &format!("DTEND;TZID=Europe/Prague:{date}T083500\r\n")
+            + "RRULE:FREQ=WEEKLY;BYDAY=TU\r\n"
+            + "SUMMARY:Daily - LabRulez\r\n"
+            + "UID:077u2vl5ec0knbionphchefveh_R20260203T073000@google.com\r\n"
+            + "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;\r\n"
+            + " CN=daniel.altmann@seznam.cz;X-NUM-GUESTS=0:mailto:\r\n"
+            + " daniel.altmann@seznam.cz\r\n"
+            + "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;\r\n"
+            + " CN=pavel.zak@cookielab.io;X-NUM-GUESTS=0:mailto:pavel.zak@cookielab.io\r\n"
+            + "BEGIN:VALARM\r\n"
+            + "ACTION:DISPLAY\r\n"
+            + "DESCRIPTION:This is an event reminder\r\n"
+            + "TRIGGER:-PT10M\r\n"
+            + "END:VALARM\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n"
+    }
+
+    // ── parse_vevent ─────────────────────────────────────────────────────────
+
+    /// Regression: expanded occurrence for 2026-02-17 (a Tuesday) must parse
+    /// correctly even though the master VEVENT has an older DTSTART.
+    #[test]
+    fn parse_vevent_recurring_occurrence_with_tzid() {
+        let ical = labrulez_ical("20260217");
+        let event = parse_vevent(&ical).expect("should parse LabRulez occurrence");
+
+        assert_eq!(event.summary, "Daily - LabRulez");
+        assert_eq!(
+            event.uid,
+            "077u2vl5ec0knbionphchefveh_R20260203T073000@google.com"
+        );
+        assert!(!event.all_day, "event should not be all-day");
+
+        // DTSTART;TZID=Europe/Prague:20260217T083000
+        // Prague is UTC+1 in February → expected UTC timestamp is 07:30
+        use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone as _};
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+
+        let start_naive = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
+            NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+        );
+        let expected_start = tz.from_local_datetime(&start_naive).single().unwrap().timestamp();
+        assert_eq!(
+            event.start_time, expected_start,
+            "DTSTART should be 2026-02-17 08:30 Prague (07:30 UTC)"
+        );
+
+        // DTEND;TZID=Europe/Prague:20260217T083500 → 5 min later
+        let end_naive = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
+            NaiveTime::from_hms_opt(8, 35, 0).unwrap(),
+        );
+        let expected_end = tz.from_local_datetime(&end_naive).single().unwrap().timestamp();
+        assert_eq!(
+            event.end_time, expected_end,
+            "DTEND should be 2026-02-17 08:35 Prague"
+        );
+    }
+
+    /// Folded ATTENDEE lines (RFC 5545 line-folding) must be unfolded so that
+    /// the attendee email and PARTSTAT are parsed from the joined value.
+    #[test]
+    fn parse_vevent_folded_attendee_lines() {
+        let ical = labrulez_ical("20260217");
+        let event = parse_vevent(&ical).expect("should parse");
+
+        let pz = event
+            .attendees
+            .iter()
+            .find(|a| a.email == "pavel.zak@cookielab.io");
+        assert!(pz.is_some(), "folded attendee email should be parsed");
+        assert_eq!(
+            pz.unwrap().status,
+            entity::calendar::AttendeeStatus::Accepted,
+            "PARTSTAT=ACCEPTED should map to Accepted"
+        );
+
+        let da = event
+            .attendees
+            .iter()
+            .find(|a| a.email.contains("daniel.altmann"));
+        assert!(da.is_some(), "second folded attendee should be parsed");
+    }
+
+    /// A nested VALARM component must not corrupt DTSTART/DTEND parsing
+    /// (the nesting guard must skip VALARM properties).
+    #[test]
+    fn parse_vevent_valarm_is_skipped() {
+        let ical = labrulez_ical("20260217");
+        let event = parse_vevent(&ical).expect("should parse");
+
+        // If VALARM DESCRIPTION leaked into the event description the field
+        // would be "This is an event reminder" instead of None.
+        assert_ne!(
+            event.description.as_deref(),
+            Some("This is an event reminder"),
+            "VALARM DESCRIPTION must not bleed into event description"
+        );
+    }
+
+    // ── build_time_range_query_from_today ────────────────────────────────────
+
+    /// The query window must start at today midnight, not at `now`.
+    /// An event at 08:30 must not be excluded when the daemon starts at 09:00.
+    #[test]
+    fn query_starts_at_today_midnight() {
+        let (_range, query) = build_time_range_query_from_today();
+
+        // Compute today midnight in UTC independently.
+        let today_midnight_utc = chrono::Local::now()
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always valid")
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .expect("today midnight is a valid local time")
+            .to_utc();
+
+        let expected_start = today_midnight_utc.format("%Y%m%dT%H%M%SZ").to_string();
+        assert!(
+            query.contains(&expected_start),
+            "query should start at today midnight ({expected_start}), got: {query}"
+        );
+    }
+
+    // ── RRULE expansion ────────────────────────────────────────────────────────
+
+    /// The master VEVENT for "Daily - LabRulez" has DTSTART=Feb 3 (the original
+    /// series start) and RRULE:FREQ=WEEKLY;BYDAY=TU.  EDS sends this master
+    /// event, NOT expanded occurrences.  The plugin must expand it so that the
+    /// Feb 17 occurrence (a Tuesday) appears in the Agenda widget.
+    #[test]
+    fn expand_weekly_recurring_event_into_today() {
+        use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone as _};
+
+        // Master event: starts Feb 3, weekly on Tuesdays.
+        let ical = labrulez_ical("20260203");
+
+        // Query window: Feb 17 midnight → Feb 19 midnight (covers Feb 17 Tuesday).
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let range_start = tz
+            .from_local_datetime(
+                &NaiveDateTime::new(
+                    NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
+                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                ),
+            )
+            .single()
+            .unwrap()
+            .timestamp();
+        let range_end = tz
+            .from_local_datetime(
+                &NaiveDateTime::new(
+                    NaiveDate::from_ymd_opt(2026, 2, 19).unwrap(),
+                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                ),
+            )
+            .single()
+            .unwrap()
+            .timestamp();
+
+        let events = expand_vevent(
+            &ical,
+            TimeRange {
+                start: range_start,
+                end: range_end,
+            },
+        );
+
+        // Should produce exactly 1 occurrence on Feb 17 (a Tuesday).
+        assert_eq!(events.len(), 1, "expected 1 occurrence in range, got {}", events.len());
+
+        let event = &events[0];
+        assert_eq!(event.summary, "Daily - LabRulez");
+
+        let expected_start = tz
+            .from_local_datetime(
+                &NaiveDateTime::new(
+                    NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
+                    NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+                ),
+            )
+            .single()
+            .unwrap()
+            .timestamp();
+        assert_eq!(
+            event.start_time, expected_start,
+            "occurrence should be on Feb 17 08:30 Prague"
+        );
+    }
+
+    /// Weekly recurring event should produce multiple occurrences across a
+    /// multi-week range.
+    #[test]
+    fn expand_weekly_recurring_multiple_weeks() {
+        use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone as _};
+
+        let ical = labrulez_ical("20260203"); // Weekly TU
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+
+        // 3-week window: Feb 10 → Mar 3 (should have Feb 10, 17, 24)
+        let range_start = tz
+            .from_local_datetime(
+                &NaiveDateTime::new(
+                    NaiveDate::from_ymd_opt(2026, 2, 10).unwrap(),
+                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                ),
+            )
+            .single()
+            .unwrap()
+            .timestamp();
+        let range_end = tz
+            .from_local_datetime(
+                &NaiveDateTime::new(
+                    NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
+                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                ),
+            )
+            .single()
+            .unwrap()
+            .timestamp();
+
+        let events = expand_vevent(
+            &ical,
+            TimeRange {
+                start: range_start,
+                end: range_end,
+            },
+        );
+
+        assert_eq!(events.len(), 3, "3 Tuesdays in [Feb 10, Mar 3): {:?}",
+            events.iter().map(|e| e.start_time).collect::<Vec<_>>());
+    }
+
+    /// EXDATE exclusions must suppress the matching occurrence.
+    #[test]
+    fn expand_weekly_with_exdate() {
+        use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone as _};
+
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+
+        // Add EXDATE for Feb 17 (skip that Tuesday).
+        let ical = "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            + "DTSTART;TZID=Europe/Prague:20260203T083000\r\n"
+            + "DTEND;TZID=Europe/Prague:20260203T083500\r\n"
+            + "RRULE:FREQ=WEEKLY;BYDAY=TU\r\n"
+            + "EXDATE;TZID=Europe/Prague:20260217T083000\r\n"
+            + "SUMMARY:Daily - LabRulez\r\n"
+            + "UID:test-exdate@example.com\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+
+        // Range: Feb 10 → Mar 3 → would normally be 3 Tuesdays.
+        let range_start = tz
+            .from_local_datetime(
+                &NaiveDateTime::new(
+                    NaiveDate::from_ymd_opt(2026, 2, 10).unwrap(),
+                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                ),
+            )
+            .single()
+            .unwrap()
+            .timestamp();
+        let range_end = tz
+            .from_local_datetime(
+                &NaiveDateTime::new(
+                    NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
+                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                ),
+            )
+            .single()
+            .unwrap()
+            .timestamp();
+
+        let events = expand_vevent(
+            &ical,
+            TimeRange {
+                start: range_start,
+                end: range_end,
+            },
+        );
+
+        // Feb 17 excluded → only Feb 10 and Feb 24.
+        assert_eq!(events.len(), 2, "EXDATE should exclude Feb 17");
+    }
+
+    // ── RRULE expansion: other frequencies ──────────────────────────────────
+
+    /// Helper: build a minimal recurring VEVENT iCal string.
+    fn recurring_ical(dtstart: &str, dtend: &str, rrule: &str, uid: &str) -> String {
+        "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            + &format!("DTSTART;TZID=Europe/Prague:{dtstart}\r\n")
+            + &format!("DTEND;TZID=Europe/Prague:{dtend}\r\n")
+            + &format!("RRULE:{rrule}\r\n")
+            + &format!("SUMMARY:Test event\r\n")
+            + &format!("UID:{uid}\r\n")
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n"
+    }
+
+    /// Helper: build a UTC range from Prague dates for brevity.
+    fn prague_range(start: (i32, u32, u32), end: (i32, u32, u32)) -> TimeRange {
+        use chrono::{NaiveDate, NaiveTime, TimeZone as _};
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let mk = |y, m, d| {
+            tz.from_local_datetime(
+                &NaiveDate::from_ymd_opt(y, m, d)
+                    .unwrap()
+                    .and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()),
+            )
+            .single()
+            .unwrap()
+            .timestamp()
+        };
+        TimeRange {
+            start: mk(start.0, start.1, start.2),
+            end: mk(end.0, end.1, end.2),
+        }
+    }
+
+    #[test]
+    fn expand_daily_recurring() {
+        // Daily event at 09:00, 30 min duration.
+        let ical = recurring_ical(
+            "20260210T090000",
+            "20260210T093000",
+            "FREQ=DAILY",
+            "daily@test",
+        );
+        let range = prague_range((2026, 2, 15), (2026, 2, 18));
+        let events = expand_vevent(&ical, range);
+        // Feb 15, 16, 17 = 3 days.
+        assert_eq!(events.len(), 3, "daily should produce 3 occurrences");
+    }
+
+    #[test]
+    fn expand_daily_with_interval() {
+        // Every 3 days starting Feb 1.
+        let ical = recurring_ical(
+            "20260201T100000",
+            "20260201T110000",
+            "FREQ=DAILY;INTERVAL=3",
+            "daily3@test",
+        );
+        // Range: Feb 1 → Feb 16. Occurrences: Feb 1, 4, 7, 10, 13 = 5.
+        let range = prague_range((2026, 2, 1), (2026, 2, 16));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 5, "every-3-days in 15 days = 5");
+    }
+
+    #[test]
+    fn expand_weekly_with_interval() {
+        // Every 2 weeks on Tuesdays starting Feb 3.
+        let ical = recurring_ical(
+            "20260203T083000",
+            "20260203T093000",
+            "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU",
+            "biweekly@test",
+        );
+        // Range: Feb 1 → Mar 15. Occurrences: Feb 3, Feb 17, Mar 3 = 3.
+        let range = prague_range((2026, 2, 1), (2026, 3, 15));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 3, "biweekly TU in 6 weeks = 3");
+    }
+
+    #[test]
+    fn expand_monthly_recurring() {
+        // Monthly on the 15th.
+        let ical = recurring_ical(
+            "20260115T140000",
+            "20260115T150000",
+            "FREQ=MONTHLY",
+            "monthly@test",
+        );
+        // Range: Feb 1 → May 1. Occurrences: Feb 15, Mar 15, Apr 15 = 3.
+        let range = prague_range((2026, 2, 1), (2026, 5, 1));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 3, "monthly from Feb→May = 3");
+    }
+
+    #[test]
+    fn expand_monthly_clamps_day_to_month_length() {
+        // Monthly on the 31st — months without 31 days should still produce
+        // an occurrence (clamped to last day).
+        let ical = recurring_ical(
+            "20260131T100000",
+            "20260131T110000",
+            "FREQ=MONTHLY",
+            "monthly31@test",
+        );
+        // Range: Jan 1 → May 1.
+        // Jan 31 ✓, Feb 28 (clamped) ✓, Mar 31 ✓, Apr 30 (clamped) ✓ = 4.
+        let range = prague_range((2026, 1, 1), (2026, 5, 1));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 4, "monthly-31 with clamping = 4");
+    }
+
+    #[test]
+    fn expand_yearly_recurring() {
+        let ical = recurring_ical(
+            "20250614T180000",
+            "20250614T200000",
+            "FREQ=YEARLY",
+            "yearly@test",
+        );
+        // Range: 2026-01 → 2029-01. Occurrences: Jun 14 2026, 2027, 2028 = 3.
+        let range = prague_range((2026, 1, 1), (2029, 1, 1));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 3, "yearly from 2026→2029 = 3");
+    }
+
+    // ── RRULE expansion: COUNT and UNTIL limits ──────────────────────────────
+
+    #[test]
+    fn expand_with_count_limit() {
+        // Daily event with COUNT=5, starting Feb 10.
+        let ical = recurring_ical(
+            "20260210T090000",
+            "20260210T100000",
+            "FREQ=DAILY;COUNT=5",
+            "count@test",
+        );
+        // Range is wide, but COUNT=5 limits to Feb 10–14.
+        let range = prague_range((2026, 2, 1), (2026, 3, 1));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 5, "COUNT=5 should cap at 5 occurrences");
+    }
+
+    #[test]
+    fn expand_with_count_fewer_in_range() {
+        // Daily event with COUNT=3, starting Feb 10.
+        let ical = recurring_ical(
+            "20260210T090000",
+            "20260210T100000",
+            "FREQ=DAILY;COUNT=3",
+            "count3@test",
+        );
+        // Range starts at Feb 12, so only Feb 12 falls in range (COUNT ends at Feb 12).
+        let range = prague_range((2026, 2, 12), (2026, 3, 1));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 1, "only 1 of 3 counted occurrences in range");
+    }
+
+    #[test]
+    fn expand_with_until_limit() {
+        // Weekly TU starting Feb 3, until Feb 20.
+        let ical = recurring_ical(
+            "20260203T083000",
+            "20260203T093000",
+            "FREQ=WEEKLY;BYDAY=TU;UNTIL=20260220T235959Z",
+            "until@test",
+        );
+        // Feb 3, 10, 17 are before UNTIL; Feb 24 is after.
+        let range = prague_range((2026, 2, 1), (2026, 3, 1));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 3, "UNTIL=Feb 20 should include Feb 3, 10, 17");
+    }
+
+    // ── RRULE expansion: non-recurring passthrough ───────────────────────────
+
+    #[test]
+    fn expand_non_recurring_event_passes_through() {
+        let ical = "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            + "DTSTART;TZID=Europe/Prague:20260217T140000\r\n"
+            + "DTEND;TZID=Europe/Prague:20260217T150000\r\n"
+            + "SUMMARY:One-off meeting\r\n"
+            + "UID:single@test\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+        let range = prague_range((2026, 2, 17), (2026, 2, 18));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].summary, "One-off meeting");
+        assert_eq!(events[0].uid, "single@test");
+    }
+
+    #[test]
+    fn expand_non_recurring_outside_range_still_returned() {
+        // Non-recurring events are NOT filtered by expand_vevent (the caller
+        // or the Agenda widget handles range filtering for non-recurring events).
+        let ical = "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            + "DTSTART;TZID=Europe/Prague:20260101T140000\r\n"
+            + "DTEND;TZID=Europe/Prague:20260101T150000\r\n"
+            + "SUMMARY:Past meeting\r\n"
+            + "UID:past@test\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+        let range = prague_range((2026, 2, 17), (2026, 2, 18));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 1, "non-recurring always passes through");
+    }
+
+    // ── RRULE expansion: BYDAY with multiple days ────────────────────────────
+
+    #[test]
+    fn expand_weekly_multiple_byday() {
+        // MWF schedule.
+        let ical = recurring_ical(
+            "20260202T090000", // Monday Feb 2
+            "20260202T100000",
+            "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+            "mwf@test",
+        );
+        // One week: Feb 9–15. Should have Mon 9, Wed 11, Fri 13 = 3.
+        let range = prague_range((2026, 2, 9), (2026, 2, 16));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 3, "MO,WE,FR in 1 week = 3");
+    }
+
+    // ── RRULE expansion: preserves event metadata ────────────────────────────
+
+    #[test]
+    fn expand_preserves_uid_and_duration() {
+        let ical = recurring_ical(
+            "20260203T083000",
+            "20260203T093000", // 1-hour duration
+            "FREQ=WEEKLY;BYDAY=TU",
+            "preserve-uid@test",
+        );
+        let range = prague_range((2026, 2, 10), (2026, 2, 25));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(events.len(), 3); // Feb 10, 17, 24
+        for event in &events {
+            assert_eq!(event.uid, "preserve-uid@test");
+            assert_eq!(
+                event.end_time - event.start_time,
+                3600,
+                "duration should be preserved"
+            );
+        }
+    }
+
+    // ── parse_ical_events (top-level, mixed input) ───────────────────────────
+
+    #[test]
+    fn parse_ical_events_mixes_recurring_and_single() {
+        let recurring = recurring_ical(
+            "20260210T090000",
+            "20260210T100000",
+            "FREQ=DAILY",
+            "recurring@test",
+        );
+        let single = "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            + "DTSTART;TZID=Europe/Prague:20260211T140000\r\n"
+            + "DTEND;TZID=Europe/Prague:20260211T150000\r\n"
+            + "SUMMARY:Single\r\n"
+            + "UID:single@test\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+
+        let icals = vec![recurring, single];
+        let range = prague_range((2026, 2, 10), (2026, 2, 13));
+        let events = parse_ical_events(
+            &icals.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            range,
+        );
+        // Daily: Feb 10, 11, 12 = 3. Single: 1. Total: 4.
+        assert_eq!(events.len(), 4, "3 daily + 1 single = 4");
+    }
+
+    // ── parse_rrule ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_rrule_weekly_byday() {
+        let rule = parse_rrule("FREQ=WEEKLY;BYDAY=TU").unwrap();
+        assert_eq!(rule.freq, Frequency::Weekly);
+        assert_eq!(rule.interval, 1);
+        assert_eq!(rule.by_day, vec![chrono::Weekday::Tue]);
+        assert!(rule.count.is_none());
+        assert!(rule.until.is_none());
+    }
+
+    #[test]
+    fn parse_rrule_daily_interval_count() {
+        let rule = parse_rrule("FREQ=DAILY;INTERVAL=3;COUNT=10").unwrap();
+        assert_eq!(rule.freq, Frequency::Daily);
+        assert_eq!(rule.interval, 3);
+        assert_eq!(rule.count, Some(10));
+    }
+
+    #[test]
+    fn parse_rrule_monthly() {
+        let rule = parse_rrule("FREQ=MONTHLY").unwrap();
+        assert_eq!(rule.freq, Frequency::Monthly);
+        assert_eq!(rule.interval, 1);
+    }
+
+    #[test]
+    fn parse_rrule_with_until() {
+        let rule = parse_rrule("FREQ=WEEKLY;UNTIL=20260301T000000Z").unwrap();
+        assert!(rule.until.is_some());
+        // UNTIL is a UTC timestamp for 2026-03-01 00:00:00Z.
+        let expected = chrono::NaiveDate::from_ymd_opt(2026, 3, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp();
+        assert_eq!(rule.until.unwrap(), expected);
+    }
+
+    #[test]
+    fn parse_rrule_multiple_byday() {
+        let rule = parse_rrule("FREQ=WEEKLY;BYDAY=MO,WE,FR").unwrap();
+        assert_eq!(
+            rule.by_day,
+            vec![chrono::Weekday::Mon, chrono::Weekday::Wed, chrono::Weekday::Fri]
+        );
+    }
+
+    #[test]
+    fn parse_rrule_unknown_freq_returns_none() {
+        assert!(parse_rrule("FREQ=SECONDLY").is_none());
+    }
+
+    // ── advance_date ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn advance_date_daily() {
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 2, 28).unwrap();
+        let next = advance_date(d, Frequency::Daily, 1);
+        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap());
+    }
+
+    #[test]
+    fn advance_date_weekly() {
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap();
+        let next = advance_date(d, Frequency::Weekly, 2);
+        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2026, 3, 3).unwrap());
+    }
+
+    #[test]
+    fn advance_date_monthly_clamps() {
+        // Jan 31 + 1 month → Feb 28 (2026 is not a leap year).
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
+        let next = advance_date(d, Frequency::Monthly, 1);
+        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2026, 2, 28).unwrap());
+    }
+
+    #[test]
+    fn advance_date_monthly_leap_year() {
+        // Jan 31 + 1 month in 2028 (leap year) → Feb 29.
+        let d = chrono::NaiveDate::from_ymd_opt(2028, 1, 31).unwrap();
+        let next = advance_date(d, Frequency::Monthly, 1);
+        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2028, 2, 29).unwrap());
+    }
+
+    #[test]
+    fn advance_date_yearly() {
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+        let next = advance_date(d, Frequency::Yearly, 1);
+        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2027, 6, 15).unwrap());
+    }
+
+    #[test]
+    fn advance_date_monthly_wraps_year() {
+        // Nov + 2 months → Jan next year.
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 11, 15).unwrap();
+        let next = advance_date(d, Frequency::Monthly, 2);
+        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2027, 1, 15).unwrap());
+    }
+
+    // ── days_in_month ────────────────────────────────────────────────────────
+
+    #[test]
+    fn days_in_month_february_non_leap() {
+        assert_eq!(days_in_month(2026, 2), 28);
+    }
+
+    #[test]
+    fn days_in_month_february_leap() {
+        assert_eq!(days_in_month(2028, 2), 29);
+    }
+
+    #[test]
+    fn days_in_month_various() {
+        assert_eq!(days_in_month(2026, 1), 31);
+        assert_eq!(days_in_month(2026, 4), 30);
+        assert_eq!(days_in_month(2026, 12), 31);
+    }
+
+    // ── parse_ical_naive_datetime ────────────────────────────────────────────
+
+    #[test]
+    fn parse_ical_naive_datetime_full() {
+        let dt = parse_ical_naive_datetime("20260217T083000").unwrap();
+        assert_eq!(dt.date(), chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap());
+        assert_eq!(dt.time(), chrono::NaiveTime::from_hms_opt(8, 30, 0).unwrap());
+    }
+
+    #[test]
+    fn parse_ical_naive_datetime_strips_z() {
+        let dt = parse_ical_naive_datetime("20260217T083000Z").unwrap();
+        assert_eq!(dt.date(), chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap());
+    }
+
+    #[test]
+    fn parse_ical_naive_datetime_date_only() {
+        let dt = parse_ical_naive_datetime("20260217").unwrap();
+        assert_eq!(dt.date(), chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap());
+        assert_eq!(dt.time(), chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn parse_ical_naive_datetime_invalid() {
+        assert!(parse_ical_naive_datetime("garbage").is_none());
+        assert!(parse_ical_naive_datetime("").is_none());
+    }
+
+    // ── extract_tzid ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn extract_tzid_present() {
+        let tz = extract_tzid(";TZID=Europe/Prague");
+        assert_eq!(tz, Some("Europe/Prague".parse().unwrap()));
+    }
+
+    #[test]
+    fn extract_tzid_with_extra_params() {
+        let tz = extract_tzid(";VALUE=DATE-TIME;TZID=America/New_York;X-FOO=bar");
+        assert_eq!(tz, Some("America/New_York".parse().unwrap()));
+    }
+
+    #[test]
+    fn extract_tzid_absent() {
+        assert!(extract_tzid("").is_none());
+        assert!(extract_tzid(";VALUE=DATE").is_none());
+    }
+
+    #[test]
+    fn extract_tzid_unknown_returns_none() {
+        assert!(extract_tzid(";TZID=Mars/Olympus_Mons").is_none());
+    }
+
+    // ── parse_ical_datetime ──────────────────────────────────────────────────
+
+    #[test]
+    fn parse_ical_datetime_with_europe_prague_tzid() {
+        use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone as _};
+        // Prague is UTC+1 in winter; 08:30 Prague = 07:30 UTC
+        let ts = parse_ical_datetime("20260217T083000", ";TZID=Europe/Prague");
+        let dt = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
+            NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+        );
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let expected = tz.from_local_datetime(&dt).single().unwrap().timestamp();
+        assert_eq!(ts, Some(expected));
+    }
+
+    #[test]
+    fn parse_ical_datetime_utc_z_suffix() {
+        let ts = parse_ical_datetime("20260217T073000Z", "");
+        // 2026-02-17 07:30:00 UTC
+        let expected = chrono::NaiveDate::from_ymd_opt(2026, 2, 17)
+            .unwrap()
+            .and_hms_opt(7, 30, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp();
+        assert_eq!(ts, Some(expected));
+    }
+
+    #[test]
+    fn parse_ical_datetime_all_day_date_only() {
+        let ts = parse_ical_datetime("20260217", ";VALUE=DATE");
+        assert!(ts.is_some(), "all-day date should parse");
+        // The timestamp must represent local midnight, not UTC midnight.
+        let local_start = chrono::NaiveDate::from_ymd_opt(2026, 2, 17)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .unwrap()
+            .timestamp();
+        assert_eq!(ts, Some(local_start));
+    }
+
+    #[test]
+    fn parse_ical_datetime_floating_no_tz_no_z() {
+        // No Z, no TZID → floating time interpreted as local.
+        let ts = parse_ical_datetime("20260217T120000", "");
+        assert!(ts.is_some());
+        let expected = chrono::NaiveDate::from_ymd_opt(2026, 2, 17)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .unwrap()
+            .timestamp();
+        assert_eq!(ts, Some(expected));
+    }
+
+    #[test]
+    fn parse_ical_datetime_invalid() {
+        assert!(parse_ical_datetime("not-a-date", "").is_none());
+        assert!(parse_ical_datetime("", "").is_none());
+    }
+
+    // ── parse_weekday ────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_weekday_all() {
+        assert_eq!(parse_weekday("MO"), Some(chrono::Weekday::Mon));
+        assert_eq!(parse_weekday("TU"), Some(chrono::Weekday::Tue));
+        assert_eq!(parse_weekday("WE"), Some(chrono::Weekday::Wed));
+        assert_eq!(parse_weekday("TH"), Some(chrono::Weekday::Thu));
+        assert_eq!(parse_weekday("FR"), Some(chrono::Weekday::Fri));
+        assert_eq!(parse_weekday("SA"), Some(chrono::Weekday::Sat));
+        assert_eq!(parse_weekday("SU"), Some(chrono::Weekday::Sun));
+        assert_eq!(parse_weekday("XX"), None);
+    }
 }
 
 fn main() -> Result<()> {
