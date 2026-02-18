@@ -341,6 +341,87 @@ async fn spawn_session_monitor(
     }
 }
 
+/// Periodically call do_refresh() according to config.
+///
+/// - Active interval:  config.refresh_interval_secs (default 480s)
+/// - Locked interval:  config.locked_refresh_interval_secs (0 = pause)
+/// - On unlock:        fires immediately, then resets to active interval
+async fn spawn_refresh_scheduler(
+    conn: Connection,
+    state: Arc<StdMutex<EdsState>>,
+    config: EdsConfig,
+    session_locked: Arc<std::sync::atomic::AtomicBool>,
+    unlock_notify: Arc<tokio::sync::Notify>,
+) {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    log::info!(
+        "[eds] Refresh scheduler started (interval={}s, locked={}s, debounce_base={}s)",
+        config.refresh_interval_secs,
+        config.locked_refresh_interval_secs,
+        config.debounce_base_secs,
+    );
+
+    loop {
+        let locked = session_locked.load(Ordering::Relaxed);
+
+        let sleep_duration = if locked {
+            if config.locked_refresh_interval_secs == 0 {
+                // Paused: wait effectively forever; unlock_notify will wake us.
+                Duration::from_secs(u64::MAX / 2)
+            } else {
+                Duration::from_secs(config.locked_refresh_interval_secs)
+            }
+        } else {
+            Duration::from_secs(config.refresh_interval_secs)
+        };
+
+        tokio::select! {
+            _ = tokio::time::sleep(sleep_duration) => {
+                // Timer fired. Only refresh if not locked (guards against MAX/2 wakeup edge).
+                if !session_locked.load(Ordering::Relaxed) {
+                    let backends = {
+                        match state.lock() {
+                            Ok(st) => st.calendar_backends.clone(),
+                            Err(e) => {
+                                log::warn!("[eds] scheduler: mutex poisoned, recovering: {e}");
+                                e.into_inner().calendar_backends.clone()
+                            }
+                        }
+                    };
+                    log::debug!("[eds] Periodic refresh firing ({} backends)", backends.len());
+                    do_refresh(&conn, &backends).await;
+                }
+            }
+            _ = unlock_notify.notified() => {
+                // Session just unlocked — refresh immediately.
+                let backends = {
+                    match state.lock() {
+                        Ok(st) => st.calendar_backends.clone(),
+                        Err(e) => {
+                            log::warn!("[eds] scheduler: mutex poisoned on unlock, recovering: {e}");
+                            e.into_inner().calendar_backends.clone()
+                        }
+                    }
+                };
+                log::debug!("[eds] Post-unlock refresh firing ({} backends)", backends.len());
+                do_refresh(&conn, &backends).await;
+
+                // Record the unlock refresh in the debounce window so an immediate
+                // overlay open doesn't double-fire within the base window.
+                if let Ok(mut st) = state.lock() {
+                    st.debounce_recent.push_back(std::time::Instant::now());
+                }
+            }
+        }
+    }
+
+    // Unreachable, but satisfies the "log when task exits" rule.
+    #[allow(unreachable_code)]
+    log::warn!("[eds] Refresh scheduler task stopped — background refresh is no longer active");
+}
+
 /// EDS D-Bus service names and paths.
 const SOURCES_DEST: &str = "org.gnome.evolution.dataserver.Sources5";
 const SOURCES_PATH: &str = "/org/gnome/evolution/dataserver/SourceManager";
