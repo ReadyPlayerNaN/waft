@@ -77,37 +77,27 @@ pub async fn setup(
             let window = toast_window.clone();
             Rc::new(move || window.trigger_resize())
         };
+        let visibility_callback = {
+            let window = toast_window.clone();
+            Rc::new(move |has_toasts: bool| window.update_visibility(has_toasts))
+        };
 
         let toast_manager = Rc::new(ToastManager::new(
             toast_window.container.clone(),
             action_tx.clone(),
             resize_callback,
+            visibility_callback,
             position,
         ));
 
         // Spawn entity event handler (glib context)
         let manager = toast_manager.clone();
-        let window = toast_window.clone();
         let event_rx_clone = event_rx.clone();
         gtk::glib::spawn_future_local(async move {
             while let Ok(event) = event_rx_clone.recv_async().await {
-                handle_event(event, &manager, &window);
+                handle_event(event, &manager);
             }
             log::warn!("[toasts] event receiver loop exited");
-        });
-
-        // Spawn TTL expiry task (glib context)
-        let manager = toast_manager.clone();
-        gtk::glib::spawn_future_local(async move {
-            loop {
-                if let Some(duration) = manager.calculate_next_expiry() {
-                    gtk::glib::timeout_future(duration).await;
-                    manager.expire_toasts();
-                } else {
-                    // No active toasts, wait forever
-                    std::future::pending::<()>().await;
-                }
-            }
         });
 
         // Prevent Rust from dropping our Rc's before the app exits
@@ -118,7 +108,7 @@ pub async fn setup(
     Ok(app)
 }
 
-fn handle_event(event: ClientEvent, manager: &ToastManager, window: &ToastWindow) {
+fn handle_event(event: ClientEvent, manager: &Rc<ToastManager>) {
     match event {
         ClientEvent::Connected => {
             log::info!("[toasts] connected to daemon");
@@ -127,16 +117,12 @@ fn handle_event(event: ClientEvent, manager: &ToastManager, window: &ToastWindow
             log::warn!("[toasts] disconnected from daemon");
         }
         ClientEvent::Notification(notification) => {
-            handle_notification(notification, manager, window);
+            handle_notification(notification, manager);
         }
     }
 }
 
-fn handle_notification(
-    notification: AppNotification,
-    manager: &ToastManager,
-    window: &ToastWindow,
-) {
+fn handle_notification(notification: AppNotification, manager: &Rc<ToastManager>) {
     match notification {
         AppNotification::EntityUpdated {
             urn,
@@ -146,7 +132,6 @@ fn handle_notification(
             "notification" => {
                 if let Ok(notification) = serde_json::from_value::<Notification>(data) {
                     manager.handle_notification(urn, notification);
-                    window.update_visibility(manager.has_active_toasts());
                 }
             }
             "dnd" => {
@@ -159,14 +144,12 @@ fn handle_notification(
         AppNotification::EntityRemoved { urn, entity_type } => {
             if entity_type == "notification" {
                 manager.handle_entity_removed(&urn);
-                window.update_visibility(manager.has_active_toasts());
             }
         }
         AppNotification::EntityStale { urn, entity_type }
         | AppNotification::EntityOutdated { urn, entity_type } => {
             if entity_type == "notification" {
                 manager.handle_entity_removed(&urn);
-                window.update_visibility(manager.has_active_toasts());
             }
         }
         _ => {} // Ignore ActionSuccess, ActionError

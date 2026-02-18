@@ -366,6 +366,11 @@ impl NotificationCard {
         &self.urn
     }
 
+    /// Get a reference to the revealer for animation-complete callbacks.
+    pub fn revealer(&self) -> &gtk::Revealer {
+        &self.revealer
+    }
+
     #[allow(dead_code)]
     pub fn widget(&self) -> &gtk::Box {
         &self.root
