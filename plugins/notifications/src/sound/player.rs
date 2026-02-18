@@ -77,6 +77,12 @@ impl SoundPlayer {
     }
 }
 
+impl Default for SoundPlayer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

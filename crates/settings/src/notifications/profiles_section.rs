@@ -457,6 +457,7 @@ impl ProfilesSection {
 
     /// Like `wire_rule_dropdown`, but also updates the sound entry sensitivity
     /// when the no_sound dropdown changes.
+    #[allow(clippy::too_many_arguments)]
     fn wire_rule_dropdown_with_sound_entry(
         dropdown: &gtk::DropDown,
         field: &'static str,

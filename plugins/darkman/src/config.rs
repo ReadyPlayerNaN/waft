@@ -138,14 +138,14 @@ pub fn validate_field(field: &str, value: &serde_json::Value) -> Result<()> {
         "latitude" => {
             let lat: f64 =
                 serde_json::from_value(value.clone()).context("Latitude must be a number")?;
-            if lat < -90.0 || lat > 90.0 {
+            if !(-90.0..=90.0).contains(&lat) {
                 return Err(anyhow::anyhow!("Latitude must be between -90 and 90"));
             }
         }
         "longitude" => {
             let lng: f64 =
                 serde_json::from_value(value.clone()).context("Longitude must be a number")?;
-            if lng < -180.0 || lng > 180.0 {
+            if !(-180.0..=180.0).contains(&lng) {
                 return Err(anyhow::anyhow!("Longitude must be between -180 and 180"));
             }
         }

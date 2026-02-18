@@ -1,5 +1,7 @@
 //! Layout row widget -- displays a single keyboard layout with drag handle, rename, and remove buttons.
 
+#![allow(dead_code)]
+
 use std::cell::RefCell;
 use std::rc::Rc;
 

@@ -20,6 +20,8 @@ use waft_protocol::entity::notification_filter::{
 use crate::notifications::combinator_editor::CombinatorEditor;
 use crate::notifications::id_from_name;
 
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(GroupFormOutput)>>>>;
+
 pub enum GroupFormOutput {
     /// Parent should call `get_group()` to read full state.
     SaveRequested,
@@ -33,12 +35,12 @@ pub struct GroupForm {
     order_spin: adw::SpinRow,
     combinator_editor: CombinatorEditor,
     existing_id: Option<String>,
-    output_callback: Rc<RefCell<Option<Box<dyn Fn(GroupFormOutput)>>>>,
+    output_callback: OutputCallback,
 }
 
 impl GroupForm {
     pub fn new(group: Option<&NotificationGroup>) -> Self {
-        let output_callback: Rc<RefCell<Option<Box<dyn Fn(GroupFormOutput)>>>> =
+        let output_callback: OutputCallback =
             Rc::new(RefCell::new(None));
 
         let edit_mode = group.is_some();

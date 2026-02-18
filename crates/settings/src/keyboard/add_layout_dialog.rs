@@ -94,13 +94,12 @@ pub fn show_add_layout_dialog(parent: &impl IsA<gtk::Widget>, on_add: impl Fn(St
     let selected: Rc<RefCell<Option<(String, String)>>> = Rc::new(RefCell::new(None));
     let selected_for_select = selected.clone();
     list_box.connect_row_selected(move |_, row| {
-        if let Some(row) = row {
-            if let Some(action_row) = row.downcast_ref::<adw::ActionRow>() {
-                if let Some(code) = action_row.subtitle() {
-                    let name = action_row.title().to_string();
-                    *selected_for_select.borrow_mut() = Some((code.to_string(), name));
-                }
-            }
+        if let Some(row) = row
+            && let Some(action_row) = row.downcast_ref::<adw::ActionRow>()
+            && let Some(code) = action_row.subtitle()
+        {
+            let name = action_row.title().to_string();
+            *selected_for_select.borrow_mut() = Some((code.to_string(), name));
         }
     });
 
@@ -109,22 +108,22 @@ pub fn show_add_layout_dialog(parent: &impl IsA<gtk::Widget>, on_add: impl Fn(St
     let on_add_for_activate = on_add.clone();
     let dialog_for_activate = dialog.clone();
     list_box.connect_row_activated(move |_, row| {
-        if let Some(action_row) = row.downcast_ref::<adw::ActionRow>() {
-            if let Some(code) = action_row.subtitle() {
-                let name = action_row.title().to_string();
-                on_add_for_activate(code.to_string(), name);
-                dialog_for_activate.force_close();
-            }
+        if let Some(action_row) = row.downcast_ref::<adw::ActionRow>()
+            && let Some(code) = action_row.subtitle()
+        {
+            let name = action_row.title().to_string();
+            on_add_for_activate(code.to_string(), name);
+            dialog_for_activate.force_close();
         }
     });
 
     let selected_for_response = selected;
     let on_add_for_response = on_add;
     dialog.connect_response(None, move |_, response| {
-        if response == "add" {
-            if let Some((code, name)) = selected_for_response.borrow().clone() {
-                on_add_for_response(code, name);
-            }
+        if response == "add"
+            && let Some((code, name)) = selected_for_response.borrow().clone()
+        {
+            on_add_for_response(code, name);
         }
     });
 

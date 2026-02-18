@@ -272,21 +272,19 @@ fn parse_xkb_content(content: &str) -> Option<XkbParsedContent> {
         }
 
         if in_symbols {
-            if layouts.is_none() {
-                if let Some(rest) = trimmed.strip_prefix("include \"") {
-                    if let Some(include_str) = rest.strip_suffix('"') {
+            if layouts.is_none()
+                && let Some(rest) = trimmed.strip_prefix("include \"")
+                    && let Some(include_str) = rest.strip_suffix('"') {
                         let (l, v) = parse_xkb_include(include_str);
                         if !l.is_empty() {
                             layouts = Some((l, v));
                         }
                     }
-                }
-            }
 
             // Parse name[groupN]="...";
-            if let Some(rest) = trimmed.strip_prefix("name[group") {
-                if let Some(bracket_pos) = rest.find(']') {
-                    if let Ok(group_num) = rest[..bracket_pos].parse::<usize>() {
+            if let Some(rest) = trimmed.strip_prefix("name[group")
+                && let Some(bracket_pos) = rest.find(']')
+                    && let Ok(group_num) = rest[..bracket_pos].parse::<usize>() {
                         // Extract the quoted name between `="` and `";`
                         let after_bracket = &rest[bracket_pos + 1..];
                         if let Some(eq_quote) = after_bracket.find("=\"") {
@@ -298,8 +296,6 @@ fn parse_xkb_content(content: &str) -> Option<XkbParsedContent> {
                             }
                         }
                     }
-                }
-            }
 
             // Stop at closing brace of xkb_symbols
             if trimmed == "};" || trimmed == "}" {
@@ -324,11 +320,10 @@ fn parse_xkb_content(content: &str) -> Option<XkbParsedContent> {
 
 /// Expand `~` to home directory in a file path.
 fn expand_tilde(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME") {
             return format!("{home}/{rest}");
         }
-    }
     path.to_string()
 }
 
@@ -356,8 +351,8 @@ fn extract_keyboard_config(doc: &KdlDocument) -> KeyboardConfig {
     };
 
     // Check for "file" option first (ExternalFile mode)
-    if let Some(file_value) = xkb_children.get_arg("file") {
-        if let Some(file_path) = file_value.as_string() {
+    if let Some(file_value) = xkb_children.get_arg("file")
+        && let Some(file_path) = file_value.as_string() {
             let expanded = expand_tilde(file_path);
             let (layouts, variant, layout_names) = match std::fs::read_to_string(&expanded) {
                 Ok(content) => match parse_xkb_content(&content) {
@@ -385,11 +380,10 @@ fn extract_keyboard_config(doc: &KdlDocument) -> KeyboardConfig {
                 ..Default::default()
             };
         }
-    }
 
     // Check for "layout" option (LayoutList mode)
-    if let Some(layout_value) = xkb_children.get_arg("layout") {
-        if let Some(layout_str) = layout_value.as_string() {
+    if let Some(layout_value) = xkb_children.get_arg("layout")
+        && let Some(layout_str) = layout_value.as_string() {
             let layouts: Vec<String> = layout_str
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -414,7 +408,6 @@ fn extract_keyboard_config(doc: &KdlDocument) -> KeyboardConfig {
                 ..Default::default()
             };
         }
-    }
 
     // Empty xkb section = SystemDefault
     KeyboardConfig::default()
@@ -493,14 +486,13 @@ pub fn write_niri_config_with_backup(config_path: &Path, doc: &KdlDocument) -> R
         Ok(()) => Ok(()),
         Err(e) => {
             // Attempt to restore from backup
-            if backup_path.exists() {
-                if let Err(restore_err) = std::fs::copy(&backup_path, config_path) {
+            if backup_path.exists()
+                && let Err(restore_err) = std::fs::copy(&backup_path, config_path) {
                     log::error!(
                         "[niri] Failed to restore backup after write failure: {}",
                         restore_err
                     );
                 }
-            }
             Err(e).context("Failed to write config file")
         }
     }
@@ -552,9 +544,9 @@ pub fn modify_xkb_content(
                 continue;
             }
 
-            if !found {
-                if let Some(rest) = trimmed.strip_prefix("include \"") {
-                    if let Some(include_str) = rest.strip_suffix('"') {
+            if !found
+                && let Some(rest) = trimmed.strip_prefix("include \"")
+                    && let Some(include_str) = rest.strip_suffix('"') {
                         let mut parsed = parse_xkb_include_full(include_str);
 
                         let old_layouts = std::mem::take(&mut parsed.layouts);
@@ -574,8 +566,6 @@ pub fn modify_xkb_content(
                         found = true;
                         continue;
                     }
-                }
-            }
 
             // Insert new name lines before the closing brace
             if trimmed == "};" || trimmed == "}" {

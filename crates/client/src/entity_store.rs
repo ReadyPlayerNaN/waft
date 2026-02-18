@@ -191,6 +191,12 @@ impl EntityStore {
     }
 }
 
+impl Default for EntityStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,12 +14,11 @@ pub fn id_from_name(name: &str) -> String {
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
         .collect();
-    let collapsed = filtered
+    filtered
         .split('-')
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
-        .join("-");
-    collapsed
+        .join("-")
 }
 
 #[cfg(test)]

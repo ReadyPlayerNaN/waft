@@ -14,6 +14,8 @@ use waft_protocol::entity::notification_filter::{
 
 use crate::notifications::pattern_row::PatternRow;
 
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(CombinatorEditorOutput)>>>>;
+
 pub enum CombinatorEditorOutput {
     Delete,
 }
@@ -27,12 +29,12 @@ pub struct CombinatorEditor {
     pub root: gtk::Box,
     operator_dropdown: gtk::DropDown,
     children: Rc<RefCell<Vec<ChildEntry>>>,
-    output_callback: Rc<RefCell<Option<Box<dyn Fn(CombinatorEditorOutput)>>>>,
+    output_callback: OutputCallback,
 }
 
 impl CombinatorEditor {
     pub fn new(combinator: &RuleCombinator, depth: usize) -> Self {
-        let output_callback: Rc<RefCell<Option<Box<dyn Fn(CombinatorEditorOutput)>>>> =
+        let output_callback: OutputCallback =
             Rc::new(RefCell::new(None));
 
         let root = gtk::Box::builder()

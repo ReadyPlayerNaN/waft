@@ -22,6 +22,9 @@ use crate::components::agenda_ui::agenda_card::{AgendaCard, AgendaCardOutput};
 use crate::menu_state::{MenuOp, MenuStore};
 use waft_client::EntityStore;
 
+/// A held reference to a rebuild callback, used to break reference cycles.
+type RebuildHolder = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
 /// Displays upcoming calendar events with sophisticated UI.
 ///
 /// Features:
@@ -52,7 +55,7 @@ pub struct AgendaComponent {
     _store: Rc<EntityStore>,
     _menu_store: Rc<MenuStore>,
     _selection_store: Rc<CalendarSelectionStore>,
-    _refresh_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    _refresh_holder: RebuildHolder,
     _timer_source: Rc<RefCell<Option<glib::SourceId>>>,
 }
 
@@ -201,7 +204,7 @@ impl AgendaComponent {
 
         // Holder that lets the timer callback call back into `rebuild` without a strong cycle.
         // `rebuild` holds a Weak to this; this holds a Strong to `rebuild`.
-        let rebuild_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let rebuild_holder: RebuildHolder = Rc::new(RefCell::new(None));
 
         // Shared rebuild closure for both entity and selection subscriptions
         let rebuild = {
@@ -251,10 +254,10 @@ impl AgendaComponent {
                 *timer =
                     Some(gtk::glib::timeout_add_seconds_local(secs as u32, move || {
                         ts.borrow_mut().take(); // clear our own SourceId
-                        if let Some(holder) = holder_weak.upgrade() {
-                            if let Some(rebuild_fn) = &*holder.borrow() {
-                                rebuild_fn();
-                            }
+                        if let Some(holder) = holder_weak.upgrade()
+                            && let Some(rebuild_fn) = &*holder.borrow()
+                        {
+                            rebuild_fn();
                         }
                         gtk::glib::ControlFlow::Break
                     }));

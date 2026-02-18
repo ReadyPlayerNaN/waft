@@ -9,6 +9,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use waft_protocol::entity::notification_filter::{MatchField, MatchOperator, Pattern};
 
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(PatternRowOutput)>>>>;
+
 const FIELD_LABELS: &[&str] = &[
     "App Name",
     "App ID",
@@ -64,12 +66,12 @@ pub struct PatternRow {
     field_dropdown: gtk::DropDown,
     operator_dropdown: gtk::DropDown,
     value_entry: gtk::Entry,
-    output_callback: Rc<RefCell<Option<Box<dyn Fn(PatternRowOutput)>>>>,
+    output_callback: OutputCallback,
 }
 
 impl PatternRow {
     pub fn new(pattern: &Pattern) -> Self {
-        let output_callback: Rc<RefCell<Option<Box<dyn Fn(PatternRowOutput)>>>> =
+        let output_callback: OutputCallback =
             Rc::new(RefCell::new(None));
 
         let root = gtk::Box::builder()

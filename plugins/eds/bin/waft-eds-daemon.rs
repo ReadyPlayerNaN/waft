@@ -1435,10 +1435,8 @@ fn expand_vevent(ical_str: &str, range: TimeRange) -> Vec<entity::calendar::Cale
             let occ_end = occ_start + duration;
 
             // Check UNTIL / COUNT limits.
-            if let Some(until) = rule.until {
-                if occ_start > until {
-                    return occurrences;
-                }
+            if let Some(until) = rule.until && occ_start > until {
+                return occurrences;
             }
 
             // Past range end → done.
@@ -1461,10 +1459,8 @@ fn expand_vevent(ical_str: &str, range: TimeRange) -> Vec<entity::calendar::Cale
             }
 
             generated += 1;
-            if let Some(count) = rule.count {
-                if generated >= count {
-                    return occurrences;
-                }
+            if let Some(count) = rule.count && generated >= count {
+                return occurrences;
             }
         }
 
@@ -1484,7 +1480,7 @@ fn advance_date(date: chrono::NaiveDate, freq: Frequency, interval: u32) -> chro
         Frequency::Monthly => {
             // Add `interval` months; clamp day to month length.
             let total_months =
-                (date.year() as i32) * 12 + (date.month0() as i32) + (interval as i32);
+                date.year() * 12 + (date.month0() as i32) + (interval as i32);
             let new_year = total_months / 12;
             let new_month = (total_months % 12) as u32 + 1;
             let max_day = days_in_month(new_year, new_month);

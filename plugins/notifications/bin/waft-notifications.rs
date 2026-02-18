@@ -193,10 +193,10 @@ fn main() -> Result<()> {
                                 }
                             };
                             process_op(&mut guard, NotificationOp::Ingress(notification));
-                            if filter_actions.no_toast {
-                                if let Some(stored) = guard.notifications.get_mut(&notif_id) {
-                                    stored.suppress_toast = true;
-                                }
+                            if filter_actions.no_toast
+                                && let Some(stored) = guard.notifications.get_mut(&notif_id)
+                            {
+                                stored.suppress_toast = true;
                             }
                         }
 

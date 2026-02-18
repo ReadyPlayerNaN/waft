@@ -101,29 +101,28 @@ impl KeyboardPage {
             let cb_ref = action_callback.clone();
 
             ordered_list.connect_output(move |output| {
-                if let OrderedListOutput::Reordered(layout_code, from_index, to_index) = output {
-                    log::debug!(
-                        "[keyboard-page] Layout '{}' reordered from {} to {}",
-                        layout_code,
-                        from_index,
-                        to_index
-                    );
+                let OrderedListOutput::Reordered(layout_code, from_index, to_index) = output;
+                log::debug!(
+                    "[keyboard-page] Layout '{}' reordered from {} to {}",
+                    layout_code,
+                    from_index,
+                    to_index
+                );
 
-                    // Compute new order
-                    let new_order = {
-                        let s = state_ref.borrow();
-                        let mut new_order = s.layout_codes.clone();
-                        let item = new_order.remove(from_index);
-                        new_order.insert(to_index, item);
-                        new_order
-                    };
+                // Compute new order
+                let new_order = {
+                    let s = state_ref.borrow();
+                    let mut new_order = s.layout_codes.clone();
+                    let item = new_order.remove(from_index);
+                    new_order.insert(to_index, item);
+                    new_order
+                };
 
-                    // Send reorder action
-                    let urn = state_ref.borrow().config_urn.clone();
-                    if let Some(urn) = urn {
-                        let params = serde_json::json!({ "layouts": new_order });
-                        cb_ref(urn, "reorder".to_string(), params);
-                    }
+                // Send reorder action
+                let urn = state_ref.borrow().config_urn.clone();
+                if let Some(urn) = urn {
+                    let params = serde_json::json!({ "layouts": new_order });
+                    cb_ref(urn, "reorder".to_string(), params);
                 }
             });
         }

@@ -158,7 +158,7 @@ impl OutputSection {
         action_callback: &EntityActionCallback,
     ) -> OutputGroupWidgets {
         let group = adw::PreferencesGroup::builder()
-            .title(&display_title(output))
+            .title(display_title(output))
             .description(format!("Output: {}", output.name))
             .build();
 

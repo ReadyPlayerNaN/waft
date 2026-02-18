@@ -121,7 +121,6 @@ impl EventsComponent {
         {
             let update_spinner = {
                 let sync_spinner_rc = Rc::clone(&sync_spinner);
-                let spinner_widget_ref = spinner_widget.clone();
                 let store_ref = store.clone();
                 move || {
                     let entities = store_ref.get_entities_typed::<entity::calendar::CalendarSync>(
@@ -130,10 +129,13 @@ impl EventsComponent {
                     let syncing = entities.first().map(|(_, s)| s.syncing).unwrap_or(false);
                     log::debug!("[events] spinner syncing={syncing}");
                     sync_spinner_rc.set_spinning(syncing);
-                    spinner_widget_ref.set_visible(syncing);
+                    sync_spinner_rc.set_visible(syncing);
                 }
             };
-            store.subscribe_type(entity::calendar::CALENDAR_SYNC_ENTITY_TYPE, update_spinner.clone());
+            store.subscribe_type(
+                entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+                update_spinner.clone(),
+            );
             // Initial reconciliation: entity may already be cached (CLAUDE.md EntityStore pattern).
             gtk::glib::idle_add_local_once(update_spinner);
         }

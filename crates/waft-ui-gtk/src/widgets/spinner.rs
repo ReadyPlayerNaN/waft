@@ -23,6 +23,12 @@ impl SpinnerWidget {
             self.spinner.stop();
         }
     }
+
+    pub fn set_visible(&self, visible: bool) {
+        if self.spinner.is_visible() != visible {
+            self.spinner.set_visible(visible);
+        }
+    }
 }
 
 impl crate::widget_base::WidgetBase for SpinnerWidget {

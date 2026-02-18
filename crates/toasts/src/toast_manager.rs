@@ -219,10 +219,10 @@ impl ToastManager {
 
     /// Show next pending toast if queue has items and space is available.
     fn show_next_pending(self: &Rc<Self>) {
-        if self.active_toasts.borrow().len() < 3 {
-            if let Some(item) = self.pending_queue.borrow_mut().pop_front() {
-                self.show_toast(item);
-            }
+        if self.active_toasts.borrow().len() < 3
+            && let Some(item) = self.pending_queue.borrow_mut().pop_front()
+        {
+            self.show_toast(item);
         }
     }
 

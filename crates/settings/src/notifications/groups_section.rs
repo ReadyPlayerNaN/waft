@@ -175,10 +175,10 @@ impl GroupsSection {
         }
 
         // If the group being edited was deleted externally, remove the form
-        if let Some(ref editing) = st.editing {
-            if editing != NEW_MARKER && to_remove.contains(editing) {
-                Self::remove_form(&mut st, root);
-            }
+        if let Some(ref editing) = st.editing
+            && editing != NEW_MARKER && to_remove.contains(editing)
+        {
+            Self::remove_form(&mut st, root);
         }
     }
 
