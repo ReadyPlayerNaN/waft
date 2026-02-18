@@ -10,7 +10,7 @@
 //! id = "eds"
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{Context, Result};
@@ -52,6 +52,9 @@ struct EdsState {
     events: HashMap<String, entity::calendar::CalendarEvent>,
     /// Handles for running view-monitor tasks. Aborted on midnight rebuild.
     view_monitor_handles: Vec<tokio::task::JoinHandle<()>>,
+    /// Timestamps of recent overlay-triggered refreshes for sliding-window debounce.
+    /// Pruned to a 4×base window on every check.
+    debounce_recent: VecDeque<std::time::Instant>,
 }
 
 impl EdsState {
@@ -59,6 +62,7 @@ impl EdsState {
         Self {
             events: HashMap::new(),
             view_monitor_handles: Vec::new(),
+            debounce_recent: VecDeque::new(),
         }
     }
 }
@@ -69,6 +73,10 @@ struct EdsPlugin {
     state: Arc<StdMutex<EdsState>>,
     #[allow(dead_code)]
     conn: Connection,
+    /// True when the session is locked. Written by session monitor, read by scheduler.
+    session_locked: Arc<std::sync::atomic::AtomicBool>,
+    /// Notified when session unlocks; wakes the refresh scheduler immediately.
+    unlock_notify: Arc<tokio::sync::Notify>,
 }
 
 impl EdsPlugin {
@@ -84,11 +92,21 @@ impl EdsPlugin {
             config,
             state: Arc::new(StdMutex::new(EdsState::new())),
             conn,
+            session_locked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            unlock_notify: Arc::new(tokio::sync::Notify::new()),
         })
     }
 
     fn shared_state(&self) -> Arc<StdMutex<EdsState>> {
         self.state.clone()
+    }
+
+    fn session_locked(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        self.session_locked.clone()
+    }
+
+    fn unlock_notify(&self) -> Arc<tokio::sync::Notify> {
+        self.unlock_notify.clone()
     }
 
     /// Create occurrence key from UID and start time.
