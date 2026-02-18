@@ -292,6 +292,7 @@ impl NotificationGroup {
                     &notif.description,
                     &notif.icon_hints,
                     &notif.actions,
+                    None,
                     Some(Rc::new(trigger_window_resize)),
                 );
 
@@ -303,6 +304,9 @@ impl NotificationGroup {
                                 cb(NotificationGroupOutput::ActionClick(urn, action_key));
                             }
                             NotificationCardOutput::Close(urn) => {
+                                cb(NotificationGroupOutput::Close(urn));
+                            }
+                            NotificationCardOutput::TimedOut(urn) => {
                                 cb(NotificationGroupOutput::Close(urn));
                             }
                         }

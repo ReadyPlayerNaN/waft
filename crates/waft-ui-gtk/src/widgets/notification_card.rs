@@ -3,17 +3,23 @@
 //! Renders a single notification with icon, title, description, close button,
 //! and optional action buttons. Supports left-click (default action), right-click
 //! (dismiss), and animated show/hide via a Revealer.
+//!
+//! When `toast_ttl` is provided, a countdown progress bar is shown at the bottom
+//! of the card. The bar ticks down and fires `TimedOut` when elapsed. Hovering
+//! the card pauses the countdown.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use gtk::prelude::*;
 
 use waft_protocol::Urn;
 use waft_protocol::entity::notification::{NotificationAction, NotificationIconHint};
 
+use super::countdown_bar::{CountdownBarOutput, CountdownBarWidget};
 use super::icon::{Icon, IconWidget};
 use super::notification_markup;
 
@@ -25,6 +31,7 @@ type OutputCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
 pub enum NotificationCardOutput {
     ActionClick(Urn, String),
     Close(Urn),
+    TimedOut(Urn),
 }
 
 /// A notification card for the panel.
@@ -35,8 +42,8 @@ pub struct NotificationCard {
     title_label: gtk::Label,
     description_label: gtk::Label,
     on_output: OutputCallback<NotificationCardOutput>,
-    #[allow(dead_code)]
     hidden: Rc<RefCell<bool>>,
+    countdown_bar: Option<CountdownBarWidget>,
 }
 
 impl NotificationCard {
@@ -46,6 +53,7 @@ impl NotificationCard {
         description: &str,
         icon_hints: &[NotificationIconHint],
         actions: &[NotificationAction],
+        toast_ttl: Option<u64>,
         window_resize_callback: Option<Rc<dyn Fn()>>,
     ) -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -172,6 +180,50 @@ impl NotificationCard {
             card_box.append(&actions_box);
         }
 
+        // Countdown bar (when toast_ttl is set)
+        let countdown_bar = toast_ttl.map(|ttl_ms| {
+            let bar = CountdownBarWidget::new(ttl_ms);
+            card_box.append(&bar.root);
+
+            // Wire Elapsed -> TimedOut output
+            let on_output_timeout = on_output.clone();
+            let urn_for_timeout = urn.clone();
+            let hidden_for_timeout = hidden.clone();
+            bar.connect_output(move |CountdownBarOutput::Elapsed| {
+                if *hidden_for_timeout.borrow() {
+                    return;
+                }
+                *hidden_for_timeout.borrow_mut() = true;
+                if let Some(ref cb) = *on_output_timeout.borrow() {
+                    cb(NotificationCardOutput::TimedOut(urn_for_timeout.clone()));
+                }
+            });
+
+            bar
+        });
+
+        // Hover detection: pause/resume countdown on mouse enter/leave
+        if let Some(ref bar) = countdown_bar {
+            let running = bar.running_handle();
+            let bar_root = bar.root.clone();
+
+            let running_enter = running.clone();
+            let bar_root_enter = bar_root.clone();
+            let running_leave = running;
+            let bar_root_leave = bar_root;
+
+            let motion = gtk::EventControllerMotion::new();
+            motion.connect_enter(move |_, _, _| {
+                running_enter.store(false, Ordering::SeqCst);
+                bar_root_enter.add_css_class("paused");
+            });
+            motion.connect_leave(move |_| {
+                running_leave.store(true, Ordering::SeqCst);
+                bar_root_leave.remove_css_class("paused");
+            });
+            root.add_controller(motion);
+        }
+
         revealer.set_child(Some(&card_box));
         root.append(&revealer);
 
@@ -272,6 +324,7 @@ impl NotificationCard {
             description_label,
             on_output,
             hidden,
+            countdown_bar,
         }
     }
 
@@ -283,10 +336,22 @@ impl NotificationCard {
         *self.on_output.borrow_mut() = Some(Box::new(callback));
     }
 
-    /// Show the card with animation.
+    /// Show the card with animation. Starts the countdown timer if present.
     pub fn show(&self) {
         self.root.set_visible(true);
         self.revealer.set_reveal_child(true);
+        if let Some(ref bar) = self.countdown_bar {
+            bar.start();
+        }
+    }
+
+    /// Hide the card with animation and stop the countdown timer.
+    pub fn hide_and_remove(&self) {
+        if let Some(ref bar) = self.countdown_bar {
+            bar.stop();
+        }
+        *self.hidden.borrow_mut() = true;
+        self.revealer.set_reveal_child(false);
     }
 
     /// Update the card content.

@@ -76,6 +76,14 @@ impl CountdownBarWidget {
         self.running.store(true, Ordering::SeqCst);
     }
 
+    /// Get a clone of the running flag for external pause/resume control.
+    ///
+    /// Setting to `false` pauses, `true` resumes. This is the same flag
+    /// used by `pause()` and `resume()`.
+    pub fn running_handle(&self) -> Arc<AtomicBool> {
+        self.running.clone()
+    }
+
     fn start_timer(&self) {
         let elapsed_ms = self.elapsed_ms.clone();
         let ttl_ms = self.ttl_ms;
