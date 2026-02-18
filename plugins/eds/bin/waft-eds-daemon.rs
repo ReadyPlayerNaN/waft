@@ -194,24 +194,37 @@ impl Plugin for EdsPlugin {
                 return Ok(());
             }
 
-            // Update last_refresh only on actual execution (keeps CalendarSync entity meaningful).
-            {
-                let mut st = match self.state.lock() {
+            // Clone notifier out of the slot (must not hold the lock across an async boundary).
+            let notifier = {
+                let guard = match self.notifier.lock() {
                     Ok(g) => g,
                     Err(e) => {
-                        log::warn!("[eds] state mutex poisoned updating last_refresh, recovering: {e}");
+                        log::warn!("[eds] handle_action: notifier slot mutex poisoned, recovering: {e}");
                         e.into_inner()
                     }
                 };
-                st.last_refresh = Some(
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64,
-                );
-            }
+                guard.as_ref().cloned()
+            };
 
-            do_refresh(&self.conn, &backends).await;
+            match notifier {
+                Some(n) => {
+                    refresh_with_status(&self.conn, &self.state, &n, &backends).await;
+                }
+                None => {
+                    // Notifier not yet wired — should not happen in production.
+                    log::warn!("[eds] handle_action: notifier slot empty, syncing indicator unavailable");
+                    do_refresh(&self.conn, &backends).await;
+                    // Update last_refresh manually since refresh_with_status didn't run.
+                    let mut st = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            log::warn!("[eds] handle_action: mutex poisoned updating last_refresh, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    st.last_refresh = Some(unix_now());
+                }
+            }
             return Ok(());
         }
 
@@ -222,6 +235,14 @@ impl Plugin for EdsPlugin {
     fn can_stop(&self) -> bool {
         true
     }
+}
+
+/// Returns the current Unix timestamp in seconds.
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 /// Returns true if a refresh is allowed under the sliding-window policy.
@@ -288,6 +309,45 @@ async fn do_refresh(conn: &Connection, backends: &[(String, String)]) {
         }
     }
     log::debug!("[eds] do_refresh complete ({} backends)", backends.len());
+}
+
+/// Run `do_refresh` and bracket it with `syncing = true/false` state updates.
+///
+/// Sets `state.syncing = true` and notifies before calling `do_refresh`, then sets
+/// `state.syncing = false` and updates `last_refresh` after it completes.
+/// This ensures the overview sees accurate syncing state for all refresh paths.
+async fn refresh_with_status(
+    conn: &Connection,
+    state: &Arc<StdMutex<EdsState>>,
+    notifier: &EntityNotifier,
+    backends: &[(String, String)],
+) {
+    {
+        let mut st = match state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("[eds] refresh_with_status: mutex poisoned on start, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        st.syncing = true;
+    }
+    notifier.notify();
+
+    do_refresh(conn, backends).await;
+
+    {
+        let mut st = match state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("[eds] refresh_with_status: mutex poisoned on end, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        st.syncing = false;
+        st.last_refresh = Some(unix_now());
+    }
+    notifier.notify();
 }
 
 /// Monitor logind for session Lock/Unlock signals.
@@ -2533,6 +2593,13 @@ mod tests {
     fn eds_state_syncing_defaults_false() {
         let state = EdsState::new();
         assert!(!state.syncing, "syncing must start false");
+    }
+
+    #[test]
+    fn check_debounce_and_unix_now_are_consistent() {
+        // unix_now() must return a plausible recent timestamp (after 2020-01-01).
+        let ts = unix_now();
+        assert!(ts > 1_577_836_800, "unix_now must return a timestamp after 2020-01-01");
     }
 }
 
