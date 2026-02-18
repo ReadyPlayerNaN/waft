@@ -2439,6 +2439,65 @@ mod tests {
         assert_eq!(parse_weekday("SU"), Some(chrono::Weekday::Sun));
         assert_eq!(parse_weekday("XX"), None);
     }
+
+    // ── check_debounce ───────────────────────────────────────────────────────
+
+    #[test]
+    fn check_debounce_allows_first_request() {
+        let mut recent = std::collections::VecDeque::new();
+        assert!(check_debounce(&mut recent, 15), "first call must be allowed");
+        assert_eq!(recent.len(), 1, "entry must be recorded");
+    }
+
+    #[test]
+    fn check_debounce_blocks_second_within_base() {
+        let mut recent = std::collections::VecDeque::new();
+        recent.push_back(std::time::Instant::now());
+        assert!(!check_debounce(&mut recent, 15), "second call within base must be blocked");
+    }
+
+    #[test]
+    fn check_debounce_allows_second_after_base_elapsed() {
+        let base_secs = 15u64;
+        let mut recent = std::collections::VecDeque::new();
+        // Push an entry just older than base
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs + 1));
+        assert!(check_debounce(&mut recent, base_secs), "second call after base elapsed must be allowed");
+    }
+
+    #[test]
+    fn check_debounce_allows_up_to_three_in_4x_window() {
+        let base_secs = 15u64;
+        let mut recent = std::collections::VecDeque::new();
+        // Two entries: one just past base, one just past 2×base
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs + 1));
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 2 + 1));
+        assert!(check_debounce(&mut recent, base_secs), "third call within 4×base must be allowed");
+        assert_eq!(recent.len(), 3, "all three entries must be in the window");
+    }
+
+    #[test]
+    fn check_debounce_blocks_fourth_in_4x_window() {
+        let base_secs = 15u64;
+        let mut recent = std::collections::VecDeque::new();
+        // Three entries spread across the 4×base window
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs + 1));
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 2 + 1));
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 3 + 1));
+        assert!(!check_debounce(&mut recent, base_secs), "fourth call within 4×base must be blocked");
+    }
+
+    #[test]
+    fn check_debounce_prunes_old_entries() {
+        let base_secs = 15u64;
+        let mut recent = std::collections::VecDeque::new();
+        // Four entries all older than 4×base — should all be pruned
+        for _ in 0..4 {
+            recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 4 + 1));
+        }
+        assert!(check_debounce(&mut recent, base_secs), "after pruning old entries, first call must be allowed");
+        assert_eq!(recent.len(), 1, "only the new entry should remain");
+    }
 }
 
 fn main() -> Result<()> {
