@@ -62,7 +62,7 @@ impl EventsComponent {
         let past_btn = agenda.past_events_button().clone();
 
         // Spinner shown while the EDS plugin is actively refreshing calendar backends.
-        let sync_spinner = SpinnerWidget::new(false);
+        let sync_spinner = Rc::new(SpinnerWidget::new(false));
         let spinner_widget = sync_spinner.widget();
         spinner_widget.set_visible(false);
 
@@ -119,27 +119,17 @@ impl EventsComponent {
 
         // Reflect calendar sync state in the spinner.
         {
-            let spinner_widget_ref = spinner_widget.clone();
-            let store_ref = store.clone();
-            // Obtain a typed gtk::Spinner reference for start()/stop() control.
-            let spinner_native = spinner_widget
-                .clone()
-                .downcast::<gtk::Spinner>()
-                .expect("SpinnerWidget root must be a gtk::Spinner");
             let update_spinner = {
-                let spinner_widget_ref = spinner_widget_ref.clone();
-                let spinner_native_ref = spinner_native.clone();
-                let store_ref = store_ref.clone();
+                let sync_spinner_rc = Rc::clone(&sync_spinner);
+                let spinner_widget_ref = spinner_widget.clone();
+                let store_ref = store.clone();
                 move || {
                     let entities = store_ref.get_entities_typed::<entity::calendar::CalendarSync>(
                         entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
                     );
                     let syncing = entities.first().map(|(_, s)| s.syncing).unwrap_or(false);
-                    if syncing {
-                        spinner_native_ref.start();
-                    } else {
-                        spinner_native_ref.stop();
-                    }
+                    log::debug!("[events] spinner syncing={syncing}");
+                    sync_spinner_rc.set_spinning(syncing);
                     spinner_widget_ref.set_visible(syncing);
                 }
             };
