@@ -320,11 +320,21 @@ async fn spawn_session_monitor(
         tokio::spawn(async move {
             use futures_util::StreamExt;
 
-            if let Ok(dbus) = zbus::fdo::DBusProxy::new(&sys_conn).await {
-                if let Ok(rule_obj) = zbus::MatchRule::try_from(rule.as_str()) {
-                    if let Err(e) = dbus.add_match_rule(rule_obj.to_owned()).await {
-                        log::warn!("[eds] Failed to add match rule for {}: {e}", if is_lock { "Lock" } else { "Unlock" });
+            match zbus::fdo::DBusProxy::new(&sys_conn).await {
+                Ok(dbus) => {
+                    match zbus::MatchRule::try_from(rule.as_str()) {
+                        Ok(rule_obj) => {
+                            if let Err(e) = dbus.add_match_rule(rule_obj.to_owned()).await {
+                                log::warn!("[eds] Failed to add match rule for {}: {e}", if is_lock { "Lock" } else { "Unlock" });
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("[eds] Invalid match rule format for {}: {e}", if is_lock { "Lock" } else { "Unlock" });
+                        }
                     }
+                }
+                Err(e) => {
+                    log::warn!("[eds] Failed to create DBusProxy for match rule registration ({}): {e}", if is_lock { "Lock" } else { "Unlock" });
                 }
             }
 
@@ -422,8 +432,14 @@ async fn spawn_refresh_scheduler(
 
                 // Record the unlock refresh in the debounce window so an immediate
                 // overlay open doesn't double-fire within the base window.
-                if let Ok(mut st) = state.lock() {
-                    st.debounce_recent.push_back(std::time::Instant::now());
+                match state.lock() {
+                    Ok(mut st) => {
+                        st.debounce_recent.push_back(std::time::Instant::now());
+                    }
+                    Err(e) => {
+                        log::warn!("[eds] scheduler: mutex poisoned recording debounce on unlock, recovering: {e}");
+                        e.into_inner().debounce_recent.push_back(std::time::Instant::now());
+                    }
                 }
             }
         }
@@ -2502,7 +2518,10 @@ mod tests {
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[entity::calendar::ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides(&[
+        entity::calendar::ENTITY_TYPE,
+        entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+    ]) {
         return Ok(());
     }
 
