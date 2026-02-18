@@ -2,7 +2,7 @@
 //!
 //! Provides calendar events from EDS via the entity-based protocol.
 //! Events are exposed as `calendar-event` entities with URN format:
-//! `eds/calendar-event/{uid}@{start_time}`
+//! `eds/calendar-event/{uid}::{start_time}`
 //!
 //! Configuration (in ~/.config/waft/config.toml):
 //! ```toml
@@ -50,7 +50,7 @@ impl Default for EdsConfig {
 /// Shared daemon state containing calendar events.
 struct EdsState {
     /// Map of occurrence keys to calendar events.
-    /// Key format: "{uid}@{start_time}"
+    /// Key format: "{uid}::{start_time}"
     events: HashMap<String, entity::calendar::CalendarEvent>,
     /// Handles for running view-monitor tasks. Aborted on midnight rebuild.
     view_monitor_handles: Vec<tokio::task::JoinHandle<()>>,
@@ -130,7 +130,7 @@ impl EdsPlugin {
 
     /// Create occurrence key from UID and start time.
     fn make_occurrence_key(uid: &str, start_time: i64) -> String {
-        format!("{}@{}", uid, start_time)
+        format!("{}::{}", uid, start_time)
     }
 }
 
@@ -1690,10 +1690,17 @@ fn update_state_remove_events(state: &Arc<StdMutex<EdsState>>, uids: &[String]) 
     };
 
     // Remove all occurrence keys matching any of the base UIDs
+    let before = st.events.len();
     st.events.retain(|key, _| {
-        let base_uid = key.split('@').next().unwrap_or("");
+        let base_uid = key.rsplit_once("::").map(|(uid, _)| uid).unwrap_or(key);
         !uids.contains(&base_uid.to_string())
     });
+    let removed = before - st.events.len();
+    if removed > 0 {
+        debug!("[eds] Removed {} event occurrences for {} UIDs", removed, uids.len());
+    } else {
+        warn!("[eds] remove_events: no matching occurrences found for UIDs: {:?}", uids);
+    }
 }
 
 #[cfg(test)]
@@ -2601,6 +2608,68 @@ mod tests {
     fn eds_state_syncing_defaults_false() {
         let state = EdsState::new();
         assert!(!state.syncing, "syncing must start false");
+    }
+
+    // ── update_state_remove_events ───────────────────────────────────────────
+
+    /// Regression: UIDs that contain `@` characters (e.g. Google Calendar UIDs
+    /// like `event@google.com`) must be matched correctly via the
+    /// `rsplit_once("::")` key split.  The base UID is everything left of the
+    /// last `::` separator, so an `@` in the UID must not interfere.
+    #[test]
+    fn removes_events_by_uid_with_at_sign() {
+        use std::sync::{Arc, Mutex as StdMutex};
+
+        let make_event = |uid: &str, start_time: i64| entity::calendar::CalendarEvent {
+            uid: uid.to_string(),
+            summary: "Test event".to_string(),
+            start_time,
+            end_time: start_time + 3600,
+            all_day: false,
+            description: None,
+            location: None,
+            attendees: vec![],
+        };
+
+        // Three events with UIDs that contain `@` signs, matching real Google
+        // Calendar UIDs.  The occurrence key is "{uid}::{start_time}".
+        let uid_a = "event@google.com";
+        let uid_b = "meeting@google.com";
+        let uid_c = "standup@example.org";
+
+        let mut state = EdsState::new();
+        state.events.insert(
+            EdsPlugin::make_occurrence_key(uid_a, 1_000_000),
+            make_event(uid_a, 1_000_000),
+        );
+        state.events.insert(
+            EdsPlugin::make_occurrence_key(uid_b, 2_000_000),
+            make_event(uid_b, 2_000_000),
+        );
+        state.events.insert(
+            EdsPlugin::make_occurrence_key(uid_c, 3_000_000),
+            make_event(uid_c, 3_000_000),
+        );
+
+        let shared = Arc::new(StdMutex::new(state));
+
+        // Remove only uid_a.
+        update_state_remove_events(&shared, &[uid_a.to_string()]);
+
+        let st = shared.lock().unwrap();
+        assert_eq!(st.events.len(), 2, "only the uid_a occurrence should be removed");
+        assert!(
+            !st.events.contains_key(&EdsPlugin::make_occurrence_key(uid_a, 1_000_000)),
+            "uid_a occurrence must be gone"
+        );
+        assert!(
+            st.events.contains_key(&EdsPlugin::make_occurrence_key(uid_b, 2_000_000)),
+            "uid_b occurrence must be retained"
+        );
+        assert!(
+            st.events.contains_key(&EdsPlugin::make_occurrence_key(uid_c, 3_000_000)),
+            "uid_c occurrence must be retained"
+        );
     }
 
     #[test]
