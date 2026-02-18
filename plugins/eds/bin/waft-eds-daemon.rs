@@ -448,6 +448,7 @@ async fn spawn_refresh_scheduler(
     config: EdsConfig,
     session_locked: Arc<std::sync::atomic::AtomicBool>,
     unlock_notify: Arc<tokio::sync::Notify>,
+    notifier: EntityNotifier,
 ) {
     use std::sync::atomic::Ordering;
     use std::time::Duration;
@@ -487,7 +488,7 @@ async fn spawn_refresh_scheduler(
                         }
                     };
                     log::debug!("[eds] Periodic refresh firing ({} backends)", backends.len());
-                    do_refresh(&conn, &backends).await;
+                    refresh_with_status(&conn, &state, &notifier, &backends).await;
                 }
             }
             _ = unlock_notify.notified() => {
@@ -502,7 +503,7 @@ async fn spawn_refresh_scheduler(
                     }
                 };
                 log::debug!("[eds] Post-unlock refresh firing ({} backends)", backends.len());
-                do_refresh(&conn, &backends).await;
+                refresh_with_status(&conn, &state, &notifier, &backends).await;
 
                 // Record the unlock refresh in the debounce window so an immediate
                 // overlay open doesn't double-fire within the base window.
@@ -2628,8 +2629,21 @@ fn main() -> Result<()> {
         let config = plugin.config.clone();
         let session_locked = plugin.session_locked();
         let unlock_notify = plugin.unlock_notify();
+        let notifier_slot = plugin.notifier_slot();
 
         let (runtime, notifier) = PluginRuntime::new("eds", plugin);
+
+        // Fill the notifier slot so handle_action and the scheduler can push syncing state.
+        {
+            let mut slot = match notifier_slot.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    log::warn!("[eds] main: notifier slot mutex poisoned, recovering: {e}");
+                    e.into_inner()
+                }
+            };
+            *slot = Some(notifier.clone());
+        }
 
         // Clone conn for the scheduler before the monitor spawn moves it
         let scheduler_conn = conn.clone();
@@ -2657,6 +2671,7 @@ fn main() -> Result<()> {
             config,
             session_locked,
             unlock_notify,
+            notifier.clone(),
         ));
 
         runtime.run().await?;
