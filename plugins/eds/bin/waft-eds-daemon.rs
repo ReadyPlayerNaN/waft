@@ -24,7 +24,26 @@ use zvariant::OwnedValue;
 /// EDS configuration from config file.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
-struct EdsConfig {}
+struct EdsConfig {
+    /// Seconds between background refresh cycles. Default: 480 (8 min).
+    #[serde(default = "EdsConfig::default_refresh_interval")]
+    refresh_interval_secs: u64,
+
+    /// Background refresh interval when the session is locked, in seconds.
+    /// 0 = pause background refresh entirely while locked. Default: 0.
+    #[serde(default)]
+    locked_refresh_interval_secs: u64,
+
+    /// Smallest sliding-window unit for overlay-triggered debounce, in seconds.
+    /// Windows: [base, 2×base, 4×base] → limits [1, 2, 3]. Default: 15.
+    #[serde(default = "EdsConfig::default_debounce_base")]
+    debounce_base_secs: u64,
+}
+
+impl EdsConfig {
+    fn default_refresh_interval() -> u64 { 480 }
+    fn default_debounce_base() -> u64 { 15 }
+}
 
 /// Shared daemon state containing calendar events.
 struct EdsState {
@@ -46,7 +65,6 @@ impl EdsState {
 
 /// EDS plugin implementation.
 struct EdsPlugin {
-    #[allow(dead_code)]
     config: EdsConfig,
     state: Arc<StdMutex<EdsState>>,
     #[allow(dead_code)]
