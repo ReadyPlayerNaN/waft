@@ -3,6 +3,22 @@ use serde::{Deserialize, Serialize};
 /// Entity type identifier for calendar events.
 pub const ENTITY_TYPE: &str = "calendar-event";
 
+/// Entity type identifier for the calendar sync control singleton.
+pub const CALENDAR_SYNC_ENTITY_TYPE: &str = "calendar-sync";
+
+/// Represents the sync state of the EDS calendar backend.
+///
+/// Exposed as a singleton entity by the EDS plugin.
+/// Accepts a `"refresh"` action to trigger an immediate backend sync.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct CalendarSync {
+    /// Unix timestamp of the last refresh trigger, or `None` if never triggered.
+    pub last_refresh: Option<i64>,
+    /// True while a calendar refresh is actively in progress.
+    #[serde(default)]
+    pub syncing: bool,
+}
+
 /// A calendar event from EDS (Evolution Data Server).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalendarEvent {
@@ -95,5 +111,21 @@ mod tests {
             let decoded: AttendeeStatus = serde_json::from_value(json).unwrap();
             assert_eq!(status, decoded);
         }
+    }
+
+    #[test]
+    fn calendar_sync_syncing_defaults_false_on_deserialize() {
+        let json = serde_json::json!({ "last_refresh": null });
+        let sync: CalendarSync = serde_json::from_value(json).unwrap();
+        assert!(!sync.syncing, "syncing must default to false when absent from JSON");
+    }
+
+    #[test]
+    fn calendar_sync_syncing_roundtrips() {
+        let sync = CalendarSync { last_refresh: Some(1_000_000), syncing: true };
+        let json = serde_json::to_value(&sync).unwrap();
+        let decoded: CalendarSync = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.syncing, true);
+        assert_eq!(decoded.last_refresh, Some(1_000_000));
     }
 }

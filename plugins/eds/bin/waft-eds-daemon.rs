@@ -10,7 +10,7 @@
 //! id = "eds"
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{Context, Result};
@@ -24,7 +24,26 @@ use zvariant::OwnedValue;
 /// EDS configuration from config file.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
-struct EdsConfig {}
+struct EdsConfig {
+    /// Seconds between background refresh cycles. Default: 480 (8 min).
+    #[serde(default = "EdsConfig::default_refresh_interval")]
+    refresh_interval_secs: u64,
+
+    /// Background refresh interval when the session is locked, in seconds.
+    /// 0 = pause background refresh entirely while locked. Default: 0.
+    #[serde(default)]
+    locked_refresh_interval_secs: u64,
+
+    /// Smallest sliding-window unit for overlay-triggered debounce, in seconds.
+    /// Windows: [base, 2×base, 4×base] → limits [1, 2, 3]. Default: 15.
+    #[serde(default = "EdsConfig::default_debounce_base")]
+    debounce_base_secs: u64,
+}
+
+impl EdsConfig {
+    fn default_refresh_interval() -> u64 { 480 }
+    fn default_debounce_base() -> u64 { 15 }
+}
 
 /// Shared daemon state containing calendar events.
 struct EdsState {
@@ -33,6 +52,16 @@ struct EdsState {
     events: HashMap<String, entity::calendar::CalendarEvent>,
     /// Handles for running view-monitor tasks. Aborted on midnight rebuild.
     view_monitor_handles: Vec<tokio::task::JoinHandle<()>>,
+    /// Timestamps of recent overlay-triggered refreshes for sliding-window debounce.
+    /// Pruned to a 4×base window on every check.
+    debounce_recent: VecDeque<std::time::Instant>,
+    /// Known calendar backends: (bus_name, object_path) pairs.
+    /// Populated during setup_calendar_views; used by do_refresh and the scheduler.
+    calendar_backends: Vec<(String, String)>,
+    /// Unix timestamp of the last refresh attempt (overlay-triggered or scheduled).
+    last_refresh: Option<i64>,
+    /// True while a calendar refresh D-Bus call is in progress.
+    syncing: bool,
 }
 
 impl EdsState {
@@ -40,17 +69,26 @@ impl EdsState {
         Self {
             events: HashMap::new(),
             view_monitor_handles: Vec::new(),
+            debounce_recent: VecDeque::new(),
+            calendar_backends: Vec::new(),
+            last_refresh: None,
+            syncing: false,
         }
     }
 }
 
 /// EDS plugin implementation.
 struct EdsPlugin {
-    #[allow(dead_code)]
     config: EdsConfig,
     state: Arc<StdMutex<EdsState>>,
-    #[allow(dead_code)]
     conn: Connection,
+    /// True when the session is locked. Written by session monitor, read by scheduler.
+    session_locked: Arc<std::sync::atomic::AtomicBool>,
+    /// Notified when session unlocks; wakes the refresh scheduler immediately.
+    unlock_notify: Arc<tokio::sync::Notify>,
+    /// Notifier slot — filled by main() after PluginRuntime::new().
+    /// Allows handle_action to push syncing-state updates mid-action.
+    notifier: Arc<StdMutex<Option<EntityNotifier>>>,
 }
 
 impl EdsPlugin {
@@ -66,11 +104,26 @@ impl EdsPlugin {
             config,
             state: Arc::new(StdMutex::new(EdsState::new())),
             conn,
+            session_locked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            unlock_notify: Arc::new(tokio::sync::Notify::new()),
+            notifier: Arc::new(StdMutex::new(None)),
         })
     }
 
     fn shared_state(&self) -> Arc<StdMutex<EdsState>> {
         self.state.clone()
+    }
+
+    fn session_locked(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        self.session_locked.clone()
+    }
+
+    fn unlock_notify(&self) -> Arc<tokio::sync::Notify> {
+        self.unlock_notify.clone()
+    }
+
+    fn notifier_slot(&self) -> Arc<StdMutex<Option<EntityNotifier>>> {
+        self.notifier.clone()
     }
 
     /// Create occurrence key from UID and start time.
@@ -90,14 +143,29 @@ impl Plugin for EdsPlugin {
             }
         };
 
-        state
+        let mut entities: Vec<Entity> = state
             .events
             .iter()
             .map(|(key, event)| {
                 let urn = Urn::new("eds", entity::calendar::ENTITY_TYPE, key);
                 Entity::new(urn, entity::calendar::ENTITY_TYPE, event)
             })
-            .collect()
+            .collect();
+
+        // Expose calendar sync control as a singleton entity so the overview can
+        // discover a stable URN for sending the "refresh" action.
+        let sync = entity::calendar::CalendarSync {
+            last_refresh: state.last_refresh,
+            syncing: state.syncing,
+        };
+        let sync_urn = Urn::new("eds", entity::calendar::CALENDAR_SYNC_ENTITY_TYPE, "singleton");
+        entities.push(Entity::new(
+            sync_urn,
+            entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+            &sync,
+        ));
+
+        entities
     }
 
     async fn handle_action(
@@ -107,13 +175,363 @@ impl Plugin for EdsPlugin {
         _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         log::debug!("Received action '{}' for URN: {}", action, urn);
-        log::warn!("EDS plugin is read-only; action '{}' not supported", action);
+
+        if action == "refresh" {
+            let (allowed, backends) = {
+                let mut st = match self.state.lock() {
+                    Ok(g) => g,
+                    Err(e) => {
+                        log::warn!("[eds] state mutex poisoned during refresh, recovering: {e}");
+                        e.into_inner()
+                    }
+                };
+                let allowed = check_debounce(&mut st.debounce_recent, self.config.debounce_base_secs);
+                (allowed, st.calendar_backends.clone())
+            };
+
+            if !allowed {
+                log::debug!("[eds] Refresh debounced (overlay-triggered)");
+                return Ok(());
+            }
+
+            // Clone notifier out of the slot (must not hold the lock across an async boundary).
+            let notifier = {
+                let guard = match self.notifier.lock() {
+                    Ok(g) => g,
+                    Err(e) => {
+                        log::warn!("[eds] handle_action: notifier slot mutex poisoned, recovering: {e}");
+                        e.into_inner()
+                    }
+                };
+                guard.as_ref().cloned()
+            };
+
+            match notifier {
+                Some(n) => {
+                    refresh_with_status(&self.conn, &self.state, &n, &backends).await;
+                }
+                None => {
+                    // Notifier not yet wired — should not happen in production.
+                    // NOTE: Without a notifier we cannot propagate the updated last_refresh to
+                    // subscribers. This path is unreachable in normal operation (notifier is filled
+                    // before the first action can arrive), but if it is ever reached, last_refresh
+                    // will be stale in the overview until the next successful refresh.
+                    log::warn!("[eds] handle_action: notifier slot empty, syncing indicator unavailable");
+                    do_refresh(&self.conn, &backends).await;
+                    // Update last_refresh manually since refresh_with_status didn't run.
+                    let mut st = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            log::warn!("[eds] handle_action: mutex poisoned updating last_refresh, recovering: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    st.last_refresh = Some(unix_now());
+                }
+            }
+            return Ok(());
+        }
+
+        log::warn!("EDS plugin does not support action '{}' (urn={})", action, urn);
         Ok(())
     }
 
     fn can_stop(&self) -> bool {
         true
     }
+}
+
+/// Returns the current Unix timestamp in seconds.
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+/// Returns true if a refresh is allowed under the sliding-window policy.
+///
+/// Three windows derived from `base_secs`:
+///   [base, 2×base, 4×base] → limits [1, 2, 3]
+///
+/// Side effect on allow: pushes current Instant and prunes old entries.
+fn check_debounce(
+    recent: &mut std::collections::VecDeque<std::time::Instant>,
+    base_secs: u64,
+) -> bool {
+    use std::time::{Duration, Instant};
+    let now = Instant::now();
+    let base = Duration::from_secs(base_secs);
+
+    // Prune entries older than 4×base (the largest window).
+    recent.retain(|&t| now.duration_since(t) < base * 4);
+
+    let in_w1 = recent.iter().filter(|&&t| now.duration_since(t) < base).count();
+    let in_w2 = recent.iter().filter(|&&t| now.duration_since(t) < base * 2).count();
+    let in_w3 = recent.len(); // all remaining are within 4×base
+
+    if in_w1 >= 1 || in_w2 >= 2 || in_w3 >= 3 {
+        return false;
+    }
+
+    recent.push_back(now);
+    true
+}
+
+/// Call EDS Calendar.Open() then Calendar.Refresh() on each known backend.
+///
+/// This is the shared implementation used by both the periodic scheduler and
+/// overlay-triggered handle_action. It does NOT check the debounce window.
+async fn do_refresh(conn: &Connection, backends: &[(String, String)]) {
+    if backends.is_empty() {
+        log::debug!("[eds] do_refresh: no backends, skipping");
+        return;
+    }
+    for (bus_name, object_path) in backends {
+        match zbus::Proxy::new(
+            conn,
+            bus_name.as_str(),
+            object_path.as_str(),
+            "org.gnome.evolution.dataserver.Calendar",
+        )
+        .await
+        {
+            Ok(proxy) => {
+                match proxy.call_method("Open", &()).await {
+                    Ok(_) => {
+                        let result: std::result::Result<(), zbus::Error> =
+                            proxy.call("Refresh", &()).await;
+                        match result {
+                            Ok(()) => log::debug!("[eds] Refreshed {object_path}"),
+                            Err(e) => log::warn!("[eds] Refresh failed for {object_path}: {e}"),
+                        }
+                    }
+                    Err(e) => log::warn!("[eds] Open failed for {object_path}: {e}"),
+                }
+            }
+            Err(e) => log::warn!("[eds] Proxy failed for {object_path}: {e}"),
+        }
+    }
+    log::debug!("[eds] do_refresh complete ({} backends)", backends.len());
+}
+
+/// Run `do_refresh` and bracket it with `syncing = true/false` state updates.
+///
+/// Sets `state.syncing = true` and notifies before calling `do_refresh`, then sets
+/// `state.syncing = false` and updates `last_refresh` after it completes.
+/// This ensures the overview sees accurate syncing state for all refresh paths.
+async fn refresh_with_status(
+    conn: &Connection,
+    state: &Arc<StdMutex<EdsState>>,
+    notifier: &EntityNotifier,
+    backends: &[(String, String)],
+) {
+    {
+        let mut st = match state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("[eds] refresh_with_status: mutex poisoned on start, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        st.syncing = true;
+    }
+    notifier.notify();
+
+    // NOTE: If do_refresh panics, syncing will remain true and the spinner will spin
+    // indefinitely. do_refresh is designed to be panic-free (all errors are handled
+    // via match/if let), but this assumption is not enforced by the type system.
+    do_refresh(conn, backends).await;
+
+    {
+        let mut st = match state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("[eds] refresh_with_status: mutex poisoned on end, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        st.syncing = false;
+        st.last_refresh = Some(unix_now());
+    }
+    notifier.notify();
+}
+
+/// Monitor logind for session Lock/Unlock signals.
+///
+/// On Lock:   session_locked = true
+/// On Unlock: session_locked = false, unlock_notify fired
+///
+/// Degrades gracefully if logind is unavailable.
+async fn spawn_session_monitor(
+    session_locked: Arc<std::sync::atomic::AtomicBool>,
+    unlock_notify: Arc<tokio::sync::Notify>,
+) {
+    use std::sync::atomic::Ordering;
+
+    let sys_conn = match zbus::Connection::system().await {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[eds] Cannot connect to system bus for session monitor: {e}");
+            log::warn!("[eds] Session-aware refresh disabled");
+            return;
+        }
+    };
+
+    // Resolve session path: prefer XDG_SESSION_ID, fall back to "auto".
+    let session_path = match std::env::var("XDG_SESSION_ID") {
+        Ok(id) => format!("/org/freedesktop/login1/session/{}", id),
+        Err(_) => "/org/freedesktop/login1/session/auto".to_string(),
+    };
+
+    log::info!("[eds] Monitoring session at {session_path}");
+
+    for (member, is_lock) in &[("Lock", true), ("Unlock", false)] {
+        let rule = format!(
+            "type='signal',interface='org.freedesktop.login1.Session',\
+             member='{}',path='{}'",
+            member, session_path
+        );
+
+        let sys_conn = sys_conn.clone();
+        let session_locked = session_locked.clone();
+        let unlock_notify = unlock_notify.clone();
+        let is_lock = *is_lock;
+
+        tokio::spawn(async move {
+            use futures_util::StreamExt;
+
+            match zbus::fdo::DBusProxy::new(&sys_conn).await {
+                Ok(dbus) => {
+                    match zbus::MatchRule::try_from(rule.as_str()) {
+                        Ok(rule_obj) => {
+                            if let Err(e) = dbus.add_match_rule(rule_obj.to_owned()).await {
+                                log::warn!("[eds] Failed to add match rule for {}: {e}", if is_lock { "Lock" } else { "Unlock" });
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("[eds] Invalid match rule format for {}: {e}", if is_lock { "Lock" } else { "Unlock" });
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[eds] Failed to create DBusProxy for match rule registration ({}): {e}", if is_lock { "Lock" } else { "Unlock" });
+                }
+            }
+
+            let mut stream = zbus::MessageStream::from(&sys_conn);
+            while let Some(Ok(msg)) = stream.next().await {
+                let h = msg.header();
+                let iface_ok = h.interface()
+                    .map(|i| i.as_str() == "org.freedesktop.login1.Session")
+                    .unwrap_or(false);
+                let member_ok = h.member()
+                    .map(|m| m.as_str() == if is_lock { "Lock" } else { "Unlock" })
+                    .unwrap_or(false);
+
+                if iface_ok && member_ok {
+                    session_locked.store(is_lock, Ordering::Relaxed);
+                    if !is_lock {
+                        log::debug!("[eds] Session unlocked — triggering immediate refresh");
+                        unlock_notify.notify_one();
+                    } else {
+                        log::debug!("[eds] Session locked — background refresh rate reduced");
+                    }
+                }
+            }
+            log::debug!("[eds] Session monitor stream ended for member={}", if is_lock { "Lock" } else { "Unlock" });
+        });
+    }
+}
+
+/// Periodically call do_refresh() according to config.
+///
+/// - Active interval:  config.refresh_interval_secs (default 480s)
+/// - Locked interval:  config.locked_refresh_interval_secs (0 = pause)
+/// - On unlock:        fires immediately, then resets to active interval
+async fn spawn_refresh_scheduler(
+    conn: Connection,
+    state: Arc<StdMutex<EdsState>>,
+    config: EdsConfig,
+    session_locked: Arc<std::sync::atomic::AtomicBool>,
+    unlock_notify: Arc<tokio::sync::Notify>,
+    notifier: EntityNotifier,
+) {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    log::info!(
+        "[eds] Refresh scheduler started (interval={}s, locked={}s, debounce_base={}s)",
+        config.refresh_interval_secs,
+        config.locked_refresh_interval_secs,
+        config.debounce_base_secs,
+    );
+
+    #[allow(unreachable_code)]
+    {
+    loop {
+        let locked = session_locked.load(Ordering::Relaxed);
+
+        let sleep_duration = if locked {
+            if config.locked_refresh_interval_secs == 0 {
+                // Paused: wait effectively forever; unlock_notify will wake us.
+                Duration::from_secs(u64::MAX / 2)
+            } else {
+                Duration::from_secs(config.locked_refresh_interval_secs)
+            }
+        } else {
+            Duration::from_secs(config.refresh_interval_secs)
+        };
+
+        tokio::select! {
+            _ = tokio::time::sleep(sleep_duration) => {
+                // Timer fired. Only refresh if not locked (guards against MAX/2 wakeup edge).
+                if !session_locked.load(Ordering::Relaxed) {
+                    let backends = {
+                        match state.lock() {
+                            Ok(st) => st.calendar_backends.clone(),
+                            Err(e) => {
+                                log::warn!("[eds] scheduler: mutex poisoned, recovering: {e}");
+                                e.into_inner().calendar_backends.clone()
+                            }
+                        }
+                    };
+                    log::debug!("[eds] Periodic refresh firing ({} backends)", backends.len());
+                    refresh_with_status(&conn, &state, &notifier, &backends).await;
+                }
+            }
+            _ = unlock_notify.notified() => {
+                // Session just unlocked — refresh immediately.
+                let backends = {
+                    match state.lock() {
+                        Ok(st) => st.calendar_backends.clone(),
+                        Err(e) => {
+                            log::warn!("[eds] scheduler: mutex poisoned on unlock, recovering: {e}");
+                            e.into_inner().calendar_backends.clone()
+                        }
+                    }
+                };
+                log::debug!("[eds] Post-unlock refresh firing ({} backends)", backends.len());
+                refresh_with_status(&conn, &state, &notifier, &backends).await;
+
+                // Record the unlock refresh in the debounce window so an immediate
+                // overlay open doesn't double-fire within the base window.
+                match state.lock() {
+                    Ok(mut st) => {
+                        st.debounce_recent.push_back(std::time::Instant::now());
+                    }
+                    Err(e) => {
+                        log::warn!("[eds] scheduler: mutex poisoned recording debounce on unlock, recovering: {e}");
+                        e.into_inner().debounce_recent.push_back(std::time::Instant::now());
+                    }
+                }
+            }
+        }
+    }
+
+    // Unreachable, but satisfies the "log when task exits" rule.
+    log::warn!("[eds] Refresh scheduler task stopped — background refresh is no longer active");
+    } // #[allow(unreachable_code)]
 }
 
 /// EDS D-Bus service names and paths.
@@ -345,6 +763,18 @@ async fn setup_calendar_views(
         let handle = tokio::spawn(async move {
             match open_calendar(&conn_clone, &source_uid).await {
                 Ok((calendar_path, bus_name)) => {
+                    // Record this backend so do_refresh can Open()+Refresh() it later.
+                    {
+                        let mut st = match state_clone.lock() {
+                            Ok(g) => g,
+                            Err(e) => {
+                                warn!("[eds] state mutex poisoned storing backend, recovering: {e}");
+                                e.into_inner()
+                            }
+                        };
+                        st.calendar_backends.push((bus_name.clone(), calendar_path.clone()));
+                    }
+
                     match create_view(&conn_clone, &bus_name, &calendar_path, &query_clone).await {
                         Ok(view_path) => {
                             {
@@ -442,6 +872,9 @@ async fn monitor_eds_calendars(
             for handle in st.view_monitor_handles.drain(..) {
                 handle.abort();
             }
+
+            // Clear backends so setup_calendar_views can repopulate for the new day.
+            st.calendar_backends.clear();
 
             let stale_keys: Vec<String> = st
                 .events
@@ -2106,11 +2539,86 @@ mod tests {
         assert_eq!(parse_weekday("SU"), Some(chrono::Weekday::Sun));
         assert_eq!(parse_weekday("XX"), None);
     }
+
+    // ── check_debounce ───────────────────────────────────────────────────────
+
+    #[test]
+    fn check_debounce_allows_first_request() {
+        let mut recent = std::collections::VecDeque::new();
+        assert!(check_debounce(&mut recent, 15), "first call must be allowed");
+        assert_eq!(recent.len(), 1, "entry must be recorded");
+    }
+
+    #[test]
+    fn check_debounce_blocks_second_within_base() {
+        let mut recent = std::collections::VecDeque::new();
+        recent.push_back(std::time::Instant::now());
+        assert!(!check_debounce(&mut recent, 15), "second call within base must be blocked");
+    }
+
+    #[test]
+    fn check_debounce_allows_second_after_base_elapsed() {
+        let base_secs = 15u64;
+        let mut recent = std::collections::VecDeque::new();
+        // Push an entry just older than base
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs + 1));
+        assert!(check_debounce(&mut recent, base_secs), "second call after base elapsed must be allowed");
+    }
+
+    #[test]
+    fn check_debounce_allows_up_to_three_in_4x_window() {
+        let base_secs = 15u64;
+        let mut recent = std::collections::VecDeque::new();
+        // Two entries: one just past base, one just past 2×base
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs + 1));
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 2 + 1));
+        assert!(check_debounce(&mut recent, base_secs), "third call within 4×base must be allowed");
+        assert_eq!(recent.len(), 3, "all three entries must be in the window");
+    }
+
+    #[test]
+    fn check_debounce_blocks_fourth_in_4x_window() {
+        let base_secs = 15u64;
+        let mut recent = std::collections::VecDeque::new();
+        // Three entries spread across the 4×base window
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs + 1));
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 2 + 1));
+        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 3 + 1));
+        assert!(!check_debounce(&mut recent, base_secs), "fourth call within 4×base must be blocked");
+    }
+
+    #[test]
+    fn check_debounce_prunes_old_entries() {
+        let base_secs = 15u64;
+        let mut recent = std::collections::VecDeque::new();
+        // Four entries all older than 4×base — should all be pruned
+        for _ in 0..4 {
+            recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 4 + 1));
+        }
+        assert!(check_debounce(&mut recent, base_secs), "after pruning old entries, first call must be allowed");
+        assert_eq!(recent.len(), 1, "only the new entry should remain");
+    }
+
+    #[test]
+    fn eds_state_syncing_defaults_false() {
+        let state = EdsState::new();
+        assert!(!state.syncing, "syncing must start false");
+    }
+
+    #[test]
+    fn check_debounce_and_unix_now_are_consistent() {
+        // unix_now() must return a plausible recent timestamp (after 2020-01-01).
+        let ts = unix_now();
+        assert!(ts > 1_577_836_800, "unix_now must return a timestamp after 2020-01-01");
+    }
 }
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[entity::calendar::ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides(&[
+        entity::calendar::ENTITY_TYPE,
+        entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+    ]) {
         return Ok(());
     }
 
@@ -2127,8 +2635,27 @@ fn main() -> Result<()> {
         // Grab shared state handle and connection before plugin is moved into the runtime
         let shared_state = plugin.shared_state();
         let conn = plugin.conn.clone();
+        let config = plugin.config.clone();
+        let session_locked = plugin.session_locked();
+        let unlock_notify = plugin.unlock_notify();
+        let notifier_slot = plugin.notifier_slot();
 
         let (runtime, notifier) = PluginRuntime::new("eds", plugin);
+
+        // Fill the notifier slot so handle_action and the scheduler can push syncing state.
+        {
+            let mut slot = match notifier_slot.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    log::warn!("[eds] main: notifier slot mutex poisoned, recovering: {e}");
+                    e.into_inner()
+                }
+            };
+            *slot = Some(notifier.clone());
+        }
+
+        // Clone conn for the scheduler before the monitor spawn moves it
+        let scheduler_conn = conn.clone();
 
         // Spawn D-Bus monitoring task
         let monitor_state = shared_state.clone();
@@ -2139,6 +2666,22 @@ fn main() -> Result<()> {
             }
             log::debug!("[eds] Calendar monitoring task stopped");
         });
+
+        // Spawn session monitor
+        tokio::spawn(spawn_session_monitor(
+            session_locked.clone(),
+            unlock_notify.clone(),
+        ));
+
+        // Spawn periodic refresh scheduler
+        tokio::spawn(spawn_refresh_scheduler(
+            scheduler_conn,
+            shared_state.clone(),
+            config,
+            session_locked,
+            unlock_notify,
+            notifier.clone(),
+        ));
 
         runtime.run().await?;
         Ok(())

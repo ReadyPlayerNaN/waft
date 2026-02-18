@@ -33,12 +33,24 @@ This plugin is read-only. No actions are supported.
 
 ## Configuration
 
+Add to `~/.config/waft/config.toml`:
+
 ```toml
 [[plugins]]
-id = "eds"
-```
+id = "plugin::eds"
 
-No plugin-specific configuration options.
+# Seconds between background calendar refreshes. Default: 480 (8 minutes).
+refresh_interval_secs = 480
+
+# Background refresh interval while the session is locked (seconds).
+# 0 = pause background refresh entirely while locked. Default: 0.
+locked_refresh_interval_secs = 0
+
+# Base window for overlay-triggered refresh rate limiting (seconds).
+# Three windows are derived: [base, 2×base, 4×base] → limits [1, 2, 3].
+# Default: 15.
+debounce_base_secs = 15
+```
 
 ## Dependencies
 

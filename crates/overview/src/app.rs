@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use log::{debug, warn};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -42,6 +43,7 @@ const ENTITY_TYPES: &[&str] = &[
     entity::notification::NOTIFICATION_ENTITY_TYPE,
     entity::notification::DND_ENTITY_TYPE,
     entity::calendar::ENTITY_TYPE,
+    entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
     entity::storage::BACKUP_METHOD_ENTITY_TYPE,
 ];
 
@@ -250,6 +252,37 @@ pub async fn setup() -> Result<adw::Application> {
                 menu_store_for_hide.emit(waft_core::menu_state::MenuOp::CloseAll);
             });
 
+            // URN of the calendar-sync singleton entity, captured when first received.
+            // Used to send the "refresh" action unconditionally when the overlay opens.
+            // The plugin (waft-eds-daemon) is authoritative for debounce logic.
+            let calendar_sync_urn: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+
+            // Subscribe to calendar-sync entities to capture the singleton URN.
+            {
+                let urn_slot = calendar_sync_urn.clone();
+                let store_clone = entity_store.clone();
+                let capture_urn = {
+                    let urn_slot = urn_slot.clone();
+                    let store_clone = store_clone.clone();
+                    move || {
+                        let entities = store_clone
+                            .get_entities_typed::<entity::calendar::CalendarSync>(
+                                entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+                            );
+                        if let Some((urn, _)) = entities.first() {
+                            *urn_slot.borrow_mut() = Some(urn.to_string());
+                        }
+                    }
+                };
+                entity_store.subscribe_type(
+                    entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+                    capture_urn.clone(),
+                );
+                // Initial reconciliation: the entity may already be cached before
+                // the subscription was registered (CLAUDE.md EntityStore pattern).
+                glib::idle_add_local_once(capture_urn);
+            }
+
             // Setup IPC receiver BEFORE plugin widget creation
             // This ensures toggle commands are processed immediately, even if plugins are slow to init
             if let Ok(mut rx_slot) = ipc_rx_slot.lock()
@@ -258,6 +291,8 @@ pub async fn setup() -> Result<adw::Application> {
                     let animation = main_window.animation.clone();
                     let progress = main_window.animation_progress.clone();
                     let animating_hide = main_window.animating_hide.clone();
+                    let urn_for_show = calendar_sync_urn.clone();
+                    let action_cb_for_show = entity_action_callback.clone();
                     glib::spawn_future_local(async move {
                         while let Ok(input) = rx.recv().await {
                             match input {
@@ -269,6 +304,21 @@ pub async fn setup() -> Result<adw::Application> {
                                     animation.set_value_to(1.0);
                                     animation.set_easing(adw::Easing::EaseOutCubic);
                                     animation.play();
+
+                                    // Trigger a calendar backend refresh unconditionally.
+                                    // The EDS plugin is authoritative for debounce logic.
+                                    if let Some(urn_str) = urn_for_show.borrow().as_deref() {
+                                        if let Ok(urn) = waft_protocol::Urn::parse(urn_str) {
+                                            action_cb_for_show(
+                                                urn,
+                                                "refresh".to_string(),
+                                                serde_json::Value::Null,
+                                            );
+                                            debug!("[app] Triggered calendar sync refresh");
+                                        } else {
+                                            warn!("[app] Invalid calendar-sync URN: {urn_str}");
+                                        }
+                                    }
                                 }
                                 MainWindowInput::HideOverlay => {
                                     if window.is_visible() && !animating_hide.get() {
@@ -294,6 +344,21 @@ pub async fn setup() -> Result<adw::Application> {
                                         animation.set_value_to(1.0);
                                         animation.set_easing(adw::Easing::EaseOutCubic);
                                         animation.play();
+
+                                        // Trigger a calendar backend refresh unconditionally.
+                                        // The EDS plugin is authoritative for debounce logic.
+                                        if let Some(urn_str) = urn_for_show.borrow().as_deref() {
+                                            if let Ok(urn) = waft_protocol::Urn::parse(urn_str) {
+                                                action_cb_for_show(
+                                                    urn,
+                                                    "refresh".to_string(),
+                                                    serde_json::Value::Null,
+                                                );
+                                                debug!("[app] Triggered calendar sync refresh");
+                                            } else {
+                                                warn!("[app] Invalid calendar-sync URN: {urn_str}");
+                                            }
+                                        }
                                     }
                                 }
                                 MainWindowInput::StopApp => {

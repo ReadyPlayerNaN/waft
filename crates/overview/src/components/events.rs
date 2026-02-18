@@ -14,6 +14,9 @@ use crate::components::calendar_grid::CalendarComponent;
 use crate::menu_state::MenuStore;
 use crate::ui::main_window::trigger_window_resize;
 use waft_client::EntityStore;
+use waft_protocol::entity;
+use waft_ui_gtk::widget_base::WidgetBase as _;
+use waft_ui_gtk::widgets::spinner::SpinnerWidget;
 
 pub struct EventsComponent {
     container: gtk::Box,
@@ -58,10 +61,16 @@ impl EventsComponent {
 
         let past_btn = agenda.past_events_button().clone();
 
+        // Spinner shown while the EDS plugin is actively refreshing calendar backends.
+        let sync_spinner = Rc::new(SpinnerWidget::new(false));
+        let spinner_widget = sync_spinner.widget();
+        spinner_widget.set_visible(false);
+
         let controls = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(4)
             .build();
+        controls.append(&spinner_widget); // spinner left of toggle buttons
         controls.append(&calendar_toggle);
         controls.append(&past_btn);
 
@@ -107,6 +116,27 @@ impl EventsComponent {
         calendar_revealer.connect_child_revealed_notify(move |_| {
             trigger_window_resize();
         });
+
+        // Reflect calendar sync state in the spinner.
+        {
+            let update_spinner = {
+                let sync_spinner_rc = Rc::clone(&sync_spinner);
+                let spinner_widget_ref = spinner_widget.clone();
+                let store_ref = store.clone();
+                move || {
+                    let entities = store_ref.get_entities_typed::<entity::calendar::CalendarSync>(
+                        entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+                    );
+                    let syncing = entities.first().map(|(_, s)| s.syncing).unwrap_or(false);
+                    log::debug!("[events] spinner syncing={syncing}");
+                    sync_spinner_rc.set_spinning(syncing);
+                    spinner_widget_ref.set_visible(syncing);
+                }
+            };
+            store.subscribe_type(entity::calendar::CALENDAR_SYNC_ENTITY_TYPE, update_spinner.clone());
+            // Initial reconciliation: entity may already be cached (CLAUDE.md EntityStore pattern).
+            gtk::glib::idle_add_local_once(update_spinner);
+        }
 
         container.append(&header);
         container.append(&calendar_revealer);
