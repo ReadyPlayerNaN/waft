@@ -2448,8 +2448,14 @@ fn main() -> Result<()> {
         // Grab shared state handle and connection before plugin is moved into the runtime
         let shared_state = plugin.shared_state();
         let conn = plugin.conn.clone();
+        let config = plugin.config.clone();
+        let session_locked = plugin.session_locked();
+        let unlock_notify = plugin.unlock_notify();
 
         let (runtime, notifier) = PluginRuntime::new("eds", plugin);
+
+        // Clone conn for the scheduler before the monitor spawn moves it
+        let scheduler_conn = conn.clone();
 
         // Spawn D-Bus monitoring task
         let monitor_state = shared_state.clone();
@@ -2460,6 +2466,21 @@ fn main() -> Result<()> {
             }
             log::debug!("[eds] Calendar monitoring task stopped");
         });
+
+        // Spawn session monitor
+        tokio::spawn(spawn_session_monitor(
+            session_locked.clone(),
+            unlock_notify.clone(),
+        ));
+
+        // Spawn periodic refresh scheduler
+        tokio::spawn(spawn_refresh_scheduler(
+            scheduler_conn,
+            shared_state.clone(),
+            config,
+            session_locked,
+            unlock_notify,
+        ));
 
         runtime.run().await?;
         Ok(())
