@@ -212,6 +212,10 @@ impl Plugin for EdsPlugin {
                 }
                 None => {
                     // Notifier not yet wired — should not happen in production.
+                    // NOTE: Without a notifier we cannot propagate the updated last_refresh to
+                    // subscribers. This path is unreachable in normal operation (notifier is filled
+                    // before the first action can arrive), but if it is ever reached, last_refresh
+                    // will be stale in the overview until the next successful refresh.
                     log::warn!("[eds] handle_action: notifier slot empty, syncing indicator unavailable");
                     do_refresh(&self.conn, &backends).await;
                     // Update last_refresh manually since refresh_with_status didn't run.
@@ -334,6 +338,9 @@ async fn refresh_with_status(
     }
     notifier.notify();
 
+    // NOTE: If do_refresh panics, syncing will remain true and the spinner will spin
+    // indefinitely. do_refresh is designed to be panic-free (all errors are handled
+    // via match/if let), but this assumption is not enforced by the type system.
     do_refresh(conn, backends).await;
 
     {
@@ -460,6 +467,8 @@ async fn spawn_refresh_scheduler(
         config.debounce_base_secs,
     );
 
+    #[allow(unreachable_code)]
+    {
     loop {
         let locked = session_locked.load(Ordering::Relaxed);
 
@@ -521,8 +530,8 @@ async fn spawn_refresh_scheduler(
     }
 
     // Unreachable, but satisfies the "log when task exits" rule.
-    #[allow(unreachable_code)]
     log::warn!("[eds] Refresh scheduler task stopped — background refresh is no longer active");
+    } // #[allow(unreachable_code)]
 }
 
 /// EDS D-Bus service names and paths.
