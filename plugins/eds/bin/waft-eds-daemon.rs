@@ -132,14 +132,26 @@ impl Plugin for EdsPlugin {
             }
         };
 
-        state
+        let mut entities: Vec<Entity> = state
             .events
             .iter()
             .map(|(key, event)| {
                 let urn = Urn::new("eds", entity::calendar::ENTITY_TYPE, key);
                 Entity::new(urn, entity::calendar::ENTITY_TYPE, event)
             })
-            .collect()
+            .collect();
+
+        // Expose calendar sync control as a singleton entity so the overview can
+        // discover a stable URN for sending the "refresh" action.
+        let sync = entity::calendar::CalendarSync { last_refresh: state.last_refresh };
+        let sync_urn = Urn::new("eds", entity::calendar::CALENDAR_SYNC_ENTITY_TYPE, "singleton");
+        entities.push(Entity::new(
+            sync_urn,
+            entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+            &sync,
+        ));
+
+        entities
     }
 
     async fn handle_action(

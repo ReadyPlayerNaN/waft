@@ -3,6 +3,19 @@ use serde::{Deserialize, Serialize};
 /// Entity type identifier for calendar events.
 pub const ENTITY_TYPE: &str = "calendar-event";
 
+/// Entity type identifier for the calendar sync control singleton.
+pub const CALENDAR_SYNC_ENTITY_TYPE: &str = "calendar-sync";
+
+/// Represents the sync state of the EDS calendar backend.
+///
+/// Exposed as a singleton entity by the EDS plugin.
+/// Accepts a `"refresh"` action to trigger an immediate backend sync.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CalendarSync {
+    /// Unix timestamp of the last refresh trigger, or `None` if never triggered.
+    pub last_refresh: Option<i64>,
+}
+
 /// A calendar event from EDS (Evolution Data Server).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalendarEvent {
