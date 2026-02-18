@@ -1,33 +1,24 @@
-# Notification sounds
+# Notification sound gallery
 
-Play a sound when a notification pops up. Configure sounds=disabled/enabled, sound based on urgency, sound based on notification matching. Sounds are off in Do Not Disturb mode.
+Save sounds into waft, reference them in the notifications Settings
 
-# Auxiliary notification group splits
+# Notifications groups and profiles zero state
 
-Sometimes apps have workspaces. It would be useful to split notifications to groups per app workspace. Good example is Slack: running multiple workspaces seems to prefix the notification title with `[{workspace_name}]` and that could be used for grouping. The workspace name (if detected) should appear in the notification group header.
-
-See `docs/notification-grouping-research.md` for research.
+These sections need to have a zero state to help users navigate
 
 # WiFi: Support connecting to new (unsaved) networks
 
 Currently WiFi only shows networks with saved connection profiles. Connecting to new networks requires a password prompt flow using `AddAndActivateConnection()` on the NetworkManager D-Bus Settings interface.
 
-# Notification toast bubbles (PARTIALLY DONE)
+# Notification toast bubbles
 
-Basic toast application (`waft-toasts`) is now implemented with:
+Think of having the toasts as unobtrusive bubbles
 
-- ✅ 3-toast limit with queue overflow
-- ✅ DND awareness (critical notifications bypass)
-- ✅ 5-second TTL with automatic expiry
-- ✅ Interactive (left-click action, right-click dismiss)
-- ✅ Top-center positioning on Layer::Top
+# Meeting invite
 
-Still TODO:
+Whenever an email with meeting invite is received, present it as calendar notification. Provide actions to accept, decline, maybe and open calendar.
 
-- [ ] Bubble-style visual design (currently uses card style)
-- [ ] Configurable toast limit and timeout
-- [ ] Per-app toast filtering
+# SNI tray
 
-# SNI (Status Notifier Items)
-
-Systray compatibility for applications that use the StatusNotifierItem protocol.
+Consider having the SNI tray in the waft overview.
+(Status Notifier Items)
