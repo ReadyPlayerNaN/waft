@@ -298,38 +298,42 @@ fn build_time_range_query_from_today() -> (TimeRange, String) {
     (range, query)
 }
 
-/// Monitor EDS calendars and populate shared state.
-///
-/// Discovers calendar sources, opens calendars, creates views,
-/// and spawns monitoring tasks for each view.
-async fn monitor_eds_calendars(
-    conn: Connection,
+/// Returns seconds until the next local midnight (minimum 1).
+fn secs_until_eds_midnight() -> u64 {
+    let now = chrono::Local::now();
+    let tomorrow = (now.date_naive() + chrono::Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is always valid")
+        .and_local_timezone(chrono::Local)
+        .earliest()
+        .expect("tomorrow midnight is a valid local time");
+    (tomorrow.timestamp() - now.timestamp()).max(1) as u64
+}
+
+/// Discover EDS calendar sources, create views for today+30d, and spawn
+/// view-monitor tasks. Returns the handles so callers can abort them later.
+async fn setup_calendar_views(
+    conn: &Connection,
     state: Arc<StdMutex<EdsState>>,
     notifier: EntityNotifier,
-) -> Result<()> {
-    // Discover calendar sources
-    let sources = match discover_calendar_sources(&conn).await {
-        Ok(sources) => sources,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    let sources = match discover_calendar_sources(conn).await {
+        Ok(s) => s,
         Err(e) => {
-            warn!("[eds] Failed to discover calendar sources: {}", e);
-            return Err(e);
+            warn!("[eds] Failed to discover calendar sources: {e}");
+            return vec![];
         }
     };
 
     if sources.is_empty() {
         debug!("[eds] No calendar sources found");
-        return Ok(());
+        return vec![];
     }
 
-    // Track view paths for signal filtering
     let view_paths = Arc::new(StdMutex::new(HashSet::new()));
-
-    // Query from today midnight through next 30 days.  Using today midnight
-    // (not now) ensures events that started before the daemon launched but
-    // still fall within today are included in the view.
     let (time_range, query) = build_time_range_query_from_today();
 
-    // Open calendars and create views
+    let mut handles = Vec::new();
     for source in &sources {
         let conn_clone = conn.clone();
         let state_clone = state.clone();
@@ -338,12 +342,11 @@ async fn monitor_eds_calendars(
         let query_clone = query.clone();
         let view_paths_clone = view_paths.clone();
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             match open_calendar(&conn_clone, &source_uid).await {
                 Ok((calendar_path, bus_name)) => {
                     match create_view(&conn_clone, &bus_name, &calendar_path, &query_clone).await {
                         Ok(view_path) => {
-                            // Track this view path
                             {
                                 let mut paths = match view_paths_clone.lock() {
                                     Ok(p) => p,
@@ -355,13 +358,13 @@ async fn monitor_eds_calendars(
                                 paths.insert(view_path.clone());
                             }
 
-                            // Start the view
-                            if let Err(e) = start_view(&conn_clone, &bus_name, &view_path).await {
-                                warn!("[eds] Failed to start view: {}", e);
+                            if let Err(e) =
+                                start_view(&conn_clone, &bus_name, &view_path).await
+                            {
+                                warn!("[eds] Failed to start view: {e}");
                                 return;
                             }
 
-                            // Spawn view monitor
                             if let Err(e) = spawn_view_monitor(
                                 conn_clone,
                                 bus_name,
@@ -373,19 +376,43 @@ async fn monitor_eds_calendars(
                             )
                             .await
                             {
-                                warn!("[eds] View monitor error: {}", e);
+                                warn!("[eds] View monitor error: {e}");
                             }
                         }
-                        Err(e) => {
-                            warn!("[eds] Failed to create view for {}: {}", source_uid, e);
-                        }
+                        Err(e) => warn!("[eds] Failed to create view for {source_uid}: {e}"),
                     }
                 }
-                Err(e) => {
-                    warn!("[eds] Failed to open calendar {}: {}", source_uid, e);
-                }
+                Err(e) => warn!("[eds] Failed to open calendar {source_uid}: {e}"),
             }
+            debug!("[eds] View task for {source_uid} stopped");
         });
+
+        handles.push(handle);
+    }
+
+    handles
+}
+
+/// Monitor EDS calendars and populate shared state.
+///
+/// Discovers calendar sources, opens calendars, creates views,
+/// and spawns monitoring tasks for each view.
+async fn monitor_eds_calendars(
+    conn: Connection,
+    state: Arc<StdMutex<EdsState>>,
+    notifier: EntityNotifier,
+) -> Result<()> {
+    let handles = setup_calendar_views(&conn, state.clone(), notifier.clone()).await;
+
+    {
+        let mut st = match state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("[eds] state mutex poisoned storing initial handles, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        st.view_monitor_handles = handles;
     }
 
     Ok(())
