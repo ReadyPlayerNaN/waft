@@ -415,7 +415,66 @@ async fn monitor_eds_calendars(
         st.view_monitor_handles = handles;
     }
 
-    Ok(())
+    // Midnight loop: rebuild views once per day so the query window stays
+    // anchored to today. Also purges events whose end_time is before the
+    // new day to prevent stale entities from persisting in the daemon.
+    loop {
+        let secs = secs_until_eds_midnight();
+        debug!("[eds] Next view rebuild in {secs}s (midnight)");
+        tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+
+        debug!("[eds] Midnight reached — rebuilding calendar views");
+
+        // Compute new today midnight timestamp for stale-event pruning.
+        let (new_time_range, _) = build_time_range_query_from_today();
+        let new_today_midnight = new_time_range.start;
+
+        // Abort old monitors and purge events that ended before the new day.
+        {
+            let mut st = match state.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    warn!("[eds] state mutex poisoned during midnight rebuild, recovering: {e}");
+                    e.into_inner()
+                }
+            };
+
+            for handle in st.view_monitor_handles.drain(..) {
+                handle.abort();
+            }
+
+            let stale_keys: Vec<String> = st
+                .events
+                .iter()
+                .filter(|(_, event)| event.end_time < new_today_midnight)
+                .map(|(key, _)| key.clone())
+                .collect();
+
+            for key in &stale_keys {
+                st.events.remove(key);
+            }
+
+            if !stale_keys.is_empty() {
+                debug!("[eds] Pruned {} stale events at midnight", stale_keys.len());
+            }
+        }
+
+        // Notify daemon so it removes the pruned entities from its cache.
+        notifier.notify();
+
+        // Set up fresh views anchored to the new today.
+        let new_handles = setup_calendar_views(&conn, state.clone(), notifier.clone()).await;
+
+        match state.lock() {
+            Ok(mut st) => st.view_monitor_handles = new_handles,
+            Err(e) => {
+                warn!("[eds] state mutex poisoned storing new handles, recovering: {e}");
+                e.into_inner().view_monitor_handles = new_handles;
+            }
+        }
+
+        debug!("[eds] Calendar views rebuilt for new day");
+    }
 }
 
 /// Spawn a monitor task for a calendar view.
