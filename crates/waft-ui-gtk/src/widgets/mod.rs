@@ -3,6 +3,7 @@
 pub mod checkmark;
 pub mod col;
 pub mod connection_row;
+pub mod countdown_bar;
 pub mod details;
 pub mod drop_zone;
 pub mod feature_grid;
