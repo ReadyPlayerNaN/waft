@@ -55,6 +55,11 @@ struct EdsState {
     /// Timestamps of recent overlay-triggered refreshes for sliding-window debounce.
     /// Pruned to a 4×base window on every check.
     debounce_recent: VecDeque<std::time::Instant>,
+    /// Known calendar backends: (bus_name, object_path) pairs.
+    /// Populated during setup_calendar_views; used by do_refresh and the scheduler.
+    calendar_backends: Vec<(String, String)>,
+    /// Unix timestamp of the last refresh attempt (overlay-triggered or scheduled).
+    last_refresh: Option<i64>,
 }
 
 impl EdsState {
@@ -63,6 +68,8 @@ impl EdsState {
             events: HashMap::new(),
             view_monitor_handles: Vec::new(),
             debounce_recent: VecDeque::new(),
+            calendar_backends: Vec::new(),
+            last_refresh: None,
         }
     }
 }
@@ -71,7 +78,6 @@ impl EdsState {
 struct EdsPlugin {
     config: EdsConfig,
     state: Arc<StdMutex<EdsState>>,
-    #[allow(dead_code)]
     conn: Connection,
     /// True when the session is locked. Written by session monitor, read by scheduler.
     session_locked: Arc<std::sync::atomic::AtomicBool>,
@@ -143,13 +149,73 @@ impl Plugin for EdsPlugin {
         _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         log::debug!("Received action '{}' for URN: {}", action, urn);
-        log::warn!("EDS plugin is read-only; action '{}' not supported", action);
+
+        if action == "refresh" {
+            let backends = {
+                let mut st = match self.state.lock() {
+                    Ok(g) => g,
+                    Err(e) => {
+                        log::warn!("[eds] state mutex poisoned during refresh, recovering: {e}");
+                        e.into_inner()
+                    }
+                };
+                st.last_refresh = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                );
+                st.calendar_backends.clone()
+            };
+
+            do_refresh(&self.conn, &backends).await;
+            return Ok(());
+        }
+
+        log::warn!("EDS plugin does not support action '{}' (urn={})", action, urn);
         Ok(())
     }
 
     fn can_stop(&self) -> bool {
         true
     }
+}
+
+/// Call EDS Calendar.Open() then Calendar.Refresh() on each known backend.
+///
+/// This is the shared implementation used by both the periodic scheduler and
+/// overlay-triggered handle_action. It does NOT check the debounce window.
+async fn do_refresh(conn: &Connection, backends: &[(String, String)]) {
+    if backends.is_empty() {
+        log::debug!("[eds] do_refresh: no backends, skipping");
+        return;
+    }
+    for (bus_name, object_path) in backends {
+        match zbus::Proxy::new(
+            conn,
+            bus_name.as_str(),
+            object_path.as_str(),
+            "org.gnome.evolution.dataserver.Calendar",
+        )
+        .await
+        {
+            Ok(proxy) => {
+                match proxy.call_method("Open", &()).await {
+                    Ok(_) => {
+                        let result: std::result::Result<(), zbus::Error> =
+                            proxy.call("Refresh", &()).await;
+                        match result {
+                            Ok(()) => log::debug!("[eds] Refreshed {object_path}"),
+                            Err(e) => log::warn!("[eds] Refresh failed for {object_path}: {e}"),
+                        }
+                    }
+                    Err(e) => log::warn!("[eds] Open failed for {object_path}: {e}"),
+                }
+            }
+            Err(e) => log::warn!("[eds] Proxy failed for {object_path}: {e}"),
+        }
+    }
+    log::debug!("[eds] do_refresh complete ({} backends)", backends.len());
 }
 
 /// EDS D-Bus service names and paths.
@@ -381,6 +447,18 @@ async fn setup_calendar_views(
         let handle = tokio::spawn(async move {
             match open_calendar(&conn_clone, &source_uid).await {
                 Ok((calendar_path, bus_name)) => {
+                    // Record this backend so do_refresh can Open()+Refresh() it later.
+                    {
+                        let mut st = match state_clone.lock() {
+                            Ok(g) => g,
+                            Err(e) => {
+                                warn!("[eds] state mutex poisoned storing backend, recovering: {e}");
+                                e.into_inner()
+                            }
+                        };
+                        st.calendar_backends.push((bus_name.clone(), calendar_path.clone()));
+                    }
+
                     match create_view(&conn_clone, &bus_name, &calendar_path, &query_clone).await {
                         Ok(view_path) => {
                             {
@@ -478,6 +556,9 @@ async fn monitor_eds_calendars(
             for handle in st.view_monitor_handles.drain(..) {
                 handle.abort();
             }
+
+            // Clear backends so setup_calendar_views can repopulate for the new day.
+            st.calendar_backends.clear();
 
             let stale_keys: Vec<String> = st
                 .events
