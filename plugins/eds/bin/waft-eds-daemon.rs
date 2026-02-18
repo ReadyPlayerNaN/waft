@@ -86,6 +86,9 @@ struct EdsPlugin {
     session_locked: Arc<std::sync::atomic::AtomicBool>,
     /// Notified when session unlocks; wakes the refresh scheduler immediately.
     unlock_notify: Arc<tokio::sync::Notify>,
+    /// Notifier slot — filled by main() after PluginRuntime::new().
+    /// Allows handle_action to push syncing-state updates mid-action.
+    notifier: Arc<StdMutex<Option<EntityNotifier>>>,
 }
 
 impl EdsPlugin {
@@ -103,6 +106,7 @@ impl EdsPlugin {
             conn,
             session_locked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             unlock_notify: Arc::new(tokio::sync::Notify::new()),
+            notifier: Arc::new(StdMutex::new(None)),
         })
     }
 
@@ -116,6 +120,10 @@ impl EdsPlugin {
 
     fn unlock_notify(&self) -> Arc<tokio::sync::Notify> {
         self.unlock_notify.clone()
+    }
+
+    fn notifier_slot(&self) -> Arc<StdMutex<Option<EntityNotifier>>> {
+        self.notifier.clone()
     }
 
     /// Create occurrence key from UID and start time.
