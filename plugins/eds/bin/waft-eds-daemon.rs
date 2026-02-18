@@ -31,12 +31,15 @@ struct EdsState {
     /// Map of occurrence keys to calendar events.
     /// Key format: "{uid}@{start_time}"
     events: HashMap<String, entity::calendar::CalendarEvent>,
+    /// Handles for running view-monitor tasks. Aborted on midnight rebuild.
+    view_monitor_handles: Vec<tokio::task::JoinHandle<()>>,
 }
 
 impl EdsState {
     fn new() -> Self {
         Self {
             events: HashMap::new(),
+            view_monitor_handles: Vec::new(),
         }
     }
 }
