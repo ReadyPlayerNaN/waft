@@ -7,12 +7,26 @@ Toggles dark mode via the [darkman](https://darkman.whynothugo.nl/) D-Bus servic
 | Entity Type | URN | Description |
 |---|---|---|
 | `dark-mode` | `darkman/dark-mode/default` | Whether dark mode is active |
+| `dark-mode-automation-config` | `darkman/dark-mode-automation-config/default` | Configuration settings for darkman |
 
 ## Actions
 
-| Action | Description |
-|---|---|
-| `toggle` | Switches between dark and light mode |
+| Action | Parameters | Description |
+|---|---|---|
+| `toggle` | none | Switches between dark and light mode |
+| `update_field` | `field` (string), `value` (json) | Updates a configuration field |
+
+### Configuration Fields
+
+| Field | Type | Range | Description |
+|---|---|---|---|
+| `latitude` | float | -90 to 90 | Manual latitude for sunrise/sunset calculation |
+| `longitude` | float | -180 to 180 | Manual longitude for sunrise/sunset calculation |
+| `auto_location` | bool | | Auto-detect location via geoclue |
+| `dbus_api` | bool | | Enable D-Bus API (required for waft) |
+| `portal_api` | bool | | Enable XDG portal support |
+
+Configuration is stored in `~/.config/darkman/config.yaml`. After changes, the plugin attempts to restart darkman via `systemctl --user restart darkman.service` (best-effort).
 
 ## D-Bus Interfaces
 

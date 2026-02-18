@@ -35,3 +35,15 @@
 .notification-action {
     min-width: 80px;
 }
+
+/* Countdown progress bar inside toast */
+.notification-progress {
+    margin: 0 4px 4px 4px;
+    min-height: 2px;
+}
+
+/* Paused state: desaturate to signal time is frozen */
+.notification-progress.paused {
+    filter: saturate(0%);
+    opacity: 0.5;
+}
