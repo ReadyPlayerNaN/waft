@@ -151,11 +151,29 @@ impl Plugin for EdsPlugin {
         log::debug!("Received action '{}' for URN: {}", action, urn);
 
         if action == "refresh" {
-            let backends = {
+            let (allowed, backends) = {
                 let mut st = match self.state.lock() {
                     Ok(g) => g,
                     Err(e) => {
                         log::warn!("[eds] state mutex poisoned during refresh, recovering: {e}");
+                        e.into_inner()
+                    }
+                };
+                let allowed = check_debounce(&mut st.debounce_recent, self.config.debounce_base_secs);
+                (allowed, st.calendar_backends.clone())
+            };
+
+            if !allowed {
+                log::debug!("[eds] Refresh debounced (overlay-triggered)");
+                return Ok(());
+            }
+
+            // Update last_refresh only on actual execution (keeps CalendarSync entity meaningful).
+            {
+                let mut st = match self.state.lock() {
+                    Ok(g) => g,
+                    Err(e) => {
+                        log::warn!("[eds] state mutex poisoned updating last_refresh, recovering: {e}");
                         e.into_inner()
                     }
                 };
@@ -165,8 +183,7 @@ impl Plugin for EdsPlugin {
                         .unwrap_or_default()
                         .as_secs() as i64,
                 );
-                st.calendar_backends.clone()
-            };
+            }
 
             do_refresh(&self.conn, &backends).await;
             return Ok(());
@@ -179,6 +196,35 @@ impl Plugin for EdsPlugin {
     fn can_stop(&self) -> bool {
         true
     }
+}
+
+/// Returns true if a refresh is allowed under the sliding-window policy.
+///
+/// Three windows derived from `base_secs`:
+///   [base, 2×base, 4×base] → limits [1, 2, 3]
+///
+/// Side effect on allow: pushes current Instant and prunes old entries.
+fn check_debounce(
+    recent: &mut std::collections::VecDeque<std::time::Instant>,
+    base_secs: u64,
+) -> bool {
+    use std::time::{Duration, Instant};
+    let now = Instant::now();
+    let base = Duration::from_secs(base_secs);
+
+    // Prune entries older than 4×base (the largest window).
+    recent.retain(|&t| now.duration_since(t) < base * 4);
+
+    let in_w1 = recent.iter().filter(|&&t| now.duration_since(t) < base).count();
+    let in_w2 = recent.iter().filter(|&&t| now.duration_since(t) < base * 2).count();
+    let in_w3 = recent.len(); // all remaining are within 4×base
+
+    if in_w1 >= 1 || in_w2 >= 2 || in_w3 >= 3 {
+        return false;
+    }
+
+    recent.push_back(now);
+    true
 }
 
 /// Call EDS Calendar.Open() then Calendar.Refresh() on each known backend.
