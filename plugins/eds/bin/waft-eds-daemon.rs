@@ -60,6 +60,8 @@ struct EdsState {
     calendar_backends: Vec<(String, String)>,
     /// Unix timestamp of the last refresh attempt (overlay-triggered or scheduled).
     last_refresh: Option<i64>,
+    /// True while a calendar refresh D-Bus call is in progress.
+    syncing: bool,
 }
 
 impl EdsState {
@@ -70,6 +72,7 @@ impl EdsState {
             debounce_recent: VecDeque::new(),
             calendar_backends: Vec::new(),
             last_refresh: None,
+            syncing: false,
         }
     }
 }
@@ -145,7 +148,7 @@ impl Plugin for EdsPlugin {
         // discover a stable URN for sending the "refresh" action.
         let sync = entity::calendar::CalendarSync {
             last_refresh: state.last_refresh,
-            syncing: false,
+            syncing: state.syncing,
         };
         let sync_urn = Urn::new("eds", entity::calendar::CALENDAR_SYNC_ENTITY_TYPE, "singleton");
         entities.push(Entity::new(
@@ -2516,6 +2519,12 @@ mod tests {
         }
         assert!(check_debounce(&mut recent, base_secs), "after pruning old entries, first call must be allowed");
         assert_eq!(recent.len(), 1, "only the new entry should remain");
+    }
+
+    #[test]
+    fn eds_state_syncing_defaults_false() {
+        let state = EdsState::new();
+        assert!(!state.syncing, "syncing must start false");
     }
 }
 
