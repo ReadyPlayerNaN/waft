@@ -52,6 +52,8 @@ pub struct AgendaComponent {
     _store: Rc<EntityStore>,
     _menu_store: Rc<MenuStore>,
     _selection_store: Rc<CalendarSelectionStore>,
+    _refresh_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    _timer_source: Rc<RefCell<Option<glib::SourceId>>>,
 }
 
 /// Returns seconds until local midnight (minimum 1).
@@ -194,6 +196,13 @@ impl AgendaComponent {
             }
         });
 
+        // Timer source -- stores the pending SourceId so we can cancel it before re-arming.
+        let timer_source: Rc<RefCell<Option<gtk::glib::SourceId>>> = Rc::new(RefCell::new(None));
+
+        // Holder that lets the timer callback call back into `rebuild` without a strong cycle.
+        // `rebuild` holds a Weak to this; this holds a Strong to `rebuild`.
+        let rebuild_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+
         // Shared rebuild closure for both entity and selection subscriptions
         let rebuild = {
             let store_ref = store.clone();
@@ -204,6 +213,11 @@ impl AgendaComponent {
             let menu_store_ref = menu_store.clone();
             let selection_store_ref = selection_store.clone();
             let now_divider = Rc::new(RefCell::new(None::<gtk::Separator>));
+
+            // Timer captures
+            let store_ref_timer = store.clone();
+            let timer_source_ref = timer_source.clone();
+            let rebuild_holder_weak = Rc::downgrade(&rebuild_holder);
 
             Rc::new(move || {
                 let selected_date = selection_store_ref.get_state().selected_date;
@@ -217,8 +231,38 @@ impl AgendaComponent {
                     &now_divider,
                     selected_date,
                 );
-            })
+
+                // --- sleep-to-deadline timer ---
+                // Compute future events to find next boundary.
+                let now = chrono::Local::now().timestamp();
+                let all: Vec<(Urn, entity::calendar::CalendarEvent)> =
+                    store_ref_timer.get_entities_typed(entity::calendar::ENTITY_TYPE);
+                let future_events: Vec<_> =
+                    all.into_iter().filter(|(_, e)| e.end_time > now).collect();
+                let secs = next_boundary_secs(&future_events);
+
+                // Cancel the previous timer, arm a new one-shot timer.
+                let mut timer = timer_source_ref.borrow_mut();
+                if let Some(id) = timer.take() {
+                    id.remove();
+                }
+                let holder_weak = rebuild_holder_weak.clone();
+                let ts = timer_source_ref.clone();
+                *timer =
+                    Some(gtk::glib::timeout_add_seconds_local(secs as u32, move || {
+                        ts.borrow_mut().take(); // clear our own SourceId
+                        if let Some(holder) = holder_weak.upgrade() {
+                            if let Some(rebuild_fn) = &*holder.borrow() {
+                                rebuild_fn();
+                            }
+                        }
+                        gtk::glib::ControlFlow::Break
+                    }));
+            }) as Rc<dyn Fn()>
         };
+
+        // Connect holder -> rebuild (after the closure is built).
+        *rebuild_holder.borrow_mut() = Some(rebuild.clone());
 
         // Subscribe to calendar events
         let rebuild_entity = rebuild.clone();
@@ -230,6 +274,13 @@ impl AgendaComponent {
         let rebuild_selection = rebuild.clone();
         selection_store.subscribe(move || {
             rebuild_selection();
+        });
+
+        // Arm the first sleep-to-deadline timer via idle so all subscriptions
+        // are registered before we read entity state.
+        let rebuild_init = rebuild.clone();
+        gtk::glib::idle_add_local_once(move || {
+            rebuild_init();
         });
 
         Self {
@@ -244,6 +295,8 @@ impl AgendaComponent {
             _store: store.clone(),
             _menu_store: menu_store.clone(),
             _selection_store: selection_store.clone(),
+            _refresh_holder: rebuild_holder,
+            _timer_source: timer_source,
         }
     }
 
