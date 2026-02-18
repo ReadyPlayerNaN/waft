@@ -143,7 +143,10 @@ impl Plugin for EdsPlugin {
 
         // Expose calendar sync control as a singleton entity so the overview can
         // discover a stable URN for sending the "refresh" action.
-        let sync = entity::calendar::CalendarSync { last_refresh: state.last_refresh };
+        let sync = entity::calendar::CalendarSync {
+            last_refresh: state.last_refresh,
+            syncing: false,
+        };
         let sync_urn = Urn::new("eds", entity::calendar::CALENDAR_SYNC_ENTITY_TYPE, "singleton");
         entities.push(Entity::new(
             sync_urn,
