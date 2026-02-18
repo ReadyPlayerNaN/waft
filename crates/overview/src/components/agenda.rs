@@ -54,6 +54,32 @@ pub struct AgendaComponent {
     _selection_store: Rc<CalendarSelectionStore>,
 }
 
+/// Returns seconds until local midnight (minimum 1).
+fn secs_until_next_midnight() -> u64 {
+    let now = chrono::Local::now();
+    let tomorrow = (now.date_naive() + chrono::Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is always valid")
+        .and_local_timezone(chrono::Local)
+        .earliest()
+        .expect("tomorrow midnight is a valid local time");
+    (tomorrow.timestamp() - now.timestamp()).max(1) as u64
+}
+
+/// Returns seconds until the next display-relevant change: whichever comes first --
+/// an in-window future event ending, or local midnight.
+fn next_boundary_secs(future_events: &[(Urn, entity::calendar::CalendarEvent)]) -> u64 {
+    let now = chrono::Local::now().timestamp();
+    let midnight = secs_until_next_midnight();
+    future_events
+        .iter()
+        .map(|(_, e)| e.end_time)
+        .filter(|&t| t > now)
+        .min()
+        .map(|t| ((t - now).max(1) as u64).min(midnight))
+        .unwrap_or(midnight)
+}
+
 impl AgendaComponent {
     pub fn new(
         store: &Rc<EntityStore>,
@@ -465,5 +491,68 @@ impl AgendaComponent {
 
     pub fn widget(&self) -> &gtk::Widget {
         self.container.upcast_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use waft_protocol::{Urn, entity};
+
+    fn make_event(end_offset_secs: i64) -> (Urn, entity::calendar::CalendarEvent) {
+        let now = chrono::Local::now().timestamp();
+        let event = entity::calendar::CalendarEvent {
+            uid: "test-uid".to_string(),
+            summary: "Test event".to_string(),
+            start_time: now - 3600,
+            end_time: now + end_offset_secs,
+            all_day: false,
+            description: None,
+            location: None,
+            attendees: vec![],
+        };
+        let urn = Urn::new("eds", entity::calendar::ENTITY_TYPE, "test-uid@0");
+        (urn, event)
+    }
+
+    #[test]
+    fn secs_until_next_midnight_is_positive() {
+        let secs = secs_until_next_midnight();
+        assert!(secs > 0, "must be at least 1 second");
+        assert!(secs <= 86401, "must be at most one day + 1 second clamp");
+    }
+
+    #[test]
+    fn next_boundary_no_events_returns_midnight() {
+        let result = next_boundary_secs(&[]);
+        let midnight = secs_until_next_midnight();
+        assert_eq!(result, midnight);
+    }
+
+    #[test]
+    fn next_boundary_event_before_midnight_returns_event_end() {
+        // Event ending in 5 minutes
+        let (urn, event) = make_event(300);
+        let result = next_boundary_secs(&[(urn, event)]);
+        assert!(result <= 300, "should be at most 300s, got {result}");
+        assert!(result > 0, "must be at least 1 second");
+    }
+
+    #[test]
+    fn next_boundary_event_after_midnight_returns_midnight() {
+        // Event ending 26 hours from now (past tomorrow midnight)
+        let (urn, event) = make_event(26 * 3600);
+        let result = next_boundary_secs(&[(urn, event)]);
+        let midnight = secs_until_next_midnight();
+        assert_eq!(result, midnight, "should sleep to midnight, not past it");
+    }
+
+    #[test]
+    fn next_boundary_picks_earliest_future_event() {
+        let event_far = make_event(26 * 3600);
+        let event_near = make_event(120); // 2 minutes
+        let result = next_boundary_secs(&[event_far, event_near]);
+        assert!(result <= 120);
+        assert!(result > 0);
     }
 }
