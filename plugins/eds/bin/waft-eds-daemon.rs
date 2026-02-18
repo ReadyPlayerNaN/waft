@@ -264,6 +264,83 @@ async fn do_refresh(conn: &Connection, backends: &[(String, String)]) {
     log::debug!("[eds] do_refresh complete ({} backends)", backends.len());
 }
 
+/// Monitor logind for session Lock/Unlock signals.
+///
+/// On Lock:   session_locked = true
+/// On Unlock: session_locked = false, unlock_notify fired
+///
+/// Degrades gracefully if logind is unavailable.
+async fn spawn_session_monitor(
+    session_locked: Arc<std::sync::atomic::AtomicBool>,
+    unlock_notify: Arc<tokio::sync::Notify>,
+) {
+    use std::sync::atomic::Ordering;
+
+    let sys_conn = match zbus::Connection::system().await {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[eds] Cannot connect to system bus for session monitor: {e}");
+            log::warn!("[eds] Session-aware refresh disabled");
+            return;
+        }
+    };
+
+    // Resolve session path: prefer XDG_SESSION_ID, fall back to "auto".
+    let session_path = match std::env::var("XDG_SESSION_ID") {
+        Ok(id) => format!("/org/freedesktop/login1/session/{}", id),
+        Err(_) => "/org/freedesktop/login1/session/auto".to_string(),
+    };
+
+    log::info!("[eds] Monitoring session at {session_path}");
+
+    for (member, is_lock) in &[("Lock", true), ("Unlock", false)] {
+        let rule = format!(
+            "type='signal',interface='org.freedesktop.login1.Session',\
+             member='{}',path='{}'",
+            member, session_path
+        );
+
+        let sys_conn = sys_conn.clone();
+        let session_locked = session_locked.clone();
+        let unlock_notify = unlock_notify.clone();
+        let is_lock = *is_lock;
+
+        tokio::spawn(async move {
+            use futures_util::StreamExt;
+
+            if let Ok(dbus) = zbus::fdo::DBusProxy::new(&sys_conn).await {
+                if let Ok(rule_obj) = zbus::MatchRule::try_from(rule.as_str()) {
+                    if let Err(e) = dbus.add_match_rule(rule_obj.to_owned()).await {
+                        log::warn!("[eds] Failed to add match rule for {}: {e}", if is_lock { "Lock" } else { "Unlock" });
+                    }
+                }
+            }
+
+            let mut stream = zbus::MessageStream::from(&sys_conn);
+            while let Some(Ok(msg)) = stream.next().await {
+                let h = msg.header();
+                let iface_ok = h.interface()
+                    .map(|i| i.as_str() == "org.freedesktop.login1.Session")
+                    .unwrap_or(false);
+                let member_ok = h.member()
+                    .map(|m| m.as_str() == if is_lock { "Lock" } else { "Unlock" })
+                    .unwrap_or(false);
+
+                if iface_ok && member_ok {
+                    session_locked.store(is_lock, Ordering::Relaxed);
+                    if !is_lock {
+                        log::debug!("[eds] Session unlocked — triggering immediate refresh");
+                        unlock_notify.notify_one();
+                    } else {
+                        log::debug!("[eds] Session locked — background refresh rate reduced");
+                    }
+                }
+            }
+            log::debug!("[eds] Session monitor stream ended for member={}", if is_lock { "Lock" } else { "Unlock" });
+        });
+    }
+}
+
 /// EDS D-Bus service names and paths.
 const SOURCES_DEST: &str = "org.gnome.evolution.dataserver.Sources5";
 const SOURCES_PATH: &str = "/org/gnome/evolution/dataserver/SourceManager";
