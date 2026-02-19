@@ -3,6 +3,7 @@
 # Window & Navigation
 settings-title = Nastavení
 settings-window-title = Nastavení Waft
+search-placeholder = Hledat nastavení…
 
 # Sidebar categories
 sidebar-connectivity = Připojení
@@ -16,6 +17,7 @@ sidebar-system = Systém
 settings-bluetooth = Bluetooth
 settings-wifi = WiFi
 settings-wired = Kabelové
+settings-appearance = Vzhled
 settings-display = Obrazovky
 settings-notifications = Oznámení
 settings-sounds = Zvuky
@@ -109,6 +111,8 @@ display-rotation-270 = 270°
 display-flip = Překlopit
 display-flip-subtitle = Zrcadlově převrátit vodorovně
 display-vrr = Proměnná obnovovací frekvence
+display-apply = Použít
+display-reset = Obnovit
 
 # Display -- Dark Mode Automation
 display-dark-mode-automation = Automatika tmavého režimu

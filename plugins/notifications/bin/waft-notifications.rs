@@ -5,10 +5,30 @@
 //! - Translates D-Bus notifications into entities for the waft daemon
 //! - Provides `notification` and `dnd` entity types
 
+use std::sync::OnceLock;
+
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
+use waft_i18n::I18n;
 
 use waft_plugin::PluginRuntime;
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            (
+                "en-US",
+                include_str!("../locales/en-US/notifications.ftl"),
+            ),
+            (
+                "cs-CZ",
+                include_str!("../locales/cs-CZ/notifications.ftl"),
+            ),
+        ])
+    })
+}
 use waft_plugin_notifications::NotificationsPlugin;
 use waft_plugin_notifications::config;
 use waft_plugin_notifications::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
@@ -27,15 +47,20 @@ use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[
-        NOTIFICATION_ENTITY_TYPE,
-        DND_ENTITY_TYPE,
-        NOTIFICATION_GROUP_ENTITY_TYPE,
-        NOTIFICATION_PROFILE_ENTITY_TYPE,
-        ACTIVE_PROFILE_ENTITY_TYPE,
-        SOUND_CONFIG_ENTITY_TYPE,
-        NOTIFICATION_SOUND_ENTITY_TYPE,
-    ]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[
+            NOTIFICATION_ENTITY_TYPE,
+            DND_ENTITY_TYPE,
+            NOTIFICATION_GROUP_ENTITY_TYPE,
+            NOTIFICATION_PROFILE_ENTITY_TYPE,
+            ACTIVE_PROFILE_ENTITY_TYPE,
+            SOUND_CONFIG_ENTITY_TYPE,
+            NOTIFICATION_SOUND_ENTITY_TYPE,
+        ],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

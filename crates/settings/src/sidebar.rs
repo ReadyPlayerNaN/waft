@@ -3,23 +3,36 @@
 //! Dumb widget displaying settings items grouped by category. Emits
 //! `SidebarOutput::Selected` when the user picks a page.
 //! Supports dynamic visibility of rows (e.g. WiFi hidden when no adapter).
+//! Includes a search bar that filters settings and shows results inline.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
+use gtk::glib;
 use waft_ui_gtk::widgets::icon::IconWidget;
 
 use crate::i18n::t;
+use crate::search_index::SearchIndex;
+use crate::search_results::{SearchResultRef, SearchResults, SearchResultsOutput};
 
 /// Output events from the sidebar.
 pub enum SidebarOutput {
-    /// A page was selected by the user.
+    /// A page was selected by the user (from category list or search).
     Selected {
         /// Stable identifier for stack page routing.
         page_id: String,
         /// Human-readable title for the content header.
         title: String,
+    },
+    /// A search result was selected with a target widget to scroll to.
+    SearchSelected {
+        /// Stable identifier for stack page routing.
+        page_id: String,
+        /// Human-readable title for the content header.
+        page_title: String,
+        /// Target widget to scroll to.
+        target_widget: Option<glib::WeakRef<gtk::Widget>>,
     },
 }
 
@@ -72,12 +85,20 @@ fn categories() -> Vec<SidebarCategory> {
         },
         SidebarCategory {
             label: t("sidebar-visual"),
-            items: vec![SidebarItem {
-                page_id: "display",
-                title: t("settings-display"),
-                icon: "preferences-desktop-display-symbolic",
-                visible: true,
-            }],
+            items: vec![
+                SidebarItem {
+                    page_id: "appearance",
+                    title: t("settings-appearance"),
+                    icon: "preferences-desktop-appearance-symbolic",
+                    visible: true,
+                },
+                SidebarItem {
+                    page_id: "display",
+                    title: t("settings-display"),
+                    icon: "preferences-desktop-display-symbolic",
+                    visible: true,
+                },
+            ],
         },
         SidebarCategory {
             label: t("sidebar-feedback"),
@@ -126,19 +147,43 @@ fn categories() -> Vec<SidebarCategory> {
     ]
 }
 
-/// Category sidebar widget.
+/// Category sidebar widget with integrated search.
 pub struct Sidebar {
     pub root: gtk::Box,
+    pub search_bar: gtk::SearchBar,
     output_cb: OutputCallback,
     wifi_row: adw::ActionRow,
     list_boxes: Vec<gtk::ListBox>,
+    search_index: Rc<RefCell<SearchIndex>>,
 }
 
 impl Sidebar {
-    pub fn new() -> Self {
+    pub fn new(search_index: Rc<RefCell<SearchIndex>>) -> Self {
         let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let output_cb: OutputCallback = Rc::new(RefCell::new(None));
         let selecting = Rc::new(Cell::new(false));
+
+        // -- Search bar --
+        let search_entry = gtk::SearchEntry::builder()
+            .placeholder_text(t("search-placeholder"))
+            .hexpand(true)
+            .build();
+
+        let search_bar = gtk::SearchBar::builder()
+            .child(&search_entry)
+            .show_close_button(false)
+            .build();
+        search_bar.connect_entry(&search_entry);
+        container.append(&search_bar);
+
+        // -- Categories container (shown when not searching) --
+        let categories_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        container.append(&categories_box);
+
+        // -- Search results (shown when searching) --
+        let search_results = SearchResults::new();
+        search_results.root.set_visible(false);
+        container.append(&search_results.root);
 
         let mut list_boxes: Vec<gtk::ListBox> = Vec::new();
         let mut wifi_row_slot: Option<adw::ActionRow> = None;
@@ -155,7 +200,7 @@ impl Sidebar {
             if cat_idx > 0 {
                 label.set_margin_top(12);
             }
-            container.append(&label);
+            categories_box.append(&label);
 
             // ListBox for this category's items
             let list_box = gtk::ListBox::builder()
@@ -182,7 +227,7 @@ impl Sidebar {
                 list_box.append(&row);
             }
 
-            container.append(&list_box);
+            categories_box.append(&list_box);
             list_boxes.push(list_box);
         }
 
@@ -223,13 +268,85 @@ impl Sidebar {
             first_box.select_row(Some(&first_row));
         }
 
+        // -- Wire search --
+        {
+            let index = search_index.clone();
+            let results_widget = search_results.root.clone();
+            let categories_ref = categories_box.clone();
+            let results_ref = Rc::new(search_results);
+
+            // Wire search entry text changes
+            let results_for_search = results_ref.clone();
+            search_entry.connect_search_changed(move |entry| {
+                let query = entry.text().to_string();
+                if query.trim().is_empty() {
+                    categories_ref.set_visible(true);
+                    results_widget.set_visible(false);
+                    results_for_search.clear();
+                } else {
+                    categories_ref.set_visible(false);
+                    results_widget.set_visible(true);
+
+                    let idx = index.borrow();
+                    let matches = idx.search(&query);
+                    let refs: Vec<SearchResultRef> = matches
+                        .iter()
+                        .map(|e| SearchResultRef {
+                            page_id: e.page_id,
+                            page_title: e.page_title.clone(),
+                            breadcrumb: e.breadcrumb(),
+                        })
+                        .collect();
+                    results_for_search.update(&refs);
+                }
+            });
+
+            // Wire search result selection
+            let cb_for_results = output_cb.clone();
+            let search_bar_ref = search_bar.clone();
+            let search_entry_ref = search_entry.clone();
+            let index_for_select = search_index.clone();
+            results_ref.connect_output(move |output| {
+                let SearchResultsOutput::Selected {
+                    page_id, page_title, ..
+                } = output;
+
+                // Look up the target_widget from the index for this result
+                let target_widget = {
+                    let idx = index_for_select.borrow();
+                    let results = idx.search(&search_entry_ref.text());
+                    results
+                        .iter()
+                        .find(|e| e.page_id == page_id)
+                        .and_then(|e| e.target_widget.clone())
+                };
+
+                // Clear search and dismiss
+                search_entry_ref.set_text("");
+                search_bar_ref.set_search_mode(false);
+
+                if let Some(ref callback) = *cb_for_results.borrow() {
+                    callback(SidebarOutput::SearchSelected {
+                        page_id,
+                        page_title,
+                        target_widget,
+                    });
+                }
+            });
+
+            // Keep results_ref alive
+            std::mem::forget(results_ref);
+        }
+
         let wifi_row = wifi_row_slot.expect("WiFi row must exist in category definitions");
 
         Self {
             root: container,
+            search_bar,
             output_cb,
             wifi_row,
             list_boxes,
+            search_index,
         }
     }
 
@@ -238,6 +355,7 @@ impl Sidebar {
     /// If hiding and WiFi is currently selected, auto-selects Bluetooth.
     pub fn set_wifi_visible(&self, visible: bool) {
         self.wifi_row.set_visible(visible);
+        self.search_index.borrow_mut().set_page_visible("wifi", visible);
 
         if !visible
             && let Some(connectivity_box) = self.list_boxes.first()
@@ -247,6 +365,27 @@ impl Sidebar {
             && let Some(bt_row) = connectivity_box.row_at_index(0)
         {
             connectivity_box.select_row(Some(&bt_row));
+        }
+    }
+
+    /// Programmatically navigate to the sidebar row for the given page ID.
+    ///
+    /// Must be called AFTER `connect_output` is registered so that the output
+    /// callback fires and both the stack and the content header title update.
+    /// If the row is already selected (e.g. "bluetooth" on first launch), GTK
+    /// will not re-emit `row-selected`, making this effectively a no-op.
+    pub fn navigate_to(&self, page_id: &str) {
+        for list_box in &self.list_boxes {
+            let mut idx = 0;
+            while let Some(row) = list_box.row_at_index(idx) {
+                if let Some(action_row) = row.downcast_ref::<adw::ActionRow>()
+                    && action_row.widget_name() == page_id
+                {
+                    list_box.select_row(Some(&row));
+                    return;
+                }
+                idx += 1;
+            }
         }
     }
 

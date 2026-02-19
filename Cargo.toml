@@ -28,5 +28,6 @@ members = [
     "plugins/audio",
     "plugins/notifications",
     "plugins/syncthing",
+    "plugins/internal-apps",
     "plugins/niri",
 ]

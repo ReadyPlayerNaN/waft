@@ -11,8 +11,22 @@
 //! id = "syncthing"
 //! ```
 
+use std::sync::OnceLock;
+
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
+use waft_i18n::I18n;
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            ("en-US", include_str!("../locales/en-US/syncthing.ftl")),
+            ("cs-CZ", include_str!("../locales/cs-CZ/syncthing.ftl")),
+        ])
+    })
+}
 use std::time::Duration;
 use waft_plugin::*;
 
@@ -225,7 +239,12 @@ async fn monitor_service_state(state: Arc<StdMutex<SyncthingState>>, notifier: E
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[entity::storage::BACKUP_METHOD_ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[entity::storage::BACKUP_METHOD_ENTITY_TYPE],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

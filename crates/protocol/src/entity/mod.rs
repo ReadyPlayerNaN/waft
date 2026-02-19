@@ -26,6 +26,7 @@
 //! When adding new entity types, ask "what domain does this belong to?"
 //! not "which plugin produces it?".
 
+pub mod app;
 pub mod audio;
 pub mod bluetooth;
 pub mod calendar;

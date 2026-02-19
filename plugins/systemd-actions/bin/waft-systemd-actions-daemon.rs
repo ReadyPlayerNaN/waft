@@ -16,9 +16,23 @@
 //! id = "systemd-actions"
 //! ```
 
+use std::sync::OnceLock;
+
 use anyhow::{Context, Result};
+use waft_i18n::I18n;
 use waft_plugin::*;
 use zbus::Connection;
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            ("en-US", include_str!("../locales/en-US/systemd-actions.ftl")),
+            ("cs-CZ", include_str!("../locales/cs-CZ/systemd-actions.ftl")),
+        ])
+    })
+}
 
 const LOGIN1_DESTINATION: &str = "org.freedesktop.login1";
 const MANAGER_PATH: &str = "/org/freedesktop/login1";
@@ -155,7 +169,12 @@ impl Plugin for SystemdActionsPlugin {
 }
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides(&[entity::session::SESSION_ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[entity::session::SESSION_ENTITY_TYPE],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

@@ -9,11 +9,25 @@
 //! id = "battery"
 //! ```
 
+use std::sync::OnceLock;
+
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
+use waft_i18n::I18n;
 use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal_async};
 use waft_plugin::*;
 use zbus::Connection;
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            ("en-US", include_str!("../locales/en-US/battery.ftl")),
+            ("cs-CZ", include_str!("../locales/cs-CZ/battery.ftl")),
+        ])
+    })
+}
 
 const UPOWER_DEST: &str = "org.freedesktop.UPower";
 const DISPLAY_DEVICE_PATH: &str = "/org/freedesktop/UPower/devices/DisplayDevice";
@@ -282,7 +296,12 @@ async fn monitor_battery_signals(
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[entity::power::ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[entity::power::ENTITY_TYPE],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

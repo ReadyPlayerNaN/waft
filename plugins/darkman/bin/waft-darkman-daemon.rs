@@ -10,9 +10,23 @@
 //! id = "darkman"
 //! ```
 
+use std::sync::OnceLock;
+
 use anyhow::{Context, Result};
 use darkman::config;
 use serde::Deserialize;
+use waft_i18n::I18n;
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            ("en-US", include_str!("../locales/en-US/darkman.ftl")),
+            ("cs-CZ", include_str!("../locales/cs-CZ/darkman.ftl")),
+        ])
+    })
+}
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal};
 use waft_plugin::*;
@@ -337,10 +351,15 @@ async fn monitor_mode_signals(
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[
-        entity::display::DARK_MODE_ENTITY_TYPE,
-        entity::display::DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE,
-    ]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[
+            entity::display::DARK_MODE_ENTITY_TYPE,
+            entity::display::DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE,
+        ],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

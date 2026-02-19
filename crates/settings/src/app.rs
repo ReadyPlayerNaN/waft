@@ -3,6 +3,7 @@
 //! Creates channels, spawns daemon connection, sets up action writer thread,
 //! and wires up the GTK application with EntityStore and SettingsWindow.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -12,7 +13,8 @@ use waft_client::{
 };
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
 use waft_protocol::entity::display::{
-    DARK_MODE_ENTITY_TYPE, DISPLAY_ENTITY_TYPE, DISPLAY_OUTPUT_ENTITY_TYPE, NIGHT_LIGHT_ENTITY_TYPE,
+    DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE, DARK_MODE_ENTITY_TYPE, DISPLAY_ENTITY_TYPE,
+    DISPLAY_OUTPUT_ENTITY_TYPE, NIGHT_LIGHT_CONFIG_ENTITY_TYPE, NIGHT_LIGHT_ENTITY_TYPE,
 };
 use waft_protocol::entity::keyboard::CONFIG_ENTITY_TYPE as KEYBOARD_CONFIG_ENTITY_TYPE;
 use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, EthernetConnection, WiFiNetwork};
@@ -37,7 +39,9 @@ const ENTITY_TYPES: &[&str] = &[
     DISPLAY_ENTITY_TYPE,
     DISPLAY_OUTPUT_ENTITY_TYPE,
     DARK_MODE_ENTITY_TYPE,
+    DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE,
     NIGHT_LIGHT_ENTITY_TYPE,
+    NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
     KEYBOARD_CONFIG_ENTITY_TYPE,
     weather::ENTITY_TYPE,
     NOTIFICATION_GROUP_ENTITY_TYPE,
@@ -49,7 +53,9 @@ const ENTITY_TYPES: &[&str] = &[
     PLUGIN_STATUS_ENTITY_TYPE,
 ];
 
-pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
+pub async fn setup(
+    initial_page: Option<String>,
+) -> Result<adw::Application, Box<dyn std::error::Error>> {
     // 1. Create channels
     let (event_tx, event_rx) = flume::unbounded::<ClientEvent>();
     let (action_tx, action_rx) =
@@ -58,44 +64,53 @@ pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
     // 2. Create client handle for write path
     let client_handle: Arc<Mutex<Option<WaftClient>>> = Arc::new(Mutex::new(None));
 
-    // 3. Spawn daemon connection task (tokio)
-    let client_handle_clone = client_handle.clone();
-    tokio::spawn(async move {
-        daemon_connection_task(event_tx, client_handle_clone, ENTITY_TYPES).await;
-        log::warn!("[settings] daemon connection task exited");
-    });
+    // 3. Capture tokio handle for use from connect_startup (a sync glib callback).
+    let rt_handle = tokio::runtime::Handle::current();
 
-    // 4. Spawn action writer thread (OS thread for GTK->daemon)
-    std::thread::spawn(move || {
-        while let Ok((urn, action, params)) = action_rx.recv() {
-            match client_handle.lock() {
-                Ok(guard) => {
-                    if let Some(ref client) = *guard {
-                        client.trigger_action(urn, &action, params);
-                    }
-                }
-                Err(e) => {
-                    log::warn!("[settings] client handle poisoned during action: {e}");
-                    if let Some(ref client) = *e.into_inner() {
-                        client.trigger_action(urn, &action, params);
-                    }
-                }
-            }
-        }
-        log::debug!("[settings] action writer thread exiting");
-    });
-
-    // 5. Create entity action callback (routes to writer thread via mpsc)
+    // 4. Create entity action callback (routes UI actions to the writer thread).
     let entity_action_callback: EntityActionCallback = Rc::new(move |urn, action_name, params| {
         if let Err(e) = action_tx.send((urn, action_name, params)) {
             log::warn!("[settings] failed to send action: {e}");
         }
     });
 
+    // Wrap one-shot values in slots so they can be taken inside connect_startup.
+    // connect_startup requires Fn (not FnOnce) but fires exactly once, in the
+    // primary instance only.  Secondary instances (HANDLES_COMMAND_LINE) exit
+    // before startup fires, so these daemon-facing resources are never created
+    // for them.
+    let event_tx_slot = RefCell::new(Some(event_tx));
+    let action_rx_slot = RefCell::new(Some(action_rx));
+
     // 6. Create GTK application
     let app = adw::Application::builder()
         .application_id("com.waft.settings")
         .build();
+
+    // Enable command-line handling so that a second invocation (when the app is
+    // already running) forwards its arguments to the primary instance via D-Bus
+    // instead of becoming a new process.  The primary instance's
+    // connect_command_line handler then reads --page and activates the
+    // navigate-to action that is registered by SettingsWindow::new.
+    app.set_flags(gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE);
+
+    // Handle command-line arguments in the primary instance.  Called for every
+    // invocation, including the very first one (after startup).
+    app.connect_command_line(|app, cmdline| {
+        let args = cmdline.arguments();
+        let mut iter = args.iter();
+        while let Some(arg) = iter.next() {
+            if arg.to_str() == Some("--page") {
+                if let Some(page) = iter.next().and_then(|s| s.to_str()) {
+                    let variant = page.to_variant();
+                    app.activate_action("navigate-to", Some(&variant));
+                }
+                break;
+            }
+        }
+        app.activate();
+        0.into()
+    });
 
     // 7. Connect activate signal
     app.connect_activate(|app| {
@@ -104,13 +119,57 @@ pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {
         }
     });
 
-    // 8. Connect startup signal
+    // 8. Connect startup signal (fires only in the primary instance)
     app.connect_startup(move |app| {
         // Load custom CSS for drag-and-drop styling
         load_css();
 
+        // Take one-shot values from their slots and start daemon-facing tasks.
+        // Safe to unwrap: startup fires exactly once.
+        let event_tx = event_tx_slot
+            .borrow_mut()
+            .take()
+            .expect("[settings] daemon task already started");
+        let action_rx = action_rx_slot
+            .borrow_mut()
+            .take()
+            .expect("[settings] action writer already started");
+
+        // Spawn daemon connection task on the tokio runtime.
+        let client_for_task = Arc::clone(&client_handle);
+        rt_handle.spawn(async move {
+            daemon_connection_task(event_tx, client_for_task, ENTITY_TYPES).await;
+            log::warn!("[settings] daemon connection task exited");
+        });
+
+        // Spawn action writer thread (OS thread for GTK->daemon write path).
+        let client_for_writer = Arc::clone(&client_handle);
+        std::thread::spawn(move || {
+            while let Ok((urn, action, params)) = action_rx.recv() {
+                match client_for_writer.lock() {
+                    Ok(guard) => {
+                        if let Some(ref client) = *guard {
+                            client.trigger_action(urn, &action, params);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("[settings] client handle poisoned during action: {e}");
+                        if let Some(ref client) = *e.into_inner() {
+                            client.trigger_action(urn, &action, params);
+                        }
+                    }
+                }
+            }
+            log::debug!("[settings] action writer thread exiting");
+        });
+
         let entity_store = Rc::new(EntityStore::new());
-        let settings_window = SettingsWindow::new(app, &entity_store, &entity_action_callback);
+        let settings_window = SettingsWindow::new(
+            app,
+            &entity_store,
+            &entity_action_callback,
+            initial_page.as_deref(),
+        );
 
         // Spawn entity event handler (glib context)
         let store = entity_store.clone();
@@ -199,6 +258,15 @@ fn load_css() {
             background: @accent_bg_color;
             min-height: 32px;
             box-shadow: 0 0 8px alpha(@accent_bg_color, 0.6);
+        }
+
+        /* Search highlight animation */
+        @keyframes search-highlight-pulse {
+            0% { background-color: alpha(@accent_bg_color, 0.3); }
+            100% { background-color: transparent; }
+        }
+        .search-highlight {
+            animation: search-highlight-pulse 1.5s ease-out;
         }
     "#;
 

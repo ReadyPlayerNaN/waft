@@ -88,10 +88,10 @@ impl BrightnessSlidersComponent {
                         None,
                     ));
 
-                    // Wire value_change -> set-brightness action
+                    // Wire value_commit -> set-brightness action (fires on drag release)
                     let urn_for_value = urn.clone();
                     let cb_value = cb.clone();
-                    slider.connect_value_change(move |v| {
+                    slider.connect_value_commit(move |v| {
                         cb_value(
                             urn_for_value.clone(),
                             "set-brightness".to_string(),

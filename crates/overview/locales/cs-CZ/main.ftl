@@ -64,6 +64,7 @@ weather-thunderstorm = Bouřka
 # Bluetooth
 bluetooth-title = Bluetooth
 bluetooth-unknown-device = Neznámé zařízení
+bluetooth-settings-button = Nastavení
 
 # Network
 network-wired = Kabelové
@@ -76,6 +77,8 @@ network-ipv4-address = IPv4 adresa
 network-ipv6-address = IPv6 adresa
 network-subnet-mask = Maska podsítě
 network-gateway = Brána
+
+wired-settings-button = Nastavení
 
 # WiFi
 wifi-scanning = Vyhledávání sítí...
@@ -105,3 +108,6 @@ battery-pending-discharge = Čekání na vybíjení
 battery-time-remaining = zbývá { $time }
 battery-time-to-full = { $time } do plného nabití
 battery-time-less-than-minute = < 1min
+
+# Settings
+settings-button = Nastavení

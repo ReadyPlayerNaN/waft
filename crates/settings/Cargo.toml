@@ -8,6 +8,7 @@ name = "waft-settings"
 path = "src/main.rs"
 
 [dependencies]
+clap = { version = "4", features = ["derive"] }
 adw = { version = "0.8", package = "libadwaita", features = ["v1_5"] }
 base64 = "0.22"
 gtk = { version = "0.10", package = "gtk4", features = ["v4_10"] }

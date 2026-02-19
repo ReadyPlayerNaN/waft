@@ -39,6 +39,7 @@ pub struct SliderWidget {
     disabled: Rc<RefCell<bool>>,
     expandable: Rc<RefCell<bool>>,
     on_value_change: Callback<f64>,
+    on_value_commit: Callback<f64>,
     on_icon_click: VoidCallback,
     scale_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>>,
     interacting: Rc<RefCell<bool>>,
@@ -54,6 +55,7 @@ pub struct SliderWidget {
 ///
 /// When the timer fires, `interacting` is set to `false` and any stashed
 /// `pending_value` is applied to the scale (blocking the signal handler).
+#[allow(clippy::too_many_arguments)]
 fn schedule_interaction_end(
     debounce_source: &Rc<RefCell<Option<glib::SourceId>>>,
     interacting: &Rc<RefCell<bool>>,
@@ -61,6 +63,7 @@ fn schedule_interaction_end(
     value: &Rc<RefCell<f64>>,
     scale: &gtk::Scale,
     scale_handler_id: &Rc<RefCell<Option<glib::SignalHandlerId>>>,
+    on_value_commit: &Callback<f64>,
     delay_ms: u64,
 ) {
     // Cancel any existing debounce timer
@@ -74,6 +77,7 @@ fn schedule_interaction_end(
     let scale = scale.clone();
     let scale_handler_id = scale_handler_id.clone();
     let debounce_source_inner = debounce_source.clone();
+    let on_value_commit = on_value_commit.clone();
 
     let source_id = glib::timeout_add_local_once(
         std::time::Duration::from_millis(delay_ms),
@@ -81,7 +85,15 @@ fn schedule_interaction_end(
             // Clear the stored source ID since this timer has fired
             *debounce_source_inner.borrow_mut() = None;
 
+            // Read the user's final value before clearing interaction state
+            let committed_value = scale.value() / 100.0;
+
             *interacting.borrow_mut() = false;
+
+            // Fire the commit callback with the value the user settled on
+            if let Some(ref callback) = *on_value_commit.borrow() {
+                callback(committed_value);
+            }
 
             // Reconcile with the last backend value received during interaction
             if let Some(v) = pending_value.borrow_mut().take() {
@@ -177,6 +189,7 @@ impl SliderWidget {
         let disabled = Rc::new(RefCell::new(props.disabled));
         let expandable = Rc::new(RefCell::new(props.expandable));
         let on_value_change: Callback<f64> = Rc::new(RefCell::new(None));
+        let on_value_commit: Callback<f64> = Rc::new(RefCell::new(None));
         let on_icon_click: VoidCallback = Rc::new(RefCell::new(None));
 
         // Connect icon button click
@@ -198,6 +211,7 @@ impl SliderWidget {
             Rc::new(RefCell::new(None));
 
         let on_value_change_ref = on_value_change.clone();
+        let on_value_commit_vc = on_value_commit.clone();
         let interacting_vc = interacting.clone();
         let debounce_source_vc = debounce_source.clone();
         let pending_value_vc = pending_value.clone();
@@ -215,6 +229,7 @@ impl SliderWidget {
                 &value_vc,
                 &scale_vc,
                 &scale_handler_id_vc,
+                &on_value_commit_vc,
                 200,
             );
             if let Some(ref callback) = *on_value_change_ref.borrow() {
@@ -242,6 +257,7 @@ impl SliderWidget {
         let value_released = value.clone();
         let scale_released = scale.clone();
         let scale_handler_id_released = scale_handler_id.clone();
+        let on_value_commit_released = on_value_commit.clone();
         gesture_click.connect_released(move |_, _, _, _| {
             schedule_interaction_end(
                 &debounce_source_released,
@@ -250,6 +266,7 @@ impl SliderWidget {
                 &value_released,
                 &scale_released,
                 &scale_handler_id_released,
+                &on_value_commit_released,
                 100,
             );
         });
@@ -261,6 +278,7 @@ impl SliderWidget {
         let value_cancel = value.clone();
         let scale_cancel = scale.clone();
         let scale_handler_id_cancel = scale_handler_id.clone();
+        let on_value_commit_cancel = on_value_commit.clone();
         gesture_click.connect_cancel(move |_, _| {
             schedule_interaction_end(
                 &debounce_source_cancel,
@@ -269,6 +287,7 @@ impl SliderWidget {
                 &value_cancel,
                 &scale_cancel,
                 &scale_handler_id_cancel,
+                &on_value_commit_cancel,
                 100,
             );
         });
@@ -284,6 +303,7 @@ impl SliderWidget {
         let value_scroll = value.clone();
         let scale_scroll = scale.clone();
         let scale_handler_id_scroll = scale_handler_id.clone();
+        let on_value_commit_scroll = on_value_commit.clone();
         scroll_controller.connect_scroll(move |_, _, _| {
             *interacting_scroll.borrow_mut() = true;
             schedule_interaction_end(
@@ -293,6 +313,7 @@ impl SliderWidget {
                 &value_scroll,
                 &scale_scroll,
                 &scale_handler_id_scroll,
+                &on_value_commit_scroll,
                 200,
             );
             glib::Propagation::Proceed
@@ -309,6 +330,7 @@ impl SliderWidget {
             disabled,
             expandable,
             on_value_change,
+            on_value_commit,
             on_icon_click,
             scale_handler_id,
             interacting,
@@ -318,12 +340,25 @@ impl SliderWidget {
         }
     }
 
-    /// Set the callback for value changes.
+    /// Set the callback for value changes (fires on every change during interaction).
     pub fn connect_value_change<F>(&self, callback: F)
     where
         F: Fn(f64) + 'static,
     {
         *self.on_value_change.borrow_mut() = Some(Box::new(callback));
+    }
+
+    /// Set the callback for value commits (fires once when interaction ends).
+    ///
+    /// Unlike `connect_value_change` which fires on every pixel of drag,
+    /// this fires only when the user finishes interacting (drag release,
+    /// scroll debounce end, keyboard debounce end). Use this for sending
+    /// actions to the backend.
+    pub fn connect_value_commit<F>(&self, callback: F)
+    where
+        F: Fn(f64) + 'static,
+    {
+        *self.on_value_commit.borrow_mut() = Some(Box::new(callback));
     }
 
     /// Set the callback for icon button clicks.

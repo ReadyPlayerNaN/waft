@@ -33,8 +33,9 @@ impl SoundGallery {
 
     /// Add a sound file to the gallery from raw bytes.
     ///
-    /// Returns an error if the file exceeds the size limit, has an unsupported
-    /// extension, or cannot be written to disk.
+    /// The filename stem is sanitized to kebab-case and deduplicated against
+    /// existing sounds. Returns an error if the file exceeds the size limit,
+    /// has an unsupported extension, or cannot be written to disk.
     pub fn add_sound(
         &mut self,
         filename: &str,
@@ -50,8 +51,14 @@ impl SoundGallery {
             .into());
         }
 
+        // Sanitize filename: only keep the base name (no path traversal)
+        let base_filename = std::path::Path::new(filename)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("invalid filename")?;
+
         // Validate extension
-        let ext = std::path::Path::new(filename)
+        let ext = std::path::Path::new(base_filename)
             .extension()
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase());
@@ -66,13 +73,17 @@ impl SoundGallery {
                 .into());
             }
         }
+        let ext = ext.unwrap();
 
-        // Sanitize filename: only keep the base name (no path traversal)
-        let safe_filename = std::path::Path::new(filename)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or("invalid filename")?
-            .to_string();
+        // Sanitize the stem to kebab-case
+        let raw_stem = std::path::Path::new(base_filename)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let stem = sanitize_sound_name(raw_stem);
+
+        // Deduplicate against existing sounds
+        let safe_filename = deduplicate_name(&stem, &ext, &self.sounds);
 
         // Ensure directory exists
         if let Err(e) = std::fs::create_dir_all(&self.sounds_dir) {
@@ -89,13 +100,8 @@ impl SoundGallery {
             size: data.len() as u64,
         };
 
-        // Replace or append
-        if let Some(existing) = self.sounds.iter_mut().find(|s| s.filename == safe_filename) {
-            *existing = sound.clone();
-        } else {
-            self.sounds.push(sound.clone());
-            self.sounds.sort_by(|a, b| a.filename.cmp(&b.filename));
-        }
+        self.sounds.push(sound.clone());
+        self.sounds.sort_by(|a, b| a.filename.cmp(&b.filename));
 
         Ok(sound)
     }
@@ -130,6 +136,62 @@ pub fn resolve_sound_reference(reference: &str) -> String {
             .into_owned();
     }
     reference.to_string()
+}
+
+/// Sanitize a sound name stem to kebab-case.
+///
+/// - Lowercases the input
+/// - Replaces any character not in `[a-z0-9]` with a hyphen
+/// - Collapses consecutive hyphens into one
+/// - Trims leading and trailing hyphens
+/// - Falls back to `"sound"` if the result is empty
+fn sanitize_sound_name(stem: &str) -> String {
+    let lowered = stem.to_lowercase();
+    let replaced: String = lowered
+        .chars()
+        .map(|c| if c.is_ascii_lowercase() || c.is_ascii_digit() { c } else { '-' })
+        .collect();
+
+    let mut collapsed = String::with_capacity(replaced.len());
+    let mut prev_hyphen = false;
+    for c in replaced.chars() {
+        if c == '-' {
+            if !prev_hyphen {
+                collapsed.push('-');
+            }
+            prev_hyphen = true;
+        } else {
+            collapsed.push(c);
+            prev_hyphen = false;
+        }
+    }
+
+    let trimmed = collapsed.trim_matches('-');
+    if trimmed.is_empty() {
+        "sound".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Produce a unique `{stem}.{ext}` filename not present in the existing sounds.
+///
+/// If `{stem}.{ext}` is already taken, appends `-2`, `-3`, etc. until a free
+/// name is found.
+fn deduplicate_name(stem: &str, ext: &str, sounds: &[NotificationSound]) -> String {
+    let candidate = format!("{stem}.{ext}");
+    if !sounds.iter().any(|s| s.filename == candidate) {
+        return candidate;
+    }
+
+    let mut counter = 2u32;
+    loop {
+        let candidate = format!("{stem}-{counter}.{ext}");
+        if !sounds.iter().any(|s| s.filename == candidate) {
+            return candidate;
+        }
+        counter += 1;
+    }
 }
 
 /// Get the sounds directory path.
@@ -232,13 +294,15 @@ mod tests {
     }
 
     #[test]
-    fn add_sound_replaces_existing() {
+    fn add_sound_deduplicates_instead_of_replacing() {
         let (_dir, mut gallery) = temp_gallery();
-        gallery.add_sound("test.ogg", b"first").unwrap();
-        gallery.add_sound("test.ogg", b"second version").unwrap();
+        let first = gallery.add_sound("test.ogg", b"first").unwrap();
+        let second = gallery.add_sound("test.ogg", b"second version").unwrap();
 
-        assert_eq!(gallery.sounds().len(), 1);
-        assert_eq!(gallery.sounds()[0].size, b"second version".len() as u64);
+        assert_eq!(gallery.sounds().len(), 2);
+        assert_eq!(first.filename, "test.ogg");
+        assert_eq!(second.filename, "test-2.ogg");
+        assert_eq!(second.size, b"second version".len() as u64);
     }
 
     #[test]
@@ -304,9 +368,109 @@ mod tests {
     fn sanitize_path_traversal() {
         let (_dir, mut gallery) = temp_gallery();
         let result = gallery.add_sound("../../../etc/passwd.ogg", b"data");
-        // Should only keep the base filename
+        // Should strip path traversal and sanitize the stem
         assert!(result.is_ok());
         let sound = result.unwrap();
         assert_eq!(sound.filename, "passwd.ogg");
+    }
+
+    #[test]
+    fn sanitize_sound_name_basic() {
+        assert_eq!(sanitize_sound_name("My Cool Alert"), "my-cool-alert");
+    }
+
+    #[test]
+    fn sanitize_sound_name_unicode() {
+        assert_eq!(sanitize_sound_name("Über Ding!!!"), "ber-ding");
+    }
+
+    #[test]
+    fn sanitize_sound_name_hyphens_collapsed() {
+        assert_eq!(sanitize_sound_name("---test---"), "test");
+    }
+
+    #[test]
+    fn sanitize_sound_name_dots() {
+        assert_eq!(sanitize_sound_name("..."), "sound");
+    }
+
+    #[test]
+    fn sanitize_sound_name_empty() {
+        assert_eq!(sanitize_sound_name(""), "sound");
+    }
+
+    #[test]
+    fn sanitize_sound_name_underscores() {
+        assert_eq!(sanitize_sound_name("café_latte"), "caf-latte");
+    }
+
+    #[test]
+    fn sanitize_sound_name_preserves_digits() {
+        assert_eq!(sanitize_sound_name("track01"), "track01");
+    }
+
+    #[test]
+    fn sanitize_sound_name_only_special_chars() {
+        assert_eq!(sanitize_sound_name("!!!@@@###"), "sound");
+    }
+
+    #[test]
+    fn deduplicate_name_no_collision() {
+        let sounds = vec![];
+        assert_eq!(deduplicate_name("test", "ogg", &sounds), "test.ogg");
+    }
+
+    #[test]
+    fn deduplicate_name_single_collision() {
+        let sounds = vec![NotificationSound {
+            filename: "test.ogg".to_string(),
+            reference: "sounds/test.ogg".to_string(),
+            size: 100,
+        }];
+        assert_eq!(deduplicate_name("test", "ogg", &sounds), "test-2.ogg");
+    }
+
+    #[test]
+    fn deduplicate_name_multiple_collisions() {
+        let sounds = vec![
+            NotificationSound {
+                filename: "test.ogg".to_string(),
+                reference: "sounds/test.ogg".to_string(),
+                size: 100,
+            },
+            NotificationSound {
+                filename: "test-2.ogg".to_string(),
+                reference: "sounds/test-2.ogg".to_string(),
+                size: 100,
+            },
+            NotificationSound {
+                filename: "test-3.ogg".to_string(),
+                reference: "sounds/test-3.ogg".to_string(),
+                size: 100,
+            },
+        ];
+        assert_eq!(deduplicate_name("test", "ogg", &sounds), "test-4.ogg");
+    }
+
+    #[test]
+    fn add_sound_sanitizes_filename() {
+        let (_dir, mut gallery) = temp_gallery();
+        let sound = gallery.add_sound("My Cool Alert.ogg", b"data").unwrap();
+        assert_eq!(sound.filename, "my-cool-alert.ogg");
+        assert_eq!(sound.reference, "sounds/my-cool-alert.ogg");
+        assert!(gallery.sounds_dir.join("my-cool-alert.ogg").exists());
+    }
+
+    #[test]
+    fn add_sound_duplicate_upload_creates_distinct_entries() {
+        let (_dir, mut gallery) = temp_gallery();
+        let first = gallery.add_sound("My File.ogg", b"data1").unwrap();
+        let second = gallery.add_sound("My File.ogg", b"data2").unwrap();
+
+        assert_eq!(first.filename, "my-file.ogg");
+        assert_eq!(second.filename, "my-file-2.ogg");
+        assert_eq!(gallery.sounds().len(), 2);
+        assert!(gallery.sounds_dir.join("my-file.ogg").exists());
+        assert!(gallery.sounds_dir.join("my-file-2.ogg").exists());
     }
 }

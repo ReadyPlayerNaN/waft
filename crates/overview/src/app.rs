@@ -45,6 +45,7 @@ const ENTITY_TYPES: &[&str] = &[
     entity::calendar::ENTITY_TYPE,
     entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
     entity::storage::BACKUP_METHOD_ENTITY_TYPE,
+    entity::app::ENTITY_TYPE,
 ];
 
 /// Set up the overlay host app and return the GTK Application.

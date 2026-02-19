@@ -10,6 +10,7 @@ pub mod keyboard_layout;
 pub mod notification_group;
 pub mod notification_list;
 pub mod session_actions;
+pub mod settings_button;
 pub mod system_actions;
 pub mod toggles;
 pub mod weather;

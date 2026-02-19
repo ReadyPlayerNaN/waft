@@ -11,11 +11,31 @@
 //! 3. **Hyprland** - Detected via `HYPRLAND_INSTANCE_SIGNATURE` environment variable
 //! 4. **systemd-localed** - Fallback via D-Bus for other systems
 
+use std::sync::OnceLock;
+
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
+use waft_i18n::I18n;
 use waft_plugin::*;
 use waft_plugin_keyboard_layout::backends::{KeyboardLayoutBackend, LayoutEvent, detect_backend};
 use zbus::Connection;
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            (
+                "en-US",
+                include_str!("../locales/en-US/keyboard-layout.ftl"),
+            ),
+            (
+                "cs-CZ",
+                include_str!("../locales/cs-CZ/keyboard-layout.ftl"),
+            ),
+        ])
+    })
+}
 
 /// Shared layout state.
 struct LayoutState {
@@ -113,7 +133,12 @@ impl Plugin for KeyboardLayoutPlugin {
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[entity::keyboard::ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[entity::keyboard::ENTITY_TYPE],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

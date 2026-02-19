@@ -64,6 +64,7 @@ weather-thunderstorm = Thunderstorm
 # Bluetooth
 bluetooth-title = Bluetooth
 bluetooth-unknown-device = Unknown Device
+bluetooth-settings-button = Settings
 
 # Network
 network-wired = Wired
@@ -76,6 +77,8 @@ network-ipv4-address = IPv4 Address
 network-ipv6-address = IPv6 Address
 network-subnet-mask = Subnet Mask
 network-gateway = Gateway
+
+wired-settings-button = Settings
 
 # WiFi
 wifi-scanning = Scanning for networks...
@@ -105,3 +108,6 @@ battery-pending-discharge = Pending discharge
 battery-time-remaining = { $time } remaining
 battery-time-to-full = { $time } to full
 battery-time-less-than-minute = < 1min
+
+# Settings
+settings-button = Settings

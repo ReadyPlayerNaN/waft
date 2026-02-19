@@ -13,11 +13,25 @@
 //! id = "sunsetr"
 //! ```
 
+use std::sync::OnceLock;
+
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::process::Stdio;
+use waft_i18n::I18n;
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            ("en-US", include_str!("../locales/en-US/sunsetr.ftl")),
+            ("cs-CZ", include_str!("../locales/cs-CZ/sunsetr.ftl")),
+        ])
+    })
+}
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use sunsetr::config as sunsetr_config;
@@ -778,10 +792,15 @@ fn binary_available() -> bool {
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[
-        entity::display::NIGHT_LIGHT_ENTITY_TYPE,
-        entity::display::NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
-    ]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[
+            entity::display::NIGHT_LIGHT_ENTITY_TYPE,
+            entity::display::NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
+        ],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

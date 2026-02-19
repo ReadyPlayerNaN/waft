@@ -11,13 +11,25 @@
 //! ```
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use anyhow::{Context, Result};
 use futures_util::stream::StreamExt;
 use log::{debug, warn};
 use serde::Deserialize;
+use waft_i18n::I18n;
 use waft_plugin::*;
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            ("en-US", include_str!("../locales/en-US/eds.ftl")),
+            ("cs-CZ", include_str!("../locales/cs-CZ/eds.ftl")),
+        ])
+    })
+}
 use zbus::{Connection, MessageStream};
 use zvariant::OwnedValue;
 
@@ -2807,10 +2819,15 @@ mod tests {
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[
-        entity::calendar::ENTITY_TYPE,
-        entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
-    ]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[
+            entity::calendar::ENTITY_TYPE,
+            entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+        ],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

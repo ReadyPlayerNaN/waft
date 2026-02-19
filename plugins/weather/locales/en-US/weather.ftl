@@ -1,3 +1,6 @@
+plugin-name = Weather
+plugin-description = Weather information from online API
+
 weather-placeholder = --
 weather-loading = Loading...
 weather-failed-to-load = Failed to load

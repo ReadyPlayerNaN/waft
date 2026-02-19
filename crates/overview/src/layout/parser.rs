@@ -55,11 +55,11 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
             Ok(LayoutNode::Widget { id: id.to_string() })
         }
         "Unmatched" => Ok(LayoutNode::Unmatched),
-        tag @ ("Clock" | "Battery" | "Weather" | "KeyboardLayout" | "SessionActions"
-        | "SystemActions" | "Calendar" | "Agenda" | "Events" | "NotificationList"
-        | "AudioSliders" | "BrightnessSliders" | "DndToggle" | "CaffeineToggle"
-        | "DarkModeToggle" | "NightLightToggle" | "BluetoothToggles" | "NetworkToggles"
-        | "BackupToggle") => Ok(LayoutNode::Component {
+        tag @ ("Clock" | "Battery" | "Weather" | "KeyboardLayout" | "SettingsButton"
+        | "SessionActions" | "SystemActions" | "Calendar" | "Agenda" | "Events"
+        | "NotificationList" | "AudioSliders" | "BrightnessSliders" | "DndToggle"
+        | "CaffeineToggle" | "DarkModeToggle" | "NightLightToggle" | "BluetoothToggles"
+        | "NetworkToggles" | "BackupToggle") => Ok(LayoutNode::Component {
             name: tag.to_string(),
         }),
         tag => Err(anyhow!("Unknown layout tag: {}", tag)),
@@ -149,15 +149,18 @@ mod tests {
                     }
                     if let LayoutNode::Row { halign, children } = &header_children[1] {
                         assert_eq!(halign.as_deref(), Some("end"));
-                        assert_eq!(children.len(), 3);
+                        assert_eq!(children.len(), 4);
                         assert!(
                             matches!(&children[0], LayoutNode::Component { name } if name == "KeyboardLayout")
                         );
                         assert!(
-                            matches!(&children[1], LayoutNode::Component { name } if name == "SessionActions")
+                            matches!(&children[1], LayoutNode::Component { name } if name == "SettingsButton")
                         );
                         assert!(
-                            matches!(&children[2], LayoutNode::Component { name } if name == "SystemActions")
+                            matches!(&children[2], LayoutNode::Component { name } if name == "SessionActions")
+                        );
+                        assert!(
+                            matches!(&children[3], LayoutNode::Component { name } if name == "SystemActions")
                         );
                     }
                 }

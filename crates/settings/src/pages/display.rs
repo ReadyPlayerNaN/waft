@@ -1,7 +1,6 @@
 //! Display settings page -- thin composer.
 //!
-//! Composes three independent smart containers: brightness, dark mode,
-//! and night light sections into a single scrollable page.
+//! Composes brightness and output sections into a single scrollable page.
 
 use std::rc::Rc;
 
@@ -9,15 +8,12 @@ use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::display::brightness_section::BrightnessSection;
-use crate::display::dark_mode_automation_section::DarkModeAutomationSection;
-use crate::display::dark_mode_section::DarkModeSection;
-use crate::display::night_light_config_section::NightLightConfigSection;
-use crate::display::night_light_section::NightLightSection;
 use crate::display::output_section::OutputSection;
 
 /// Display settings page composed of independent sections.
 pub struct DisplayPage {
     pub root: gtk::Box,
+    output_section: OutputSection,
 }
 
 impl DisplayPage {
@@ -34,23 +30,17 @@ impl DisplayPage {
         let brightness = BrightnessSection::new(entity_store, action_callback);
         root.append(&brightness.root);
 
-        let output = OutputSection::new(entity_store, action_callback);
-        root.append(&output.root);
+        let output_section = OutputSection::new(entity_store, action_callback);
+        root.append(&output_section.root);
 
-        let dark_mode = DarkModeSection::new(entity_store, action_callback);
-        root.append(&dark_mode.root);
+        Self {
+            root,
+            output_section,
+        }
+    }
 
-        let dark_mode_automation =
-            DarkModeAutomationSection::new(entity_store, action_callback);
-        root.append(&dark_mode_automation.root);
-
-        let night_light = NightLightSection::new(entity_store, action_callback);
-        root.append(&night_light.root);
-
-        let night_light_config =
-            NightLightConfigSection::new(entity_store, action_callback);
-        root.append(&night_light_config.root);
-
-        Self { root }
+    /// Discard pending output changes and re-reconcile from entity store.
+    pub fn reset(&self) {
+        self.output_section.reset();
     }
 }

@@ -15,80 +15,70 @@ Whenever an email with meeting invite is received, present it as calendar notifi
 Consider having the SNI tray in the waft overview.
 (Status Notifier Items)
 
+# `waft-settings`
+
+Audio settings that include managing input / output devices and their settings as `pavucontrol` does.
+
+# Launcher
+
+Create app `waft-launcher`. The app will have a single window on the gtk layer shell. On start it will focus an input field. Upon search, the app will search available applications. It will have keyboard navigation - using arrows up and down will change the selected item, but the input field remains focused. `<Enter>` starts the selected app and exits `waft-launcher`. Clicking an app starts it and exits `waft-launcher`. The list of apps will display icon and name.
+
 ---
 
-# `waft-plugin-eds` Do not trigger bad calendar calls
+# `waft-overview` Bluetooth paired label
 
-```
-[2026-02-18T18:17:10Z WARN  waft_eds_daemon] [eds] Refresh failed for /org/gnome/evolution/dataserver/Subprocess/10522/2: org.gtk.GDBus.UnmappedGError.Quark._e_2dclient_2derror_2dquark.Code11: Kalendář nelze obnovit: Nepodporováno
-[waft] action abb5c67d-1f12-459e-bc75-45010e9b56cd timed out (app: c7f66ec6-5e64-4be6-970e-eecabae2bfbc)
-[2026-02-18T18:17:12Z WARN  waft_eds_daemon] [eds] Refresh failed for /org/gnome/evolution/dataserver/Subprocess/10522/518: org.gtk.GDBus.UnmappedGError.Quark._e_2dclient_2derror_2dquark.Code11: Kalendář nelze obnovit: Nepodporováno
-[waft] ActionSuccess for unknown action abb5c67d-1f12-459e-bc75-45010e9b56cd
-[2026-02-18T18:25:06Z WARN  waft_eds_daemon] [eds] Refresh failed for /org/gnome/evolution/dataserver/Subprocess/10522/2: org.gtk.GDBus.UnmappedGError.Quark._e_2dclient_2derror_2dquark.Code11: Kalendář nelze obnovit: Nepodporováno
-[2026-02-18T18:25:06Z WARN  waft_eds_daemon] [eds] Refresh failed for /org/gnome/evolution/dataserver/Subprocess/10522/518: org.gtk.GDBus.UnmappedGError.Quark._e_2dclient_2derror_2dquark.Code11: Kalendář nelze obnovit: Nepodporováno
-```
+When no devices are connected to a bluetooth adatper, it displays label "{n} paired". There should be no label when all devices are disconnected.
 
-# `waft-overview` Audio slider does not work
+# `waft-settings` Keyboard layout options
 
-It keeps jumping left and right. It should ignore accepting updates to value from the backend when the slider is being dragged or mousewheeled. When the drag is over, it should accept the value from the outside again.
+Must be able to configure keyboard layout options. For example cz QWERTY.
 
-# `waft-overview` Brightness does not work
+# `waft-settings` Bluetooth search button
 
-The slider always resets the brightness to minimum. It should set the brightness value in realtime as it is sliding instead.
+Should be in the header of "available devices" on the right side.
 
-# `waft-settings` categories
+# `waft-settings` More granular search
 
-Split current settings left panel cards into categories:
+Currently search finds and focuses more-or-less sections. It is good. But we need to do better. We should make every field in the `waft-settings`, that is provided by the UI (this includes disabled fields) also findable. When it is findable, it must be focusable.
 
-- Connectivity (Bluetooth, Wifi, Wired)
-- Visual (Display)
-- Feedback (Notifications)
-- Inputs (Keyboard)
+# `waft-settings` Wallpaper settings
 
-# `waft-settings` Nicer Display UI
+Create `waft-plugin-swww` that allows managing wallpapers using `swww`. Take the script `~/.config/niri/wallpaper-rotate.sh` as a base of logic. The plugin should provide `waft-settings` methods to change the wallpaper, set the random wallpaper, configure the wallpaper directory, configure transition fps, angle, duration and type. I think a good name for such entity is `WallpaperManager`. It should provide an option to select wallpaper per monitor or to keep it in sync. Default wallpaper folder is `~/.config/waft/wallpapers`, but it can be changed. Put this under visual section of settings
 
-Also provide user more options
+# `waft-overview` Audio slider even now still does not work
 
-- Enable/Disable the display via gtk::switch (at least one output must remain active at all times)
-- Select resolution and refresh rate as two separated select boxes. Selecting the pixel resolution will limit options provided in refresh rate select
-- Select scale (real number rounded to two decimal places)
-- Select rotation (0, 90, 180, 270), together with flip it combines into niri tranransform
-- Enable/Disable flip (true/false)
-- Display readonly connection type and connection ID (HDMI, DisplayPort, Internal, ...), for example DP-3, HDMI-1
-- Display readonly physical size
+The audio sliders now move when dragging. That is good. The slider is not being overriden by backend value during the drag, that is also good. The slider was supposed to send the value to the backend during the drag immediately.
 
-# `waft-settings` Notification sound gallery
+# App integration
 
-Save sounds into waft (`~/.config/waft/sounds`), reference them in the notifications Settings. The point is to be able to sync settings between devices. Have this as a separated page "Sounds" under `Feedback` category.
+Introduce entity `WaftSettings`. This entity is going to be provided by a new `waft-plugin-internal-apps`. The entity will be provided only if the binary `waft-settings` is available and executable in the `$PATH`. It will provide two methods:
 
-# `waft-settings` Notifications groups and profiles zero state
+- `open` - Opens waft settings as usual
+- `openPage` - Opens waft settings on a specific page
 
-These sections need to have a zero state to help users navigate
+Each waft settings page must have static identificator assigned.
 
-# `waft-settings` translations
+## `waft-overview` settings integration
 
-All of the strings in the waft-settings must be translated just as waft-overview. Prepare for a possibility that waft itself will need translations.
+There should be a general settings button in the header, right of the keyboard layout button. It should be visible only if the `WaftSettings` entity is available.
 
-# `waft-protocol` entity descriptions
+### Wired settings button
 
-The protocol must communicate human readable descriptions for the entity, the entity properties and the entity methods. The descriptions must be translatable. Each plugin has responsibility for providing the human readable translated descriptions. Each plugin must provide human readable translated Name and Description of itself.
+The wired feature toggle menu should have "Settings" button that opens waft-settings on the wired page using the WaftSettings entity method openPage. The menu will be available even if wired connection is disconnected.
 
-# `waft` usable CLI
+### Bluetooth settings button
 
-Running `waft --help` must provide list of CLI options.
+The bluetooth feature toggle menu should have "Settings" button that opens waft-settings on the bluetooth page using the WaftSettings entity method openPage. The menu will be available even if bluetooth adapter is off.
 
-Add global option `[-j|--json]`, that will change the waft CLI output from human readable text to JSON.
+# Network manager plugin: wireguard
 
-The `waft plugin ls` command will provide the human readable Name of the plugin, the plugin id and supported entity list. Text version returns for example "Sunsetr (sunsetr) - night-light, night-light-config". The JSON variant `{ "id": "sunsetr", "name": "Sunsetr", "entities": ["night-light", "night-light-config", "description": "Control sunsetr from waft"] }`
+The VPN list now correctly shows the wireguard VPN connections. However, connecting it does not seem to work. This may be because of the fact that wireguard connections are triggered differently to wireguard. The Vpn entity in the protocol may have to be extended to also include "type": "vpn | wireguard".
 
-# `waft` CLI protocol
+# `waft-overview` VPN feature toggle menu icons
 
-Add command `waft protocol` command will provide list of supported entities and their human readable descriptions.
+- Regular VPN must display VPN icon
+- Wireguard networks must display wireguard icon
 
-# `waft` CLI describe plugin
+# `waft` logging too verbose
 
-Add command `waft plugin describe [plugin]`, that describes selected plugin.
-
-# `waft-settings` plugins
-
-Add page listing all available waft plugins, their status (available, running, failed, not-running) and their capabilities (entity names). Add this page to new category System.
+Revise the logged messages in waft to see if all of them are really needed to be at `info` level. What is not helpful on info may be moved to `debug` or `trace` level.

@@ -57,6 +57,31 @@ pub struct ParamInfo {
 /// Returns all entity types known to the protocol, sorted by domain then entity type.
 pub fn all_entity_types() -> &'static [EntityTypeInfo] {
     static REGISTRY: &[EntityTypeInfo] = &[
+        // ── app ──
+        EntityTypeInfo {
+            entity_type: super::app::ENTITY_TYPE,
+            domain: "app",
+            description: "A launchable application",
+            urn_pattern: "{plugin}/app/{id}",
+            properties: &[
+                PropertyInfo { name: "name", type_description: "string", description: "Application display name", optional: false },
+                PropertyInfo { name: "icon", type_description: "string", description: "Themed icon name", optional: false },
+                PropertyInfo { name: "available", type_description: "bool", description: "Whether the application binary was found", optional: false },
+            ],
+            actions: &[
+                ActionInfo {
+                    name: "open",
+                    description: "Launch the application",
+                    params: &[],
+                },
+                ActionInfo {
+                    name: "open-page",
+                    description: "Launch the application at a specific page",
+                    params: &[ParamInfo { name: "page", type_description: "string", description: "Page identifier to navigate to", required: true }],
+                },
+            ],
+        },
+
         // ── audio ──
         EntityTypeInfo {
             entity_type: super::audio::ENTITY_TYPE,
@@ -671,6 +696,7 @@ mod tests {
 
         // Verify all known ENTITY_TYPE constants are in the registry.
         let expected = [
+            super::super::app::ENTITY_TYPE,
             super::super::audio::ENTITY_TYPE,
             super::super::bluetooth::BluetoothAdapter::ENTITY_TYPE,
             super::super::bluetooth::BluetoothDevice::ENTITY_TYPE,
@@ -749,7 +775,7 @@ mod tests {
     #[test]
     fn all_domains_are_valid_module_names() {
         let valid_domains = [
-            "audio", "bluetooth", "calendar", "clock", "display",
+            "app", "audio", "bluetooth", "calendar", "clock", "display",
             "keyboard", "network", "notification", "notification_filter",
             "notification_sound", "plugin", "power", "session", "storage", "weather",
         ];

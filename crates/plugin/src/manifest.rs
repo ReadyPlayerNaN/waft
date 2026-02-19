@@ -17,9 +17,9 @@ use crate::plugin::Plugin;
 pub struct PluginManifest {
     pub entity_types: Vec<String>,
     #[serde(default)]
-    pub name: Option<String>,
+    pub name: String,
     #[serde(default)]
-    pub description: Option<String>,
+    pub description: String,
 }
 
 /// Extended manifest with full plugin description, returned by `provides --describe`.
@@ -27,45 +27,67 @@ pub struct PluginManifest {
 pub struct PluginManifestDescribed {
     pub entity_types: Vec<String>,
     #[serde(default)]
-    pub name: Option<String>,
+    pub name: String,
     #[serde(default)]
-    pub description: Option<String>,
+    pub description: String,
     /// Full plugin description with per-entity-type detail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin: Option<PluginDescription>,
 }
 
-/// Check CLI args for a `provides` command, print the manifest, and return
-/// whether it was handled.
+/// Check CLI args for a `provides` command, resolve translations via i18n,
+/// print the manifest, and return whether it was handled.
 ///
 /// Call this early in `main()` before starting the tokio runtime:
 ///
 /// ```rust,no_run
+/// use std::sync::OnceLock;
+/// use waft_i18n::I18n;
+///
+/// static I18N: OnceLock<I18n> = OnceLock::new();
+///
+/// fn i18n() -> &'static I18n {
+///     I18N.get_or_init(|| I18n::new(&[
+///         ("en-US", "plugin-name = Clock\nplugin-description = Time display"),
+///     ]))
+/// }
+///
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     if waft_plugin::manifest::handle_provides(&["clock"]) {
+///     if waft_plugin::manifest::handle_provides_i18n(
+///         &["clock"],
+///         i18n(),
+///         "plugin-name",
+///         "plugin-description",
+///     ) {
 ///         return Ok(());
 ///     }
 ///     // ... start tokio runtime
 ///     Ok(())
 /// }
 /// ```
-pub fn handle_provides(entity_types: &[&str]) -> bool {
-    handle_provides_full(entity_types, None, None)
+pub fn handle_provides_i18n(
+    entity_types: &[&str],
+    i18n: &waft_i18n::I18n,
+    name_key: &str,
+    description_key: &str,
+) -> bool {
+    let name = i18n.t(name_key);
+    let description = i18n.t(description_key);
+    handle_provides_full(entity_types, &name, &description)
 }
 
-/// Like [`handle_provides`], but also includes a display name and description
-/// in the manifest for richer CLI output.
+/// Like [`handle_provides_i18n`], but accepts pre-resolved strings.
 pub fn handle_provides_full(
     entity_types: &[&str],
-    name: Option<&str>,
-    description: Option<&str>,
+    name: &str,
+    description: &str,
 ) -> bool {
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 2 && args[1] == "provides" {
         let manifest = PluginManifest {
             entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
-            name: name.map(|s| s.to_string()),
-            description: description.map(|s| s.to_string()),
+            name: name.to_string(),
+            description: description.to_string(),
         };
         match serde_json::to_string_pretty(&manifest) {
             Ok(json) => println!("{json}"),
@@ -96,8 +118,8 @@ pub fn handle_provides_full(
 ///     let plugin = MyPlugin;
 ///     if waft_plugin::manifest::handle_provides_described(
 ///         &["my-entity"],
-///         Some("My Plugin"),
-///         Some("Does things"),
+///         "My Plugin",
+///         "Does things",
 ///         &plugin,
 ///     ) {
 ///         return Ok(());
@@ -108,8 +130,8 @@ pub fn handle_provides_full(
 /// ```
 pub fn handle_provides_described<P: Plugin>(
     entity_types: &[&str],
-    name: Option<&str>,
-    description: Option<&str>,
+    name: &str,
+    description: &str,
     plugin: &P,
 ) -> bool {
     let args: Vec<String> = std::env::args().collect();
@@ -120,8 +142,8 @@ pub fn handle_provides_described<P: Plugin>(
             let plugin_desc = plugin.describe();
             let manifest = PluginManifestDescribed {
                 entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
-                name: name.map(|s| s.to_string()),
-                description: description.map(|s| s.to_string()),
+                name: name.to_string(),
+                description: description.to_string(),
                 plugin: plugin_desc,
             };
             match serde_json::to_string_pretty(&manifest) {
@@ -131,8 +153,8 @@ pub fn handle_provides_described<P: Plugin>(
         } else {
             let manifest = PluginManifest {
                 entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
-                name: name.map(|s| s.to_string()),
-                description: description.map(|s| s.to_string()),
+                name: name.to_string(),
+                description: description.to_string(),
             };
             match serde_json::to_string_pretty(&manifest) {
                 Ok(json) => println!("{json}"),
@@ -153,30 +175,27 @@ mod tests {
     fn manifest_serde_roundtrip() {
         let manifest = PluginManifest {
             entity_types: vec!["clock".to_string(), "dark-mode".to_string()],
-            name: None,
-            description: None,
+            name: "Clock".to_string(),
+            description: "Time display".to_string(),
         };
         let json = serde_json::to_string(&manifest).unwrap();
         let decoded: PluginManifest = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.entity_types, manifest.entity_types);
-        assert_eq!(decoded.name, None);
-        assert_eq!(decoded.description, None);
+        assert_eq!(decoded.name, "Clock");
+        assert_eq!(decoded.description, "Time display");
     }
 
     #[test]
     fn manifest_with_name_and_description() {
         let manifest = PluginManifest {
             entity_types: vec!["night-light".to_string()],
-            name: Some("Sunsetr".to_string()),
-            description: Some("Night light control via sunsetr".to_string()),
+            name: "Sunsetr".to_string(),
+            description: "Night light control via sunsetr".to_string(),
         };
         let json = serde_json::to_string(&manifest).unwrap();
         let decoded: PluginManifest = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded.name, Some("Sunsetr".to_string()));
-        assert_eq!(
-            decoded.description,
-            Some("Night light control via sunsetr".to_string())
-        );
+        assert_eq!(decoded.name, "Sunsetr");
+        assert_eq!(decoded.description, "Night light control via sunsetr");
     }
 
     #[test]
@@ -184,8 +203,8 @@ mod tests {
         let json = r#"{"entity_types": ["clock"]}"#;
         let decoded: PluginManifest = serde_json::from_str(json).unwrap();
         assert_eq!(decoded.entity_types, vec!["clock".to_string()]);
-        assert_eq!(decoded.name, None);
-        assert_eq!(decoded.description, None);
+        assert_eq!(decoded.name, "");
+        assert_eq!(decoded.description, "");
     }
 
     #[test]
@@ -205,8 +224,8 @@ mod tests {
 
         let manifest = PluginManifestDescribed {
             entity_types: vec!["audio-device".to_string()],
-            name: Some("Audio Control".to_string()),
-            description: Some("Volume control".to_string()),
+            name: "Audio Control".to_string(),
+            description: "Volume control".to_string(),
             plugin: Some(desc.clone()),
         };
 
@@ -220,8 +239,8 @@ mod tests {
     fn described_manifest_without_plugin_field() {
         let manifest = PluginManifestDescribed {
             entity_types: vec!["clock".to_string()],
-            name: Some("Clock".to_string()),
-            description: None,
+            name: "Clock".to_string(),
+            description: String::new(),
             plugin: None,
         };
 
@@ -240,7 +259,7 @@ mod tests {
         let json = r#"{"entity_types": ["clock"], "name": "Clock"}"#;
         let decoded: PluginManifestDescribed = serde_json::from_str(json).unwrap();
         assert_eq!(decoded.entity_types, vec!["clock".to_string()]);
-        assert_eq!(decoded.name, Some("Clock".to_string()));
+        assert_eq!(decoded.name, "Clock");
         assert!(decoded.plugin.is_none());
     }
 }

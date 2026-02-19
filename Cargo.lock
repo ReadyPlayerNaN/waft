@@ -3313,6 +3313,7 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "uuid",
+ "waft-i18n",
  "waft-protocol",
  "zbus",
 ]
@@ -3326,6 +3327,7 @@ dependencies = [
  "log",
  "serde_json",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
 ]
@@ -3338,6 +3340,7 @@ dependencies = [
  "async-trait",
  "log",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
  "zbus",
@@ -3353,6 +3356,7 @@ dependencies = [
  "log",
  "serde_json",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
  "zbus",
@@ -3367,6 +3371,7 @@ dependencies = [
  "log",
  "serde_json",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
 ]
@@ -3379,6 +3384,7 @@ dependencies = [
  "async-trait",
  "log",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
  "zbus",
@@ -3411,6 +3417,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
  "zbus",
@@ -3428,10 +3435,25 @@ dependencies = [
  "log",
  "serde",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
  "zbus",
  "zvariant",
+]
+
+[[package]]
+name = "waft-plugin-internal-apps"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "waft-plugin",
+ "waft-protocol",
 ]
 
 [[package]]
@@ -3446,6 +3468,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
  "zbus",
@@ -3461,6 +3484,7 @@ dependencies = [
  "log",
  "serde_json",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
  "zbus",
@@ -3479,6 +3503,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
 ]
@@ -3502,6 +3527,7 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "waft-config",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
  "zbus",
@@ -3519,6 +3545,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
 ]
@@ -3533,6 +3560,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
 ]
@@ -3546,6 +3574,7 @@ dependencies = [
  "log",
  "serde_json",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
  "zbus",
@@ -3582,6 +3611,7 @@ name = "waft-settings"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "clap",
  "env_logger",
  "flume",
  "glib 0.21.5",

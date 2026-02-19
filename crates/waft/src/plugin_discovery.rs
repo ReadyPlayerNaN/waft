@@ -14,9 +14,9 @@ use waft_protocol::PluginDescription;
 struct PluginManifestDescribed {
     entity_types: Vec<String>,
     #[serde(default)]
-    name: Option<String>,
+    name: String,
     #[serde(default)]
-    description: Option<String>,
+    description: String,
     #[serde(default)]
     plugin: Option<PluginDescription>,
 }
@@ -24,7 +24,7 @@ struct PluginManifestDescribed {
 struct DiscoveredPlugin {
     id: String,
     display_name: String,
-    description: Option<String>,
+    description: String,
     entity_types: Vec<String>,
     binary_path: PathBuf,
     plugin_description: Option<PluginDescription>,
@@ -36,7 +36,7 @@ struct PluginListEntry {
     id: String,
     name: String,
     entities: Vec<String>,
-    description: Option<String>,
+    description: String,
 }
 
 /// Cached mapping from entity type to plugin binary for on-demand spawning.
@@ -179,8 +179,7 @@ struct PluginDescribeOutput {
     id: String,
     name: String,
     binary: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
+    description: String,
     entity_types: Vec<PluginDescribeEntityType>,
 }
 
@@ -321,8 +320,8 @@ fn print_describe_text(plugin: &DiscoveredPlugin) {
     println!("Plugin: {} ({})", plugin.display_name, plugin.id);
     println!("Binary: {}", plugin.binary_path.display());
 
-    if let Some(ref desc) = plugin.description {
-        println!("{desc}");
+    if !plugin.description.is_empty() {
+        println!("{}", plugin.description);
     }
 
     match &plugin.plugin_description {
@@ -475,7 +474,11 @@ fn discover_plugins(dir: &PathBuf) -> Vec<DiscoveredPlugin> {
         .map(|(id, path)| {
             std::thread::spawn(move || {
                 let manifest = query_manifest_described(&path)?;
-                let display_name = manifest.name.unwrap_or_else(|| title_case(&id));
+                let display_name = if manifest.name.is_empty() {
+                    title_case(&id)
+                } else {
+                    manifest.name
+                };
                 Some(DiscoveredPlugin {
                     display_name,
                     description: manifest.description,
@@ -625,7 +628,7 @@ mod tests {
         let plugins = vec![DiscoveredPlugin {
             id: "sunsetr".to_string(),
             display_name: "Sunsetr".to_string(),
-            description: Some("Night light control".to_string()),
+            description: "Night light control".to_string(),
             entity_types: vec!["night-light".to_string()],
             binary_path: PathBuf::from("/usr/bin/waft-sunsetr-daemon"),
             plugin_description: None,
@@ -651,16 +654,16 @@ mod tests {
     }
 
     #[test]
-    fn json_output_null_description() {
+    fn json_output_empty_description() {
         let entry = PluginListEntry {
             id: "clock".to_string(),
             name: "Clock".to_string(),
             entities: vec!["clock".to_string()],
-            description: None,
+            description: String::new(),
         };
 
         let json = serde_json::to_value(&entry).unwrap();
-        assert!(json["description"].is_null());
+        assert_eq!(json["description"], "");
     }
 
     #[test]
@@ -668,7 +671,7 @@ mod tests {
         let json = r#"{"entity_types": ["clock"], "name": "Clock"}"#;
         let manifest: PluginManifestDescribed = serde_json::from_str(json).unwrap();
         assert_eq!(manifest.entity_types, vec!["clock"]);
-        assert_eq!(manifest.name, Some("Clock".to_string()));
+        assert_eq!(manifest.name, "Clock");
         assert!(manifest.plugin.is_none());
     }
 
@@ -733,7 +736,7 @@ mod tests {
         let plugin = DiscoveredPlugin {
             id: "clock".to_string(),
             display_name: "Clock".to_string(),
-            description: Some("Time display".to_string()),
+            description: "Time display".to_string(),
             entity_types: vec!["clock".to_string()],
             binary_path: PathBuf::from("/usr/bin/waft-clock-daemon"),
             plugin_description: Some(PluginDescription {
@@ -764,7 +767,7 @@ mod tests {
         assert_eq!(output.id, "clock");
         assert_eq!(output.name, "Clock");
         assert_eq!(output.binary, "/usr/bin/waft-clock-daemon");
-        assert_eq!(output.description, Some("Time display".to_string()));
+        assert_eq!(output.description, "Time display");
         assert_eq!(output.entity_types.len(), 1);
         assert_eq!(output.entity_types[0].name, "clock");
         assert_eq!(
@@ -788,7 +791,7 @@ mod tests {
         let plugin = DiscoveredPlugin {
             id: "sunsetr".to_string(),
             display_name: "Sunsetr".to_string(),
-            description: None,
+            description: String::new(),
             entity_types: vec!["night-light".to_string()],
             binary_path: PathBuf::from("/usr/bin/waft-sunsetr-daemon"),
             plugin_description: None,
@@ -805,7 +808,6 @@ mod tests {
         // Verify JSON serialization -- empty vecs are omitted, None is absent
         let json = serde_json::to_string(&output).unwrap();
         let val: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert!(!val.as_object().unwrap().contains_key("description"));
         assert!(
             !val["entity_types"][0]
                 .as_object()
@@ -827,7 +829,7 @@ mod tests {
         let plugin = DiscoveredPlugin {
             id: "audio".to_string(),
             display_name: "Audio".to_string(),
-            description: None,
+            description: String::new(),
             entity_types: vec!["audio-device".to_string()],
             binary_path: PathBuf::from("/usr/bin/waft-audio-daemon"),
             plugin_description: Some(PluginDescription {

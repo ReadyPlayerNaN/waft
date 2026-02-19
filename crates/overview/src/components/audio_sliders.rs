@@ -107,10 +107,10 @@ impl AudioSlidersComponent {
                         entry.widget.set_icon(&icon);
                         entry.widget.set_expandable(has_multiple);
 
-                        // Reconnect value_change and icon_click to the new default URN
+                        // Reconnect value_commit and icon_click to the new default URN
                         let urn_for_value = (*default_urn).clone();
                         let cb_value = cb.clone();
-                        entry.widget.connect_value_change(move |v| {
+                        entry.widget.connect_value_commit(move |v| {
                             cb_value(
                                 urn_for_value.clone(),
                                 "set-volume".to_string(),
@@ -145,10 +145,10 @@ impl AudioSlidersComponent {
                             Some(menu_store_ref.clone()),
                         ));
 
-                        // Wire value_change -> set-volume action
+                        // Wire value_commit -> set-volume action (fires on drag release)
                         let urn_for_value = (*default_urn).clone();
                         let cb_value = cb.clone();
-                        slider.connect_value_change(move |v| {
+                        slider.connect_value_commit(move |v| {
                             cb_value(
                                 urn_for_value.clone(),
                                 "set-volume".to_string(),

@@ -15,10 +15,24 @@
 //! id = "audio"
 //! ```
 
+use std::sync::OnceLock;
+
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
+use waft_i18n::I18n;
 use waft_plugin::*;
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            ("en-US", include_str!("../locales/en-US/audio.ftl")),
+            ("cs-CZ", include_str!("../locales/cs-CZ/audio.ftl")),
+        ])
+    })
+}
 
 use waft_plugin_audio::pactl::{self, AudioEvent, CardPortMap};
 
@@ -355,7 +369,12 @@ async fn monitor_events(
 }
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides(&[entity::audio::ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[entity::audio::ENTITY_TYPE],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

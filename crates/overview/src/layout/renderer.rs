@@ -20,6 +20,7 @@ use crate::components::calendar_grid::CalendarComponent;
 use crate::components::clock::ClockComponent;
 use crate::components::events::EventsComponent;
 use crate::components::keyboard_layout::KeyboardLayoutComponent;
+use crate::components::settings_button::SettingsButtonComponent;
 use crate::components::notification_list::NotificationsComponent;
 use crate::components::session_actions::SessionActionsComponent;
 use crate::components::system_actions::SystemActionsComponent;
@@ -260,6 +261,12 @@ fn render_component(
         }
         "KeyboardLayout" => {
             let c = KeyboardLayoutComponent::new(&ctx.store, &ctx.action_callback);
+            let w = c.widget();
+            keep.push(Box::new(c));
+            w
+        }
+        "SettingsButton" => {
+            let c = SettingsButtonComponent::new(&ctx.store, &ctx.action_callback);
             let w = c.widget();
             keep.push(Box::new(c));
             w

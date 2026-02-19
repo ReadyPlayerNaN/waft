@@ -12,9 +12,12 @@
 //! Requires: Niri compositor running, `NIRI_SOCKET` environment variable set,
 //! `niri` binary in PATH.
 
+use std::sync::OnceLock;
+
 use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
+use waft_i18n::I18n;
 use waft_plugin::*;
 use waft_plugin_niri::commands;
 use waft_plugin_niri::config::{self, KeyboardConfigMode};
@@ -26,6 +29,17 @@ use waft_protocol::entity::display::DisplayOutput;
 use waft_protocol::entity::keyboard::{
     CONFIG_ENTITY_TYPE, ENTITY_TYPE as KEYBOARD_ENTITY_TYPE,
 };
+
+static I18N: OnceLock<I18n> = OnceLock::new();
+
+fn i18n() -> &'static I18n {
+    I18N.get_or_init(|| {
+        I18n::new(&[
+            ("en-US", include_str!("../locales/en-US/niri.ftl")),
+            ("cs-CZ", include_str!("../locales/cs-CZ/niri.ftl")),
+        ])
+    })
+}
 
 struct NiriPlugin {
     state: Arc<StdMutex<NiriState>>,
@@ -377,11 +391,16 @@ impl Plugin for NiriPlugin {
 }
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides(&[
-        KEYBOARD_ENTITY_TYPE,
-        CONFIG_ENTITY_TYPE,
-        DisplayOutput::ENTITY_TYPE,
-    ]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[
+            KEYBOARD_ENTITY_TYPE,
+            CONFIG_ENTITY_TYPE,
+            DisplayOutput::ENTITY_TYPE,
+        ],
+        i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

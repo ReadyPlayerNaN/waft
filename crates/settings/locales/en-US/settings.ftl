@@ -3,6 +3,7 @@
 # Window & Navigation
 settings-title = Settings
 settings-window-title = Waft Settings
+search-placeholder = Search settings…
 
 # Sidebar categories
 sidebar-connectivity = Connectivity
@@ -16,6 +17,7 @@ sidebar-system = System
 settings-bluetooth = Bluetooth
 settings-wifi = WiFi
 settings-wired = Wired
+settings-appearance = Appearance
 settings-display = Display
 settings-notifications = Notifications
 settings-sounds = Sounds
@@ -109,6 +111,8 @@ display-rotation-270 = 270°
 display-flip = Flip
 display-flip-subtitle = Mirror display horizontally
 display-vrr = Variable Refresh Rate
+display-apply = Apply
+display-reset = Reset
 
 # Display -- Dark Mode Automation
 display-dark-mode-automation = Dark Mode Automation

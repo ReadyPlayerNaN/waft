@@ -1,3 +1,6 @@
+plugin-name = Počasí
+plugin-description = Informace o počasí z online API
+
 weather-placeholder = --
 weather-loading = Načítání...
 weather-failed-to-load = Chyba načítání

@@ -13,6 +13,11 @@ use crate::dbus_property::{
 };
 use crate::state::{NmState, VpnConnectionInfo, VpnState};
 
+/// Returns true if the NM connection type should be treated as a VPN.
+pub fn is_vpn_type(conn_type: &str) -> bool {
+    conn_type == "vpn" || conn_type == "wireguard"
+}
+
 /// A saved VPN connection profile.
 #[derive(Debug, Clone)]
 pub struct VpnProfileInfo {
@@ -51,7 +56,7 @@ pub async fn get_vpn_profiles(conn: &Connection) -> Result<Vec<VpnProfileInfo>> 
         if let Some(connection) = settings.get("connection")
             && let Some(conn_type) = connection.get("type")
             && let Ok(type_str) = String::try_from(conn_type.clone())
-            && type_str == "vpn"
+            && is_vpn_type(&type_str)
         {
             let name = connection
                 .get("id")
@@ -94,7 +99,7 @@ pub async fn get_active_vpn_connections(
                 Err(_) => continue,
             };
 
-        if conn_type != "vpn" {
+        if !is_vpn_type(&conn_type) {
             continue;
         }
 

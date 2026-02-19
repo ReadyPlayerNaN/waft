@@ -13,6 +13,7 @@ path = "bin/waft-sunsetr-daemon.rs"
 
 [dependencies]
 waft-plugin = { path = "../../crates/plugin" }
+waft-i18n = { path = "../../crates/i18n" }
 waft-protocol = { path = "../../crates/protocol" }
 anyhow = "1"
 dirs = "5"

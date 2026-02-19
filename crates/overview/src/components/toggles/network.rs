@@ -30,6 +30,8 @@ struct ToggleEntry {
     weight: i32,
     /// Tracks connected state for click handler closures that need fresh state.
     connected: Rc<Cell<bool>>,
+    /// Settings button for wired adapter menus (None for WiFi/VPN/Tethering).
+    settings_button: Option<gtk::Box>,
 }
 
 /// A single network row in the menu — either a plain box (WiFi/Ethernet)
@@ -73,6 +75,9 @@ pub struct NetworkManagerToggles {
     action_callback: EntityActionCallback,
     #[allow(dead_code)]
     menu_store: Rc<waft_core::menu_state::MenuStore>,
+    /// Whether the settings app entity is available.
+    #[allow(dead_code)]
+    settings_available: Rc<Cell<bool>>,
 }
 
 impl NetworkManagerToggles {
@@ -87,6 +92,8 @@ impl NetworkManagerToggles {
         rebuild_callback: Rc<dyn Fn()>,
     ) -> Self {
         let entries: Rc<RefCell<Vec<ToggleEntry>>> = Rc::new(RefCell::new(Vec::new()));
+        let settings_available: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        let settings_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
 
         // Subscribe to network adapter changes
         {
@@ -95,6 +102,8 @@ impl NetworkManagerToggles {
             let cb = action_callback.clone();
             let rebuild = rebuild_callback.clone();
             let menu_store_ref = menu_store.clone();
+            let settings_available_ref = settings_available.clone();
+            let settings_urn_ref = settings_urn.clone();
 
             store.subscribe_type(entity::network::ADAPTER_ENTITY_TYPE, move || {
                 let adapters: Vec<(Urn, entity::network::NetworkAdapter)> =
@@ -135,7 +144,11 @@ impl NetworkManagerToggles {
 
                         // Update IP info rows for wired adapters
                         if matches!(adapter.kind, entity::network::AdapterKind::Wired) {
-                            update_wired_info_rows(entry, adapter);
+                            update_wired_info_rows(
+                                entry,
+                                adapter,
+                                &settings_available_ref,
+                            );
                         }
                     } else {
                         // Create new toggle for this adapter
@@ -187,6 +200,22 @@ impl NetworkManagerToggles {
                             );
                         });
 
+                        // Create settings button for wired adapters
+                        let settings_button = if matches!(
+                            adapter.kind,
+                            entity::network::AdapterKind::Wired
+                        ) {
+                            let container = build_settings_button(
+                                &settings_available_ref,
+                                &settings_urn_ref,
+                                &cb,
+                            );
+                            menu.append(&container);
+                            Some(container)
+                        } else {
+                            None
+                        };
+
                         let entry = ToggleEntry {
                             urn_str,
                             toggle,
@@ -195,11 +224,16 @@ impl NetworkManagerToggles {
                             info_rows: RefCell::new(Vec::new()),
                             weight: 150,
                             connected,
+                            settings_button,
                         };
 
                         // Initialize IP info rows for wired adapters
                         if matches!(adapter.kind, entity::network::AdapterKind::Wired) {
-                            update_wired_info_rows(&entry, adapter);
+                            update_wired_info_rows(
+                                &entry,
+                                adapter,
+                                &settings_available_ref,
+                            );
                         }
 
                         entries_mut.push(entry);
@@ -229,10 +263,16 @@ impl NetworkManagerToggles {
             let entries_ref = entries.clone();
             let store_ref = store.clone();
             let cb = action_callback.clone();
+            let settings_available_ref = settings_available.clone();
             store.subscribe_type(
                 entity::network::ETHERNET_CONNECTION_ENTITY_TYPE,
                 move || {
-                    Self::update_ethernet_menus(&entries_ref, &store_ref, &cb);
+                    Self::update_ethernet_menus(
+                        &entries_ref,
+                        &store_ref,
+                        &cb,
+                        &settings_available_ref,
+                    );
                 },
             );
         }
@@ -356,6 +396,7 @@ impl NetworkManagerToggles {
                         info_rows: RefCell::new(Vec::new()),
                         weight: 160,
                         connected: Rc::new(Cell::new(any_active)),
+                        settings_button: None,
                     };
 
                     // Populate VPN menu rows
@@ -364,6 +405,43 @@ impl NetworkManagerToggles {
                     entries_mut.push(entry);
                     drop(entries_mut);
                     rebuild();
+                }
+            });
+        }
+
+        // Subscribe to app entity changes (for settings button visibility)
+        {
+            let entries_ref = entries.clone();
+            let settings_available_ref = settings_available.clone();
+            let settings_urn_ref = settings_urn.clone();
+            let store_ref = store.clone();
+
+            store.subscribe_type(entity::app::ENTITY_TYPE, move || {
+                let apps: Vec<(Urn, entity::app::App)> =
+                    store_ref.get_entities_typed(entity::app::ENTITY_TYPE);
+
+                let has_settings = !apps.is_empty();
+                let was_available = settings_available_ref.get();
+                settings_available_ref.set(has_settings);
+
+                // Store the first app entity's URN for action routing
+                *settings_urn_ref.borrow_mut() = apps.first().map(|(urn, _)| urn.clone());
+
+                // Update existing wired entries when availability changes
+                if has_settings != was_available {
+                    let entries = entries_ref.borrow();
+                    for entry in entries.iter() {
+                        if let Some(ref btn_container) = entry.settings_button {
+                            btn_container.set_visible(has_settings);
+
+                            // Re-evaluate expandable state
+                            let has_info = !entry.info_rows.borrow().is_empty();
+                            let has_profiles = entry.network_rows.borrow().len() >= 2;
+                            entry
+                                .toggle
+                                .set_expandable(has_info || has_profiles || has_settings);
+                        }
+                    }
                 }
             });
         }
@@ -386,6 +464,7 @@ impl NetworkManagerToggles {
             store: store.clone(),
             action_callback: action_callback.clone(),
             menu_store: menu_store.clone(),
+            settings_available,
         }
     }
 
@@ -602,6 +681,7 @@ impl NetworkManagerToggles {
         entries: &Rc<RefCell<Vec<ToggleEntry>>>,
         store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
+        settings_available: &Rc<Cell<bool>>,
     ) {
         let connections: Vec<(Urn, entity::network::EthernetConnection)> =
             store.get_entities_typed(entity::network::ETHERNET_CONNECTION_ENTITY_TYPE);
@@ -632,11 +712,15 @@ impl NetworkManagerToggles {
                 for row in network_rows.drain(..) {
                     row.remove_from(&entry.menu);
                 }
-                // Don't change expandable here - info rows may still warrant it
-                return;
+                // Re-evaluate expandable: info rows or settings button may still warrant it
+                let has_info = !entry.info_rows.borrow().is_empty();
+                if !has_info && !settings_available.get() {
+                    entry.toggle.set_expandable(false);
+                }
+                continue;
             }
 
-            // Update expandable - IP info rows or profiles should show menu
+            // Update expandable - IP info rows, profiles, or settings button should show menu
             entry.toggle.set_expandable(true);
 
             // Remove rows for connections that no longer exist
@@ -707,6 +791,11 @@ impl NetworkManagerToggles {
                     urn_str: conn_urn_str,
                     root: row_box,
                 });
+            }
+
+            // Re-append settings button to keep it last in the menu
+            if let Some(ref btn_container) = entry.settings_button {
+                entry.menu.reorder_child_after(btn_container, entry.menu.last_child().as_ref());
             }
         }
     }
@@ -847,7 +936,11 @@ fn adapter_title(adapter: &entity::network::NetworkAdapter) -> String {
 }
 
 /// Update IP info rows in a wired adapter's menu.
-fn update_wired_info_rows(entry: &ToggleEntry, adapter: &entity::network::NetworkAdapter) {
+fn update_wired_info_rows(
+    entry: &ToggleEntry,
+    adapter: &entity::network::NetworkAdapter,
+    settings_available: &Rc<Cell<bool>>,
+) {
     let mut info_rows = entry.info_rows.borrow_mut();
 
     // Remove old info rows
@@ -860,9 +953,9 @@ fn update_wired_info_rows(entry: &ToggleEntry, adapter: &entity::network::Networ
         Some(ip) if adapter.connected => ip,
         _ => {
             // Don't unconditionally set expandable to false — ethernet profiles
-            // or other content may still require the menu to be expandable.
+            // or settings button may still require the menu to be expandable.
             let has_profiles = entry.network_rows.borrow().len() >= 2;
-            if !has_profiles {
+            if !has_profiles && !settings_available.get() {
                 entry.toggle.set_expandable(false);
             }
             return;
@@ -889,6 +982,13 @@ fn update_wired_info_rows(entry: &ToggleEntry, adapter: &entity::network::Networ
     let public_row = build_info_row("Public IP", public_text);
     entry.menu.append(&public_row);
     info_rows.push(public_row);
+
+    // Re-append settings button to keep it last in the menu
+    if let Some(ref btn_container) = entry.settings_button {
+        entry
+            .menu
+            .reorder_child_after(btn_container, entry.menu.last_child().as_ref());
+    }
 }
 
 /// Build a non-interactive info label row for the menu.
@@ -914,4 +1014,62 @@ fn build_info_row(label: &str, value: &str) -> gtk::Box {
     row.append(&value_widget);
 
     row
+}
+
+/// Build a settings button container (separator + button) for wired adapter menus.
+///
+/// Returns a vertical `gtk::Box` containing a separator and a button row.
+/// Visibility is controlled by `settings_available`.
+fn build_settings_button(
+    settings_available: &Rc<Cell<bool>>,
+    settings_urn: &Rc<RefCell<Option<Urn>>>,
+    action_callback: &EntityActionCallback,
+) -> gtk::Box {
+    let container = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(0)
+        .visible(settings_available.get())
+        .build();
+
+    let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+    container.append(&separator);
+
+    let button = gtk::Button::builder()
+        .css_classes(["menu-row", "flat"])
+        .build();
+
+    let button_content = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(12)
+        .build();
+
+    let icon = IconWidget::from_name("emblem-system-symbolic", 24);
+    button_content.append(icon.widget());
+
+    let label = gtk::Label::builder()
+        .label(crate::i18n::t("wired-settings-button"))
+        .hexpand(true)
+        .xalign(0.0)
+        .build();
+    button_content.append(&label);
+
+    let chevron = IconWidget::from_name("go-next-symbolic", 16);
+    button_content.append(chevron.widget());
+
+    button.set_child(Some(&button_content));
+
+    let settings_urn_ref = settings_urn.clone();
+    let cb = action_callback.clone();
+    button.connect_clicked(move |_| {
+        if let Some(ref urn) = *settings_urn_ref.borrow() {
+            cb(
+                urn.clone(),
+                "open-page".to_string(),
+                serde_json::json!({ "page": "wired" }),
+            );
+        }
+    });
+
+    container.append(&button);
+    container
 }

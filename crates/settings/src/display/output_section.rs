@@ -6,10 +6,14 @@
 //! - Connection type and physical size (read-only)
 //! - Resolution selector (distinct resolutions)
 //! - Refresh rate selector (filtered by selected resolution)
-//! - Scale input (0.25 increments)
+//! - Scale input (SpinRow with 0.05 step + slider snapping to 0.5 steps)
 //! - Rotation selector
 //! - Flip toggle
 //! - VRR toggle (if supported)
+//!
+//! All mutable changes are buffered in `PendingOutputChanges` per output URN.
+//! Changes are only sent to the daemon when the user clicks Apply.
+//! Reset discards pending changes and re-reconciles from entity store.
 
 use std::cell::Cell;
 use std::cell::RefCell;
@@ -19,15 +23,46 @@ use std::rc::Rc;
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
-use crate::i18n::{t, t_args};
+use crate::i18n::t;
+use crate::i18n::t_args;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{
     DISPLAY_OUTPUT_ENTITY_TYPE, DisplayMode, DisplayOutput, DisplayTransform,
 };
 
+/// Pending (uncommitted) display output changes for one URN.
+#[derive(Default)]
+struct PendingOutputChanges {
+    /// New mode index to apply (from resolution or refresh rate change).
+    mode_index: Option<usize>,
+    /// New scale value.
+    scale: Option<f64>,
+    /// New transform (combines rotation + flip).
+    transform: Option<DisplayTransform>,
+    /// New VRR state.
+    vrr: Option<bool>,
+    /// New enabled state.
+    enabled: Option<bool>,
+}
+
+impl PendingOutputChanges {
+    fn dirty(&self) -> bool {
+        self.mode_index.is_some()
+            || self.scale.is_some()
+            || self.transform.is_some()
+            || self.vrr.is_some()
+            || self.enabled.is_some()
+    }
+}
+
 /// Smart container for display output settings.
 pub struct OutputSection {
     pub root: gtk::Box,
+    pending: Rc<RefCell<HashMap<String, PendingOutputChanges>>>,
+    entity_store: Rc<EntityStore>,
+    outputs: Rc<RefCell<HashMap<String, OutputGroupWidgets>>>,
+    apply_button: gtk::Button,
+    reset_button: gtk::Button,
 }
 
 struct OutputGroupWidgets {
@@ -38,6 +73,10 @@ struct OutputGroupWidgets {
     resolution_row: adw::ComboRow,
     refresh_rate_row: adw::ComboRow,
     scale_row: adw::SpinRow,
+    #[allow(dead_code)] // Kept for ownership; updates via shared adjustment
+    scale_slider: gtk::Scale,
+    #[allow(dead_code)] // Kept for ownership; shared between SpinRow and Scale
+    scale_adjustment: gtk::Adjustment,
     rotation_row: adw::ComboRow,
     flip_row: adw::SwitchRow,
     vrr_row: adw::SwitchRow,
@@ -132,6 +171,11 @@ fn rotation_labels() -> Vec<String> {
     ]
 }
 
+/// Check if any output has pending changes.
+fn any_dirty(pending: &HashMap<String, PendingOutputChanges>) -> bool {
+    pending.values().any(|p| p.dirty())
+}
+
 impl OutputSection {
     pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
         let root = gtk::Box::builder()
@@ -142,27 +186,120 @@ impl OutputSection {
 
         let outputs: Rc<RefCell<HashMap<String, OutputGroupWidgets>>> =
             Rc::new(RefCell::new(HashMap::new()));
+        let pending: Rc<RefCell<HashMap<String, PendingOutputChanges>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+
+        // --- Apply / Reset buttons ---
+        let button_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(12)
+            .halign(gtk::Align::End)
+            .build();
+
+        let reset_button = gtk::Button::builder()
+            .label(t("display-reset"))
+            .css_classes(["destructive-action"])
+            .sensitive(false)
+            .build();
+
+        let apply_button = gtk::Button::builder()
+            .label(t("display-apply"))
+            .css_classes(["suggested-action"])
+            .sensitive(false)
+            .build();
+
+        button_box.append(&reset_button);
+        button_box.append(&apply_button);
+
+        let button_group = adw::PreferencesGroup::new();
+        button_group.add(&button_box);
+        // button_group is appended after all output groups; we add it at the end
+        // We use a separate container approach -- the button group is always last in root
+
+        // We'll append button_group to root. Output groups are also appended to root.
+        // To ensure button_group is always at the bottom, we append it now and insert
+        // output groups before it. Actually, let's just append it last and manage ordering.
+        // Since we only add output groups via root.append, and button_group is appended once,
+        // new output groups will appear before button_group only if we insert them before.
+        // GTK Box doesn't support insert_before easily. Instead, let's use a content_box
+        // for output groups and put button_group after it.
+
+        let content_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(24)
+            .build();
+        root.append(&content_box);
+        root.append(&button_group);
+
+        // Wire Apply button
+        {
+            let pending_ref = pending.clone();
+            let outputs_ref = outputs.clone();
+            let cb = action_callback.clone();
+            let store = entity_store.clone();
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
+            apply_button.connect_clicked(move |btn| {
+                Self::apply_all(&pending_ref, &outputs_ref, &cb, &store);
+                apply_btn.set_sensitive(false);
+                reset_btn.set_sensitive(false);
+                btn.grab_focus();
+            });
+        }
+
+        // Wire Reset button
+        {
+            let pending_ref = pending.clone();
+            let outputs_ref = outputs.clone();
+            let store = entity_store.clone();
+            let content_ref = content_box.clone();
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
+            let root_ref = root.clone();
+            let apply_for_reconcile = apply_button.clone();
+            let reset_for_reconcile = reset_button.clone();
+            reset_button.connect_clicked(move |btn| {
+                pending_ref.borrow_mut().clear();
+                apply_btn.set_sensitive(false);
+                reset_btn.set_sensitive(false);
+                let entities: Vec<(Urn, DisplayOutput)> =
+                    store.get_entities_typed(DISPLAY_OUTPUT_ENTITY_TYPE);
+                Self::reconcile(&outputs_ref, &content_ref, &entities, &pending_ref, &apply_for_reconcile, &reset_for_reconcile);
+                root_ref.set_visible(!entities.is_empty());
+                btn.grab_focus();
+            });
+        }
 
         // Subscribe to display-output entities
         {
             let store = entity_store.clone();
-            let cb = action_callback.clone();
-            let root_ref = root.clone();
+            let content_ref = content_box.clone();
             let outputs_ref = outputs.clone();
+            let pending_ref = pending.clone();
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
+            let root_ref = root.clone();
 
             entity_store.subscribe_type(DISPLAY_OUTPUT_ENTITY_TYPE, move || {
                 let entities: Vec<(Urn, DisplayOutput)> =
                     store.get_entities_typed(DISPLAY_OUTPUT_ENTITY_TYPE);
-                Self::reconcile(&outputs_ref, &root_ref, &entities, &cb);
+                Self::reconcile(&outputs_ref, &content_ref, &entities, &pending_ref, &apply_btn, &reset_btn);
+                root_ref.set_visible(!entities.is_empty());
+                let is_dirty = any_dirty(&pending_ref.borrow());
+                apply_btn.set_sensitive(is_dirty);
+                reset_btn.set_sensitive(is_dirty);
             });
         }
 
         // Initial reconciliation for cached entities
         {
             let store = entity_store.clone();
-            let cb = action_callback.clone();
+            let content_ref = content_box;
+            let outputs_ref = outputs.clone();
+            let pending_ref = pending.clone();
             let root_ref = root.clone();
-            let outputs_ref = outputs;
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
 
             gtk::glib::idle_add_local_once(move || {
                 let entities: Vec<(Urn, DisplayOutput)> =
@@ -172,39 +309,87 @@ impl OutputSection {
                         "[output-section] Initial reconciliation: {} outputs",
                         entities.len()
                     );
-                    Self::reconcile(&outputs_ref, &root_ref, &entities, &cb);
+                    Self::reconcile(&outputs_ref, &content_ref, &entities, &pending_ref, &apply_btn, &reset_btn);
+                    root_ref.set_visible(true);
                 }
             });
         }
 
-        Self { root }
+        Self {
+            root,
+            pending,
+            entity_store: entity_store.clone(),
+            outputs,
+            apply_button,
+            reset_button,
+        }
+    }
+
+    /// Discard all pending changes and re-reconcile from entity store.
+    pub fn reset(&self) {
+        self.pending.borrow_mut().clear();
+        self.apply_button.set_sensitive(false);
+        self.reset_button.set_sensitive(false);
+
+        let entities: Vec<(Urn, DisplayOutput)> =
+            self.entity_store.get_entities_typed(DISPLAY_OUTPUT_ENTITY_TYPE);
+
+        // The content_box is the first child of root.
+        if let Some(content_box) = self.root.first_child()
+            && let Ok(content) = content_box.downcast::<gtk::Box>()
+        {
+            Self::reconcile(
+                &self.outputs,
+                &content,
+                &entities,
+                &self.pending,
+                &self.apply_button,
+                &self.reset_button,
+            );
+        }
     }
 
     fn reconcile(
         outputs_map: &Rc<RefCell<HashMap<String, OutputGroupWidgets>>>,
-        root: &gtk::Box,
+        content_box: &gtk::Box,
         entities: &[(Urn, DisplayOutput)],
-        action_callback: &EntityActionCallback,
+        pending: &Rc<RefCell<HashMap<String, PendingOutputChanges>>>,
+        apply_button: &gtk::Button,
+        reset_button: &gtk::Button,
     ) {
         let mut map = outputs_map.borrow_mut();
         let mut seen = HashSet::new();
+        let pending_map = pending.borrow();
 
         // Count enabled outputs for at-least-one-active enforcement
-        let enabled_count = entities.iter().filter(|(_, o)| o.enabled).count();
+        // Take pending enabled state into account
+        let enabled_count = entities
+            .iter()
+            .filter(|(urn, o)| {
+                let urn_str = urn.as_str().to_string();
+                if let Some(p) = pending_map.get(&urn_str) {
+                    p.enabled.unwrap_or(o.enabled)
+                } else {
+                    o.enabled
+                }
+            })
+            .count();
 
         for (urn, output) in entities {
             let urn_str = urn.as_str().to_string();
             seen.insert(urn_str.clone());
 
+            let output_pending = pending_map.get(&urn_str);
+
             if let Some(existing) = map.get(&urn_str) {
-                Self::update_output_group(existing, output, enabled_count);
+                Self::update_output_group(existing, output, enabled_count, output_pending);
             } else {
-                let widgets = Self::create_output_group(urn, output, action_callback);
+                let widgets = Self::create_output_group(urn, output, pending, apply_button, reset_button);
                 // Set enable switch sensitivity based on at-least-one-active rule
                 if output.enabled && enabled_count <= 1 {
                     widgets.enable_row.set_sensitive(false);
                 }
-                root.append(&widgets.group);
+                content_box.append(&widgets.group);
                 map.insert(urn_str, widgets);
             }
         }
@@ -217,32 +402,36 @@ impl OutputSection {
             .collect();
         for key in to_remove {
             if let Some(widgets) = map.remove(&key) {
-                root.remove(&widgets.group);
+                content_box.remove(&widgets.group);
             }
         }
-
-        root.set_visible(!map.is_empty());
     }
 
     fn update_output_group(
         widgets: &OutputGroupWidgets,
         output: &DisplayOutput,
         enabled_count: usize,
+        pending: Option<&PendingOutputChanges>,
     ) {
         widgets.updating.set(true);
 
-        // Title & description
+        // Title & description (always update -- read-only)
         widgets.group.set_title(&display_title(output));
         widgets
             .group
             .set_description(Some(&t_args("display-output-name", &[("name", &output.name)])));
 
-        // Enable/disable
-        widgets.enable_row.set_active(output.enabled);
+        // Enable/disable -- skip if pending
+        if pending.and_then(|p| p.enabled).is_none() {
+            widgets.enable_row.set_active(output.enabled);
+        }
         // Desensitize if this is the last active output
+        let effective_enabled = pending
+            .and_then(|p| p.enabled)
+            .unwrap_or(output.enabled);
         widgets
             .enable_row
-            .set_sensitive(!(output.enabled && enabled_count <= 1));
+            .set_sensitive(!(effective_enabled && enabled_count <= 1));
 
         // Read-only fields
         widgets
@@ -260,73 +449,81 @@ impl OutputSection {
             }
         }
 
-        // Resolution + refresh rate
+        // Resolution + refresh rate -- skip if pending mode_index
         let resolutions = distinct_resolutions(&output.available_modes);
         let rate_indices = build_rate_mode_indices(&output.available_modes, &resolutions);
 
-        // Find which resolution matches current mode
-        let current_res_idx = resolutions
-            .iter()
-            .position(|&(w, h)| {
-                w == output.current_mode.width && h == output.current_mode.height
-            })
-            .unwrap_or(0);
-
-        // Update resolution combo
-        let res_strings: Vec<String> = resolutions
-            .iter()
-            .map(|&(w, h)| format_resolution(w, h))
-            .collect();
-        let res_str_refs: Vec<&str> = res_strings.iter().map(|s| s.as_str()).collect();
-        let res_list = gtk::StringList::new(&res_str_refs);
-        widgets.resolution_row.set_model(Some(&res_list));
-        widgets
-            .resolution_row
-            .set_selected(current_res_idx as u32);
-
-        // Update refresh rate combo for current resolution
-        if let Some(&(w, h)) = resolutions.get(current_res_idx) {
-            let rates = rates_for_resolution(&output.available_modes, w, h);
-            let rate_strings: Vec<String> = rates
+        if pending.and_then(|p| p.mode_index).is_none() {
+            // Find which resolution matches current mode
+            let current_res_idx = resolutions
                 .iter()
-                .map(|&(idx, rate)| {
-                    let preferred = output
-                        .available_modes
-                        .get(idx)
-                        .map(|m| m.preferred)
-                        .unwrap_or(false);
-                    format_refresh_rate(rate, preferred)
+                .position(|&(w, h)| {
+                    w == output.current_mode.width && h == output.current_mode.height
                 })
-                .collect();
-            let rate_str_refs: Vec<&str> = rate_strings.iter().map(|s| s.as_str()).collect();
-            let rate_list = gtk::StringList::new(&rate_str_refs);
-            widgets.refresh_rate_row.set_model(Some(&rate_list));
-
-            // Find which rate matches current mode
-            let current_rate_idx = rates
-                .iter()
-                .position(|&(_, rate)| (rate - output.current_mode.refresh_rate).abs() < 0.01)
                 .unwrap_or(0);
+
+            // Update resolution combo
+            let res_strings: Vec<String> = resolutions
+                .iter()
+                .map(|&(w, h)| format_resolution(w, h))
+                .collect();
+            let res_str_refs: Vec<&str> = res_strings.iter().map(|s| s.as_str()).collect();
+            let res_list = gtk::StringList::new(&res_str_refs);
+            widgets.resolution_row.set_model(Some(&res_list));
             widgets
-                .refresh_rate_row
-                .set_selected(current_rate_idx as u32);
+                .resolution_row
+                .set_selected(current_res_idx as u32);
+
+            // Update refresh rate combo for current resolution
+            if let Some(&(w, h)) = resolutions.get(current_res_idx) {
+                let rates = rates_for_resolution(&output.available_modes, w, h);
+                let rate_strings: Vec<String> = rates
+                    .iter()
+                    .map(|&(idx, rate)| {
+                        let preferred = output
+                            .available_modes
+                            .get(idx)
+                            .map(|m| m.preferred)
+                            .unwrap_or(false);
+                        format_refresh_rate(rate, preferred)
+                    })
+                    .collect();
+                let rate_str_refs: Vec<&str> = rate_strings.iter().map(|s| s.as_str()).collect();
+                let rate_list = gtk::StringList::new(&rate_str_refs);
+                widgets.refresh_rate_row.set_model(Some(&rate_list));
+
+                // Find which rate matches current mode
+                let current_rate_idx = rates
+                    .iter()
+                    .position(|&(_, rate)| (rate - output.current_mode.refresh_rate).abs() < 0.01)
+                    .unwrap_or(0);
+                widgets
+                    .refresh_rate_row
+                    .set_selected(current_rate_idx as u32);
+            }
         }
 
-        // Store cached data
+        // Store cached data (always update -- needed for local resolution/rate switching)
         *widgets.resolutions.borrow_mut() = resolutions;
         *widgets.rate_mode_indices.borrow_mut() = rate_indices;
 
-        // Scale
-        widgets.scale_row.set_value(output.scale);
+        // Scale -- skip if pending
+        if pending.and_then(|p| p.scale).is_none() {
+            widgets.scale_row.set_value(output.scale);
+        }
 
-        // Rotation + flip
-        let (rotation_idx, flipped) = output.transform.decompose();
-        widgets.rotation_row.set_selected(rotation_idx as u32);
-        widgets.flip_row.set_active(flipped);
+        // Rotation + flip -- skip if pending transform
+        if pending.and_then(|p| p.transform).is_none() {
+            let (rotation_idx, flipped) = output.transform.decompose();
+            widgets.rotation_row.set_selected(rotation_idx as u32);
+            widgets.flip_row.set_active(flipped);
+        }
 
         // VRR
         widgets.vrr_row.set_visible(output.vrr_supported);
-        widgets.vrr_row.set_active(output.vrr_enabled);
+        if pending.and_then(|p| p.vrr).is_none() {
+            widgets.vrr_row.set_active(output.vrr_enabled);
+        }
 
         widgets.updating.set(false);
     }
@@ -334,7 +531,9 @@ impl OutputSection {
     fn create_output_group(
         urn: &Urn,
         output: &DisplayOutput,
-        action_callback: &EntityActionCallback,
+        pending: &Rc<RefCell<HashMap<String, PendingOutputChanges>>>,
+        apply_button: &gtk::Button,
+        reset_button: &gtk::Button,
     ) -> OutputGroupWidgets {
         let group = adw::PreferencesGroup::builder()
             .title(display_title(output))
@@ -355,18 +554,21 @@ impl OutputSection {
         group.add(&enable_row);
 
         {
-            let urn_clone = urn.clone();
-            let cb = action_callback.clone();
+            let urn_str = urn.as_str().to_string();
+            let pending_ref = pending.clone();
             let guard = updating.clone();
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
             enable_row.connect_active_notify(move |row| {
                 if guard.get() {
                     return;
                 }
-                cb(
-                    urn_clone.clone(),
-                    "set-enabled".to_string(),
-                    serde_json::json!({ "value": row.is_active() }),
-                );
+                let mut map = pending_ref.borrow_mut();
+                let entry = map.entry(urn_str.clone()).or_default();
+                entry.enabled = Some(row.is_active());
+                drop(map);
+                apply_btn.set_sensitive(true);
+                reset_btn.set_sensitive(true);
             });
         }
 
@@ -445,15 +647,17 @@ impl OutputSection {
         *resolutions_rc.borrow_mut() = resolutions;
         *rate_mode_indices_rc.borrow_mut() = rate_indices;
 
-        // Wire resolution change -> rebuild refresh rate dropdown
+        // Wire resolution change -> rebuild refresh rate dropdown locally + set pending mode
         {
-            let urn_clone = urn.clone();
-            let cb = action_callback.clone();
+            let urn_str = urn.as_str().to_string();
+            let pending_ref = pending.clone();
             let guard = updating.clone();
             let rate_row = refresh_rate_row.clone();
             let res_rc = resolutions_rc.clone();
             let rate_idx_rc = rate_mode_indices_rc.clone();
             let guard_inner = updating.clone();
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
 
             resolution_row.connect_selected_notify(move |row| {
                 if guard.get() {
@@ -464,38 +668,26 @@ impl OutputSection {
                 let rate_indices = rate_idx_rc.borrow();
 
                 if let Some(&(w, h)) = resolutions.get(selected) {
-                    // We need the modes to get rate values; reconstruct from rate_indices
-                    // For now, use the mode indices to build rate strings
-                    // We'll fire set-mode when refresh rate is selected
                     if let Some(mode_indices) = rate_indices.get(selected) {
-                        // Build rate labels from mode indices - we need the actual rates
-                        // Since we only have indices, we let the refresh rate callback handle set-mode
-                        // For the label, use the resolution to find rates
-                        // This is simplified: rebuild the rate combo from stored data
-
                         guard_inner.set(true);
 
-                        // We need to build rate strings. Since we don't have modes stored,
-                        // we fire set-mode with the first (highest) rate for the new resolution.
                         let rate_list = gtk::StringList::new(&[]);
-                        // We don't have the actual rate values here; we need them
-                        // The rate_mode_indices only stores mode indices.
-                        // We'll rebuild by looking at the rate combo options:
-                        // Actually, we need to store modes reference. Let's use a different approach:
-                        // Fire set-mode for the first mode at this resolution (preferred or highest rate).
                         if let Some(&first_mode_idx) = mode_indices.first() {
-                            // Set a placeholder; the entity update from daemon will reconcile
+                            // Set a placeholder; the rate dropdown will be fully rebuilt
+                            // when the entity update arrives after Apply
                             rate_list.append(&format!("{}\u{00D7}{}", w, h));
                             rate_row.set_model(Some(&rate_list));
                             rate_row.set_selected(0);
 
                             guard_inner.set(false);
 
-                            cb(
-                                urn_clone.clone(),
-                                "set-mode".to_string(),
-                                serde_json::json!({ "mode_index": first_mode_idx }),
-                            );
+                            // Buffer pending mode change
+                            let mut map = pending_ref.borrow_mut();
+                            let entry = map.entry(urn_str.clone()).or_default();
+                            entry.mode_index = Some(first_mode_idx);
+                            drop(map);
+                            apply_btn.set_sensitive(true);
+                            reset_btn.set_sensitive(true);
                             return;
                         }
                     }
@@ -504,13 +696,15 @@ impl OutputSection {
             });
         }
 
-        // Wire refresh rate change -> fire set-mode
+        // Wire refresh rate change -> set pending mode
         {
-            let urn_clone = urn.clone();
-            let cb = action_callback.clone();
+            let urn_str = urn.as_str().to_string();
+            let pending_ref = pending.clone();
             let guard = updating.clone();
             let res_row = resolution_row.clone();
             let rate_idx_rc = rate_mode_indices_rc.clone();
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
 
             refresh_rate_row.connect_selected_notify(move |row| {
                 if guard.get() {
@@ -523,45 +717,79 @@ impl OutputSection {
                 if let Some(modes_for_res) = rate_indices.get(res_selected)
                     && let Some(&mode_idx) = modes_for_res.get(rate_selected)
                 {
-                    cb(
-                        urn_clone.clone(),
-                        "set-mode".to_string(),
-                        serde_json::json!({ "mode_index": mode_idx }),
-                    );
+                    let mut map = pending_ref.borrow_mut();
+                    let entry = map.entry(urn_str.clone()).or_default();
+                    entry.mode_index = Some(mode_idx);
+                    drop(map);
+                    apply_btn.set_sensitive(true);
+                    reset_btn.set_sensitive(true);
                 }
             });
         }
 
         // --- Scale ---
-        let adjustment = gtk::Adjustment::new(
+        let scale_adjustment = gtk::Adjustment::new(
             output.scale,
-            0.25, // min
+            0.5,  // min
             4.0,  // max
-            0.25, // step
+            0.05, // step
             0.5,  // page
             0.0,  // page_size
         );
         let scale_row = adw::SpinRow::builder()
             .title(t("display-scale"))
-            .adjustment(&adjustment)
+            .adjustment(&scale_adjustment)
             .digits(2)
             .build();
         group.add(&scale_row);
 
+        let scale_slider = gtk::Scale::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .adjustment(&scale_adjustment)
+            .hexpand(true)
+            .draw_value(false)
+            .build();
+
+        // Add marks at 0.5 intervals for visual snap targets
+        let mut mark = 0.5;
+        while mark <= 4.0 {
+            scale_slider.add_mark(mark, gtk::PositionType::Bottom, None::<&str>);
+            mark += 0.5;
+        }
+
+        // Snap slider drag to nearest 0.5
         {
-            let urn_clone = urn.clone();
-            let cb = action_callback.clone();
+            let adj = scale_adjustment.clone();
+            scale_slider.connect_change_value(move |_scale, _scroll_type, value| {
+                let snapped = (value * 2.0).round() / 2.0;
+                let clamped = snapped.clamp(0.5, 4.0);
+                adj.set_value(clamped);
+                gtk::glib::Propagation::Stop
+            });
+        }
+
+        let scale_slider_row = adw::ActionRow::new();
+        scale_slider_row.add_suffix(&scale_slider);
+        group.add(&scale_slider_row);
+
+        // Buffer scale changes into pending state
+        {
+            let urn_str = urn.as_str().to_string();
+            let pending_ref = pending.clone();
             let guard = updating.clone();
-            scale_row.connect_value_notify(move |row| {
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
+            scale_adjustment.connect_value_changed(move |adj| {
                 if guard.get() {
                     return;
                 }
-                let value = row.value();
-                cb(
-                    urn_clone.clone(),
-                    "set-scale".to_string(),
-                    serde_json::json!({ "value": value }),
-                );
+                let value = adj.value();
+                let mut map = pending_ref.borrow_mut();
+                let entry = map.entry(urn_str.clone()).or_default();
+                entry.scale = Some(value);
+                drop(map);
+                apply_btn.set_sensitive(true);
+                reset_btn.set_sensitive(true);
             });
         }
 
@@ -586,12 +814,14 @@ impl OutputSection {
             .build();
         group.add(&flip_row);
 
-        // Wire rotation change -> compose transform and fire set-transform
+        // Wire rotation change -> buffer pending transform
         {
-            let urn_clone = urn.clone();
-            let cb = action_callback.clone();
+            let urn_str = urn.as_str().to_string();
+            let pending_ref = pending.clone();
             let guard = updating.clone();
             let flip_ref = flip_row.clone();
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
             rotation_row.connect_selected_notify(move |row| {
                 if guard.get() {
                     return;
@@ -599,20 +829,23 @@ impl OutputSection {
                 let rot = row.selected() as usize;
                 let flip = flip_ref.is_active();
                 let transform = DisplayTransform::compose(rot, flip);
-                cb(
-                    urn_clone.clone(),
-                    "set-transform".to_string(),
-                    serde_json::json!({ "value": transform }),
-                );
+                let mut map = pending_ref.borrow_mut();
+                let entry = map.entry(urn_str.clone()).or_default();
+                entry.transform = Some(transform);
+                drop(map);
+                apply_btn.set_sensitive(true);
+                reset_btn.set_sensitive(true);
             });
         }
 
-        // Wire flip change -> compose transform and fire set-transform
+        // Wire flip change -> buffer pending transform
         {
-            let urn_clone = urn.clone();
-            let cb = action_callback.clone();
+            let urn_str = urn.as_str().to_string();
+            let pending_ref = pending.clone();
             let guard = updating.clone();
             let rot_ref = rotation_row.clone();
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
             flip_row.connect_active_notify(move |row| {
                 if guard.get() {
                     return;
@@ -620,11 +853,12 @@ impl OutputSection {
                 let rot = rot_ref.selected() as usize;
                 let flip = row.is_active();
                 let transform = DisplayTransform::compose(rot, flip);
-                cb(
-                    urn_clone.clone(),
-                    "set-transform".to_string(),
-                    serde_json::json!({ "value": transform }),
-                );
+                let mut map = pending_ref.borrow_mut();
+                let entry = map.entry(urn_str.clone()).or_default();
+                entry.transform = Some(transform);
+                drop(map);
+                apply_btn.set_sensitive(true);
+                reset_btn.set_sensitive(true);
             });
         }
 
@@ -637,18 +871,21 @@ impl OutputSection {
         group.add(&vrr_row);
 
         {
-            let urn_clone = urn.clone();
-            let cb = action_callback.clone();
+            let urn_str = urn.as_str().to_string();
+            let pending_ref = pending.clone();
             let guard = updating.clone();
-            vrr_row.connect_active_notify(move |_row| {
+            let apply_btn = apply_button.clone();
+            let reset_btn = reset_button.clone();
+            vrr_row.connect_active_notify(move |row| {
                 if guard.get() {
                     return;
                 }
-                cb(
-                    urn_clone.clone(),
-                    "toggle-vrr".to_string(),
-                    serde_json::Value::Null,
-                );
+                let mut map = pending_ref.borrow_mut();
+                let entry = map.entry(urn_str.clone()).or_default();
+                entry.vrr = Some(row.is_active());
+                drop(map);
+                apply_btn.set_sensitive(true);
+                reset_btn.set_sensitive(true);
             });
         }
 
@@ -660,12 +897,95 @@ impl OutputSection {
             resolution_row,
             refresh_rate_row,
             scale_row,
+            scale_slider,
+            scale_adjustment,
             rotation_row,
             flip_row,
             vrr_row,
             updating,
             resolutions: resolutions_rc,
             rate_mode_indices: rate_mode_indices_rc,
+        }
+    }
+
+    /// Apply all pending changes by firing entity actions, then clear pending state.
+    fn apply_all(
+        pending: &Rc<RefCell<HashMap<String, PendingOutputChanges>>>,
+        outputs: &Rc<RefCell<HashMap<String, OutputGroupWidgets>>>,
+        action_callback: &EntityActionCallback,
+        entity_store: &Rc<EntityStore>,
+    ) {
+        let mut pending_map = pending.borrow_mut();
+        let entities: Vec<(Urn, DisplayOutput)> =
+            entity_store.get_entities_typed(DISPLAY_OUTPUT_ENTITY_TYPE);
+
+        // Build a lookup from urn_str -> (Urn, DisplayOutput)
+        let entity_lookup: HashMap<String, (&Urn, &DisplayOutput)> = entities
+            .iter()
+            .map(|(urn, output)| (urn.as_str().to_string(), (urn, output)))
+            .collect();
+
+        // Lock outputs to check VRR state for toggle logic
+        let outputs_map = outputs.borrow();
+
+        for (urn_str, changes) in pending_map.drain() {
+            let urn = match entity_lookup.get(&urn_str) {
+                Some((urn, _)) => (*urn).clone(),
+                None => {
+                    log::warn!("[output-section] Pending changes for unknown URN: {urn_str}");
+                    continue;
+                }
+            };
+            let current_output = entity_lookup.get(&urn_str).map(|(_, o)| *o);
+
+            if let Some(enabled) = changes.enabled {
+                action_callback(
+                    urn.clone(),
+                    "set-enabled".to_string(),
+                    serde_json::json!({ "value": enabled }),
+                );
+            }
+
+            if let Some(mode_index) = changes.mode_index {
+                action_callback(
+                    urn.clone(),
+                    "set-mode".to_string(),
+                    serde_json::json!({ "mode_index": mode_index }),
+                );
+            }
+
+            if let Some(scale) = changes.scale {
+                action_callback(
+                    urn.clone(),
+                    "set-scale".to_string(),
+                    serde_json::json!({ "value": scale }),
+                );
+            }
+
+            if let Some(transform) = changes.transform {
+                action_callback(
+                    urn.clone(),
+                    "set-transform".to_string(),
+                    serde_json::json!({ "value": transform }),
+                );
+            }
+
+            if let Some(vrr) = changes.vrr {
+                // VRR is a toggle action -- only fire if the desired state differs from current
+                let current_vrr = current_output.map(|o| o.vrr_enabled).unwrap_or(false);
+                if vrr != current_vrr {
+                    action_callback(
+                        urn.clone(),
+                        "toggle-vrr".to_string(),
+                        serde_json::Value::Null,
+                    );
+                }
+            }
+
+            // Reset the updating guard for widgets that had pending changes
+            if let Some(widgets) = outputs_map.get(&urn_str) {
+                widgets.updating.set(false);
+            }
         }
     }
 }
@@ -864,5 +1184,61 @@ mod tests {
             connection_type: "DisplayPort".to_string(),
         };
         assert_eq!(display_title(&output), "DP-3");
+    }
+
+    #[test]
+    fn test_pending_output_changes_dirty() {
+        let empty = PendingOutputChanges::default();
+        assert!(!empty.dirty());
+
+        let with_scale = PendingOutputChanges {
+            scale: Some(1.5),
+            ..Default::default()
+        };
+        assert!(with_scale.dirty());
+
+        let with_mode = PendingOutputChanges {
+            mode_index: Some(0),
+            ..Default::default()
+        };
+        assert!(with_mode.dirty());
+
+        let with_transform = PendingOutputChanges {
+            transform: Some(DisplayTransform::Normal),
+            ..Default::default()
+        };
+        assert!(with_transform.dirty());
+
+        let with_vrr = PendingOutputChanges {
+            vrr: Some(true),
+            ..Default::default()
+        };
+        assert!(with_vrr.dirty());
+
+        let with_enabled = PendingOutputChanges {
+            enabled: Some(false),
+            ..Default::default()
+        };
+        assert!(with_enabled.dirty());
+    }
+
+    #[test]
+    fn test_any_dirty() {
+        let empty: HashMap<String, PendingOutputChanges> = HashMap::new();
+        assert!(!any_dirty(&empty));
+
+        let mut with_clean = HashMap::new();
+        with_clean.insert("dp-1".to_string(), PendingOutputChanges::default());
+        assert!(!any_dirty(&with_clean));
+
+        let mut with_dirty = HashMap::new();
+        with_dirty.insert(
+            "dp-1".to_string(),
+            PendingOutputChanges {
+                scale: Some(2.0),
+                ..Default::default()
+            },
+        );
+        assert!(any_dirty(&with_dirty));
     }
 }

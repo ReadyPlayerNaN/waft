@@ -148,7 +148,12 @@ impl Plugin for WeatherPlugin {
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides(&[entity::weather::ENTITY_TYPE]) {
+    if waft_plugin::manifest::handle_provides_i18n(
+        &[entity::weather::ENTITY_TYPE],
+        waft_plugin_weather::i18n::i18n(),
+        "plugin-name",
+        "plugin-description",
+    ) {
         return Ok(());
     }
 

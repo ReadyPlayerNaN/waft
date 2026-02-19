@@ -21,7 +21,7 @@ use crate::state::{
     BluetoothDeviceInfo, CachedIpConfig, EthernetAdapterState, NmState, WiFiAdapterState,
 };
 use crate::tethering::refresh_tethering_states;
-use crate::vpn::refresh_vpn_states;
+use crate::vpn::{is_vpn_type, refresh_vpn_states};
 use waft_plugin::EntityNotifier;
 
 /// Monitor NM D-Bus signals and update shared state accordingly.
@@ -122,7 +122,7 @@ pub async fn monitor_nm_signals(
                         .unwrap_or_default()
                     };
 
-                    if conn_type == "vpn" {
+                    if is_vpn_type(&conn_type) {
                         debug!(
                             "[nm] VPN state changed: path={}, state={}",
                             obj_path, state_code
