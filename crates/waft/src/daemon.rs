@@ -7,6 +7,8 @@ use uuid::Uuid;
 use waft_protocol::urn::Urn;
 use waft_protocol::{AppMessage, AppNotification, PluginCommand, PluginMessage};
 
+use waft_protocol::entity::plugin::{self as plugin_entity, PluginState, PluginStatus};
+
 use crate::action_tracker::ActionTracker;
 use crate::connection::{ClientKind, Connection, ConnectionError, ReadHalf};
 use crate::crash_tracker::{CrashOutcome, CrashTracker};
@@ -49,6 +51,8 @@ pub struct WaftDaemon {
     crash_tracker: CrashTracker,
     /// Plugins currently in a graceful CanStop shutdown (not a crash).
     graceful_stops: HashSet<String>,
+    /// Plugins that were stopped gracefully and remain stopped until respawned.
+    stopped_plugins: HashSet<String>,
     event_rx: mpsc::Receiver<Event>,
     event_tx: mpsc::Sender<Event>,
 }
@@ -74,6 +78,7 @@ impl WaftDaemon {
             plugin_spawner,
             crash_tracker: CrashTracker::new(),
             graceful_stops: HashSet::new(),
+            stopped_plugins: HashSet::new(),
             event_rx,
             event_tx,
         })
@@ -229,8 +234,14 @@ impl WaftDaemon {
                     name: plugin_name.clone(),
                 };
             }
-            self.plugin_registry.register(plugin_name, conn_id);
-            return self.handle_plugin_message(conn_id, msg).await;
+            self.plugin_registry
+                .register(plugin_name.clone(), conn_id);
+            // Clear stopped state since the plugin is now running
+            self.stopped_plugins.remove(&plugin_name);
+            let result = self.handle_plugin_message(conn_id, msg).await;
+            // Emit updated plugin-status (now Running)
+            self.emit_plugin_status(&plugin_name).await;
+            return result;
         }
 
         // Try app message
@@ -392,9 +403,15 @@ impl WaftDaemon {
                     subscriptions.insert(entity_type.clone());
                 }
 
-                // Spawn plugin on demand if none is connected for this entity type
-                self.plugin_spawner
-                    .ensure_plugin_for_entity_type(&entity_type);
+                // For plugin-status, the daemon itself produces entities --
+                // no external plugin to spawn. Send all known statuses to this app.
+                if entity_type == plugin_entity::ENTITY_TYPE {
+                    self.emit_all_plugin_statuses_to(conn_id).await;
+                } else {
+                    // Spawn plugin on demand if none is connected for this entity type
+                    self.plugin_spawner
+                        .ensure_plugin_for_entity_type(&entity_type);
+                }
             }
 
             AppMessage::Unsubscribe { entity_type } => {
@@ -474,6 +491,37 @@ impl WaftDaemon {
                                 error: format!("no plugin found for URN: {urn}"),
                             })
                             .await;
+                    }
+                }
+            }
+
+            AppMessage::Describe { plugin_name } => {
+                let plugins: Vec<_> = if let Some(ref name) = plugin_name {
+                    self.plugin_spawner
+                        .get_description(name)
+                        .into_iter()
+                        .cloned()
+                        .collect()
+                } else {
+                    self.plugin_spawner
+                        .all_descriptions()
+                        .into_iter()
+                        .cloned()
+                        .collect()
+                };
+
+                eprintln!(
+                    "[waft] app {conn_id} requested descriptions (filter: {:?}, found: {})",
+                    plugin_name,
+                    plugins.len(),
+                );
+
+                if let Some(conn) = self.connections.get(&conn_id) {
+                    let response = AppNotification::DescribeResponse { plugins };
+                    if let Err(e) = conn.send(&response).await {
+                        eprintln!(
+                            "[waft] failed to send DescribeResponse to {conn_id}: {e}"
+                        );
                     }
                 }
             }
@@ -622,6 +670,9 @@ impl WaftDaemon {
         // Handle plugin crash detection and restart
         if let Some(ref name) = plugin_name {
             let graceful = self.graceful_stops.remove(name.as_str());
+            if graceful {
+                self.stopped_plugins.insert(name.clone());
+            }
             self.plugin_spawner.mark_disconnected(name);
 
             if !graceful {
@@ -711,6 +762,102 @@ impl WaftDaemon {
                         error: "plugin disconnected".to_string(),
                     })
                     .await;
+            }
+        }
+
+        // Emit updated plugin-status for the disconnected plugin
+        if let Some(ref name) = plugin_name {
+            self.emit_plugin_status(name).await;
+        }
+    }
+
+    /// Compute the current lifecycle state of a plugin.
+    fn compute_plugin_state(&self, plugin_name: &str) -> PluginState {
+        if self.crash_tracker.circuit_broken(plugin_name) {
+            PluginState::Failed
+        } else if self.plugin_registry.connection_for_plugin(plugin_name).is_some() {
+            PluginState::Running
+        } else if self.stopped_plugins.contains(plugin_name) {
+            PluginState::Stopped
+        } else {
+            PluginState::Available
+        }
+    }
+
+    /// Build and broadcast a plugin-status entity for a single plugin.
+    async fn emit_plugin_status(&self, plugin_name: &str) {
+        let state = self.compute_plugin_state(plugin_name);
+        let entity_types: Vec<String> = self
+            .plugin_spawner
+            .all_plugins()
+            .into_iter()
+            .find(|(name, _)| name == plugin_name)
+            .map(|(_, types)| types)
+            .unwrap_or_default();
+
+        let status = PluginStatus {
+            name: plugin_name.to_string(),
+            state,
+            entity_types,
+        };
+
+        let urn = Urn::new("waft", plugin_entity::ENTITY_TYPE, plugin_name);
+        let data = match serde_json::to_value(&status) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("[waft] failed to serialize plugin-status for {plugin_name}: {e}");
+                return;
+            }
+        };
+
+        let notification = AppNotification::EntityUpdated {
+            urn,
+            entity_type: plugin_entity::ENTITY_TYPE.to_string(),
+            data,
+        };
+
+        let subscribers = self.app_registry.subscribers(plugin_entity::ENTITY_TYPE);
+        for app_id in subscribers {
+            if let Some(conn) = self.connections.get(&app_id)
+                && let Err(e) = conn.send(&notification).await
+            {
+                eprintln!("[waft] failed to send plugin-status to {app_id}: {e}");
+            }
+        }
+    }
+
+    /// Emit plugin-status entities for all discovered plugins to a specific app.
+    async fn emit_all_plugin_statuses_to(&self, app_conn_id: Uuid) {
+        let all_plugins = self.plugin_spawner.all_plugins();
+
+        if let Some(conn) = self.connections.get(&app_conn_id) {
+            for (plugin_name, entity_types) in all_plugins {
+                let state = self.compute_plugin_state(&plugin_name);
+                let status = PluginStatus {
+                    name: plugin_name.clone(),
+                    state,
+                    entity_types,
+                };
+
+                let urn = Urn::new("waft", plugin_entity::ENTITY_TYPE, &plugin_name);
+                let data = match serde_json::to_value(&status) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        eprintln!("[waft] failed to serialize plugin-status for {plugin_name}: {e}");
+                        continue;
+                    }
+                };
+
+                let notification = AppNotification::EntityUpdated {
+                    urn,
+                    entity_type: plugin_entity::ENTITY_TYPE.to_string(),
+                    data,
+                };
+
+                if let Err(e) = conn.send(&notification).await {
+                    eprintln!("[waft] failed to send plugin-status to {app_conn_id}: {e}");
+                    break;
+                }
             }
         }
     }

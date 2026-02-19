@@ -1,7 +1,8 @@
-//! Notification filtering settings page -- thin composer.
+//! Notification settings page -- thin composer.
 //!
-//! Composes three independent smart containers: active profile selection,
-//! notification groups, and profiles sections into a single scrollable page.
+//! Composes independent smart containers: DnD toggle, sound defaults,
+//! active profile selection, notification groups, and profiles sections
+//! into a single scrollable page.
 
 use std::rc::Rc;
 
@@ -12,9 +13,9 @@ use crate::notifications::active_profile_section::ActiveProfileSection;
 use crate::notifications::dnd_section::DndSection;
 use crate::notifications::groups_section::GroupsSection;
 use crate::notifications::profiles_section::ProfilesSection;
-use crate::notifications::sound_section::SoundSection;
+use crate::sounds::defaults_section::DefaultsSection;
 
-/// Notification filtering settings page composed of independent sections.
+/// Notification settings page composed of independent sections.
 pub struct NotificationsPage {
     pub root: gtk::Box,
 }
@@ -33,8 +34,8 @@ impl NotificationsPage {
         let dnd = DndSection::new(entity_store, action_callback);
         root.append(&dnd.root);
 
-        let sounds = SoundSection::new(entity_store, action_callback);
-        root.append(&sounds.root);
+        let defaults = DefaultsSection::new(entity_store, action_callback);
+        root.append(&defaults.root);
 
         let active_profile = ActiveProfileSection::new(entity_store, action_callback);
         root.append(&active_profile.root);

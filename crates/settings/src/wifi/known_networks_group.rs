@@ -10,6 +10,8 @@ use waft_client::EntityActionCallback;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::WiFiNetwork;
 
+use crate::i18n::t;
+
 use super::network_row::{NetworkRow, NetworkRowOutput, NetworkRowProps};
 
 /// Group displaying known (saved) WiFi networks.
@@ -21,9 +23,9 @@ pub struct KnownNetworksGroup {
 impl KnownNetworksGroup {
     pub fn new() -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Known Networks")
+            .title(t("wifi-known-networks"))
             .visible(true)
-            .description("No known networks")
+            .description(t("wifi-no-known-networks"))
             .build();
 
         Self {
@@ -90,7 +92,7 @@ impl KnownNetworksGroup {
         }
 
         if self.rows.is_empty() {
-            self.root.set_description(Some("No known networks"));
+            self.root.set_description(Some(&t("wifi-no-known-networks")));
         } else {
             self.root.set_description(None::<&str>);
         }

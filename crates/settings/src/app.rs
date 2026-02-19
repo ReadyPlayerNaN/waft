@@ -21,6 +21,8 @@ use waft_protocol::entity::notification_filter::{
     ACTIVE_PROFILE_ENTITY_TYPE, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE,
     SOUND_CONFIG_ENTITY_TYPE,
 };
+use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
+use waft_protocol::entity::plugin::ENTITY_TYPE as PLUGIN_STATUS_ENTITY_TYPE;
 use waft_protocol::entity::weather;
 
 use crate::window::SettingsWindow;
@@ -43,6 +45,8 @@ const ENTITY_TYPES: &[&str] = &[
     ACTIVE_PROFILE_ENTITY_TYPE,
     DND_ENTITY_TYPE,
     SOUND_CONFIG_ENTITY_TYPE,
+    NOTIFICATION_SOUND_ENTITY_TYPE,
+    PLUGIN_STATUS_ENTITY_TYPE,
 ];
 
 pub async fn setup() -> Result<adw::Application, Box<dyn std::error::Error>> {

@@ -68,6 +68,61 @@ pub struct DisplayOutput {
     pub vrr_supported: bool,
     /// Whether variable refresh rate is currently enabled.
     pub vrr_enabled: bool,
+    /// Whether the output is currently enabled (active).
+    pub enabled: bool,
+    /// Current scale factor (e.g. 1.0, 1.5, 2.0).
+    pub scale: f64,
+    /// Current transform/rotation.
+    pub transform: DisplayTransform,
+    /// Physical size in millimeters [width, height]. None if not reported by EDID.
+    pub physical_size: Option<[u32; 2]>,
+    /// Connection type derived from output name (e.g. "HDMI", "DisplayPort", "Internal").
+    pub connection_type: String,
+}
+
+/// Display transform (rotation + optional flip).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DisplayTransform {
+    Normal,
+    Rotate90,
+    Rotate180,
+    Rotate270,
+    Flipped,
+    FlippedRotate90,
+    FlippedRotate180,
+    FlippedRotate270,
+}
+
+impl DisplayTransform {
+    /// Decompose into rotation index (0=Normal, 1=90, 2=180, 3=270) and flip state.
+    pub fn decompose(self) -> (usize, bool) {
+        match self {
+            Self::Normal => (0, false),
+            Self::Rotate90 => (1, false),
+            Self::Rotate180 => (2, false),
+            Self::Rotate270 => (3, false),
+            Self::Flipped => (0, true),
+            Self::FlippedRotate90 => (1, true),
+            Self::FlippedRotate180 => (2, true),
+            Self::FlippedRotate270 => (3, true),
+        }
+    }
+
+    /// Compose from rotation index (0=Normal, 1=90, 2=180, 3=270) and flip state.
+    pub fn compose(rotation_idx: usize, flipped: bool) -> Self {
+        match (rotation_idx % 4, flipped) {
+            (0, false) => Self::Normal,
+            (1, false) => Self::Rotate90,
+            (2, false) => Self::Rotate180,
+            (3, false) => Self::Rotate270,
+            (0, true) => Self::Flipped,
+            (1, true) => Self::FlippedRotate90,
+            (2, true) => Self::FlippedRotate180,
+            (3, true) => Self::FlippedRotate270,
+            _ => unreachable!(),
+        }
+    }
+
 }
 
 impl DisplayOutput {
@@ -271,10 +326,99 @@ mod tests {
             ],
             vrr_supported: true,
             vrr_enabled: false,
+            enabled: true,
+            scale: 1.5,
+            transform: DisplayTransform::Rotate90,
+            physical_size: Some([1190, 340]),
+            connection_type: "DisplayPort".to_string(),
         };
         let json = serde_json::to_value(&output).unwrap();
         let decoded: DisplayOutput = serde_json::from_value(json).unwrap();
         assert_eq!(output, decoded);
+    }
+
+    #[test]
+    fn display_output_serde_roundtrip_no_physical_size() {
+        let output = DisplayOutput {
+            name: "HDMI-1".to_string(),
+            make: "".to_string(),
+            model: "".to_string(),
+            current_mode: DisplayMode {
+                width: 1920,
+                height: 1080,
+                refresh_rate: 60.0,
+                preferred: true,
+            },
+            available_modes: vec![],
+            vrr_supported: false,
+            vrr_enabled: false,
+            enabled: false,
+            scale: 1.0,
+            transform: DisplayTransform::Normal,
+            physical_size: None,
+            connection_type: "HDMI".to_string(),
+        };
+        let json = serde_json::to_value(&output).unwrap();
+        let decoded: DisplayOutput = serde_json::from_value(json).unwrap();
+        assert_eq!(output, decoded);
+    }
+
+    #[test]
+    fn display_transform_serde_roundtrip_all_variants() {
+        let variants = [
+            DisplayTransform::Normal,
+            DisplayTransform::Rotate90,
+            DisplayTransform::Rotate180,
+            DisplayTransform::Rotate270,
+            DisplayTransform::Flipped,
+            DisplayTransform::FlippedRotate90,
+            DisplayTransform::FlippedRotate180,
+            DisplayTransform::FlippedRotate270,
+        ];
+        for variant in &variants {
+            let json = serde_json::to_value(variant).unwrap();
+            let decoded: DisplayTransform = serde_json::from_value(json).unwrap();
+            assert_eq!(*variant, decoded);
+        }
+    }
+
+    #[test]
+    fn display_transform_variants_serialize_distinctly() {
+        let variants = [
+            DisplayTransform::Normal,
+            DisplayTransform::Rotate90,
+            DisplayTransform::Rotate180,
+            DisplayTransform::Rotate270,
+            DisplayTransform::Flipped,
+            DisplayTransform::FlippedRotate90,
+            DisplayTransform::FlippedRotate180,
+            DisplayTransform::FlippedRotate270,
+        ];
+        let serialized: Vec<String> = variants
+            .iter()
+            .map(|v| serde_json::to_string(v).unwrap())
+            .collect();
+        let unique: std::collections::HashSet<&String> = serialized.iter().collect();
+        assert_eq!(unique.len(), 8, "All 8 transforms must serialize distinctly");
+    }
+
+    #[test]
+    fn display_transform_decompose_compose_roundtrip() {
+        let variants = [
+            DisplayTransform::Normal,
+            DisplayTransform::Rotate90,
+            DisplayTransform::Rotate180,
+            DisplayTransform::Rotate270,
+            DisplayTransform::Flipped,
+            DisplayTransform::FlippedRotate90,
+            DisplayTransform::FlippedRotate180,
+            DisplayTransform::FlippedRotate270,
+        ];
+        for variant in &variants {
+            let (rotation, flipped) = variant.decompose();
+            let recomposed = DisplayTransform::compose(rotation, flipped);
+            assert_eq!(*variant, recomposed, "Roundtrip failed for {:?}", variant);
+        }
     }
 
     #[test]

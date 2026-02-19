@@ -9,6 +9,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 
+use crate::i18n::t;
+
 /// Input properties for location settings.
 pub struct LocationSettingsProps {
     pub location_name: Option<String>,
@@ -48,13 +50,20 @@ pub struct LocationSettingsGroup {
     current_location_name: Rc<RefCell<Option<String>>>,
 }
 
-const UNITS_OPTIONS: &[&str] = &["Celsius", "Fahrenheit"];
-const INTERVAL_OPTIONS: &[(&str, u64)] = &[
-    ("5 minutes", 300),
-    ("10 minutes", 600),
-    ("30 minutes", 1800),
-    ("1 hour", 3600),
-];
+fn units_options() -> Vec<String> {
+    vec![t("weather-celsius"), t("weather-fahrenheit")]
+}
+
+const INTERVAL_VALUES: &[u64] = &[300, 600, 1800, 3600];
+
+fn interval_options() -> Vec<(String, u64)> {
+    vec![
+        (t("weather-interval-5m"), 300),
+        (t("weather-interval-10m"), 600),
+        (t("weather-interval-30m"), 1800),
+        (t("weather-interval-1h"), 3600),
+    ]
+}
 
 impl LocationSettingsGroup {
     pub fn new(props: &LocationSettingsProps) -> Self {
@@ -70,19 +79,19 @@ impl LocationSettingsGroup {
             Rc::new(RefCell::new(props.location_name.clone()));
 
         // -- Location group --
-        let location_group = adw::PreferencesGroup::builder().title("Location").build();
+        let location_group = adw::PreferencesGroup::builder().title(t("weather-location")).build();
 
         let location_label = match &props.location_name {
             Some(name) => name.clone(),
             None => format!("{:.4}, {:.4}", props.latitude, props.longitude),
         };
         let location_row = adw::ActionRow::builder()
-            .title("Current Location")
+            .title(t("weather-current-location"))
             .subtitle(&location_label)
             .build();
         location_group.add(&location_row);
 
-        let search_entry = adw::EntryRow::builder().title("Search City").build();
+        let search_entry = adw::EntryRow::builder().title(t("weather-search-city")).build();
         location_group.add(&search_entry);
 
         // Wire search on activate (Enter key)
@@ -102,18 +111,20 @@ impl LocationSettingsGroup {
 
         // -- Search results group (hidden until results arrive) --
         let results_group = adw::PreferencesGroup::builder()
-            .title("Search Results")
+            .title(t("weather-search-results"))
             .visible(false)
             .build();
         root.append(&results_group);
 
         // -- Settings group --
-        let settings_group = adw::PreferencesGroup::builder().title("Settings").build();
+        let settings_group = adw::PreferencesGroup::builder().title(t("weather-settings")).build();
 
         // Units combo
-        let units_model = gtk::StringList::new(UNITS_OPTIONS);
+        let units_labels = units_options();
+        let units_refs: Vec<&str> = units_labels.iter().map(|s| s.as_str()).collect();
+        let units_model = gtk::StringList::new(&units_refs);
         let units_row = adw::ComboRow::builder()
-            .title("Temperature Unit")
+            .title(t("weather-temp-unit"))
             .model(&units_model)
             .build();
         let units_idx = match props.units.as_str() {
@@ -124,15 +135,16 @@ impl LocationSettingsGroup {
         settings_group.add(&units_row);
 
         // Interval combo
-        let interval_labels: Vec<&str> = INTERVAL_OPTIONS.iter().map(|(l, _)| *l).collect();
-        let interval_model = gtk::StringList::new(&interval_labels);
+        let intervals = interval_options();
+        let interval_label_refs: Vec<&str> = intervals.iter().map(|(l, _)| l.as_str()).collect();
+        let interval_model = gtk::StringList::new(&interval_label_refs);
         let interval_row = adw::ComboRow::builder()
-            .title("Update Interval")
+            .title(t("weather-update-interval"))
             .model(&interval_model)
             .build();
-        let interval_idx = INTERVAL_OPTIONS
+        let interval_idx = INTERVAL_VALUES
             .iter()
-            .position(|(_, v)| *v == props.update_interval)
+            .position(|v| *v == props.update_interval)
             .unwrap_or(1) as u32; // default to "10 minutes"
         interval_row.set_selected(interval_idx);
         settings_group.add(&interval_row);
@@ -149,9 +161,9 @@ impl LocationSettingsGroup {
                     1 => "fahrenheit",
                     _ => "celsius",
                 };
-                let interval = INTERVAL_OPTIONS
+                let interval = INTERVAL_VALUES
                     .get(interval_ref.selected() as usize)
-                    .map(|(_, v)| *v)
+                    .copied()
                     .unwrap_or(600);
                 if let Some(ref callback) = *cb.borrow() {
                     callback(LocationSettingsOutput::ConfigChanged {
@@ -173,9 +185,9 @@ impl LocationSettingsGroup {
             let name = current_location_name.clone();
             let units_ref = units_row.clone();
             interval_row.connect_selected_notify(move |row| {
-                let interval = INTERVAL_OPTIONS
+                let interval = INTERVAL_VALUES
                     .get(row.selected() as usize)
-                    .map(|(_, v)| *v)
+                    .copied()
                     .unwrap_or(600);
                 let units = match units_ref.selected() {
                     1 => "fahrenheit",
@@ -218,7 +230,7 @@ impl LocationSettingsGroup {
 
         if results.is_empty() {
             let empty_row = adw::ActionRow::builder()
-                .title("No locations found")
+                .title(t("weather-no-locations"))
                 .build();
             self.results_group.add(&empty_row);
         } else {
@@ -256,9 +268,9 @@ impl LocationSettingsGroup {
                         1 => "fahrenheit",
                         _ => "celsius",
                     };
-                    let interval = INTERVAL_OPTIONS
+                    let interval = INTERVAL_VALUES
                         .get(interval_ref.selected() as usize)
-                        .map(|(_, v)| *v)
+                        .copied()
                         .unwrap_or(600);
                     if let Some(ref callback) = *cb.borrow() {
                         callback(LocationSettingsOutput::ConfigChanged {

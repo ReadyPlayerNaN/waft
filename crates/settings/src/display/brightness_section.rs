@@ -10,6 +10,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+
+use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{DISPLAY_ENTITY_TYPE, Display, DisplayKind};
 
@@ -56,15 +58,15 @@ impl BrightnessSection {
                         existing.group.set_title(&display.name);
                         existing.scale.set_value(display.brightness);
                         let subtitle = match display.kind {
-                            DisplayKind::Backlight => "Built-in display",
-                            DisplayKind::External => "External display",
+                            DisplayKind::Backlight => t("display-builtin"),
+                            DisplayKind::External => t("display-external"),
                         };
-                        existing.group.set_description(Some(subtitle));
+                        existing.group.set_description(Some(&subtitle));
                         existing.updating.set(false);
                     } else {
                         let subtitle = match display.kind {
-                            DisplayKind::Backlight => "Built-in display",
-                            DisplayKind::External => "External display",
+                            DisplayKind::Backlight => t("display-builtin"),
+                            DisplayKind::External => t("display-external"),
                         };
                         let group = adw::PreferencesGroup::builder()
                             .title(&display.name)
@@ -80,7 +82,7 @@ impl BrightnessSection {
                         scale.set_increments(0.05, 0.1);
                         scale.set_value(display.brightness);
 
-                        let row = adw::ActionRow::builder().title("Brightness").build();
+                        let row = adw::ActionRow::builder().title(t("display-brightness")).build();
                         row.add_suffix(&scale);
                         group.add(&row);
 

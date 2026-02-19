@@ -9,6 +9,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use waft_ui_gtk::widgets::icon::IconWidget;
 
+use crate::i18n::t;
+
 /// Props for creating or updating a network row.
 pub struct NetworkRowProps {
     pub ssid: String,
@@ -100,11 +102,11 @@ impl NetworkRow {
         self.secure_icon.widget().set_visible(props.secure);
 
         if props.connected {
-            self.root.set_subtitle("Connected");
-            self.action_button.set_label("Disconnect");
+            self.root.set_subtitle(&t("wifi-connected"));
+            self.action_button.set_label(&t("wifi-disconnect"));
         } else {
             self.root.set_subtitle("");
-            self.action_button.set_label("Connect");
+            self.action_button.set_label(&t("wifi-connect"));
         }
     }
 

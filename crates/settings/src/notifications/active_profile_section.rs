@@ -9,6 +9,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
+use crate::i18n::t;
 use waft_protocol::entity::notification_filter::{
     ACTIVE_PROFILE_ENTITY_TYPE, ActiveProfile, NOTIFICATION_PROFILE_ENTITY_TYPE,
     NotificationProfile,
@@ -22,13 +23,13 @@ pub struct ActiveProfileSection {
 impl ActiveProfileSection {
     pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Active Profile")
+            .title(t("notif-active-profile"))
             .visible(false)
             .build();
 
         let string_list = gtk::StringList::new(&[]);
         let combo_row = adw::ComboRow::builder()
-            .title("Profile")
+            .title(t("notif-profile"))
             .model(&string_list)
             .build();
         group.add(&combo_row);

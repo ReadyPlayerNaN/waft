@@ -10,6 +10,8 @@ use adw::prelude::*;
 use waft_protocol::entity::bluetooth::ConnectionState;
 use waft_ui_gtk::widgets::icon::IconWidget;
 
+use crate::i18n::{t, t_args};
+
 /// Props for creating or updating a device row.
 pub struct DeviceRowProps {
     pub name: String,
@@ -62,12 +64,12 @@ impl DeviceRow {
             .icon_name("user-trash-symbolic")
             .valign(gtk::Align::Center)
             .css_classes(["flat", "destructive-action"])
-            .tooltip_text("Remove device")
+            .tooltip_text(t("bt-remove-device"))
             .build();
 
         // Pair button (for discovered devices)
         let pair_button = gtk::Button::builder()
-            .label("Pair")
+            .label(t("bt-pair"))
             .valign(gtk::Align::Center)
             .css_classes(["flat", "suggested-action"])
             .build();
@@ -126,21 +128,22 @@ impl DeviceRow {
 
             let (subtitle, connect_label, sensitive) = match props.connection_state {
                 ConnectionState::Connected => {
-                    let mut text = "Connected".to_string();
-                    if let Some(pct) = props.battery_percentage {
-                        text.push_str(&format!(" \u{00B7} Battery {pct}%"));
-                    }
-                    (text, "Disconnect", true)
+                    let text = if let Some(pct) = props.battery_percentage {
+                        t_args("bt-battery-pct", &[("pct", &pct.to_string())])
+                    } else {
+                        t("bt-connected")
+                    };
+                    (text, t("bt-disconnect"), true)
                 }
-                ConnectionState::Connecting => ("Connecting\u{2026}".to_string(), "Cancel", false),
+                ConnectionState::Connecting => (t("bt-connecting"), t("bt-cancel"), false),
                 ConnectionState::Disconnecting => {
-                    ("Disconnecting\u{2026}".to_string(), "Wait", false)
+                    (t("bt-disconnecting"), t("bt-wait"), false)
                 }
-                ConnectionState::Disconnected => ("Disconnected".to_string(), "Connect", true),
+                ConnectionState::Disconnected => (t("bt-disconnected"), t("bt-connect"), true),
             };
 
             self.root.set_subtitle(&subtitle);
-            self.connect_button.set_label(connect_label);
+            self.connect_button.set_label(&connect_label);
             self.connect_button.set_sensitive(sensitive);
             self.remove_button.set_sensitive(sensitive);
         } else {
@@ -150,10 +153,10 @@ impl DeviceRow {
             self.remove_button.set_visible(false);
 
             let subtitle = match props.rssi {
-                Some(rssi) if rssi > -50 => "Excellent signal".to_string(),
-                Some(rssi) if rssi > -70 => "Good signal".to_string(),
-                Some(rssi) if rssi > -85 => "Fair signal".to_string(),
-                Some(_) => "Weak signal".to_string(),
+                Some(rssi) if rssi > -50 => t("bt-signal-excellent"),
+                Some(rssi) if rssi > -70 => t("bt-signal-good"),
+                Some(rssi) if rssi > -85 => t("bt-signal-fair"),
+                Some(_) => t("bt-signal-weak"),
                 None => String::new(),
             };
             self.root.set_subtitle(&subtitle);

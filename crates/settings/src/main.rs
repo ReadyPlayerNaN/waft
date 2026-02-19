@@ -3,10 +3,13 @@
 mod app;
 mod bluetooth;
 mod display;
+mod i18n;
 mod keyboard;
 mod notifications;
 mod pages;
+mod plugins;
 mod sidebar;
+mod sounds;
 mod weather;
 mod wifi;
 mod window;

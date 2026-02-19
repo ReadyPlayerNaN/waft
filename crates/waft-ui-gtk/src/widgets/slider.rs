@@ -41,8 +41,61 @@ pub struct SliderWidget {
     on_value_change: Callback<f64>,
     on_icon_click: VoidCallback,
     scale_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>>,
-    is_dragging: Rc<RefCell<bool>>,
+    interacting: Rc<RefCell<bool>>,
+    pending_value: Rc<RefCell<Option<f64>>>,
+    /// Held to keep the active debounce `SourceId` alive across the widget's
+    /// lifetime. Accessed only inside gesture/scroll handler closures.
+    #[allow(dead_code)]
+    debounce_source: Rc<RefCell<Option<glib::SourceId>>>,
     pub menu_id: Option<String>,
+}
+
+/// Cancel any pending debounce and schedule a new one-shot timer.
+///
+/// When the timer fires, `interacting` is set to `false` and any stashed
+/// `pending_value` is applied to the scale (blocking the signal handler).
+fn schedule_interaction_end(
+    debounce_source: &Rc<RefCell<Option<glib::SourceId>>>,
+    interacting: &Rc<RefCell<bool>>,
+    pending_value: &Rc<RefCell<Option<f64>>>,
+    value: &Rc<RefCell<f64>>,
+    scale: &gtk::Scale,
+    scale_handler_id: &Rc<RefCell<Option<glib::SignalHandlerId>>>,
+    delay_ms: u64,
+) {
+    // Cancel any existing debounce timer
+    if let Some(source_id) = debounce_source.borrow_mut().take() {
+        source_id.remove();
+    }
+
+    let interacting = interacting.clone();
+    let pending_value = pending_value.clone();
+    let value = value.clone();
+    let scale = scale.clone();
+    let scale_handler_id = scale_handler_id.clone();
+    let debounce_source_inner = debounce_source.clone();
+
+    let source_id = glib::timeout_add_local_once(
+        std::time::Duration::from_millis(delay_ms),
+        move || {
+            // Clear the stored source ID since this timer has fired
+            *debounce_source_inner.borrow_mut() = None;
+
+            *interacting.borrow_mut() = false;
+
+            // Reconcile with the last backend value received during interaction
+            if let Some(v) = pending_value.borrow_mut().take() {
+                *value.borrow_mut() = v;
+                if let Some(ref handler_id) = *scale_handler_id.borrow() {
+                    scale.block_signal(handler_id);
+                    scale.set_value(v * 100.0);
+                    scale.unblock_signal(handler_id);
+                }
+            }
+        },
+    );
+
+    *debounce_source.borrow_mut() = Some(source_id);
 }
 
 impl SliderWidget {
@@ -134,33 +187,117 @@ impl SliderWidget {
             }
         });
 
-        // Connect scale value change — store handler ID so set_value() can block it
-        let last_user_change: Rc<RefCell<Option<std::time::Instant>>> = Rc::new(RefCell::new(None));
-        let is_dragging = Rc::new(RefCell::new(false));
+        // Interaction tracking state
+        let interacting = Rc::new(RefCell::new(false));
+        let pending_value: Rc<RefCell<Option<f64>>> = Rc::new(RefCell::new(None));
+        let debounce_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+
+        // Connect scale value change -- store handler ID so set_value() can block it.
+        // The handler also marks interaction for keyboard-driven changes (arrow keys).
+        let scale_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>> =
+            Rc::new(RefCell::new(None));
+
         let on_value_change_ref = on_value_change.clone();
-        let last_user_change_ref = last_user_change.clone();
-        let is_dragging_ref = is_dragging.clone();
+        let interacting_vc = interacting.clone();
+        let debounce_source_vc = debounce_source.clone();
+        let pending_value_vc = pending_value.clone();
+        let value_vc = value.clone();
+        let scale_vc = scale.clone();
+        let scale_handler_id_vc = scale_handler_id.clone();
+
         let handler_id = scale.connect_value_changed(move |s| {
             let v = s.value() / 100.0;
-            *last_user_change_ref.borrow_mut() = Some(std::time::Instant::now());
-            *is_dragging_ref.borrow_mut() = true;
+            *interacting_vc.borrow_mut() = true;
+            schedule_interaction_end(
+                &debounce_source_vc,
+                &interacting_vc,
+                &pending_value_vc,
+                &value_vc,
+                &scale_vc,
+                &scale_handler_id_vc,
+                200,
+            );
             if let Some(ref callback) = *on_value_change_ref.borrow() {
                 callback(v);
             }
         });
-        let scale_handler_id = Rc::new(RefCell::new(Some(handler_id)));
+        *scale_handler_id.borrow_mut() = Some(handler_id);
 
-        // Monitor for drag end (no value_changed for 150ms)
-        let is_dragging_monitor = is_dragging.clone();
-        let last_change_monitor = last_user_change.clone();
-        glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
-            if let Some(last) = *last_change_monitor.borrow()
-                && last.elapsed() > std::time::Duration::from_millis(150)
-            {
-                *is_dragging_monitor.borrow_mut() = false;
+        // GestureClick for press/release detection on the scale
+        let gesture_click = gtk::GestureClick::new();
+
+        let interacting_pressed = interacting.clone();
+        let debounce_source_pressed = debounce_source.clone();
+        gesture_click.connect_pressed(move |_, _, _, _| {
+            *interacting_pressed.borrow_mut() = true;
+            // Cancel any pending debounce -- user is actively pressing
+            if let Some(source_id) = debounce_source_pressed.borrow_mut().take() {
+                source_id.remove();
             }
-            glib::ControlFlow::Continue
         });
+
+        let interacting_released = interacting.clone();
+        let debounce_source_released = debounce_source.clone();
+        let pending_value_released = pending_value.clone();
+        let value_released = value.clone();
+        let scale_released = scale.clone();
+        let scale_handler_id_released = scale_handler_id.clone();
+        gesture_click.connect_released(move |_, _, _, _| {
+            schedule_interaction_end(
+                &debounce_source_released,
+                &interacting_released,
+                &pending_value_released,
+                &value_released,
+                &scale_released,
+                &scale_handler_id_released,
+                100,
+            );
+        });
+
+        // Handle gesture cancellation (e.g. pointer leaves widget during press)
+        let interacting_cancel = interacting.clone();
+        let debounce_source_cancel = debounce_source.clone();
+        let pending_value_cancel = pending_value.clone();
+        let value_cancel = value.clone();
+        let scale_cancel = scale.clone();
+        let scale_handler_id_cancel = scale_handler_id.clone();
+        gesture_click.connect_cancel(move |_, _| {
+            schedule_interaction_end(
+                &debounce_source_cancel,
+                &interacting_cancel,
+                &pending_value_cancel,
+                &value_cancel,
+                &scale_cancel,
+                &scale_handler_id_cancel,
+                100,
+            );
+        });
+        scale.add_controller(gesture_click);
+
+        // EventControllerScroll for mousewheel interaction
+        let scroll_controller =
+            gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+
+        let interacting_scroll = interacting.clone();
+        let debounce_source_scroll = debounce_source.clone();
+        let pending_value_scroll = pending_value.clone();
+        let value_scroll = value.clone();
+        let scale_scroll = scale.clone();
+        let scale_handler_id_scroll = scale_handler_id.clone();
+        scroll_controller.connect_scroll(move |_, _, _| {
+            *interacting_scroll.borrow_mut() = true;
+            schedule_interaction_end(
+                &debounce_source_scroll,
+                &interacting_scroll,
+                &pending_value_scroll,
+                &value_scroll,
+                &scale_scroll,
+                &scale_handler_id_scroll,
+                200,
+            );
+            glib::Propagation::Proceed
+        });
+        scale.add_controller(scroll_controller);
 
         Self {
             root,
@@ -174,7 +311,9 @@ impl SliderWidget {
             on_value_change,
             on_icon_click,
             scale_handler_id,
-            is_dragging,
+            interacting,
+            pending_value,
+            debounce_source,
             menu_id,
         }
     }
@@ -197,14 +336,22 @@ impl SliderWidget {
 
     /// Update the scale value, blocking the signal handler to prevent feedback loops.
     ///
-    /// Completely blocks external updates during active drag gestures to prevent
-    /// value jumping. After the user stops dragging (150ms of inactivity), updates
-    /// reconcile immediately.
+    /// During active user interaction (drag, scroll, keyboard), the backend value
+    /// is stashed in `pending_value` instead of applied immediately. When the
+    /// interaction ends (debounce timer fires), the pending value is reconciled
+    /// so the slider settles at the authoritative backend value.
     pub fn set_value(&self, v: f64) {
-        if *self.is_dragging.borrow() {
-            return; // Block all external updates during drag
+        if *self.interacting.borrow() {
+            *self.pending_value.borrow_mut() = Some(v);
+            return;
         }
+        self.apply_value(v);
+    }
+
+    /// Internal: apply a value to the scale, blocking the signal handler.
+    fn apply_value(&self, v: f64) {
         *self.value.borrow_mut() = v;
+        *self.pending_value.borrow_mut() = None;
         if let Some(ref handler_id) = *self.scale_handler_id.borrow() {
             self.scale.block_signal(handler_id);
             self.scale.set_value(v * 100.0);
@@ -346,5 +493,115 @@ mod tests {
         assert!(!slider.expand_revealer.reveals_child());
         slider.set_expandable(true);
         assert!(slider.expand_revealer.reveals_child());
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_slider_suppresses_value_during_interaction() {
+        init_gtk_for_tests();
+        let menu_store = Rc::new(create_menu_store());
+
+        let slider = SliderWidget::new(
+            SliderProps {
+                icon: "audio-volume-high-symbolic".to_string(),
+                value: 0.5,
+                disabled: false,
+                expandable: false,
+                menu_id: None,
+            },
+            Some(menu_store),
+        );
+
+        // Simulate interaction start
+        *slider.interacting.borrow_mut() = true;
+
+        // Backend pushes a value during interaction
+        slider.set_value(0.8);
+
+        // Scale should NOT have moved
+        assert!(
+            (slider.scale.value() - 50.0).abs() < 0.01,
+            "Scale should stay at 50.0 during interaction, got {}",
+            slider.scale.value()
+        );
+
+        // Pending value should be stashed
+        assert_eq!(
+            *slider.pending_value.borrow(),
+            Some(0.8),
+            "Pending value should be stashed"
+        );
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_slider_reconciles_after_interaction_ends() {
+        init_gtk_for_tests();
+        let menu_store = Rc::new(create_menu_store());
+
+        let slider = SliderWidget::new(
+            SliderProps {
+                icon: "audio-volume-high-symbolic".to_string(),
+                value: 0.5,
+                disabled: false,
+                expandable: false,
+                menu_id: None,
+            },
+            Some(menu_store),
+        );
+
+        // Simulate interaction and stash a backend value
+        *slider.interacting.borrow_mut() = true;
+        slider.set_value(0.8);
+
+        // Now simulate interaction end by clearing state and applying pending
+        *slider.interacting.borrow_mut() = false;
+        if let Some(v) = slider.pending_value.borrow_mut().take() {
+            slider.apply_value(v);
+        }
+
+        // Scale should now reflect the backend value
+        assert!(
+            (slider.scale.value() - 80.0).abs() < 0.01,
+            "Scale should be at 80.0 after reconciliation, got {}",
+            slider.scale.value()
+        );
+    }
+
+    #[test]
+    #[ignore = "Requires GTK main thread - run with --test-threads=1"]
+    fn test_slider_last_backend_value_wins() {
+        init_gtk_for_tests();
+        let menu_store = Rc::new(create_menu_store());
+
+        let slider = SliderWidget::new(
+            SliderProps {
+                icon: "audio-volume-high-symbolic".to_string(),
+                value: 0.5,
+                disabled: false,
+                expandable: false,
+                menu_id: None,
+            },
+            Some(menu_store),
+        );
+
+        // Simulate interaction with multiple backend updates
+        *slider.interacting.borrow_mut() = true;
+        slider.set_value(0.6);
+        slider.set_value(0.7);
+        slider.set_value(0.85);
+
+        // Only the last value should be stashed
+        assert_eq!(
+            *slider.pending_value.borrow(),
+            Some(0.85),
+            "Only the most recent backend value should be stashed"
+        );
+
+        // Scale should still be at original position
+        assert!(
+            (slider.scale.value() - 50.0).abs() < 0.01,
+            "Scale should not have moved during interaction"
+        );
     }
 }

@@ -7,6 +7,8 @@ use std::collections::HashMap;
 
 use adw::prelude::*;
 use waft_client::EntityActionCallback;
+
+use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::BluetoothDevice;
 use waft_ui_gtk::bluetooth::device_row::device_type_icon;
@@ -22,9 +24,9 @@ pub struct PairedDevicesGroup {
 impl PairedDevicesGroup {
     pub fn new() -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Paired Devices")
+            .title(t("bt-paired-devices"))
             .visible(true)
-            .description("No paired devices")
+            .description(t("bt-no-paired-devices"))
             .build();
 
         Self {
@@ -92,7 +94,7 @@ impl PairedDevicesGroup {
         }
 
         if self.rows.is_empty() {
-            self.root.set_description(Some("No paired devices"));
+            self.root.set_description(Some(&t("bt-no-paired-devices")));
         } else {
             self.root.set_description(None::<&str>);
         }

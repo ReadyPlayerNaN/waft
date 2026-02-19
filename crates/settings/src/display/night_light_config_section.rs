@@ -8,6 +8,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+
+use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{
     FieldState, NIGHT_LIGHT_CONFIG_ENTITY_TYPE, NightLightConfig,
@@ -26,11 +28,11 @@ fn apply_field_state(widget: &impl gtk::prelude::WidgetExt, state: Option<&Field
     }
 }
 
-fn subtitle_for_state(state: Option<&FieldState>) -> &'static str {
+fn subtitle_for_state(state: Option<&FieldState>) -> String {
     match state {
-        Some(FieldState::ReadOnly) => "Calculated automatically",
-        Some(FieldState::Disabled) => "Not used in this mode",
-        _ => "",
+        Some(FieldState::ReadOnly) => t("nlc-calculated-auto"),
+        Some(FieldState::Disabled) => t("nlc-not-used"),
+        _ => String::new(),
     }
 }
 
@@ -44,53 +46,53 @@ impl NightLightConfigSection {
 
         // ---- Colors Group ----
         let colors_group = adw::PreferencesGroup::builder()
-            .title("Colors")
+            .title(t("nlc-colors"))
             .build();
         root.append(&colors_group);
 
         let night_temp_row = adw::SpinRow::builder()
-            .title("Night Temperature")
-            .subtitle("Color temperature at night (K)")
+            .title(t("nlc-night-temp"))
+            .subtitle(t("nlc-night-temp-sub"))
             .adjustment(&gtk::Adjustment::new(3500.0, 1000.0, 10000.0, 100.0, 500.0, 0.0))
             .digits(0)
             .build();
         colors_group.add(&night_temp_row);
 
         let night_gamma_row = adw::SpinRow::builder()
-            .title("Night Gamma")
-            .subtitle("Gamma correction at night (%)")
+            .title(t("nlc-night-gamma"))
+            .subtitle(t("nlc-night-gamma-sub"))
             .adjustment(&gtk::Adjustment::new(100.0, 10.0, 200.0, 1.0, 10.0, 0.0))
             .digits(0)
             .build();
         colors_group.add(&night_gamma_row);
 
         let day_temp_row = adw::SpinRow::builder()
-            .title("Day Temperature")
-            .subtitle("Color temperature during day (K)")
+            .title(t("nlc-day-temp"))
+            .subtitle(t("nlc-day-temp-sub"))
             .adjustment(&gtk::Adjustment::new(6500.0, 1000.0, 10000.0, 100.0, 500.0, 0.0))
             .digits(0)
             .build();
         colors_group.add(&day_temp_row);
 
         let day_gamma_row = adw::SpinRow::builder()
-            .title("Day Gamma")
-            .subtitle("Gamma correction during day (%)")
+            .title(t("nlc-day-gamma"))
+            .subtitle(t("nlc-day-gamma-sub"))
             .adjustment(&gtk::Adjustment::new(100.0, 10.0, 200.0, 1.0, 10.0, 0.0))
             .digits(0)
             .build();
         colors_group.add(&day_gamma_row);
 
         let static_temp_row = adw::SpinRow::builder()
-            .title("Static Temperature")
-            .subtitle("Color temperature in static mode (K)")
+            .title(t("nlc-static-temp"))
+            .subtitle(t("nlc-static-temp-sub"))
             .adjustment(&gtk::Adjustment::new(4500.0, 1000.0, 10000.0, 100.0, 500.0, 0.0))
             .digits(0)
             .build();
         colors_group.add(&static_temp_row);
 
         let static_gamma_row = adw::SpinRow::builder()
-            .title("Static Gamma")
-            .subtitle("Gamma correction in static mode (%)")
+            .title(t("nlc-static-gamma"))
+            .subtitle(t("nlc-static-gamma-sub"))
             .adjustment(&gtk::Adjustment::new(100.0, 10.0, 200.0, 1.0, 10.0, 0.0))
             .digits(0)
             .build();
@@ -98,33 +100,33 @@ impl NightLightConfigSection {
 
         // ---- Timing Group ----
         let timing_group = adw::PreferencesGroup::builder()
-            .title("Timing")
+            .title(t("nlc-timing"))
             .build();
         root.append(&timing_group);
 
         let mode_model = gtk::StringList::new(&["geo", "static", "center", "finish_by", "start_at"]);
         let mode_row = adw::ComboRow::builder()
-            .title("Transition Mode")
-            .subtitle("How to determine day/night timing")
+            .title(t("nlc-transition-mode"))
+            .subtitle(t("nlc-transition-mode-sub"))
             .model(&mode_model)
             .build();
         timing_group.add(&mode_row);
 
         let sunrise_row = adw::EntryRow::builder()
-            .title("Sunrise")
+            .title(t("nlc-sunrise"))
             .show_apply_button(true)
             .build();
         timing_group.add(&sunrise_row);
 
         let sunset_row = adw::EntryRow::builder()
-            .title("Sunset")
+            .title(t("nlc-sunset"))
             .show_apply_button(true)
             .build();
         timing_group.add(&sunset_row);
 
         let transition_duration_row = adw::SpinRow::builder()
-            .title("Transition Duration")
-            .subtitle("Duration of color transition (minutes)")
+            .title(t("nlc-transition-duration"))
+            .subtitle(t("nlc-transition-duration-sub"))
             .adjustment(&gtk::Adjustment::new(30.0, 1.0, 180.0, 1.0, 10.0, 0.0))
             .digits(0)
             .build();
@@ -132,68 +134,68 @@ impl NightLightConfigSection {
 
         // ---- Location Group ----
         let location_group = adw::PreferencesGroup::builder()
-            .title("Location")
+            .title(t("nlc-location"))
             .build();
         root.append(&location_group);
 
         let latitude_row = adw::EntryRow::builder()
-            .title("Latitude")
+            .title(t("nlc-latitude"))
             .show_apply_button(true)
             .build();
         location_group.add(&latitude_row);
 
         let longitude_row = adw::EntryRow::builder()
-            .title("Longitude")
+            .title(t("nlc-longitude"))
             .show_apply_button(true)
             .build();
         location_group.add(&longitude_row);
 
         // ---- Advanced Group ----
         let advanced_group = adw::PreferencesGroup::builder()
-            .title("Advanced")
+            .title(t("nlc-advanced"))
             .build();
         root.append(&advanced_group);
 
         let backend_model = gtk::StringList::new(&["auto", "hyprland", "wayland"]);
         let backend_row = adw::ComboRow::builder()
-            .title("Backend")
+            .title(t("nlc-backend"))
             .model(&backend_model)
             .build();
         advanced_group.add(&backend_row);
 
         let smoothing_row = adw::SwitchRow::builder()
-            .title("Smoothing")
-            .subtitle("Smooth color transitions")
+            .title(t("nlc-smoothing"))
+            .subtitle(t("nlc-smoothing-sub"))
             .build();
         advanced_group.add(&smoothing_row);
 
         let startup_duration_row = adw::SpinRow::builder()
-            .title("Startup Duration")
-            .subtitle("Duration of startup transition (seconds)")
+            .title(t("nlc-startup-duration"))
+            .subtitle(t("nlc-startup-duration-sub"))
             .adjustment(&gtk::Adjustment::new(1.0, 0.0, 30.0, 0.1, 1.0, 0.0))
             .digits(1)
             .build();
         advanced_group.add(&startup_duration_row);
 
         let shutdown_duration_row = adw::SpinRow::builder()
-            .title("Shutdown Duration")
-            .subtitle("Duration of shutdown transition (seconds)")
+            .title(t("nlc-shutdown-duration"))
+            .subtitle(t("nlc-shutdown-duration-sub"))
             .adjustment(&gtk::Adjustment::new(1.0, 0.0, 30.0, 0.1, 1.0, 0.0))
             .digits(1)
             .build();
         advanced_group.add(&shutdown_duration_row);
 
         let adaptive_interval_row = adw::SpinRow::builder()
-            .title("Adaptive Interval")
-            .subtitle("Adaptive update interval (milliseconds)")
+            .title(t("nlc-adaptive-interval"))
+            .subtitle(t("nlc-adaptive-interval-sub"))
             .adjustment(&gtk::Adjustment::new(100.0, 10.0, 10000.0, 10.0, 100.0, 0.0))
             .digits(0)
             .build();
         advanced_group.add(&adaptive_interval_row);
 
         let update_interval_row = adw::SpinRow::builder()
-            .title("Update Interval")
-            .subtitle("Regular update interval (seconds)")
+            .title(t("nlc-update-interval"))
+            .subtitle(t("nlc-update-interval-sub"))
             .adjustment(&gtk::Adjustment::new(5.0, 1.0, 600.0, 1.0, 10.0, 0.0))
             .digits(0)
             .build();
@@ -434,7 +436,7 @@ fn reconcile_spin(row: &adw::SpinRow, value: &str, state: Option<&FieldState>) {
     apply_field_state(row, state);
     let sub = subtitle_for_state(state);
     if !sub.is_empty() {
-        row.set_subtitle(sub);
+        row.set_subtitle(&sub);
     }
 }
 

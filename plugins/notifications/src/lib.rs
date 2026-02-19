@@ -15,6 +15,7 @@ use waft_protocol::entity::notification_filter::{
     self as filter_proto, ActiveProfile, NotificationGroup, NotificationProfile,
     SoundConfigEntity, SOUND_CONFIG_ENTITY_TYPE,
 };
+use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
 
 use self::dbus::client::{OutboundEvent, close_reasons};
 use self::dbus::ingress::IngressedNotification;
@@ -122,6 +123,8 @@ pub struct NotificationsPlugin {
     compiled_matchers: Arc<StdMutex<Vec<CompiledGroup>>>,
     sound_config: Arc<StdMutex<config::SoundConfig>>,
     sound_policy: Arc<StdMutex<sound::policy::SoundPolicy>>,
+    sound_gallery: Arc<StdMutex<sound::gallery::SoundGallery>>,
+    sound_player: Arc<sound::player::SoundPlayer>,
 }
 
 impl NotificationsPlugin {
@@ -136,6 +139,7 @@ impl NotificationsPlugin {
     ) -> Self {
         let compiled_matchers = compile_groups(&groups);
         let policy = sound::policy::SoundPolicy::new(sound_cfg.clone());
+        let gallery = sound::gallery::SoundGallery::scan();
 
         Self {
             state,
@@ -146,6 +150,8 @@ impl NotificationsPlugin {
             compiled_matchers: Arc::new(StdMutex::new(compiled_matchers)),
             sound_config: Arc::new(StdMutex::new(sound_cfg)),
             sound_policy: Arc::new(StdMutex::new(policy)),
+            sound_gallery: Arc::new(StdMutex::new(gallery)),
+            sound_player: Arc::new(sound::player::SoundPlayer::new()),
         }
     }
 
@@ -445,6 +451,29 @@ impl Plugin for NotificationsPlugin {
                     profile_id: active_profile_id,
                 },
             ));
+        }
+
+        // Sound gallery
+        {
+            let gallery = match self.sound_gallery.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    warn!("[notifications] mutex poisoned in get_entities: {e}");
+                    e.into_inner()
+                }
+            };
+
+            for sound in gallery.sounds() {
+                entities.push(Entity::new(
+                    Urn::new(
+                        "notifications",
+                        NOTIFICATION_SOUND_ENTITY_TYPE,
+                        &sound.filename,
+                    ),
+                    NOTIFICATION_SOUND_ENTITY_TYPE,
+                    sound,
+                ));
+            }
         }
 
         entities
@@ -795,6 +824,68 @@ impl Plugin for NotificationsPlugin {
                 }
 
                 info!("[notifications] deleted profile {entity_id}");
+            }
+
+            // --- Sound gallery actions ---
+
+            ("notification-sound", "add-sound") => {
+                let filename = params
+                    .get("filename")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing filename")?
+                    .to_string();
+                let data_b64 = params
+                    .get("data")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing data")?;
+
+                use base64::Engine;
+                let data = base64::engine::general_purpose::STANDARD
+                    .decode(data_b64)
+                    .map_err(|e| format!("invalid base64: {e}"))?;
+
+                {
+                    let mut gallery = match self.sound_gallery.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[notifications] mutex poisoned: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    gallery.add_sound(&filename, &data)?;
+                }
+
+                info!("[notifications] added sound to gallery: {filename}");
+            }
+
+            ("notification-sound", "remove-sound") => {
+                {
+                    let mut gallery = match self.sound_gallery.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!("[notifications] mutex poisoned: {e}");
+                            e.into_inner()
+                        }
+                    };
+                    gallery.remove_sound(entity_id)?;
+                }
+
+                info!("[notifications] removed sound from gallery: {entity_id}");
+            }
+
+            (_, "preview-sound") => {
+                let reference = params
+                    .get("reference")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing reference")?;
+
+                let resolved = sound::gallery::resolve_sound_reference(reference);
+                let player = self.sound_player.clone();
+                tokio::spawn(async move {
+                    player.play(&resolved).await;
+                });
+
+                info!("[notifications] previewing sound: {reference}");
             }
 
             _ => {

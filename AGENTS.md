@@ -19,6 +19,15 @@ WAFT_DAEMON_DIR=./target/debug cargo run
 
 # Run a single daemon standalone (for development/debugging)
 cargo run --bin waft-clock-daemon
+
+# CLI commands (waft daemon binary)
+waft                           # Start daemon (default)
+waft plugin ls                 # List discovered plugins
+waft plugin ls --json          # List plugins as JSON
+waft plugin describe <name>    # Show plugin details (entity types, properties, actions)
+waft protocol                  # List all protocol entity types
+waft protocol --domain audio   # Filter by domain
+waft protocol --entity-type clock  # Show single entity type (verbose)
 ```
 
 ---
@@ -70,12 +79,12 @@ When implementing features:
 
 - **`waft-protocol`** - Entity types (domain-organized), messages (`AppMessage`, `PluginMessage`, `AppNotification`, `PluginCommand`), URN format and parsing, transport (length-prefixed JSON).
 - **`waft-plugin`** - Plugin SDK: `Plugin` trait (Send+Sync), `PluginRuntime`, `EntityNotifier`, manifest handling (`handle_provides`), D-Bus monitoring helpers.
-- **`waft`** - Central daemon: plugin discovery, on-demand spawning, entity routing, action tracking, crash recovery, D-Bus activation (`org.waft.Daemon`).
+- **`waft`** - Central daemon: plugin discovery, on-demand spawning, entity routing, action tracking, crash recovery, D-Bus activation (`org.waft.Daemon`). Also provides CLI (`waft plugin ls`, `waft plugin describe`, `waft protocol`) and emits `plugin-status` entities as a meta-plugin.
 - **`waft-overview`** - Main GTK4 overlay application binary. Connects to daemon via `WaftClient`, subscribes to entity types, renders entities via `EntityRenderer` and `WidgetReconciler`.
 - **`waft-ui-gtk`** - GTK4 widget library: `WidgetBase` trait, `Child`/`Children` container types, `WidgetReconciler`, widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`).
 - **`waft-config`** - Configuration loading from `~/.config/waft/config.toml`
 - **`waft-i18n`** - Fluent localization: `system_locale()` returns BCP47 locale, `I18n` struct for translations with `t()` and `t_args()`.
-- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with sidebar and `gtk::Stack` for page switching. Pages: Bluetooth (adapter controls, paired/discovered devices), WiFi (adapter toggle, scan, known/available networks), Wired (adapter status, IP info, connection profiles). Uses same `WaftClient` + `EntityStore` pattern as overview.
+- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with categorized sidebar and `gtk::Stack` for page switching. Pages: Bluetooth, WiFi, Wired (Connectivity); Display, Keyboard (Visual/Inputs); Notifications, Sounds (Feedback); Weather (Info); Plugins (System). Uses same `WaftClient` + `EntityStore` pattern as overview.
 - **`waft-core`** - Common types: `Callback<T>`, `VoidCallback`, `DbusHandle` (zbus wrapper). Re-exports `waft-config`.
 - **`waft-ipc`** - Legacy widget protocol types (being phased out).
 
@@ -96,7 +105,7 @@ All 15 plugins are standalone daemon binaries implementing the `Plugin` trait fr
 | **audio** | `audio-device` | Volume sliders, device selection (pactl) |
 | **networkmanager** | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn` | WiFi/Ethernet/VPN management (nmrs + zbus) |
 | **weather** | `weather` | Weather information via HTTP API |
-| **notifications** | `notification`, `dnd` | D-Bus notification server, toasts, DND |
+| **notifications** | `notification`, `dnd`, `notification-group`, `notification-profile`, `active-profile`, `sound-config`, `notification-sound` | D-Bus notification server, toasts, DND, filtering, sound management |
 | **eds** | `calendar-event` | EDS calendar integration |
 | **sunsetr** | `night-light` | Night light control via sunsetr CLI |
 | **syncthing** | `backup-method` | Syncthing service toggle |
@@ -119,16 +128,21 @@ Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK overlay)
 - Tracks actions by UUID with configurable timeouts
 - Detects crashes: sends `EntityStale` on restart, `EntityOutdated` after 5 crashes in 60s
 - Graceful shutdown via `CanStop` when no subscribers remain
+- Emits `plugin-status` entities as a meta-plugin (Available/Running/Stopped/Failed lifecycle states)
+- Handles `Describe` requests: returns `PluginDescription` data cached from plugin discovery
 
 **Plugin SDK (`waft-plugin`):**
-- `Plugin` trait (Send+Sync): `get_entities()`, `handle_action()`, `can_stop()`
+- `Plugin` trait (Send+Sync): `get_entities()`, `handle_action()`, `can_stop()`, `describe()` (optional)
 - `PluginRuntime` manages socket connection and message handling
 - `EntityNotifier` pushes updates via `notify()`
+- `PluginManifest`: `entity_types`, optional `name`, `description`; extended `provides --describe` returns `PluginDescription`
 
 **Protocol (`waft-protocol`):**
 - Entity types organized by domain (e.g. `entity::display::DarkMode`, `entity::audio::AudioDevice`)
 - URN format: `{plugin}/{entity-type}/{id}[/{entity-type}/{id}]*`
-- Messages: `AppMessage` (Subscribe, TriggerAction), `PluginMessage` (EntityUpdated, EntityRemoved, ActionSuccess/Error)
+- Messages: `AppMessage` (Subscribe, TriggerAction, Describe), `PluginMessage` (EntityUpdated, EntityRemoved, ActionSuccess/Error), `AppNotification` (DescribeResponse)
+- Static protocol registry: `entity::registry::all_entity_types()` returns compile-time entity type metadata (descriptions, URN patterns, properties, actions)
+- Plugin descriptions: `description::PluginDescription` with entity type details, obtained via `provides --describe` at discovery time
 - Transport: 4-byte big-endian length prefix + JSON payload over Unix sockets
 
 **Overview app (`waft-overview`):**
@@ -205,14 +219,22 @@ crates/
             main.rs               # GTK entrypoint
             app.rs                # Entity subscriptions, action writer, client setup
             window.rs             # AdwNavigationSplitView with gtk::Stack page switching
-            sidebar.rs            # Category navigation (Bluetooth, WiFi, Wired, Display)
+            sidebar.rs            # Categorized sidebar (Connectivity, Visual, Feedback, Inputs, Info, System)
             pages/
                 bluetooth.rs      # Smart container: adapter groups + device lists
                 wifi.rs           # Smart container: WiFi adapters + network lists
                 wired.rs          # Smart container: Ethernet adapters + connection profiles
+                display.rs        # Smart container: per-output display controls
+                keyboard.rs       # Smart container: keyboard layout selection
+                notifications.rs  # Smart container: groups, profiles, DND
+                sounds.rs         # Thin composer: defaults + gallery sections
+                weather.rs        # Smart container: weather display
+                plugins.rs        # Smart container: plugin lifecycle status
             bluetooth/            # Dumb widgets: adapter_group, device_row, paired/discovered groups
             wifi/                 # Dumb widgets: adapter_group, network_row, known/available groups
             wired/                # Dumb widgets: adapter_group, connection_row
+            plugins/              # Dumb widgets: plugin_row
+            sounds/               # Smart sections: defaults_section, gallery_section
 ```
 
 ### Key Architectural Patterns
@@ -227,9 +249,33 @@ crates/
 - `on_session_lock()` hook pauses animations and expensive operations when locked
 - Reduces power consumption and visual artifacts during lock screen
 
+**Two-Tier Plugin Manifest:**
+
+Plugins expose metadata through a two-tier manifest system:
+
+- **Tier 1 (basic)**: `handle_provides(&[entity_types])` or `handle_provides_full(entity_types, name, description)` -- returns `PluginManifest` with entity type list and optional display metadata. Used for `waft plugin ls`.
+- **Tier 2 (described)**: `handle_provides_described(entity_types, name, description, &plugin)` -- when called with `provides --describe`, invokes `Plugin::describe()` to return `PluginManifestDescribed` with full `PluginDescription` (entity type descriptions, properties, actions). Falls back to Tier 1 if the plugin returns `None` from `describe()`. Used for `waft plugin describe <name>`.
+
+All three functions live in `waft_plugin::manifest`. Plugins that don't implement `describe()` work with both tiers (Tier 2 gracefully degrades).
+
+**Daemon as Meta-Plugin (plugin-status entities):**
+
+The daemon itself emits `plugin-status` entities with URN `waft/plugin-status/{plugin-name}`. This is the only entity type that uses a fixed `"waft"` prefix instead of `{plugin}` in the URN pattern. The daemon tracks four lifecycle states: `Available` (discovered, not spawned), `Running` (connected), `Stopped` (graceful CanStop), `Failed` (circuit breaker tripped). See `entity::plugin::PluginStatus`.
+
+**Static Protocol Registry vs Runtime Plugin Descriptions:**
+
+There are two distinct sources of entity type documentation:
+
+- **Static registry** (`waft_protocol::entity::registry::all_entity_types()`): Compile-time metadata defined in the protocol crate. Contains domain-level entity type info (descriptions, URN patterns, property schemas, action schemas). Used by `waft protocol` CLI and for reference documentation. **Use this** when you need protocol-level documentation that is independent of which plugins are running.
+- **Runtime plugin descriptions** (`PluginDescription` from `provides --describe`): Per-plugin metadata obtained at discovery time, potentially localized. Contains the same structure but from the plugin's perspective. Used by `waft plugin describe` CLI and the daemon's `Describe` message. **Use this** when you need plugin-specific documentation that may include localized labels.
+
 ---
 
 ## Critical Rules
+
+### Known Tech Debt
+
+**`vrr_supported`/`vrr_enabled` in `DisplayOutput`**: These boolean fields in `entity::display::DisplayOutput` violate the project's boolean naming convention (state names, not questions). Should be renamed to `vrr_support`/`vrr` or similar. Deferred because it requires coordinated changes across protocol, niri plugin, and display settings page.
 
 ### Naming Conventions (MUST follow)
 
@@ -603,11 +649,11 @@ let handle = match self.field.as_ref() {
 
 **All 15 plugins use the entity-based architecture** with central daemon routing.
 
-- `waft-protocol` with entity types, messages, URN, transport
-- `waft-plugin` with `Plugin` trait, `PluginRuntime`, `EntityNotifier`
-- `waft` central daemon with discovery, spawning, routing, crash recovery
+- `waft-protocol` with entity types, messages, URN, transport, static entity registry, plugin descriptions
+- `waft-plugin` with `Plugin` trait, `PluginRuntime`, `EntityNotifier`, extended manifest (`provides --describe`)
+- `waft` central daemon with discovery, spawning, routing, crash recovery, CLI (clap), plugin-status meta-entities
 - `waft-overview` with `WaftClient`, `EntityRenderer`, socket reconnection
-- `waft-settings` with Bluetooth, WiFi, and Wired settings pages
+- `waft-settings` with Bluetooth, WiFi, Wired, Display, Keyboard, Notifications, Sounds, Weather, Plugins pages
 
 **Legacy crates** (`waft-ipc`, parts of `waft-core`) are still in the workspace but being phased out.
 

@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::description::PluginDescription;
 use crate::urn::Urn;
 
 /// Messages sent from an app to the waft daemon.
@@ -31,6 +32,12 @@ pub enum AppMessage {
         action_id: Uuid,
         params: serde_json::Value,
         timeout_ms: Option<u64>,
+    },
+
+    /// Request descriptions of a specific plugin, or all plugins.
+    Describe {
+        /// If set, describe only this plugin. If None, describe all.
+        plugin_name: Option<String>,
     },
 }
 
@@ -83,6 +90,11 @@ pub enum AppNotification {
 
     /// An entity's data is outdated (plugin reconnecting).
     EntityOutdated { urn: Urn, entity_type: String },
+
+    /// Response to a Describe request.
+    DescribeResponse {
+        plugins: Vec<PluginDescription>,
+    },
 }
 
 /// Commands sent from the waft daemon to a plugin.
@@ -254,6 +266,52 @@ mod tests {
             action: "toggle".to_string(),
             action_id: Uuid::new_v4(),
             params: serde_json::Value::Null,
+        });
+    }
+
+    #[test]
+    fn app_message_describe_all() {
+        roundtrip_json(&AppMessage::Describe {
+            plugin_name: None,
+        });
+    }
+
+    #[test]
+    fn app_message_describe_specific() {
+        roundtrip_json(&AppMessage::Describe {
+            plugin_name: Some("audio".to_string()),
+        });
+    }
+
+    #[test]
+    fn app_notification_describe_response() {
+        use crate::description::*;
+
+        roundtrip_json(&AppNotification::DescribeResponse {
+            plugins: vec![PluginDescription {
+                name: "clock".to_string(),
+                display_name: "Clock".to_string(),
+                description: "Current time and date display".to_string(),
+                entity_types: vec![EntityTypeDescription {
+                    entity_type: "clock".to_string(),
+                    display_name: "Clock".to_string(),
+                    description: "Current time and date".to_string(),
+                    properties: vec![PropertyDescription {
+                        name: "time".to_string(),
+                        label: "Time".to_string(),
+                        description: "Formatted time string".to_string(),
+                        value_type: PropertyValueType::String,
+                    }],
+                    actions: vec![],
+                }],
+            }],
+        });
+    }
+
+    #[test]
+    fn app_notification_describe_response_empty() {
+        roundtrip_json(&AppNotification::DescribeResponse {
+            plugins: vec![],
         });
     }
 }

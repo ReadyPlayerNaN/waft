@@ -1,10 +1,13 @@
-# Create Daemon Plugin
+---
+name: create-daemon-plugin
+description: Guide for creating a new daemon plugin for Waft. Daemon plugins are standalone binaries implementing the Plugin trait that communicate with the central waft daemon via Unix socket IPC using the entity-based protocol.
+---
 
-Guide for creating a new daemon plugin for Waft. Daemon plugins are standalone binaries that communicate with waft-overview via Unix socket IPC.
+# Create Daemon Plugin
 
 ## When to Use
 
-Use this skill when creating a **new** plugin. All new plugins must use the daemon architecture. The legacy cdylib (.so) architecture is deprecated.
+Use this skill when creating a **new** plugin for Waft. All plugins use the entity-based daemon architecture with `waft-plugin` SDK.
 
 ## Plugin Structure
 
@@ -30,17 +33,15 @@ name = "waft-your-plugin-daemon"
 path = "bin/waft-your-plugin-daemon.rs"
 
 [dependencies]
-waft-plugin-sdk = { path = "../../crates/plugin-sdk" }
-waft-ipc = { path = "../../crates/ipc" }
+waft-plugin = { path = "../../crates/plugin" }
 waft-i18n = { path = "../../crates/i18n" }       # If locale support needed
 
 anyhow = "1"
 async-trait = "0.1"
-env_logger = "0.11"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-toml = "0.8"
 
 # Add if D-Bus integration is needed:
 # zbus = { version = "5", default-features = false, features = ["tokio"] }
@@ -56,316 +57,294 @@ members = [
 ]
 ```
 
-## Step 2: Implement PluginDaemon Trait
+## Step 2: Define Entity Type in Protocol
 
-The daemon binary implements `PluginDaemon` from `waft-plugin-sdk`:
+Add your entity type to `crates/protocol/src/entity/`:
 
 ```rust
-use waft_plugin_sdk::*;
+// crates/protocol/src/entity/your_domain.rs
+use serde::{Deserialize, Serialize};
 
-#[async_trait::async_trait]
-pub trait PluginDaemon: Send + Sync {
-    /// Return current widget descriptions (called on every GetWidgets request)
-    fn get_widgets(&self) -> Vec<NamedWidget>;
+pub const ENTITY_TYPE: &str = "your-entity";
 
-    /// Handle user interaction from the overview UI
-    async fn handle_action(
-        &mut self,
-        widget_id: String,
-        action: Action,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct YourEntity {
+    pub name: String,
+    pub active: bool,
+    // Entity data fields -- these are the domain data, NOT widgets
 }
 ```
 
-## Step 3: Canonical Example (Clock Daemon Pattern)
+Register in `crates/protocol/src/entity/mod.rs`:
+```rust
+pub mod your_domain;
+```
 
-Minimal daemon with config and timer-based updates:
+## Step 3: Implement Plugin Trait
 
 ```rust
-use anyhow::Result;
-use serde::Deserialize;
-use waft_plugin_sdk::*;
+use anyhow::{Context, Result};
+use waft_plugin::*;
 
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
-struct MyConfig {
-    // Plugin-specific config fields
-}
-
-struct MyDaemon {
-    config: MyConfig,
-}
-
-impl MyDaemon {
-    fn new() -> Result<Self> {
-        let config = Self::load_config().unwrap_or_default();
-        Ok(Self { config })
-    }
-
-    fn load_config() -> Result<MyConfig> {
-        let config_path = dirs::config_dir()
-            .context("No config directory")?
-            .join("waft/config.toml");
-
-        if !config_path.exists() {
-            return Ok(MyConfig::default());
-        }
-
-        let content = std::fs::read_to_string(&config_path)?;
-        let root: toml::Table = toml::from_str(&content)?;
-
-        if let Some(plugins) = root.get("plugins").and_then(|v| v.as_array()) {
-            for plugin in plugins {
-                if let Some(table) = plugin.as_table() {
-                    if let Some(id) = table.get("id").and_then(|v| v.as_str()) {
-                        if id == "waft::your-plugin-daemon" || id == "your-plugin-daemon" {
-                            return toml::Value::Table(table.clone())
-                                .try_into()
-                                .context("Failed to parse config");
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(MyConfig::default())
-    }
+struct YourPlugin {
+    // Plugin state -- must be Send + Sync
+    state: std::sync::Arc<std::sync::Mutex<YourState>>,
 }
 
 #[async_trait::async_trait]
-impl PluginDaemon for MyDaemon {
-    fn get_widgets(&self) -> Vec<NamedWidget> {
-        vec![NamedWidget {
-            id: "my-plugin:toggle".to_string(),
-            weight: 100,
-            widget: FeatureToggleBuilder::new("My Feature")
-                .icon("emblem-system-symbolic")
-                .active(false)
-                .on_toggle("toggle")
-                .build(),
-        }]
+impl Plugin for YourPlugin {
+    fn get_entities(&self) -> Vec<Entity> {
+        let state = match self.state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("[your-plugin] mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        };
+
+        vec![Entity::new(
+            Urn::new("your-plugin", entity::your_domain::ENTITY_TYPE, "default"),
+            entity::your_domain::ENTITY_TYPE,
+            &entity::your_domain::YourEntity {
+                name: state.name.clone(),
+                active: state.active,
+            },
+        )]
     }
 
     async fn handle_action(
-        &mut self,
-        _widget_id: String,
-        action: Action,
+        &self,
+        urn: Urn,
+        action: String,
+        params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        match action.id.as_str() {
+        match action.as_str() {
             "toggle" => {
-                // Handle toggle
+                let mut state = match self.state.lock() {
+                    Ok(g) => g,
+                    Err(e) => {
+                        log::warn!("[your-plugin] mutex poisoned, recovering: {e}");
+                        e.into_inner()
+                    }
+                };
+                state.active = !state.active;
             }
-            _ => {}
+            other => {
+                log::warn!("[your-plugin] unknown action: {other}");
+            }
         }
         Ok(())
     }
-}
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    log::info!("Starting my-plugin daemon...");
-
-    let daemon = MyDaemon::new()?;
-    let (server, notifier) = PluginServer::new("your-plugin-daemon", daemon);
-
-    // Optional: spawn background task that calls notifier.notify() on state changes
-
-    server.run().await?;
-    Ok(())
+    fn can_stop(&self) -> bool {
+        true
+    }
 }
 ```
 
-## Step 4: Widget Builders
+## Step 4: Main Function
 
-The SDK provides builders for all widget types:
+There are three levels of manifest support. Use the simplest one that fits:
 
 ```rust
-// Feature toggle (most common)
-FeatureToggleBuilder::new("Title")
-    .icon("icon-name-symbolic")
-    .details("Status text")
-    .active(true)
-    .busy(false)
-    .expandable(true)
-    .expanded_content(menu_widget)
-    .on_toggle("action_id")
-    .build()
+fn main() -> Result<()> {
+    // Option A: Basic manifest (entity types only)
+    if waft_plugin::manifest::handle_provides(&[entity::your_domain::ENTITY_TYPE]) {
+        return Ok(());
+    }
 
-// Slider (volume, brightness)
-SliderBuilder::new(0.75)              // value 0.0..1.0
-    .icon("audio-volume-high-symbolic")
-    .muted(false)
-    .expandable(true)
-    .expanded_content(device_menu)
-    .on_value_change("set_volume")
-    .on_icon_click("toggle_mute")
-    .build()
+    // Option B: With display name and description (for `waft plugin ls`)
+    if waft_plugin::manifest::handle_provides_full(
+        &[entity::your_domain::ENTITY_TYPE],
+        Some("Your Plugin"),
+        Some("Does useful things"),
+    ) {
+        return Ok(());
+    }
 
-// Menu row (list items, settings)
-MenuRowBuilder::new("Label")
-    .icon("icon-symbolic")
-    .sublabel("Description")
-    .trailing(SwitchBuilder::new().active(true).build())
-    .sensitive(true)
-    .on_click("action_id")
-    .build()
+    // Option C: Full descriptions (for `waft plugin describe <name>`)
+    // Requires creating the plugin before the runtime to call describe()
+    let plugin = YourPlugin::new()?;
+    if waft_plugin::manifest::handle_provides_described(
+        &[entity::your_domain::ENTITY_TYPE],
+        Some("Your Plugin"),
+        Some("Does useful things"),
+        &plugin,
+    ) {
+        return Ok(());
+    }
 
-// Container (layout)
-ContainerBuilder::new(Orientation::Vertical)
-    .spacing(4)
-    .css_class("menu-section")
-    .child(row1)
-    .child(row2)
-    .build()
+    // Initialize logging
+    waft_plugin::init_plugin_logger("info");
 
-// Button, Label, InfoCard, Switch also available
-ButtonBuilder::new().label("Power Off").icon("system-shutdown-symbolic").on_click("shutdown").build()
-LabelBuilder::new("Text").css_class("dim-label").build()
-InfoCardBuilder::new("Title").icon("icon").description("Details").build()
-SwitchBuilder::new().active(true).on_toggle("toggle").build()
+    log::info!("Starting your-plugin...");
+
+    // Build tokio runtime manually so `handle_provides` runs without it
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(async {
+        let plugin = YourPlugin::new()?;
+        let (runtime, notifier) = PluginRuntime::new("your-plugin", plugin);
+
+        // Optional: spawn background task that calls notifier.notify() on state changes
+        tokio::spawn(async move {
+            // D-Bus signal monitoring, timer, etc.
+            // When state changes: notifier.notify();
+        });
+
+        runtime.run().await?;
+        Ok(())
+    })
+}
+```
+
+For Option C, implement `describe()` on the Plugin trait:
+
+```rust
+fn describe(&self) -> Option<waft_protocol::PluginDescription> {
+    Some(waft_protocol::PluginDescription {
+        name: "your-plugin".to_string(),
+        display_name: "Your Plugin".to_string(),
+        description: "Does useful things".to_string(),
+        entity_types: vec![
+            waft_protocol::description::EntityTypeDescription {
+                entity_type: "your-entity".to_string(),
+                display_name: "Your Entity".to_string(),
+                description: "A domain entity".to_string(),
+                properties: vec![/* PropertyDescription */],
+                actions: vec![/* ActionDescription */],
+            },
+        ],
+    })
+}
 ```
 
 ## Step 5: D-Bus Integration (Optional)
 
-For plugins that monitor D-Bus signals, follow the darkman daemon pattern:
+For plugins that monitor D-Bus signals:
 
 ```rust
 use std::sync::{Arc, Mutex as StdMutex};
-use zbus::Connection;
-use futures_util::StreamExt;
 
-struct MyDaemon {
-    state: Arc<StdMutex<MyState>>,
-    conn: Connection,
+struct YourPlugin {
+    state: Arc<StdMutex<YourState>>,
 }
 
-impl MyDaemon {
-    async fn new() -> Result<Self> {
-        let conn = Connection::session().await?;   // or Connection::system()
-        let initial_state = get_state_from_dbus(&conn).await?;
-        Ok(Self {
-            state: Arc::new(StdMutex::new(initial_state)),
-            conn,
-        })
+// Spawn signal monitoring task before starting runtime:
+async fn monitor_signals(
+    conn: zbus::Connection,
+    state: Arc<StdMutex<YourState>>,
+    notifier: EntityNotifier,
+) {
+    let proxy = YourProxy::new(&conn).await.unwrap();
+    let mut stream = proxy.receive_property_changed().await.unwrap();
+    while let Some(change) = stream.next().await {
+        {
+            let mut s = match state.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    log::warn!("[your-plugin] mutex poisoned: {e}");
+                    e.into_inner()
+                }
+            };
+            s.update_from(change);
+        }
+        notifier.notify();
     }
+    log::warn!("[your-plugin] signal monitoring exited");
 }
-
-// Spawn signal monitoring task before starting server:
-async fn monitor_signals(conn: Connection, state: Arc<StdMutex<MyState>>, notifier: WidgetNotifier) -> Result<()> {
-    let rule = zbus::MatchRule::builder()
-        .msg_type(zbus::message::Type::Signal)
-        .sender("org.example.Service")?
-        .path("/org/example/path")?
-        .interface("org.example.Interface")?
-        .member("SignalName")?
-        .build();
-
-    let dbus_proxy = zbus::fdo::DBusProxy::new(&conn).await?;
-    dbus_proxy.add_match_rule(rule).await?;
-
-    let mut stream = zbus::MessageStream::from(&conn);
-    while let Some(msg) = stream.next().await {
-        // Update shared state
-        *state.lock().unwrap() = new_state;
-        notifier.notify();  // Push updated widgets to overview
-    }
-    Ok(())
-}
-
-// In main():
-let shared_state = daemon.shared_state();
-let monitor_conn = daemon.conn.clone();
-let (server, notifier) = PluginServer::new("my-daemon", daemon);
-
-tokio::spawn(async move {
-    if let Err(e) = monitor_signals(monitor_conn, shared_state, notifier).await {
-        log::error!("Signal monitoring failed: {}", e);
-    }
-});
-
-server.run().await?;
 ```
 
 Key D-Bus patterns:
-- **Shared state**: `Arc<StdMutex<T>>` between daemon struct and monitoring tasks
-- **Signal monitoring**: `tokio::spawn` + `zbus::MessageStream` + `notifier.notify()`
+- **Shared state**: `Arc<StdMutex<T>>` between plugin struct and monitoring tasks
+- **Signal monitoring**: `tokio::spawn` + signal stream + `notifier.notify()`
 - **zbus v5**: Always use `features = ["tokio"]`, disable default features
 - **NO POLLING**: Sleep to next event boundary (D-Bus signals, timer boundaries)
 
-## Step 6: Register with DaemonSpawner
+## Step 6: Configuration (Optional)
 
-Add your daemon binary name to `crates/overview/src/daemon_spawner.rs`:
+Load config from `~/.config/waft/config.toml`:
 
 ```rust
-pub fn spawn_all_daemons(&mut self) {
-    let daemon_names = vec![
-        // ... existing daemons ...
-        "waft-your-plugin-daemon",
-    ];
-    // ...
-}
+let config: YourConfig =
+    waft_plugin::config::load_plugin_config("your-plugin").unwrap_or_default();
+```
+
+Config section format:
+```toml
+[[plugins]]
+id = "your-plugin"
+some_setting = "value"
 ```
 
 ## Step 7: Build and Test
 
 ```bash
-# Build the daemon
+# Build the plugin
 cargo build -p waft-plugin-your-plugin
 
-# Run standalone (for development)
-cargo run -p waft-plugin-your-plugin --bin waft-your-plugin-daemon
+# Run standalone (for development/debugging)
+cargo run --bin waft-your-plugin-daemon
 
-# Run full system with all daemons
+# Test provides manifest
+./target/debug/waft-your-plugin-daemon provides
+
+# Run full system with all plugins
 WAFT_DAEMON_DIR=./target/debug cargo run
 
 # Run tests
 cargo test -p waft-plugin-your-plugin
-
-# Verify socket is created
-ls /run/user/$(id -u)/waft/plugins/your-plugin-daemon.sock
+cargo test --workspace
 ```
 
-## Testing with SDK Helpers
+The central daemon auto-discovers plugins by running `waft-*-daemon provides` in the daemon directory.
 
-The `waft_plugin_sdk::testing` module provides test utilities:
+## Critical Rules
 
-- `MockPluginDaemon` - configurable mock for testing
-- `TestPlugin` - minimal toggle plugin
-- `spawn_test_plugin(name, daemon)` - spawn daemon in background tokio task
-- `wait_for_socket(path, timeout)` - wait for socket file to appear
-- `unique_test_socket_path(prefix)` - generate unique socket path for parallel tests
-- `cleanup_test_sockets(names)` - clean up test socket files
+1. **Plugin trait requires Send + Sync** -- use `Arc<StdMutex<T>>` for shared mutable state, never `Rc<RefCell<T>>`
+2. **Never use `let _ =` on fallible operations** -- always log errors
+3. **Recover from mutex poison** -- use `e.into_inner()` instead of `.unwrap()`
+4. **Log when background tasks exit** -- wrap `tokio::spawn` with error logging
+5. **No polling** -- use D-Bus signals, timer boundaries, or other event-driven patterns
+6. **Reap child processes** -- spawn a thread to `wait()` on any child processes
+
+## Step 8: Register in Protocol Registry
+
+Add your entity type to `crates/protocol/src/entity/registry.rs` in the `all_entity_types()` function:
 
 ```rust
-use waft_plugin_sdk::testing::*;
-
-#[tokio::test]
-async fn test_my_plugin() {
-    let daemon = TestPlugin::new();
-    let (handle, socket_path) = spawn_test_plugin("test", daemon).await;
-    wait_for_socket(&socket_path, Duration::from_secs(1)).await.unwrap();
-    // ... test via IPC ...
-    handle.abort();
-}
+EntityTypeInfo {
+    entity_type: "your-entity",
+    domain: "your-domain",
+    description: "A domain entity",
+    urn_pattern: "{plugin}/your-entity/{id}",
+    properties: &[
+        PropertyInfo { name: "name", type_description: "string", description: "Entity name", optional: false },
+        PropertyInfo { name: "active", type_description: "bool", description: "Whether active", optional: false },
+    ],
+    actions: &[
+        ActionInfo {
+            name: "toggle",
+            description: "Toggle active state",
+            params: &[],
+        },
+    ],
+},
 ```
 
-## IPC Protocol Reference
-
-- **Transport**: Unix socket at `/run/user/{uid}/waft/plugins/{name}.sock`
-- **Framing**: 4-byte big-endian length prefix + JSON payload
-- **Overview -> Plugin**: `OverviewMessage::GetWidgets`, `OverviewMessage::TriggerAction { widget_id, action }`
-- **Plugin -> Overview**: `PluginMessage::SetWidgets { widgets }`
-- **Push updates**: Call `notifier.notify()` to push `SetWidgets` to all connected clients
+This enables `waft protocol` CLI to list your entity type with documentation.
 
 ## Checklist
 
-- [ ] `Cargo.toml` with `[[bin]]` entry and `waft-plugin-sdk` dependency
+- [ ] Entity type defined in `crates/protocol/src/entity/` with `ENTITY_TYPE` constant
+- [ ] Entity module registered in `crates/protocol/src/entity/mod.rs`
+- [ ] Entity type added to `crates/protocol/src/entity/registry.rs` in `all_entity_types()`
+- [ ] `Cargo.toml` with `[[bin]]` entry and `waft-plugin` dependency
 - [ ] Added to workspace `Cargo.toml` members
-- [ ] `PluginDaemon` trait implemented (`get_widgets`, `handle_action`)
-- [ ] `PluginServer::new()` + `server.run().await` in `main()`
+- [ ] `Plugin` trait implemented (`get_entities`, `handle_action`, `can_stop`)
+- [ ] `PluginRuntime::new()` + `runtime.run().await` in `main()`
+- [ ] `handle_provides()` check before tokio runtime starts (pick one of three tiers)
 - [ ] Background tasks use `notifier.notify()` for state change push
-- [ ] Daemon name added to `DaemonSpawner::spawn_all_daemons()`
 - [ ] Config loading from `~/.config/waft/config.toml` (if configurable)
-- [ ] Tests written
+- [ ] Plugin README.md created with Entity Types, Actions, Configuration sections
+- [ ] Serde roundtrip tests for entity type
 - [ ] `cargo build --workspace && cargo test --workspace` pass

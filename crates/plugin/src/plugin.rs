@@ -5,6 +5,7 @@
 //! widget descriptions, `Plugin` returns domain data as entities.
 
 use serde::Serialize;
+use waft_protocol::PluginDescription;
 use waft_protocol::urn::Urn;
 
 /// A domain entity produced by a plugin.
@@ -74,5 +75,14 @@ pub trait Plugin: Send + Sync {
     /// finish work before stopping.
     fn can_stop(&self) -> bool {
         true
+    }
+
+    /// Describe this plugin's entity types, properties, and actions.
+    ///
+    /// Called during manifest generation (`provides --describe`), not at
+    /// runtime. Returns `None` by default (plugin has no description).
+    /// Override to provide self-documentation for settings UIs and CLI tools.
+    fn describe(&self) -> Option<PluginDescription> {
+        None
     }
 }

@@ -9,6 +9,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+
+use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{DARK_MODE_ENTITY_TYPE, DarkMode};
 
@@ -20,11 +22,11 @@ pub struct DarkModeSection {
 impl DarkModeSection {
     pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Appearance")
+            .title(t("display-appearance"))
             .visible(false)
             .build();
 
-        let toggle_row = adw::SwitchRow::builder().title("Dark Mode").build();
+        let toggle_row = adw::SwitchRow::builder().title(t("display-dark-mode")).build();
         group.add(&toggle_row);
 
         let updating = Rc::new(Cell::new(false));

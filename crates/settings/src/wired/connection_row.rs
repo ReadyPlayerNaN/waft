@@ -9,6 +9,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use waft_ui_gtk::widgets::icon::IconWidget;
 
+use crate::i18n::t;
+
 /// Props for creating or updating a connection row.
 pub struct ConnectionRowProps {
     pub name: String,
@@ -83,11 +85,11 @@ impl WiredConnectionRow {
         self.check_icon.widget().set_visible(props.active);
 
         if props.active {
-            self.root.set_subtitle("Active");
-            self.action_button.set_label("Disconnect");
+            self.root.set_subtitle(&t("wired-active"));
+            self.action_button.set_label(&t("wired-disconnect"));
         } else {
             self.root.set_subtitle("");
-            self.action_button.set_label("Connect");
+            self.action_button.set_label(&t("wired-connect"));
         }
     }
 

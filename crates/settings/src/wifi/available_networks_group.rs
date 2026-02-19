@@ -10,6 +10,8 @@ use waft_client::EntityActionCallback;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::WiFiNetwork;
 
+use crate::i18n::t;
+
 use super::network_row::{NetworkRow, NetworkRowOutput, NetworkRowProps};
 
 /// Group displaying available (discovered) WiFi networks.
@@ -22,7 +24,7 @@ pub struct AvailableNetworksGroup {
 impl AvailableNetworksGroup {
     pub fn new() -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Available Networks")
+            .title(t("wifi-available-networks"))
             .visible(false)
             .build();
 
@@ -100,7 +102,7 @@ impl AvailableNetworksGroup {
             self.spinner.start();
             if self.rows.is_empty() {
                 self.root
-                    .set_description(Some("Searching for networks\u{2026}"));
+                    .set_description(Some(&t("wifi-searching-networks")));
             } else {
                 self.root.set_description(None::<&str>);
             }

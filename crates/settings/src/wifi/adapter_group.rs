@@ -7,6 +7,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 
+use crate::i18n::t;
+
 /// Props for creating or updating a WiFi adapter group.
 pub struct WifiAdapterGroupProps {
     pub name: String,
@@ -38,7 +40,7 @@ impl WifiAdapterGroup {
     pub fn new(props: &WifiAdapterGroupProps) -> Self {
         let group = adw::PreferencesGroup::builder().title(&props.name).build();
 
-        let enabled_row = adw::SwitchRow::builder().title("Enabled").build();
+        let enabled_row = adw::SwitchRow::builder().title(t("wifi-adapter-enabled")).build();
         group.add(&enabled_row);
 
         let scan_button = gtk::Button::builder()
@@ -97,7 +99,7 @@ impl WifiAdapterGroup {
 
         self.root.set_title(&props.name);
         self.enabled_row.set_active(props.enabled);
-        self.scan_button.set_label("Scan");
+        self.scan_button.set_label(&t("wifi-adapter-scan"));
         self.scan_button.set_sensitive(props.enabled);
 
         *self.updating.borrow_mut() = false;

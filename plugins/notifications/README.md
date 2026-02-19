@@ -8,6 +8,11 @@ Freedesktop.org notification server that owns `org.freedesktop.Notifications` on
 |---|---|---|
 | `notification` | `notifications/notification/{id}` | One entity per active notification |
 | `dnd` | `notifications/dnd/default` | Do Not Disturb toggle state |
+| `notification-group` | `notifications/notification-group/{id}` | Notification filter group (pattern matcher) |
+| `notification-profile` | `notifications/notification-profile/{id}` | Notification filter profile (set of group rules) |
+| `active-profile` | `notifications/active-profile/default` | Currently active filter profile |
+| `sound-config` | `notifications/sound-config/default` | Sound enabled toggle + per-urgency default sounds |
+| `notification-sound` | `notifications/notification-sound/{filename}` | Custom sound file in gallery |
 
 ### `notification` entity
 
@@ -32,6 +37,17 @@ Freedesktop.org notification server that owns `org.freedesktop.Notifications` on
 | `dnd` | `toggle` | - | Toggle Do Not Disturb on/off |
 | `notification` | `dismiss` | - | Dismiss a notification (emits `NotificationClosed` signal) |
 | `notification` | `invoke-action` | `{"key": "action_key"}` | Invoke a notification action (emits `ActionInvoked` + `NotificationClosed` signals) |
+| `notification-group` | `create-group` | `{group object}` | Create a new filter group |
+| `notification-group` | `update-group` | `{group object}` | Update an existing filter group |
+| `notification-group` | `delete-group` | - | Delete a filter group |
+| `notification-profile` | `create-profile` | `{profile object}` | Create a new filter profile |
+| `notification-profile` | `update-profile` | `{profile object}` | Update an existing filter profile |
+| `notification-profile` | `delete-profile` | - | Delete a filter profile |
+| `active-profile` | `set-active-profile` | `{"profile_id": "..."}` | Switch the active filter profile |
+| `sound-config` | `update-sound-config` | `{sound config object}` | Update sound enabled state and per-urgency defaults |
+| `sound-config` | `preview-sound` | `{"reference": "..."}` | Play a sound preview |
+| `notification-sound` | `add-sound` | `{"filename": "...", "data": "base64..."}` | Upload a custom sound file |
+| `notification-sound` | `remove-sound` | - | Remove a custom sound file |
 
 ## D-Bus Interfaces
 
@@ -56,15 +72,36 @@ Requests the name with `REPLACE_EXISTING` and `ALLOW_REPLACEMENT` flags. If anot
 - **Slack workspace extraction**: Detects `[workspace] title` pattern in Slack notifications and groups per workspace
 - **Replacement**: Supports `replaces_id` to update existing notifications
 - **Spec version**: Implements freedesktop.org Desktop Notifications Specification 1.2
+- **Notification filtering**: Pattern-based groups with AND/OR combinators (8 match operators: equals, contains, starts_with, ends_with, regex, not_equals, not_contains, not_regex). Configurable profiles with hide/no_toast/no_sound rules per group.
+- **Sound management**: Master toggle, per-urgency default sounds (XDG sound names or custom files), sound gallery with upload/preview/remove. Custom sounds stored in `~/.config/waft/sounds/`.
 
 ## Configuration
 
 ```toml
 [[plugins]]
 id = "plugin::notifications"
+toast_limit = 3
+disable_toasts = false
+
+[plugins.sound]
+enabled = true
+default_low = "message-new-email"
+default_normal = "message-new-instant"
+default_critical = "dialog-warning"
+
+[[plugins.groups]]
+id = "my-group"
+name = "My Filter Group"
+combinator = "and"
+# ... pattern matchers
+
+[[plugins.profiles]]
+id = "my-profile"
+name = "My Profile"
+# ... group rules (hide/no_toast/no_sound)
 ```
 
-No plugin-specific configuration options.
+See `~/.config/waft/config.toml` under `plugin::notifications` for full configuration.
 
 ## Lifecycle
 

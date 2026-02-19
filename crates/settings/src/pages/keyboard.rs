@@ -13,6 +13,7 @@ use waft_protocol::entity::keyboard::{CONFIG_ENTITY_TYPE, KeyboardLayoutConfig};
 use waft_ui_gtk::widgets::ordered_list::{OrderedList, OrderedListOutput, OrderedListProps};
 use waft_ui_gtk::widgets::ordered_list_row::{OrderedListRow, OrderedListRowProps};
 
+use crate::i18n::{t, t_args};
 use crate::keyboard::add_layout_dialog;
 use crate::keyboard::rename_dialog;
 
@@ -54,10 +55,8 @@ impl KeyboardPage {
 
         // Layout list group
         let list_group = adw::PreferencesGroup::builder()
-            .title("Keyboard Layouts")
-            .description(
-                "Configure available keyboard layouts for switching. Drag the handle to reorder.",
-            )
+            .title(t("kb-layouts-title"))
+            .description(t("kb-layouts-desc"))
             .build();
 
         // Create OrderedList instead of manual ListBox
@@ -70,8 +69,8 @@ impl KeyboardPage {
         // Empty state shown when no layouts are configured
         let empty_state = adw::StatusPage::builder()
             .icon_name("input-keyboard-symbolic")
-            .title("No Keyboard Layouts")
-            .description("Add a layout to start switching between keyboards.")
+            .title(t("kb-no-layouts"))
+            .description(t("kb-no-layouts-desc"))
             .build();
         list_group.add(&empty_state);
 
@@ -79,7 +78,7 @@ impl KeyboardPage {
 
         // Add layout button
         let add_button = gtk::Button::builder()
-            .label("Add Layout")
+            .label(t("kb-add-layout"))
             .halign(gtk::Align::Start)
             .build();
         root.append(&add_button);
@@ -220,13 +219,9 @@ impl KeyboardPage {
         match config.mode.as_str() {
             "external-file" => {
                 let msg = if let Some(path) = &config.file_path {
-                    format!(
-                        "Layouts configured via XKB file: {}. Changes require restarting the Niri session.",
-                        path
-                    )
+                    t_args("kb-mode-external-file", &[("path", path)])
                 } else {
-                    "Layouts configured via XKB file. Changes require restarting the Niri session."
-                        .to_string()
+                    t("kb-mode-external-file-no-path")
                 };
                 s.mode_banner.set_title(&msg);
                 s.mode_banner.set_revealed(true);
@@ -234,12 +229,9 @@ impl KeyboardPage {
             }
             "error" => {
                 let msg = if let Some(error) = &config.error_message {
-                    format!(
-                        "Configuration error: {}. Please check ~/.config/niri/config.kdl",
-                        error
-                    )
+                    t_args("kb-mode-error", &[("error", error)])
                 } else {
-                    "Configuration error. Please check ~/.config/niri/config.kdl".to_string()
+                    t("kb-mode-error-no-detail")
                 };
                 s.mode_banner.set_title(&msg);
                 s.mode_banner.set_revealed(true);
@@ -247,7 +239,7 @@ impl KeyboardPage {
             }
             "system-default" => {
                 s.mode_banner
-                    .set_title("Using system defaults. Add a layout to start configuring.");
+                    .set_title(&t("kb-mode-system-default"));
                 s.mode_banner.set_revealed(true);
                 s.add_button.set_sensitive(true);
             }
@@ -299,7 +291,7 @@ impl KeyboardPage {
             if can_rename {
                 let rename_btn = gtk::Button::builder()
                     .icon_name("document-edit-symbolic")
-                    .tooltip_text("Rename layout")
+                    .tooltip_text(t("kb-rename-layout"))
                     .valign(gtk::Align::Center)
                     .css_classes(["flat"])
                     .build();
@@ -344,7 +336,7 @@ impl KeyboardPage {
             // Remove button
             let remove_btn = gtk::Button::builder()
                 .icon_name("user-trash-symbolic")
-                .tooltip_text("Remove layout")
+                .tooltip_text(t("kb-remove-layout"))
                 .valign(gtk::Align::Center)
                 .css_classes(["flat"])
                 .build();

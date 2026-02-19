@@ -54,6 +54,8 @@ pub use runtime::{PluginRuntime, daemon_socket_path};
 pub use serde_json;
 
 // Re-export protocol types commonly used by plugins
+pub use waft_protocol::PluginDescription;
+pub use waft_protocol::description;
 pub use waft_protocol::entity;
 pub use waft_protocol::urn::Urn;
 pub use waft_protocol::{PluginCommand, PluginMessage};

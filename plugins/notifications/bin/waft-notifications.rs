@@ -23,6 +23,7 @@ use waft_protocol::entity::notification_filter::{
     ACTIVE_PROFILE_ENTITY_TYPE, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE,
     SOUND_CONFIG_ENTITY_TYPE,
 };
+use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
 
 fn main() -> Result<()> {
     // Handle `provides` CLI command before starting runtime
@@ -33,6 +34,7 @@ fn main() -> Result<()> {
         NOTIFICATION_PROFILE_ENTITY_TYPE,
         ACTIVE_PROFILE_ENTITY_TYPE,
         SOUND_CONFIG_ENTITY_TYPE,
+        NOTIFICATION_SOUND_ENTITY_TYPE,
     ]) {
         return Ok(());
     }
@@ -202,9 +204,10 @@ fn main() -> Result<()> {
 
                         // 6. Play sound AFTER state mutation (non-blocking)
                         if let SoundDecision::Play(sound_id) = sound_decision {
+                            let resolved = waft_plugin_notifications::sound::gallery::resolve_sound_reference(&sound_id);
                             let player = ingress_sound_player.clone();
                             tokio::spawn(async move {
-                                player.play(&sound_id).await;
+                                player.play(&resolved).await;
                             });
                         }
 

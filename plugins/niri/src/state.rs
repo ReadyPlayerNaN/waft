@@ -40,6 +40,14 @@ pub struct DisplayOutputState {
     pub vrr_supported: bool,
     /// Whether VRR is currently enabled.
     pub vrr_enabled: bool,
+    /// Whether the output is currently enabled (logical is Some in niri).
+    pub enabled: bool,
+    /// Current scale factor.
+    pub scale: f64,
+    /// Current transform string from niri (e.g. "Normal", "90", "Flipped90").
+    pub transform: String,
+    /// Physical size in millimeters [width, height]. None if not reported.
+    pub physical_size: Option<[u32; 2]>,
 }
 
 /// A single display mode from Niri.

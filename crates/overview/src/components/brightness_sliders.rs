@@ -95,7 +95,7 @@ impl BrightnessSlidersComponent {
                         cb_value(
                             urn_for_value.clone(),
                             "set-brightness".to_string(),
-                            serde_json::json!(v),
+                            serde_json::json!({ "value": v }),
                         );
                     });
 

@@ -1,0 +1,303 @@
+# waft-settings English translations
+
+# Window & Navigation
+settings-title = Settings
+settings-window-title = Waft Settings
+
+# Sidebar categories
+sidebar-connectivity = Connectivity
+sidebar-visual = Visual
+sidebar-feedback = Feedback
+sidebar-inputs = Inputs
+sidebar-info = Info
+sidebar-system = System
+
+# Sidebar pages
+settings-bluetooth = Bluetooth
+settings-wifi = WiFi
+settings-wired = Wired
+settings-display = Display
+settings-notifications = Notifications
+settings-sounds = Sounds
+settings-keyboard = Keyboard
+settings-weather = Weather
+settings-plugins = Plugins
+
+# Bluetooth -- Adapter
+bt-adapter-enabled = Enabled
+bt-adapter-discoverable = Discoverable
+bt-adapter-device-name = Device Name
+bt-adapter-stop-scanning = Stop Scanning
+bt-adapter-start-scanning = Start Scanning
+
+# Bluetooth -- Devices
+bt-paired-devices = Paired Devices
+bt-no-paired-devices = No paired devices
+bt-available-devices = Available Devices
+bt-searching-devices = Searching for devices…
+bt-start-scanning-hint = Start scanning to discover nearby devices
+bt-remove-device = Remove device
+bt-pair = Pair
+bt-connected = Connected
+bt-battery-pct = Connected · Battery { $pct }%
+bt-connecting = Connecting…
+bt-cancel = Cancel
+bt-disconnecting = Disconnecting…
+bt-wait = Wait
+bt-disconnected = Disconnected
+bt-connect = Connect
+bt-disconnect = Disconnect
+bt-signal-excellent = Excellent signal
+bt-signal-good = Good signal
+bt-signal-fair = Fair signal
+bt-signal-weak = Weak signal
+
+# WiFi -- Adapter
+wifi-adapter-enabled = Enabled
+wifi-adapter-scan = Scan
+
+# WiFi -- Networks
+wifi-available-networks = Available Networks
+wifi-searching-networks = Searching for networks…
+wifi-known-networks = Known Networks
+wifi-no-known-networks = No known networks
+wifi-connected = Connected
+wifi-disconnect = Disconnect
+wifi-connect = Connect
+
+# Wired
+wired-connected = Connected
+wired-ip-address = IP Address
+wired-gateway = Gateway
+wired-public-ip = Public IP
+wired-active = Active
+wired-disconnect = Disconnect
+wired-connect = Connect
+
+# Display -- Brightness
+display-builtin = Built-in display
+display-external = External display
+display-brightness = Brightness
+
+# Display -- Dark Mode
+display-appearance = Appearance
+display-dark-mode = Dark Mode
+
+# Display -- Night Light
+display-night-light = Night Light
+display-night-light-toggle = Night Light
+display-color-preset = Color Preset
+display-status = Status
+display-day = Day
+display-night = Night
+display-default = Default
+display-next-transition = Next Transition
+
+# Display -- Output
+display-preferred = (Preferred)
+display-output-name = Output: { $name }
+display-connection = Connection
+display-physical-size = Physical Size
+display-resolution = Resolution
+display-refresh-rate = Refresh Rate
+display-scale = Scale
+display-rotation = Rotation
+display-rotation-normal = Normal
+display-rotation-90 = 90°
+display-rotation-180 = 180°
+display-rotation-270 = 270°
+display-flip = Flip
+display-flip-subtitle = Mirror display horizontally
+display-vrr = Variable Refresh Rate
+
+# Display -- Dark Mode Automation
+display-dark-mode-automation = Dark Mode Automation
+display-latitude = Latitude
+display-longitude = Longitude
+display-auto-location = Auto-detect location
+display-dbus-api = Enable D-Bus API
+display-xdg-portal = Enable XDG Portal
+
+# Display -- Night Light Config
+nlc-colors = Colors
+nlc-night-temp = Night Temperature
+nlc-night-temp-sub = Color temperature at night (K)
+nlc-night-gamma = Night Gamma
+nlc-night-gamma-sub = Gamma correction at night (%)
+nlc-day-temp = Day Temperature
+nlc-day-temp-sub = Color temperature during day (K)
+nlc-day-gamma = Day Gamma
+nlc-day-gamma-sub = Gamma correction during day (%)
+nlc-static-temp = Static Temperature
+nlc-static-temp-sub = Color temperature in static mode (K)
+nlc-static-gamma = Static Gamma
+nlc-static-gamma-sub = Gamma correction in static mode (%)
+nlc-timing = Timing
+nlc-transition-mode = Transition Mode
+nlc-transition-mode-sub = How to determine day/night timing
+nlc-sunrise = Sunrise
+nlc-sunset = Sunset
+nlc-transition-duration = Transition Duration
+nlc-transition-duration-sub = Duration of color transition (minutes)
+nlc-location = Location
+nlc-latitude = Latitude
+nlc-longitude = Longitude
+nlc-advanced = Advanced
+nlc-backend = Backend
+nlc-smoothing = Smoothing
+nlc-smoothing-sub = Smooth color transitions
+nlc-startup-duration = Startup Duration
+nlc-startup-duration-sub = Duration of startup transition (seconds)
+nlc-shutdown-duration = Shutdown Duration
+nlc-shutdown-duration-sub = Duration of shutdown transition (seconds)
+nlc-adaptive-interval = Adaptive Interval
+nlc-adaptive-interval-sub = Adaptive update interval (milliseconds)
+nlc-update-interval = Update Interval
+nlc-update-interval-sub = Regular update interval (seconds)
+nlc-calculated-auto = Calculated automatically
+nlc-not-used = Not used in this mode
+
+# Keyboard
+kb-layouts-title = Keyboard Layouts
+kb-layouts-desc = Configure available keyboard layouts for switching. Drag the handle to reorder.
+kb-no-layouts = No Keyboard Layouts
+kb-no-layouts-desc = Add a layout to start switching between keyboards.
+kb-add-layout = Add Layout
+kb-mode-external-file = Layouts configured via XKB file: { $path }. Changes require restarting the Niri session.
+kb-mode-external-file-no-path = Layouts configured via XKB file. Changes require restarting the Niri session.
+kb-mode-error = Configuration error: { $error }. Please check ~/.config/niri/config.kdl
+kb-mode-error-no-detail = Configuration error. Please check ~/.config/niri/config.kdl
+kb-mode-system-default = Using system defaults. Add a layout to start configuring.
+kb-rename-layout = Rename layout
+kb-remove-layout = Remove layout
+kb-rename-dialog-heading = Rename Layout
+kb-rename-cancel = Cancel
+kb-rename-confirm = Rename
+kb-rename-entry-title = Layout name
+kb-add-dialog-heading = Add Keyboard Layout
+kb-add-cancel = Cancel
+kb-add-confirm = Add
+kb-add-search-placeholder = Search layouts...
+
+# Weather
+weather-current = Current Weather
+weather-temperature = Temperature
+weather-condition = Condition
+weather-location = Location
+weather-current-location = Current Location
+weather-search-city = Search City
+weather-search-results = Search Results
+weather-settings = Settings
+weather-temp-unit = Temperature Unit
+weather-update-interval = Update Interval
+weather-celsius = Celsius
+weather-fahrenheit = Fahrenheit
+weather-interval-5m = 5 minutes
+weather-interval-10m = 10 minutes
+weather-interval-30m = 30 minutes
+weather-interval-1h = 1 hour
+weather-no-locations = No locations found
+weather-clear = Clear
+weather-partly-cloudy = Partly Cloudy
+weather-cloudy = Cloudy
+weather-fog = Fog
+weather-drizzle = Drizzle
+weather-rain = Rain
+weather-freezing-rain = Freezing Rain
+weather-snow = Snow
+weather-thunderstorm = Thunderstorm
+
+# Notifications -- DND
+notif-dnd = Do Not Disturb
+
+# Notifications -- Active Profile
+notif-active-profile = Active Profile
+notif-profile = Profile
+
+# Notifications -- Groups
+notif-groups = Notification Groups
+notif-no-groups = No Notification Groups
+notif-no-groups-desc = Groups define which notifications to match using patterns like app name, title, or urgency. Create a group to start filtering.
+notif-group-order = Order: { $order }
+notif-match-all-and = All match (AND)
+notif-match-any-or = Any match (OR)
+
+# Notifications -- Fields
+notif-field-app-name = App Name
+notif-field-app-id = App ID
+notif-field-title = Title
+notif-field-body = Body
+notif-field-category = Category
+notif-field-urgency = Urgency
+notif-field-workspace = Workspace
+
+# Notifications -- Operators
+notif-op-equals = equals
+notif-op-not-equals = not equals
+notif-op-contains = contains
+notif-op-not-contains = not contains
+notif-op-starts-with = starts with
+notif-op-not-starts-with = not starts with
+notif-op-ends-with = ends with
+notif-op-not-ends-with = not ends with
+notif-op-matches-regex = matches regex
+notif-op-not-matches-regex = not matches regex
+
+# Notifications -- Profiles
+notif-profiles = Profiles
+notif-no-profiles = No Profiles
+notif-no-profiles-desc = Profiles combine groups with rules to control how matched notifications behave. Create groups first, then add them to profiles.
+notif-rule-default = Default
+notif-rule-on = On
+notif-rule-off = Off
+notif-rule-hide = Hide
+notif-rule-suppress-toast = Suppress Toast
+notif-rule-suppress-sound = Suppress Sound
+notif-rule-custom-sound = Custom Sound
+notif-add-group = Add Group
+notif-profile-name = Profile Name
+notif-create = Create
+notif-cancel = Cancel
+
+# Notifications -- Group Form
+notif-group-name = Group Name
+notif-priority-order = Priority Order
+notif-save = Save
+notif-delete = Delete
+notif-add-rule = Add Rule
+notif-add-subgroup = Add Sub-group
+notif-pattern-value = Value
+
+# Sounds -- Defaults
+sounds-defaults = Sound Defaults
+sounds-enable = Enable notification sounds
+sounds-low-urgency = Low urgency
+sounds-normal-urgency = Normal urgency
+sounds-critical-urgency = Critical urgency
+sounds-custom = Custom...
+sounds-custom-name = Custom sound name
+sounds-preview = Preview sound
+
+# Sounds -- XDG names
+sounds-xdg-new-email = New Email
+sounds-xdg-new-message = New Message
+sounds-xdg-warning = Warning
+sounds-xdg-bell = Bell
+sounds-xdg-incoming-call = Incoming Call
+
+# Sounds -- Gallery
+sounds-gallery = Sound Gallery
+sounds-gallery-desc = Custom notification sounds stored in ~/.config/waft/sounds/
+sounds-add-file = Add sound file
+sounds-remove = Remove sound
+sounds-error-heading = Error
+
+# Sounds -- Size
+sounds-size-bytes = { $bytes } B
+sounds-size-kb = { $size } KB
+sounds-size-mb = { $size } MB
+
+# Plugins
+plugins-title = Plugins
+plugins-no-plugins = No Plugins
+plugins-no-plugins-desc = No plugins were discovered by the daemon.

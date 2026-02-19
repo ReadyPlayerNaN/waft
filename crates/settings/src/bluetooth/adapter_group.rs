@@ -8,6 +8,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 
+use crate::i18n::t;
+
 /// Props for creating or updating an adapter group.
 pub struct AdapterGroupProps {
     pub name: String,
@@ -52,16 +54,16 @@ impl AdapterGroup {
         let group = adw::PreferencesGroup::builder().title(&props.name).build();
 
         // Power switch
-        let power_row = adw::SwitchRow::builder().title("Enabled").build();
+        let power_row = adw::SwitchRow::builder().title(t("bt-adapter-enabled")).build();
         group.add(&power_row);
 
         // Discoverable switch
-        let discoverable_row = adw::SwitchRow::builder().title("Discoverable").build();
+        let discoverable_row = adw::SwitchRow::builder().title(t("bt-adapter-discoverable")).build();
         group.add(&discoverable_row);
 
         // Alias entry
         let alias_row = adw::EntryRow::builder()
-            .title("Device Name")
+            .title(t("bt-adapter-device-name"))
             .text(&props.name)
             .show_apply_button(true)
             .build();
@@ -155,11 +157,11 @@ impl AdapterGroup {
         self.alias_row.set_sensitive(props.powered);
 
         if props.discovering {
-            self.scan_button.set_label("Stop Scanning");
+            self.scan_button.set_label(&t("bt-adapter-stop-scanning"));
             self.scan_button.add_css_class("destructive-action");
             self.scan_button.remove_css_class("suggested-action");
         } else {
-            self.scan_button.set_label("Start Scanning");
+            self.scan_button.set_label(&t("bt-adapter-start-scanning"));
             self.scan_button.add_css_class("suggested-action");
             self.scan_button.remove_css_class("destructive-action");
         }

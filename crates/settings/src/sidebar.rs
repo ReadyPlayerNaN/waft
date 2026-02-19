@@ -1,129 +1,235 @@
 //! Settings category sidebar.
 //!
-//! Dumb widget displaying a list of settings categories. Emits
-//! `SidebarOutput::Selected` when the user picks a category.
+//! Dumb widget displaying settings items grouped by category. Emits
+//! `SidebarOutput::Selected` when the user picks a page.
 //! Supports dynamic visibility of rows (e.g. WiFi hidden when no adapter).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_ui_gtk::widgets::icon::IconWidget;
 
+use crate::i18n::t;
+
 /// Output events from the sidebar.
 pub enum SidebarOutput {
-    /// A category was selected by the user.
-    Selected(String),
+    /// A page was selected by the user.
+    Selected {
+        /// Stable identifier for stack page routing.
+        page_id: String,
+        /// Human-readable title for the content header.
+        title: String,
+    },
 }
 
 /// Callback type for sidebar output events.
 type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(SidebarOutput)>>>>;
 
+/// An item in the sidebar.
+struct SidebarItem {
+    /// Stable identifier used for stack page routing.
+    page_id: &'static str,
+    /// Display title shown to the user.
+    title: String,
+    /// Icon name.
+    icon: &'static str,
+    /// Initial visibility.
+    visible: bool,
+}
+
+/// A group of sidebar items under a category header.
+struct SidebarCategory {
+    label: String,
+    items: Vec<SidebarItem>,
+}
+
+/// Returns the category layout for the sidebar.
+fn categories() -> Vec<SidebarCategory> {
+    vec![
+        SidebarCategory {
+            label: t("sidebar-connectivity"),
+            items: vec![
+                SidebarItem {
+                    page_id: "bluetooth",
+                    title: t("settings-bluetooth"),
+                    icon: "bluetooth-active-symbolic",
+                    visible: true,
+                },
+                SidebarItem {
+                    page_id: "wifi",
+                    title: t("settings-wifi"),
+                    icon: "network-wireless-symbolic",
+                    visible: false,
+                },
+                SidebarItem {
+                    page_id: "wired",
+                    title: t("settings-wired"),
+                    icon: "network-wired-symbolic",
+                    visible: true,
+                },
+            ],
+        },
+        SidebarCategory {
+            label: t("sidebar-visual"),
+            items: vec![SidebarItem {
+                page_id: "display",
+                title: t("settings-display"),
+                icon: "preferences-desktop-display-symbolic",
+                visible: true,
+            }],
+        },
+        SidebarCategory {
+            label: t("sidebar-feedback"),
+            items: vec![
+                SidebarItem {
+                    page_id: "notifications",
+                    title: t("settings-notifications"),
+                    icon: "preferences-system-notifications-symbolic",
+                    visible: true,
+                },
+                SidebarItem {
+                    page_id: "sounds",
+                    title: t("settings-sounds"),
+                    icon: "audio-speakers-symbolic",
+                    visible: true,
+                },
+            ],
+        },
+        SidebarCategory {
+            label: t("sidebar-inputs"),
+            items: vec![SidebarItem {
+                page_id: "keyboard",
+                title: t("settings-keyboard"),
+                icon: "input-keyboard-symbolic",
+                visible: true,
+            }],
+        },
+        SidebarCategory {
+            label: t("sidebar-info"),
+            items: vec![SidebarItem {
+                page_id: "weather",
+                title: t("settings-weather"),
+                icon: "weather-clear-symbolic",
+                visible: true,
+            }],
+        },
+        SidebarCategory {
+            label: t("sidebar-system"),
+            items: vec![SidebarItem {
+                page_id: "plugins",
+                title: t("settings-plugins"),
+                icon: "application-x-addon-symbolic",
+                visible: true,
+            }],
+        },
+    ]
+}
+
 /// Category sidebar widget.
 pub struct Sidebar {
-    pub root: gtk::ListBox,
+    pub root: gtk::Box,
     output_cb: OutputCallback,
     wifi_row: adw::ActionRow,
+    list_boxes: Vec<gtk::ListBox>,
 }
 
 impl Sidebar {
     pub fn new() -> Self {
-        let list_box = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::Single)
-            .css_classes(["navigation-sidebar"])
-            .build();
+        let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+        let selecting = Rc::new(Cell::new(false));
 
-        // Bluetooth row (active)
-        let bt_icon = IconWidget::from_name("bluetooth-active-symbolic", 16);
-        let bt_row = adw::ActionRow::builder()
-            .title("Bluetooth")
-            .activatable(true)
-            .build();
-        bt_row.add_prefix(bt_icon.widget());
-        list_box.append(&bt_row);
+        let mut list_boxes: Vec<gtk::ListBox> = Vec::new();
+        let mut wifi_row_slot: Option<adw::ActionRow> = None;
 
-        // WiFi row (hidden until adapter detected)
-        let net_icon = IconWidget::from_name("network-wireless-symbolic", 16);
-        let wifi_row = adw::ActionRow::builder()
-            .title("WiFi")
-            .activatable(true)
-            .visible(false)
-            .build();
-        wifi_row.add_prefix(net_icon.widget());
-        list_box.append(&wifi_row);
+        for (cat_idx, category) in categories().into_iter().enumerate() {
+            // Category header label
+            let label = gtk::Label::builder()
+                .label(&category.label)
+                .css_classes(["heading"])
+                .halign(gtk::Align::Start)
+                .margin_start(12)
+                .margin_bottom(4)
+                .build();
+            if cat_idx > 0 {
+                label.set_margin_top(12);
+            }
+            container.append(&label);
 
-        // Wired row
-        let wired_icon = IconWidget::from_name("network-wired-symbolic", 16);
-        let wired_row = adw::ActionRow::builder()
-            .title("Wired")
-            .activatable(true)
-            .build();
-        wired_row.add_prefix(wired_icon.widget());
-        list_box.append(&wired_row);
+            // ListBox for this category's items
+            let list_box = gtk::ListBox::builder()
+                .selection_mode(gtk::SelectionMode::Single)
+                .css_classes(["navigation-sidebar"])
+                .build();
 
-        // Weather row
-        let weather_icon = IconWidget::from_name("weather-clear-symbolic", 16);
-        let weather_row = adw::ActionRow::builder()
-            .title("Weather")
-            .activatable(true)
-            .build();
-        weather_row.add_prefix(weather_icon.widget());
-        list_box.append(&weather_row);
+            for item in &category.items {
+                let icon = IconWidget::from_name(item.icon, 16);
+                let row = adw::ActionRow::builder()
+                    .title(&item.title)
+                    .activatable(true)
+                    .visible(item.visible)
+                    .build();
+                row.add_prefix(icon.widget());
 
-        // Display row
-        let disp_icon = IconWidget::from_name("preferences-desktop-display-symbolic", 16);
-        let disp_row = adw::ActionRow::builder()
-            .title("Display")
-            .activatable(true)
-            .build();
-        disp_row.add_prefix(disp_icon.widget());
-        list_box.append(&disp_row);
+                // Store page_id on the row as widget name for retrieval in selection handler
+                row.set_widget_name(item.page_id);
 
-        // Keyboard row
-        let kb_icon = IconWidget::from_name("input-keyboard-symbolic", 16);
-        let kb_row = adw::ActionRow::builder()
-            .title("Keyboard")
-            .activatable(true)
-            .build();
-        kb_row.add_prefix(kb_icon.widget());
-        list_box.append(&kb_row);
+                if item.page_id == "wifi" {
+                    wifi_row_slot = Some(row.clone());
+                }
 
-        // Notifications row
-        let notif_icon =
-            IconWidget::from_name("preferences-system-notifications-symbolic", 16);
-        let notif_row = adw::ActionRow::builder()
-            .title("Notifications")
-            .activatable(true)
-            .build();
-        notif_row.add_prefix(notif_icon.widget());
-        list_box.append(&notif_row);
+                list_box.append(&row);
+            }
 
-        // Select Bluetooth by default
-        if let Some(first_row) = list_box.row_at_index(0) {
-            list_box.select_row(Some(&first_row));
+            container.append(&list_box);
+            list_boxes.push(list_box);
         }
 
-        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+        // Wire up cross-group selection for each ListBox
+        for (i, list_box) in list_boxes.iter().enumerate() {
+            let all_boxes = list_boxes.clone();
+            let selecting = selecting.clone();
+            let cb = output_cb.clone();
 
-        // Connect row selection -- use row title instead of index
-        // so hidden rows don't break the mapping.
-        let cb = output_cb.clone();
-        list_box.connect_row_selected(move |_, row| {
-            if let Some(row) = row {
-                // adw::ActionRow extends gtk::ListBoxRow, so downcast directly
-                if let Some(action_row) = row.downcast_ref::<adw::ActionRow>() {
-                    let title = action_row.title();
-                    if let Some(ref callback) = *cb.borrow() {
-                        callback(SidebarOutput::Selected(title.to_string()));
+            list_box.connect_row_selected(move |_, row| {
+                if selecting.get() {
+                    return;
+                }
+                if let Some(row) = row {
+                    selecting.set(true);
+                    for (j, other) in all_boxes.iter().enumerate() {
+                        if i != j {
+                            other.select_row(gtk::ListBoxRow::NONE);
+                        }
+                    }
+                    selecting.set(false);
+
+                    if let Some(action_row) = row.downcast_ref::<adw::ActionRow>() {
+                        let page_id = action_row.widget_name().to_string();
+                        let title = action_row.title().to_string();
+                        if let Some(ref callback) = *cb.borrow() {
+                            callback(SidebarOutput::Selected { page_id, title });
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
+
+        // Select Bluetooth (first row of first category) by default
+        if let Some(first_box) = list_boxes.first()
+            && let Some(first_row) = first_box.row_at_index(0)
+        {
+            first_box.select_row(Some(&first_row));
+        }
+
+        let wifi_row = wifi_row_slot.expect("WiFi row must exist in category definitions");
 
         Self {
-            root: list_box,
+            root: container,
             output_cb,
             wifi_row,
+            list_boxes,
         }
     }
 
@@ -133,14 +239,14 @@ impl Sidebar {
     pub fn set_wifi_visible(&self, visible: bool) {
         self.wifi_row.set_visible(visible);
 
-        // If hiding WiFi while it's selected, switch to Bluetooth
         if !visible
-            && let Some(selected) = self.root.selected_row()
+            && let Some(connectivity_box) = self.list_boxes.first()
+            && let Some(selected) = connectivity_box.selected_row()
             && let Some(action_row) = selected.downcast_ref::<adw::ActionRow>()
-            && action_row.title() == "WiFi"
-            && let Some(bt_row) = self.root.row_at_index(0)
+            && action_row.widget_name() == "wifi"
+            && let Some(bt_row) = connectivity_box.row_at_index(0)
         {
-            self.root.select_row(Some(&bt_row));
+            connectivity_box.select_row(Some(&bt_row));
         }
     }
 

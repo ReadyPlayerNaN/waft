@@ -16,6 +16,7 @@ use waft_protocol::entity::notification_filter::{
     NotificationGroup, Pattern, RuleCombinator, RuleNode,
 };
 
+use crate::i18n::{t, t_args};
 use crate::notifications::group_form::{GroupForm, GroupFormOutput};
 
 const NEW_MARKER: &str = "__new__";
@@ -35,6 +36,7 @@ struct GroupsSectionState {
     groups: HashMap<String, GroupWidgets>,
     editing: Option<String>,
     form: Option<GroupForm>,
+    empty_state: adw::StatusPage,
 }
 
 impl GroupsSection {
@@ -45,7 +47,7 @@ impl GroupsSection {
             .build();
 
         let pref_group = adw::PreferencesGroup::builder()
-            .title("Notification Groups")
+            .title(t("notif-groups"))
             .build();
 
         // Add header button
@@ -56,12 +58,21 @@ impl GroupsSection {
             .build();
         pref_group.set_header_suffix(Some(&add_button));
 
+        // Empty state shown when no groups exist
+        let empty_state = adw::StatusPage::builder()
+            .icon_name("view-list-symbolic")
+            .title(t("notif-no-groups"))
+            .description(t("notif-no-groups-desc"))
+            .build();
+        pref_group.add(&empty_state);
+
         root.append(&pref_group);
 
         let state: Rc<RefCell<GroupsSectionState>> = Rc::new(RefCell::new(GroupsSectionState {
             groups: HashMap::new(),
             editing: None,
             form: None,
+            empty_state,
         }));
 
         // Wire "Add" button
@@ -89,7 +100,8 @@ impl GroupsSection {
             });
         }
 
-        // Initial reconciliation
+        // Initial reconciliation.
+        // When entities are empty, the StatusPage stays visible by default (no reconcile needed).
         {
             let store = entity_store.clone();
             let pref_ref = pref_group;
@@ -142,7 +154,7 @@ impl GroupsSection {
                 existing.expander.set_title(&group.name);
                 existing
                     .expander
-                    .set_subtitle(&format!("Order: {}", group.order));
+                    .set_subtitle(&t_args("notif-group-order", &[("order", &group.order.to_string())]));
 
                 // Remove old pattern rows and rebuild
                 for row in existing.rows.drain(..) {
@@ -180,6 +192,11 @@ impl GroupsSection {
         {
             Self::remove_form(&mut st, root);
         }
+
+        // Toggle empty state visibility
+        let has_groups = !st.groups.is_empty();
+        let form_visible = st.editing.is_some();
+        st.empty_state.set_visible(!has_groups && !form_visible);
     }
 
     fn create_group_widgets(
@@ -190,7 +207,7 @@ impl GroupsSection {
     ) -> GroupWidgets {
         let expander = adw::ExpanderRow::builder()
             .title(&group.name)
-            .subtitle(format!("Order: {}", group.order))
+            .subtitle(t_args("notif-group-order", &[("order", &group.order.to_string())]))
             .build();
 
         // Edit button suffix
@@ -281,6 +298,7 @@ impl GroupsSection {
         let mut st = state.borrow_mut();
         st.editing = Some(NEW_MARKER.to_string());
         st.form = Some(form);
+        st.empty_state.set_visible(false);
     }
 
     fn show_edit_form(
@@ -355,6 +373,9 @@ impl GroupsSection {
             root.remove(&form.root);
         }
         state.editing = None;
+        if state.groups.is_empty() {
+            state.empty_state.set_visible(true);
+        }
     }
 }
 
@@ -362,8 +383,8 @@ fn build_matcher_rows(combinator: &RuleCombinator, depth: usize) -> Vec<adw::Act
     let mut rows = Vec::new();
     let indent = "  ".repeat(depth);
     let op_label = match combinator.operator {
-        CombinatorOperator::And => "All match (AND)",
-        CombinatorOperator::Or => "Any match (OR)",
+        CombinatorOperator::And => t("notif-match-all-and"),
+        CombinatorOperator::Or => t("notif-match-any-or"),
     };
 
     let op_row = adw::ActionRow::builder()
@@ -398,29 +419,29 @@ fn format_pattern(pattern: &Pattern) -> String {
     format!("{field} {op} '{}'", pattern.value)
 }
 
-fn format_field(field: MatchField) -> &'static str {
+fn format_field(field: MatchField) -> String {
     match field {
-        MatchField::AppName => "App Name",
-        MatchField::AppId => "App ID",
-        MatchField::Title => "Title",
-        MatchField::Body => "Body",
-        MatchField::Category => "Category",
-        MatchField::Urgency => "Urgency",
-        MatchField::Workspace => "Workspace",
+        MatchField::AppName => t("notif-field-app-name"),
+        MatchField::AppId => t("notif-field-app-id"),
+        MatchField::Title => t("notif-field-title"),
+        MatchField::Body => t("notif-field-body"),
+        MatchField::Category => t("notif-field-category"),
+        MatchField::Urgency => t("notif-field-urgency"),
+        MatchField::Workspace => t("notif-field-workspace"),
     }
 }
 
-fn format_operator(op: MatchOperator) -> &'static str {
+fn format_operator(op: MatchOperator) -> String {
     match op {
-        MatchOperator::Equals => "equals",
-        MatchOperator::NotEquals => "not equals",
-        MatchOperator::Contains => "contains",
-        MatchOperator::NotContains => "not contains",
-        MatchOperator::StartsWith => "starts with",
-        MatchOperator::NotStartsWith => "not starts with",
-        MatchOperator::EndsWith => "ends with",
-        MatchOperator::NotEndsWith => "not ends with",
-        MatchOperator::MatchesRegex => "matches regex",
-        MatchOperator::NotMatchesRegex => "not matches regex",
+        MatchOperator::Equals => t("notif-op-equals"),
+        MatchOperator::NotEquals => t("notif-op-not-equals"),
+        MatchOperator::Contains => t("notif-op-contains"),
+        MatchOperator::NotContains => t("notif-op-not-contains"),
+        MatchOperator::StartsWith => t("notif-op-starts-with"),
+        MatchOperator::NotStartsWith => t("notif-op-not-starts-with"),
+        MatchOperator::EndsWith => t("notif-op-ends-with"),
+        MatchOperator::NotEndsWith => t("notif-op-not-ends-with"),
+        MatchOperator::MatchesRegex => t("notif-op-matches-regex"),
+        MatchOperator::NotMatchesRegex => t("notif-op-not-matches-regex"),
     }
 }

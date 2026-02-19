@@ -12,6 +12,8 @@ use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::notification::{DND_ENTITY_TYPE, Dnd};
 
+use crate::i18n::t;
+
 /// Smart container for Do Not Disturb settings.
 pub struct DndSection {
     pub root: adw::PreferencesGroup,
@@ -20,7 +22,7 @@ pub struct DndSection {
 impl DndSection {
     pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Do Not Disturb")
+            .title(t("notif-dnd"))
             .visible(false)
             .build();
 

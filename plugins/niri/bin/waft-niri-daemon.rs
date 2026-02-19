@@ -7,7 +7,7 @@
 //! Entity types:
 //! - `keyboard-layout` with actions: `cycle`
 //! - `keyboard-layout-config` with actions: `add`, `remove`, `reorder`
-//! - `display-output` with actions: `set-mode`, `toggle-vrr`
+//! - `display-output` with actions: `set-mode`, `toggle-vrr`, `set-scale`, `set-transform`, `set-enabled`
 //!
 //! Requires: Niri compositor running, `NIRI_SOCKET` environment variable set,
 //! `niri` binary in PATH.

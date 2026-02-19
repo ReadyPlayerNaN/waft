@@ -17,6 +17,7 @@ use waft_protocol::entity::notification_filter::{
     RuleNode,
 };
 
+use crate::i18n::t;
 use crate::notifications::combinator_editor::CombinatorEditor;
 use crate::notifications::id_from_name;
 
@@ -55,7 +56,7 @@ impl GroupForm {
         let fields_group = adw::PreferencesGroup::builder().build();
 
         let name_entry = adw::EntryRow::builder()
-            .title("Group Name")
+            .title(t("notif-group-name"))
             .text(group.map(|g| g.name.as_str()).unwrap_or(""))
             .show_apply_button(false)
             .build();
@@ -70,7 +71,7 @@ impl GroupForm {
             0.0,
         );
         let order_spin = adw::SpinRow::builder()
-            .title("Priority Order")
+            .title(t("notif-priority-order"))
             .adjustment(&adjustment)
             .build();
         fields_group.add(&order_spin);
@@ -97,15 +98,15 @@ impl GroupForm {
             .spacing(6)
             .build();
 
-        let save_label = if edit_mode { "Save" } else { "Create" };
+        let save_label = if edit_mode { t("notif-save") } else { t("notif-create") };
         let save_button = gtk::Button::builder()
-            .label(save_label)
+            .label(&save_label)
             .css_classes(["pill", "suggested-action"])
             .build();
         button_box.append(&save_button);
 
         let cancel_button = gtk::Button::builder()
-            .label("Cancel")
+            .label(t("notif-cancel"))
             .css_classes(["pill"])
             .build();
         button_box.append(&cancel_button);
@@ -115,7 +116,7 @@ impl GroupForm {
 
         if edit_mode {
             let delete_button = gtk::Button::builder()
-                .label("Delete")
+                .label(t("notif-delete"))
                 .css_classes(["pill", "destructive-action"])
                 .build();
 

@@ -3,6 +3,8 @@
 use adw::prelude::*;
 use std::rc::Rc;
 
+use crate::i18n::t;
+
 /// Show a dialog to rename a keyboard layout.
 /// Calls `on_rename` with the new name if the user confirms.
 pub fn show_rename_dialog(
@@ -11,17 +13,17 @@ pub fn show_rename_dialog(
     on_rename: impl Fn(String) + 'static,
 ) {
     let dialog = adw::AlertDialog::builder()
-        .heading("Rename Layout")
+        .heading(t("kb-rename-dialog-heading"))
         .close_response("cancel")
         .build();
 
-    dialog.add_response("cancel", "Cancel");
-    dialog.add_response("rename", "Rename");
+    dialog.add_response("cancel", &t("kb-rename-cancel"));
+    dialog.add_response("rename", &t("kb-rename-confirm"));
     dialog.set_response_appearance("rename", adw::ResponseAppearance::Suggested);
     dialog.set_default_response(Some("rename"));
 
     let entry = adw::EntryRow::builder()
-        .title("Layout name")
+        .title(t("kb-rename-entry-title"))
         .text(current_name)
         .show_apply_button(false)
         .build();

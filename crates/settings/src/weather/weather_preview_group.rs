@@ -6,6 +6,8 @@
 use adw::prelude::*;
 use waft_ui_gtk::widgets::icon::IconWidget;
 
+use crate::i18n::t;
+
 /// Presentational widget showing current weather conditions.
 pub struct WeatherPreviewGroup {
     pub root: adw::PreferencesGroup,
@@ -17,17 +19,17 @@ pub struct WeatherPreviewGroup {
 impl WeatherPreviewGroup {
     pub fn new() -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Current Weather")
+            .title(t("weather-current"))
             .visible(false)
             .build();
 
         let icon = IconWidget::from_name("weather-clear-symbolic", 32);
 
-        let temperature_row = adw::ActionRow::builder().title("Temperature").build();
+        let temperature_row = adw::ActionRow::builder().title(t("weather-temperature")).build();
         temperature_row.add_prefix(icon.widget());
         group.add(&temperature_row);
 
-        let condition_row = adw::ActionRow::builder().title("Condition").build();
+        let condition_row = adw::ActionRow::builder().title(t("weather-condition")).build();
         group.add(&condition_row);
 
         Self {

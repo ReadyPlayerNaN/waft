@@ -76,6 +76,10 @@ impl EntityStore {
                 log::debug!("[entity-store] entity {urn} ({entity_type}) is outdated");
                 self.handle_entity_removed(&urn, &entity_type);
             }
+            AppNotification::DescribeResponse { .. } => {
+                // Description responses are handled by CLI/settings, not the entity store.
+                log::debug!("[entity-store] received DescribeResponse (ignored by entity store)");
+            }
         }
     }
 

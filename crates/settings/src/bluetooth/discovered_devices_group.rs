@@ -7,6 +7,8 @@ use std::collections::HashMap;
 
 use adw::prelude::*;
 use waft_client::EntityActionCallback;
+
+use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::BluetoothDevice;
 use waft_ui_gtk::bluetooth::device_row::device_type_icon;
@@ -23,7 +25,7 @@ pub struct DiscoveredDevicesGroup {
 impl DiscoveredDevicesGroup {
     pub fn new() -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Available Devices")
+            .title(t("bt-available-devices"))
             .build();
 
         let spinner = gtk::Spinner::new();
@@ -97,7 +99,7 @@ impl DiscoveredDevicesGroup {
             self.spinner.start();
             if self.rows.is_empty() {
                 self.root
-                    .set_description(Some("Searching for devices\u{2026}"));
+                    .set_description(Some(&t("bt-searching-devices")));
             } else {
                 self.root.set_description(None::<&str>);
             }
@@ -105,7 +107,7 @@ impl DiscoveredDevicesGroup {
             self.spinner.stop();
             if self.rows.is_empty() {
                 self.root
-                    .set_description(Some("Start scanning to discover nearby devices"));
+                    .set_description(Some(&t("bt-start-scanning-hint")));
             } else {
                 self.root.set_description(None::<&str>);
             }

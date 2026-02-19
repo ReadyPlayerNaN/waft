@@ -8,6 +8,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+
+use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{
     DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE, DarkModeAutomationConfig, FieldState,
@@ -96,12 +98,12 @@ fn reconcile(config: &DarkModeAutomationConfig, widgets: &Widgets) {
 impl DarkModeAutomationSection {
     pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Dark Mode Automation")
+            .title(t("display-dark-mode-automation"))
             .visible(false)
             .build();
 
         let latitude_row = adw::SpinRow::builder()
-            .title("Latitude")
+            .title(t("display-latitude"))
             .adjustment(&gtk::Adjustment::new(0.0, -90.0, 90.0, 0.01, 1.0, 0.0))
             .digits(2)
             .visible(false)
@@ -109,7 +111,7 @@ impl DarkModeAutomationSection {
         group.add(&latitude_row);
 
         let longitude_row = adw::SpinRow::builder()
-            .title("Longitude")
+            .title(t("display-longitude"))
             .adjustment(&gtk::Adjustment::new(0.0, -180.0, 180.0, 0.01, 1.0, 0.0))
             .digits(2)
             .visible(false)
@@ -117,19 +119,19 @@ impl DarkModeAutomationSection {
         group.add(&longitude_row);
 
         let auto_location_row = adw::SwitchRow::builder()
-            .title("Auto-detect location")
+            .title(t("display-auto-location"))
             .visible(false)
             .build();
         group.add(&auto_location_row);
 
         let dbus_api_row = adw::SwitchRow::builder()
-            .title("Enable D-Bus API")
+            .title(t("display-dbus-api"))
             .visible(false)
             .build();
         group.add(&dbus_api_row);
 
         let portal_api_row = adw::SwitchRow::builder()
-            .title("Enable XDG Portal")
+            .title(t("display-xdg-portal"))
             .visible(false)
             .build();
         group.add(&portal_api_row);

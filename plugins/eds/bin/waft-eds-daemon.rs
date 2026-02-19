@@ -60,6 +60,9 @@ struct EdsState {
     /// Known calendar backends: (bus_name, object_path) pairs.
     /// Populated during setup_calendar_views; used by do_refresh and the scheduler.
     calendar_backends: Vec<(String, String)>,
+    /// Object paths of calendar backends that returned "not supported" (Code11) on Refresh().
+    /// Cleared at midnight rebuild so backends get a fresh chance after reconfiguration.
+    refresh_unsupported: HashSet<String>,
     /// Unix timestamp of the last refresh attempt (overlay-triggered or scheduled).
     last_refresh: Option<i64>,
     /// True while a calendar refresh D-Bus call is in progress.
@@ -73,6 +76,7 @@ impl EdsState {
             view_monitor_handles: Vec::new(),
             debounce_recent: VecDeque::new(),
             calendar_backends: Vec::new(),
+            refresh_unsupported: HashSet::new(),
             last_refresh: None,
             syncing: false,
         }
@@ -160,7 +164,11 @@ impl Plugin for EdsPlugin {
             last_refresh: state.last_refresh,
             syncing: state.syncing,
         };
-        let sync_urn = Urn::new("eds", entity::calendar::CALENDAR_SYNC_ENTITY_TYPE, "singleton");
+        let sync_urn = Urn::new(
+            "eds",
+            entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+            "singleton",
+        );
         entities.push(Entity::new(
             sync_urn,
             entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
@@ -179,7 +187,7 @@ impl Plugin for EdsPlugin {
         log::debug!("Received action '{}' for URN: {}", action, urn);
 
         if action == "refresh" {
-            let (allowed, backends) = {
+            let allowed = {
                 let mut st = match self.state.lock() {
                     Ok(g) => g,
                     Err(e) => {
@@ -187,8 +195,7 @@ impl Plugin for EdsPlugin {
                         e.into_inner()
                     }
                 };
-                let allowed = check_debounce(&mut st.debounce_recent, self.config.debounce_base_secs);
-                (allowed, st.calendar_backends.clone())
+                check_debounce(&mut st.debounce_recent, self.config.debounce_base_secs)
             };
 
             if !allowed {
@@ -201,7 +208,9 @@ impl Plugin for EdsPlugin {
                 let guard = match self.notifier.lock() {
                     Ok(g) => g,
                     Err(e) => {
-                        log::warn!("[eds] handle_action: notifier slot mutex poisoned, recovering: {e}");
+                        log::warn!(
+                            "[eds] handle_action: notifier slot mutex poisoned, recovering: {e}"
+                        );
                         e.into_inner()
                     }
                 };
@@ -210,7 +219,7 @@ impl Plugin for EdsPlugin {
 
             match notifier {
                 Some(n) => {
-                    refresh_with_status(&self.conn, &self.state, &n, &backends).await;
+                    refresh_with_status(&self.conn, &self.state, &n).await;
                 }
                 None => {
                     // Notifier not yet wired — should not happen in production.
@@ -218,13 +227,17 @@ impl Plugin for EdsPlugin {
                     // subscribers. This path is unreachable in normal operation (notifier is filled
                     // before the first action can arrive), but if it is ever reached, last_refresh
                     // will be stale in the overview until the next successful refresh.
-                    log::warn!("[eds] handle_action: notifier slot empty, syncing indicator unavailable");
-                    do_refresh(&self.conn, &backends).await;
+                    log::warn!(
+                        "[eds] handle_action: notifier slot empty, syncing indicator unavailable"
+                    );
+                    do_refresh(&self.conn, &self.state).await;
                     // Update last_refresh manually since refresh_with_status didn't run.
                     let mut st = match self.state.lock() {
                         Ok(g) => g,
                         Err(e) => {
-                            log::warn!("[eds] handle_action: mutex poisoned updating last_refresh, recovering: {e}");
+                            log::warn!(
+                                "[eds] handle_action: mutex poisoned updating last_refresh, recovering: {e}"
+                            );
                             e.into_inner()
                         }
                     };
@@ -234,7 +247,11 @@ impl Plugin for EdsPlugin {
             return Ok(());
         }
 
-        log::warn!("EDS plugin does not support action '{}' (urn={})", action, urn);
+        log::warn!(
+            "EDS plugin does not support action '{}' (urn={})",
+            action,
+            urn
+        );
         Ok(())
     }
 
@@ -268,8 +285,14 @@ fn check_debounce(
     // Prune entries older than 4×base (the largest window).
     recent.retain(|&t| now.duration_since(t) < base * 4);
 
-    let in_w1 = recent.iter().filter(|&&t| now.duration_since(t) < base).count();
-    let in_w2 = recent.iter().filter(|&&t| now.duration_since(t) < base * 2).count();
+    let in_w1 = recent
+        .iter()
+        .filter(|&&t| now.duration_since(t) < base)
+        .count();
+    let in_w2 = recent
+        .iter()
+        .filter(|&&t| now.duration_since(t) < base * 2)
+        .count();
     let in_w3 = recent.len(); // all remaining are within 4×base
 
     if in_w1 >= 1 || in_w2 >= 2 || in_w3 >= 3 {
@@ -284,12 +307,32 @@ fn check_debounce(
 ///
 /// This is the shared implementation used by both the periodic scheduler and
 /// overlay-triggered handle_action. It does NOT check the debounce window.
-async fn do_refresh(conn: &Connection, backends: &[(String, String)]) {
+///
+/// Backends that previously returned Code11 (not supported) are skipped.
+/// New Code11 failures are recorded in `state.refresh_unsupported` so they
+/// are skipped on future calls (cleared at midnight rebuild).
+async fn do_refresh(conn: &Connection, state: &Arc<StdMutex<EdsState>>) {
+    let (backends, unsupported) = {
+        let st = match state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("[eds] do_refresh: mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        (st.calendar_backends.clone(), st.refresh_unsupported.clone())
+    };
+
     if backends.is_empty() {
         log::debug!("[eds] do_refresh: no backends, skipping");
         return;
     }
-    for (bus_name, object_path) in backends {
+    for (bus_name, object_path) in &backends {
+        if unsupported.contains(object_path) {
+            log::debug!("[eds] Skipping unsupported backend: {object_path}");
+            continue;
+        }
+
         match zbus::Proxy::new(
             conn,
             bus_name.as_str(),
@@ -305,7 +348,27 @@ async fn do_refresh(conn: &Connection, backends: &[(String, String)]) {
                             proxy.call("Refresh", &()).await;
                         match result {
                             Ok(()) => log::debug!("[eds] Refreshed {object_path}"),
-                            Err(e) => log::warn!("[eds] Refresh failed for {object_path}: {e}"),
+                            Err(e) => {
+                                // EDS Code11 = E_NOT_SUPPORTED. This error code
+                                // appears in all locales in the D-Bus error detail.
+                                if format!("{e}").contains("Code11") {
+                                    log::debug!(
+                                        "[eds] Backend {object_path} does not support Refresh, will skip in future"
+                                    );
+                                    let mut st = match state.lock() {
+                                        Ok(g) => g,
+                                        Err(e) => {
+                                            log::warn!(
+                                                "[eds] do_refresh: mutex poisoned recording unsupported, recovering: {e}"
+                                            );
+                                            e.into_inner()
+                                        }
+                                    };
+                                    st.refresh_unsupported.insert(object_path.clone());
+                                } else {
+                                    log::warn!("[eds] Refresh failed for {object_path}: {e}");
+                                }
+                            }
                         }
                     }
                     Err(e) => log::warn!("[eds] Open failed for {object_path}: {e}"),
@@ -326,7 +389,6 @@ async fn refresh_with_status(
     conn: &Connection,
     state: &Arc<StdMutex<EdsState>>,
     notifier: &EntityNotifier,
-    backends: &[(String, String)],
 ) {
     {
         let mut st = match state.lock() {
@@ -343,7 +405,7 @@ async fn refresh_with_status(
     // NOTE: If do_refresh panics, syncing will remain true and the spinner will spin
     // indefinitely. do_refresh is designed to be panic-free (all errors are handled
     // via match/if let), but this assumption is not enforced by the type system.
-    do_refresh(conn, backends).await;
+    do_refresh(conn, state).await;
 
     {
         let mut st = match state.lock() {
@@ -404,30 +466,39 @@ async fn spawn_session_monitor(
             use futures_util::StreamExt;
 
             match zbus::fdo::DBusProxy::new(&sys_conn).await {
-                Ok(dbus) => {
-                    match zbus::MatchRule::try_from(rule.as_str()) {
-                        Ok(rule_obj) => {
-                            if let Err(e) = dbus.add_match_rule(rule_obj.to_owned()).await {
-                                log::warn!("[eds] Failed to add match rule for {}: {e}", if is_lock { "Lock" } else { "Unlock" });
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("[eds] Invalid match rule format for {}: {e}", if is_lock { "Lock" } else { "Unlock" });
+                Ok(dbus) => match zbus::MatchRule::try_from(rule.as_str()) {
+                    Ok(rule_obj) => {
+                        if let Err(e) = dbus.add_match_rule(rule_obj.to_owned()).await {
+                            log::warn!(
+                                "[eds] Failed to add match rule for {}: {e}",
+                                if is_lock { "Lock" } else { "Unlock" }
+                            );
                         }
                     }
-                }
+                    Err(e) => {
+                        log::warn!(
+                            "[eds] Invalid match rule format for {}: {e}",
+                            if is_lock { "Lock" } else { "Unlock" }
+                        );
+                    }
+                },
                 Err(e) => {
-                    log::warn!("[eds] Failed to create DBusProxy for match rule registration ({}): {e}", if is_lock { "Lock" } else { "Unlock" });
+                    log::warn!(
+                        "[eds] Failed to create DBusProxy for match rule registration ({}): {e}",
+                        if is_lock { "Lock" } else { "Unlock" }
+                    );
                 }
             }
 
             let mut stream = zbus::MessageStream::from(&sys_conn);
             while let Some(Ok(msg)) = stream.next().await {
                 let h = msg.header();
-                let iface_ok = h.interface()
+                let iface_ok = h
+                    .interface()
                     .map(|i| i.as_str() == "org.freedesktop.login1.Session")
                     .unwrap_or(false);
-                let member_ok = h.member()
+                let member_ok = h
+                    .member()
                     .map(|m| m.as_str() == if is_lock { "Lock" } else { "Unlock" })
                     .unwrap_or(false);
 
@@ -441,7 +512,10 @@ async fn spawn_session_monitor(
                     }
                 }
             }
-            log::debug!("[eds] Session monitor stream ended for member={}", if is_lock { "Lock" } else { "Unlock" });
+            log::debug!(
+                "[eds] Session monitor stream ended for member={}",
+                if is_lock { "Lock" } else { "Unlock" }
+            );
         });
     }
 }
@@ -471,68 +545,50 @@ async fn spawn_refresh_scheduler(
 
     #[allow(unreachable_code)]
     {
-    loop {
-        let locked = session_locked.load(Ordering::Relaxed);
+        loop {
+            let locked = session_locked.load(Ordering::Relaxed);
 
-        let sleep_duration = if locked {
-            if config.locked_refresh_interval_secs == 0 {
-                // Paused: wait effectively forever; unlock_notify will wake us.
-                Duration::from_secs(u64::MAX / 2)
-            } else {
-                Duration::from_secs(config.locked_refresh_interval_secs)
-            }
-        } else {
-            Duration::from_secs(config.refresh_interval_secs)
-        };
-
-        tokio::select! {
-            _ = tokio::time::sleep(sleep_duration) => {
-                // Timer fired. Only refresh if not locked (guards against MAX/2 wakeup edge).
-                if !session_locked.load(Ordering::Relaxed) {
-                    let backends = {
-                        match state.lock() {
-                            Ok(st) => st.calendar_backends.clone(),
-                            Err(e) => {
-                                log::warn!("[eds] scheduler: mutex poisoned, recovering: {e}");
-                                e.into_inner().calendar_backends.clone()
-                            }
-                        }
-                    };
-                    log::debug!("[eds] Periodic refresh firing ({} backends)", backends.len());
-                    refresh_with_status(&conn, &state, &notifier, &backends).await;
+            let sleep_duration = if locked {
+                if config.locked_refresh_interval_secs == 0 {
+                    // Paused: wait effectively forever; unlock_notify will wake us.
+                    Duration::from_secs(u64::MAX / 2)
+                } else {
+                    Duration::from_secs(config.locked_refresh_interval_secs)
                 }
-            }
-            _ = unlock_notify.notified() => {
-                // Session just unlocked — refresh immediately.
-                let backends = {
-                    match state.lock() {
-                        Ok(st) => st.calendar_backends.clone(),
-                        Err(e) => {
-                            log::warn!("[eds] scheduler: mutex poisoned on unlock, recovering: {e}");
-                            e.into_inner().calendar_backends.clone()
-                        }
-                    }
-                };
-                log::debug!("[eds] Post-unlock refresh firing ({} backends)", backends.len());
-                refresh_with_status(&conn, &state, &notifier, &backends).await;
+            } else {
+                Duration::from_secs(config.refresh_interval_secs)
+            };
 
-                // Record the unlock refresh in the debounce window so an immediate
-                // overlay open doesn't double-fire within the base window.
-                match state.lock() {
-                    Ok(mut st) => {
-                        st.debounce_recent.push_back(std::time::Instant::now());
+            tokio::select! {
+                _ = tokio::time::sleep(sleep_duration) => {
+                    // Timer fired. Only refresh if not locked (guards against MAX/2 wakeup edge).
+                    if !session_locked.load(Ordering::Relaxed) {
+                        log::debug!("[eds] Periodic refresh firing");
+                        refresh_with_status(&conn, &state, &notifier).await;
                     }
-                    Err(e) => {
-                        log::warn!("[eds] scheduler: mutex poisoned recording debounce on unlock, recovering: {e}");
-                        e.into_inner().debounce_recent.push_back(std::time::Instant::now());
+                }
+                _ = unlock_notify.notified() => {
+                    // Session just unlocked — refresh immediately.
+                    log::debug!("[eds] Post-unlock refresh firing");
+                    refresh_with_status(&conn, &state, &notifier).await;
+
+                    // Record the unlock refresh in the debounce window so an immediate
+                    // overlay open doesn't double-fire within the base window.
+                    match state.lock() {
+                        Ok(mut st) => {
+                            st.debounce_recent.push_back(std::time::Instant::now());
+                        }
+                        Err(e) => {
+                            log::warn!("[eds] scheduler: mutex poisoned recording debounce on unlock, recovering: {e}");
+                            e.into_inner().debounce_recent.push_back(std::time::Instant::now());
+                        }
                     }
                 }
             }
         }
-    }
 
-    // Unreachable, but satisfies the "log when task exits" rule.
-    log::warn!("[eds] Refresh scheduler task stopped — background refresh is no longer active");
+        // Unreachable, but satisfies the "log when task exits" rule.
+        log::warn!("[eds] Refresh scheduler task stopped — background refresh is no longer active");
     } // #[allow(unreachable_code)]
 }
 
@@ -770,11 +826,14 @@ async fn setup_calendar_views(
                         let mut st = match state_clone.lock() {
                             Ok(g) => g,
                             Err(e) => {
-                                warn!("[eds] state mutex poisoned storing backend, recovering: {e}");
+                                warn!(
+                                    "[eds] state mutex poisoned storing backend, recovering: {e}"
+                                );
                                 e.into_inner()
                             }
                         };
-                        st.calendar_backends.push((bus_name.clone(), calendar_path.clone()));
+                        st.calendar_backends
+                            .push((bus_name.clone(), calendar_path.clone()));
                     }
 
                     match create_view(&conn_clone, &bus_name, &calendar_path, &query_clone).await {
@@ -790,9 +849,7 @@ async fn setup_calendar_views(
                                 paths.insert(view_path.clone());
                             }
 
-                            if let Err(e) =
-                                start_view(&conn_clone, &bus_name, &view_path).await
-                            {
+                            if let Err(e) = start_view(&conn_clone, &bus_name, &view_path).await {
                                 warn!("[eds] Failed to start view: {e}");
                                 return;
                             }
@@ -875,8 +932,11 @@ async fn monitor_eds_calendars(
                 handle.abort();
             }
 
-            // Clear backends so setup_calendar_views can repopulate for the new day.
+            // Clear backends and unsupported set so setup_calendar_views can repopulate
+            // for the new day. Clearing refresh_unsupported gives reconfigured calendars
+            // a fresh chance after midnight.
             st.calendar_backends.clear();
+            st.refresh_unsupported.clear();
 
             let stale_keys: Vec<String> = st
                 .events
@@ -1061,10 +1121,7 @@ async fn spawn_view_monitor(
 ///
 /// Recurring events (those with RRULE) are expanded into individual
 /// occurrences within `range`.  Non-recurring events pass through as-is.
-fn parse_ical_events(
-    icals: &[String],
-    range: TimeRange,
-) -> Vec<entity::calendar::CalendarEvent> {
+fn parse_ical_events(icals: &[String], range: TimeRange) -> Vec<entity::calendar::CalendarEvent> {
     icals
         .iter()
         .flat_map(|ical| expand_vevent(ical, range))
@@ -1277,7 +1334,8 @@ fn parse_rrule(s: &str) -> Option<RecurrenceRule> {
         } else if let Some(val) = part.strip_prefix("BYDAY=") {
             for day_str in val.split(',') {
                 // Strip optional ordinal prefix (e.g. "2MO" → "MO")
-                let weekday_str = day_str.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-');
+                let weekday_str =
+                    day_str.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-');
                 if let Some(wd) = parse_weekday(weekday_str) {
                     by_day.push(wd);
                 }
@@ -1320,7 +1378,10 @@ fn naive_to_timestamp(
     }
     if let Some(tz) = tz {
         // .earliest() picks the pre-DST side for ambiguous times.
-        return tz.from_local_datetime(&naive).earliest().map(|dt| dt.timestamp());
+        return tz
+            .from_local_datetime(&naive)
+            .earliest()
+            .map(|dt| dt.timestamp());
     }
     // Floating time → local.
     chrono::Local
@@ -1413,13 +1474,12 @@ fn expand_vevent(ical_str: &str, range: TimeRange) -> Vec<entity::calendar::Cale
             Frequency::Weekly if !rule.by_day.is_empty() => {
                 use chrono::Datelike;
                 // Find the Monday of the week containing `cursor`.
-                let iso_week_start = cursor
-                    - chrono::Duration::days(cursor.weekday().num_days_from_monday() as i64);
+                let iso_week_start =
+                    cursor - chrono::Duration::days(cursor.weekday().num_days_from_monday() as i64);
                 rule.by_day
                     .iter()
                     .map(|wd| {
-                        iso_week_start
-                            + chrono::Duration::days(wd.num_days_from_monday() as i64)
+                        iso_week_start + chrono::Duration::days(wd.num_days_from_monday() as i64)
                     })
                     .filter(|d| *d >= raw.dtstart_naive.date())
                     .collect()
@@ -1435,7 +1495,9 @@ fn expand_vevent(ical_str: &str, range: TimeRange) -> Vec<entity::calendar::Cale
             let occ_end = occ_start + duration;
 
             // Check UNTIL / COUNT limits.
-            if let Some(until) = rule.until && occ_start > until {
+            if let Some(until) = rule.until
+                && occ_start > until
+            {
                 return occurrences;
             }
 
@@ -1459,7 +1521,9 @@ fn expand_vevent(ical_str: &str, range: TimeRange) -> Vec<entity::calendar::Cale
             }
 
             generated += 1;
-            if let Some(count) = rule.count && generated >= count {
+            if let Some(count) = rule.count
+                && generated >= count
+            {
                 return occurrences;
             }
         }
@@ -1479,8 +1543,7 @@ fn advance_date(date: chrono::NaiveDate, freq: Frequency, interval: u32) -> chro
         Frequency::Weekly => date + chrono::Duration::weeks(interval as i64),
         Frequency::Monthly => {
             // Add `interval` months; clamp day to month length.
-            let total_months =
-                date.year() * 12 + (date.month0() as i32) + (interval as i32);
+            let total_months = date.year() * 12 + (date.month0() as i32) + (interval as i32);
             let new_year = total_months / 12;
             let new_month = (total_months % 12) as u32 + 1;
             let max_day = days_in_month(new_year, new_month);
@@ -1697,9 +1760,16 @@ fn update_state_remove_events(state: &Arc<StdMutex<EdsState>>, uids: &[String]) 
     });
     let removed = before - st.events.len();
     if removed > 0 {
-        debug!("[eds] Removed {} event occurrences for {} UIDs", removed, uids.len());
+        debug!(
+            "[eds] Removed {} event occurrences for {} UIDs",
+            removed,
+            uids.len()
+        );
     } else {
-        warn!("[eds] remove_events: no matching occurrences found for UIDs: {:?}", uids);
+        warn!(
+            "[eds] remove_events: no matching occurrences found for UIDs: {:?}",
+            uids
+        );
     }
 }
 
@@ -1766,7 +1836,11 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
             NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
         );
-        let expected_start = tz.from_local_datetime(&start_naive).single().unwrap().timestamp();
+        let expected_start = tz
+            .from_local_datetime(&start_naive)
+            .single()
+            .unwrap()
+            .timestamp();
         assert_eq!(
             event.start_time, expected_start,
             "DTSTART should be 2026-02-17 08:30 Prague (07:30 UTC)"
@@ -1777,7 +1851,11 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
             NaiveTime::from_hms_opt(8, 35, 0).unwrap(),
         );
-        let expected_end = tz.from_local_datetime(&end_naive).single().unwrap().timestamp();
+        let expected_end = tz
+            .from_local_datetime(&end_naive)
+            .single()
+            .unwrap()
+            .timestamp();
         assert_eq!(
             event.end_time, expected_end,
             "DTEND should be 2026-02-17 08:35 Prague"
@@ -1866,22 +1944,18 @@ mod tests {
         // Query window: Feb 17 midnight → Feb 19 midnight (covers Feb 17 Tuesday).
         let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
         let range_start = tz
-            .from_local_datetime(
-                &NaiveDateTime::new(
-                    NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
-                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-                ),
-            )
+            .from_local_datetime(&NaiveDateTime::new(
+                NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
+                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+            ))
             .single()
             .unwrap()
             .timestamp();
         let range_end = tz
-            .from_local_datetime(
-                &NaiveDateTime::new(
-                    NaiveDate::from_ymd_opt(2026, 2, 19).unwrap(),
-                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-                ),
-            )
+            .from_local_datetime(&NaiveDateTime::new(
+                NaiveDate::from_ymd_opt(2026, 2, 19).unwrap(),
+                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+            ))
             .single()
             .unwrap()
             .timestamp();
@@ -1895,18 +1969,21 @@ mod tests {
         );
 
         // Should produce exactly 1 occurrence on Feb 17 (a Tuesday).
-        assert_eq!(events.len(), 1, "expected 1 occurrence in range, got {}", events.len());
+        assert_eq!(
+            events.len(),
+            1,
+            "expected 1 occurrence in range, got {}",
+            events.len()
+        );
 
         let event = &events[0];
         assert_eq!(event.summary, "Daily - LabRulez");
 
         let expected_start = tz
-            .from_local_datetime(
-                &NaiveDateTime::new(
-                    NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
-                    NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
-                ),
-            )
+            .from_local_datetime(&NaiveDateTime::new(
+                NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
+                NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+            ))
             .single()
             .unwrap()
             .timestamp();
@@ -1927,22 +2004,18 @@ mod tests {
 
         // 3-week window: Feb 10 → Mar 3 (should have Feb 10, 17, 24)
         let range_start = tz
-            .from_local_datetime(
-                &NaiveDateTime::new(
-                    NaiveDate::from_ymd_opt(2026, 2, 10).unwrap(),
-                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-                ),
-            )
+            .from_local_datetime(&NaiveDateTime::new(
+                NaiveDate::from_ymd_opt(2026, 2, 10).unwrap(),
+                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+            ))
             .single()
             .unwrap()
             .timestamp();
         let range_end = tz
-            .from_local_datetime(
-                &NaiveDateTime::new(
-                    NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
-                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-                ),
-            )
+            .from_local_datetime(&NaiveDateTime::new(
+                NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
+                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+            ))
             .single()
             .unwrap()
             .timestamp();
@@ -1955,8 +2028,12 @@ mod tests {
             },
         );
 
-        assert_eq!(events.len(), 3, "3 Tuesdays in [Feb 10, Mar 3): {:?}",
-            events.iter().map(|e| e.start_time).collect::<Vec<_>>());
+        assert_eq!(
+            events.len(),
+            3,
+            "3 Tuesdays in [Feb 10, Mar 3): {:?}",
+            events.iter().map(|e| e.start_time).collect::<Vec<_>>()
+        );
     }
 
     /// EXDATE exclusions must suppress the matching occurrence.
@@ -1980,22 +2057,18 @@ mod tests {
 
         // Range: Feb 10 → Mar 3 → would normally be 3 Tuesdays.
         let range_start = tz
-            .from_local_datetime(
-                &NaiveDateTime::new(
-                    NaiveDate::from_ymd_opt(2026, 2, 10).unwrap(),
-                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-                ),
-            )
+            .from_local_datetime(&NaiveDateTime::new(
+                NaiveDate::from_ymd_opt(2026, 2, 10).unwrap(),
+                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+            ))
             .single()
             .unwrap()
             .timestamp();
         let range_end = tz
-            .from_local_datetime(
-                &NaiveDateTime::new(
-                    NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
-                    NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-                ),
-            )
+            .from_local_datetime(&NaiveDateTime::new(
+                NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
+                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+            ))
             .single()
             .unwrap()
             .timestamp();
@@ -2336,7 +2409,11 @@ mod tests {
         let rule = parse_rrule("FREQ=WEEKLY;BYDAY=MO,WE,FR").unwrap();
         assert_eq!(
             rule.by_day,
-            vec![chrono::Weekday::Mon, chrono::Weekday::Wed, chrono::Weekday::Fri]
+            vec![
+                chrono::Weekday::Mon,
+                chrono::Weekday::Wed,
+                chrono::Weekday::Fri
+            ]
         );
     }
 
@@ -2416,20 +2493,32 @@ mod tests {
     #[test]
     fn parse_ical_naive_datetime_full() {
         let dt = parse_ical_naive_datetime("20260217T083000").unwrap();
-        assert_eq!(dt.date(), chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap());
-        assert_eq!(dt.time(), chrono::NaiveTime::from_hms_opt(8, 30, 0).unwrap());
+        assert_eq!(
+            dt.date(),
+            chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap()
+        );
+        assert_eq!(
+            dt.time(),
+            chrono::NaiveTime::from_hms_opt(8, 30, 0).unwrap()
+        );
     }
 
     #[test]
     fn parse_ical_naive_datetime_strips_z() {
         let dt = parse_ical_naive_datetime("20260217T083000Z").unwrap();
-        assert_eq!(dt.date(), chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap());
+        assert_eq!(
+            dt.date(),
+            chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap()
+        );
     }
 
     #[test]
     fn parse_ical_naive_datetime_date_only() {
         let dt = parse_ical_naive_datetime("20260217").unwrap();
-        assert_eq!(dt.date(), chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap());
+        assert_eq!(
+            dt.date(),
+            chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap()
+        );
         assert_eq!(dt.time(), chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap());
     }
 
@@ -2550,7 +2639,10 @@ mod tests {
     #[test]
     fn check_debounce_allows_first_request() {
         let mut recent = std::collections::VecDeque::new();
-        assert!(check_debounce(&mut recent, 15), "first call must be allowed");
+        assert!(
+            check_debounce(&mut recent, 15),
+            "first call must be allowed"
+        );
         assert_eq!(recent.len(), 1, "entry must be recorded");
     }
 
@@ -2558,7 +2650,10 @@ mod tests {
     fn check_debounce_blocks_second_within_base() {
         let mut recent = std::collections::VecDeque::new();
         recent.push_back(std::time::Instant::now());
-        assert!(!check_debounce(&mut recent, 15), "second call within base must be blocked");
+        assert!(
+            !check_debounce(&mut recent, 15),
+            "second call within base must be blocked"
+        );
     }
 
     #[test]
@@ -2567,7 +2662,10 @@ mod tests {
         let mut recent = std::collections::VecDeque::new();
         // Push an entry just older than base
         recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs + 1));
-        assert!(check_debounce(&mut recent, base_secs), "second call after base elapsed must be allowed");
+        assert!(
+            check_debounce(&mut recent, base_secs),
+            "second call after base elapsed must be allowed"
+        );
     }
 
     #[test]
@@ -2576,8 +2674,13 @@ mod tests {
         let mut recent = std::collections::VecDeque::new();
         // Two entries: one just past base, one just past 2×base
         recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs + 1));
-        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 2 + 1));
-        assert!(check_debounce(&mut recent, base_secs), "third call within 4×base must be allowed");
+        recent.push_back(
+            std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 2 + 1),
+        );
+        assert!(
+            check_debounce(&mut recent, base_secs),
+            "third call within 4×base must be allowed"
+        );
         assert_eq!(recent.len(), 3, "all three entries must be in the window");
     }
 
@@ -2587,9 +2690,16 @@ mod tests {
         let mut recent = std::collections::VecDeque::new();
         // Three entries spread across the 4×base window
         recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs + 1));
-        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 2 + 1));
-        recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 3 + 1));
-        assert!(!check_debounce(&mut recent, base_secs), "fourth call within 4×base must be blocked");
+        recent.push_back(
+            std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 2 + 1),
+        );
+        recent.push_back(
+            std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 3 + 1),
+        );
+        assert!(
+            !check_debounce(&mut recent, base_secs),
+            "fourth call within 4×base must be blocked"
+        );
     }
 
     #[test]
@@ -2598,9 +2708,14 @@ mod tests {
         let mut recent = std::collections::VecDeque::new();
         // Four entries all older than 4×base — should all be pruned
         for _ in 0..4 {
-            recent.push_back(std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 4 + 1));
+            recent.push_back(
+                std::time::Instant::now() - std::time::Duration::from_secs(base_secs * 4 + 1),
+            );
         }
-        assert!(check_debounce(&mut recent, base_secs), "after pruning old entries, first call must be allowed");
+        assert!(
+            check_debounce(&mut recent, base_secs),
+            "after pruning old entries, first call must be allowed"
+        );
         assert_eq!(recent.len(), 1, "only the new entry should remain");
     }
 
@@ -2657,17 +2772,24 @@ mod tests {
         update_state_remove_events(&shared, &[uid_a.to_string()]);
 
         let st = shared.lock().unwrap();
-        assert_eq!(st.events.len(), 2, "only the uid_a occurrence should be removed");
+        assert_eq!(
+            st.events.len(),
+            2,
+            "only the uid_a occurrence should be removed"
+        );
         assert!(
-            !st.events.contains_key(&EdsPlugin::make_occurrence_key(uid_a, 1_000_000)),
+            !st.events
+                .contains_key(&EdsPlugin::make_occurrence_key(uid_a, 1_000_000)),
             "uid_a occurrence must be gone"
         );
         assert!(
-            st.events.contains_key(&EdsPlugin::make_occurrence_key(uid_b, 2_000_000)),
+            st.events
+                .contains_key(&EdsPlugin::make_occurrence_key(uid_b, 2_000_000)),
             "uid_b occurrence must be retained"
         );
         assert!(
-            st.events.contains_key(&EdsPlugin::make_occurrence_key(uid_c, 3_000_000)),
+            st.events
+                .contains_key(&EdsPlugin::make_occurrence_key(uid_c, 3_000_000)),
             "uid_c occurrence must be retained"
         );
     }
@@ -2676,7 +2798,10 @@ mod tests {
     fn check_debounce_and_unix_now_are_consistent() {
         // unix_now() must return a plausible recent timestamp (after 2020-01-01).
         let ts = unix_now();
-        assert!(ts > 1_577_836_800, "unix_now must return a timestamp after 2020-01-01");
+        assert!(
+            ts > 1_577_836_800,
+            "unix_now must return a timestamp after 2020-01-01"
+        );
     }
 }
 

@@ -9,17 +9,21 @@ use std::rc::Rc;
 use adw::prelude::*;
 use waft_protocol::entity::notification_filter::{MatchField, MatchOperator, Pattern};
 
+use crate::i18n::t;
+
 type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(PatternRowOutput)>>>>;
 
-const FIELD_LABELS: &[&str] = &[
-    "App Name",
-    "App ID",
-    "Title",
-    "Body",
-    "Category",
-    "Urgency",
-    "Workspace",
-];
+fn field_labels() -> Vec<String> {
+    vec![
+        t("notif-field-app-name"),
+        t("notif-field-app-id"),
+        t("notif-field-title"),
+        t("notif-field-body"),
+        t("notif-field-category"),
+        t("notif-field-urgency"),
+        t("notif-field-workspace"),
+    ]
+}
 
 const FIELD_VALUES: &[MatchField] = &[
     MatchField::AppName,
@@ -31,18 +35,20 @@ const FIELD_VALUES: &[MatchField] = &[
     MatchField::Workspace,
 ];
 
-const OPERATOR_LABELS: &[&str] = &[
-    "equals",
-    "not equals",
-    "contains",
-    "not contains",
-    "starts with",
-    "not starts with",
-    "ends with",
-    "not ends with",
-    "matches regex",
-    "not matches regex",
-];
+fn operator_labels() -> Vec<String> {
+    vec![
+        t("notif-op-equals"),
+        t("notif-op-not-equals"),
+        t("notif-op-contains"),
+        t("notif-op-not-contains"),
+        t("notif-op-starts-with"),
+        t("notif-op-not-starts-with"),
+        t("notif-op-ends-with"),
+        t("notif-op-not-ends-with"),
+        t("notif-op-matches-regex"),
+        t("notif-op-not-matches-regex"),
+    ]
+}
 
 const OPERATOR_VALUES: &[MatchOperator] = &[
     MatchOperator::Equals,
@@ -79,7 +85,9 @@ impl PatternRow {
             .spacing(6)
             .build();
 
-        let field_model = gtk::StringList::new(FIELD_LABELS);
+        let fl = field_labels();
+        let fl_refs: Vec<&str> = fl.iter().map(|s| s.as_str()).collect();
+        let field_model = gtk::StringList::new(&fl_refs);
         let field_dropdown = gtk::DropDown::builder()
             .model(&field_model)
             .selected(field_to_index(pattern.field))
@@ -87,7 +95,9 @@ impl PatternRow {
             .build();
         root.append(&field_dropdown);
 
-        let operator_model = gtk::StringList::new(OPERATOR_LABELS);
+        let ol = operator_labels();
+        let ol_refs: Vec<&str> = ol.iter().map(|s| s.as_str()).collect();
+        let operator_model = gtk::StringList::new(&ol_refs);
         let operator_dropdown = gtk::DropDown::builder()
             .model(&operator_model)
             .selected(operator_to_index(pattern.operator))
@@ -97,7 +107,7 @@ impl PatternRow {
 
         let value_entry = gtk::Entry::builder()
             .text(&pattern.value)
-            .placeholder_text("Value")
+            .placeholder_text(t("notif-pattern-value"))
             .hexpand(true)
             .valign(gtk::Align::Center)
             .build();

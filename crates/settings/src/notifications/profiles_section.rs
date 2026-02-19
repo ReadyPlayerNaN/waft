@@ -18,6 +18,7 @@ use waft_protocol::entity::notification_filter::{
     NotificationGroup, NotificationProfile, RuleValue,
 };
 
+use crate::i18n::t;
 use crate::notifications::id_from_name;
 
 /// Smart container for notification profiles display and editing.
@@ -38,7 +39,9 @@ struct CreateFormWidgets {
     wrapper: gtk::ListBoxRow,
 }
 
-const RULE_OPTIONS: &[&str] = &["Default", "On", "Off"];
+fn rule_options() -> Vec<String> {
+    vec![t("notif-rule-default"), t("notif-rule-on"), t("notif-rule-off")]
+}
 
 fn rule_value_to_index(value: RuleValue) -> u32 {
     match value {
@@ -74,7 +77,7 @@ fn send_profile_update(
 impl ProfilesSection {
     pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
         let pref_group = adw::PreferencesGroup::builder()
-            .title("Profiles")
+            .title(t("notif-profiles"))
             .build();
 
         // Add header button
@@ -84,6 +87,14 @@ impl ProfilesSection {
             .valign(gtk::Align::Center)
             .build();
         pref_group.set_header_suffix(Some(&add_button));
+
+        // Empty state shown when no profiles exist
+        let empty_state = adw::StatusPage::builder()
+            .icon_name("view-paged-symbolic")
+            .title(t("notif-no-profiles"))
+            .description(t("notif-no-profiles-desc"))
+            .build();
+        pref_group.add(&empty_state);
 
         let widgets_map: Rc<RefCell<HashMap<String, ProfileWidgets>>> =
             Rc::new(RefCell::new(HashMap::new()));
@@ -105,13 +116,14 @@ impl ProfilesSection {
             let group_ref = pref_group.clone();
             let map_ref = widgets_map.clone();
             let cb = action_callback.clone();
+            let empty_ref = empty_state;
 
             Rc::new(move || {
                 let profiles: Vec<(Urn, NotificationProfile)> =
                     store.get_entities_typed(NOTIFICATION_PROFILE_ENTITY_TYPE);
                 let groups: Vec<(Urn, NotificationGroup)> =
                     store.get_entities_typed(NOTIFICATION_GROUP_ENTITY_TYPE);
-                Self::reconcile(&map_ref, &group_ref, &profiles, &groups, &cb);
+                Self::reconcile(&map_ref, &group_ref, &empty_ref, &profiles, &groups, &cb);
             })
         };
 
@@ -137,6 +149,7 @@ impl ProfilesSection {
     fn reconcile(
         widgets_map: &Rc<RefCell<HashMap<String, ProfileWidgets>>>,
         pref_group: &adw::PreferencesGroup,
+        empty_state: &adw::StatusPage,
         profiles: &[(Urn, NotificationProfile)],
         groups: &[(Urn, NotificationGroup)],
         action_callback: &EntityActionCallback,
@@ -179,6 +192,10 @@ impl ProfilesSection {
                 pref_group.remove(&widgets.expander);
             }
         }
+
+        // Toggle empty state visibility
+        let has_profiles = !map.is_empty();
+        empty_state.set_visible(!has_profiles);
     }
 
     fn create_profile_widgets(
@@ -320,14 +337,14 @@ impl ProfilesSection {
 
         let hide_dropdown = Self::create_rule_dropdown();
         hide_dropdown.set_selected(rule_value_to_index(rule.hide));
-        let hide_row = adw::ActionRow::builder().title("Hide").build();
+        let hide_row = adw::ActionRow::builder().title(t("notif-rule-hide")).build();
         hide_row.add_suffix(&hide_dropdown);
         sub_group.add(&hide_row);
 
         let no_toast_dropdown = Self::create_rule_dropdown();
         no_toast_dropdown.set_selected(rule_value_to_index(rule.no_toast));
         let toast_row = adw::ActionRow::builder()
-            .title("Suppress Toast")
+            .title(t("notif-rule-suppress-toast"))
             .build();
         toast_row.add_suffix(&no_toast_dropdown);
         sub_group.add(&toast_row);
@@ -335,13 +352,13 @@ impl ProfilesSection {
         let no_sound_dropdown = Self::create_rule_dropdown();
         no_sound_dropdown.set_selected(rule_value_to_index(rule.no_sound));
         let suppress_sound_row = adw::ActionRow::builder()
-            .title("Suppress Sound")
+            .title(t("notif-rule-suppress-sound"))
             .build();
         suppress_sound_row.add_suffix(&no_sound_dropdown);
         sub_group.add(&suppress_sound_row);
 
         let sound_entry = adw::EntryRow::builder()
-            .title("Custom Sound")
+            .title(t("notif-rule-custom-sound"))
             .text(rule.sound.as_deref().unwrap_or(""))
             .show_apply_button(true)
             .sensitive(rule.no_sound != RuleValue::On)
@@ -537,7 +554,7 @@ impl ProfilesSection {
             .build();
 
         let add_button = gtk::Button::builder()
-            .label("Add Group")
+            .label(t("notif-add-group"))
             .css_classes(["flat", "suggested-action"])
             .valign(gtk::Align::Center)
             .build();
@@ -601,7 +618,7 @@ impl ProfilesSection {
             .build();
 
         let name_entry = adw::EntryRow::builder()
-            .title("Profile Name")
+            .title(t("notif-profile-name"))
             .show_apply_button(false)
             .hexpand(true)
             .build();
@@ -610,13 +627,13 @@ impl ProfilesSection {
         entry_group.add(&name_entry);
 
         let create_button = gtk::Button::builder()
-            .label("Create")
+            .label(t("notif-create"))
             .css_classes(["pill", "suggested-action"])
             .valign(gtk::Align::Center)
             .build();
 
         let cancel_button = gtk::Button::builder()
-            .label("Cancel")
+            .label(t("notif-cancel"))
             .css_classes(["pill"])
             .valign(gtk::Align::Center)
             .build();
@@ -684,7 +701,9 @@ impl ProfilesSection {
     }
 
     fn create_rule_dropdown() -> gtk::DropDown {
-        let string_list = gtk::StringList::new(RULE_OPTIONS);
+        let options = rule_options();
+        let refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+        let string_list = gtk::StringList::new(&refs);
         gtk::DropDown::builder()
             .model(&string_list)
             .selected(0)

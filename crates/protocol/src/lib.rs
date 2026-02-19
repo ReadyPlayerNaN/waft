@@ -14,11 +14,13 @@
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
+pub mod description;
 pub mod entity;
 pub mod message;
 pub mod transport;
 pub mod urn;
 
+pub use description::PluginDescription;
 pub use message::{AppMessage, AppNotification, PluginCommand, PluginMessage};
 pub use transport::{TransportError, read_framed, write_framed};
 pub use urn::{Urn, UrnError};

@@ -8,6 +8,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Child;
 
+use waft_protocol::PluginDescription;
+
 use crate::plugin_discovery::PluginDiscoveryCache;
 
 /// A spawned plugin process.
@@ -130,6 +132,21 @@ impl PluginSpawner {
                 .map(|(name, _)| name != plugin_name)
                 .unwrap_or(true)
         });
+    }
+
+    /// Get the cached description for a specific plugin.
+    pub fn get_description(&self, plugin_name: &str) -> Option<&PluginDescription> {
+        self.discovery_cache.get_description(plugin_name)
+    }
+
+    /// Get all cached plugin descriptions.
+    pub fn all_descriptions(&self) -> Vec<&PluginDescription> {
+        self.discovery_cache.all_descriptions()
+    }
+
+    /// Return all discovered plugin names with their entity types.
+    pub fn all_plugins(&self) -> Vec<(String, Vec<String>)> {
+        self.discovery_cache.all_plugins()
     }
 
     /// Check if a plugin has been spawned for a given name.

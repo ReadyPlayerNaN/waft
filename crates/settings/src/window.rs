@@ -10,10 +10,13 @@ use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, AdapterKind, NetworkAdapter};
 
+use crate::i18n::t;
 use crate::pages::bluetooth::BluetoothPage;
 use crate::pages::display::DisplayPage;
 use crate::pages::keyboard::KeyboardPage;
 use crate::pages::notifications::NotificationsPage;
+use crate::pages::plugins::PluginsPage;
+use crate::pages::sounds::SoundsPage;
 use crate::pages::weather::WeatherPage;
 use crate::pages::wifi::WiFiPage;
 use crate::pages::wired::WiredPage;
@@ -37,10 +40,16 @@ impl SettingsWindow {
         let sidebar_header = adw::HeaderBar::new();
         let sidebar_toolbar = adw::ToolbarView::new();
         sidebar_toolbar.add_top_bar(&sidebar_header);
-        sidebar_toolbar.set_content(Some(&sidebar.root));
+
+        let sidebar_scrolled = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vexpand(true)
+            .build();
+        sidebar_scrolled.set_child(Some(&sidebar.root));
+        sidebar_toolbar.set_content(Some(&sidebar_scrolled));
 
         let sidebar_page = adw::NavigationPage::builder()
-            .title("Settings")
+            .title(t("settings-title"))
             .child(&sidebar_toolbar)
             .build();
 
@@ -54,6 +63,7 @@ impl SettingsWindow {
         let display_page = DisplayPage::new(entity_store, action_callback);
         let keyboard_page = KeyboardPage::new(entity_store, action_callback);
         let notifications_page = NotificationsPage::new(entity_store, action_callback);
+        let sounds_page = SoundsPage::new(entity_store, action_callback);
 
         // Wrap each page in a clamp for consistent max width
         let bt_clamp = adw::Clamp::builder()
@@ -85,18 +95,31 @@ impl SettingsWindow {
             .child(&notifications_page.root)
             .build();
 
-        // Stack for page switching
+        let sounds_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&sounds_page.root)
+            .build();
+
+        let plugins_page = PluginsPage::new(entity_store);
+        let plugins_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&plugins_page.root)
+            .build();
+
+        // Stack for page switching (keyed by stable page_id)
         let stack = gtk::Stack::builder()
             .transition_type(gtk::StackTransitionType::Crossfade)
             .build();
-        stack.add_named(&bt_clamp, Some("Bluetooth"));
-        stack.add_named(&wifi_clamp, Some("WiFi"));
-        stack.add_named(&wired_clamp, Some("Wired"));
-        stack.add_named(&weather_clamp, Some("Weather"));
-        stack.add_named(&display_clamp, Some("Display"));
-        stack.add_named(&keyboard_clamp, Some("Keyboard"));
-        stack.add_named(&notif_clamp, Some("Notifications"));
-        stack.set_visible_child_name("Bluetooth");
+        stack.add_named(&bt_clamp, Some("bluetooth"));
+        stack.add_named(&wifi_clamp, Some("wifi"));
+        stack.add_named(&wired_clamp, Some("wired"));
+        stack.add_named(&weather_clamp, Some("weather"));
+        stack.add_named(&display_clamp, Some("display"));
+        stack.add_named(&keyboard_clamp, Some("keyboard"));
+        stack.add_named(&notif_clamp, Some("notifications"));
+        stack.add_named(&sounds_clamp, Some("sounds"));
+        stack.add_named(&plugins_clamp, Some("plugins"));
+        stack.set_visible_child_name("bluetooth");
 
         let content_header = adw::HeaderBar::new();
         let content_scrolled = gtk::ScrolledWindow::builder()
@@ -111,7 +134,7 @@ impl SettingsWindow {
         content_toolbar.set_content(Some(&content_scrolled));
 
         let content_page = adw::NavigationPage::builder()
-            .title("Bluetooth")
+            .title(t("settings-bluetooth"))
             .child(&content_toolbar)
             .build();
 
@@ -120,10 +143,10 @@ impl SettingsWindow {
         // -- Connect sidebar selection --
         let stack_ref = stack.clone();
         sidebar.connect_output(move |output| match output {
-            SidebarOutput::Selected(category) => {
-                log::debug!("[settings] sidebar selected: {category}");
-                content_page.set_title(&category);
-                stack_ref.set_visible_child_name(&category);
+            SidebarOutput::Selected { page_id, title } => {
+                log::debug!("[settings] sidebar selected: {page_id} ({title})");
+                content_page.set_title(&title);
+                stack_ref.set_visible_child_name(&page_id);
             }
         });
 
@@ -145,9 +168,9 @@ impl SettingsWindow {
                 // If WiFi page is active and WiFi row was hidden, switch to Bluetooth
                 if !has_wireless
                     && let Some(name) = stack_for_wifi.visible_child_name()
-                    && name == "WiFi"
+                    && name == "wifi"
                 {
-                    stack_for_wifi.set_visible_child_name("Bluetooth");
+                    stack_for_wifi.set_visible_child_name("bluetooth");
                 }
             });
 
@@ -168,7 +191,7 @@ impl SettingsWindow {
             // -- Window --
             let window = adw::ApplicationWindow::builder()
                 .application(app)
-                .title("Waft Settings")
+                .title(t("settings-window-title"))
                 .default_width(900)
                 .default_height(600)
                 .content(&split_view)

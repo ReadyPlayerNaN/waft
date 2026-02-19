@@ -1,26 +1,51 @@
 mod action_tracker;
+mod cli;
 mod connection;
 mod crash_tracker;
 mod daemon;
 mod plugin_discovery;
 mod plugin_spawner;
+mod protocol_command;
 mod registry;
 
 use std::path::PathBuf;
 
+use clap::Parser;
+use cli::{Cli, Command, PluginCommand};
 use daemon::WaftDaemon;
 
 /// Well-known D-Bus name for the waft daemon.
 const DBUS_NAME: &str = "org.waft.Daemon";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
+    let cli = Cli::parse();
 
-    if args.len() >= 3 && args[1] == "plugin" && args[2] == "ls" {
-        plugin_discovery::print_plugin_list();
-        return Ok(());
+    match cli.command {
+        None | Some(Command::Daemon) => {
+            run_daemon()?;
+        }
+        Some(Command::Plugin { command }) => match command {
+            PluginCommand::Ls => {
+                plugin_discovery::print_plugin_list(cli.json);
+            }
+            PluginCommand::Describe { name } => {
+                plugin_discovery::print_plugin_description(&name, cli.json);
+            }
+        },
+        Some(Command::Protocol { entity_type, domain, verbose }) => {
+            protocol_command::run(
+                cli.json,
+                verbose,
+                entity_type.as_deref(),
+                domain.as_deref(),
+            );
+        }
     }
 
+    Ok(())
+}
+
+fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         // Register on the session bus so clients can discover us and

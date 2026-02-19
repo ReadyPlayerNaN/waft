@@ -12,6 +12,7 @@ use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::weather::{self, Weather, WeatherCondition};
 
+use crate::i18n::t;
 use crate::weather::geocoding;
 use crate::weather::location_settings_group::{
     LocationSettingsGroup, LocationSettingsOutput, LocationSettingsProps,
@@ -143,7 +144,7 @@ impl WeatherPage {
                     let icon_name = condition_icon_name(&w.condition, w.day);
                     let condition_text = condition_description(&w.condition);
 
-                    preview_ref.apply_props(w.temperature, condition_text, icon_name);
+                    preview_ref.apply_props(w.temperature, &condition_text, icon_name);
                 }
             });
         }
@@ -165,7 +166,7 @@ impl WeatherPage {
 
                     let icon_name = condition_icon_name(&w.condition, w.day);
                     let condition_text = condition_description(&w.condition);
-                    preview_ref.apply_props(w.temperature, condition_text, icon_name);
+                    preview_ref.apply_props(w.temperature, &condition_text, icon_name);
                 }
             });
         }
@@ -195,16 +196,16 @@ fn condition_icon_name(condition: &WeatherCondition, day: bool) -> &'static str 
 }
 
 /// Map WeatherCondition enum to human-readable description.
-fn condition_description(condition: &WeatherCondition) -> &'static str {
+fn condition_description(condition: &WeatherCondition) -> String {
     match condition {
-        WeatherCondition::Clear => "Clear",
-        WeatherCondition::PartlyCloudy => "Partly Cloudy",
-        WeatherCondition::Cloudy => "Cloudy",
-        WeatherCondition::Fog => "Fog",
-        WeatherCondition::Drizzle => "Drizzle",
-        WeatherCondition::Rain => "Rain",
-        WeatherCondition::FreezingRain => "Freezing Rain",
-        WeatherCondition::Snow => "Snow",
-        WeatherCondition::Thunderstorm => "Thunderstorm",
+        WeatherCondition::Clear => t("weather-clear"),
+        WeatherCondition::PartlyCloudy => t("weather-partly-cloudy"),
+        WeatherCondition::Cloudy => t("weather-cloudy"),
+        WeatherCondition::Fog => t("weather-fog"),
+        WeatherCondition::Drizzle => t("weather-drizzle"),
+        WeatherCondition::Rain => t("weather-rain"),
+        WeatherCondition::FreezingRain => t("weather-freezing-rain"),
+        WeatherCondition::Snow => t("weather-snow"),
+        WeatherCondition::Thunderstorm => t("weather-thunderstorm"),
     }
 }

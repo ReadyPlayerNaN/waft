@@ -5,7 +5,6 @@ pub mod group_form;
 pub mod groups_section;
 pub mod pattern_row;
 pub mod profiles_section;
-pub mod sound_section;
 
 /// Generate a URL-safe ID from a human-readable name.
 pub fn id_from_name(name: &str) -> String {

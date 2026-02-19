@@ -12,6 +12,7 @@ use waft_protocol::entity::notification_filter::{
     CombinatorOperator, MatchField, MatchOperator, Pattern, RuleCombinator, RuleNode,
 };
 
+use crate::i18n::t;
 use crate::notifications::pattern_row::PatternRow;
 
 type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(CombinatorEditorOutput)>>>>;
@@ -48,7 +49,9 @@ impl CombinatorEditor {
             .spacing(6)
             .build();
 
-        let operator_model = gtk::StringList::new(&["All match (AND)", "Any match (OR)"]);
+        let op_labels = [t("notif-match-all-and"), t("notif-match-any-or")];
+        let op_refs: Vec<&str> = op_labels.iter().map(|s| s.as_str()).collect();
+        let operator_model = gtk::StringList::new(&op_refs);
         let operator_dropdown = gtk::DropDown::builder()
             .model(&operator_model)
             .selected(match combinator.operator {
@@ -60,14 +63,14 @@ impl CombinatorEditor {
         header.append(&operator_dropdown);
 
         let add_rule_button = gtk::Button::builder()
-            .label("Add Rule")
+            .label(t("notif-add-rule"))
             .css_classes(["flat", "suggested-action"])
             .valign(gtk::Align::Center)
             .build();
         header.append(&add_rule_button);
 
         let add_subgroup_button = gtk::Button::builder()
-            .label("Add Sub-group")
+            .label(t("notif-add-subgroup"))
             .css_classes(["flat"])
             .valign(gtk::Align::Center)
             .build();

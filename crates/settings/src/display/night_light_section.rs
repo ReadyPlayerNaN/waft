@@ -8,6 +8,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+
+use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{NIGHT_LIGHT_ENTITY_TYPE, NightLight};
 
@@ -19,23 +21,23 @@ pub struct NightLightSection {
 impl NightLightSection {
     pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
         let group = adw::PreferencesGroup::builder()
-            .title("Night Light")
+            .title(t("display-night-light"))
             .visible(false)
             .build();
 
-        let toggle_row = adw::SwitchRow::builder().title("Night Light").build();
+        let toggle_row = adw::SwitchRow::builder().title(t("display-night-light-toggle")).build();
         group.add(&toggle_row);
 
         let preset_model = gtk::StringList::new(&[]);
         let preset_row = adw::ComboRow::builder()
-            .title("Color Preset")
+            .title(t("display-color-preset"))
             .model(&preset_model)
             .visible(false)
             .build();
         group.add(&preset_row);
 
         let status_row = adw::ActionRow::builder()
-            .title("Status")
+            .title(t("display-status"))
             .visible(false)
             .build();
         group.add(&status_row);
@@ -112,11 +114,11 @@ impl NightLightSection {
 
                     if let Some(ref period) = nl.period {
                         let label = match period.as_str() {
-                            "day" => "Day",
-                            "night" => "Night",
-                            other => other,
+                            "day" => t("display-day"),
+                            "night" => t("display-night"),
+                            other => other.to_string(),
                         };
-                        toggle_ref.set_subtitle(label);
+                        toggle_ref.set_subtitle(&label);
                     } else {
                         toggle_ref.set_subtitle("");
                     }
@@ -131,7 +133,7 @@ impl NightLightSection {
                         if count > 0 {
                             preset_model_ref.splice(0, count, &[] as &[&str]);
                         }
-                        preset_model_ref.append("Default");
+                        preset_model_ref.append(&t("display-default"));
                         for preset in &nl.presets {
                             preset_model_ref.append(preset);
                         }
@@ -154,7 +156,7 @@ impl NightLightSection {
                     if nl.active {
                         if let Some(ref next) = nl.next_transition {
                             status_row_ref.set_subtitle(next);
-                            status_row_ref.set_title("Next Transition");
+                            status_row_ref.set_title(&t("display-next-transition"));
                             status_row_ref.set_visible(true);
                         } else {
                             status_row_ref.set_visible(false);

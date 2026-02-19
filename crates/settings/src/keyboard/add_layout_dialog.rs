@@ -6,6 +6,8 @@ use adw::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::i18n::t;
+
 /// Available XKB layout entry.
 struct AvailableLayout {
     code: String,
@@ -16,18 +18,18 @@ struct AvailableLayout {
 /// and name if the user confirms selection.
 pub fn show_add_layout_dialog(parent: &impl IsA<gtk::Widget>, on_add: impl Fn(String, String) + 'static) {
     let dialog = adw::AlertDialog::builder()
-        .heading("Add Keyboard Layout")
+        .heading(t("kb-add-dialog-heading"))
         .close_response("cancel")
         .build();
 
-    dialog.add_response("cancel", "Cancel");
-    dialog.add_response("add", "Add");
+    dialog.add_response("cancel", &t("kb-add-cancel"));
+    dialog.add_response("add", &t("kb-add-confirm"));
     dialog.set_response_appearance("add", adw::ResponseAppearance::Suggested);
     dialog.set_default_response(Some("add"));
 
     // Search entry
     let search_entry = gtk::SearchEntry::builder()
-        .placeholder_text("Search layouts...")
+        .placeholder_text(t("kb-add-search-placeholder"))
         .margin_bottom(8)
         .build();
 

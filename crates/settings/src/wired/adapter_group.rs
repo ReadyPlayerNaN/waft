@@ -9,6 +9,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::EntityActionCallback;
+
+use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::{EthernetConnection, IpInfo};
 
@@ -48,23 +50,23 @@ impl WiredAdapterGroup {
     pub fn new(props: &WiredAdapterGroupProps) -> Self {
         let group = adw::PreferencesGroup::builder().title(&props.name).build();
 
-        let connected_row = adw::SwitchRow::builder().title("Connected").build();
+        let connected_row = adw::SwitchRow::builder().title(t("wired-connected")).build();
         group.add(&connected_row);
 
         let ip_row = adw::ActionRow::builder()
-            .title("IP Address")
+            .title(t("wired-ip-address"))
             .visible(false)
             .build();
         group.add(&ip_row);
 
         let gateway_row = adw::ActionRow::builder()
-            .title("Gateway")
+            .title(t("wired-gateway"))
             .visible(false)
             .build();
         group.add(&gateway_row);
 
         let public_ip_row = adw::ActionRow::builder()
-            .title("Public IP")
+            .title(t("wired-public-ip"))
             .visible(false)
             .build();
         group.add(&public_ip_row);
