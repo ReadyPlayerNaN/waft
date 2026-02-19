@@ -22,8 +22,17 @@ settings-display = Display
 settings-notifications = Notifications
 settings-sounds = Sounds
 settings-keyboard = Keyboard
+settings-audio = Audio
 settings-weather = Weather
 settings-plugins = Plugins
+
+# Audio
+audio-output-devices = Output Devices
+audio-input-devices = Input Devices
+audio-no-devices = No Audio
+audio-no-devices-desc = PulseAudio or PipeWire is not available
+audio-default-device = Default
+audio-set-default = Set as Default
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Enabled
@@ -182,6 +191,12 @@ kb-add-dialog-heading = Add Keyboard Layout
 kb-add-cancel = Cancel
 kb-add-confirm = Add
 kb-add-search-placeholder = Search layouts...
+kb-variant-button = Layout variant
+kb-variant-dialog-heading = Select Variant
+kb-variant-none = Default (no variant)
+kb-variant-search-placeholder = Search variants...
+kb-variant-cancel = Cancel
+kb-variant-confirm = Select
 
 # Weather
 weather-current = Current Weather
@@ -300,6 +315,28 @@ sounds-error-heading = Error
 sounds-size-bytes = { $bytes } B
 sounds-size-kb = { $size } KB
 sounds-size-mb = { $size } MB
+
+# Wallpaper
+settings-wallpaper = Wallpaper
+wallpaper-current = Current Wallpaper
+wallpaper-current-path = Wallpaper
+wallpaper-none = No wallpaper set
+wallpaper-unavailable = swww is not installed or swww-daemon is not running
+wallpaper-browse = Browse…
+wallpaper-browse-title = Select Wallpaper Image
+wallpaper-image-files = Image files
+wallpaper-random = Random
+wallpaper-transition = Transition
+wallpaper-transition-type = Transition Type
+wallpaper-transition-fps = FPS
+wallpaper-transition-angle = Angle
+wallpaper-transition-angle-sub = Angle in degrees for directional transitions
+wallpaper-transition-duration = Duration
+wallpaper-transition-duration-sub = Transition duration in seconds
+wallpaper-config = Configuration
+wallpaper-dir = Wallpaper Directory
+wallpaper-sync = Synchronize Outputs
+wallpaper-sync-sub = Apply the same wallpaper to all monitors
 
 # Plugins
 plugins-title = Plugins

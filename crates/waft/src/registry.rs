@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use log::{debug, info};
 use uuid::Uuid;
 use waft_protocol::Urn;
 
@@ -18,7 +19,7 @@ impl PluginRegistry {
 
     /// Register a plugin name to a connection.
     pub fn register(&mut self, plugin_name: String, conn_id: Uuid) {
-        eprintln!("[waft] plugin registered: {plugin_name} (conn {conn_id})");
+        info!("plugin registered: {plugin_name} (conn {conn_id})");
         self.plugins.insert(plugin_name, conn_id);
     }
 
@@ -41,7 +42,7 @@ impl PluginRegistry {
     pub fn remove_connection(&mut self, conn_id: Uuid) {
         self.plugins.retain(|name, id| {
             if *id == conn_id {
-                eprintln!("[waft] plugin unregistered: {name}");
+                debug!("plugin unregistered: {name}");
                 false
             } else {
                 true

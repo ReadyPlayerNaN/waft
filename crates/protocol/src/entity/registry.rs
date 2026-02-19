@@ -334,6 +334,50 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 },
             ],
         },
+        EntityTypeInfo {
+            entity_type: super::display::WALLPAPER_MANAGER_ENTITY_TYPE,
+            domain: "display",
+            description: "Wallpaper manager for a display output",
+            urn_pattern: "{plugin}/wallpaper-manager/{output}",
+            properties: &[
+                PropertyInfo { name: "output", type_description: "string", description: "Output name or 'all' for sync mode", optional: false },
+                PropertyInfo { name: "current_wallpaper", type_description: "string", description: "Absolute path to current wallpaper image", optional: true },
+                PropertyInfo { name: "available", type_description: "bool", description: "Whether swww-daemon is running", optional: false },
+                PropertyInfo { name: "transition", type_description: "object", description: "Transition animation parameters", optional: false },
+                PropertyInfo { name: "wallpaper_dir", type_description: "string", description: "Configured wallpaper directory", optional: false },
+                PropertyInfo { name: "sync", type_description: "bool", description: "Whether all outputs are synchronized", optional: false },
+            ],
+            actions: &[
+                ActionInfo {
+                    name: "set-wallpaper",
+                    description: "Set wallpaper to a specific image file",
+                    params: &[ParamInfo { name: "path", type_description: "string", description: "Absolute path to image file", required: true }],
+                },
+                ActionInfo {
+                    name: "random",
+                    description: "Set a random wallpaper from the configured directory",
+                    params: &[],
+                },
+                ActionInfo {
+                    name: "update-transition",
+                    description: "Update transition animation parameters",
+                    params: &[
+                        ParamInfo { name: "transition_type", type_description: "string", description: "Transition type (fade, wipe, grow, etc.)", required: false },
+                        ParamInfo { name: "fps", type_description: "u32", description: "Animation frames per second", required: false },
+                        ParamInfo { name: "angle", type_description: "u32", description: "Transition angle in degrees", required: false },
+                        ParamInfo { name: "duration", type_description: "f64", description: "Transition duration in seconds", required: false },
+                    ],
+                },
+                ActionInfo {
+                    name: "update-config",
+                    description: "Update wallpaper configuration",
+                    params: &[
+                        ParamInfo { name: "wallpaper_dir", type_description: "string", description: "Wallpaper directory path", required: false },
+                        ParamInfo { name: "sync", type_description: "bool", description: "Synchronize all outputs", required: false },
+                    ],
+                },
+            ],
+        },
 
         // ── keyboard ──
         EntityTypeInfo {
@@ -362,16 +406,45 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 PropertyInfo { name: "mode", type_description: "string", description: "Configuration mode (editable, external-file, system-default, error)", optional: false },
                 PropertyInfo { name: "layouts", type_description: "array", description: "Configured layout codes", optional: false },
                 PropertyInfo { name: "layout_names", type_description: "array", description: "Custom layout display names", optional: false },
-                PropertyInfo { name: "variant", type_description: "string", description: "XKB variant", optional: true },
+                PropertyInfo { name: "variant", type_description: "string", description: "XKB variant (comma-separated, parallel to layouts)", optional: true },
                 PropertyInfo { name: "options", type_description: "string", description: "XKB options", optional: true },
                 PropertyInfo { name: "file_path", type_description: "string", description: "External keymap file path", optional: true },
                 PropertyInfo { name: "error_message", type_description: "string", description: "Error description", optional: true },
             ],
             actions: &[
                 ActionInfo {
-                    name: "update",
-                    description: "Update keyboard layout configuration",
-                    params: &[],
+                    name: "add",
+                    description: "Add a keyboard layout",
+                    params: &[
+                        ParamInfo { name: "layout", type_description: "string", description: "XKB layout code", required: true },
+                        ParamInfo { name: "name", type_description: "string", description: "Display name", required: false },
+                    ],
+                },
+                ActionInfo {
+                    name: "remove",
+                    description: "Remove a keyboard layout",
+                    params: &[ParamInfo { name: "layout", type_description: "string", description: "XKB layout code", required: true }],
+                },
+                ActionInfo {
+                    name: "reorder",
+                    description: "Reorder keyboard layouts",
+                    params: &[ParamInfo { name: "layouts", type_description: "array", description: "Ordered layout codes", required: true }],
+                },
+                ActionInfo {
+                    name: "set-variant",
+                    description: "Set the XKB variant for a specific layout",
+                    params: &[
+                        ParamInfo { name: "layout", type_description: "string", description: "XKB layout code", required: true },
+                        ParamInfo { name: "variant", type_description: "string", description: "XKB variant name (empty string to clear)", required: true },
+                    ],
+                },
+                ActionInfo {
+                    name: "rename",
+                    description: "Rename a layout (external-file mode only)",
+                    params: &[
+                        ParamInfo { name: "layout", type_description: "string", description: "XKB layout code", required: true },
+                        ParamInfo { name: "name", type_description: "string", description: "New display name", required: true },
+                    ],
                 },
             ],
         },
@@ -433,6 +506,7 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             properties: &[
                 PropertyInfo { name: "name", type_description: "string", description: "VPN connection name", optional: false },
                 PropertyInfo { name: "state", type_description: "enum(Disconnected, Connecting, Connected, Disconnecting)", description: "Connection state", optional: false },
+                PropertyInfo { name: "vpn_type", type_description: "enum(vpn, wireguard)", description: "Connection technology type", optional: false },
             ],
             actions: &[
                 ActionInfo { name: "connect", description: "Connect to the VPN", params: &[] },
@@ -709,6 +783,7 @@ mod tests {
             super::super::display::DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE,
             super::super::display::NIGHT_LIGHT_ENTITY_TYPE,
             super::super::display::NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
+            super::super::display::WALLPAPER_MANAGER_ENTITY_TYPE,
             super::super::keyboard::ENTITY_TYPE,
             super::super::keyboard::CONFIG_ENTITY_TYPE,
             super::super::network::ADAPTER_ENTITY_TYPE,

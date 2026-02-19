@@ -22,8 +22,17 @@ settings-display = Obrazovky
 settings-notifications = Oznámení
 settings-sounds = Zvuky
 settings-keyboard = Klávesnice
+settings-audio = Zvuk
 settings-weather = Počasí
 settings-plugins = Doplňky
+
+# Audio
+audio-output-devices = Výstupní zařízení
+audio-input-devices = Vstupní zařízení
+audio-no-devices = Žádný zvuk
+audio-no-devices-desc = PulseAudio nebo PipeWire není dostupné
+audio-default-device = Výchozí
+audio-set-default = Nastavit jako výchozí
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Zapnuto
@@ -182,6 +191,12 @@ kb-add-dialog-heading = Přidat rozložení klávesnice
 kb-add-cancel = Zrušit
 kb-add-confirm = Přidat
 kb-add-search-placeholder = Hledat rozložení...
+kb-variant-button = Varianta rozložení
+kb-variant-dialog-heading = Vybrat variantu
+kb-variant-none = Výchozí (žádná varianta)
+kb-variant-search-placeholder = Hledat varianty...
+kb-variant-cancel = Zrušit
+kb-variant-confirm = Vybrat
 
 # Weather
 weather-current = Aktuální počasí
@@ -300,6 +315,28 @@ sounds-error-heading = Chyba
 sounds-size-bytes = { $bytes } B
 sounds-size-kb = { $size } KB
 sounds-size-mb = { $size } MB
+
+# Tapeta
+settings-wallpaper = Tapeta
+wallpaper-current = Aktuální tapeta
+wallpaper-current-path = Tapeta
+wallpaper-none = Žádná tapeta nastavena
+wallpaper-unavailable = swww není nainstalováno nebo swww-daemon neběží
+wallpaper-browse = Procházet…
+wallpaper-browse-title = Vybrat obrázek tapety
+wallpaper-image-files = Soubory obrázků
+wallpaper-random = Náhodná
+wallpaper-transition = Přechod
+wallpaper-transition-type = Typ přechodu
+wallpaper-transition-fps = FPS
+wallpaper-transition-angle = Úhel
+wallpaper-transition-angle-sub = Úhel ve stupních pro směrové přechody
+wallpaper-transition-duration = Délka
+wallpaper-transition-duration-sub = Délka přechodu v sekundách
+wallpaper-config = Nastavení
+wallpaper-dir = Adresář tapet
+wallpaper-sync = Synchronizovat výstupy
+wallpaper-sync-sub = Použít stejnou tapetu na všechny monitory
 
 # Plugins
 plugins-title = Doplňky

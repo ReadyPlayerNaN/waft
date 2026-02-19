@@ -13,8 +13,12 @@ use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
 
 use crate::bluetooth::adapter_group::{AdapterGroup, AdapterGroupOutput, AdapterGroupProps};
-use crate::bluetooth::discovered_devices_group::DiscoveredDevicesGroup;
+use crate::bluetooth::discovered_devices_group::{
+    DiscoveredDevicesGroup, DiscoveredDevicesGroupOutput,
+};
 use crate::bluetooth::paired_devices_group::PairedDevicesGroup;
+use crate::i18n::t;
+use crate::search_index::SearchIndex;
 
 /// Smart container for the Bluetooth settings page.
 ///
@@ -33,7 +37,11 @@ struct BluetoothPageState {
 }
 
 impl BluetoothPage {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -57,6 +65,49 @@ impl BluetoothPage {
         // Discovered devices group
         let discovered_group = DiscoveredDevicesGroup::new();
         root.append(&discovered_group.root);
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-bluetooth");
+            idx.add_section("bluetooth", &page_title, &t("bt-paired-devices"), "bt-paired-devices", &paired_group.root);
+            idx.add_section("bluetooth", &page_title, &t("bt-available-devices"), "bt-available-devices", &discovered_group.root);
+        }
+
+        // Wire discovered group search button output
+        {
+            let store = entity_store.clone();
+            let cb = action_callback.clone();
+            discovered_group.connect_output(move |output| {
+                let adapters: Vec<(Urn, BluetoothAdapter)> =
+                    store.get_entities_typed(BluetoothAdapter::ENTITY_TYPE);
+
+                match output {
+                    DiscoveredDevicesGroupOutput::StartDiscovery => {
+                        for (urn, adapter) in &adapters {
+                            if adapter.powered && !adapter.discovering {
+                                cb(
+                                    urn.clone(),
+                                    "start-discovery".to_string(),
+                                    serde_json::Value::Null,
+                                );
+                            }
+                        }
+                    }
+                    DiscoveredDevicesGroupOutput::StopDiscovery => {
+                        for (urn, adapter) in &adapters {
+                            if adapter.discovering {
+                                cb(
+                                    urn.clone(),
+                                    "stop-discovery".to_string(),
+                                    serde_json::Value::Null,
+                                );
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         let state = Rc::new(RefCell::new(BluetoothPageState {
             adapter_groups: HashMap::new(),
@@ -151,7 +202,6 @@ impl BluetoothPage {
                 name: adapter.name.clone(),
                 powered: adapter.powered,
                 discoverable: adapter.discoverable,
-                discovering: adapter.discovering,
             };
 
             if let Some(existing) = state.adapter_groups.get(&urn_str) {
@@ -170,12 +220,6 @@ impl BluetoothPage {
                         }
                         AdapterGroupOutput::SetAlias(alias) => {
                             ("set-alias", serde_json::json!({ "alias": alias }))
-                        }
-                        AdapterGroupOutput::StartDiscovery => {
-                            ("start-discovery", serde_json::Value::Null)
-                        }
-                        AdapterGroupOutput::StopDiscovery => {
-                            ("stop-discovery", serde_json::Value::Null)
                         }
                     };
                     cb(urn_clone.clone(), action.to_string(), params);
@@ -217,6 +261,7 @@ impl BluetoothPage {
             devices.iter().filter(|(_, d)| !d.paired).cloned().collect();
 
         let any_discovering = adapters.iter().any(|(_, a)| a.discovering);
+        let any_powered = adapters.iter().any(|(_, a)| a.powered);
 
         log::debug!(
             "[bluetooth-page] reconcile_devices: {} total, {} paired, {} discovered, discovering={}",
@@ -229,6 +274,6 @@ impl BluetoothPage {
         state.paired_group.reconcile(&paired, action_callback);
         state
             .discovered_group
-            .reconcile(&discovered, any_discovering, action_callback);
+            .reconcile(&discovered, any_discovering, any_powered, action_callback);
     }
 }

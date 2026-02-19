@@ -16,6 +16,9 @@ use waft_ui_gtk::widgets::ordered_list_row::{OrderedListRow, OrderedListRowProps
 use crate::i18n::{t, t_args};
 use crate::keyboard::add_layout_dialog;
 use crate::keyboard::rename_dialog;
+use crate::keyboard::variant_dialog;
+use crate::keyboard::xkb_database;
+use crate::search_index::SearchIndex;
 
 /// Smart container for the Keyboard settings page.
 pub struct KeyboardPage {
@@ -32,6 +35,8 @@ struct KeyboardPageState {
     layout_codes: Vec<String>,
     /// Custom names parallel to layout_codes (empty string = no custom name).
     layout_names: Vec<String>,
+    /// Per-layout variant slots, parallel to layout_codes.
+    variant_slots: Vec<String>,
     /// Current entity URN (set on first reconcile).
     config_urn: Option<Urn>,
     /// Whether rename is supported (external-file mode).
@@ -39,7 +44,11 @@ struct KeyboardPageState {
 }
 
 impl KeyboardPage {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -76,6 +85,14 @@ impl KeyboardPage {
 
         root.append(&list_group);
 
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-keyboard");
+            idx.add_section("keyboard", &page_title, &t("kb-layouts-title"), "kb-layouts-title", &list_group);
+            idx.add_input("keyboard", &page_title, &t("kb-layouts-title"), &t("kb-add-layout"), "kb-add-layout", &list_group);
+        }
+
         // Add layout button
         let add_button = gtk::Button::builder()
             .label(t("kb-add-layout"))
@@ -90,6 +107,7 @@ impl KeyboardPage {
             mode_banner,
             layout_codes: Vec::new(),
             layout_names: Vec::new(),
+            variant_slots: Vec::new(),
             config_urn: None,
             can_rename: false,
         }));
@@ -253,8 +271,14 @@ impl KeyboardPage {
             }
         }
 
-        // Check if layout list actually changed
-        if s.layout_codes == config.layouts && s.layout_names == config.layout_names {
+        // Parse variant string into per-layout slots
+        let variant_slots = parse_variant_slots(&config.variant, config.layouts.len());
+
+        // Check if layout list or variants actually changed
+        if s.layout_codes == config.layouts
+            && s.layout_names == config.layout_names
+            && s.variant_slots == variant_slots
+        {
             return;
         }
 
@@ -262,9 +286,10 @@ impl KeyboardPage {
         s.ordered_list.clear();
         s.layout_codes.clear();
         s.layout_names.clear();
+        s.variant_slots.clear();
 
         // Add rows in order
-        for layout_code in config.layouts.iter() {
+        for (i, layout_code) in config.layouts.iter().enumerate() {
             let full_name = config
                 .layout_names
                 .iter()
@@ -279,13 +304,86 @@ impl KeyboardPage {
                 })
                 .unwrap_or_else(|| layout_code_to_name(layout_code));
 
+            let current_variant = variant_slots.get(i).cloned().unwrap_or_default();
+
+            // Build subtitle: layout code + variant if set
+            let subtitle = if current_variant.is_empty() {
+                layout_code.clone()
+            } else {
+                format!("{} ({})", layout_code, current_variant)
+            };
+
             // Create OrderedListRow with native ActionRow layout
             let row = OrderedListRow::new(OrderedListRowProps {
                 id: layout_code.clone(),
                 draggable: true,
                 title: full_name,
-                subtitle: Some(layout_code.clone()),
+                subtitle: Some(subtitle),
             });
+
+            // Variant button (shown only if layout has available variants)
+            let available_variants = xkb_database::get_variants_for_layout(layout_code);
+            if !available_variants.is_empty() {
+                let variant_label = if current_variant.is_empty() {
+                    t("kb-variant-none")
+                } else {
+                    // Find description for current variant
+                    available_variants
+                        .iter()
+                        .find(|v| v.code == current_variant)
+                        .map(|v| v.description.clone())
+                        .unwrap_or_else(|| current_variant.clone())
+                };
+
+                let variant_btn = gtk::Button::builder()
+                    .label(variant_label)
+                    .tooltip_text(t("kb-variant-button"))
+                    .valign(gtk::Align::Center)
+                    .css_classes(["flat"])
+                    .build();
+
+                let code_clone = layout_code.clone();
+                let state_clone = state.clone();
+                let cb_clone = action_callback.clone();
+                let urn_clone = urn.clone();
+                let list_widget = s.ordered_list.root.clone();
+
+                variant_btn.connect_clicked(move |_| {
+                    let current = {
+                        let s = state_clone.borrow();
+                        let idx = s.layout_codes.iter().position(|c| c == &code_clone);
+                        idx.and_then(|i| s.variant_slots.get(i))
+                            .cloned()
+                            .unwrap_or_default()
+                    };
+
+                    let cb = cb_clone.clone();
+                    let urn = urn_clone.clone();
+                    let code_for_dialog = code_clone.clone();
+                    let code_for_cb = code_clone.clone();
+                    variant_dialog::show_variant_dialog(
+                        &list_widget,
+                        &code_for_dialog,
+                        &current,
+                        move |new_variant| {
+                            log::debug!(
+                                "[keyboard-page] Setting variant for '{}' to '{}'",
+                                code_for_cb,
+                                if new_variant.is_empty() {
+                                    "(none)"
+                                } else {
+                                    &new_variant
+                                }
+                            );
+                            let params =
+                                serde_json::json!({ "layout": code_for_cb, "variant": new_variant });
+                            cb(urn.clone(), "set-variant".to_string(), params);
+                        },
+                    );
+                });
+
+                row.add_suffix(&variant_btn);
+            }
 
             // Rename button (only if can_rename)
             if can_rename {
@@ -356,13 +454,34 @@ impl KeyboardPage {
             s.layout_codes.push(layout_code.clone());
         }
 
-        // Store names for rename lookups
+        // Store names and variants for lookups
         s.layout_names = config.layout_names.clone();
+        s.variant_slots = variant_slots;
 
         // Toggle empty state vs list visibility
         let has_layouts = !s.layout_codes.is_empty();
         s.ordered_list.root.set_visible(has_layouts);
         s.empty_state.set_visible(!has_layouts);
+    }
+}
+
+/// Parse a variant string into per-layout slots.
+///
+/// The variant field is a comma-separated string parallel to layouts.
+/// E.g., for `layouts: ["us", "cz"]`, `variant: Some(",qwerty")` means
+/// `us` has no variant and `cz` has `qwerty`.
+fn parse_variant_slots(variant: &Option<String>, layout_count: usize) -> Vec<String> {
+    match variant {
+        Some(v) if !v.is_empty() => {
+            let mut slots: Vec<String> = v.split(',').map(|s| s.to_string()).collect();
+            // Pad with empty strings if needed
+            while slots.len() < layout_count {
+                slots.push(String::new());
+            }
+            slots.truncate(layout_count);
+            slots
+        }
+        _ => vec![String::new(); layout_count],
     }
 }
 

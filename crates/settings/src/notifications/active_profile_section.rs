@@ -3,13 +3,14 @@
 //! Subscribes to `active-profile` and `notification-profile` entity types.
 //! Shows a combo row to select the active notification filtering profile.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use waft_protocol::entity::notification_filter::{
     ACTIVE_PROFILE_ENTITY_TYPE, ActiveProfile, NOTIFICATION_PROFILE_ENTITY_TYPE,
     NotificationProfile,
@@ -21,7 +22,11 @@ pub struct ActiveProfileSection {
 }
 
 impl ActiveProfileSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let group = adw::PreferencesGroup::builder()
             .title(t("notif-active-profile"))
             .visible(false)
@@ -34,9 +39,18 @@ impl ActiveProfileSection {
             .build();
         group.add(&combo_row);
 
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-notifications");
+            let section_title = t("notif-active-profile");
+            idx.add_section("notifications", &page_title, &section_title, "notif-active-profile", &group);
+            idx.add_input("notifications", &page_title, &section_title, &t("notif-profile"), "notif-profile", &combo_row);
+        }
+
         let updating = Rc::new(Cell::new(false));
-        let profile_ids: Rc<std::cell::RefCell<Vec<String>>> =
-            Rc::new(std::cell::RefCell::new(Vec::new()));
+        let profile_ids: Rc<RefCell<Vec<String>>> =
+            Rc::new(RefCell::new(Vec::new()));
 
         // Wire combo selection -> action
         {

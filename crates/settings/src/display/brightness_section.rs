@@ -12,6 +12,7 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{DISPLAY_ENTITY_TYPE, Display, DisplayKind};
 
@@ -27,7 +28,11 @@ struct DisplayWidgets {
 }
 
 impl BrightnessSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -42,9 +47,28 @@ impl BrightnessSection {
             let cb = action_callback.clone();
             let root_ref = root.clone();
             let displays_ref = displays;
+            let idx_ref = search_index.clone();
 
             entity_store.subscribe_type(DISPLAY_ENTITY_TYPE, move || {
                 let entities: Vec<(Urn, Display)> = store.get_entities_typed(DISPLAY_ENTITY_TYPE);
+
+                // Clear and re-register dynamic brightness search entries
+                {
+                    let mut idx = idx_ref.borrow_mut();
+                    idx.remove_entries("display", &t("display-brightness"));
+                    let page_title = t("settings-display");
+                    let section_title = t("display-brightness");
+                    for (_, display) in &entities {
+                        idx.add_input(
+                            "display",
+                            &page_title,
+                            &section_title,
+                            &display.name,
+                            "display-brightness",
+                            &root_ref,
+                        );
+                    }
+                }
 
                 let mut map = displays_ref.borrow_mut();
                 let mut seen = HashSet::new();

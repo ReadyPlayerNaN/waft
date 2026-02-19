@@ -10,6 +10,7 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{
     FieldState, NIGHT_LIGHT_CONFIG_ENTITY_TYPE, NightLightConfig,
@@ -37,7 +38,11 @@ fn subtitle_for_state(state: Option<&FieldState>) -> String {
 }
 
 impl NightLightConfigSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(12)
@@ -200,6 +205,42 @@ impl NightLightConfigSection {
             .digits(0)
             .build();
         advanced_group.add(&update_interval_row);
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-appearance");
+            // Colors group
+            let colors_title = t("nlc-colors");
+            idx.add_section("appearance", &page_title, &colors_title, "nlc-colors", &colors_group);
+            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-night-temp"), "nlc-night-temp", &night_temp_row);
+            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-night-gamma"), "nlc-night-gamma", &night_gamma_row);
+            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-day-temp"), "nlc-day-temp", &day_temp_row);
+            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-day-gamma"), "nlc-day-gamma", &day_gamma_row);
+            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-static-temp"), "nlc-static-temp", &static_temp_row);
+            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-static-gamma"), "nlc-static-gamma", &static_gamma_row);
+            // Timing group
+            let timing_title = t("nlc-timing");
+            idx.add_section("appearance", &page_title, &timing_title, "nlc-timing", &timing_group);
+            idx.add_input("appearance", &page_title, &timing_title, &t("nlc-transition-mode"), "nlc-transition-mode", &mode_row);
+            idx.add_input("appearance", &page_title, &timing_title, &t("nlc-sunrise"), "nlc-sunrise", &sunrise_row);
+            idx.add_input("appearance", &page_title, &timing_title, &t("nlc-sunset"), "nlc-sunset", &sunset_row);
+            idx.add_input("appearance", &page_title, &timing_title, &t("nlc-transition-duration"), "nlc-transition-duration", &transition_duration_row);
+            // Location group
+            let location_title = t("nlc-location");
+            idx.add_section("appearance", &page_title, &location_title, "nlc-location", &location_group);
+            idx.add_input("appearance", &page_title, &location_title, &t("nlc-latitude"), "nlc-latitude", &latitude_row);
+            idx.add_input("appearance", &page_title, &location_title, &t("nlc-longitude"), "nlc-longitude", &longitude_row);
+            // Advanced group
+            let advanced_title = t("nlc-advanced");
+            idx.add_section("appearance", &page_title, &advanced_title, "nlc-advanced", &advanced_group);
+            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-backend"), "nlc-backend", &backend_row);
+            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-smoothing"), "nlc-smoothing", &smoothing_row);
+            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-startup-duration"), "nlc-startup-duration", &startup_duration_row);
+            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-shutdown-duration"), "nlc-shutdown-duration", &shutdown_duration_row);
+            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-adaptive-interval"), "nlc-adaptive-interval", &adaptive_interval_row);
+            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-update-interval"), "nlc-update-interval", &update_interval_row);
+        }
 
         let updating = Rc::new(Cell::new(false));
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));

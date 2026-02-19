@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use waft_protocol::description::PropertyValueType;
 use waft_protocol::PluginDescription;
@@ -74,8 +75,8 @@ impl PluginDiscoveryCache {
         }
 
         let desc_count = descriptions.len();
-        eprintln!(
-            "[waft] discovery cache: {} entity types from {} plugins ({desc_count} with descriptions)",
+        info!(
+            "discovery cache: {} entity types from {} plugins ({desc_count} with descriptions)",
             type_to_binary.len(),
             plugins.len(),
         );
@@ -526,7 +527,7 @@ fn run_binary_with_timeout(binary: &PathBuf, args: &[&str]) -> Option<String> {
     {
         Ok(child) => child,
         Err(e) => {
-            eprintln!("[waft] failed to run {}: {e}", binary.display());
+            warn!("failed to run {}: {e}", binary.display());
             return None;
         }
     };
@@ -540,7 +541,7 @@ fn run_binary_with_timeout(binary: &PathBuf, args: &[&str]) -> Option<String> {
             Ok(None) => {
                 if std::time::Instant::now() >= deadline {
                     if let Err(e) = child.kill() {
-                        eprintln!("[waft] failed to kill {}: {e}", binary.display());
+                        warn!("failed to kill {}: {e}", binary.display());
                     }
                     let _ = child.wait();
                     return None;
@@ -548,7 +549,7 @@ fn run_binary_with_timeout(binary: &PathBuf, args: &[&str]) -> Option<String> {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
             Err(e) => {
-                eprintln!("[waft] failed to wait for {}: {e}", binary.display());
+                warn!("failed to wait for {}: {e}", binary.display());
                 return None;
             }
         }
@@ -563,8 +564,8 @@ fn run_binary_with_timeout(binary: &PathBuf, args: &[&str]) -> Option<String> {
             use std::io::Read;
             let mut buf = String::new();
             if let Err(e) = pipe.read_to_string(&mut buf) {
-                eprintln!(
-                    "[waft] failed to read stdout from {}: {e}",
+                warn!(
+                    "failed to read stdout from {}: {e}",
                     binary.display()
                 );
                 return None;
@@ -590,8 +591,8 @@ fn query_manifest_described(binary: &PathBuf) -> Option<PluginManifestDescribed>
     match serde_json::from_str::<PluginManifestDescribed>(&stdout) {
         Ok(manifest) => Some(manifest),
         Err(e) => {
-            eprintln!(
-                "[waft] failed to parse manifest from {}: {e}",
+            warn!(
+                "failed to parse manifest from {}: {e}",
                 binary.display()
             );
             None

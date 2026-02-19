@@ -8,6 +8,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk::prelude::*;
 use waft_protocol::Urn;
@@ -17,6 +18,7 @@ use waft_ui_gtk::audio::device_row::{AudioDeviceRow, AudioDeviceRowOutput, Audio
 use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
 
+use super::throttled_sender::ThrottledSender;
 use waft_client::{EntityActionCallback, EntityStore};
 
 /// A device row in the expandable menu.
@@ -35,6 +37,8 @@ struct SliderEntry {
     device_rows: RefCell<Vec<DeviceMenuRow>>,
     /// The outer box wrapping slider + revealer.
     wrapper: gtk::Box,
+    /// Throttled sender for real-time value changes during drag.
+    throttle: ThrottledSender,
 }
 
 /// Renders volume sliders for default audio output and input devices with
@@ -107,7 +111,17 @@ impl AudioSlidersComponent {
                         entry.widget.set_icon(&icon);
                         entry.widget.set_expandable(has_multiple);
 
-                        // Reconnect value_commit and icon_click to the new default URN
+                        // Reconnect value_change, value_commit, and icon_click to the new default URN
+                        let urn_for_drag = (*default_urn).clone();
+                        let cb_drag = cb.clone();
+                        entry.throttle.set_callback(move |v| {
+                            cb_drag(
+                                urn_for_drag.clone(),
+                                "set-volume".to_string(),
+                                serde_json::json!({ "value": v }),
+                            );
+                        });
+
                         let urn_for_value = (*default_urn).clone();
                         let cb_value = cb.clone();
                         entry.widget.connect_value_commit(move |v| {
@@ -144,6 +158,19 @@ impl AudioSlidersComponent {
                             },
                             Some(menu_store_ref.clone()),
                         ));
+
+                        // Wire value_change -> throttled set-volume during drag
+                        let throttle = ThrottledSender::new(Duration::from_millis(50));
+                        let urn_for_drag = (*default_urn).clone();
+                        let cb_drag = cb.clone();
+                        throttle.set_callback(move |v| {
+                            cb_drag(
+                                urn_for_drag.clone(),
+                                "set-volume".to_string(),
+                                serde_json::json!({ "value": v }),
+                            );
+                        });
+                        slider.connect_value_change(throttle.throttle_fn());
 
                         // Wire value_commit -> set-volume action (fires on drag release)
                         let urn_for_value = (*default_urn).clone();
@@ -207,6 +234,7 @@ impl AudioSlidersComponent {
                             menu_box,
                             device_rows: RefCell::new(Vec::new()),
                             wrapper,
+                            throttle,
                         };
 
                         // Populate device rows

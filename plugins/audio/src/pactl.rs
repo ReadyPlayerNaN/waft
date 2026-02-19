@@ -14,6 +14,8 @@ pub struct AudioDevice {
     pub name: String,
     pub icon: String,
     pub secondary_icon: Option<String>,
+    pub volume: f64,
+    pub muted: bool,
 }
 
 /// Card port information parsed from `pactl list cards`.
@@ -27,7 +29,6 @@ pub type CardPortMap = HashMap<(String, String), CardPortInfo>;
 
 /// Sink (output device) information.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // volume_percent and muted are parsed but not yet consumed
 pub struct SinkInfo {
     pub name: String,
     pub description: String,
@@ -44,7 +45,6 @@ pub struct SinkInfo {
 
 /// Source (input device) information.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // volume_percent and muted are parsed but not yet consumed
 pub struct SourceInfo {
     pub name: String,
     pub description: String,
@@ -1030,6 +1030,8 @@ impl AudioDevice {
             name,
             icon,
             secondary_icon,
+            volume: sink.volume_percent,
+            muted: sink.muted,
         }
     }
 
@@ -1052,6 +1054,8 @@ impl AudioDevice {
             name,
             icon,
             secondary_icon,
+            volume: source.volume_percent,
+            muted: source.muted,
         }
     }
 }

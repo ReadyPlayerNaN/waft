@@ -153,7 +153,6 @@ impl BluetoothToggles {
                         // Update existing toggle
                         entry.toggle.set_active(adapter.powered);
                         entry.toggle.set_icon(icon);
-                        entry.toggle.set_details(Some(adapter.name.clone()));
                     } else {
                         // Create new toggle for this adapter
                         let widget_id = format!("bluetooth-toggle-{}", urn_str);
@@ -180,7 +179,7 @@ impl BluetoothToggles {
                             FeatureToggleProps {
                                 active: adapter.powered,
                                 busy: false,
-                                details: Some(adapter.name.clone()),
+                                details: None,
                                 expandable: has_settings, // Expandable if settings available
                                 icon: icon.to_string(),
                                 title: "Bluetooth".to_string(),
@@ -338,13 +337,10 @@ impl BluetoothToggles {
                 .filter(|(_, d)| d.connected())
                 .count();
             if connected_count > 0 {
-                entry
-                    .toggle
-                    .set_details(Some(format!("{} connected", connected_count)));
-            } else if !adapter_devices.is_empty() {
-                entry
-                    .toggle
-                    .set_details(Some(format!("{} paired", adapter_devices.len())));
+                entry.toggle.set_details(Some(i18n::t_args(
+                    "bluetooth-connected-count",
+                    &[("count", &connected_count.to_string())],
+                )));
             } else {
                 entry.toggle.set_details(None);
             }

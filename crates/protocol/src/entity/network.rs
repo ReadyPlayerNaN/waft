@@ -80,6 +80,17 @@ impl EthernetConnection {
 pub struct Vpn {
     pub name: String,
     pub state: VpnState,
+    #[serde(default)]
+    pub vpn_type: VpnType,
+}
+
+/// VPN technology type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum VpnType {
+    #[default]
+    Vpn,
+    Wireguard,
 }
 
 /// VPN connection state.
@@ -175,10 +186,33 @@ mod tests {
         let vpn = Vpn {
             name: "Work VPN".to_string(),
             state: VpnState::Connected,
+            vpn_type: VpnType::Vpn,
         };
         let json = serde_json::to_value(&vpn).unwrap();
         let decoded: Vpn = serde_json::from_value(json).unwrap();
         assert_eq!(vpn, decoded);
+    }
+
+    #[test]
+    fn serde_roundtrip_vpn_wireguard() {
+        let vpn = Vpn {
+            name: "WG Tunnel".to_string(),
+            state: VpnState::Disconnected,
+            vpn_type: VpnType::Wireguard,
+        };
+        let json = serde_json::to_value(&vpn).unwrap();
+        let decoded: Vpn = serde_json::from_value(json).unwrap();
+        assert_eq!(vpn, decoded);
+    }
+
+    #[test]
+    fn serde_vpn_missing_type_defaults_to_vpn() {
+        let json = serde_json::json!({
+            "name": "Legacy VPN",
+            "state": "Connected"
+        });
+        let decoded: Vpn = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.vpn_type, VpnType::Vpn);
     }
 
     #[test]

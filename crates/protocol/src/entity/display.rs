@@ -234,6 +234,39 @@ pub struct Constraints {
     pub step: Option<f64>,
 }
 
+/// Entity type identifier for wallpaper manager.
+pub const WALLPAPER_MANAGER_ENTITY_TYPE: &str = "wallpaper-manager";
+
+/// Wallpaper manager state for a single output or all outputs in sync.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WallpaperManager {
+    /// Output name (e.g. "DP-3", "HDMI-1") or "all" for synchronized mode.
+    pub output: String,
+    /// Absolute path to the currently active wallpaper image, if known.
+    pub current_wallpaper: Option<String>,
+    /// Whether swww-daemon is running and responsive.
+    pub available: bool,
+    /// Transition configuration currently in effect.
+    pub transition: WallpaperTransition,
+    /// Configured wallpaper directory.
+    pub wallpaper_dir: String,
+    /// Whether all monitors are kept in sync.
+    pub sync: bool,
+}
+
+/// Wallpaper transition animation parameters.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WallpaperTransition {
+    /// Transition type (e.g. "simple", "fade", "wipe", "grow", "wave", "outer", "random", "none").
+    pub transition_type: String,
+    /// Frames per second for animation.
+    pub fps: u32,
+    /// Angle in degrees for directional transitions.
+    pub angle: u32,
+    /// Duration in seconds.
+    pub duration: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,5 +549,45 @@ mod tests {
         let json = serde_json::to_value(&config).unwrap();
         let decoded: NightLightConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn wallpaper_manager_serde_roundtrip() {
+        let manager = WallpaperManager {
+            output: "DP-3".to_string(),
+            current_wallpaper: Some("/home/user/wallpaper.png".to_string()),
+            available: true,
+            transition: WallpaperTransition {
+                transition_type: "fade".to_string(),
+                fps: 60,
+                angle: 0,
+                duration: 1.0,
+            },
+            wallpaper_dir: "/home/user/.config/waft/wallpapers".to_string(),
+            sync: true,
+        };
+        let json = serde_json::to_value(&manager).unwrap();
+        let decoded: WallpaperManager = serde_json::from_value(json).unwrap();
+        assert_eq!(manager, decoded);
+    }
+
+    #[test]
+    fn wallpaper_manager_serde_roundtrip_unavailable() {
+        let manager = WallpaperManager {
+            output: "all".to_string(),
+            current_wallpaper: None,
+            available: false,
+            transition: WallpaperTransition {
+                transition_type: "none".to_string(),
+                fps: 30,
+                angle: 45,
+                duration: 0.5,
+            },
+            wallpaper_dir: "~/.config/waft/wallpapers".to_string(),
+            sync: false,
+        };
+        let json = serde_json::to_value(&manager).unwrap();
+        let decoded: WallpaperManager = serde_json::from_value(json).unwrap();
+        assert_eq!(manager, decoded);
     }
 }

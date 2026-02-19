@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Command;
 use waft_plugin::*;
+use waft_protocol::description::*;
 
 /// Internal apps plugin.
 struct InternalAppsPlugin {
@@ -153,13 +154,73 @@ impl Plugin for InternalAppsPlugin {
     fn can_stop(&self) -> bool {
         true
     }
+
+    fn describe(&self) -> Option<PluginDescription> {
+        Some(PluginDescription {
+            name: "internal-apps".to_string(),
+            display_name: "Internal Apps".to_string(),
+            description: "Provides launchable application entities for internal waft apps"
+                .to_string(),
+            entity_types: vec![EntityTypeDescription {
+                entity_type: entity::app::ENTITY_TYPE.to_string(),
+                display_name: "Application".to_string(),
+                description: "A launchable application (e.g. waft-settings)".to_string(),
+                properties: vec![
+                    PropertyDescription {
+                        name: "name".to_string(),
+                        label: "Name".to_string(),
+                        description: "Application display name".to_string(),
+                        value_type: PropertyValueType::String,
+                    },
+                    PropertyDescription {
+                        name: "icon".to_string(),
+                        label: "Icon".to_string(),
+                        description: "Themed icon name".to_string(),
+                        value_type: PropertyValueType::String,
+                    },
+                    PropertyDescription {
+                        name: "available".to_string(),
+                        label: "Available".to_string(),
+                        description: "Whether the application binary was found".to_string(),
+                        value_type: PropertyValueType::Bool,
+                    },
+                ],
+                actions: vec![
+                    ActionDescription {
+                        name: "open".to_string(),
+                        label: "Open".to_string(),
+                        description: "Launch the application".to_string(),
+                        params: vec![],
+                    },
+                    ActionDescription {
+                        name: "open-page".to_string(),
+                        label: "Open Page".to_string(),
+                        description: "Launch the application at a specific page".to_string(),
+                        params: vec![ActionParamDescription {
+                            name: "page".to_string(),
+                            label: "Page".to_string(),
+                            description: "Page identifier to navigate to".to_string(),
+                            required: true,
+                            value_type: PropertyValueType::String,
+                        }],
+                    },
+                ],
+            }],
+        })
+    }
 }
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides_full(
+    // InternalAppsPlugin::new() is async, but describe() doesn't need runtime state,
+    // so we create a dummy plugin with no settings path for manifest generation.
+    let manifest_plugin = InternalAppsPlugin {
+        settings_path: None,
+    };
+    if waft_plugin::manifest::handle_provides_described(
         &[entity::app::ENTITY_TYPE],
         "Internal Apps",
         "Provides launchable application entities for internal waft apps",
+        &manifest_plugin,
     ) {
         return Ok(());
     }

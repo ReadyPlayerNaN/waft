@@ -13,6 +13,7 @@ use waft_protocol::Urn;
 use waft_protocol::entity::weather::{self, Weather, WeatherCondition};
 
 use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use crate::weather::geocoding;
 use crate::weather::location_settings_group::{
     LocationSettingsGroup, LocationSettingsOutput, LocationSettingsProps,
@@ -25,7 +26,11 @@ pub struct WeatherPage {
 }
 
 impl WeatherPage {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -49,6 +54,16 @@ impl WeatherPage {
         };
         let location_group = LocationSettingsGroup::new(&default_props);
         root.append(&location_group.root);
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-weather");
+            idx.add_section("weather", &page_title, &t("weather-current"), "weather-current", &preview.root);
+            idx.add_section("weather", &page_title, &t("weather-settings"), "weather-settings", &location_group.root);
+            idx.add_input("weather", &page_title, &t("weather-settings"), &t("weather-temp-unit"), "weather-temp-unit", &location_group.root);
+            idx.add_input("weather", &page_title, &t("weather-settings"), &t("weather-update-interval"), "weather-update-interval", &location_group.root);
+        }
 
         // Wrap in Rc for sharing between closures
         let location_group = Rc::new(location_group);

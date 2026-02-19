@@ -24,6 +24,8 @@ pub struct VpnProfileInfo {
     pub path: String,
     pub uuid: String,
     pub name: String,
+    /// NM connection type: "vpn" or "wireguard".
+    pub conn_type: String,
 }
 
 /// List all saved VPN connection profiles from NM Settings.
@@ -71,6 +73,7 @@ pub async fn get_vpn_profiles(conn: &Connection) -> Result<Vec<VpnProfileInfo>> 
                 path: path_str.to_string(),
                 uuid,
                 name,
+                conn_type: type_str,
             });
         }
     }
@@ -137,7 +140,17 @@ pub async fn get_active_vpn_connections(
 }
 
 /// Activate a VPN connection.
-pub async fn activate_vpn(conn: &Connection, connection_path: &str) -> Result<String> {
+pub async fn activate_vpn(
+    conn: &Connection,
+    connection_path: &str,
+    conn_type: &str,
+) -> Result<String> {
+    log::info!(
+        "[nm] Activating {} connection: {}",
+        conn_type,
+        connection_path
+    );
+
     let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
         .await
         .context("Failed to create NM proxy")?;
@@ -149,7 +162,12 @@ pub async fn activate_vpn(conn: &Connection, connection_path: &str) -> Result<St
     let (active_conn_path,): (OwnedObjectPath,) = proxy
         .call("ActivateConnection", &(conn_obj, device_obj, specific_obj))
         .await
-        .context("Failed to activate VPN connection")?;
+        .with_context(|| {
+            format!(
+                "Failed to activate {} connection: {}",
+                conn_type, connection_path
+            )
+        })?;
 
     Ok(active_conn_path.to_string())
 }
@@ -191,6 +209,7 @@ pub async fn refresh_vpn_states(conn: &Connection, state: &Arc<StdMutex<NmState>
             path: profile.path,
             uuid: profile.uuid,
             name: profile.name,
+            conn_type: profile.conn_type,
             state: vpn_state,
             active_path,
         });

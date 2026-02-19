@@ -14,6 +14,8 @@ use waft_protocol::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, NetworkAdapter, WiFiNetwork,
 };
 
+use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use crate::wifi::adapter_group::{WifiAdapterGroup, WifiAdapterGroupOutput, WifiAdapterGroupProps};
 use crate::wifi::available_networks_group::AvailableNetworksGroup;
 use crate::wifi::known_networks_group::KnownNetworksGroup;
@@ -31,7 +33,11 @@ struct WiFiPageState {
 }
 
 impl WiFiPage {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -52,6 +58,14 @@ impl WiFiPage {
 
         let available_group = AvailableNetworksGroup::new();
         root.append(&available_group.root);
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-wifi");
+            idx.add_section("wifi", &page_title, &t("wifi-known-networks"), "wifi-known-networks", &known_group.root);
+            idx.add_section("wifi", &page_title, &t("wifi-available-networks"), "wifi-available-networks", &available_group.root);
+        }
 
         let state = Rc::new(RefCell::new(WiFiPageState {
             adapter_groups: HashMap::new(),

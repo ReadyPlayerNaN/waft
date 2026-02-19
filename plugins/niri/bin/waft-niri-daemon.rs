@@ -6,7 +6,7 @@
 //!
 //! Entity types:
 //! - `keyboard-layout` with actions: `cycle`
-//! - `keyboard-layout-config` with actions: `add`, `remove`, `reorder`
+//! - `keyboard-layout-config` with actions: `add`, `remove`, `reorder`, `set-variant`, `rename`
 //! - `display-output` with actions: `set-mode`, `toggle-vrr`, `set-scale`, `set-transform`, `set-enabled`
 //!
 //! Requires: Niri compositor running, `NIRI_SOCKET` environment variable set,
@@ -180,8 +180,8 @@ impl NiriPlugin {
                         .ok_or("Missing 'layouts' parameter")?,
                 )?;
 
-                // Build code->name map from current state, then reorder names
-                let new_names = {
+                // Build code->name and code->variant maps from current state, then reorder
+                let (new_names, new_variant) = {
                     let state = self.lock_state();
                     let code_to_name: std::collections::HashMap<&str, &str> = state
                         .keyboard_config
@@ -190,7 +190,22 @@ impl NiriPlugin {
                         .zip(state.keyboard_config.layout_names.iter())
                         .map(|(c, n)| (c.as_str(), n.as_str()))
                         .collect();
-                    layouts
+
+                    // Build code->variant map for LayoutList mode
+                    let variant_slots: Vec<String> = if let Some(ref v) = state.keyboard_config.variant {
+                        v.split(',').map(|s| s.to_string()).collect()
+                    } else {
+                        vec![String::new(); state.keyboard_config.layouts.len()]
+                    };
+                    let code_to_variant: std::collections::HashMap<&str, &str> = state
+                        .keyboard_config
+                        .layouts
+                        .iter()
+                        .zip(variant_slots.iter())
+                        .map(|(c, v)| (c.as_str(), v.as_str()))
+                        .collect();
+
+                    let names = layouts
                         .iter()
                         .map(|code| {
                             code_to_name
@@ -198,7 +213,25 @@ impl NiriPlugin {
                                 .unwrap_or(&"")
                                 .to_string()
                         })
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<_>>();
+
+                    let reordered_variants: Vec<String> = layouts
+                        .iter()
+                        .map(|code| {
+                            code_to_variant
+                                .get(code.as_str())
+                                .unwrap_or(&"")
+                                .to_string()
+                        })
+                        .collect();
+
+                    let variant = if reordered_variants.iter().all(|s| s.is_empty()) {
+                        None
+                    } else {
+                        Some(reordered_variants.join(","))
+                    };
+
+                    (names, variant)
                 };
 
                 self.write_layouts(
@@ -207,6 +240,16 @@ impl NiriPlugin {
                     &layouts,
                     &new_names,
                 )?;
+
+                // Also update variant for LayoutList mode (ExternalFile handles it in write_xkb_layouts)
+                if !matches!(current_mode, KeyboardConfigMode::ExternalFile) {
+                    if let Some(ref v) = new_variant {
+                        config::write_keyboard_variant(v)?;
+                    } else {
+                        config::write_keyboard_variant("")?;
+                    }
+                }
+
                 info!("[niri] Reordered keyboard layouts");
 
                 // Update state
@@ -214,6 +257,124 @@ impl NiriPlugin {
                     let mut s = self.lock_state();
                     s.keyboard_config.layouts = layouts;
                     s.keyboard_config.layout_names = new_names;
+                    s.keyboard_config.variant = new_variant;
+                }
+
+                self.reload_niri_config().await;
+            }
+            "set-variant" => {
+                let layout: String = serde_json::from_value(
+                    params
+                        .get("layout")
+                        .cloned()
+                        .ok_or("Missing 'layout' parameter")?,
+                )?;
+
+                let variant: String = serde_json::from_value(
+                    params
+                        .get("variant")
+                        .cloned()
+                        .ok_or("Missing 'variant' parameter")?,
+                )?;
+
+                let layouts = {
+                    let state = self.lock_state();
+                    state.keyboard_config.layouts.clone()
+                };
+
+                let idx = layouts
+                    .iter()
+                    .position(|l| l == &layout)
+                    .ok_or_else(|| format!("Layout '{}' not found", layout))?;
+
+                match &current_mode {
+                    KeyboardConfigMode::ExternalFile => {
+                        let path = file_path
+                            .as_deref()
+                            .ok_or("ExternalFile mode but no file path in config")?;
+                        let variant_opt = if variant.is_empty() {
+                            None
+                        } else {
+                            Some(variant.as_str())
+                        };
+                        config::write_xkb_variant(path, &layout, variant_opt)?;
+                    }
+                    _ => {
+                        // LayoutList / SystemDefault: update the comma-separated variant string
+                        let current_variant = {
+                            let state = self.lock_state();
+                            state.keyboard_config.variant.clone()
+                        };
+
+                        let mut slots: Vec<String> = if let Some(ref v) = current_variant {
+                            v.split(',').map(|s| s.to_string()).collect()
+                        } else {
+                            vec![String::new(); layouts.len()]
+                        };
+
+                        // Extend slots if needed
+                        while slots.len() < layouts.len() {
+                            slots.push(String::new());
+                        }
+
+                        slots[idx] = variant.clone();
+
+                        // Build new variant string; set to None if all slots are empty
+                        let new_variant = if slots.iter().all(|s| s.is_empty()) {
+                            String::new()
+                        } else {
+                            slots.join(",")
+                        };
+
+                        config::write_keyboard_variant(&new_variant)?;
+                    }
+                }
+
+                info!(
+                    "[niri] Set variant for layout '{}' to '{}'",
+                    layout,
+                    if variant.is_empty() { "(none)" } else { &variant }
+                );
+
+                // Update state
+                {
+                    let mut s = self.lock_state();
+                    // Re-derive the variant string from what we wrote
+                    if current_mode == KeyboardConfigMode::ExternalFile {
+                        // For XKB files, re-read the variant from file content
+                        // The config reload event will update this, but set it now for responsiveness
+                        let current_variant = s.keyboard_config.variant.clone();
+                        let mut slots: Vec<String> = if let Some(ref v) = current_variant {
+                            v.split(',').map(|s| s.to_string()).collect()
+                        } else {
+                            vec![String::new(); s.keyboard_config.layouts.len()]
+                        };
+                        while slots.len() < s.keyboard_config.layouts.len() {
+                            slots.push(String::new());
+                        }
+                        slots[idx] = variant;
+                        let new_variant = if slots.iter().all(|s| s.is_empty()) {
+                            None
+                        } else {
+                            Some(slots.join(","))
+                        };
+                        s.keyboard_config.variant = new_variant;
+                    } else {
+                        let mut slots: Vec<String> = if let Some(ref v) = s.keyboard_config.variant {
+                            v.split(',').map(|s| s.to_string()).collect()
+                        } else {
+                            vec![String::new(); s.keyboard_config.layouts.len()]
+                        };
+                        while slots.len() < s.keyboard_config.layouts.len() {
+                            slots.push(String::new());
+                        }
+                        slots[idx] = variant;
+                        s.keyboard_config.variant = if slots.iter().all(|s| s.is_empty()) {
+                            None
+                        } else {
+                            Some(slots.join(","))
+                        };
+                    }
                 }
 
                 self.reload_niri_config().await;

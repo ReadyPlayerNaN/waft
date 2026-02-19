@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk::prelude::*;
 
@@ -13,6 +14,7 @@ use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
 
+use super::throttled_sender::ThrottledSender;
 use waft_client::{EntityActionCallback, EntityStore};
 
 struct SliderEntry {
@@ -87,6 +89,19 @@ impl BrightnessSlidersComponent {
                         },
                         None,
                     ));
+
+                    // Wire value_change -> throttled set-brightness during drag
+                    let throttle = ThrottledSender::new(Duration::from_millis(200));
+                    let urn_for_drag = urn.clone();
+                    let cb_drag = cb.clone();
+                    throttle.set_callback(move |v| {
+                        cb_drag(
+                            urn_for_drag.clone(),
+                            "set-brightness".to_string(),
+                            serde_json::json!({ "value": v }),
+                        );
+                    });
+                    slider.connect_value_change(throttle.throttle_fn());
 
                     // Wire value_commit -> set-brightness action (fires on drag release)
                     let urn_for_value = urn.clone();

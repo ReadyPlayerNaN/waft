@@ -9,11 +9,15 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use waft_core::Callback;
 
+use crate::widgets::icon::IconWidget;
+
 /// Properties for initializing a connection row.
 pub struct ConnectionRowProps {
     pub name: String,
     pub active: bool,
     pub transitioning: bool,
+    /// Optional leading icon name (e.g. "network-vpn-symbolic").
+    pub icon: Option<String>,
 }
 
 /// Output events from the connection row.
@@ -23,9 +27,11 @@ pub enum ConnectionRowOutput {
 
 /// A horizontal button row for a single toggleable connection.
 ///
-/// Layout: `Button > Box(H) > [name_label(hexpand), right_box(spinner + switch)]`
+/// Layout: `Button > Box(H) > [icon?(24px), name_label(hexpand), right_box(spinner + switch)]`
 pub struct ConnectionRow {
     pub root: gtk::Button,
+    inner: gtk::Box,
+    icon_widget: Option<IconWidget>,
     name_label: gtk::Label,
     spinner: gtk::Spinner,
     switch: gtk::Switch,
@@ -38,6 +44,13 @@ impl ConnectionRow {
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
             .build();
+
+        // Optional leading icon
+        let icon_widget = props.icon.as_ref().map(|icon_name| {
+            let icon = IconWidget::from_name(icon_name, 24);
+            inner.append(icon.widget());
+            icon
+        });
 
         // Connection name (expands to fill)
         let name_label = gtk::Label::builder()
@@ -87,6 +100,8 @@ impl ConnectionRow {
 
         Self {
             root: button,
+            inner,
+            icon_widget,
             name_label,
             spinner,
             switch,
@@ -113,5 +128,21 @@ impl ConnectionRow {
         self.spinner.set_visible(transitioning);
         self.spinner.set_spinning(transitioning);
         self.root.set_sensitive(!transitioning);
+    }
+
+    pub fn set_icon(&self, icon_name: Option<&str>) {
+        match (&self.icon_widget, icon_name) {
+            (Some(existing), Some(name)) => {
+                existing.set_icon(name);
+            }
+            (Some(existing), None) => {
+                self.inner.remove(existing.widget());
+            }
+            (None, Some(name)) => {
+                let icon = IconWidget::from_name(name, 24);
+                self.inner.prepend(icon.widget());
+            }
+            (None, None) => {}
+        }
     }
 }

@@ -98,11 +98,23 @@ fn categories() -> Vec<SidebarCategory> {
                     icon: "preferences-desktop-display-symbolic",
                     visible: true,
                 },
+                SidebarItem {
+                    page_id: "wallpaper",
+                    title: t("settings-wallpaper"),
+                    icon: "preferences-desktop-wallpaper-symbolic",
+                    visible: true,
+                },
             ],
         },
         SidebarCategory {
             label: t("sidebar-feedback"),
             items: vec![
+                SidebarItem {
+                    page_id: "audio",
+                    title: t("settings-audio"),
+                    icon: "audio-volume-high-symbolic",
+                    visible: true,
+                },
                 SidebarItem {
                     page_id: "notifications",
                     title: t("settings-notifications"),

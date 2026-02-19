@@ -14,6 +14,7 @@ use waft_protocol::entity::plugin::{self, PluginStatus};
 
 use crate::i18n::t;
 use crate::plugins::plugin_row::{PluginRow, PluginRowProps};
+use crate::search_index::SearchIndex;
 
 /// Smart container for the Plugins settings page.
 pub struct PluginsPage {
@@ -31,7 +32,7 @@ struct PluginsPageState {
 }
 
 impl PluginsPage {
-    pub fn new(entity_store: &Rc<EntityStore>) -> Self {
+    pub fn new(entity_store: &Rc<EntityStore>, search_index: &Rc<RefCell<SearchIndex>>) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -60,6 +61,13 @@ impl PluginsPage {
             .build();
         group.add(&list_box);
         root.append(&group);
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-plugins");
+            idx.add_section("plugins", &page_title, &t("plugins-title"), "plugins-title", &group);
+        }
 
         let state = Rc::new(RefCell::new(PluginsPageState {
             plugin_rows: HashMap::new(),

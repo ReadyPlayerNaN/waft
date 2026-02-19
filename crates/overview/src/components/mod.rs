@@ -12,5 +12,6 @@ pub mod notification_list;
 pub mod session_actions;
 pub mod settings_button;
 pub mod system_actions;
+pub mod throttled_sender;
 pub mod toggles;
 pub mod weather;

@@ -1,10 +1,12 @@
 pub mod appearance;
+pub mod audio;
 pub mod bluetooth;
 pub mod display;
 pub mod keyboard;
 pub mod notifications;
 pub mod plugins;
 pub mod sounds;
+pub mod wallpaper;
 pub mod weather;
 pub mod wifi;
 pub mod wired;

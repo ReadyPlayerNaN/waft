@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use log::{debug, trace};
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -100,11 +101,11 @@ impl ReadHalf {
 async fn write_loop(conn_id: Uuid, mut writer: OwnedWriteHalf, mut rx: mpsc::Receiver<Vec<u8>>) {
     while let Some(frame) = rx.recv().await {
         if let Err(e) = writer.write_all(&frame).await {
-            eprintln!("[waft] write error for connection {conn_id}: {e}");
+            debug!("write error for connection {conn_id}: {e}");
             break;
         }
     }
-    eprintln!("[waft] write loop exited for connection {conn_id}");
+    trace!("write loop exited for connection {conn_id}");
 }
 
 /// Errors from connection I/O.

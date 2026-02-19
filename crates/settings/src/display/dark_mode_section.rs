@@ -11,6 +11,7 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{DARK_MODE_ENTITY_TYPE, DarkMode};
 
@@ -20,7 +21,11 @@ pub struct DarkModeSection {
 }
 
 impl DarkModeSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let group = adw::PreferencesGroup::builder()
             .title(t("display-appearance"))
             .visible(false)
@@ -45,6 +50,27 @@ impl DarkModeSection {
                     cb(urn.clone(), "toggle".to_string(), serde_json::Value::Null);
                 }
             });
+        }
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-appearance");
+            idx.add_section(
+                "appearance",
+                &page_title,
+                &t("display-appearance"),
+                "display-appearance",
+                &group,
+            );
+            idx.add_input(
+                "appearance",
+                &page_title,
+                &t("display-appearance"),
+                &t("display-dark-mode"),
+                "display-dark-mode",
+                &toggle_row,
+            );
         }
 
         // Subscribe to dark-mode entities

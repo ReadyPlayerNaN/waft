@@ -140,6 +140,21 @@ impl SearchIndex {
         });
     }
 
+    /// Remove all entries for a page_id whose section_title matches.
+    /// Used to clear dynamic section entries before re-registering.
+    pub fn remove_entries(&mut self, page_id: &str, section_title: &str) {
+        self.entries.retain(|e| {
+            !(e.page_id == page_id && e.section_title.as_deref() == Some(section_title))
+        });
+    }
+
+    /// Remove ALL entries for a page_id (page + sections + inputs).
+    /// Used when a page is entirely rebuilt.
+    #[allow(dead_code)]
+    pub fn remove_page_entries(&mut self, page_id: &str) {
+        self.entries.retain(|e| e.page_id != page_id);
+    }
+
     /// Show or hide a page in search results.
     pub fn set_page_visible(&mut self, page_id: &'static str, visible: bool) {
         if visible {
@@ -296,6 +311,72 @@ mod tests {
         let results = index.search("display");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].depth(), 0);
+    }
+
+    #[test]
+    fn remove_entries_by_section() {
+        let mut index = SearchIndex::new();
+        index.add_page("display", "Display", "settings-display");
+        // We can't call add_section without a real widget in tests,
+        // so manually push entries with section titles.
+        index.entries.push(SearchEntry {
+            page_id: "display",
+            page_title: "Display".to_string(),
+            section_title: Some("Brightness".to_string()),
+            input_title: None,
+            search_terms: vec!["brightness".to_string()],
+            target_widget: None,
+        });
+        index.entries.push(SearchEntry {
+            page_id: "display",
+            page_title: "Display".to_string(),
+            section_title: Some("Brightness".to_string()),
+            input_title: Some("Slider".to_string()),
+            search_terms: vec!["slider".to_string()],
+            target_widget: None,
+        });
+        index.entries.push(SearchEntry {
+            page_id: "display",
+            page_title: "Display".to_string(),
+            section_title: Some("Output".to_string()),
+            input_title: None,
+            search_terms: vec!["output".to_string()],
+            target_widget: None,
+        });
+
+        assert_eq!(index.entries.len(), 4); // page + 2 brightness + 1 output
+        index.remove_entries("display", "Brightness");
+        assert_eq!(index.entries.len(), 2); // page + output remain
+        assert!(index.entries.iter().all(|e| e.section_title.as_deref() != Some("Brightness")));
+    }
+
+    #[test]
+    fn remove_page_entries_clears_all() {
+        let mut index = SearchIndex::new();
+        index.add_page("display", "Display", "settings-display");
+        index.add_page("bluetooth", "Bluetooth", "settings-bluetooth");
+        index.entries.push(SearchEntry {
+            page_id: "display",
+            page_title: "Display".to_string(),
+            section_title: Some("Brightness".to_string()),
+            input_title: None,
+            search_terms: vec!["brightness".to_string()],
+            target_widget: None,
+        });
+
+        assert_eq!(index.entries.len(), 3);
+        index.remove_page_entries("display");
+        assert_eq!(index.entries.len(), 1);
+        assert_eq!(index.entries[0].page_id, "bluetooth");
+    }
+
+    #[test]
+    fn remove_entries_no_match_leaves_unchanged() {
+        let mut index = SearchIndex::new();
+        index.add_page("display", "Display", "settings-display");
+        let count = index.entries.len();
+        index.remove_entries("display", "NonExistent");
+        assert_eq!(index.entries.len(), count);
     }
 
     #[test]

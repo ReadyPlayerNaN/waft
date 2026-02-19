@@ -14,12 +14,14 @@ use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, AdapterKind, NetworkAd
 
 use crate::i18n::t;
 use crate::pages::appearance::AppearancePage;
+use crate::pages::audio::AudioPage;
 use crate::pages::bluetooth::BluetoothPage;
 use crate::pages::display::DisplayPage;
 use crate::pages::keyboard::KeyboardPage;
 use crate::pages::notifications::NotificationsPage;
 use crate::pages::plugins::PluginsPage;
 use crate::pages::sounds::SoundsPage;
+use crate::pages::wallpaper::WallpaperPage;
 use crate::pages::weather::WeatherPage;
 use crate::pages::wifi::WiFiPage;
 use crate::pages::wired::WiredPage;
@@ -29,6 +31,7 @@ use crate::sidebar::{Sidebar, SidebarOutput};
 /// Map a page_id to its translated display title.
 fn page_title(page_id: &str) -> String {
     let key = match page_id {
+        "audio" => "settings-audio",
         "bluetooth" => "settings-bluetooth",
         "wifi" => "settings-wifi",
         "wired" => "settings-wired",
@@ -37,6 +40,7 @@ fn page_title(page_id: &str) -> String {
         "notifications" => "settings-notifications",
         "sounds" => "settings-sounds",
         "keyboard" => "settings-keyboard",
+        "wallpaper" => "settings-wallpaper",
         "weather" => "settings-weather",
         "plugins" => "settings-plugins",
         _ => "settings-bluetooth",
@@ -95,40 +99,42 @@ impl SettingsWindow {
         split_view.set_sidebar(Some(&sidebar_page));
 
         // -- Content pages --
-        // Pass search_index to page constructors for registration
-        let idx = &search_index;
+        // Register page-level search entries, then construct pages which
+        // register their own section/input entries via search_index.
+        {
+            let mut idx = search_index.borrow_mut();
+            idx.add_page("audio", &t("settings-audio"), "settings-audio");
+            idx.add_page("bluetooth", &t("settings-bluetooth"), "settings-bluetooth");
+            idx.add_page("wifi", &t("settings-wifi"), "settings-wifi");
+            idx.add_page("wired", &t("settings-wired"), "settings-wired");
+            idx.add_page("weather", &t("settings-weather"), "settings-weather");
+            idx.add_page("appearance", &t("settings-appearance"), "settings-appearance");
+            idx.add_page("display", &t("settings-display"), "settings-display");
+            idx.add_page("wallpaper", &t("settings-wallpaper"), "settings-wallpaper");
+            idx.add_page("keyboard", &t("settings-keyboard"), "settings-keyboard");
+            idx.add_page("notifications", &t("settings-notifications"), "settings-notifications");
+            idx.add_page("sounds", &t("settings-sounds"), "settings-sounds");
+            idx.add_page("plugins", &t("settings-plugins"), "settings-plugins");
+        }
 
-        let bluetooth_page = BluetoothPage::new(entity_store, action_callback);
-        register_bluetooth_page(idx, &bluetooth_page);
-
-        let wifi_page = WiFiPage::new(entity_store, action_callback);
-        register_wifi_page(idx, &wifi_page);
-
-        let wired_page = WiredPage::new(entity_store, action_callback);
-        register_wired_page(idx, &wired_page);
-
-        let weather_page = WeatherPage::new(entity_store, action_callback);
-        register_weather_page(idx, &weather_page);
-
-        let appearance_page = AppearancePage::new(entity_store, action_callback);
-        register_appearance_page(idx, &appearance_page);
-
-        let display_page = DisplayPage::new(entity_store, action_callback);
-        register_display_page(idx, &display_page);
-
-        let keyboard_page = KeyboardPage::new(entity_store, action_callback);
-        register_keyboard_page(idx, &keyboard_page);
-
-        let notifications_page = NotificationsPage::new(entity_store, action_callback);
-        register_notifications_page(idx, &notifications_page);
-
-        let sounds_page = SoundsPage::new(entity_store, action_callback);
-        register_sounds_page(idx, &sounds_page);
-
-        let plugins_page = PluginsPage::new(entity_store);
-        register_plugins_page(idx, &plugins_page);
+        let audio_page = AudioPage::new(entity_store, action_callback, &search_index);
+        let bluetooth_page = BluetoothPage::new(entity_store, action_callback, &search_index);
+        let wifi_page = WiFiPage::new(entity_store, action_callback, &search_index);
+        let wired_page = WiredPage::new(entity_store, action_callback, &search_index);
+        let weather_page = WeatherPage::new(entity_store, action_callback, &search_index);
+        let appearance_page = AppearancePage::new(entity_store, action_callback, &search_index);
+        let display_page = DisplayPage::new(entity_store, action_callback, &search_index);
+        let wallpaper_page = WallpaperPage::new(entity_store, action_callback, &search_index);
+        let keyboard_page = KeyboardPage::new(entity_store, action_callback, &search_index);
+        let notifications_page = NotificationsPage::new(entity_store, action_callback, &search_index);
+        let sounds_page = SoundsPage::new(entity_store, action_callback, &search_index);
+        let plugins_page = PluginsPage::new(entity_store, &search_index);
 
         // Wrap each page in a clamp for consistent max width
+        let audio_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&audio_page.root)
+            .build();
         let bt_clamp = adw::Clamp::builder()
             .maximum_size(600)
             .child(&bluetooth_page.root)
@@ -153,6 +159,10 @@ impl SettingsWindow {
             .maximum_size(600)
             .child(&display_page.root)
             .build();
+        let wallpaper_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&wallpaper_page.root)
+            .build();
         let keyboard_clamp = adw::Clamp::builder()
             .maximum_size(600)
             .child(&keyboard_page.root)
@@ -176,12 +186,14 @@ impl SettingsWindow {
         let stack = gtk::Stack::builder()
             .transition_type(gtk::StackTransitionType::Crossfade)
             .build();
+        stack.add_named(&audio_clamp, Some("audio"));
         stack.add_named(&bt_clamp, Some("bluetooth"));
         stack.add_named(&wifi_clamp, Some("wifi"));
         stack.add_named(&wired_clamp, Some("wired"));
         stack.add_named(&weather_clamp, Some("weather"));
         stack.add_named(&appearance_clamp, Some("appearance"));
         stack.add_named(&display_clamp, Some("display"));
+        stack.add_named(&wallpaper_clamp, Some("wallpaper"));
         stack.add_named(&keyboard_clamp, Some("keyboard"));
         stack.add_named(&notif_clamp, Some("notifications"));
         stack.add_named(&sounds_clamp, Some("sounds"));
@@ -359,8 +371,9 @@ fn scroll_to_and_highlight(scrolled: &gtk::ScrolledWindow, widget: &gtk::Widget)
         adj.set_value(target.max(0.0));
     }
 
-    // Add highlight class
+    // Add highlight class and grab focus
     widget.add_css_class("search-highlight");
+    widget.grab_focus();
 
     // Remove highlight after 1.5s
     let weak = widget.downgrade();
@@ -371,423 +384,3 @@ fn scroll_to_and_highlight(scrolled: &gtk::ScrolledWindow, widget: &gtk::Widget)
     });
 }
 
-// -- Page registration functions --
-// Each function registers the page and its key sections/inputs into the search index.
-
-fn register_bluetooth_page(
-    idx: &Rc<RefCell<SearchIndex>>,
-    page: &BluetoothPage,
-) {
-    let title = t("settings-bluetooth");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("bluetooth", &title, "settings-bluetooth");
-    idx.add_section(
-        "bluetooth",
-        &title,
-        &t("bt-paired-devices"),
-        "bt-paired-devices",
-        &page.root,
-    );
-    idx.add_section(
-        "bluetooth",
-        &title,
-        &t("bt-available-devices"),
-        "bt-available-devices",
-        &page.root,
-    );
-}
-
-fn register_wifi_page(idx: &Rc<RefCell<SearchIndex>>, page: &WiFiPage) {
-    let title = t("settings-wifi");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("wifi", &title, "settings-wifi");
-    idx.add_section(
-        "wifi",
-        &title,
-        &t("wifi-known-networks"),
-        "wifi-known-networks",
-        &page.root,
-    );
-    idx.add_section(
-        "wifi",
-        &title,
-        &t("wifi-available-networks"),
-        "wifi-available-networks",
-        &page.root,
-    );
-}
-
-fn register_wired_page(idx: &Rc<RefCell<SearchIndex>>, page: &WiredPage) {
-    let title = t("settings-wired");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("wired", &title, "settings-wired");
-    idx.add_section("wired", &title, &t("wired-ip-address"), "wired-ip-address", &page.root);
-}
-
-fn register_weather_page(
-    idx: &Rc<RefCell<SearchIndex>>,
-    page: &WeatherPage,
-) {
-    let title = t("settings-weather");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("weather", &title, "settings-weather");
-    idx.add_section(
-        "weather",
-        &title,
-        &t("weather-current"),
-        "weather-current",
-        &page.root,
-    );
-    idx.add_section(
-        "weather",
-        &title,
-        &t("weather-settings"),
-        "weather-settings",
-        &page.root,
-    );
-    idx.add_input(
-        "weather",
-        &title,
-        &t("weather-settings"),
-        &t("weather-temp-unit"),
-        "weather-temp-unit",
-        &page.root,
-    );
-    idx.add_input(
-        "weather",
-        &title,
-        &t("weather-settings"),
-        &t("weather-update-interval"),
-        "weather-update-interval",
-        &page.root,
-    );
-}
-
-fn register_appearance_page(
-    idx: &Rc<RefCell<SearchIndex>>,
-    page: &AppearancePage,
-) {
-    let title = t("settings-appearance");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("appearance", &title, "settings-appearance");
-    idx.add_section(
-        "appearance",
-        &title,
-        &t("display-appearance"),
-        "display-appearance",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("display-appearance"),
-        &t("display-dark-mode"),
-        "display-dark-mode",
-        &page.root,
-    );
-    idx.add_section(
-        "appearance",
-        &title,
-        &t("display-dark-mode-automation"),
-        "display-dark-mode-automation",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("display-dark-mode-automation"),
-        &t("display-latitude"),
-        "display-latitude",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("display-dark-mode-automation"),
-        &t("display-longitude"),
-        "display-longitude",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("display-dark-mode-automation"),
-        &t("display-auto-location"),
-        "display-auto-location",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("display-dark-mode-automation"),
-        &t("display-dbus-api"),
-        "display-dbus-api",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("display-dark-mode-automation"),
-        &t("display-xdg-portal"),
-        "display-xdg-portal",
-        &page.root,
-    );
-    idx.add_section(
-        "appearance",
-        &title,
-        &t("display-night-light"),
-        "display-night-light",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("display-night-light"),
-        &t("display-night-light-toggle"),
-        "display-night-light-toggle",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("display-night-light"),
-        &t("display-color-preset"),
-        "display-color-preset",
-        &page.root,
-    );
-    // Night light config sub-sections
-    idx.add_section(
-        "appearance",
-        &title,
-        &t("nlc-colors"),
-        "nlc-colors",
-        &page.root,
-    );
-    idx.add_section(
-        "appearance",
-        &title,
-        &t("nlc-timing"),
-        "nlc-timing",
-        &page.root,
-    );
-    idx.add_section(
-        "appearance",
-        &title,
-        &t("nlc-advanced"),
-        "nlc-advanced",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("nlc-colors"),
-        &t("nlc-night-temp"),
-        "nlc-night-temp",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("nlc-timing"),
-        &t("nlc-transition-mode"),
-        "nlc-transition-mode",
-        &page.root,
-    );
-    idx.add_input(
-        "appearance",
-        &title,
-        &t("nlc-advanced"),
-        &t("nlc-backend"),
-        "nlc-backend",
-        &page.root,
-    );
-}
-
-fn register_display_page(
-    idx: &Rc<RefCell<SearchIndex>>,
-    page: &DisplayPage,
-) {
-    let title = t("settings-display");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("display", &title, "settings-display");
-    idx.add_section(
-        "display",
-        &title,
-        &t("display-brightness"),
-        "display-brightness",
-        &page.root,
-    );
-    // Output section inputs
-    idx.add_input(
-        "display",
-        &title,
-        &t("display-brightness"),
-        &t("display-brightness"),
-        "display-brightness",
-        &page.root,
-    );
-    idx.add_input(
-        "display",
-        &title,
-        &t("display-brightness"),
-        &t("display-resolution"),
-        "display-resolution",
-        &page.root,
-    );
-    idx.add_input(
-        "display",
-        &title,
-        &t("display-brightness"),
-        &t("display-refresh-rate"),
-        "display-refresh-rate",
-        &page.root,
-    );
-    idx.add_input(
-        "display",
-        &title,
-        &t("display-brightness"),
-        &t("display-scale"),
-        "display-scale",
-        &page.root,
-    );
-    idx.add_input(
-        "display",
-        &title,
-        &t("display-brightness"),
-        &t("display-rotation"),
-        "display-rotation",
-        &page.root,
-    );
-    idx.add_input(
-        "display",
-        &title,
-        &t("display-brightness"),
-        &t("display-flip"),
-        "display-flip",
-        &page.root,
-    );
-    idx.add_input(
-        "display",
-        &title,
-        &t("display-brightness"),
-        &t("display-vrr"),
-        "display-vrr",
-        &page.root,
-    );
-}
-
-fn register_keyboard_page(
-    idx: &Rc<RefCell<SearchIndex>>,
-    page: &KeyboardPage,
-) {
-    let title = t("settings-keyboard");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("keyboard", &title, "settings-keyboard");
-    idx.add_section(
-        "keyboard",
-        &title,
-        &t("kb-layouts-title"),
-        "kb-layouts-title",
-        &page.root,
-    );
-    idx.add_input(
-        "keyboard",
-        &title,
-        &t("kb-layouts-title"),
-        &t("kb-add-layout"),
-        "kb-add-layout",
-        &page.root,
-    );
-}
-
-fn register_notifications_page(
-    idx: &Rc<RefCell<SearchIndex>>,
-    page: &NotificationsPage,
-) {
-    let title = t("settings-notifications");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("notifications", &title, "settings-notifications");
-    idx.add_section(
-        "notifications",
-        &title,
-        &t("notif-dnd"),
-        "notif-dnd",
-        &page.root,
-    );
-    idx.add_section(
-        "notifications",
-        &title,
-        &t("sounds-defaults"),
-        "sounds-defaults",
-        &page.root,
-    );
-    idx.add_input(
-        "notifications",
-        &title,
-        &t("sounds-defaults"),
-        &t("sounds-enable"),
-        "sounds-enable",
-        &page.root,
-    );
-    idx.add_section(
-        "notifications",
-        &title,
-        &t("notif-active-profile"),
-        "notif-active-profile",
-        &page.root,
-    );
-    idx.add_section(
-        "notifications",
-        &title,
-        &t("notif-groups"),
-        "notif-groups",
-        &page.root,
-    );
-    idx.add_section(
-        "notifications",
-        &title,
-        &t("notif-profiles"),
-        "notif-profiles",
-        &page.root,
-    );
-}
-
-fn register_sounds_page(
-    idx: &Rc<RefCell<SearchIndex>>,
-    page: &SoundsPage,
-) {
-    let title = t("settings-sounds");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("sounds", &title, "settings-sounds");
-    idx.add_section(
-        "sounds",
-        &title,
-        &t("sounds-gallery"),
-        "sounds-gallery",
-        &page.root,
-    );
-    idx.add_input(
-        "sounds",
-        &title,
-        &t("sounds-gallery"),
-        &t("sounds-add-file"),
-        "sounds-add-file",
-        &page.root,
-    );
-}
-
-fn register_plugins_page(
-    idx: &Rc<RefCell<SearchIndex>>,
-    page: &PluginsPage,
-) {
-    let title = t("settings-plugins");
-    let mut idx = idx.borrow_mut();
-    idx.add_page("plugins", &title, "settings-plugins");
-    idx.add_section(
-        "plugins",
-        &title,
-        &t("plugins-title"),
-        "plugins-title",
-        &page.root,
-    );
-}

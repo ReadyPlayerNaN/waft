@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::notification_sound::{NOTIFICATION_SOUND_ENTITY_TYPE, NotificationSound};
 
@@ -25,7 +26,11 @@ struct SoundRow {
 }
 
 impl GallerySection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let group = adw::PreferencesGroup::builder()
             .title(t("sounds-gallery"))
             .description(t("sounds-gallery-desc"))
@@ -39,6 +44,15 @@ impl GallerySection {
             .tooltip_text(t("sounds-add-file"))
             .build();
         group.set_header_suffix(Some(&add_button));
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-sounds");
+            let section_title = t("sounds-gallery");
+            idx.add_section("sounds", &page_title, &section_title, "sounds-gallery", &group);
+            idx.add_input("sounds", &page_title, &section_title, &t("sounds-add-file"), "sounds-add-file", &add_button);
+        }
 
         // Wire add button to open file dialog
         {

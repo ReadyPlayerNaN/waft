@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Child;
 
+use log::{debug, error, info, warn};
 use waft_protocol::PluginDescription;
 
 use crate::plugin_discovery::PluginDiscoveryCache;
@@ -52,7 +53,7 @@ impl PluginSpawner {
             match self.discovery_cache.binary_for_entity_type(entity_type) {
                 Some((name, path)) => (name.to_string(), path.clone()),
                 None => {
-                    eprintln!("[waft] no plugin known for entity type '{entity_type}'");
+                    debug!("no plugin known for entity type '{entity_type}'");
                     return;
                 }
             };
@@ -68,12 +69,6 @@ impl PluginSpawner {
     }
 
     fn spawn_plugin(&mut self, plugin_name: &str, binary_path: &PathBuf) {
-        eprintln!(
-            "[waft] spawning plugin '{}' from {}",
-            plugin_name,
-            binary_path.display()
-        );
-
         match std::process::Command::new(binary_path)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::inherit())
@@ -82,7 +77,12 @@ impl PluginSpawner {
         {
             Ok(child) => {
                 let pid = child.id();
-                eprintln!("[waft] spawned plugin '{}' (pid {})", plugin_name, pid);
+                info!(
+                    "spawned plugin '{}' (pid {}) from {}",
+                    plugin_name,
+                    pid,
+                    binary_path.display()
+                );
 
                 let mut spawned = SpawnedPlugin { child: Some(child) };
 
@@ -95,16 +95,16 @@ impl PluginSpawner {
                             let mut child = child;
                             match child.wait() {
                                 Ok(status) => {
-                                    eprintln!("[waft] plugin '{name}' exited with {status}");
+                                    info!("plugin '{name}' exited with {status}");
                                 }
                                 Err(e) => {
-                                    eprintln!("[waft] failed to wait for plugin '{name}': {e}");
+                                    warn!("failed to wait for plugin '{name}': {e}");
                                 }
                             }
                         })
                         .unwrap_or_else(|e| {
-                            eprintln!(
-                                "[waft] failed to spawn reaper thread for '{plugin_name}': {e}"
+                            warn!(
+                                "failed to spawn reaper thread for '{plugin_name}': {e}"
                             );
                             // At minimum, we tried. The child will be reaped on daemon exit.
                             std::thread::spawn(|| {})
@@ -114,7 +114,7 @@ impl PluginSpawner {
                 self.spawned.insert(plugin_name.to_string(), spawned);
             }
             Err(e) => {
-                eprintln!("[waft] failed to spawn plugin '{}': {e}", plugin_name,);
+                error!("failed to spawn plugin '{}': {e}", plugin_name);
             }
         }
     }

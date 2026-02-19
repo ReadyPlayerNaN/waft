@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::notification_filter::{
     CombinatorOperator, MatchField, MatchOperator, NOTIFICATION_GROUP_ENTITY_TYPE,
@@ -40,7 +41,11 @@ struct GroupsSectionState {
 }
 
 impl GroupsSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(12)
@@ -74,6 +79,13 @@ impl GroupsSection {
             form: None,
             empty_state,
         }));
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-notifications");
+            idx.add_section("notifications", &page_title, &t("notif-groups"), "notif-groups", &pref_group);
+        }
 
         // Wire "Add" button
         {

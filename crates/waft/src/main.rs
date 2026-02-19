@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use cli::{Cli, Command, PluginCommand};
 use daemon::WaftDaemon;
+use log::{info, warn};
 
 /// Well-known D-Bus name for the waft daemon.
 const DBUS_NAME: &str = "org.waft.Daemon";
@@ -22,6 +23,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         None | Some(Command::Daemon) => {
+            env_logger::Builder::from_env(
+                env_logger::Env::default().default_filter_or("info"),
+            )
+            .init();
             run_daemon()?;
         }
         Some(Command::Plugin { command }) => match command {
@@ -52,19 +57,19 @@ fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
         // D-Bus activation can auto-start the daemon.
         let dbus_conn = match register_dbus_name().await {
             Ok(conn) => {
-                eprintln!("[waft] registered as {DBUS_NAME} on session bus");
+                info!("registered as {DBUS_NAME} on session bus");
                 Some(conn)
             }
             Err(e) => {
-                eprintln!("[waft] failed to register on D-Bus: {e}");
-                eprintln!("[waft] continuing without D-Bus name (clients must connect directly)");
+                warn!("failed to register on D-Bus: {e}");
+                warn!("continuing without D-Bus name (clients must connect directly)");
                 None
             }
         };
 
         let socket_path = daemon_socket_path()?;
 
-        eprintln!("[waft] starting daemon at {}", socket_path.display());
+        info!("starting daemon at {}", socket_path.display());
 
         let daemon = WaftDaemon::new(socket_path)?;
         daemon.run().await?;

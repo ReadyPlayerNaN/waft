@@ -14,6 +14,8 @@ use waft_protocol::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, EthernetConnection, NetworkAdapter,
 };
 
+use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use crate::wired::adapter_group::{
     WiredAdapterGroup, WiredAdapterGroupOutput, WiredAdapterGroupProps,
 };
@@ -29,7 +31,11 @@ struct WiredPageState {
 }
 
 impl WiredPage {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -44,6 +50,13 @@ impl WiredPage {
             .spacing(24)
             .build();
         root.append(&adapters_box);
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-wired");
+            idx.add_section("wired", &page_title, &t("wired-ip-address"), "wired-ip-address", &adapters_box);
+        }
 
         let state = Rc::new(RefCell::new(WiredPageState {
             adapter_groups: HashMap::new(),

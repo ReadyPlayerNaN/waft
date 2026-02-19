@@ -10,6 +10,7 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{NIGHT_LIGHT_ENTITY_TYPE, NightLight};
 
@@ -19,7 +20,11 @@ pub struct NightLightSection {
 }
 
 impl NightLightSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let group = adw::PreferencesGroup::builder()
             .title(t("display-night-light"))
             .visible(false)
@@ -41,6 +46,16 @@ impl NightLightSection {
             .visible(false)
             .build();
         group.add(&status_row);
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-appearance");
+            let section_title = t("display-night-light");
+            idx.add_section("appearance", &page_title, &section_title, "display-night-light", &group);
+            idx.add_input("appearance", &page_title, &section_title, &t("display-night-light-toggle"), "display-night-light-toggle", &toggle_row);
+            idx.add_input("appearance", &page_title, &section_title, &t("display-color-preset"), "display-color-preset", &preset_row);
+        }
 
         let updating = Rc::new(Cell::new(false));
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));

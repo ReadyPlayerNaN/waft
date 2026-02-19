@@ -2,6 +2,7 @@
 //!
 //! Composes dark mode and night light sections into a single scrollable page.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -11,6 +12,7 @@ use crate::display::dark_mode_automation_section::DarkModeAutomationSection;
 use crate::display::dark_mode_section::DarkModeSection;
 use crate::display::night_light_config_section::NightLightConfigSection;
 use crate::display::night_light_section::NightLightSection;
+use crate::search_index::SearchIndex;
 
 /// Appearance settings page composed of independent sections.
 pub struct AppearancePage {
@@ -18,7 +20,11 @@ pub struct AppearancePage {
 }
 
 impl AppearancePage {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -28,18 +34,18 @@ impl AppearancePage {
             .margin_end(12)
             .build();
 
-        let dark_mode = DarkModeSection::new(entity_store, action_callback);
+        let dark_mode = DarkModeSection::new(entity_store, action_callback, search_index);
         root.append(&dark_mode.root);
 
         let dark_mode_automation =
-            DarkModeAutomationSection::new(entity_store, action_callback);
+            DarkModeAutomationSection::new(entity_store, action_callback, search_index);
         root.append(&dark_mode_automation.root);
 
-        let night_light = NightLightSection::new(entity_store, action_callback);
+        let night_light = NightLightSection::new(entity_store, action_callback, search_index);
         root.append(&night_light.root);
 
         let night_light_config =
-            NightLightConfigSection::new(entity_store, action_callback);
+            NightLightConfigSection::new(entity_store, action_callback, search_index);
         root.append(&night_light_config.root);
 
         Self { root }

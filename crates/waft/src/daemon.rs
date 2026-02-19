@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use log::{debug, error, info, warn};
 use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -120,7 +121,7 @@ impl WaftDaemon {
                         Ok((stream, _)) => {
                             let (conn, read_half) = Connection::new(stream);
                             let conn_id = conn.id;
-                            eprintln!("[waft] new connection: {conn_id}");
+                            debug!("new connection: {conn_id}");
                             self.connections.insert(conn_id, conn);
 
                             // Spawn read loop for this connection
@@ -128,7 +129,7 @@ impl WaftDaemon {
                             tokio::spawn(Self::read_loop(read_half, tx));
                         }
                         Err(e) => {
-                            eprintln!("[waft] accept error: {e}");
+                            error!("accept error: {e}");
                         }
                     }
                 }
@@ -137,15 +138,15 @@ impl WaftDaemon {
                     match event {
                         Event::Message(conn_id, bytes) => {
                             if let Err(e) = self.handle_message(conn_id, &bytes).await {
-                                eprintln!("[waft] error handling message from {conn_id}: {e}");
+                                warn!("error handling message from {conn_id}: {e}");
                                 self.remove_connection(conn_id).await;
                             }
                         }
                         Event::Disconnected(conn_id, err) => {
                             if let Some(e) = err {
-                                eprintln!("[waft] connection {conn_id} error: {e}");
+                                debug!("connection {conn_id} error: {e}");
                             } else {
-                                eprintln!("[waft] connection {conn_id} disconnected");
+                                debug!("connection {conn_id} disconnected");
                             }
                             self.remove_connection(conn_id).await;
                         }
@@ -251,7 +252,7 @@ impl WaftDaemon {
                     subscriptions: Default::default(),
                 };
             }
-            eprintln!("[waft] connection {conn_id} identified as app");
+            debug!("connection {conn_id} identified as app");
             return self.handle_app_message(conn_id, msg).await;
         }
 
@@ -291,7 +292,7 @@ impl WaftDaemon {
                     if let Some(conn) = self.connections.get(&app_id)
                         && let Err(e) = conn.send(&notification).await
                     {
-                        eprintln!("[waft] failed to forward EntityUpdated to {app_id}: {e}");
+                        warn!("failed to forward EntityUpdated to {app_id}: {e}");
                     }
                 }
             }
@@ -313,7 +314,7 @@ impl WaftDaemon {
                     if let Some(conn) = self.connections.get(&app_id)
                         && let Err(e) = conn.send(&notification).await
                     {
-                        eprintln!("[waft] failed to forward EntityRemoved to {app_id}: {e}");
+                        warn!("failed to forward EntityRemoved to {app_id}: {e}");
                     }
                 }
             }
@@ -325,13 +326,13 @@ impl WaftDaemon {
                             .send(&AppNotification::ActionSuccess { action_id })
                             .await
                     {
-                        eprintln!(
-                            "[waft] failed to forward ActionSuccess to {}: {e}",
+                        warn!(
+                            "failed to forward ActionSuccess to {}: {e}",
                             action.app_conn_id
                         );
                     }
                 } else {
-                    eprintln!("[waft] ActionSuccess for unknown action {action_id}");
+                    warn!("ActionSuccess for unknown action {action_id}");
                 }
             }
 
@@ -345,13 +346,13 @@ impl WaftDaemon {
                             })
                             .await
                     {
-                        eprintln!(
-                            "[waft] failed to forward ActionError to {}: {e}",
+                        warn!(
+                            "failed to forward ActionError to {}: {e}",
                             action.app_conn_id
                         );
                     }
                 } else {
-                    eprintln!("[waft] ActionError for unknown action {action_id}");
+                    warn!("ActionError for unknown action {action_id}");
                 }
             }
 
@@ -363,12 +364,12 @@ impl WaftDaemon {
 
                 if let Some(ref name) = plugin_name {
                     if can_stop {
-                        eprintln!("[waft] plugin {name} confirmed it can stop, disconnecting");
+                        info!("plugin {name} confirmed it can stop, disconnecting");
                         self.pending_can_stops.remove(name.as_str());
                         self.graceful_stops.insert(name.clone());
                         self.remove_connection(conn_id).await;
                     } else {
-                        eprintln!("[waft] plugin {name} cannot stop, will retry in 30s");
+                        debug!("plugin {name} cannot stop, will retry in 30s");
                         self.pending_can_stops.insert(
                             name.clone(),
                             PendingCanStop {
@@ -394,7 +395,7 @@ impl WaftDaemon {
         match msg {
             AppMessage::Subscribe { entity_type } => {
                 self.app_registry.subscribe(entity_type.clone(), conn_id);
-                eprintln!("[waft] app {conn_id} subscribed to {entity_type}");
+                debug!("app {conn_id} subscribed to {entity_type}");
 
                 // Track subscription in connection state
                 if let Some(conn) = self.connections.get_mut(&conn_id)
@@ -416,7 +417,7 @@ impl WaftDaemon {
 
             AppMessage::Unsubscribe { entity_type } => {
                 self.app_registry.unsubscribe(&entity_type, conn_id);
-                eprintln!("[waft] app {conn_id} unsubscribed from {entity_type}");
+                debug!("app {conn_id} unsubscribed from {entity_type}");
 
                 if let Some(conn) = self.connections.get_mut(&conn_id)
                     && let ClientKind::App { subscriptions } = &mut conn.kind
@@ -429,7 +430,7 @@ impl WaftDaemon {
             }
 
             AppMessage::Status { entity_type } => {
-                eprintln!("[waft] app {conn_id} requested status for {entity_type}");
+                debug!("app {conn_id} requested status for {entity_type}");
 
                 if let Some(conn) = self.connections.get(&conn_id) {
                     for cached in self.entity_cache.values() {
@@ -440,7 +441,7 @@ impl WaftDaemon {
                                 data: cached.data.clone(),
                             };
                             if let Err(e) = conn.send(&notification).await {
-                                eprintln!("[waft] failed to send cached entity to {conn_id}: {e}");
+                                warn!("failed to send cached entity to {conn_id}: {e}");
                                 break;
                             }
                         }
@@ -469,7 +470,7 @@ impl WaftDaemon {
                     if let Some(plugin_conn) = self.connections.get(&plugin_conn_id)
                         && let Err(e) = plugin_conn.send(&cmd).await
                     {
-                        eprintln!("[waft] failed to forward TriggerAction to plugin: {e}");
+                        warn!("failed to forward TriggerAction to plugin: {e}");
                         // Resolve the action as failed
                         if let Some(action) = self.action_tracker.resolve(action_id)
                             && let Some(app_conn) = self.connections.get(&action.app_conn_id)
@@ -510,8 +511,8 @@ impl WaftDaemon {
                         .collect()
                 };
 
-                eprintln!(
-                    "[waft] app {conn_id} requested descriptions (filter: {:?}, found: {})",
+                debug!(
+                    "app {conn_id} requested descriptions (filter: {:?}, found: {})",
                     plugin_name,
                     plugins.len(),
                 );
@@ -519,9 +520,7 @@ impl WaftDaemon {
                 if let Some(conn) = self.connections.get(&conn_id) {
                     let response = AppNotification::DescribeResponse { plugins };
                     if let Err(e) = conn.send(&response).await {
-                        eprintln!(
-                            "[waft] failed to send DescribeResponse to {conn_id}: {e}"
-                        );
+                        warn!("failed to send DescribeResponse to {conn_id}: {e}");
                     }
                 }
             }
@@ -534,8 +533,8 @@ impl WaftDaemon {
     async fn handle_timeouts(&mut self) {
         let timed_out = self.action_tracker.drain_timed_out();
         for action in timed_out {
-            eprintln!(
-                "[waft] action {} timed out (app: {})",
+            warn!(
+                "action {} timed out (app: {})",
                 action.action_id, action.app_conn_id
             );
             if let Some(conn) = self.connections.get(&action.app_conn_id) {
@@ -563,11 +562,11 @@ impl WaftDaemon {
             if let Some(pending) = self.pending_can_stops.remove(&name) {
                 // Re-check if the plugin still has no subscribers before retrying
                 if self.plugin_has_subscribers(&name) {
-                    eprintln!("[waft] plugin {name} now has subscribers, cancelling CanStop retry");
+                    debug!("plugin {name} now has subscribers, cancelling CanStop retry");
                 } else if let Some(conn) = self.connections.get(&pending.plugin_conn_id) {
-                    eprintln!("[waft] retrying CanStop for plugin {name}");
+                    debug!("retrying CanStop for plugin {name}");
                     if let Err(e) = conn.send(&PluginCommand::CanStop).await {
-                        eprintln!("[waft] failed to send CanStop retry to {name}: {e}");
+                        warn!("failed to send CanStop retry to {name}: {e}");
                     }
                 }
             }
@@ -618,11 +617,11 @@ impl WaftDaemon {
             if !self.plugin_has_subscribers(&plugin_name)
                 && let Some(conn_id) = self.plugin_registry.connection_for_plugin(&plugin_name)
             {
-                eprintln!("[waft] plugin {plugin_name} has zero subscribers, sending CanStop");
+                debug!("plugin {plugin_name} has zero subscribers, sending CanStop");
                 if let Some(conn) = self.connections.get(&conn_id)
                     && let Err(e) = conn.send(&PluginCommand::CanStop).await
                 {
-                    eprintln!("[waft] failed to send CanStop to {plugin_name}: {e}");
+                    warn!("failed to send CanStop to {plugin_name}: {e}");
                 }
             }
         }
@@ -632,7 +631,7 @@ impl WaftDaemon {
     async fn remove_connection(&mut self, conn_id: Uuid) {
         let plugin_name = if let Some(conn) = self.connections.remove(&conn_id) {
             if let ClientKind::Plugin { ref name } = conn.kind {
-                eprintln!("[waft] plugin {name} disconnected (conn {conn_id})");
+                info!("plugin {name} disconnected (conn {conn_id})");
                 Some(name.clone())
             } else {
                 None
@@ -696,8 +695,8 @@ impl WaftDaemon {
                         if let Some(conn) = self.connections.get(&app_id)
                             && let Err(e) = conn.send(&notification).await
                         {
-                            eprintln!(
-                                "[waft] failed to send stale/outdated notification to {app_id}: {e}"
+                            warn!(
+                                "failed to send stale/outdated notification to {app_id}: {e}"
                             );
                         }
                     }
@@ -711,19 +710,19 @@ impl WaftDaemon {
                             .any(|et| self.app_registry.has_subscribers(et));
 
                         if has_subscribers {
-                            eprintln!("[waft] plugin {name} crashed, restarting");
+                            info!("plugin {name} crashed, restarting");
                             for et in &plugin_entity_types {
                                 self.plugin_spawner.ensure_plugin_for_entity_type(et);
                             }
                         } else {
-                            eprintln!(
-                                "[waft] plugin {name} crashed but has no subscribers, not restarting"
+                            info!(
+                                "plugin {name} crashed but has no subscribers, not restarting"
                             );
                         }
                     }
                     CrashOutcome::CircuitBroken => {
-                        eprintln!(
-                            "[waft] plugin {name} crashed too many times, circuit breaker tripped"
+                        warn!(
+                            "plugin {name} crashed too many times, circuit breaker tripped"
                         );
                     }
                 }
@@ -740,13 +739,13 @@ impl WaftDaemon {
                     && !self.plugin_has_subscribers(&name)
                     && let Some(plugin_conn_id) = self.plugin_registry.connection_for_plugin(&name)
                 {
-                    eprintln!(
-                        "[waft] plugin {name} has zero subscribers after app disconnect, sending CanStop"
+                    debug!(
+                        "plugin {name} has zero subscribers after app disconnect, sending CanStop"
                     );
                     if let Some(conn) = self.connections.get(&plugin_conn_id)
                         && let Err(e) = conn.send(&PluginCommand::CanStop).await
                     {
-                        eprintln!("[waft] failed to send CanStop to {name}: {e}");
+                        warn!("failed to send CanStop to {name}: {e}");
                     }
                 }
             }
@@ -805,7 +804,7 @@ impl WaftDaemon {
         let data = match serde_json::to_value(&status) {
             Ok(d) => d,
             Err(e) => {
-                eprintln!("[waft] failed to serialize plugin-status for {plugin_name}: {e}");
+                error!("failed to serialize plugin-status for {plugin_name}: {e}");
                 return;
             }
         };
@@ -821,7 +820,7 @@ impl WaftDaemon {
             if let Some(conn) = self.connections.get(&app_id)
                 && let Err(e) = conn.send(&notification).await
             {
-                eprintln!("[waft] failed to send plugin-status to {app_id}: {e}");
+                warn!("failed to send plugin-status to {app_id}: {e}");
             }
         }
     }
@@ -843,7 +842,7 @@ impl WaftDaemon {
                 let data = match serde_json::to_value(&status) {
                     Ok(d) => d,
                     Err(e) => {
-                        eprintln!("[waft] failed to serialize plugin-status for {plugin_name}: {e}");
+                        error!("failed to serialize plugin-status for {plugin_name}: {e}");
                         continue;
                     }
                 };
@@ -855,7 +854,7 @@ impl WaftDaemon {
                 };
 
                 if let Err(e) = conn.send(&notification).await {
-                    eprintln!("[waft] failed to send plugin-status to {app_conn_id}: {e}");
+                    warn!("failed to send plugin-status to {app_conn_id}: {e}");
                     break;
                 }
             }

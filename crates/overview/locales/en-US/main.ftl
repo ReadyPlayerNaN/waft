@@ -65,6 +65,7 @@ weather-thunderstorm = Thunderstorm
 bluetooth-title = Bluetooth
 bluetooth-unknown-device = Unknown Device
 bluetooth-settings-button = Settings
+bluetooth-connected-count = { $count } connected
 
 # Network
 network-wired = Wired
@@ -84,6 +85,7 @@ wired-settings-button = Settings
 wifi-scanning = Scanning for networks...
 wifi-no-networks = No networks found
 wifi-refresh = Refresh
+wifi-settings-button = Settings
 
 # VPN
 vpn-title = VPN

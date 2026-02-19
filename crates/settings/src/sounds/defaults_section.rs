@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::notification_filter::{SOUND_CONFIG_ENTITY_TYPE, SoundConfigEntity};
 use waft_protocol::entity::notification_sound::{NOTIFICATION_SOUND_ENTITY_TYPE, NotificationSound};
@@ -41,7 +42,11 @@ pub struct DefaultsSection {
 }
 
 impl DefaultsSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let group = adw::PreferencesGroup::builder()
             .title(t("sounds-defaults"))
             .visible(false)
@@ -61,6 +66,15 @@ impl DefaultsSection {
 
         let critical_row = Self::create_urgency_row(&t("sounds-critical-urgency"));
         group.add(&critical_row.combo);
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-notifications");
+            let section_title = t("sounds-defaults");
+            idx.add_section("notifications", &page_title, &section_title, "sounds-defaults", &group);
+            idx.add_input("notifications", &page_title, &section_title, &t("sounds-enable"), "sounds-enable", &enabled_row);
+        }
 
         let updating = Rc::new(Cell::new(false));
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));

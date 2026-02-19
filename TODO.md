@@ -15,10 +15,6 @@ Whenever an email with meeting invite is received, present it as calendar notifi
 Consider having the SNI tray in the waft overview.
 (Status Notifier Items)
 
-# `waft-settings`
-
-Audio settings that include managing input / output devices and their settings as `pavucontrol` does.
-
 # Launcher
 
 Create app `waft-launcher`. The app will have a single window on the gtk layer shell. On start it will focus an input field. Upon search, the app will search available applications. It will have keyboard navigation - using arrows up and down will change the selected item, but the input field remains focused. `<Enter>` starts the selected app and exits `waft-launcher`. Clicking an app starts it and exits `waft-launcher`. The list of apps will display icon and name.
@@ -82,3 +78,7 @@ The VPN list now correctly shows the wireguard VPN connections. However, connect
 # `waft` logging too verbose
 
 Revise the logged messages in waft to see if all of them are really needed to be at `info` level. What is not helpful on info may be moved to `debug` or `trace` level.
+
+# `waft-settings` Audio
+
+Audio settings that include managing input / output devices and their settings as `pavucontrol` does.

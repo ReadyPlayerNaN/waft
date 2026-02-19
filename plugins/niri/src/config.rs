@@ -513,6 +513,150 @@ pub fn write_keyboard_layouts(layouts: Vec<String>) -> Result<()> {
     write_niri_config_with_backup(&config_path, &modified)
 }
 
+/// Modify the keyboard variant in a KDL document.
+///
+/// Updates the `variant` value inside `input.keyboard.xkb`, creating
+/// the node hierarchy if needed. Removes the variant node if the value
+/// is empty (all layouts have no variant).
+pub fn modify_keyboard_variant(mut doc: KdlDocument, variant: &str) -> Result<KdlDocument> {
+    // Navigate to input.keyboard.xkb, bail if missing (layout must exist first)
+    let input_node = doc
+        .get_mut("input")
+        .context("No 'input' node in config")?;
+    let input_children = input_node.ensure_children();
+
+    let keyboard_node = input_children
+        .get_mut("keyboard")
+        .context("No 'keyboard' node in config")?;
+    let keyboard_children = keyboard_node.ensure_children();
+
+    let xkb_node = keyboard_children
+        .get_mut("xkb")
+        .context("No 'xkb' node in config")?;
+    let xkb_children = xkb_node.ensure_children();
+
+    if variant.is_empty() || variant.chars().all(|c| c == ',') {
+        // Remove variant node if all slots are empty
+        xkb_children
+            .nodes_mut()
+            .retain(|n| n.name().value() != "variant");
+    } else if let Some(existing_variant) = xkb_children.get_mut("variant") {
+        existing_variant.entries_mut().clear();
+        existing_variant.push(quoted_kdl_entry(variant));
+    } else {
+        let mut variant_node = kdl::KdlNode::new("variant");
+        variant_node.push(quoted_kdl_entry(variant));
+        xkb_children.nodes_mut().push(variant_node);
+    }
+
+    Ok(doc)
+}
+
+/// Write keyboard variant to niri config file.
+pub fn write_keyboard_variant(variant: &str) -> Result<()> {
+    let config_path = niri_config_path();
+
+    let doc = if config_path.exists() {
+        let contents = std::fs::read_to_string(&config_path)?;
+        contents.parse::<KdlDocument>()?
+    } else {
+        anyhow::bail!("Config file does not exist; cannot set variant without layouts");
+    };
+
+    let modified = modify_keyboard_variant(doc, variant)?;
+    write_niri_config_with_backup(&config_path, &modified)
+}
+
+/// Modify a specific layout's variant in an XKB file's include directive.
+///
+/// Parses the include string, finds the layout, updates its variant,
+/// and rebuilds the include line.
+pub fn modify_xkb_content_variant(
+    content: &str,
+    layout: &str,
+    variant: Option<&str>,
+) -> Result<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut in_symbols = false;
+    let mut found = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with("xkb_symbols") {
+            in_symbols = true;
+            lines.push(line.to_string());
+            continue;
+        }
+
+        if in_symbols {
+            if !found
+                && let Some(rest) = trimmed.strip_prefix("include \"")
+                && let Some(include_str) = rest.strip_suffix('"')
+            {
+                let mut parsed = parse_xkb_include_full(include_str);
+
+                // Find the layout and update its variant
+                let layout_found = parsed.layouts.iter_mut().any(|l| {
+                    if l.code == layout {
+                        l.variant = variant.filter(|v| !v.is_empty()).map(|v| v.to_string());
+                        true
+                    } else {
+                        false
+                    }
+                });
+
+                if !layout_found {
+                    anyhow::bail!("Layout '{}' not found in XKB include directive", layout);
+                }
+
+                let new_include = build_xkb_include(&parsed);
+                let indent = &line[..line.len() - trimmed.len()];
+                lines.push(format!("{}include \"{}\"", indent, new_include));
+                found = true;
+                continue;
+            }
+
+            if trimmed == "};" || trimmed == "}" {
+                in_symbols = false;
+            }
+        }
+
+        lines.push(line.to_string());
+    }
+
+    if !found {
+        anyhow::bail!("Could not find 'include' directive in xkb_symbols section");
+    }
+
+    let mut result = lines.join("\n");
+    if content.ends_with('\n') {
+        result.push('\n');
+    }
+
+    Ok(result)
+}
+
+/// Write a layout variant change to an external XKB file.
+pub fn write_xkb_variant(file_path: &str, layout: &str, variant: Option<&str>) -> Result<()> {
+    let expanded = expand_tilde(file_path);
+    let path = Path::new(&expanded);
+
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read XKB file: {}", expanded))?;
+
+    let modified = modify_xkb_content_variant(&content, layout, variant)?;
+
+    let backup_path = format!("{}.backup", expanded);
+    std::fs::copy(path, &backup_path)
+        .with_context(|| format!("Failed to create XKB backup: {}", backup_path))?;
+
+    std::fs::write(path, &modified)
+        .with_context(|| format!("Failed to write XKB file: {}", expanded))?;
+
+    Ok(())
+}
+
 /// Modify the `include` directive and `name[groupN]` lines inside the `xkb_symbols` section.
 ///
 /// Parses the existing include string, updates layout codes (preserving variants for
@@ -1302,5 +1446,166 @@ xkb_keymap {
         assert!(new_content.contains(r#"include "pc+us+cz(qwerty):2+de:3+inet(evdev)""#));
         assert!(new_content.contains(r#"name[group1]="English (US)";"#));
         assert!(new_content.contains(r#"name[group3]="German";"#));
+    }
+
+    #[test]
+    fn modify_variant_set() {
+        let kdl = r#"input {
+    keyboard {
+        xkb {
+            layout "us,cz"
+        }
+    }
+}
+"#;
+
+        let doc: KdlDocument = kdl.parse().unwrap();
+        let modified = modify_keyboard_variant(doc, ",qwerty").unwrap();
+        let config = extract_keyboard_config(&modified);
+
+        assert_eq!(config.variant, Some(",qwerty".to_string()));
+    }
+
+    #[test]
+    fn modify_variant_update_existing() {
+        let kdl = r#"input {
+    keyboard {
+        xkb {
+            layout "us,cz"
+            variant ",qwerty"
+        }
+    }
+}
+"#;
+
+        let doc: KdlDocument = kdl.parse().unwrap();
+        let modified = modify_keyboard_variant(doc, "dvorak,qwerty").unwrap();
+        let config = extract_keyboard_config(&modified);
+
+        assert_eq!(config.variant, Some("dvorak,qwerty".to_string()));
+    }
+
+    #[test]
+    fn modify_variant_clear() {
+        let kdl = r#"input {
+    keyboard {
+        xkb {
+            layout "us,cz"
+            variant ",qwerty"
+        }
+    }
+}
+"#;
+
+        let doc: KdlDocument = kdl.parse().unwrap();
+        let modified = modify_keyboard_variant(doc, "").unwrap();
+        let config = extract_keyboard_config(&modified);
+
+        assert_eq!(config.variant, None);
+    }
+
+    #[test]
+    fn modify_variant_all_commas_clears() {
+        let kdl = r#"input {
+    keyboard {
+        xkb {
+            layout "us,cz"
+            variant ",qwerty"
+        }
+    }
+}
+"#;
+
+        let doc: KdlDocument = kdl.parse().unwrap();
+        let modified = modify_keyboard_variant(doc, ",").unwrap();
+        let config = extract_keyboard_config(&modified);
+
+        assert_eq!(config.variant, None);
+    }
+
+    #[test]
+    fn modify_variant_preserves_layout_and_options() {
+        let kdl = r#"input {
+    keyboard {
+        xkb {
+            layout "us,cz"
+            options "grp:win_space_toggle"
+        }
+    }
+}
+"#;
+
+        let doc: KdlDocument = kdl.parse().unwrap();
+        let modified = modify_keyboard_variant(doc, ",qwerty").unwrap();
+        let config = extract_keyboard_config(&modified);
+
+        assert_eq!(config.layouts, vec!["us", "cz"]);
+        assert_eq!(config.options, Some("grp:win_space_toggle".to_string()));
+        assert_eq!(config.variant, Some(",qwerty".to_string()));
+    }
+
+    #[test]
+    fn modify_xkb_content_variant_set() {
+        let xkb = r#"xkb_keymap {
+    xkb_symbols   {
+        include "pc+us+cz:2+inet(evdev)"
+    };
+};
+"#;
+
+        let modified = modify_xkb_content_variant(xkb, "cz", Some("qwerty")).unwrap();
+        assert!(modified.contains(r#"include "pc+us+cz(qwerty):2+inet(evdev)""#));
+    }
+
+    #[test]
+    fn modify_xkb_content_variant_clear() {
+        let xkb = r#"xkb_keymap {
+    xkb_symbols   {
+        include "pc+us+cz(qwerty):2+inet(evdev)"
+    };
+};
+"#;
+
+        let modified = modify_xkb_content_variant(xkb, "cz", None).unwrap();
+        assert!(modified.contains(r#"include "pc+us+cz:2+inet(evdev)""#));
+    }
+
+    #[test]
+    fn modify_xkb_content_variant_clear_empty_string() {
+        let xkb = r#"xkb_keymap {
+    xkb_symbols   {
+        include "pc+us+cz(qwerty):2+inet(evdev)"
+    };
+};
+"#;
+
+        let modified = modify_xkb_content_variant(xkb, "cz", Some("")).unwrap();
+        assert!(modified.contains(r#"include "pc+us+cz:2+inet(evdev)""#));
+    }
+
+    #[test]
+    fn modify_xkb_content_variant_change() {
+        let xkb = r#"xkb_keymap {
+    xkb_symbols   {
+        include "pc+us(dvorak)+cz(qwerty):2+inet(evdev)"
+    };
+};
+"#;
+
+        let modified = modify_xkb_content_variant(xkb, "us", Some("colemak")).unwrap();
+        assert!(modified.contains(r#"include "pc+us(colemak)+cz(qwerty):2+inet(evdev)""#));
+    }
+
+    #[test]
+    fn modify_xkb_content_variant_unknown_layout_fails() {
+        let xkb = r#"xkb_keymap {
+    xkb_symbols   {
+        include "pc+us+cz:2+inet(evdev)"
+    };
+};
+"#;
+
+        let result = modify_xkb_content_variant(xkb, "de", Some("nodeadkeys"));
+        assert!(result.is_err());
     }
 }

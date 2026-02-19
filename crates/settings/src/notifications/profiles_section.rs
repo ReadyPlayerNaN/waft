@@ -12,6 +12,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::notification_filter::{
     GroupRule, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE,
@@ -75,7 +76,11 @@ fn send_profile_update(
 }
 
 impl ProfilesSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let pref_group = adw::PreferencesGroup::builder()
             .title(t("notif-profiles"))
             .build();
@@ -100,6 +105,13 @@ impl ProfilesSection {
             Rc::new(RefCell::new(HashMap::new()));
 
         let create_form: Rc<RefCell<Option<CreateFormWidgets>>> = Rc::new(RefCell::new(None));
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-notifications");
+            idx.add_section("notifications", &page_title, &t("notif-profiles"), "notif-profiles", &pref_group);
+        }
 
         // Wire "Add" button
         {

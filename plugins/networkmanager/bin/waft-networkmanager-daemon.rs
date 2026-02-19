@@ -207,6 +207,7 @@ impl NetworkManagerPlugin {
                             path: profile.path,
                             uuid: profile.uuid,
                             name: profile.name,
+                            conn_type: profile.conn_type,
                             state: vpn_state,
                             active_path,
                         },
@@ -427,9 +428,14 @@ fn ethernet_adapter_to_entities(
 }
 
 fn vpn_to_entity(vpn: &waft_plugin_networkmanager::state::VpnConnectionInfo) -> Entity {
+    let vpn_type = match vpn.conn_type.as_str() {
+        "wireguard" => waft_plugin::entity::network::VpnType::Wireguard,
+        _ => waft_plugin::entity::network::VpnType::Vpn,
+    };
     let entity = waft_plugin::entity::network::Vpn {
         name: vpn.name.clone(),
         state: to_entity_vpn_state(&vpn.state),
+        vpn_type,
     };
 
     Entity::new(
@@ -958,7 +964,17 @@ impl NetworkManagerPlugin {
         &self,
         conn_path: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("[nm] Connecting VPN: {}", conn_path);
+        let conn_type = {
+            let state = self.lock_state();
+            state
+                .vpn_connections
+                .iter()
+                .find(|v| v.path == conn_path)
+                .map(|v| v.conn_type.clone())
+                .unwrap_or_else(|| "vpn".to_string())
+        };
+
+        info!("[nm] Connecting {} VPN: {}", conn_type, conn_path);
 
         {
             let mut state = self.lock_state();
@@ -971,11 +987,11 @@ impl NetworkManagerPlugin {
             }
         }
 
-        match activate_vpn(&self.conn, conn_path).await {
+        match activate_vpn(&self.conn, conn_path, &conn_type).await {
             Ok(active_path) => {
                 info!(
-                    "[nm] VPN connection initiated: {} -> {}",
-                    conn_path, active_path
+                    "[nm] {} VPN connection initiated: {} -> {}",
+                    conn_type, conn_path, active_path
                 );
                 let mut state = self.lock_state();
                 if let Some(vpn) = state
@@ -987,7 +1003,10 @@ impl NetworkManagerPlugin {
                 }
             }
             Err(e) => {
-                error!("[nm] Failed to connect VPN: {}", e);
+                error!(
+                    "[nm] Failed to connect {} VPN {}: {}",
+                    conn_type, conn_path, e
+                );
                 let mut state = self.lock_state();
                 if let Some(vpn) = state
                     .vpn_connections
@@ -1043,7 +1062,8 @@ impl NetworkManagerPlugin {
                 return Err(e.into());
             }
         } else {
-            warn!("[nm] No active connection path for VPN: {}", conn_path);
+            warn!("[nm] No active connection path for VPN: {} — connection was never activated or already disconnected", conn_path);
+            return Err(format!("VPN has no active connection to disconnect: {}", conn_path).into());
         }
 
         Ok(())

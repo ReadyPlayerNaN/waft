@@ -11,10 +11,12 @@ use gtk::prelude::*;
 use waft_client::{
     ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
 };
+use waft_protocol::entity::audio;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
 use waft_protocol::entity::display::{
     DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE, DARK_MODE_ENTITY_TYPE, DISPLAY_ENTITY_TYPE,
     DISPLAY_OUTPUT_ENTITY_TYPE, NIGHT_LIGHT_CONFIG_ENTITY_TYPE, NIGHT_LIGHT_ENTITY_TYPE,
+    WALLPAPER_MANAGER_ENTITY_TYPE,
 };
 use waft_protocol::entity::keyboard::CONFIG_ENTITY_TYPE as KEYBOARD_CONFIG_ENTITY_TYPE;
 use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, EthernetConnection, WiFiNetwork};
@@ -31,6 +33,7 @@ use crate::window::SettingsWindow;
 
 /// Entity types the settings app subscribes to.
 const ENTITY_TYPES: &[&str] = &[
+    audio::ENTITY_TYPE,
     BluetoothAdapter::ENTITY_TYPE,
     BluetoothDevice::ENTITY_TYPE,
     ADAPTER_ENTITY_TYPE,
@@ -42,6 +45,7 @@ const ENTITY_TYPES: &[&str] = &[
     DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE,
     NIGHT_LIGHT_ENTITY_TYPE,
     NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
+    WALLPAPER_MANAGER_ENTITY_TYPE,
     KEYBOARD_CONFIG_ENTITY_TYPE,
     weather::ENTITY_TYPE,
     NOTIFICATION_GROUP_ENTITY_TYPE,

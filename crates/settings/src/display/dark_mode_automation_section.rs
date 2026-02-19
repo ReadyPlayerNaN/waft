@@ -10,6 +10,7 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{
     DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE, DarkModeAutomationConfig, FieldState,
@@ -96,7 +97,11 @@ fn reconcile(config: &DarkModeAutomationConfig, widgets: &Widgets) {
 }
 
 impl DarkModeAutomationSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let group = adw::PreferencesGroup::builder()
             .title(t("display-dark-mode-automation"))
             .visible(false)
@@ -135,6 +140,25 @@ impl DarkModeAutomationSection {
             .visible(false)
             .build();
         group.add(&portal_api_row);
+
+        // Register search entries
+        {
+            let mut idx = search_index.borrow_mut();
+            let page_title = t("settings-appearance");
+            let section_title = t("display-dark-mode-automation");
+            idx.add_section(
+                "appearance",
+                &page_title,
+                &section_title,
+                "display-dark-mode-automation",
+                &group,
+            );
+            idx.add_input("appearance", &page_title, &section_title, &t("display-latitude"), "display-latitude", &latitude_row);
+            idx.add_input("appearance", &page_title, &section_title, &t("display-longitude"), "display-longitude", &longitude_row);
+            idx.add_input("appearance", &page_title, &section_title, &t("display-auto-location"), "display-auto-location", &auto_location_row);
+            idx.add_input("appearance", &page_title, &section_title, &t("display-dbus-api"), "display-dbus-api", &dbus_api_row);
+            idx.add_input("appearance", &page_title, &section_title, &t("display-xdg-portal"), "display-xdg-portal", &portal_api_row);
+        }
 
         let updating = Rc::new(Cell::new(false));
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));

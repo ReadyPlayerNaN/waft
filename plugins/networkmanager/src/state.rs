@@ -88,6 +88,8 @@ pub struct VpnConnectionInfo {
     pub path: String,
     pub uuid: String,
     pub name: String,
+    /// NM connection type: "vpn" or "wireguard".
+    pub conn_type: String,
     pub state: VpnState,
     /// Active connection D-Bus path when connected/connecting.
     pub active_path: Option<String>,

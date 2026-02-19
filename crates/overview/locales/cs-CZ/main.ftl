@@ -65,6 +65,11 @@ weather-thunderstorm = Bouřka
 bluetooth-title = Bluetooth
 bluetooth-unknown-device = Neznámé zařízení
 bluetooth-settings-button = Nastavení
+bluetooth-connected-count = { $count ->
+    [one] { $count } připojeno
+    [few] { $count } připojeny
+   *[other] { $count } připojených
+}
 
 # Network
 network-wired = Kabelové
@@ -84,6 +89,7 @@ wired-settings-button = Nastavení
 wifi-scanning = Vyhledávání sítí...
 wifi-no-networks = Nebyly nalezeny žádné sítě
 wifi-refresh = Obnovit
+wifi-settings-button = Nastavení
 
 # VPN
 vpn-title = VPN

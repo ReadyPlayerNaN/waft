@@ -1,6 +1,7 @@
 //! waft-settings - Standalone settings application for Waft.
 
 mod app;
+mod audio;
 mod bluetooth;
 mod display;
 mod i18n;
@@ -12,6 +13,7 @@ mod search_index;
 mod search_results;
 mod sidebar;
 mod sounds;
+mod wallpaper;
 mod weather;
 mod wifi;
 mod window;

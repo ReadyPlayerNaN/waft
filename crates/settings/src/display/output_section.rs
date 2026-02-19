@@ -25,6 +25,7 @@ use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::i18n::t;
 use crate::i18n::t_args;
+use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{
     DISPLAY_OUTPUT_ENTITY_TYPE, DisplayMode, DisplayOutput, DisplayTransform,
@@ -177,7 +178,11 @@ fn any_dirty(pending: &HashMap<String, PendingOutputChanges>) -> bool {
 }
 
 impl OutputSection {
-    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
+    pub fn new(
+        entity_store: &Rc<EntityStore>,
+        action_callback: &EntityActionCallback,
+        search_index: &Rc<RefCell<SearchIndex>>,
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -279,12 +284,16 @@ impl OutputSection {
             let apply_btn = apply_button.clone();
             let reset_btn = reset_button.clone();
             let root_ref = root.clone();
+            let idx_ref = search_index.clone();
 
             entity_store.subscribe_type(DISPLAY_OUTPUT_ENTITY_TYPE, move || {
                 let entities: Vec<(Urn, DisplayOutput)> =
                     store.get_entities_typed(DISPLAY_OUTPUT_ENTITY_TYPE);
                 Self::reconcile(&outputs_ref, &content_ref, &entities, &pending_ref, &apply_btn, &reset_btn);
                 root_ref.set_visible(!entities.is_empty());
+
+                // Re-register dynamic output search entries
+                Self::register_output_search_entries(&idx_ref, &outputs_ref);
                 let is_dirty = any_dirty(&pending_ref.borrow());
                 apply_btn.set_sensitive(is_dirty);
                 reset_btn.set_sensitive(is_dirty);
@@ -905,6 +914,38 @@ impl OutputSection {
             updating,
             resolutions: resolutions_rc,
             rate_mode_indices: rate_mode_indices_rc,
+        }
+    }
+
+    /// Re-register dynamic search entries for all current display outputs.
+    fn register_output_search_entries(
+        search_index: &Rc<RefCell<SearchIndex>>,
+        outputs: &Rc<RefCell<HashMap<String, OutputGroupWidgets>>>,
+    ) {
+        let mut idx = search_index.borrow_mut();
+        let page_title = t("settings-display");
+        // Remove old dynamic output entries — they share section_title with
+        // the display name, so we remove all non-brightness display entries
+        // by removing and re-adding per output.
+        // We use a convention: output section titles are the display title (make+model).
+        // First remove all display page entries that are not the page-level or brightness section.
+        // Simpler: just remove all entries we're about to re-add by iterating outputs.
+        let map = outputs.borrow();
+        // Remove entries for each output by its title
+        for widgets in map.values() {
+            let title = widgets.group.title().to_string();
+            idx.remove_entries("display", &title);
+        }
+        // Re-register
+        for widgets in map.values() {
+            let title = widgets.group.title().to_string();
+            idx.add_section("display", &page_title, &title, "display-output", &widgets.group);
+            idx.add_input("display", &page_title, &title, &t("display-resolution"), "display-resolution", &widgets.resolution_row);
+            idx.add_input("display", &page_title, &title, &t("display-refresh-rate"), "display-refresh-rate", &widgets.refresh_rate_row);
+            idx.add_input("display", &page_title, &title, &t("display-scale"), "display-scale", &widgets.scale_row);
+            idx.add_input("display", &page_title, &title, &t("display-rotation"), "display-rotation", &widgets.rotation_row);
+            idx.add_input("display", &page_title, &title, &t("display-flip"), "display-flip", &widgets.flip_row);
+            idx.add_input("display", &page_title, &title, &t("display-vrr"), "display-vrr", &widgets.vrr_row);
         }
     }
 
