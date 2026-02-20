@@ -17,7 +17,7 @@ use waft_protocol::entity::network::{
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
 use crate::wifi::adapter_group::{WifiAdapterGroup, WifiAdapterGroupOutput, WifiAdapterGroupProps};
-use crate::wifi::available_networks_group::AvailableNetworksGroup;
+use crate::wifi::available_networks_group::{AvailableNetworksGroup, AvailableNetworksGroupOutput};
 use crate::wifi::known_networks_group::KnownNetworksGroup;
 
 /// Smart container for the WiFi settings page.
@@ -65,6 +65,30 @@ impl WiFiPage {
             let page_title = t("settings-wifi");
             idx.add_section("wifi", &page_title, &t("wifi-known-networks"), "wifi-known-networks", &known_group.root);
             idx.add_section("wifi", &page_title, &t("wifi-available-networks"), "wifi-available-networks", &available_group.root);
+        }
+
+        // Wire available networks group scan button output
+        {
+            let store = entity_store.clone();
+            let cb = action_callback.clone();
+            available_group.connect_output(move |output| {
+                let adapters: Vec<(Urn, NetworkAdapter)> =
+                    store.get_entities_typed(ADAPTER_ENTITY_TYPE);
+
+                match output {
+                    AvailableNetworksGroupOutput::Scan => {
+                        for (urn, adapter) in &adapters {
+                            if adapter.kind == AdapterKind::Wireless && adapter.enabled {
+                                cb(
+                                    urn.clone(),
+                                    "scan".to_string(),
+                                    serde_json::Value::Null,
+                                );
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         let state = Rc::new(RefCell::new(WiFiPageState {
@@ -165,7 +189,6 @@ impl WiFiPage {
                     let action = match output {
                         WifiAdapterGroupOutput::Enable => "activate",
                         WifiAdapterGroupOutput::Disable => "deactivate",
-                        WifiAdapterGroupOutput::Scan => "scan",
                     };
                     cb(
                         urn_clone.clone(),

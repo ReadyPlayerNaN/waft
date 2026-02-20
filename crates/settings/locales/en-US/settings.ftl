@@ -75,6 +75,7 @@ wifi-adapter-scan = Scan
 # WiFi -- Networks
 wifi-available-networks = Available Networks
 wifi-searching-networks = Searching for networks…
+wifi-no-available-networks = No networks found. Search to discover nearby networks.
 wifi-known-networks = Known Networks
 wifi-no-known-networks = No known networks
 wifi-connected = Connected

@@ -4,6 +4,9 @@
 //! entity types. Dynamically creates FeatureToggleWidget per adapter/VPN with expandable
 //! menus showing child networks/connections.
 
+mod network_menu_logic;
+pub(crate) use network_menu_logic::{details_text, should_be_expandable};
+
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -521,23 +524,16 @@ impl NetworkManagerToggles {
                 .collect();
 
             // Update toggle expandable state based on network count or settings availability
+            let adapter_networks_owned: Vec<_> = adapter_networks
+                .iter()
+                .map(|(urn, net)| ((*urn).clone(), (*net).clone()))
+                .collect();
             entry
                 .toggle
-                .set_expandable(!adapter_networks.is_empty() || has_settings);
+                .set_expandable(should_be_expandable(adapter_networks_owned.len(), has_settings));
 
             // Update details text
-            if let Some((_, connected_network)) = adapter_networks.iter().find(|(_, n)| n.connected)
-            {
-                entry
-                    .toggle
-                    .set_details(Some(connected_network.ssid.clone()));
-            } else if !adapter_networks.is_empty() {
-                entry
-                    .toggle
-                    .set_details(Some(format!("{} networks", adapter_networks.len())));
-            } else {
-                entry.toggle.set_details(None);
-            }
+            entry.toggle.set_details(details_text(&adapter_networks_owned));
 
             // Update network rows
             let mut network_rows = entry.network_rows.borrow_mut();

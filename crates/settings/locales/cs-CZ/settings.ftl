@@ -75,6 +75,7 @@ wifi-adapter-scan = Hledat
 # WiFi -- Networks
 wifi-available-networks = Dostupné sítě
 wifi-searching-networks = Vyhledávání sítí…
+wifi-no-available-networks = Žádné sítě nenalezeny. Spusťte hledání pro nalezení sítí v okolí.
 wifi-known-networks = Známé sítě
 wifi-no-known-networks = Žádné známé sítě
 wifi-connected = Připojeno

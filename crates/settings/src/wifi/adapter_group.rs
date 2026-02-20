@@ -1,6 +1,6 @@
 //! Per-adapter WiFi preferences group.
 //!
-//! Dumb widget displaying WiFi adapter controls: enable toggle and scan button.
+//! Dumb widget displaying WiFi adapter controls: enable toggle.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -19,7 +19,6 @@ pub struct WifiAdapterGroupProps {
 pub enum WifiAdapterGroupOutput {
     Enable,
     Disable,
-    Scan,
 }
 
 /// Callback type for WiFi adapter group output events.
@@ -29,7 +28,6 @@ type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(WifiAdapterGroupOutput)>>>>;
 pub struct WifiAdapterGroup {
     pub root: adw::PreferencesGroup,
     enabled_row: adw::SwitchRow,
-    scan_button: gtk::Button,
     enabled: Rc<RefCell<bool>>,
     /// Guard against feedback loops when programmatically updating switch state.
     updating: Rc<RefCell<bool>>,
@@ -42,13 +40,6 @@ impl WifiAdapterGroup {
 
         let enabled_row = adw::SwitchRow::builder().title(t("wifi-adapter-enabled")).build();
         group.add(&enabled_row);
-
-        let scan_button = gtk::Button::builder()
-            .halign(gtk::Align::Start)
-            .css_classes(["pill", "suggested-action"])
-            .margin_top(12)
-            .build();
-        group.add(&scan_button);
 
         let enabled = Rc::new(RefCell::new(props.enabled));
         let updating = Rc::new(RefCell::new(false));
@@ -71,18 +62,9 @@ impl WifiAdapterGroup {
             }
         });
 
-        // Wire scan button
-        let cb = output_cb.clone();
-        scan_button.connect_clicked(move |_| {
-            if let Some(ref callback) = *cb.borrow() {
-                callback(WifiAdapterGroupOutput::Scan);
-            }
-        });
-
         let adapter = Self {
             root: group,
             enabled_row,
-            scan_button,
             enabled,
             updating,
             output_cb,
@@ -99,8 +81,6 @@ impl WifiAdapterGroup {
 
         self.root.set_title(&props.name);
         self.enabled_row.set_active(props.enabled);
-        self.scan_button.set_label(&t("wifi-adapter-scan"));
-        self.scan_button.set_sensitive(props.enabled);
 
         *self.updating.borrow_mut() = false;
     }
