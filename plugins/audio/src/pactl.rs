@@ -33,6 +33,7 @@ pub struct PortInfo {
     pub name: String,
     pub description: String,
     pub available: bool,
+    pub port_type: Option<String>,
 }
 
 /// Sink (output device) information.
@@ -507,6 +508,20 @@ fn parse_port_line(line: &str) -> Option<PortInfo> {
         after_colon.to_string()
     };
 
+    // Extract port type from parenthesized metadata: "(type: Speaker, ...)"
+    let port_type = if let Some(paren_pos) = after_colon.find('(') {
+        let meta = &after_colon[paren_pos..];
+        if let Some(type_start) = meta.find("type: ") {
+            let after_type = &meta[type_start + 6..];
+            let end = after_type.find(',').or_else(|| after_type.find(')'));
+            end.map(|pos| after_type[..pos].trim().to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Determine availability
     let available = if trimmed.contains("not available") {
         false
@@ -518,6 +533,7 @@ fn parse_port_line(line: &str) -> Option<PortInfo> {
         name: name.to_string(),
         description,
         available,
+        port_type,
     })
 }
 

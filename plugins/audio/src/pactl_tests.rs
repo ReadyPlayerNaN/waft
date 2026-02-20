@@ -772,3 +772,24 @@ fn test_parse_cards_empty_output() {
     let cards = parse_cards("");
     assert!(cards.is_empty());
 }
+
+#[test]
+fn test_parse_port_line_extracts_port_type() {
+    let line = "    analog-output-speaker: Speaker (type: Speaker, priority: 100, availability group: Legacy 1, available)";
+    let port = super::parse_port_line(line).unwrap();
+    assert_eq!(port.port_type, Some("Speaker".to_string()));
+}
+
+#[test]
+fn test_parse_port_line_extracts_hdmi_type() {
+    let line = "    [Out] HDMI1: HDMI / DisplayPort (type: HDMI, priority: 5900, availability group: HDMI Group 1, not available)";
+    let port = super::parse_port_line(line).unwrap();
+    assert_eq!(port.port_type, Some("HDMI".to_string()));
+}
+
+#[test]
+fn test_parse_port_line_no_type_info() {
+    let line = "    some-port: Some Port (priority: 100, available)";
+    let port = super::parse_port_line(line).unwrap();
+    assert_eq!(port.port_type, None);
+}
