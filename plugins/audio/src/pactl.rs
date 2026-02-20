@@ -12,8 +12,6 @@ use std::process::Stdio;
 pub struct AudioDevice {
     pub id: String,
     pub name: String,
-    pub icon: String,
-    pub secondary_icon: Option<String>,
     pub device_type: String,
     pub connection_type: Option<String>,
     pub volume: f64,
@@ -1391,8 +1389,6 @@ pub fn compute_label(
 impl AudioDevice {
     /// Create an AudioDevice from a SinkInfo with card port context.
     pub fn from_sink(sink: &SinkInfo, card_ports: &CardPortMap) -> Self {
-        let icon = compute_primary_icon_sink(&sink.icon_name, &sink.active_port);
-        let secondary_icon = compute_secondary_icon(&sink.icon_name, &sink.bus);
         let name = compute_label(
             &sink.description,
             &sink.node_nick,
@@ -1416,8 +1412,6 @@ impl AudioDevice {
         AudioDevice {
             id: sink.name.clone(),
             name,
-            icon,
-            secondary_icon,
             device_type,
             connection_type,
             volume: sink.volume_percent,
@@ -1427,8 +1421,6 @@ impl AudioDevice {
 
     /// Create an AudioDevice from a SourceInfo with card port context.
     pub fn from_source(source: &SourceInfo, card_ports: &CardPortMap) -> Self {
-        let icon = compute_primary_icon_source(&source.icon_name, &source.active_port);
-        let secondary_icon = compute_secondary_icon(&source.icon_name, &source.bus);
         let name = compute_label(
             &source.description,
             &source.node_nick,
@@ -1452,8 +1444,6 @@ impl AudioDevice {
         AudioDevice {
             id: source.name.clone(),
             name,
-            icon,
-            secondary_icon,
             device_type,
             connection_type,
             volume: source.volume_percent,
