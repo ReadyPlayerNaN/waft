@@ -456,9 +456,6 @@ impl AudioPlugin {
 
 /// Build an AudioCard entity from card info and current audio state.
 fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::AudioCard {
-    let icon = pactl::compute_primary_icon_sink(&card.icon_name, &None);
-    let connection_icon = pactl::compute_secondary_icon(&card.icon_name, &card.bus);
-
     let card_device_type = pactl::compute_device_type(
         card.form_factor.as_deref(),
         card.icon_name.as_deref(),
@@ -472,7 +469,6 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
         .iter()
         .filter(|sink| sink_matches_card(sink, &card.name))
         .map(|sink| {
-            let sink_icon = pactl::compute_primary_icon_sink(&sink.icon_name, &sink.active_port);
             let label = pactl::compute_label(
                 &sink.description,
                 &sink.node_nick,
@@ -527,8 +523,6 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
         .iter()
         .filter(|source| source_matches_card(source, &card.name))
         .map(|source| {
-            let source_icon =
-                pactl::compute_primary_icon_source(&source.icon_name, &source.active_port);
             let label = pactl::compute_label(
                 &source.description,
                 &source.node_nick,

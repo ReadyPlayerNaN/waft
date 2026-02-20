@@ -1154,25 +1154,6 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
     cards
 }
 
-/// Strip PipeWire-specific suffixes from a `device.icon_name` value.
-///
-/// PipeWire appends bus/connection suffixes like `-analog`, `-bluetooth`,
-/// `-pci`, `-usb` to the base icon name (e.g. `"audio-card-analog"`).
-/// This function removes known suffixes so the base name can be matched
-/// against well-known icon categories.
-fn strip_icon_suffix(name: &str) -> String {
-    const SUFFIXES: &[&str] = &["-analog", "-bluetooth", "-pci", "-usb"];
-
-    let mut result = name.to_string();
-    for suffix in SUFFIXES {
-        if let Some(stripped) = result.strip_suffix(suffix) {
-            result = stripped.to_string();
-            break;
-        }
-    }
-    result
-}
-
 /// Compute the structured device type from PulseAudio metadata.
 ///
 /// Priority: form_factor > port type > icon name fallback > input/output direction.
@@ -1198,7 +1179,14 @@ pub fn compute_device_type(
     }
     // GPU audio card identified by icon name (strips PipeWire bus suffixes before checking)
     if let Some(name) = icon_name {
-        let base = strip_icon_suffix(name);
+        const SUFFIXES: &[&str] = &["-analog", "-bluetooth", "-pci", "-usb"];
+        let mut base = name.to_string();
+        for suffix in SUFFIXES {
+            if let Some(stripped) = base.strip_suffix(suffix) {
+                base = stripped.to_string();
+                break;
+            }
+        }
         if base == "video-display" {
             return "display".to_string();
         }
@@ -1226,106 +1214,6 @@ pub fn compute_connection_type(bus: Option<&str>, port_type: Option<&str>) -> Op
             _ => "pci",
         }.to_string()),
         _ => None,
-    }
-}
-
-/// Compute the primary icon for a sink.
-///
-/// First checks the active port name for hardware-specific hints (headphones,
-/// headset, HDMI, speaker), then falls back to mapping well-known pactl
-/// `device.icon_name` values to Adwaita icon names.
-pub fn compute_primary_icon_sink(
-    icon_name: &Option<String>,
-    active_port: &Option<String>,
-) -> String {
-    // 1. Try to derive icon from active port name
-    if let Some(port) = active_port {
-        let port_lower = port.to_lowercase();
-        if port_lower.contains("headphones") {
-            return "audio-headphones-symbolic".to_string();
-        }
-        if port_lower.contains("headset") {
-            return "audio-headphones-symbolic".to_string();
-        }
-        if port_lower.contains("hdmi") || port_lower.contains("displayport") {
-            return "video-display-symbolic".to_string();
-        }
-        if port_lower.contains("speaker")
-            || port_lower.contains("lineout")
-            || port_lower.contains("line-out")
-        {
-            return "audio-speakers-symbolic".to_string();
-        }
-    }
-
-    // 2. Map well-known icon names to Adwaita icons.
-    // PipeWire may append suffixes like "-analog", "-bluetooth", "-pci" to the
-    // base icon name (e.g. "audio-card-analog"). Strip known suffixes to get
-    // the base name for matching.
-    let base = icon_name.as_deref().map(strip_icon_suffix);
-    match base.as_deref() {
-        Some("audio-card") => "audio-speakers-symbolic".to_string(),
-        Some("audio-headphones" | "audio-headset") => "audio-headphones-symbolic".to_string(),
-        Some("video-display") => "video-display-symbolic".to_string(),
-        Some(name) if !name.is_empty() => {
-            if name.ends_with("-symbolic") {
-                name.to_string()
-            } else {
-                format!("{name}-symbolic")
-            }
-        }
-        _ => "audio-speakers-symbolic".to_string(),
-    }
-}
-
-/// Compute the primary icon for a source.
-///
-/// First checks the active port name for hardware-specific hints (headset,
-/// webcam), then falls back to mapping well-known pactl `device.icon_name`
-/// values to Adwaita icon names.
-pub fn compute_primary_icon_source(
-    icon_name: &Option<String>,
-    active_port: &Option<String>,
-) -> String {
-    // 1. Try to derive icon from active port name
-    if let Some(port) = active_port {
-        let port_lower = port.to_lowercase();
-        if port_lower.contains("headset") {
-            return "audio-headphones-symbolic".to_string();
-        }
-        if port_lower.contains("webcam") {
-            return "camera-web-symbolic".to_string();
-        }
-    }
-
-    // 2. Map well-known icon names to Adwaita icons.
-    // PipeWire may append suffixes like "-analog", "-bluetooth", "-pci" to the
-    // base icon name (e.g. "audio-card-analog"). Strip known suffixes to get
-    // the base name for matching.
-    let base = icon_name.as_deref().map(strip_icon_suffix);
-    match base.as_deref() {
-        Some("audio-card") => "audio-input-microphone-symbolic".to_string(),
-        Some("camera-web") => "camera-web-symbolic".to_string(),
-        Some("audio-headset") => "audio-headphones-symbolic".to_string(),
-        Some(name) if !name.is_empty() => {
-            if name.ends_with("-symbolic") {
-                name.to_string()
-            } else {
-                format!("{name}-symbolic")
-            }
-        }
-        _ => "audio-input-microphone-symbolic".to_string(),
-    }
-}
-
-/// Compute the secondary icon based on device properties.
-pub fn compute_secondary_icon(icon_name: &Option<String>, bus: &Option<String>) -> Option<String> {
-    if icon_name.as_deref().map(strip_icon_suffix).as_deref() == Some("video-display") {
-        Some("video-joined-displays-symbolic".to_string())
-    } else if bus.as_deref() == Some("bluetooth") {
-        Some("bluetooth-symbolic".to_string())
-    } else {
-        None
     }
 }
 

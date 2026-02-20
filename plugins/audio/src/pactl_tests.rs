@@ -76,245 +76,6 @@ fn test_parse_property_line_returns_none_for_invalid() {
 }
 
 #[test]
-fn test_compute_primary_icon_sink_uses_icon_name() {
-    let icon_name = Some("audio-headphones".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &None),
-        "audio-headphones-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_defaults_to_speakers() {
-    assert_eq!(
-        compute_primary_icon_sink(&None, &None),
-        "audio-speakers-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_avoids_double_symbolic_suffix() {
-    let icon_name = Some("audio-headphones-symbolic".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &None),
-        "audio-headphones-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_maps_audio_card_to_speakers() {
-    let icon_name = Some("audio-card".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &None),
-        "audio-speakers-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_maps_audio_headset_to_headphones() {
-    let icon_name = Some("audio-headset".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &None),
-        "audio-headphones-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_maps_video_display() {
-    let icon_name = Some("video-display".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &None),
-        "video-display-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_port_headphones_overrides_icon_name() {
-    let icon_name = Some("audio-card".to_string());
-    let port = Some("analog-output-headphones".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &port),
-        "audio-headphones-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_port_headset_overrides_icon_name() {
-    let icon_name = Some("audio-card".to_string());
-    let port = Some("[Out] Headset".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &port),
-        "audio-headphones-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_port_hdmi() {
-    let icon_name = Some("audio-card".to_string());
-    let port = Some("[Out] HDMI1".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &port),
-        "video-display-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_port_speaker() {
-    let icon_name = Some("audio-card".to_string());
-    let port = Some("analog-output-speaker".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &port),
-        "audio-speakers-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_port_lineout() {
-    let icon_name = Some("audio-card-analog".to_string());
-    let port = Some("analog-output-lineout".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &port),
-        "audio-speakers-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_pipewire_audio_card_analog() {
-    let icon_name = Some("audio-card-analog".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &None),
-        "audio-speakers-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_pipewire_audio_headset_bluetooth() {
-    let icon_name = Some("audio-headset-bluetooth".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &None),
-        "audio-headphones-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_sink_pipewire_audio_card_pci() {
-    let icon_name = Some("audio-card-pci".to_string());
-    assert_eq!(
-        compute_primary_icon_sink(&icon_name, &None),
-        "audio-speakers-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_source_uses_icon_name() {
-    let icon_name = Some("audio-headset".to_string());
-    assert_eq!(
-        compute_primary_icon_source(&icon_name, &None),
-        "audio-headphones-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_source_defaults_to_microphone() {
-    assert_eq!(
-        compute_primary_icon_source(&None, &None),
-        "audio-input-microphone-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_source_avoids_double_symbolic_suffix() {
-    let icon_name = Some("audio-headset-symbolic".to_string());
-    assert_eq!(
-        compute_primary_icon_source(&icon_name, &None),
-        "audio-headset-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_source_maps_audio_card_to_microphone() {
-    let icon_name = Some("audio-card".to_string());
-    assert_eq!(
-        compute_primary_icon_source(&icon_name, &None),
-        "audio-input-microphone-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_source_maps_camera_web() {
-    let icon_name = Some("camera-web".to_string());
-    assert_eq!(
-        compute_primary_icon_source(&icon_name, &None),
-        "camera-web-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_source_pipewire_audio_card_analog() {
-    let icon_name = Some("audio-card-analog".to_string());
-    assert_eq!(
-        compute_primary_icon_source(&icon_name, &None),
-        "audio-input-microphone-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_source_pipewire_audio_headset_bluetooth() {
-    let icon_name = Some("audio-headset-bluetooth".to_string());
-    assert_eq!(
-        compute_primary_icon_source(&icon_name, &None),
-        "audio-headphones-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_source_port_headset_overrides_icon_name() {
-    let icon_name = Some("audio-card".to_string());
-    let port = Some("analog-input-headset-mic".to_string());
-    assert_eq!(
-        compute_primary_icon_source(&icon_name, &port),
-        "audio-headphones-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_primary_icon_source_port_webcam() {
-    let icon_name = Some("audio-card".to_string());
-    let port = Some("[In] Webcam".to_string());
-    assert_eq!(
-        compute_primary_icon_source(&icon_name, &port),
-        "camera-web-symbolic"
-    );
-}
-
-#[test]
-fn test_compute_secondary_icon_video_display() {
-    let icon_name = Some("video-display".to_string());
-    let bus = None;
-    assert_eq!(
-        compute_secondary_icon(&icon_name, &bus),
-        Some("video-joined-displays-symbolic".to_string())
-    );
-}
-
-#[test]
-fn test_compute_secondary_icon_bluetooth() {
-    let icon_name = None;
-    let bus = Some("bluetooth".to_string());
-    assert_eq!(
-        compute_secondary_icon(&icon_name, &bus),
-        Some("bluetooth-symbolic".to_string())
-    );
-}
-
-#[test]
-fn test_compute_secondary_icon_none_for_regular_device() {
-    let icon_name = Some("audio-headphones".to_string());
-    let bus = Some("usb".to_string());
-    assert_eq!(compute_secondary_icon(&icon_name, &bus), None);
-}
-
-#[test]
 fn test_muted_icon_appends_muted() {
     assert_eq!(
         muted_icon("audio-volume-high-symbolic"),
@@ -352,8 +113,8 @@ fn test_audio_device_from_sink() {
     let device = AudioDevice::from_sink(&sink, &card_ports);
     assert_eq!(device.id, "alsa_output.pci-0000_00_1f.3.analog-stereo");
     assert_eq!(device.name, "Speakers");
-    assert_eq!(device.icon, "audio-speakers-symbolic");
-    assert_eq!(device.secondary_icon, None);
+    assert_eq!(device.device_type, "card");
+    assert_eq!(device.connection_type, Some("pci".to_string()));
 }
 
 #[test]
@@ -378,8 +139,8 @@ fn test_audio_device_from_source() {
     let device = AudioDevice::from_source(&source, &card_ports);
     assert_eq!(device.id, "alsa_input.pci-0000_00_1f.3.analog-stereo");
     assert_eq!(device.name, "Built-in Audio Analog Stereo");
-    assert_eq!(device.icon, "audio-input-microphone-symbolic");
-    assert_eq!(device.secondary_icon, None);
+    assert_eq!(device.device_type, "microphone");
+    assert_eq!(device.connection_type, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -478,26 +239,20 @@ fn test_non_default_sink_icons_computed_correctly() {
 
     let card_ports = CardPortMap::new();
 
-    // Default sink: active port "analog-output-speaker" -> speaker icon
+    // Default sink: PCI card with Speaker port -> card/jack
     let default_device = AudioDevice::from_sink(&sinks[0], &card_ports);
-    assert_eq!(default_device.icon, "audio-speakers-symbolic");
-    assert_eq!(default_device.secondary_icon, None);
+    assert_eq!(default_device.device_type, "card");
+    assert_eq!(default_device.connection_type, Some("jack".to_string()));
 
-    // Non-default bluetooth: icon_name "audio-headphones" -> headphones icon
+    // Non-default bluetooth headphones -> card/bluetooth (no form_factor in test data)
     let bt_device = AudioDevice::from_sink(&sinks[1], &card_ports);
-    assert_eq!(bt_device.icon, "audio-headphones-symbolic");
-    assert_eq!(
-        bt_device.secondary_icon,
-        Some("bluetooth-symbolic".to_string())
-    );
+    assert_eq!(bt_device.device_type, "card");
+    assert_eq!(bt_device.connection_type, Some("bluetooth".to_string()));
 
-    // Non-default HDMI: active port "[Out] HDMI1" -> video-display icon
+    // Non-default HDMI: active port type "HDMI" -> display/hdmi
     let hdmi_device = AudioDevice::from_sink(&sinks[2], &card_ports);
-    assert_eq!(hdmi_device.icon, "video-display-symbolic");
-    assert_eq!(
-        hdmi_device.secondary_icon,
-        Some("video-joined-displays-symbolic".to_string())
-    );
+    assert_eq!(hdmi_device.device_type, "display");
+    assert_eq!(hdmi_device.connection_type, Some("hdmi".to_string()));
 }
 
 #[test]
@@ -508,19 +263,17 @@ fn test_non_default_sink_icons_after_switching_default() {
 
     let card_ports = CardPortMap::new();
 
-    // Previously-default speaker is now non-default -- should still have speaker icon
+    // Previously-default speaker is now non-default -- card/jack type unchanged
     let speaker_device = AudioDevice::from_sink(&sinks[0], &card_ports);
     assert!(!sinks[0].is_default);
-    assert_eq!(speaker_device.icon, "audio-speakers-symbolic");
+    assert_eq!(speaker_device.device_type, "card");
+    assert_eq!(speaker_device.connection_type, Some("jack".to_string()));
 
     // New default bluetooth headphones
     let bt_device = AudioDevice::from_sink(&sinks[1], &card_ports);
     assert!(sinks[1].is_default);
-    assert_eq!(bt_device.icon, "audio-headphones-symbolic");
-    assert_eq!(
-        bt_device.secondary_icon,
-        Some("bluetooth-symbolic".to_string())
-    );
+    assert_eq!(bt_device.device_type, "card");
+    assert_eq!(bt_device.connection_type, Some("bluetooth".to_string()));
 }
 
 const MULTI_SOURCE_OUTPUT: &str = "\
@@ -610,22 +363,20 @@ fn test_non_default_source_icons_computed_correctly() {
 
     let card_ports = CardPortMap::new();
 
-    // Default source: internal mic with audio-card icon
+    // Default source: internal PCI mic -> microphone/pci
     let default_device = AudioDevice::from_source(&sources[0], &card_ports);
-    assert_eq!(default_device.icon, "audio-input-microphone-symbolic");
+    assert_eq!(default_device.device_type, "microphone");
+    assert_eq!(default_device.connection_type, Some("pci".to_string()));
 
-    // Non-default bluetooth headset
+    // Non-default bluetooth headset -> microphone/bluetooth (no form_factor in test data)
     let bt_device = AudioDevice::from_source(&sources[1], &card_ports);
-    assert_eq!(bt_device.icon, "audio-headphones-symbolic");
-    assert_eq!(
-        bt_device.secondary_icon,
-        Some("bluetooth-symbolic".to_string())
-    );
+    assert_eq!(bt_device.device_type, "microphone");
+    assert_eq!(bt_device.connection_type, Some("bluetooth".to_string()));
 
-    // Non-default webcam
+    // Non-default USB webcam -> microphone/usb (form_factor needed for webcam type)
     let webcam_device = AudioDevice::from_source(&sources[2], &card_ports);
-    assert_eq!(webcam_device.icon, "camera-web-symbolic");
-    assert_eq!(webcam_device.secondary_icon, None);
+    assert_eq!(webcam_device.device_type, "microphone");
+    assert_eq!(webcam_device.connection_type, Some("usb".to_string()));
 }
 
 #[test]
