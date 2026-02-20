@@ -13,6 +13,12 @@ pub struct AudioDevice {
     pub icon: String,
     #[serde(default)]
     pub connection_icon: Option<String>,
+    /// Semantic device type (e.g. "headset", "card", "display"). Replaces icon.
+    #[serde(default)]
+    pub device_type: String,
+    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi"). Replaces connection_icon.
+    #[serde(default)]
+    pub connection_type: Option<String>,
     pub volume: f64,
     pub muted: bool,
     pub default: bool,
@@ -36,6 +42,12 @@ pub struct AudioCard {
     /// Connection type icon (e.g. bluetooth, USB).
     #[serde(default)]
     pub connection_icon: Option<String>,
+    /// Semantic device type (e.g. "headset", "card", "display"). Replaces icon.
+    #[serde(default)]
+    pub device_type: String,
+    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi"). Replaces connection_icon.
+    #[serde(default)]
+    pub connection_type: Option<String>,
     /// Currently active profile name.
     pub active_profile: String,
     /// Available profiles.
@@ -66,6 +78,12 @@ pub struct AudioCardSink {
     pub name: String,
     /// Icon.
     pub icon: String,
+    /// Semantic device type (e.g. "headset", "card", "display"). Replaces icon.
+    #[serde(default)]
+    pub device_type: String,
+    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi"). Replaces connection_icon.
+    #[serde(default)]
+    pub connection_type: Option<String>,
     /// Volume 0.0-1.0.
     pub volume: f64,
     /// Muted state.
@@ -88,6 +106,12 @@ pub struct AudioCardSource {
     pub name: String,
     /// Icon.
     pub icon: String,
+    /// Semantic device type (e.g. "headset", "card", "display"). Replaces icon.
+    #[serde(default)]
+    pub device_type: String,
+    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi"). Replaces connection_icon.
+    #[serde(default)]
+    pub connection_type: Option<String>,
     /// Volume 0.0-1.0.
     pub volume: f64,
     /// Muted state.
@@ -122,6 +146,8 @@ mod tests {
             name: "Built-in Audio Analog Stereo".to_string(),
             icon: "audio-speakers-symbolic".to_string(),
             connection_icon: None,
+            device_type: String::new(),
+            connection_type: None,
             volume: 0.75,
             muted: false,
             default: true,
@@ -138,6 +164,8 @@ mod tests {
             name: "USB Microphone".to_string(),
             icon: "audio-input-microphone-symbolic".to_string(),
             connection_icon: Some("bluetooth-symbolic".to_string()),
+            device_type: String::new(),
+            connection_type: None,
             volume: 0.5,
             muted: true,
             default: false,
@@ -168,6 +196,8 @@ mod tests {
             name: "Built-in Audio".to_string(),
             icon: "audio-card-symbolic".to_string(),
             connection_icon: None,
+            device_type: String::new(),
+            connection_type: None,
             active_profile: "output:analog-stereo+input:analog-stereo".to_string(),
             profiles: vec![
                 AudioCardProfile {
@@ -185,6 +215,8 @@ mod tests {
                 sink_name: "alsa_output.pci-0000_00_1f.3.analog-stereo".to_string(),
                 name: "Speakers".to_string(),
                 icon: "audio-speakers-symbolic".to_string(),
+                device_type: String::new(),
+                connection_type: None,
                 volume: 0.75,
                 muted: false,
                 default: true,
@@ -206,6 +238,8 @@ mod tests {
                 source_name: "alsa_input.pci-0000_00_1f.3.analog-stereo".to_string(),
                 name: "Internal Microphone".to_string(),
                 icon: "audio-input-microphone-symbolic".to_string(),
+                device_type: String::new(),
+                connection_type: None,
                 volume: 0.5,
                 muted: false,
                 default: true,
