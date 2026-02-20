@@ -14,6 +14,8 @@ pub struct AudioDevice {
     pub name: String,
     pub icon: String,
     pub secondary_icon: Option<String>,
+    pub device_type: String,
+    pub connection_type: Option<String>,
     pub volume: f64,
     pub muted: bool,
 }
@@ -33,6 +35,7 @@ pub struct PortInfo {
     pub name: String,
     pub description: String,
     pub available: bool,
+    pub port_type: Option<String>,
 }
 
 /// Sink (output device) information.
@@ -47,6 +50,7 @@ pub struct SinkInfo {
     pub bus: Option<String>,
     pub node_nick: Option<String>,
     pub device_id: Option<String>,
+    pub form_factor: Option<String>,
     pub active_port: Option<String>,
     pub active_port_available: Option<bool>,
     /// Parsed ports with name, description, and availability.
@@ -65,6 +69,7 @@ pub struct SourceInfo {
     pub bus: Option<String>,
     pub node_nick: Option<String>,
     pub device_id: Option<String>,
+    pub form_factor: Option<String>,
     pub active_port: Option<String>,
     pub active_port_available: Option<bool>,
     /// Parsed ports with name, description, and availability.
@@ -78,6 +83,7 @@ pub struct CardInfo {
     pub description: String,
     pub icon_name: Option<String>,
     pub bus: Option<String>,
+    pub form_factor: Option<String>,
     pub profiles: Vec<CardProfile>,
     pub active_profile: String,
 }
@@ -507,6 +513,20 @@ fn parse_port_line(line: &str) -> Option<PortInfo> {
         after_colon.to_string()
     };
 
+    // Extract port type from parenthesized metadata: "(type: Speaker, ...)"
+    let port_type = if let Some(paren_pos) = after_colon.find('(') {
+        let meta = &after_colon[paren_pos..];
+        if let Some(type_start) = meta.find("type: ") {
+            let after_type = &meta[type_start + 6..];
+            let end = after_type.find(',').or_else(|| after_type.find(')'));
+            end.map(|pos| after_type[..pos].trim().to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Determine availability
     let available = if trimmed.contains("not available") {
         false
@@ -518,6 +538,7 @@ fn parse_port_line(line: &str) -> Option<PortInfo> {
         name: name.to_string(),
         description,
         available,
+        port_type,
     })
 }
 
@@ -575,6 +596,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
     let mut current_bus: Option<String> = None;
     let mut current_node_nick: Option<String> = None;
     let mut current_device_id: Option<String> = None;
+    let mut current_form_factor: Option<String> = None;
     let mut current_active_port: Option<String> = None;
     let mut current_ports_lines: Vec<String> = Vec::new();
     let mut section = ParseSection::Top;
@@ -587,6 +609,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
                      bus: Option<String>,
                      node_nick: Option<String>,
                      device_id: Option<String>,
+                     form_factor: Option<String>,
                      active_port: Option<String>,
                      ports_lines: &[String],
                      sinks: &mut Vec<SinkInfo>| {
@@ -604,6 +627,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
             bus,
             node_nick,
             device_id,
+            form_factor,
             active_port,
             active_port_available,
             ports,
@@ -625,6 +649,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
                     current_bus.take(),
                     current_node_nick.take(),
                     current_device_id.take(),
+                    current_form_factor.take(),
                     current_active_port.take(),
                     &current_ports_lines,
                     &mut sinks,
@@ -636,6 +661,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
             current_bus = None;
             current_node_nick = None;
             current_device_id = None;
+            current_form_factor = None;
             current_active_port = None;
             current_ports_lines.clear();
             section = ParseSection::Top;
@@ -661,6 +687,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
                     "device.bus" => current_bus = Some(value.to_string()),
                     "node.nick" => current_node_nick = Some(value.to_string()),
                     "device.id" => current_device_id = Some(value.to_string()),
+                    "device.form_factor" => current_form_factor = Some(value.to_string()),
                     _ => {}
                 }
             }
@@ -702,6 +729,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
             current_bus,
             current_node_nick,
             current_device_id,
+            current_form_factor,
             current_active_port,
             &current_ports_lines,
             &mut sinks,
@@ -721,6 +749,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
     let mut current_bus: Option<String> = None;
     let mut current_node_nick: Option<String> = None;
     let mut current_device_id: Option<String> = None;
+    let mut current_form_factor: Option<String> = None;
     let mut current_active_port: Option<String> = None;
     let mut current_ports_lines: Vec<String> = Vec::new();
     let mut section = ParseSection::Top;
@@ -733,6 +762,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
                        bus: Option<String>,
                        node_nick: Option<String>,
                        device_id: Option<String>,
+                       form_factor: Option<String>,
                        active_port: Option<String>,
                        ports_lines: &[String],
                        sources: &mut Vec<SourceInfo>| {
@@ -753,6 +783,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
             bus,
             node_nick,
             device_id,
+            form_factor,
             active_port,
             active_port_available,
             ports,
@@ -774,6 +805,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
                     current_bus.take(),
                     current_node_nick.take(),
                     current_device_id.take(),
+                    current_form_factor.take(),
                     current_active_port.take(),
                     &current_ports_lines,
                     &mut sources,
@@ -785,6 +817,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
             current_bus = None;
             current_node_nick = None;
             current_device_id = None;
+            current_form_factor = None;
             current_active_port = None;
             current_ports_lines.clear();
             section = ParseSection::Top;
@@ -809,6 +842,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
                     "device.bus" => current_bus = Some(value.to_string()),
                     "node.nick" => current_node_nick = Some(value.to_string()),
                     "device.id" => current_device_id = Some(value.to_string()),
+                    "device.form_factor" => current_form_factor = Some(value.to_string()),
                     _ => {}
                 }
             }
@@ -849,6 +883,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
             current_bus,
             current_node_nick,
             current_device_id,
+            current_form_factor,
             current_active_port,
             &current_ports_lines,
             &mut sources,
@@ -978,6 +1013,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
     let mut current_description: Option<String> = None;
     let mut current_icon_name: Option<String> = None;
     let mut current_bus: Option<String> = None;
+    let mut current_form_factor: Option<String> = None;
     let mut current_profiles: Vec<CardProfile> = Vec::new();
     let mut current_active_profile: Option<String> = None;
     let mut section = ParseSection::Top;
@@ -986,6 +1022,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
                      description: String,
                      icon_name: Option<String>,
                      bus: Option<String>,
+                     form_factor: Option<String>,
                      profiles: Vec<CardProfile>,
                      active_profile: String,
                      cards: &mut Vec<CardInfo>| {
@@ -994,6 +1031,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
             description,
             icon_name,
             bus,
+            form_factor,
             profiles,
             active_profile,
         });
@@ -1010,6 +1048,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
                     desc,
                     current_icon_name.take(),
                     current_bus.take(),
+                    current_form_factor.take(),
                     std::mem::take(&mut current_profiles),
                     current_active_profile.take().unwrap_or_default(),
                     &mut cards,
@@ -1017,6 +1056,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
             }
             current_icon_name = None;
             current_bus = None;
+            current_form_factor = None;
             current_profiles.clear();
             current_active_profile = None;
             section = ParseSection::Top;
@@ -1039,6 +1079,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
                 match key {
                     "device.icon_name" => current_icon_name = Some(value.to_string()),
                     "device.bus" => current_bus = Some(value.to_string()),
+                    "device.form_factor" => current_form_factor = Some(value.to_string()),
                     "device.description" => {
                         current_description = Some(value.to_string());
                     }
@@ -1105,6 +1146,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
             desc,
             current_icon_name,
             current_bus,
+            current_form_factor,
             current_profiles,
             current_active_profile.unwrap_or_default(),
             &mut cards,
@@ -1131,6 +1173,62 @@ fn strip_icon_suffix(name: &str) -> String {
         }
     }
     result
+}
+
+/// Compute the structured device type from PulseAudio metadata.
+///
+/// Priority: form_factor > port type > icon name fallback > input/output direction.
+pub fn compute_device_type(
+    form_factor: Option<&str>,
+    icon_name: Option<&str>,
+    port_type: Option<&str>,
+    is_input: bool,
+) -> String {
+    // form_factor is the primary signal
+    match form_factor {
+        Some("headset") => return "headset".to_string(),
+        Some("headphone") => return "headphone".to_string(),
+        Some("hands-free") => return "hands-free".to_string(),
+        Some("webcam") => return "webcam".to_string(),
+        Some("phone") => return "phone".to_string(),
+        Some("speaker") => return "speaker".to_string(),
+        _ => {}
+    }
+    // HDMI/DisplayPort output -> display device
+    if matches!(port_type, Some("HDMI") | Some("DisplayPort")) {
+        return "display".to_string();
+    }
+    // GPU audio card identified by icon name (strips PipeWire bus suffixes before checking)
+    if let Some(name) = icon_name {
+        let base = strip_icon_suffix(name);
+        if base == "video-display" {
+            return "display".to_string();
+        }
+    }
+    // Fall back to direction-based type
+    if is_input {
+        "microphone".to_string()
+    } else {
+        "card".to_string()
+    }
+}
+
+/// Compute the structured connection type from device bus and active port type.
+///
+/// Bus-first rule: for bluetooth/usb/virtual the bus determines the connection type
+/// regardless of ports. For PCI devices, the active port type determines Jack vs HDMI.
+pub fn compute_connection_type(bus: Option<&str>, port_type: Option<&str>) -> Option<String> {
+    match bus {
+        Some("bluetooth") => Some("bluetooth".to_string()),
+        Some("usb") => Some("usb".to_string()),
+        Some("virtual") | Some("network") => Some("virtual".to_string()),
+        Some("pci") => Some(match port_type {
+            Some("HDMI") | Some("DisplayPort") => "hdmi",
+            Some("Headphones") | Some("Speaker") | Some("Line") | Some("Microphone") => "jack",
+            _ => "pci",
+        }.to_string()),
+        _ => None,
+    }
 }
 
 /// Compute the primary icon for a sink.
@@ -1304,12 +1402,24 @@ impl AudioDevice {
             &sink.bus,
             card_ports,
         );
+        let active_port_type = sink.ports.iter()
+            .find(|p| Some(&p.name) == sink.active_port.as_ref())
+            .and_then(|p| p.port_type.as_deref());
+        let device_type = compute_device_type(
+            sink.form_factor.as_deref(),
+            sink.icon_name.as_deref(),
+            active_port_type,
+            false,
+        );
+        let connection_type = compute_connection_type(sink.bus.as_deref(), active_port_type);
 
         AudioDevice {
             id: sink.name.clone(),
             name,
             icon,
             secondary_icon,
+            device_type,
+            connection_type,
             volume: sink.volume_percent,
             muted: sink.muted,
         }
@@ -1328,12 +1438,24 @@ impl AudioDevice {
             &source.bus,
             card_ports,
         );
+        let active_port_type = source.ports.iter()
+            .find(|p| Some(&p.name) == source.active_port.as_ref())
+            .and_then(|p| p.port_type.as_deref());
+        let device_type = compute_device_type(
+            source.form_factor.as_deref(),
+            source.icon_name.as_deref(),
+            active_port_type,
+            true,
+        );
+        let connection_type = compute_connection_type(source.bus.as_deref(), active_port_type);
 
         AudioDevice {
             id: source.name.clone(),
             name,
             icon,
             secondary_icon,
+            device_type,
+            connection_type,
             volume: source.volume_percent,
             muted: source.muted,
         }
