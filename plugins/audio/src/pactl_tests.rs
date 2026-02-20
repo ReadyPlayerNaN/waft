@@ -854,3 +854,43 @@ fn test_compute_device_type_card_for_generic_output() {
     assert_eq!(super::compute_device_type(None, None, None, false), "card");
     assert_eq!(super::compute_device_type(None, Some("audio-card-pci"), None, false), "card");
 }
+
+#[test]
+fn test_compute_connection_type_bluetooth() {
+    assert_eq!(super::compute_connection_type(Some("bluetooth"), None), Some("bluetooth".to_string()));
+}
+
+#[test]
+fn test_compute_connection_type_usb() {
+    assert_eq!(super::compute_connection_type(Some("usb"), None), Some("usb".to_string()));
+}
+
+#[test]
+fn test_compute_connection_type_virtual() {
+    assert_eq!(super::compute_connection_type(Some("virtual"), None), Some("virtual".to_string()));
+    assert_eq!(super::compute_connection_type(Some("network"), None), Some("virtual".to_string()));
+}
+
+#[test]
+fn test_compute_connection_type_pci_hdmi_port() {
+    assert_eq!(super::compute_connection_type(Some("pci"), Some("HDMI")), Some("hdmi".to_string()));
+    assert_eq!(super::compute_connection_type(Some("pci"), Some("DisplayPort")), Some("hdmi".to_string()));
+}
+
+#[test]
+fn test_compute_connection_type_pci_jack_port() {
+    assert_eq!(super::compute_connection_type(Some("pci"), Some("Speaker")), Some("jack".to_string()));
+    assert_eq!(super::compute_connection_type(Some("pci"), Some("Headphones")), Some("jack".to_string()));
+    assert_eq!(super::compute_connection_type(Some("pci"), Some("Line")), Some("jack".to_string()));
+    assert_eq!(super::compute_connection_type(Some("pci"), Some("Microphone")), Some("jack".to_string()));
+}
+
+#[test]
+fn test_compute_connection_type_pci_no_port() {
+    assert_eq!(super::compute_connection_type(Some("pci"), None), Some("pci".to_string()));
+}
+
+#[test]
+fn test_compute_connection_type_no_bus() {
+    assert_eq!(super::compute_connection_type(None, None), None);
+}

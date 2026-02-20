@@ -1211,6 +1211,24 @@ pub fn compute_device_type(
     }
 }
 
+/// Compute the structured connection type from device bus and active port type.
+///
+/// Bus-first rule: for bluetooth/usb/virtual the bus determines the connection type
+/// regardless of ports. For PCI devices, the active port type determines Jack vs HDMI.
+pub fn compute_connection_type(bus: Option<&str>, port_type: Option<&str>) -> Option<String> {
+    match bus {
+        Some("bluetooth") => Some("bluetooth".to_string()),
+        Some("usb") => Some("usb".to_string()),
+        Some("virtual") | Some("network") => Some("virtual".to_string()),
+        Some("pci") => Some(match port_type {
+            Some("HDMI") | Some("DisplayPort") => "hdmi",
+            Some("Headphones") | Some("Speaker") | Some("Line") | Some("Microphone") => "jack",
+            _ => "pci",
+        }.to_string()),
+        _ => None,
+    }
+}
+
 /// Compute the primary icon for a sink.
 ///
 /// First checks the active port name for hardware-specific hints (headphones,
