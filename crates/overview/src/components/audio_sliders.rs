@@ -321,16 +321,17 @@ fn update_device_rows(
         if let Some(existing) = rows.iter().find(|r| r.urn_str == urn_str) {
             // Update in place
             existing.row.set_name(&device.name);
-            existing.row.set_device_icon(&device.icon);
+            existing.row.set_device_icon(&device.device_type, device.kind);
             existing
                 .row
-                .set_connection_icon(device.connection_icon.as_deref());
+                .set_connection_icon(device.connection_type.as_deref());
             existing.row.set_active(device.default);
         } else {
             // Create new row
             let device_row = Rc::new(AudioDeviceRow::new(AudioDeviceRowProps {
-                device_icon: device.icon.clone(),
-                connection_icon: device.connection_icon.clone(),
+                device_type: device.device_type.clone(),
+                connection_type: device.connection_type.clone(),
+                kind: device.kind,
                 name: device.name.clone(),
                 active: device.default,
             }));
