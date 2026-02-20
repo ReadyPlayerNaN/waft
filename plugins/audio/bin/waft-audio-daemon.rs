@@ -192,6 +192,8 @@ impl Plugin for AudioPlugin {
                 muted: device.muted,
                 default: is_default,
                 kind: entity::audio::AudioDeviceKind::Output,
+                device_type: device.device_type.clone(),
+                connection_type: device.connection_type.clone(),
             };
             entities.push(Entity::new(
                 Urn::new("audio", entity::audio::ENTITY_TYPE, &device.id),
@@ -212,6 +214,8 @@ impl Plugin for AudioPlugin {
                 muted: device.muted,
                 default: is_default,
                 kind: entity::audio::AudioDeviceKind::Input,
+                device_type: device.device_type.clone(),
+                connection_type: device.connection_type.clone(),
             };
             entities.push(Entity::new(
                 Urn::new("audio", entity::audio::ENTITY_TYPE, &device.id),
@@ -459,6 +463,14 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
     let icon = pactl::compute_primary_icon_sink(&card.icon_name, &None);
     let connection_icon = pactl::compute_secondary_icon(&card.icon_name, &card.bus);
 
+    let card_device_type = pactl::compute_device_type(
+        card.form_factor.as_deref(),
+        card.icon_name.as_deref(),
+        None,
+        false,
+    );
+    let card_connection_type = pactl::compute_connection_type(card.bus.as_deref(), None);
+
     let card_sinks: Vec<entity::audio::AudioCardSink> = state
         .sinks
         .iter()
@@ -474,6 +486,23 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
                 &sink.bus,
                 &state.card_ports,
             );
+            let sink_active_port_type = sink
+                .ports
+                .iter()
+                .find(|p| Some(&p.name) == sink.active_port.as_ref())
+                .and_then(|p| p.port_type.as_deref());
+            let effective_port_type = match card.bus.as_deref() {
+                Some("pci") => sink_active_port_type,
+                _ => None,
+            };
+            let sink_device_type = pactl::compute_device_type(
+                card.form_factor.as_deref(),
+                card.icon_name.as_deref(),
+                sink_active_port_type,
+                false,
+            );
+            let sink_connection_type =
+                pactl::compute_connection_type(card.bus.as_deref(), effective_port_type);
             entity::audio::AudioCardSink {
                 sink_name: sink.name.clone(),
                 name: label,
@@ -491,6 +520,8 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
                         available: p.available,
                     })
                     .collect(),
+                device_type: sink_device_type,
+                connection_type: sink_connection_type,
             }
         })
         .collect();
@@ -512,6 +543,23 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
                 &source.bus,
                 &state.card_ports,
             );
+            let source_active_port_type = source
+                .ports
+                .iter()
+                .find(|p| Some(&p.name) == source.active_port.as_ref())
+                .and_then(|p| p.port_type.as_deref());
+            let effective_port_type = match card.bus.as_deref() {
+                Some("pci") => source_active_port_type,
+                _ => None,
+            };
+            let source_device_type = pactl::compute_device_type(
+                card.form_factor.as_deref(),
+                card.icon_name.as_deref(),
+                source_active_port_type,
+                true,
+            );
+            let source_connection_type =
+                pactl::compute_connection_type(card.bus.as_deref(), effective_port_type);
             entity::audio::AudioCardSource {
                 source_name: source.name.clone(),
                 name: label,
@@ -529,6 +577,8 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
                         available: p.available,
                     })
                     .collect(),
+                device_type: source_device_type,
+                connection_type: source_connection_type,
             }
         })
         .collect();
@@ -549,6 +599,8 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
             .collect(),
         sinks: card_sinks,
         sources: card_sources,
+        device_type: card_device_type,
+        connection_type: card_connection_type,
     }
 }
 
