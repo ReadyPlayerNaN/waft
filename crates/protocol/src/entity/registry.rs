@@ -90,8 +90,6 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             urn_pattern: "{plugin}/audio-card/{card-name}",
             properties: &[
                 PropertyInfo { name: "name", type_description: "string", description: "Device display name", optional: false },
-                PropertyInfo { name: "icon", type_description: "string", description: "Primary icon name", optional: false },
-                PropertyInfo { name: "connection_icon", type_description: "string", description: "Connection type icon (e.g. bluetooth)", optional: true },
                 PropertyInfo { name: "device_type", type_description: "string", description: "Semantic device type (e.g. headset, card, display)", optional: true },
                 PropertyInfo { name: "connection_type", type_description: "string", description: "Semantic connection type (e.g. bluetooth, jack, hdmi)", optional: true },
                 PropertyInfo { name: "active_profile", type_description: "string", description: "Currently active profile name", optional: false },
@@ -155,8 +153,6 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             urn_pattern: "{plugin}/audio-device/{id}",
             properties: &[
                 PropertyInfo { name: "name", type_description: "string", description: "Device display name", optional: false },
-                PropertyInfo { name: "icon", type_description: "string", description: "Icon name for the device", optional: false },
-                PropertyInfo { name: "connection_icon", type_description: "string", description: "Connection type icon (e.g. bluetooth)", optional: true },
                 PropertyInfo { name: "device_type", type_description: "string", description: "Semantic device type (e.g. headset, card, display)", optional: true },
                 PropertyInfo { name: "connection_type", type_description: "string", description: "Semantic connection type (e.g. bluetooth, jack, hdmi)", optional: true },
                 PropertyInfo { name: "volume", type_description: "float", description: "Volume level (0.0 - 1.0)", optional: false },
