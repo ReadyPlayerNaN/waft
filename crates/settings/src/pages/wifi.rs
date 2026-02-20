@@ -213,13 +213,13 @@ impl WiFiPage {
         // Sort available networks by strength descending
         available.sort_by(|(_, a), (_, b)| b.strength.cmp(&a.strength));
 
-        let any_wireless_enabled = adapters
+        let any_scanning = adapters
             .iter()
-            .any(|(_, a)| a.kind == AdapterKind::Wireless && a.enabled);
+            .any(|(_, a)| a.kind == AdapterKind::Wireless && a.scanning);
 
         state.known_group.reconcile(&known, action_callback);
         state
             .available_group
-            .reconcile(&available, any_wireless_enabled, action_callback);
+            .reconcile(&available, any_scanning, action_callback);
     }
 }
