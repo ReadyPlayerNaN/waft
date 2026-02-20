@@ -88,6 +88,7 @@ impl AudioSlidersComponent {
                 .collect();
 
             let mut sliders = sliders_ref.borrow_mut();
+            let mut needs_sort = false;
 
             // Process each kind: output and input
             for (kind_key, devices) in [("output", &output_devices), ("input", &input_devices)] {
@@ -241,11 +242,13 @@ impl AudioSlidersComponent {
                         update_device_rows(&entry, devices, &cb);
 
                         sliders.insert(kind_key.to_string(), entry);
+                        needs_sort = true;
                     }
                 } else if devices.is_empty() {
                     // No devices at all for this kind -- remove the slider
                     if let Some(entry) = sliders.remove(kind_key) {
                         container_ref.remove(&entry.wrapper);
+                        needs_sort = true;
                     }
                 }
                 // When devices exist but none is marked default, keep the
@@ -255,22 +258,28 @@ impl AudioSlidersComponent {
                 // default device changes.
             }
 
-            // Re-sort children: output (weight 60) before input (weight 65)
-            while let Some(child) = container_ref.first_child() {
-                container_ref.remove(&child);
+            // Re-sort children only when the set of slider kinds changed (a slider
+            // was added or removed). Re-parenting widgets during a drag kills the
+            // scale's internal gesture, so this must never run on routine updates.
+            if needs_sort {
+                while let Some(child) = container_ref.first_child() {
+                    container_ref.remove(&child);
+                }
+
+                let mut sorted: Vec<(&String, &SliderEntry)> = sliders.iter().collect();
+                sorted.sort_by_key(|(_, entry)| match entry.kind {
+                    AudioDeviceKind::Output => 60,
+                    AudioDeviceKind::Input => 65,
+                });
+
+                for (_, entry) in &sorted {
+                    container_ref.append(&entry.wrapper);
+                }
+
+                container_ref.set_visible(!sliders.is_empty());
+            } else {
+                container_ref.set_visible(!sliders.is_empty());
             }
-
-            let mut sorted: Vec<(&String, &SliderEntry)> = sliders.iter().collect();
-            sorted.sort_by_key(|(_, entry)| match entry.kind {
-                AudioDeviceKind::Output => 60,
-                AudioDeviceKind::Input => 65,
-            });
-
-            for (_, entry) in &sorted {
-                container_ref.append(&entry.wrapper);
-            }
-
-            container_ref.set_visible(!sliders.is_empty());
         });
 
         Self { container, sliders }
