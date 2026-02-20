@@ -14,6 +14,8 @@ pub struct AudioDevice {
     pub name: String,
     pub icon: String,
     pub secondary_icon: Option<String>,
+    pub device_type: String,
+    pub connection_type: Option<String>,
     pub volume: f64,
     pub muted: bool,
 }
@@ -1400,12 +1402,24 @@ impl AudioDevice {
             &sink.bus,
             card_ports,
         );
+        let active_port_type = sink.ports.iter()
+            .find(|p| Some(&p.name) == sink.active_port.as_ref())
+            .and_then(|p| p.port_type.as_deref());
+        let device_type = compute_device_type(
+            sink.form_factor.as_deref(),
+            sink.icon_name.as_deref(),
+            active_port_type,
+            false,
+        );
+        let connection_type = compute_connection_type(sink.bus.as_deref(), active_port_type);
 
         AudioDevice {
             id: sink.name.clone(),
             name,
             icon,
             secondary_icon,
+            device_type,
+            connection_type,
             volume: sink.volume_percent,
             muted: sink.muted,
         }
@@ -1424,12 +1438,24 @@ impl AudioDevice {
             &source.bus,
             card_ports,
         );
+        let active_port_type = source.ports.iter()
+            .find(|p| Some(&p.name) == source.active_port.as_ref())
+            .and_then(|p| p.port_type.as_deref());
+        let device_type = compute_device_type(
+            source.form_factor.as_deref(),
+            source.icon_name.as_deref(),
+            active_port_type,
+            true,
+        );
+        let connection_type = compute_connection_type(source.bus.as_deref(), active_port_type);
 
         AudioDevice {
             id: source.name.clone(),
             name,
             icon,
             secondary_icon,
+            device_type,
+            connection_type,
             volume: source.volume_percent,
             muted: source.muted,
         }
