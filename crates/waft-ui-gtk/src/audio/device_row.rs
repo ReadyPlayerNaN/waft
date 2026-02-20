@@ -9,13 +9,16 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 use waft_core::Callback;
+use waft_protocol::entity::audio::AudioDeviceKind;
 
+use crate::audio::icon::{audio_connection_icon, audio_device_icon};
 use crate::widgets::icon::IconWidget;
 
 /// Properties for initializing an audio device row.
 pub struct AudioDeviceRowProps {
-    pub device_icon: String,
-    pub connection_icon: Option<String>,
+    pub device_type: String,
+    pub connection_type: Option<String>,
+    pub kind: AudioDeviceKind,
     pub name: String,
     pub active: bool,
 }
@@ -52,18 +55,18 @@ impl AudioDeviceRow {
             .valign(gtk::Align::Center)
             .build();
 
-        let device_icon = IconWidget::from_name(&props.device_icon, 16);
+        let device_icon_name = audio_device_icon(&props.device_type, props.kind);
+        let device_icon = IconWidget::from_name(device_icon_name, 16);
         icon_box.append(device_icon.widget());
 
-        let connection_icon = IconWidget::from_name(
-            props
-                .connection_icon
-                .as_deref()
-                .unwrap_or("bluetooth-symbolic"),
-            16,
-        );
+        let conn_icon_name = props
+            .connection_type
+            .as_deref()
+            .and_then(audio_connection_icon);
+        let connection_icon =
+            IconWidget::from_name(conn_icon_name.unwrap_or("bluetooth-symbolic"), 16);
         let connection_icon_widget = connection_icon.widget().clone().upcast::<gtk::Widget>();
-        connection_icon_widget.set_visible(props.connection_icon.is_some());
+        connection_icon_widget.set_visible(conn_icon_name.is_some());
         icon_box.append(&connection_icon_widget);
 
         inner.append(&icon_box);
@@ -126,11 +129,12 @@ impl AudioDeviceRow {
         self.name_label.set_label(name);
     }
 
-    pub fn set_device_icon(&self, icon_name: &str) {
-        self.device_icon.set_icon(icon_name);
+    pub fn set_device_icon(&self, device_type: &str, kind: AudioDeviceKind) {
+        self.device_icon.set_icon(audio_device_icon(device_type, kind));
     }
 
-    pub fn set_connection_icon(&self, icon_name: Option<&str>) {
+    pub fn set_connection_icon(&self, connection_type: Option<&str>) {
+        let icon_name = connection_type.and_then(audio_connection_icon);
         if let Some(name) = icon_name {
             self.connection_icon.set_icon(name);
             self.connection_icon_widget.set_visible(true);
