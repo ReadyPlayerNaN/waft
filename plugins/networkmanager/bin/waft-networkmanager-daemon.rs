@@ -58,7 +58,7 @@ use waft_plugin_networkmanager::vpn::{
     activate_vpn, deactivate_vpn, get_active_vpn_connections, get_vpn_profiles,
 };
 use waft_plugin_networkmanager::wifi::{
-    activate_connection, connect_wired_dbus, disconnect_device, get_active_ssid,
+    activate_connection, connect_wired_dbus, disconnect_device, get_active_access_point,
     get_connections_for_ssid, set_wifi_enabled_dbus,
 };
 use waft_plugin_networkmanager::wifi_scan::wifi_scan_task;
@@ -148,11 +148,17 @@ impl NetworkManagerPlugin {
             }
         }
 
-        // Read active SSID for already-connected WiFi adapters
+        // Read active AP for already-connected WiFi adapters.
+        // Populates both active_ssid and access_points so the connected network
+        // is immediately visible as a wifi-network entity without waiting for a scan.
         for adapter in &mut state.wifi_adapters {
-            adapter.active_ssid = get_active_ssid(&conn, &adapter.path).await;
-            if let Some(ref ssid) = adapter.active_ssid {
-                debug!("[nm] WiFi {} already connected to {}", adapter.interface_name, ssid);
+            if let Some(ap_info) = get_active_access_point(&conn, &adapter.path).await {
+                debug!(
+                    "[nm] WiFi {} already connected to {}",
+                    adapter.interface_name, ap_info.ssid
+                );
+                adapter.active_ssid = Some(ap_info.ssid.clone());
+                adapter.access_points.push(ap_info);
             }
         }
 

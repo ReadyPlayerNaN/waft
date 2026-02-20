@@ -104,6 +104,11 @@ impl NetworkManagerToggles {
             let menu_store_ref = menu_store.clone();
             let settings_available_ref = settings_available.clone();
             let settings_urn_ref = settings_urn.clone();
+            // Extra clones for update_wifi_menus call after entry changes
+            let wifi_menu_store_ref = store.clone();
+            let wifi_menu_entries_ref = entries.clone();
+            let wifi_menu_cb = action_callback.clone();
+            let wifi_menu_settings_ref = settings_available.clone();
 
             store.subscribe_type(entity::network::ADAPTER_ENTITY_TYPE, move || {
                 let adapters: Vec<(Urn, entity::network::NetworkAdapter)> =
@@ -254,6 +259,15 @@ impl NetworkManagerToggles {
 
                 if changed {
                     drop(entries_mut);
+                    // Re-evaluate WiFi menus immediately so newly-created toggle entries
+                    // pick up the correct expandable state based on current has_settings
+                    // and any wifi-network entities already in the store.
+                    Self::update_wifi_menus(
+                        &wifi_menu_entries_ref,
+                        &wifi_menu_store_ref,
+                        &wifi_menu_cb,
+                        &wifi_menu_settings_ref,
+                    );
                     rebuild();
                 }
             });

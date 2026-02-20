@@ -155,8 +155,43 @@ pub async fn scan_wifi_networks(
     Ok(result)
 }
 
+/// Return the access point info for the currently active AP on a wireless device,
+/// or None if the device has no active AP (path is "/" or D-Bus call fails).
+///
+/// Unlike `get_active_ssid`, this also reads signal strength and security flags so
+/// the caller can immediately show the connected network in the entity list without
+/// waiting for a full scan.
+pub async fn get_active_access_point(
+    conn: &Connection,
+    device_path: &str,
+) -> Option<AccessPointInfo> {
+    use crate::dbus_property::get_property;
+
+    let ap_path: OwnedObjectPath =
+        get_property(conn, device_path, NM_WIRELESS_INTERFACE, "ActiveAccessPoint")
+            .await
+            .ok()?;
+
+    if ap_path.as_str() == "/" {
+        return None;
+    }
+
+    let ap = read_access_point(conn, ap_path.as_str()).await.ok()?;
+    if ap.ssid.is_empty() {
+        return None;
+    }
+
+    let secure = ap.is_secure();
+    Some(AccessPointInfo {
+        ssid: ap.ssid,
+        strength: ap.strength,
+        secure,
+        known: true, // connected → saved profile must exist
+    })
+}
+
 /// Read access point properties from D-Bus.
-async fn read_access_point(conn: &Connection, ap_path: &str) -> Result<AccessPoint> {
+pub async fn read_access_point(conn: &Connection, ap_path: &str) -> Result<AccessPoint> {
     use crate::dbus_property::get_property;
 
     let ssid_bytes: Vec<u8> = get_property(

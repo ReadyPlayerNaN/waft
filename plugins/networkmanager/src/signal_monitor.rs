@@ -412,11 +412,11 @@ pub async fn monitor_nm_signals(
                         }
                     }
 
-                    // Populate active_ssid when WiFi device reaches activated state
+                    // Populate active_ssid and access_points when WiFi device reaches activated state
                     if let Some(device_path) = refresh_ssid_for {
                         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                        if let Some(ssid) =
-                            crate::wifi::get_active_ssid(&conn, &device_path).await
+                        if let Some(ap_info) =
+                            crate::wifi::get_active_access_point(&conn, &device_path).await
                         {
                             let mut st = match state.lock() {
                                 Ok(g) => g,
@@ -428,7 +428,12 @@ pub async fn monitor_nm_signals(
                             if let Some(adapter) =
                                 st.wifi_adapters.iter_mut().find(|a| a.path == device_path)
                             {
-                                adapter.active_ssid = Some(ssid);
+                                adapter.active_ssid = Some(ap_info.ssid.clone());
+                                // Add to access_points if not already present so it appears
+                                // in the entity list without requiring a manual scan
+                                if !adapter.access_points.iter().any(|ap| ap.ssid == ap_info.ssid) {
+                                    adapter.access_points.push(ap_info);
+                                }
                             }
                             notifier.notify();
                         }
