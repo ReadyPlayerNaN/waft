@@ -61,7 +61,7 @@ fn build_settings_button(
     action_callback: &EntityActionCallback,
     settings_urn: &Rc<RefCell<Option<Urn>>>,
 ) -> gtk::Button {
-    let icon = IconWidget::from_name("emblem-system-symbolic", 16);
+    let icon = IconWidget::from_name("preferences-system-symbolic", 16);
     let label = gtk::Label::builder()
         .label(i18n::t("bluetooth-settings-button"))
         .halign(gtk::Align::Start)

@@ -1,25 +1,26 @@
 //! Audio settings page -- smart container.
 //!
-//! Subscribes to `EntityStore` for `audio-device` entity type. On entity
-//! changes, partitions devices into output and input groups and reconciles
-//! the corresponding `AudioDeviceGroup` widgets.
+//! Subscribes to `EntityStore` for `audio-card` entity type. On entity
+//! changes, reconciles `AudioDeviceCard` widgets per physical audio card.
+//! Also subscribes to `audio-device` for backward compatibility (the overview
+//! still uses it), but the settings page UI is card-based.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
-use waft_protocol::entity::audio::{self, AudioDevice, AudioDeviceKind};
+use waft_protocol::entity::audio::{self, AudioCard};
 
-use crate::audio::device_group::AudioDeviceGroup;
-use crate::audio::device_row::AudioDeviceRowOutput;
+use crate::audio::device_card::{AudioDeviceCard, AudioDeviceCardOutput};
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
 
 /// Smart container for the Audio settings page.
 ///
-/// Owns output and input device groups. Subscribes to EntityStore
+/// Owns card widgets keyed by URN. Subscribes to EntityStore
 /// and updates widgets when entity data changes.
 pub struct AudioPage {
     pub root: gtk::Box,
@@ -27,9 +28,10 @@ pub struct AudioPage {
 
 /// Internal mutable state for the Audio page.
 struct AudioPageState {
-    output_group: AudioDeviceGroup,
-    input_group: AudioDeviceGroup,
+    cards: HashMap<String, AudioDeviceCard>,
+    cards_box: gtk::Box,
     empty_state: adw::StatusPage,
+    action_callback: EntityActionCallback,
 }
 
 impl AudioPage {
@@ -47,15 +49,11 @@ impl AudioPage {
             .margin_end(12)
             .build();
 
-        // Output devices group
-        let output_group = AudioDeviceGroup::new(&t("audio-output-devices"));
-        output_group.root.set_visible(false);
-        root.append(&output_group.root);
-
-        // Input devices group
-        let input_group = AudioDeviceGroup::new(&t("audio-input-devices"));
-        input_group.root.set_visible(false);
-        root.append(&input_group.root);
+        let cards_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(24)
+            .build();
+        root.append(&cards_box);
 
         // Empty state
         let empty_state = adw::StatusPage::builder()
@@ -65,70 +63,38 @@ impl AudioPage {
             .build();
         root.append(&empty_state);
 
-        // Register search entries
+        // Register search entry
         {
             let mut idx = search_index.borrow_mut();
             let page_title = t("settings-audio");
-            idx.add_section("audio", &page_title, &t("audio-output-devices"), "audio-output-devices", &output_group.root);
-            idx.add_section("audio", &page_title, &t("audio-input-devices"), "audio-input-devices", &input_group.root);
-        }
-
-        // Wire output group actions
-        {
-            let cb = action_callback.clone();
-            output_group.connect_output(move |output| {
-                let (action, params) = match output.action {
-                    AudioDeviceRowOutput::SetVolume(v) => {
-                        ("set-volume", serde_json::json!({ "value": v }))
-                    }
-                    AudioDeviceRowOutput::ToggleMute => {
-                        ("toggle-mute", serde_json::Value::Null)
-                    }
-                    AudioDeviceRowOutput::SetDefault => {
-                        ("set-default", serde_json::Value::Null)
-                    }
-                };
-                cb(output.urn, action.to_string(), params);
-            });
-        }
-
-        // Wire input group actions
-        {
-            let cb = action_callback.clone();
-            input_group.connect_output(move |output| {
-                let (action, params) = match output.action {
-                    AudioDeviceRowOutput::SetVolume(v) => {
-                        ("set-volume", serde_json::json!({ "value": v }))
-                    }
-                    AudioDeviceRowOutput::ToggleMute => {
-                        ("toggle-mute", serde_json::Value::Null)
-                    }
-                    AudioDeviceRowOutput::SetDefault => {
-                        ("set-default", serde_json::Value::Null)
-                    }
-                };
-                cb(output.urn, action.to_string(), params);
-            });
+            idx.add_section(
+                "audio",
+                &page_title,
+                &t("audio-output-devices"),
+                "audio-output-devices",
+                &cards_box,
+            );
         }
 
         let state = Rc::new(RefCell::new(AudioPageState {
-            output_group,
-            input_group,
+            cards: HashMap::new(),
+            cards_box,
             empty_state,
+            action_callback: action_callback.clone(),
         }));
 
-        // Subscribe to audio device changes
+        // Subscribe to audio card changes
         {
             let store = entity_store.clone();
             let state = state.clone();
-            entity_store.subscribe_type(audio::ENTITY_TYPE, move || {
-                let devices: Vec<(Urn, AudioDevice)> =
-                    store.get_entities_typed(audio::ENTITY_TYPE);
+            entity_store.subscribe_type(audio::CARD_ENTITY_TYPE, move || {
+                let cards: Vec<(Urn, AudioCard)> =
+                    store.get_entities_typed(audio::CARD_ENTITY_TYPE);
                 log::debug!(
-                    "[audio-page] Subscription triggered: {} devices",
-                    devices.len()
+                    "[audio-page] Card subscription triggered: {} cards",
+                    cards.len()
                 );
-                Self::reconcile(&state, &devices);
+                Self::reconcile(&state, &cards);
             });
         }
 
@@ -138,15 +104,15 @@ impl AudioPage {
             let store_clone = entity_store.clone();
 
             gtk::glib::idle_add_local_once(move || {
-                let devices: Vec<(Urn, AudioDevice)> =
-                    store_clone.get_entities_typed(audio::ENTITY_TYPE);
+                let cards: Vec<(Urn, AudioCard)> =
+                    store_clone.get_entities_typed(audio::CARD_ENTITY_TYPE);
 
-                if !devices.is_empty() {
+                if !cards.is_empty() {
                     log::debug!(
-                        "[audio-page] Initial reconciliation: {} devices",
-                        devices.len()
+                        "[audio-page] Initial reconciliation: {} cards",
+                        cards.len()
                     );
-                    Self::reconcile(&state_clone, &devices);
+                    Self::reconcile(&state_clone, &cards);
                 }
             });
         }
@@ -154,29 +120,77 @@ impl AudioPage {
         Self { root }
     }
 
-    /// Reconcile device groups with current device data.
-    fn reconcile(
-        state: &Rc<RefCell<AudioPageState>>,
-        devices: &[(Urn, AudioDevice)],
-    ) {
-        let state = state.borrow();
+    /// Reconcile card widgets with current card data.
+    fn reconcile(state: &Rc<RefCell<AudioPageState>>, cards: &[(Urn, AudioCard)]) {
+        let mut state = state.borrow_mut();
+        let mut seen = std::collections::HashSet::new();
 
-        let outputs: Vec<(Urn, AudioDevice)> = devices
-            .iter()
-            .filter(|(_, d)| d.kind == AudioDeviceKind::Output)
+        for (urn, card) in cards {
+            let urn_str = urn.as_str().to_string();
+            seen.insert(urn_str.clone());
+
+            if let Some(existing) = state.cards.get(&urn_str) {
+                existing.apply_props(card);
+            } else {
+                let widget = AudioDeviceCard::new(card);
+                let urn_clone = urn.clone();
+                let cb = state.action_callback.clone();
+                widget.connect_output(move |output| {
+                    let (action, params) = match output {
+                        AudioDeviceCardOutput::SetProfile(profile) => {
+                            ("set-profile", serde_json::json!({ "profile": profile }))
+                        }
+                        AudioDeviceCardOutput::SetSinkVolume { sink, volume } => (
+                            "set-volume",
+                            serde_json::json!({ "sink": sink, "value": volume }),
+                        ),
+                        AudioDeviceCardOutput::ToggleSinkMute { sink } => {
+                            ("toggle-mute", serde_json::json!({ "sink": sink }))
+                        }
+                        AudioDeviceCardOutput::SetSinkDefault { sink } => {
+                            ("set-default", serde_json::json!({ "sink": sink }))
+                        }
+                        AudioDeviceCardOutput::SetSinkPort { sink, port } => (
+                            "set-sink-port",
+                            serde_json::json!({ "sink": sink, "port": port }),
+                        ),
+                        AudioDeviceCardOutput::SetSourceVolume { source, volume } => (
+                            "set-volume",
+                            serde_json::json!({ "source": source, "value": volume }),
+                        ),
+                        AudioDeviceCardOutput::ToggleSourceMute { source } => {
+                            ("toggle-mute", serde_json::json!({ "source": source }))
+                        }
+                        AudioDeviceCardOutput::SetSourceDefault { source } => {
+                            ("set-default", serde_json::json!({ "source": source }))
+                        }
+                        AudioDeviceCardOutput::SetSourcePort { source, port } => (
+                            "set-source-port",
+                            serde_json::json!({ "source": source, "port": port }),
+                        ),
+                    };
+                    cb(urn_clone.clone(), action.to_string(), params);
+                });
+                state.cards_box.append(&widget.root);
+                state.cards.insert(urn_str, widget);
+            }
+        }
+
+        // Remove cards no longer present
+        let to_remove: Vec<String> = state
+            .cards
+            .keys()
+            .filter(|k| !seen.contains(*k))
             .cloned()
             .collect();
 
-        let inputs: Vec<(Urn, AudioDevice)> = devices
-            .iter()
-            .filter(|(_, d)| d.kind == AudioDeviceKind::Input)
-            .cloned()
-            .collect();
+        for key in to_remove {
+            if let Some(card) = state.cards.remove(&key) {
+                state.cards_box.remove(&card.root);
+            }
+        }
 
-        state.output_group.reconcile(&outputs);
-        state.input_group.reconcile(&inputs);
-
-        // Show empty state only when no devices at all
-        state.empty_state.set_visible(devices.is_empty());
+        // Show empty state only when no cards
+        state.empty_state.set_visible(cards.is_empty());
     }
 }

@@ -27,7 +27,7 @@ impl ClockComponent {
             .visible(false)
             .build();
 
-        let widget = Rc::new(InfoCardWidget::new("appointment-symbolic", "", None));
+        let widget = Rc::new(InfoCardWidget::new("alarm-symbolic", "", None));
         container.append(&widget.widget());
 
         let store_ref = store.clone();

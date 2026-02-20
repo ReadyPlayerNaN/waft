@@ -3558,8 +3558,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "dirs 5.0.1",
  "fastrand",
+ "futures-util",
  "log",
  "serde",
  "serde_json",
@@ -3568,6 +3570,7 @@ dependencies = [
  "waft-i18n",
  "waft-plugin",
  "waft-protocol",
+ "zbus",
 ]
 
 [[package]]

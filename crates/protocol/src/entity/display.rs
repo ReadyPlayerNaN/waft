@@ -237,6 +237,88 @@ pub struct Constraints {
 /// Entity type identifier for wallpaper manager.
 pub const WALLPAPER_MANAGER_ENTITY_TYPE: &str = "wallpaper-manager";
 
+/// Wallpaper operational mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WallpaperMode {
+    #[default]
+    Static,
+    StyleTracking,
+    DayTracking,
+}
+
+/// Named day segments for day-tracking wallpaper mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DaySegment {
+    EarlyMorning,
+    Morning,
+    Afternoon,
+    Evening,
+    Night,
+    MidnightOil,
+}
+
+impl DaySegment {
+    /// Folder name under the wallpaper directory.
+    pub fn folder_name(self) -> &'static str {
+        match self {
+            Self::EarlyMorning => "early-morning",
+            Self::Morning => "morning",
+            Self::Afternoon => "afternoon",
+            Self::Evening => "evening",
+            Self::Night => "night",
+            Self::MidnightOil => "midnight-oil",
+        }
+    }
+
+    /// All segments in chronological order (from midnight-oil through night).
+    pub fn all() -> &'static [DaySegment] {
+        &[
+            Self::MidnightOil,
+            Self::EarlyMorning,
+            Self::Morning,
+            Self::Afternoon,
+            Self::Evening,
+            Self::Night,
+        ]
+    }
+
+    /// Determine the current segment from local time (hour 0-23, minute 0-59).
+    pub fn from_time(hour: u32, minute: u32) -> Self {
+        let minutes = hour * 60 + minute;
+        match minutes {
+            60..=269 => Self::MidnightOil,   // 1:00 - 4:29
+            270..=449 => Self::EarlyMorning,  // 4:30 - 7:29
+            450..=719 => Self::Morning,       // 7:30 - 11:59
+            720..=1019 => Self::Afternoon,    // 12:00 - 16:59
+            1020..=1259 => Self::Evening,     // 17:00 - 20:59
+            _ => Self::Night,                 // 21:00 - 0:59
+        }
+    }
+
+    /// Compute seconds until the next segment boundary from current time.
+    pub fn seconds_to_next(hour: u32, minute: u32, second: u32) -> u64 {
+        let total_minutes = hour * 60 + minute;
+        let next_boundary_minutes = match Self::from_time(hour, minute) {
+            Self::MidnightOil => 270,   // 4:30
+            Self::EarlyMorning => 450,  // 7:30
+            Self::Morning => 720,       // 12:00
+            Self::Afternoon => 1020,    // 17:00
+            Self::Evening => 1260,      // 21:00
+            Self::Night => 60,          // 1:00 (next day)
+        };
+
+        let remaining_minutes = if next_boundary_minutes > total_minutes {
+            next_boundary_minutes - total_minutes
+        } else {
+            // Crosses midnight: add 24 hours
+            next_boundary_minutes + 1440 - total_minutes
+        };
+
+        // Convert to seconds and subtract current seconds within the minute
+        (remaining_minutes * 60).saturating_sub(second) as u64
+    }
+}
+
 /// Wallpaper manager state for a single output or all outputs in sync.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WallpaperManager {
@@ -252,6 +334,15 @@ pub struct WallpaperManager {
     pub wallpaper_dir: String,
     /// Whether all monitors are kept in sync.
     pub sync: bool,
+    /// Active wallpaper mode.
+    #[serde(default)]
+    pub mode: WallpaperMode,
+    /// Current day segment (only meaningful in DayTracking mode).
+    #[serde(default)]
+    pub current_segment: Option<DaySegment>,
+    /// Whether style tracking mode is available (darkman D-Bus reachable).
+    #[serde(default)]
+    pub style_tracking_available: bool,
 }
 
 /// Wallpaper transition animation parameters.
@@ -565,6 +656,9 @@ mod tests {
             },
             wallpaper_dir: "/home/user/.config/waft/wallpapers".to_string(),
             sync: true,
+            mode: WallpaperMode::Static,
+            current_segment: None,
+            style_tracking_available: false,
         };
         let json = serde_json::to_value(&manager).unwrap();
         let decoded: WallpaperManager = serde_json::from_value(json).unwrap();
@@ -585,9 +679,102 @@ mod tests {
             },
             wallpaper_dir: "~/.config/waft/wallpapers".to_string(),
             sync: false,
+            mode: WallpaperMode::DayTracking,
+            current_segment: Some(DaySegment::Afternoon),
+            style_tracking_available: false,
         };
         let json = serde_json::to_value(&manager).unwrap();
         let decoded: WallpaperManager = serde_json::from_value(json).unwrap();
         assert_eq!(manager, decoded);
+    }
+
+    #[test]
+    fn wallpaper_manager_backward_compat_without_mode_fields() {
+        // Simulate old serialized data without mode/current_segment/style_tracking_available
+        let json = serde_json::json!({
+            "output": "DP-3",
+            "current_wallpaper": null,
+            "available": true,
+            "transition": {
+                "transition_type": "fade",
+                "fps": 60,
+                "angle": 0,
+                "duration": 1.0
+            },
+            "wallpaper_dir": "~/wallpapers",
+            "sync": true
+        });
+        let decoded: WallpaperManager = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.mode, WallpaperMode::Static);
+        assert_eq!(decoded.current_segment, None);
+        assert!(!decoded.style_tracking_available);
+    }
+
+    #[test]
+    fn wallpaper_mode_serde_roundtrip() {
+        for mode in [WallpaperMode::Static, WallpaperMode::StyleTracking, WallpaperMode::DayTracking] {
+            let json = serde_json::to_value(mode).unwrap();
+            let decoded: WallpaperMode = serde_json::from_value(json).unwrap();
+            assert_eq!(mode, decoded);
+        }
+    }
+
+    #[test]
+    fn wallpaper_mode_default_is_static() {
+        assert_eq!(WallpaperMode::default(), WallpaperMode::Static);
+    }
+
+    #[test]
+    fn day_segment_serde_roundtrip() {
+        for segment in DaySegment::all() {
+            let json = serde_json::to_value(segment).unwrap();
+            let decoded: DaySegment = serde_json::from_value(json).unwrap();
+            assert_eq!(*segment, decoded);
+        }
+    }
+
+    #[test]
+    fn day_segment_from_time_boundaries() {
+        // MidnightOil: 1:00 - 4:29
+        assert_eq!(DaySegment::from_time(1, 0), DaySegment::MidnightOil);
+        assert_eq!(DaySegment::from_time(4, 29), DaySegment::MidnightOil);
+        // EarlyMorning: 4:30 - 7:29
+        assert_eq!(DaySegment::from_time(4, 30), DaySegment::EarlyMorning);
+        assert_eq!(DaySegment::from_time(7, 29), DaySegment::EarlyMorning);
+        // Morning: 7:30 - 11:59
+        assert_eq!(DaySegment::from_time(7, 30), DaySegment::Morning);
+        assert_eq!(DaySegment::from_time(11, 59), DaySegment::Morning);
+        // Afternoon: 12:00 - 16:59
+        assert_eq!(DaySegment::from_time(12, 0), DaySegment::Afternoon);
+        assert_eq!(DaySegment::from_time(16, 59), DaySegment::Afternoon);
+        // Evening: 17:00 - 20:59
+        assert_eq!(DaySegment::from_time(17, 0), DaySegment::Evening);
+        assert_eq!(DaySegment::from_time(20, 59), DaySegment::Evening);
+        // Night: 21:00 - 0:59
+        assert_eq!(DaySegment::from_time(21, 0), DaySegment::Night);
+        assert_eq!(DaySegment::from_time(0, 0), DaySegment::Night);
+        assert_eq!(DaySegment::from_time(0, 59), DaySegment::Night);
+    }
+
+    #[test]
+    fn day_segment_seconds_to_next() {
+        // At 12:00:00 (Afternoon), next boundary is 17:00 = 5 hours = 18000s
+        assert_eq!(DaySegment::seconds_to_next(12, 0, 0), 18000);
+        // At 12:00:30, should be 18000 - 30 = 17970s
+        assert_eq!(DaySegment::seconds_to_next(12, 0, 30), 17970);
+        // At 23:00:00 (Night), next boundary is 1:00 = 2 hours = 7200s
+        assert_eq!(DaySegment::seconds_to_next(23, 0, 0), 7200);
+        // At 0:30:00 (Night), next boundary is 1:00 = 30 minutes = 1800s
+        assert_eq!(DaySegment::seconds_to_next(0, 30, 0), 1800);
+    }
+
+    #[test]
+    fn day_segment_folder_names() {
+        assert_eq!(DaySegment::MidnightOil.folder_name(), "midnight-oil");
+        assert_eq!(DaySegment::EarlyMorning.folder_name(), "early-morning");
+        assert_eq!(DaySegment::Morning.folder_name(), "morning");
+        assert_eq!(DaySegment::Afternoon.folder_name(), "afternoon");
+        assert_eq!(DaySegment::Evening.folder_name(), "evening");
+        assert_eq!(DaySegment::Night.folder_name(), "night");
     }
 }

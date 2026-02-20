@@ -27,10 +27,10 @@ pub enum ConnectionRowOutput {
 
 /// A horizontal button row for a single toggleable connection.
 ///
-/// Layout: `Button > Box(H) > [icon?(24px), name_label(hexpand), right_box(spinner + switch)]`
+/// Layout: `Button > Box(H) > [icon_box(icon 16px), name_label(hexpand), right_box(spinner + switch)]`
 pub struct ConnectionRow {
     pub root: gtk::Button,
-    inner: gtk::Box,
+    icon_box: gtk::Box,
     icon_widget: Option<IconWidget>,
     name_label: gtk::Label,
     spinner: gtk::Spinner,
@@ -45,10 +45,20 @@ impl ConnectionRow {
             .spacing(8)
             .build();
 
-        // Optional leading icon
+        // Left box: connection icon
+        let icon_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(4)
+            .valign(gtk::Align::Center)
+            .build();
+
+        // Always append icon_box (may be empty)
+        inner.prepend(&icon_box);
+
+        // Populate it if we have an initial icon
         let icon_widget = props.icon.as_ref().map(|icon_name| {
-            let icon = IconWidget::from_name(icon_name, 24);
-            inner.append(icon.widget());
+            let icon = IconWidget::from_name(icon_name, 16);
+            icon_box.append(icon.widget());
             icon
         });
 
@@ -78,7 +88,7 @@ impl ConnectionRow {
             .active(props.active)
             .sensitive(false) // display-only
             .valign(gtk::Align::Center)
-            .css_classes(["connection-switch"])
+            .css_classes(["device-switch"])
             .build();
         right_box.append(&switch);
 
@@ -86,7 +96,7 @@ impl ConnectionRow {
 
         let button = gtk::Button::builder()
             .child(&inner)
-            .css_classes(["flat", "menu-row"])
+            .css_classes(["flat", "device-row"])
             .sensitive(!props.transitioning)
             .build();
 
@@ -100,7 +110,7 @@ impl ConnectionRow {
 
         Self {
             root: button,
-            inner,
+            icon_box,
             icon_widget,
             name_label,
             spinner,
@@ -130,19 +140,16 @@ impl ConnectionRow {
         self.root.set_sensitive(!transitioning);
     }
 
-    pub fn set_icon(&self, icon_name: Option<&str>) {
-        match (&self.icon_widget, icon_name) {
-            (Some(existing), Some(name)) => {
-                existing.set_icon(name);
-            }
-            (Some(existing), None) => {
-                self.inner.remove(existing.widget());
-            }
-            (None, Some(name)) => {
-                let icon = IconWidget::from_name(name, 24);
-                self.inner.prepend(icon.widget());
-            }
-            (None, None) => {}
+    pub fn set_icon(&mut self, icon_name: Option<&str>) {
+        // Remove existing icon widget if any
+        if let Some(ref old_icon) = self.icon_widget {
+            self.icon_box.remove(old_icon.widget());
         }
+        // Add new icon if provided
+        self.icon_widget = icon_name.map(|name| {
+            let icon = IconWidget::from_name(name, 16);
+            self.icon_box.append(icon.widget());
+            icon
+        });
     }
 }

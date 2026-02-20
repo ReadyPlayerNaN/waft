@@ -1,7 +1,7 @@
 //! Wallpaper settings page -- smart container.
 //!
 //! Subscribes to `EntityStore` for `wallpaper-manager` entity type.
-//! Composes preview, transition, and configuration sections.
+//! Composes mode, preview, transition, and configuration sections.
 //! Routes entity data down and user actions up.
 
 use std::cell::RefCell;
@@ -17,6 +17,7 @@ use waft_protocol::entity::display::{
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
 use crate::wallpaper::config_section::{ConfigSection, ConfigSectionOutput};
+use crate::wallpaper::mode_section::{ModeSection, ModeSectionOutput};
 use crate::wallpaper::preview_section::{PreviewSection, PreviewSectionOutput};
 use crate::wallpaper::transition_section::{TransitionSection, TransitionSectionOutput};
 
@@ -40,6 +41,9 @@ impl WallpaperPage {
             .margin_end(12)
             .build();
 
+        let mode = Rc::new(ModeSection::new());
+        root.append(&mode.root);
+
         let preview = Rc::new(PreviewSection::new());
         root.append(&preview.root);
 
@@ -53,6 +57,7 @@ impl WallpaperPage {
         {
             let mut idx = search_index.borrow_mut();
             let page_title = t("settings-wallpaper");
+            idx.add_section("wallpaper", &page_title, &t("wallpaper-mode"), "wallpaper-mode", &mode.root);
             idx.add_section("wallpaper", &page_title, &t("wallpaper-current"), "wallpaper-current", &preview.root);
             idx.add_section("wallpaper", &page_title, &t("wallpaper-transition"), "wallpaper-transition", &transition.root);
             idx.add_section("wallpaper", &page_title, &t("wallpaper-config"), "wallpaper-config", &config.root);
@@ -60,6 +65,22 @@ impl WallpaperPage {
 
         // Current URN for the "all" entity (or first output)
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
+
+        // Wire mode output
+        {
+            let cb = action_callback.clone();
+            let urn_ref = current_urn.clone();
+            mode.connect_output(move |output| {
+                if let Some(ref urn) = *urn_ref.borrow() {
+                    let ModeSectionOutput::ModeChanged { mode } = output;
+                    cb(
+                        urn.clone(),
+                        "set-mode".to_string(),
+                        serde_json::json!({ "mode": mode }),
+                    );
+                }
+            });
+        }
 
         // Wire preview output
         {
@@ -136,6 +157,7 @@ impl WallpaperPage {
         fn reconcile(
             entities: &[(Urn, WallpaperManager)],
             urn_ref: &Rc<RefCell<Option<Urn>>>,
+            mode: &Rc<ModeSection>,
             preview: &Rc<PreviewSection>,
             transition: &Rc<TransitionSection>,
             config: &Rc<ConfigSection>,
@@ -149,6 +171,11 @@ impl WallpaperPage {
             if let Some((urn, manager)) = target {
                 *urn_ref.borrow_mut() = Some(urn.clone());
 
+                mode.apply_props(
+                    &manager.mode,
+                    manager.current_segment.as_ref(),
+                    manager.style_tracking_available,
+                );
                 preview.apply_props(
                     manager.current_wallpaper.as_deref(),
                     manager.available,
@@ -160,7 +187,7 @@ impl WallpaperPage {
                     manager.transition.duration,
                 );
                 transition.set_sensitive(manager.available);
-                config.apply_props(&manager.wallpaper_dir, manager.sync);
+                config.apply_props(&manager.wallpaper_dir, manager.sync, &manager.mode);
                 config.set_sensitive(manager.available);
             }
         }
@@ -169,6 +196,7 @@ impl WallpaperPage {
         {
             let store = entity_store.clone();
             let urn_ref = current_urn.clone();
+            let mode_ref = mode.clone();
             let preview_ref = preview.clone();
             let transition_ref = transition.clone();
             let config_ref = config.clone();
@@ -176,7 +204,7 @@ impl WallpaperPage {
             entity_store.subscribe_type(WALLPAPER_MANAGER_ENTITY_TYPE, move || {
                 let entities: Vec<(Urn, WallpaperManager)> =
                     store.get_entities_typed(WALLPAPER_MANAGER_ENTITY_TYPE);
-                reconcile(&entities, &urn_ref, &preview_ref, &transition_ref, &config_ref);
+                reconcile(&entities, &urn_ref, &mode_ref, &preview_ref, &transition_ref, &config_ref);
             });
         }
 
@@ -184,6 +212,7 @@ impl WallpaperPage {
         {
             let store = entity_store.clone();
             let urn_ref = current_urn;
+            let mode_ref = mode.clone();
             let preview_ref = preview.clone();
             let transition_ref = transition.clone();
             let config_ref = config.clone();
@@ -196,12 +225,13 @@ impl WallpaperPage {
                         "[wallpaper-page] Initial reconciliation: {} entities",
                         entities.len()
                     );
-                    reconcile(&entities, &urn_ref, &preview_ref, &transition_ref, &config_ref);
+                    reconcile(&entities, &urn_ref, &mode_ref, &preview_ref, &transition_ref, &config_ref);
                 }
             });
         }
 
         // Prevent sections from being dropped
+        std::mem::forget(mode);
         std::mem::forget(preview);
         std::mem::forget(transition);
         std::mem::forget(config);

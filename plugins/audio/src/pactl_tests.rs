@@ -345,6 +345,7 @@ fn test_audio_device_from_sink() {
         device_id: None,
         active_port: None,
         active_port_available: None,
+        ports: vec![],
     };
 
     let device = AudioDevice::from_sink(&sink, &card_ports);
@@ -369,6 +370,7 @@ fn test_audio_device_from_source() {
         device_id: None,
         active_port: None,
         active_port_available: None,
+        ports: vec![],
     };
 
     let device = AudioDevice::from_source(&source, &card_ports);
@@ -640,4 +642,133 @@ fn test_port_availability_parsed_for_all_sinks() {
 
     // HDMI sink has "[Out] HDMI1" which is "available"
     assert_eq!(sinks[2].active_port_available, Some(true));
+}
+
+#[test]
+fn test_sink_ports_parsed_as_structured_list() {
+    let sinks = parse_sinks(
+        MULTI_SINK_OUTPUT,
+        Some("alsa_output.pci-0000_00_1f.3.analog-stereo"),
+    )
+    .unwrap();
+
+    // First sink has two ports
+    assert_eq!(sinks[0].ports.len(), 2);
+    assert_eq!(sinks[0].ports[0].name, "analog-output-speaker");
+    assert_eq!(sinks[0].ports[0].description, "Speaker");
+    assert!(sinks[0].ports[0].available);
+    assert_eq!(sinks[0].ports[1].name, "analog-output-headphones");
+    assert_eq!(sinks[0].ports[1].description, "Headphones");
+    assert!(!sinks[0].ports[1].available);
+
+    // Bluetooth sink has one port
+    assert_eq!(sinks[1].ports.len(), 1);
+    assert_eq!(sinks[1].ports[0].name, "headset-output");
+    assert_eq!(sinks[1].ports[0].description, "Headset");
+    assert!(sinks[1].ports[0].available);
+}
+
+#[test]
+fn test_source_ports_parsed_as_structured_list() {
+    let sources = parse_sources(
+        MULTI_SOURCE_OUTPUT,
+        Some("alsa_input.pci-0000_00_1f.3.analog-stereo"),
+    )
+    .unwrap();
+
+    // First source has one port
+    assert_eq!(sources[0].ports.len(), 1);
+    assert_eq!(sources[0].ports[0].name, "analog-input-internal-mic");
+    assert_eq!(sources[0].ports[0].description, "Internal Microphone");
+    assert!(sources[0].ports[0].available);
+}
+
+// ---------------------------------------------------------------------------
+// Card parsing tests
+// ---------------------------------------------------------------------------
+
+const CARD_OUTPUT: &str = "\
+Card #49
+\tName: alsa_card.pci-0000_00_1f.3
+\tDriver: module-alsa-card.c
+\tProperties:
+\t\tdevice.icon_name = \"audio-card\"
+\t\tdevice.bus = \"pci\"
+\t\tdevice.description = \"Built-in Audio\"
+\tProfiles:
+\t\toutput:analog-stereo: Analog Stereo Output (sinks: 1, sources: 0, priority: 6500, available: yes)
+\t\toutput:analog-stereo+input:analog-stereo: Analog Stereo Duplex (sinks: 1, sources: 1, priority: 6565, available: yes)
+\t\toutput:hdmi-stereo: Digital Stereo (HDMI) Output (sinks: 1, sources: 0, priority: 5900, available: yes)
+\t\toff: Off (sinks: 0, sources: 0, priority: 0, available: yes)
+\tActive Profile: output:analog-stereo+input:analog-stereo
+\tPorts:
+\t\tanalog-output-speaker: Speaker (type: Speaker, priority: 100)
+
+Card #62
+\tName: bluez_card.AA_BB_CC_DD_EE_FF
+\tDriver: module-bluez5-device.c
+\tProperties:
+\t\tdevice.icon_name = \"audio-headphones\"
+\t\tdevice.bus = \"bluetooth\"
+\t\tdevice.description = \"WH-1000XM4\"
+\tProfiles:
+\t\ta2dp-sink: High Fidelity Playback (A2DP Sink, codec SBC) (sinks: 1, sources: 0, priority: 40, available: yes)
+\t\thandsfree_head_unit: Handsfree Head Unit (HFP) (sinks: 1, sources: 1, priority: 30, available: yes)
+\t\toff: Off (sinks: 0, sources: 0, priority: 0, available: yes)
+\tActive Profile: a2dp-sink
+\tPorts:
+\t\theadset-output: Headset (type: Headset, priority: 0)
+";
+
+#[test]
+fn test_parse_cards_extracts_card_info() {
+    let cards = parse_cards(CARD_OUTPUT);
+
+    assert_eq!(cards.len(), 2);
+
+    // Built-in audio card
+    assert_eq!(cards[0].name, "alsa_card.pci-0000_00_1f.3");
+    assert_eq!(cards[0].description, "Built-in Audio");
+    assert_eq!(cards[0].icon_name.as_deref(), Some("audio-card"));
+    assert_eq!(cards[0].bus.as_deref(), Some("pci"));
+    assert_eq!(
+        cards[0].active_profile,
+        "output:analog-stereo+input:analog-stereo"
+    );
+
+    // Bluetooth headphones card
+    assert_eq!(cards[1].name, "bluez_card.AA_BB_CC_DD_EE_FF");
+    assert_eq!(cards[1].description, "WH-1000XM4");
+    assert_eq!(cards[1].icon_name.as_deref(), Some("audio-headphones"));
+    assert_eq!(cards[1].bus.as_deref(), Some("bluetooth"));
+    assert_eq!(cards[1].active_profile, "a2dp-sink");
+}
+
+#[test]
+fn test_parse_cards_extracts_profiles() {
+    let cards = parse_cards(CARD_OUTPUT);
+
+    // Built-in audio has 4 profiles
+    assert_eq!(cards[0].profiles.len(), 4);
+    assert_eq!(cards[0].profiles[0].name, "output:analog-stereo");
+    assert_eq!(
+        cards[0].profiles[0].description,
+        "Analog Stereo Output"
+    );
+    assert!(cards[0].profiles[0].available);
+
+    assert_eq!(cards[0].profiles[3].name, "off");
+    assert_eq!(cards[0].profiles[3].description, "Off");
+    assert!(cards[0].profiles[3].available);
+
+    // Bluetooth has 3 profiles
+    assert_eq!(cards[1].profiles.len(), 3);
+    assert_eq!(cards[1].profiles[0].name, "a2dp-sink");
+    assert!(cards[1].profiles[0].available);
+}
+
+#[test]
+fn test_parse_cards_empty_output() {
+    let cards = parse_cards("");
+    assert!(cards.is_empty());
 }

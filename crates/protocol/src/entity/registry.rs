@@ -84,6 +84,69 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
 
         // ── audio ──
         EntityTypeInfo {
+            entity_type: super::audio::CARD_ENTITY_TYPE,
+            domain: "audio",
+            description: "A physical audio card grouping sinks and sources with profile switching",
+            urn_pattern: "{plugin}/audio-card/{card-name}",
+            properties: &[
+                PropertyInfo { name: "name", type_description: "string", description: "Device display name", optional: false },
+                PropertyInfo { name: "icon", type_description: "string", description: "Primary icon name", optional: false },
+                PropertyInfo { name: "connection_icon", type_description: "string", description: "Connection type icon (e.g. bluetooth)", optional: true },
+                PropertyInfo { name: "active_profile", type_description: "string", description: "Currently active profile name", optional: false },
+                PropertyInfo { name: "profiles", type_description: "array", description: "Available card profiles", optional: false },
+                PropertyInfo { name: "sinks", type_description: "array", description: "Output sinks belonging to this card", optional: false },
+                PropertyInfo { name: "sources", type_description: "array", description: "Input sources belonging to this card (excludes monitors)", optional: false },
+            ],
+            actions: &[
+                ActionInfo {
+                    name: "set-profile",
+                    description: "Set the card's active profile",
+                    params: &[ParamInfo { name: "profile", type_description: "string", description: "Profile name to activate", required: true }],
+                },
+                ActionInfo {
+                    name: "set-volume",
+                    description: "Set volume on a sink or source",
+                    params: &[
+                        ParamInfo { name: "sink", type_description: "string", description: "Sink name (for output volume)", required: false },
+                        ParamInfo { name: "source", type_description: "string", description: "Source name (for input volume)", required: false },
+                        ParamInfo { name: "value", type_description: "float", description: "Volume level (0.0 - 1.0)", required: true },
+                    ],
+                },
+                ActionInfo {
+                    name: "toggle-mute",
+                    description: "Toggle mute on a sink or source",
+                    params: &[
+                        ParamInfo { name: "sink", type_description: "string", description: "Sink name (for output)", required: false },
+                        ParamInfo { name: "source", type_description: "string", description: "Source name (for input)", required: false },
+                    ],
+                },
+                ActionInfo {
+                    name: "set-default",
+                    description: "Set a sink or source as the default device",
+                    params: &[
+                        ParamInfo { name: "sink", type_description: "string", description: "Sink name (for output)", required: false },
+                        ParamInfo { name: "source", type_description: "string", description: "Source name (for input)", required: false },
+                    ],
+                },
+                ActionInfo {
+                    name: "set-sink-port",
+                    description: "Change the active port on a sink",
+                    params: &[
+                        ParamInfo { name: "sink", type_description: "string", description: "Sink name", required: true },
+                        ParamInfo { name: "port", type_description: "string", description: "Port name to activate", required: true },
+                    ],
+                },
+                ActionInfo {
+                    name: "set-source-port",
+                    description: "Change the active port on a source",
+                    params: &[
+                        ParamInfo { name: "source", type_description: "string", description: "Source name", required: true },
+                        ParamInfo { name: "port", type_description: "string", description: "Port name to activate", required: true },
+                    ],
+                },
+            ],
+        },
+        EntityTypeInfo {
             entity_type: super::audio::ENTITY_TYPE,
             domain: "audio",
             description: "An audio input or output device",
@@ -771,6 +834,7 @@ mod tests {
         // Verify all known ENTITY_TYPE constants are in the registry.
         let expected = [
             super::super::app::ENTITY_TYPE,
+            super::super::audio::CARD_ENTITY_TYPE,
             super::super::audio::ENTITY_TYPE,
             super::super::bluetooth::BluetoothAdapter::ENTITY_TYPE,
             super::super::bluetooth::BluetoothDevice::ENTITY_TYPE,

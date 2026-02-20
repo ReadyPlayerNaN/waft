@@ -34,7 +34,7 @@ fn i18n() -> &'static I18n {
     })
 }
 
-use waft_plugin_audio::pactl::{self, AudioEvent, CardPortMap};
+use waft_plugin_audio::pactl::{self, AudioEvent, CardInfo, CardPortMap, SinkInfo, SourceInfo};
 
 /// Shared audio state, accessible from both the plugin and the event monitor.
 #[derive(Clone, Default)]
@@ -44,6 +44,14 @@ struct AudioState {
     input_devices: Vec<pactl::AudioDevice>,
     default_input: Option<String>,
     available: bool,
+    /// Raw sink info for building card entities.
+    sinks: Vec<SinkInfo>,
+    /// Raw source info for building card entities.
+    sources: Vec<SourceInfo>,
+    /// Card info for building card entities.
+    cards: Vec<CardInfo>,
+    /// Card port map for display labels.
+    card_ports: CardPortMap,
 }
 
 /// Audio plugin.
@@ -106,9 +114,11 @@ fn lock_state(state: &Arc<StdMutex<AudioState>>) -> std::sync::MutexGuard<'_, Au
 /// Reload all audio state from pactl into the shared state.
 async fn reload_all(state: &Arc<StdMutex<AudioState>>) -> Result<()> {
     let card_ports = pactl::get_card_port_info().await.unwrap_or_default();
+    lock_state(state).card_ports = card_ports.clone();
 
     reload_sinks(state, &card_ports).await;
     reload_sources(state, &card_ports).await;
+    reload_cards(state).await;
 
     Ok(())
 }
@@ -124,7 +134,9 @@ async fn reload_sinks(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPortMa
             .iter()
             .map(|s| pactl::AudioDevice::from_sink(s, card_ports))
             .collect();
-        lock_state(state).output_devices = devices;
+        let mut s = lock_state(state);
+        s.output_devices = devices;
+        s.sinks = sinks;
     }
 }
 
@@ -139,7 +151,21 @@ async fn reload_sources(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPort
             .iter()
             .map(|s| pactl::AudioDevice::from_source(s, card_ports))
             .collect();
-        lock_state(state).input_devices = devices;
+        let mut s = lock_state(state);
+        s.input_devices = devices;
+        s.sources = sources;
+    }
+}
+
+/// Reload card state.
+async fn reload_cards(state: &Arc<StdMutex<AudioState>>) {
+    match pactl::get_cards().await {
+        Ok(cards) => {
+            lock_state(state).cards = cards;
+        }
+        Err(e) => {
+            warn!("[audio] Failed to reload cards: {}", e);
+        }
     }
 }
 
@@ -154,7 +180,7 @@ impl Plugin for AudioPlugin {
 
         let mut entities = Vec::new();
 
-        // Output devices
+        // Output devices (audio-device entities for overview)
         for device in &state.output_devices {
             let is_default = state.default_output.as_deref() == Some(&device.id);
 
@@ -174,7 +200,7 @@ impl Plugin for AudioPlugin {
             ));
         }
 
-        // Input devices
+        // Input devices (audio-device entities for overview)
         for device in &state.input_devices {
             let is_default = state.default_input.as_deref() == Some(&device.id);
 
@@ -194,6 +220,16 @@ impl Plugin for AudioPlugin {
             ));
         }
 
+        // Audio card entities (for settings)
+        for card in &state.cards {
+            let card_entity = build_card_entity(card, &state);
+            entities.push(Entity::new(
+                Urn::new("audio", entity::audio::CARD_ENTITY_TYPE, &card.name),
+                entity::audio::CARD_ENTITY_TYPE,
+                &card_entity,
+            ));
+        }
+
         entities
     }
 
@@ -203,6 +239,12 @@ impl Plugin for AudioPlugin {
         action: String,
         params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let entity_type = urn.entity_type();
+
+        if entity_type == entity::audio::CARD_ENTITY_TYPE {
+            return self.handle_card_action(urn, action, params).await;
+        }
+
         let device_id = urn.id().to_string();
 
         // Determine if the target is an output or input device
@@ -290,6 +332,260 @@ impl Plugin for AudioPlugin {
     }
 }
 
+impl AudioPlugin {
+    /// Handle actions on audio-card entities.
+    async fn handle_card_action(
+        &self,
+        _urn: Urn,
+        action: String,
+        params: serde_json::Value,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match action.as_str() {
+            "set-profile" => {
+                let card_name = _urn.id().to_string();
+                let profile = params
+                    .get("profile")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing 'profile' parameter")?;
+                if let Err(e) = pactl::set_card_profile(&card_name, profile).await {
+                    error!("[audio] Failed to set card profile: {}", e);
+                    return Err(e.into());
+                }
+            }
+            "set-volume" => {
+                let volume = params
+                    .get("value")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0)
+                    .clamp(0.0, 1.0);
+
+                if let Some(sink) = params.get("sink").and_then(|v| v.as_str()) {
+                    if let Err(e) = pactl::set_sink_volume(sink, volume).await {
+                        error!("[audio] Failed to set sink volume: {}", e);
+                        return Err(e.into());
+                    }
+                } else if let Some(source) = params.get("source").and_then(|v| v.as_str()) {
+                    if let Err(e) = pactl::set_source_volume(source, volume).await {
+                        error!("[audio] Failed to set source volume: {}", e);
+                        return Err(e.into());
+                    }
+                } else {
+                    debug!("[audio] set-volume on card: missing 'sink' or 'source' param");
+                }
+            }
+            "toggle-mute" => {
+                if let Some(sink_name) = params.get("sink").and_then(|v| v.as_str()) {
+                    let current_muted = lock_state(&self.state)
+                        .sinks
+                        .iter()
+                        .find(|s| s.name == sink_name)
+                        .map(|s| s.muted)
+                        .unwrap_or(false);
+                    if let Err(e) = pactl::set_sink_mute(sink_name, !current_muted).await {
+                        error!("[audio] Failed to toggle sink mute: {}", e);
+                        return Err(e.into());
+                    }
+                } else if let Some(source_name) = params.get("source").and_then(|v| v.as_str()) {
+                    let current_muted = lock_state(&self.state)
+                        .sources
+                        .iter()
+                        .find(|s| s.name == source_name)
+                        .map(|s| s.muted)
+                        .unwrap_or(false);
+                    if let Err(e) = pactl::set_source_mute(source_name, !current_muted).await {
+                        error!("[audio] Failed to toggle source mute: {}", e);
+                        return Err(e.into());
+                    }
+                } else {
+                    debug!("[audio] toggle-mute on card: missing 'sink' or 'source' param");
+                }
+            }
+            "set-default" => {
+                if let Some(sink_name) = params.get("sink").and_then(|v| v.as_str()) {
+                    if let Err(e) = pactl::set_default_sink(sink_name).await {
+                        error!("[audio] Failed to set default sink: {}", e);
+                        return Err(e.into());
+                    }
+                    lock_state(&self.state).default_output = Some(sink_name.to_string());
+                } else if let Some(source_name) = params.get("source").and_then(|v| v.as_str()) {
+                    if let Err(e) = pactl::set_default_source(source_name).await {
+                        error!("[audio] Failed to set default source: {}", e);
+                        return Err(e.into());
+                    }
+                    lock_state(&self.state).default_input = Some(source_name.to_string());
+                } else {
+                    debug!("[audio] set-default on card: missing 'sink' or 'source' param");
+                }
+            }
+            "set-sink-port" => {
+                let sink = params
+                    .get("sink")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing 'sink' parameter")?;
+                let port = params
+                    .get("port")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing 'port' parameter")?;
+                if let Err(e) = pactl::set_sink_port(sink, port).await {
+                    error!("[audio] Failed to set sink port: {}", e);
+                    return Err(e.into());
+                }
+            }
+            "set-source-port" => {
+                let source = params
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing 'source' parameter")?;
+                let port = params
+                    .get("port")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing 'port' parameter")?;
+                if let Err(e) = pactl::set_source_port(source, port).await {
+                    error!("[audio] Failed to set source port: {}", e);
+                    return Err(e.into());
+                }
+            }
+            other => {
+                debug!("[audio] Unknown card action: {}", other);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Build an AudioCard entity from card info and current audio state.
+fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::AudioCard {
+    let icon = pactl::compute_primary_icon_sink(&card.icon_name, &None);
+    let connection_icon = pactl::compute_secondary_icon(&card.icon_name, &card.bus);
+
+    let card_sinks: Vec<entity::audio::AudioCardSink> = state
+        .sinks
+        .iter()
+        .filter(|sink| sink_matches_card(sink, &card.name))
+        .map(|sink| {
+            let sink_icon = pactl::compute_primary_icon_sink(&sink.icon_name, &sink.active_port);
+            let label = pactl::compute_label(
+                &sink.description,
+                &sink.node_nick,
+                &sink.device_id,
+                &sink.active_port,
+                &sink.icon_name,
+                &sink.bus,
+                &state.card_ports,
+            );
+            entity::audio::AudioCardSink {
+                sink_name: sink.name.clone(),
+                name: label,
+                icon: sink_icon,
+                volume: sink.volume_percent,
+                muted: sink.muted,
+                default: state.default_output.as_deref() == Some(&sink.name),
+                active_port: sink.active_port.clone(),
+                ports: sink
+                    .ports
+                    .iter()
+                    .map(|p| entity::audio::AudioPort {
+                        name: p.name.clone(),
+                        description: p.description.clone(),
+                        available: p.available,
+                    })
+                    .collect(),
+            }
+        })
+        .collect();
+
+    // Group sources that belong to this card (excluding .monitor sources, already filtered)
+    let card_sources: Vec<entity::audio::AudioCardSource> = state
+        .sources
+        .iter()
+        .filter(|source| source_matches_card(source, &card.name))
+        .map(|source| {
+            let source_icon =
+                pactl::compute_primary_icon_source(&source.icon_name, &source.active_port);
+            let label = pactl::compute_label(
+                &source.description,
+                &source.node_nick,
+                &source.device_id,
+                &source.active_port,
+                &source.icon_name,
+                &source.bus,
+                &state.card_ports,
+            );
+            entity::audio::AudioCardSource {
+                source_name: source.name.clone(),
+                name: label,
+                icon: source_icon,
+                volume: source.volume_percent,
+                muted: source.muted,
+                default: state.default_input.as_deref() == Some(&source.name),
+                active_port: source.active_port.clone(),
+                ports: source
+                    .ports
+                    .iter()
+                    .map(|p| entity::audio::AudioPort {
+                        name: p.name.clone(),
+                        description: p.description.clone(),
+                        available: p.available,
+                    })
+                    .collect(),
+            }
+        })
+        .collect();
+
+    entity::audio::AudioCard {
+        name: card.description.clone(),
+        icon,
+        connection_icon,
+        active_profile: card.active_profile.clone(),
+        profiles: card
+            .profiles
+            .iter()
+            .map(|p| entity::audio::AudioCardProfile {
+                name: p.name.clone(),
+                description: p.description.clone(),
+                available: p.available,
+            })
+            .collect(),
+        sinks: card_sinks,
+        sources: card_sources,
+    }
+}
+
+/// Match a sink to a card by comparing name patterns.
+///
+/// Card name `alsa_card.pci-0000_00_1f.3` maps to sinks starting with
+/// `alsa_output.pci-0000_00_1f.3`. Similarly `bluez_card.XX` maps to
+/// `bluez_output.XX`.
+fn sink_matches_card(sink: &SinkInfo, card_name: &str) -> bool {
+    if let Some(suffix) = card_name.strip_prefix("alsa_card.") {
+        sink.name.starts_with(&format!("alsa_output.{suffix}"))
+    } else if let Some(suffix) = card_name.strip_prefix("bluez_card.") {
+        sink.name.starts_with(&format!("bluez_output.{suffix}"))
+    } else if let Some(pos) = card_name.find("_card.") {
+        let prefix = &card_name[..pos];
+        let suffix = &card_name[pos + "_card.".len()..];
+        sink.name.starts_with(&format!("{prefix}_output.{suffix}"))
+    } else {
+        false
+    }
+}
+
+/// Match a source to a card by comparing name patterns.
+fn source_matches_card(source: &SourceInfo, card_name: &str) -> bool {
+    if let Some(suffix) = card_name.strip_prefix("alsa_card.") {
+        source.name.starts_with(&format!("alsa_input.{suffix}"))
+    } else if let Some(suffix) = card_name.strip_prefix("bluez_card.") {
+        source.name.starts_with(&format!("bluez_input.{suffix}"))
+    } else if let Some(pos) = card_name.find("_card.") {
+        let prefix = &card_name[..pos];
+        let suffix = &card_name[pos + "_card.".len()..];
+        source.name.starts_with(&format!("{prefix}_input.{suffix}"))
+    } else {
+        false
+    }
+}
+
 /// Monitor pactl events and reload state when audio devices change.
 async fn monitor_events(
     mut rx: tokio::sync::mpsc::Receiver<AudioEvent>,
@@ -300,6 +596,7 @@ async fn monitor_events(
         debug!("[audio] Received event: {:?}", event);
 
         let card_ports = pactl::get_card_port_info().await.unwrap_or_default();
+        lock_state(&state).card_ports = card_ports.clone();
 
         match event {
             AudioEvent::Sink | AudioEvent::Server => {
@@ -311,6 +608,7 @@ async fn monitor_events(
             AudioEvent::Card => {
                 reload_sinks(&state, &card_ports).await;
                 reload_sources(&state, &card_ports).await;
+                reload_cards(&state).await;
             }
         }
 
@@ -322,7 +620,7 @@ async fn monitor_events(
 
 fn main() -> Result<()> {
     if waft_plugin::manifest::handle_provides_i18n(
-        &[entity::audio::ENTITY_TYPE],
+        &[entity::audio::ENTITY_TYPE, entity::audio::CARD_ENTITY_TYPE],
         i18n(),
         "plugin-name",
         "plugin-description",

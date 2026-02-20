@@ -33,7 +33,7 @@ impl SettingsButtonComponent {
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
 
         let label = i18n::t("settings-button");
-        let icon = IconWidget::from_name("emblem-system-symbolic", 16);
+        let icon = IconWidget::from_name("preferences-system-symbolic", 16);
 
         let button_content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         button_content.append(icon.widget());

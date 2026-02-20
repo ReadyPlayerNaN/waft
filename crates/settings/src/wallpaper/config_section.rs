@@ -7,6 +7,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 
+use waft_protocol::entity::display::WallpaperMode;
+
 use crate::i18n::t;
 
 /// Output events from the config section.
@@ -26,6 +28,7 @@ pub struct ConfigSection {
     output_cb: OutputCallback,
     dir_row: adw::EntryRow,
     sync_row: adw::SwitchRow,
+    subfolder_hint: gtk::Label,
     updating: Rc<std::cell::Cell<bool>>,
 }
 
@@ -44,6 +47,17 @@ impl ConfigSection {
             .text("~/.config/waft/wallpapers")
             .build();
         group.add(&dir_row);
+
+        // Subfolder hint label (shown for style-tracking and day-tracking modes)
+        let subfolder_hint = gtk::Label::builder()
+            .label("")
+            .xalign(0.0)
+            .css_classes(["dim-label", "caption"])
+            .margin_start(12)
+            .margin_top(4)
+            .visible(false)
+            .build();
+        group.add(&subfolder_hint);
 
         // Sync toggle
         let sync_row = adw::SwitchRow::builder()
@@ -84,15 +98,32 @@ impl ConfigSection {
             output_cb,
             dir_row,
             sync_row,
+            subfolder_hint,
             updating,
         }
     }
 
     /// Update the config controls with current state.
-    pub fn apply_props(&self, wallpaper_dir: &str, sync: bool) {
+    pub fn apply_props(&self, wallpaper_dir: &str, sync: bool, mode: &WallpaperMode) {
         self.updating.set(true);
         self.dir_row.set_text(wallpaper_dir);
         self.sync_row.set_active(sync);
+
+        // Show subfolder hint based on mode
+        match mode {
+            WallpaperMode::StyleTracking => {
+                self.subfolder_hint.set_label(&t("wallpaper-subfolder-hint-style"));
+                self.subfolder_hint.set_visible(true);
+            }
+            WallpaperMode::DayTracking => {
+                self.subfolder_hint.set_label(&t("wallpaper-subfolder-hint-day"));
+                self.subfolder_hint.set_visible(true);
+            }
+            WallpaperMode::Static => {
+                self.subfolder_hint.set_visible(false);
+            }
+        }
+
         self.updating.set(false);
     }
 

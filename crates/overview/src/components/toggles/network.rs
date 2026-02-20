@@ -952,7 +952,7 @@ fn adapter_icon(adapter: &entity::network::NetworkAdapter) -> String {
 /// Determine the icon name for a VPN connection based on its type.
 fn vpn_icon_name(vpn_type: &entity::network::VpnType) -> String {
     match vpn_type {
-        entity::network::VpnType::Wireguard => "wireguard-symbolic".to_string(),
+        entity::network::VpnType::Wireguard => "network-vpn-symbolic".to_string(),
         entity::network::VpnType::Vpn => "network-vpn-symbolic".to_string(),
     }
 }
@@ -1076,7 +1076,7 @@ fn build_settings_button(
         .spacing(12)
         .build();
 
-    let icon = IconWidget::from_name("emblem-system-symbolic", 24);
+    let icon = IconWidget::from_name("preferences-system-symbolic", 24);
     button_content.append(icon.widget());
 
     let label = gtk::Label::builder()

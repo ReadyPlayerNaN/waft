@@ -27,6 +27,14 @@ pub struct CardPortInfo {
 /// Key for looking up card port info: (card_id, port_name).
 pub type CardPortMap = HashMap<(String, String), CardPortInfo>;
 
+/// A port on a sink or source.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PortInfo {
+    pub name: String,
+    pub description: String,
+    pub available: bool,
+}
+
 /// Sink (output device) information.
 #[derive(Debug, Clone)]
 pub struct SinkInfo {
@@ -41,6 +49,8 @@ pub struct SinkInfo {
     pub device_id: Option<String>,
     pub active_port: Option<String>,
     pub active_port_available: Option<bool>,
+    /// Parsed ports with name, description, and availability.
+    pub ports: Vec<PortInfo>,
 }
 
 /// Source (input device) information.
@@ -57,6 +67,27 @@ pub struct SourceInfo {
     pub device_id: Option<String>,
     pub active_port: Option<String>,
     pub active_port_available: Option<bool>,
+    /// Parsed ports with name, description, and availability.
+    pub ports: Vec<PortInfo>,
+}
+
+/// Card-level information parsed from `pactl list cards`.
+#[derive(Debug, Clone)]
+pub struct CardInfo {
+    pub name: String,
+    pub description: String,
+    pub icon_name: Option<String>,
+    pub bus: Option<String>,
+    pub profiles: Vec<CardProfile>,
+    pub active_profile: String,
+}
+
+/// A profile on a card.
+#[derive(Debug, Clone)]
+pub struct CardProfile {
+    pub name: String,
+    pub description: String,
+    pub available: bool,
 }
 
 /// Audio event types from pactl subscribe.
@@ -313,6 +344,63 @@ pub async fn set_default_source(source_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Get all audio cards with profiles.
+pub async fn get_cards() -> Result<Vec<CardInfo>> {
+    let output = run_pactl(&["list", "cards"]).await?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "pactl list cards failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_cards(&stdout))
+}
+
+/// Set the active profile on a card.
+pub async fn set_card_profile(card_name: &str, profile: &str) -> Result<()> {
+    let output = run_pactl(&["set-card-profile", card_name, profile]).await?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "pactl set-card-profile failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    Ok(())
+}
+
+/// Set the active port on a sink.
+pub async fn set_sink_port(sink_name: &str, port: &str) -> Result<()> {
+    let output = run_pactl(&["set-sink-port", sink_name, port]).await?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "pactl set-sink-port failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    Ok(())
+}
+
+/// Set the active port on a source.
+pub async fn set_source_port(source_name: &str, port: &str) -> Result<()> {
+    let output = run_pactl(&["set-source-port", source_name, port]).await?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "pactl set-source-port failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    Ok(())
+}
+
 /// Check if PulseAudio/PipeWire is available.
 pub async fn is_available() -> bool {
     run_pactl(&["info"])
@@ -396,6 +484,51 @@ pub fn parse_property_line(line: &str) -> Option<(&str, &str)> {
     Some((key, value))
 }
 
+/// Parse a single port line into a PortInfo.
+///
+/// Port lines look like:
+/// ```text
+/// [Out] HDMI1: HDMI / DisplayPort (type: HDMI, priority: 5900, availability group: ..., not available)
+/// analog-output-speaker: Speaker (type: Speaker, priority: 100, availability group: ..., available)
+/// ```
+fn parse_port_line(line: &str) -> Option<PortInfo> {
+    let trimmed = line.trim();
+    let colon_pos = trimmed.find(':')?;
+    let name = trimmed[..colon_pos].trim();
+    if name.is_empty() || name == "Properties" {
+        return None;
+    }
+
+    // Extract description: text between first ":" and first "(" or end of line
+    let after_colon = trimmed[colon_pos + 1..].trim();
+    let description = if let Some(paren_pos) = after_colon.find('(') {
+        after_colon[..paren_pos].trim().to_string()
+    } else {
+        after_colon.to_string()
+    };
+
+    // Determine availability
+    let available = if trimmed.contains("not available") {
+        false
+    } else {
+        trimmed.contains("available")
+    };
+
+    Some(PortInfo {
+        name: name.to_string(),
+        description,
+        available,
+    })
+}
+
+/// Parse port lines into structured PortInfo list.
+fn parse_ports_structured(ports_lines: &[String]) -> Vec<PortInfo> {
+    ports_lines
+        .iter()
+        .filter_map(|line| parse_port_line(line))
+        .collect()
+}
+
 /// Parse the Ports section of a sink/source to determine active port availability.
 ///
 /// The Ports section looks like:
@@ -459,6 +592,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
                      sinks: &mut Vec<SinkInfo>| {
         let port_refs: Vec<&str> = ports_lines.iter().map(|s| s.as_str()).collect();
         let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
+        let ports = parse_ports_structured(ports_lines);
         let is_default = default_sink.is_some_and(|d| d == name);
         sinks.push(SinkInfo {
             name,
@@ -472,6 +606,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
             device_id,
             active_port,
             active_port_available,
+            ports,
         });
     };
 
@@ -606,6 +741,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
         }
         let port_refs: Vec<&str> = ports_lines.iter().map(|s| s.as_str()).collect();
         let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
+        let ports = parse_ports_structured(ports_lines);
         let is_default = default_source.is_some_and(|d| d == name);
         sources.push(SourceInfo {
             name,
@@ -619,6 +755,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
             device_id,
             active_port,
             active_port_available,
+            ports,
         });
     };
 
@@ -832,6 +969,149 @@ pub fn parse_card_ports(output: &str) -> CardPortMap {
     }
 
     map
+}
+
+/// Parse `pactl list cards` output to extract card-level info (profiles, description, icon).
+pub fn parse_cards(output: &str) -> Vec<CardInfo> {
+    let mut cards = Vec::new();
+    let mut current_name: Option<String> = None;
+    let mut current_description: Option<String> = None;
+    let mut current_icon_name: Option<String> = None;
+    let mut current_bus: Option<String> = None;
+    let mut current_profiles: Vec<CardProfile> = Vec::new();
+    let mut current_active_profile: Option<String> = None;
+    let mut section = ParseSection::Top;
+
+    let push_card = |name: String,
+                     description: String,
+                     icon_name: Option<String>,
+                     bus: Option<String>,
+                     profiles: Vec<CardProfile>,
+                     active_profile: String,
+                     cards: &mut Vec<CardInfo>| {
+        cards.push(CardInfo {
+            name,
+            description,
+            icon_name,
+            bus,
+            profiles,
+            active_profile,
+        });
+    };
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with("Card #") {
+            // Save previous card
+            if let (Some(name), Some(desc)) = (current_name.take(), current_description.take()) {
+                push_card(
+                    name,
+                    desc,
+                    current_icon_name.take(),
+                    current_bus.take(),
+                    std::mem::take(&mut current_profiles),
+                    current_active_profile.take().unwrap_or_default(),
+                    &mut cards,
+                );
+            }
+            current_icon_name = None;
+            current_bus = None;
+            current_profiles.clear();
+            current_active_profile = None;
+            section = ParseSection::Top;
+        } else if trimmed == "Properties:" {
+            section = ParseSection::Properties;
+        } else if trimmed == "Profiles:" || trimmed.starts_with("Profiles:") {
+            section = ParseSection::Ports; // Reuse Ports section state for profile parsing
+        } else if trimmed.starts_with("Active Profile:") {
+            current_active_profile = Some(
+                trimmed
+                    .trim_start_matches("Active Profile:")
+                    .trim()
+                    .to_string(),
+            );
+            section = ParseSection::Top;
+        } else if section == ParseSection::Properties {
+            if !line.starts_with('\t') && !line.starts_with("    ") {
+                section = ParseSection::Top;
+            } else if let Some((key, value)) = parse_property_line(trimmed) {
+                match key {
+                    "device.icon_name" => current_icon_name = Some(value.to_string()),
+                    "device.bus" => current_bus = Some(value.to_string()),
+                    "device.description" => {
+                        current_description = Some(value.to_string());
+                    }
+                    _ => {}
+                }
+            }
+        } else if section == ParseSection::Ports {
+            // Profiles section (reusing Ports state)
+            if !line.starts_with('\t') && !line.starts_with("    ") {
+                section = ParseSection::Top;
+            } else if trimmed.contains(':') && !trimmed.starts_with("Part of profile") {
+                // Profile line like:
+                // output:analog-stereo: Analog Stereo Output (sinks: 1, sources: 0, priority: 6500, available: yes)
+                if let Some(colon_pos) = trimmed.find(": ") {
+                    let profile_name = trimmed[..colon_pos].trim().to_string();
+                    let rest = trimmed[colon_pos + 2..].trim();
+
+                    // Extract description: text before first "("
+                    let description = if let Some(paren_pos) = rest.find('(') {
+                        rest[..paren_pos].trim().to_string()
+                    } else {
+                        rest.to_string()
+                    };
+
+                    // Parse available from parenthesized metadata
+                    let available = if let Some(paren_start) = rest.find('(') {
+                        let meta = &rest[paren_start..];
+                        meta.contains("available: yes")
+                    } else {
+                        true
+                    };
+
+                    current_profiles.push(CardProfile {
+                        name: profile_name,
+                        description,
+                        available,
+                    });
+                }
+            }
+        }
+
+        // Top-level fields
+        if section == ParseSection::Top {
+            if trimmed.starts_with("Name:") {
+                current_name = Some(trimmed.trim_start_matches("Name:").trim().to_string());
+            } else if trimmed.starts_with("Description:") {
+                // Top-level Description is always overridable by device.description in Properties
+                if current_description.is_none() {
+                    current_description = Some(
+                        trimmed
+                            .trim_start_matches("Description:")
+                            .trim()
+                            .to_string(),
+                    );
+                }
+            }
+        }
+    }
+
+    // Save last card
+    if let (Some(name), Some(desc)) = (current_name, current_description) {
+        push_card(
+            name,
+            desc,
+            current_icon_name,
+            current_bus,
+            current_profiles,
+            current_active_profile.unwrap_or_default(),
+            &mut cards,
+        );
+    }
+
+    cards
 }
 
 /// Strip PipeWire-specific suffixes from a `device.icon_name` value.

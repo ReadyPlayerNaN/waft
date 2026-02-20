@@ -34,6 +34,7 @@ use crate::window::SettingsWindow;
 /// Entity types the settings app subscribes to.
 const ENTITY_TYPES: &[&str] = &[
     audio::ENTITY_TYPE,
+    audio::CARD_ENTITY_TYPE,
     BluetoothAdapter::ENTITY_TYPE,
     BluetoothDevice::ENTITY_TYPE,
     ADAPTER_ENTITY_TYPE,

@@ -43,6 +43,10 @@ pub struct SliderWidget {
     on_icon_click: VoidCallback,
     scale_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>>,
     interacting: Rc<RefCell<bool>>,
+    /// Tracks whether the mouse button is physically held down on the scale.
+    /// Accessed only inside gesture handler closures.
+    #[allow(dead_code)]
+    pointer_down: Rc<RefCell<bool>>,
     pending_value: Rc<RefCell<Option<f64>>>,
     /// Held to keep the active debounce `SourceId` alive across the widget's
     /// lifetime. Accessed only inside gesture/scroll handler closures.
@@ -202,6 +206,7 @@ impl SliderWidget {
 
         // Interaction tracking state
         let interacting = Rc::new(RefCell::new(false));
+        let pointer_down = Rc::new(RefCell::new(false));
         let pending_value: Rc<RefCell<Option<f64>>> = Rc::new(RefCell::new(None));
         let debounce_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
 
@@ -213,6 +218,7 @@ impl SliderWidget {
         let on_value_change_ref = on_value_change.clone();
         let on_value_commit_vc = on_value_commit.clone();
         let interacting_vc = interacting.clone();
+        let pointer_down_vc = pointer_down.clone();
         let debounce_source_vc = debounce_source.clone();
         let pending_value_vc = pending_value.clone();
         let value_vc = value.clone();
@@ -221,17 +227,21 @@ impl SliderWidget {
 
         let handler_id = scale.connect_value_changed(move |s| {
             let v = s.value() / 100.0;
-            *interacting_vc.borrow_mut() = true;
-            schedule_interaction_end(
-                &debounce_source_vc,
-                &interacting_vc,
-                &pending_value_vc,
-                &value_vc,
-                &scale_vc,
-                &scale_handler_id_vc,
-                &on_value_commit_vc,
-                200,
-            );
+            // Only set interacting + schedule debounce for keyboard-driven changes.
+            // Pointer drags are tracked by the GestureClick pressed/released lifecycle.
+            if !*pointer_down_vc.borrow() {
+                *interacting_vc.borrow_mut() = true;
+                schedule_interaction_end(
+                    &debounce_source_vc,
+                    &interacting_vc,
+                    &pending_value_vc,
+                    &value_vc,
+                    &scale_vc,
+                    &scale_handler_id_vc,
+                    &on_value_commit_vc,
+                    200,
+                );
+            }
             if let Some(ref callback) = *on_value_change_ref.borrow() {
                 callback(v);
             }
@@ -242,8 +252,10 @@ impl SliderWidget {
         let gesture_click = gtk::GestureClick::new();
 
         let interacting_pressed = interacting.clone();
+        let pointer_down_pressed = pointer_down.clone();
         let debounce_source_pressed = debounce_source.clone();
         gesture_click.connect_pressed(move |_, _, _, _| {
+            *pointer_down_pressed.borrow_mut() = true;
             *interacting_pressed.borrow_mut() = true;
             // Cancel any pending debounce -- user is actively pressing
             if let Some(source_id) = debounce_source_pressed.borrow_mut().take() {
@@ -252,6 +264,7 @@ impl SliderWidget {
         });
 
         let interacting_released = interacting.clone();
+        let pointer_down_released = pointer_down.clone();
         let debounce_source_released = debounce_source.clone();
         let pending_value_released = pending_value.clone();
         let value_released = value.clone();
@@ -259,6 +272,7 @@ impl SliderWidget {
         let scale_handler_id_released = scale_handler_id.clone();
         let on_value_commit_released = on_value_commit.clone();
         gesture_click.connect_released(move |_, _, _, _| {
+            *pointer_down_released.borrow_mut() = false;
             schedule_interaction_end(
                 &debounce_source_released,
                 &interacting_released,
@@ -273,6 +287,7 @@ impl SliderWidget {
 
         // Handle gesture cancellation (e.g. pointer leaves widget during press)
         let interacting_cancel = interacting.clone();
+        let pointer_down_cancel = pointer_down.clone();
         let debounce_source_cancel = debounce_source.clone();
         let pending_value_cancel = pending_value.clone();
         let value_cancel = value.clone();
@@ -280,6 +295,7 @@ impl SliderWidget {
         let scale_handler_id_cancel = scale_handler_id.clone();
         let on_value_commit_cancel = on_value_commit.clone();
         gesture_click.connect_cancel(move |_, _| {
+            *pointer_down_cancel.borrow_mut() = false;
             schedule_interaction_end(
                 &debounce_source_cancel,
                 &interacting_cancel,
@@ -334,6 +350,7 @@ impl SliderWidget {
             on_icon_click,
             scale_handler_id,
             interacting,
+            pointer_down,
             pending_value,
             debounce_source,
             menu_id,

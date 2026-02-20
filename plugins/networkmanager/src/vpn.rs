@@ -162,10 +162,11 @@ pub async fn activate_vpn(
     let (active_conn_path,): (OwnedObjectPath,) = proxy
         .call("ActivateConnection", &(conn_obj, device_obj, specific_obj))
         .await
-        .with_context(|| {
-            format!(
-                "Failed to activate {} connection: {}",
-                conn_type, connection_path
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to activate {} connection {}: {e}",
+                conn_type,
+                connection_path,
             )
         })?;
 
