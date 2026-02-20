@@ -58,8 +58,8 @@ use waft_plugin_networkmanager::vpn::{
     activate_vpn, deactivate_vpn, get_active_vpn_connections, get_vpn_profiles,
 };
 use waft_plugin_networkmanager::wifi::{
-    activate_connection, connect_wired_dbus, disconnect_device, get_connections_for_ssid,
-    set_wifi_enabled_dbus,
+    activate_connection, connect_wired_dbus, disconnect_device, get_active_ssid,
+    get_connections_for_ssid, set_wifi_enabled_dbus,
 };
 use waft_plugin_networkmanager::wifi_scan::wifi_scan_task;
 
@@ -145,6 +145,14 @@ impl NetworkManagerPlugin {
                         );
                     }
                 }
+            }
+        }
+
+        // Read active SSID for already-connected WiFi adapters
+        for adapter in &mut state.wifi_adapters {
+            adapter.active_ssid = get_active_ssid(&conn, &adapter.path).await;
+            if let Some(ref ssid) = adapter.active_ssid {
+                debug!("[nm] WiFi {} already connected to {}", adapter.interface_name, ssid);
             }
         }
 
@@ -336,6 +344,7 @@ fn wifi_adapter_to_entities(adapter: &WiFiAdapterState) -> Vec<Entity> {
         name: adapter.interface_name.clone(),
         enabled: adapter.enabled,
         connected: adapter.active_ssid.is_some(),
+        scanning: adapter.scanning,
         ip: None,
         public_ip: None,
         kind: AdapterKind::Wireless,
@@ -353,7 +362,7 @@ fn wifi_adapter_to_entities(adapter: &WiFiAdapterState) -> Vec<Entity> {
             ssid: ap.ssid.clone(),
             strength: ap.strength,
             secure: ap.secure,
-            known: true, // TODO: Check if network has saved profile
+            known: ap.known,
             connected: adapter.active_ssid.as_ref() == Some(&ap.ssid),
         };
         entities.push(Entity::new(
@@ -392,6 +401,7 @@ fn ethernet_adapter_to_entities(
         name: adapter.interface_name.clone(),
         enabled: true,
         connected: adapter.is_connected(),
+        scanning: false,
         ip,
         public_ip: if adapter.is_connected() {
             public_ip.clone()
@@ -457,6 +467,7 @@ fn tethering_adapter_to_entities(
         name: "tethering".to_string(),
         enabled: true,
         connected: any_active,
+        scanning: false,
         ip: None,
         public_ip: None,
         kind: AdapterKind::Tethering,
