@@ -1173,6 +1173,44 @@ fn strip_icon_suffix(name: &str) -> String {
     result
 }
 
+/// Compute the structured device type from PulseAudio metadata.
+///
+/// Priority: form_factor > port type > icon name fallback > input/output direction.
+pub fn compute_device_type(
+    form_factor: Option<&str>,
+    icon_name: Option<&str>,
+    port_type: Option<&str>,
+    is_input: bool,
+) -> String {
+    // form_factor is the primary signal
+    match form_factor {
+        Some("headset") => return "headset".to_string(),
+        Some("headphone") => return "headphone".to_string(),
+        Some("hands-free") => return "hands-free".to_string(),
+        Some("webcam") => return "webcam".to_string(),
+        Some("phone") => return "phone".to_string(),
+        Some("speaker") => return "speaker".to_string(),
+        _ => {}
+    }
+    // HDMI/DisplayPort output -> display device
+    if matches!(port_type, Some("HDMI") | Some("DisplayPort")) {
+        return "display".to_string();
+    }
+    // GPU audio card identified by icon name (strips PipeWire bus suffixes before checking)
+    if let Some(name) = icon_name {
+        let base = strip_icon_suffix(name);
+        if base == "video-display" {
+            return "display".to_string();
+        }
+    }
+    // Fall back to direction-based type
+    if is_input {
+        "microphone".to_string()
+    } else {
+        "card".to_string()
+    }
+}
+
 /// Compute the primary icon for a sink.
 ///
 /// First checks the active port name for hardware-specific hints (headphones,

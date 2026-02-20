@@ -814,3 +814,43 @@ fn test_parse_port_line_no_type_info() {
     let port = super::parse_port_line(line).unwrap();
     assert_eq!(port.port_type, None);
 }
+
+#[test]
+fn test_compute_device_type_headset_from_form_factor() {
+    assert_eq!(super::compute_device_type(Some("headset"), None, None, false), "headset");
+    assert_eq!(super::compute_device_type(Some("headset"), None, None, true), "headset");
+}
+
+#[test]
+fn test_compute_device_type_headphone_from_form_factor() {
+    assert_eq!(super::compute_device_type(Some("headphone"), None, None, false), "headphone");
+}
+
+#[test]
+fn test_compute_device_type_webcam_from_form_factor() {
+    assert_eq!(super::compute_device_type(Some("webcam"), None, None, true), "webcam");
+}
+
+#[test]
+fn test_compute_device_type_display_from_hdmi_port() {
+    assert_eq!(super::compute_device_type(None, None, Some("HDMI"), false), "display");
+    assert_eq!(super::compute_device_type(None, None, Some("DisplayPort"), false), "display");
+}
+
+#[test]
+fn test_compute_device_type_display_from_icon_name() {
+    assert_eq!(super::compute_device_type(None, Some("video-display"), None, false), "display");
+    assert_eq!(super::compute_device_type(None, Some("video-display-pci"), None, false), "display");
+}
+
+#[test]
+fn test_compute_device_type_microphone_for_input() {
+    assert_eq!(super::compute_device_type(None, None, None, true), "microphone");
+    assert_eq!(super::compute_device_type(None, Some("audio-card"), None, true), "microphone");
+}
+
+#[test]
+fn test_compute_device_type_card_for_generic_output() {
+    assert_eq!(super::compute_device_type(None, None, None, false), "card");
+    assert_eq!(super::compute_device_type(None, Some("audio-card-pci"), None, false), "card");
+}
