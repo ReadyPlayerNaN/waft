@@ -9,7 +9,10 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk::glib;
-use waft_protocol::entity::audio::{AudioCard, AudioCardSink, AudioCardSource, AudioPort};
+use waft_protocol::entity::audio::{
+    AudioCard, AudioCardSink, AudioCardSource, AudioDeviceKind, AudioPort,
+};
+use waft_ui_gtk::audio::icon::audio_device_icon;
 use waft_ui_gtk::widgets::icon::IconWidget;
 
 use crate::i18n::{t, t_args};
@@ -444,7 +447,7 @@ impl AudioDeviceCard {
             .spacing(0)
             .build();
 
-        let icon = IconWidget::from_name(&sink.icon, 16);
+        let icon = IconWidget::from_name(audio_device_icon(&sink.device_type, AudioDeviceKind::Output), 16);
 
         // Info row with icon, name, mute button, default button
         let info_row = adw::ActionRow::builder()
@@ -736,7 +739,7 @@ impl AudioDeviceCard {
             .spacing(0)
             .build();
 
-        let icon = IconWidget::from_name(&source.icon, 16);
+        let icon = IconWidget::from_name(audio_device_icon(&source.device_type, AudioDeviceKind::Input), 16);
 
         let info_row = adw::ActionRow::builder()
             .title(&source.name)
