@@ -186,8 +186,6 @@ impl Plugin for AudioPlugin {
 
             let audio_device = entity::audio::AudioDevice {
                 name: device.name.clone(),
-                icon: device.icon.clone(),
-                connection_icon: device.secondary_icon.clone(),
                 volume: device.volume,
                 muted: device.muted,
                 default: is_default,
@@ -208,8 +206,6 @@ impl Plugin for AudioPlugin {
 
             let audio_device = entity::audio::AudioDevice {
                 name: device.name.clone(),
-                icon: device.icon.clone(),
-                connection_icon: device.secondary_icon.clone(),
                 volume: device.volume,
                 muted: device.muted,
                 default: is_default,
@@ -506,7 +502,6 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
             entity::audio::AudioCardSink {
                 sink_name: sink.name.clone(),
                 name: label,
-                icon: sink_icon,
                 volume: sink.volume_percent,
                 muted: sink.muted,
                 default: state.default_output.as_deref() == Some(&sink.name),
@@ -563,7 +558,6 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
             entity::audio::AudioCardSource {
                 source_name: source.name.clone(),
                 name: label,
-                icon: source_icon,
                 volume: source.volume_percent,
                 muted: source.muted,
                 default: state.default_input.as_deref() == Some(&source.name),
@@ -585,8 +579,6 @@ fn build_card_entity(card: &CardInfo, state: &AudioState) -> entity::audio::Audi
 
     entity::audio::AudioCard {
         name: card.description.clone(),
-        icon,
-        connection_icon,
         active_profile: card.active_profile.clone(),
         profiles: card
             .profiles

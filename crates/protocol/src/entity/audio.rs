@@ -10,13 +10,10 @@ pub const CARD_ENTITY_TYPE: &str = "audio-card";
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AudioDevice {
     pub name: String,
-    pub icon: String,
-    #[serde(default)]
-    pub connection_icon: Option<String>,
-    /// Semantic device type (e.g. "headset", "card", "display"). Replaces icon.
+    /// Semantic device type (e.g. "headset", "card", "display").
     #[serde(default)]
     pub device_type: String,
-    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi"). Replaces connection_icon.
+    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi").
     #[serde(default)]
     pub connection_type: Option<String>,
     pub volume: f64,
@@ -37,15 +34,10 @@ pub enum AudioDeviceKind {
 pub struct AudioCard {
     /// Display name of the physical device (e.g. "Built-in Audio", "WH-1000XM4").
     pub name: String,
-    /// Primary icon for the card.
-    pub icon: String,
-    /// Connection type icon (e.g. bluetooth, USB).
-    #[serde(default)]
-    pub connection_icon: Option<String>,
-    /// Semantic device type (e.g. "headset", "card", "display"). Replaces icon.
+    /// Semantic device type (e.g. "headset", "card", "display").
     #[serde(default)]
     pub device_type: String,
-    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi"). Replaces connection_icon.
+    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi").
     #[serde(default)]
     pub connection_type: Option<String>,
     /// Currently active profile name.
@@ -76,12 +68,10 @@ pub struct AudioCardSink {
     pub sink_name: String,
     /// Display name.
     pub name: String,
-    /// Icon.
-    pub icon: String,
-    /// Semantic device type (e.g. "headset", "card", "display"). Replaces icon.
+    /// Semantic device type (e.g. "headset", "card", "display").
     #[serde(default)]
     pub device_type: String,
-    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi"). Replaces connection_icon.
+    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi").
     #[serde(default)]
     pub connection_type: Option<String>,
     /// Volume 0.0-1.0.
@@ -104,12 +94,10 @@ pub struct AudioCardSource {
     pub source_name: String,
     /// Display name.
     pub name: String,
-    /// Icon.
-    pub icon: String,
-    /// Semantic device type (e.g. "headset", "card", "display"). Replaces icon.
+    /// Semantic device type (e.g. "headset", "card", "display").
     #[serde(default)]
     pub device_type: String,
-    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi"). Replaces connection_icon.
+    /// Semantic connection type (e.g. "bluetooth", "jack", "hdmi").
     #[serde(default)]
     pub connection_type: Option<String>,
     /// Volume 0.0-1.0.
@@ -144,9 +132,7 @@ mod tests {
     fn serde_roundtrip() {
         let device = AudioDevice {
             name: "Built-in Audio Analog Stereo".to_string(),
-            icon: "audio-speakers-symbolic".to_string(),
-            connection_icon: None,
-            device_type: String::new(),
+            device_type: "card".to_string(),
             connection_type: None,
             volume: 0.75,
             muted: false,
@@ -162,10 +148,8 @@ mod tests {
     fn serde_roundtrip_input() {
         let device = AudioDevice {
             name: "USB Microphone".to_string(),
-            icon: "audio-input-microphone-symbolic".to_string(),
-            connection_icon: Some("bluetooth-symbolic".to_string()),
-            device_type: String::new(),
-            connection_type: None,
+            device_type: "microphone".to_string(),
+            connection_type: Some("usb".to_string()),
             volume: 0.5,
             muted: true,
             default: false,
@@ -177,26 +161,10 @@ mod tests {
     }
 
     #[test]
-    fn backward_compat_without_connection_icon() {
-        let json = serde_json::json!({
-            "name": "Speakers",
-            "icon": "audio-speakers-symbolic",
-            "volume": 0.5,
-            "muted": false,
-            "default": true,
-            "kind": "Output"
-        });
-        let device: AudioDevice = serde_json::from_value(json).unwrap();
-        assert_eq!(device.connection_icon, None);
-    }
-
-    #[test]
     fn audio_card_serde_roundtrip() {
         let card = AudioCard {
             name: "Built-in Audio".to_string(),
-            icon: "audio-card-symbolic".to_string(),
-            connection_icon: None,
-            device_type: String::new(),
+            device_type: "card".to_string(),
             connection_type: None,
             active_profile: "output:analog-stereo+input:analog-stereo".to_string(),
             profiles: vec![
@@ -214,9 +182,8 @@ mod tests {
             sinks: vec![AudioCardSink {
                 sink_name: "alsa_output.pci-0000_00_1f.3.analog-stereo".to_string(),
                 name: "Speakers".to_string(),
-                icon: "audio-speakers-symbolic".to_string(),
-                device_type: String::new(),
-                connection_type: None,
+                device_type: "card".to_string(),
+                connection_type: Some("jack".to_string()),
                 volume: 0.75,
                 muted: false,
                 default: true,
@@ -237,9 +204,8 @@ mod tests {
             sources: vec![AudioCardSource {
                 source_name: "alsa_input.pci-0000_00_1f.3.analog-stereo".to_string(),
                 name: "Internal Microphone".to_string(),
-                icon: "audio-input-microphone-symbolic".to_string(),
-                device_type: String::new(),
-                connection_type: None,
+                device_type: "microphone".to_string(),
+                connection_type: Some("jack".to_string()),
                 volume: 0.5,
                 muted: false,
                 default: true,
@@ -260,14 +226,13 @@ mod tests {
     fn audio_card_without_optional_fields() {
         let json = serde_json::json!({
             "name": "WH-1000XM4",
-            "icon": "audio-headphones-symbolic",
             "active_profile": "a2dp-sink",
             "profiles": [],
             "sinks": [],
             "sources": []
         });
         let card: AudioCard = serde_json::from_value(json).unwrap();
-        assert_eq!(card.connection_icon, None);
+        assert_eq!(card.connection_type, None);
         assert!(card.sinks.is_empty());
         assert!(card.sources.is_empty());
     }
