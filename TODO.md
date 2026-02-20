@@ -19,66 +19,79 @@ Consider having the SNI tray in the waft overview.
 
 Create app `waft-launcher`. The app will have a single window on the gtk layer shell. On start it will focus an input field. Upon search, the app will search available applications. It will have keyboard navigation - using arrows up and down will change the selected item, but the input field remains focused. `<Enter>` starts the selected app and exits `waft-launcher`. Clicking an app starts it and exits `waft-launcher`. The list of apps will display icon and name.
 
----
-
-# `waft-overview` Bluetooth paired label
-
-When no devices are connected to a bluetooth adatper, it displays label "{n} paired". There should be no label when all devices are disconnected.
-
-# `waft-settings` Keyboard layout options
-
-Must be able to configure keyboard layout options. For example cz QWERTY.
-
-# `waft-settings` Bluetooth search button
-
-Should be in the header of "available devices" on the right side.
-
-# `waft-settings` More granular search
-
-Currently search finds and focuses more-or-less sections. It is good. But we need to do better. We should make every field in the `waft-settings`, that is provided by the UI (this includes disabled fields) also findable. When it is findable, it must be focusable.
-
-# `waft-settings` Wallpaper settings
-
-Create `waft-plugin-swww` that allows managing wallpapers using `swww`. Take the script `~/.config/niri/wallpaper-rotate.sh` as a base of logic. The plugin should provide `waft-settings` methods to change the wallpaper, set the random wallpaper, configure the wallpaper directory, configure transition fps, angle, duration and type. I think a good name for such entity is `WallpaperManager`. It should provide an option to select wallpaper per monitor or to keep it in sync. Default wallpaper folder is `~/.config/waft/wallpapers`, but it can be changed. Put this under visual section of settings
-
 # `waft-overview` Audio slider even now still does not work
 
-The audio sliders now move when dragging. That is good. The slider is not being overriden by backend value during the drag, that is also good. The slider was supposed to send the value to the backend during the drag immediately.
+This is the fifth iteration. The audio slider lags, making it unusable
 
-# App integration
+- The audio sliders now move when dragging. That is good.
+- The slider was sends the value to the backend during the drag immediately.
+- The slider value is being overriden by backend value during the drag, that is bad.
 
-Introduce entity `WaftSettings`. This entity is going to be provided by a new `waft-plugin-internal-apps`. The entity will be provided only if the binary `waft-settings` is available and executable in the `$PATH`. It will provide two methods:
+It looks like we have regressed and now the slider is unusable. There should be two modes: idle and dragging.
 
-- `open` - Opens waft settings as usual
-- `openPage` - Opens waft settings on a specific page
+## Idle slider
 
-Each waft settings page must have static identificator assigned.
+When it is idle (not dragging), the slider immediately reactively displays the value that comes from the backend (for example audio plugin). Every new value.
 
-## `waft-overview` settings integration
+## Dragging slider
 
-There should be a general settings button in the header, right of the keyboard layout button. It should be visible only if the `WaftSettings` entity is available.
+When it is dragging (not idle), the slider respects the value provided by the user and completely ignores value provided by the backend. The dragging starts with user mousedown event on the drag ball and ends with user releasing the dragball.
 
-### Wired settings button
+---
 
-The wired feature toggle menu should have "Settings" button that opens waft-settings on the wired page using the WaftSettings entity method openPage. The menu will be available even if wired connection is disconnected.
+# `waft-settings` Wallpaper modes
 
-### Bluetooth settings button
+Wallpaper manager will have three modes to work with:
 
-The bluetooth feature toggle menu should have "Settings" button that opens waft-settings on the bluetooth page using the WaftSettings entity method openPage. The menu will be available even if bluetooth adapter is off.
+## Static mode
 
-# Network manager plugin: wireguard
+Static mode is simple: Select a wallpaper, the wallpaper gets stored in the main wallpaper folder and you are done.
 
-The VPN list now correctly shows the wireguard VPN connections. However, connecting it does not seem to work. This may be because of the fact that wireguard connections are triggered differently to wireguard. The Vpn entity in the protocol may have to be extended to also include "type": "vpn | wireguard".
+## Style tracking mode
 
-# `waft-overview` VPN feature toggle menu icons
+There is a folder `dark` and `light` in the configured wallpaper folder. Whenever a `dark-mode` entity changes, the wallpaper rotates to match the mode. When no matching wallpaper is found, it is a noop. The wallpaper plugin listens for the `dark-mode` entity. This mode is unavailable when nothing provides the `dark-mode` entitty
 
-- Regular VPN must display VPN icon
-- Wireguard networks must display wireguard icon
+## Day tracking mode
 
-# `waft` logging too verbose
+There are folders matching parts of the day. Whenever current day progresses to the next part, wallpaper is rotated and a random one is picked from one of following directories localed in the configured wallpaper directory. When no matching wallpaper is found, it is a noop.
 
-Revise the logged messages in waft to see if all of them are really needed to be at `info` level. What is not helpful on info may be moved to `debug` or `trace` level.
+- `early-morning` approx. 4:30 - 7:30
+- `morning` approx 7:30 – 12:00
+- `afternoon` 12:00 - 17:00
+- `evening` 17:00 - 21:00
+- `night` 21:00 - 1:00
+- `midnight-oil` - 1:00 - 4:30
 
-# `waft-settings` Audio
+---
 
-Audio settings that include managing input / output devices and their settings as `pavucontrol` does.
+# `waft-plugin-audio` device type
+
+Propagate audio card type through the protocol. The `AudioCard` will provide `bus = device.bus` and `device_type = device.form_factor` of the pulse audio device. AudioDevice will also provide the `device_type`. This should replace the `AudioDevice.icon` and `AudioDevice.connection_icon`. The icon decisions will be done in the `waft-ui-gtk`, we will have `AudioDeviceIcon` and `AudioConnectionIcon` components, that resolve the icon based on `direction=input/output`, `connection_type`, `device_type`.
+
+## Example: Webcam
+
+Card has `device.form_factor = webcam` -> device type is `webcam` AND `device.bus = usb`.
+`AudioDevice` will provide:
+
+- `connection_type = usb`.
+- `device_type = webcam`.
+
+## Example: Bluetooth headset
+
+Card has `form_factor = headset` -> device type is `headset` AND Card has `device.bus = bluetooth`
+
+- `connection_type = bluetooth`.
+- `device_type = headset`.
+
+## Example: PCI Card
+
+Card has `form_factor = NULL` AND Card has `device.bus = pci`.
+
+Both the `AudioCard` and `AudioDevice` entities provide:
+
+- `device_type = card`.
+
+The `AudioDevice` entities are derived from port type
+
+Port type = Line -> `connection_type = jack`.
+Port type = Headphones -> `connection_type = jack`.
