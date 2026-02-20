@@ -274,6 +274,7 @@ pub async fn monitor_nm_signals(
                 {
                     let mut changed = false;
                     let mut refresh_ip_for_device: Option<String> = None;
+                    let mut refresh_ssid_for: Option<String> = None;
                     let mut clear_ip = false;
 
                     {
@@ -321,8 +322,9 @@ pub async fn monitor_nm_signals(
                                 adapter.active_ssid = None;
                                 changed = true;
                             }
-                            // If device becomes activated, mark as changed (scan will update SSID)
+                            // If device becomes activated, schedule SSID refresh
                             if new_state == 100 && adapter.active_ssid.is_none() {
+                                refresh_ssid_for = Some(adapter.path.clone());
                                 changed = true;
                             }
                         }
@@ -407,6 +409,28 @@ pub async fn monitor_nm_signals(
                                 }
                             };
                             st.public_ip = None;
+                        }
+                    }
+
+                    // Populate active_ssid when WiFi device reaches activated state
+                    if let Some(device_path) = refresh_ssid_for {
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        if let Some(ssid) =
+                            crate::wifi::get_active_ssid(&conn, &device_path).await
+                        {
+                            let mut st = match state.lock() {
+                                Ok(g) => g,
+                                Err(e) => {
+                                    warn!("[nm] Mutex poisoned, recovering: {e}");
+                                    e.into_inner()
+                                }
+                            };
+                            if let Some(adapter) =
+                                st.wifi_adapters.iter_mut().find(|a| a.path == device_path)
+                            {
+                                adapter.active_ssid = Some(ssid);
+                            }
+                            notifier.notify();
                         }
                     }
 

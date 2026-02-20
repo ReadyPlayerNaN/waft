@@ -7,7 +7,7 @@ use waft_plugin::EntityNotifier;
 use zbus::Connection;
 
 use crate::state::NmState;
-use crate::wifi::scan_and_list_known_networks;
+use crate::wifi::scan_wifi_networks;
 
 fn lock_state(state: &StdMutex<NmState>) -> std::sync::MutexGuard<'_, NmState> {
     match state.lock() {
@@ -40,7 +40,7 @@ pub async fn wifi_scan_task(
         };
         notifier.notify();
 
-        match scan_and_list_known_networks(&conn, &adapter_paths).await {
+        match scan_wifi_networks(&conn, &adapter_paths).await {
             Ok(networks) => {
                 info!("[nm] WiFi scan found {} known networks", networks.len());
                 let mut st = lock_state(&state);

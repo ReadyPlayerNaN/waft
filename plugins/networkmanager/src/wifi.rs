@@ -14,11 +14,39 @@ use crate::dbus_property::{
 };
 use crate::state::AccessPointInfo;
 
-/// Scan WiFi networks and list known ones via D-Bus.
+/// Return the SSID of the currently active access point for a wireless device,
+/// or None if the device has no active AP (path is "/" or D-Bus call fails).
+pub async fn get_active_ssid(conn: &Connection, device_path: &str) -> Option<String> {
+    use crate::dbus_property::get_property;
+
+    let ap_path: zbus::zvariant::OwnedObjectPath =
+        get_property(conn, device_path, NM_WIRELESS_INTERFACE, "ActiveAccessPoint")
+            .await
+            .ok()?;
+
+    if ap_path.as_str() == "/" {
+        return None;
+    }
+
+    let ssid_bytes: Vec<u8> = get_property(
+        conn,
+        ap_path.as_str(),
+        "org.freedesktop.NetworkManager.AccessPoint",
+        "Ssid",
+    )
+    .await
+    .ok()?;
+
+    let ssid = String::from_utf8_lossy(&ssid_bytes).to_string();
+    if ssid.is_empty() { None } else { Some(ssid) }
+}
+
+/// Scan WiFi networks and list all visible ones via D-Bus.
 ///
 /// Calls `RequestScan` on each adapter, waits for results, then reads access points
-/// via `GetAllAccessPoints`. Only returns networks with saved connection profiles.
-pub async fn scan_and_list_known_networks(
+/// via `GetAllAccessPoints`. Each network is marked with `known: true` if it has
+/// a saved connection profile.
+pub async fn scan_wifi_networks(
     conn: &Connection,
     adapter_paths: &[String],
 ) -> Result<Vec<AccessPointInfo>> {
@@ -98,14 +126,10 @@ pub async fn scan_and_list_known_networks(
                 continue;
             }
 
-            // Only include networks with saved connection profiles
-            match get_connections_for_ssid(conn, &ap.ssid).await {
-                Ok(connections) if !connections.is_empty() => {}
-                _ => {
-                    debug!("[nm] Skipping network {} (no saved profile)", ap.ssid);
-                    continue;
-                }
-            }
+            let known = matches!(
+                get_connections_for_ssid(conn, &ap.ssid).await,
+                Ok(c) if !c.is_empty()
+            );
 
             let secure = ap.is_secure();
 
@@ -118,6 +142,7 @@ pub async fn scan_and_list_known_networks(
                             ssid: ap.ssid,
                             strength: ap.strength,
                             secure,
+                            known,
                         },
                     );
                 }

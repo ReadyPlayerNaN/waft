@@ -27,6 +27,7 @@ pub struct AccessPointInfo {
     pub ssid: String,
     pub strength: u8,
     pub secure: bool,
+    pub known: bool,
 }
 
 /// Per-adapter WiFi state.
