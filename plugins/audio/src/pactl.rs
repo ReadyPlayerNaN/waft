@@ -48,6 +48,7 @@ pub struct SinkInfo {
     pub bus: Option<String>,
     pub node_nick: Option<String>,
     pub device_id: Option<String>,
+    pub form_factor: Option<String>,
     pub active_port: Option<String>,
     pub active_port_available: Option<bool>,
     /// Parsed ports with name, description, and availability.
@@ -66,6 +67,7 @@ pub struct SourceInfo {
     pub bus: Option<String>,
     pub node_nick: Option<String>,
     pub device_id: Option<String>,
+    pub form_factor: Option<String>,
     pub active_port: Option<String>,
     pub active_port_available: Option<bool>,
     /// Parsed ports with name, description, and availability.
@@ -79,6 +81,7 @@ pub struct CardInfo {
     pub description: String,
     pub icon_name: Option<String>,
     pub bus: Option<String>,
+    pub form_factor: Option<String>,
     pub profiles: Vec<CardProfile>,
     pub active_profile: String,
 }
@@ -591,6 +594,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
     let mut current_bus: Option<String> = None;
     let mut current_node_nick: Option<String> = None;
     let mut current_device_id: Option<String> = None;
+    let mut current_form_factor: Option<String> = None;
     let mut current_active_port: Option<String> = None;
     let mut current_ports_lines: Vec<String> = Vec::new();
     let mut section = ParseSection::Top;
@@ -603,6 +607,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
                      bus: Option<String>,
                      node_nick: Option<String>,
                      device_id: Option<String>,
+                     form_factor: Option<String>,
                      active_port: Option<String>,
                      ports_lines: &[String],
                      sinks: &mut Vec<SinkInfo>| {
@@ -620,6 +625,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
             bus,
             node_nick,
             device_id,
+            form_factor,
             active_port,
             active_port_available,
             ports,
@@ -641,6 +647,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
                     current_bus.take(),
                     current_node_nick.take(),
                     current_device_id.take(),
+                    current_form_factor.take(),
                     current_active_port.take(),
                     &current_ports_lines,
                     &mut sinks,
@@ -652,6 +659,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
             current_bus = None;
             current_node_nick = None;
             current_device_id = None;
+            current_form_factor = None;
             current_active_port = None;
             current_ports_lines.clear();
             section = ParseSection::Top;
@@ -677,6 +685,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
                     "device.bus" => current_bus = Some(value.to_string()),
                     "node.nick" => current_node_nick = Some(value.to_string()),
                     "device.id" => current_device_id = Some(value.to_string()),
+                    "device.form_factor" => current_form_factor = Some(value.to_string()),
                     _ => {}
                 }
             }
@@ -718,6 +727,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
             current_bus,
             current_node_nick,
             current_device_id,
+            current_form_factor,
             current_active_port,
             &current_ports_lines,
             &mut sinks,
@@ -737,6 +747,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
     let mut current_bus: Option<String> = None;
     let mut current_node_nick: Option<String> = None;
     let mut current_device_id: Option<String> = None;
+    let mut current_form_factor: Option<String> = None;
     let mut current_active_port: Option<String> = None;
     let mut current_ports_lines: Vec<String> = Vec::new();
     let mut section = ParseSection::Top;
@@ -749,6 +760,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
                        bus: Option<String>,
                        node_nick: Option<String>,
                        device_id: Option<String>,
+                       form_factor: Option<String>,
                        active_port: Option<String>,
                        ports_lines: &[String],
                        sources: &mut Vec<SourceInfo>| {
@@ -769,6 +781,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
             bus,
             node_nick,
             device_id,
+            form_factor,
             active_port,
             active_port_available,
             ports,
@@ -790,6 +803,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
                     current_bus.take(),
                     current_node_nick.take(),
                     current_device_id.take(),
+                    current_form_factor.take(),
                     current_active_port.take(),
                     &current_ports_lines,
                     &mut sources,
@@ -801,6 +815,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
             current_bus = None;
             current_node_nick = None;
             current_device_id = None;
+            current_form_factor = None;
             current_active_port = None;
             current_ports_lines.clear();
             section = ParseSection::Top;
@@ -825,6 +840,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
                     "device.bus" => current_bus = Some(value.to_string()),
                     "node.nick" => current_node_nick = Some(value.to_string()),
                     "device.id" => current_device_id = Some(value.to_string()),
+                    "device.form_factor" => current_form_factor = Some(value.to_string()),
                     _ => {}
                 }
             }
@@ -865,6 +881,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
             current_bus,
             current_node_nick,
             current_device_id,
+            current_form_factor,
             current_active_port,
             &current_ports_lines,
             &mut sources,
@@ -994,6 +1011,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
     let mut current_description: Option<String> = None;
     let mut current_icon_name: Option<String> = None;
     let mut current_bus: Option<String> = None;
+    let mut current_form_factor: Option<String> = None;
     let mut current_profiles: Vec<CardProfile> = Vec::new();
     let mut current_active_profile: Option<String> = None;
     let mut section = ParseSection::Top;
@@ -1002,6 +1020,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
                      description: String,
                      icon_name: Option<String>,
                      bus: Option<String>,
+                     form_factor: Option<String>,
                      profiles: Vec<CardProfile>,
                      active_profile: String,
                      cards: &mut Vec<CardInfo>| {
@@ -1010,6 +1029,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
             description,
             icon_name,
             bus,
+            form_factor,
             profiles,
             active_profile,
         });
@@ -1026,6 +1046,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
                     desc,
                     current_icon_name.take(),
                     current_bus.take(),
+                    current_form_factor.take(),
                     std::mem::take(&mut current_profiles),
                     current_active_profile.take().unwrap_or_default(),
                     &mut cards,
@@ -1033,6 +1054,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
             }
             current_icon_name = None;
             current_bus = None;
+            current_form_factor = None;
             current_profiles.clear();
             current_active_profile = None;
             section = ParseSection::Top;
@@ -1055,6 +1077,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
                 match key {
                     "device.icon_name" => current_icon_name = Some(value.to_string()),
                     "device.bus" => current_bus = Some(value.to_string()),
+                    "device.form_factor" => current_form_factor = Some(value.to_string()),
                     "device.description" => {
                         current_description = Some(value.to_string());
                     }
@@ -1121,6 +1144,7 @@ pub fn parse_cards(output: &str) -> Vec<CardInfo> {
             desc,
             current_icon_name,
             current_bus,
+            current_form_factor,
             current_profiles,
             current_active_profile.unwrap_or_default(),
             &mut cards,

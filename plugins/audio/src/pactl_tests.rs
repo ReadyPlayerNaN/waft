@@ -343,6 +343,7 @@ fn test_audio_device_from_sink() {
         bus: Some("pci".to_string()),
         node_nick: Some("Speakers".to_string()),
         device_id: None,
+        form_factor: None,
         active_port: None,
         active_port_available: None,
         ports: vec![],
@@ -368,6 +369,7 @@ fn test_audio_device_from_source() {
         bus: None,
         node_nick: None,
         device_id: None,
+        form_factor: None,
         active_port: None,
         active_port_available: None,
         ports: vec![],
@@ -771,6 +773,25 @@ fn test_parse_cards_extracts_profiles() {
 fn test_parse_cards_empty_output() {
     let cards = parse_cards("");
     assert!(cards.is_empty());
+}
+
+#[test]
+fn test_parse_sinks_extracts_form_factor() {
+    let input = "\
+Sink #0
+\tName: alsa_output.bt_headset
+\tDescription: WH-1000XM4
+\tMute: no
+\tVolume: front-left: 65536 / 100%
+\tProperties:
+\t\tdevice.bus = \"bluetooth\"
+\t\tdevice.form_factor = \"headset\"
+\tPorts:
+\tActive Port: (none)
+";
+    let sinks = super::parse_sinks(input, None).unwrap();
+    assert_eq!(sinks[0].form_factor, Some("headset".to_string()));
+    assert_eq!(sinks[0].bus, Some("bluetooth".to_string()));
 }
 
 #[test]
