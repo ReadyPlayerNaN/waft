@@ -19,79 +19,25 @@ Consider having the SNI tray in the waft overview.
 
 Create app `waft-launcher`. The app will have a single window on the gtk layer shell. On start it will focus an input field. Upon search, the app will search available applications. It will have keyboard navigation - using arrows up and down will change the selected item, but the input field remains focused. `<Enter>` starts the selected app and exits `waft-launcher`. Clicking an app starts it and exits `waft-launcher`. The list of apps will display icon and name.
 
-# `waft-overview` Audio slider even now still does not work
-
-This is the fifth iteration. The audio slider lags, making it unusable
-
-- The audio sliders now move when dragging. That is good.
-- The slider was sends the value to the backend during the drag immediately.
-- The slider value is being overriden by backend value during the drag, that is bad.
-
-It looks like we have regressed and now the slider is unusable. There should be two modes: idle and dragging.
-
-## Idle slider
-
-When it is idle (not dragging), the slider immediately reactively displays the value that comes from the backend (for example audio plugin). Every new value.
-
-## Dragging slider
-
-When it is dragging (not idle), the slider respects the value provided by the user and completely ignores value provided by the backend. The dragging starts with user mousedown event on the drag ball and ends with user releasing the dragball.
-
 ---
 
-# `waft-settings` Wallpaper modes
+# `waft-toasts` timeout dismisses notifications
 
-Wallpaper manager will have three modes to work with:
+It seems that notifications that time out in `waft-toasts` also trigger dismiss. This should not be. The `waft-toasts`. The notification arrives to `waft-toasts` either with ttl or without ttl.
 
-## Static mode
+## With TTL
 
-Static mode is simple: Select a wallpaper, the wallpaper gets stored in the main wallpaper folder and you are done.
+This is the timeout given by the sender of the notification and it is binding. When we receive notification with TTL, we must honor the TTL and let the notification disappear on its own and mark it as timed out. These must be given higher priority than the notifications without TTL (while also considering urgency).
 
-## Style tracking mode
+Normal urgency with TTL > Normal urgency without TTL
+Urgent with TTL > Urgent without TTL
 
-There is a folder `dark` and `light` in the configured wallpaper folder. Whenever a `dark-mode` entity changes, the wallpaper rotates to match the mode. When no matching wallpaper is found, it is a noop. The wallpaper plugin listens for the `dark-mode` entity. This mode is unavailable when nothing provides the `dark-mode` entitty
+## Without TTL
 
-## Day tracking mode
+Notifications that arrive without TTL are supposed to behave under `waft-toasts` terms. The app stores them in memory. When they are displayed, they should be visible as toasts only for a limited time. When they time out, the toasts disappear, but the notification is supposed to remain accessible from other apps. The only acceptable scenario when a toast times out and it is removed is that no other app wants it.
 
-There are folders matching parts of the day. Whenever current day progresses to the next part, wallpaper is rotated and a random one is picked from one of following directories localed in the configured wallpaper directory. When no matching wallpaper is found, it is a noop.
+## No other app wants it
 
-- `early-morning` approx. 4:30 - 7:30
-- `morning` approx 7:30 – 12:00
-- `afternoon` 12:00 - 17:00
-- `evening` 17:00 - 21:00
-- `night` 21:00 - 1:00
-- `midnight-oil` - 1:00 - 4:30
+There needs to be a special Notification entity method to confirm this. Something like "release". The query is sent to the `waft-plugin-notifications`. The plugin daemon sends a message via a new entity `EntityClaim(entity="Notification", ident={notification_id})` carrying the notification ID. When `waft-overview` receives it and it has the notification in its store, it responds with using `EntityClaim.claim`. If it does not have it in memory, it responds with the method `EntityClaim.pass`. This is what we would do to avoid memory leaks (`waft-toasts` does not know if it can afford to release it without loosing other apps data.
 
----
 
-# `waft-plugin-audio` device type
-
-Propagate audio card type through the protocol. The `AudioCard` will provide `bus = device.bus` and `device_type = device.form_factor` of the pulse audio device. AudioDevice will also provide the `device_type`. This should replace the `AudioDevice.icon` and `AudioDevice.connection_icon`. The icon decisions will be done in the `waft-ui-gtk`, we will have `AudioDeviceIcon` and `AudioConnectionIcon` components, that resolve the icon based on `direction=input/output`, `connection_type`, `device_type`.
-
-## Example: Webcam
-
-Card has `device.form_factor = webcam` -> device type is `webcam` AND `device.bus = usb`.
-`AudioDevice` will provide:
-
-- `connection_type = usb`.
-- `device_type = webcam`.
-
-## Example: Bluetooth headset
-
-Card has `form_factor = headset` -> device type is `headset` AND Card has `device.bus = bluetooth`
-
-- `connection_type = bluetooth`.
-- `device_type = headset`.
-
-## Example: PCI Card
-
-Card has `form_factor = NULL` AND Card has `device.bus = pci`.
-
-Both the `AudioCard` and `AudioDevice` entities provide:
-
-- `device_type = card`.
-
-The `AudioDevice` entities are derived from port type
-
-Port type = Line -> `connection_type = jack`.
-Port type = Headphones -> `connection_type = jack`.
