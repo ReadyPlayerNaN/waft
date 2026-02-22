@@ -42,6 +42,7 @@ waft protocol --entity-type clock  # Show single entity type (verbose)
 - **specs/** - Detailed capability specifications
 
 **Active OpenSpec Changes (10+ archived specs):**
+
 - Display brightness plugin control with brightnessctl/ddcutil backends
 - VPN network support and toggle
 - WiFi and Ethernet network management
@@ -54,6 +55,7 @@ waft protocol --entity-type clock  # Show single entity type (verbose)
 - Notification store reducer pattern
 
 When implementing features:
+
 1. Check `openspec/` for existing specifications
 2. Review related `proposal.md` and `design.md` for context
 3. Follow tasks outlined in `tasks.md`
@@ -92,25 +94,25 @@ When implementing features:
 
 All 15 plugins are standalone daemon binaries implementing the `Plugin` trait from `waft-plugin`. They provide domain entities to the central daemon, which routes updates to subscribed apps.
 
-| Plugin | Entity Types | Purpose |
-|--------|-------------|---------|
-| **clock** | `clock` | Current time and date with locale support |
-| **darkman** | `dark-mode` | Dark mode toggle via darkman D-Bus |
-| **caffeine** | `sleep-inhibitor` | Prevent sleep/screensaver (Portal/ScreenSaver) |
-| **battery** | `battery` | Battery percentage, health, charging (UPower D-Bus) |
-| **brightness** | `display` | Display brightness (brightnessctl/ddcutil) |
-| **keyboard-layout** | `keyboard-layout` | Input method display/switch (Niri/Sway/Hyprland/localed) |
-| **systemd-actions** | `session` | Lock, logout, reboot, shutdown, suspend via systemd login1 |
-| **bluez** | `bluetooth-adapter`, `bluetooth-device` | Bluetooth device management (BlueZ D-Bus) |
-| **audio** | `audio-device` | Volume sliders, device selection (pactl) |
-| **networkmanager** | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn` | WiFi/Ethernet/VPN management (nmrs + zbus) |
-| **weather** | `weather` | Weather information via HTTP API |
-| **notifications** | `notification`, `dnd`, `notification-group`, `notification-profile`, `active-profile`, `sound-config`, `notification-sound` | D-Bus notification server, toasts, DND, filtering, sound management |
-| **eds** | `calendar-event` | EDS calendar integration |
-| **sunsetr** | `night-light` | Night light control via sunsetr CLI |
-| **syncthing** | `backup-method` | Syncthing service toggle |
+| Plugin              | Entity Types                                                                                                                | Purpose                                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **clock**           | `clock`                                                                                                                     | Current time and date with locale support                           |
+| **darkman**         | `dark-mode`                                                                                                                 | Dark mode toggle via darkman D-Bus                                  |
+| **caffeine**        | `sleep-inhibitor`                                                                                                           | Prevent sleep/screensaver (Portal/ScreenSaver)                      |
+| **battery**         | `battery`                                                                                                                   | Battery percentage, health, charging (UPower D-Bus)                 |
+| **brightness**      | `display`                                                                                                                   | Display brightness (brightnessctl/ddcutil)                          |
+| **keyboard-layout** | `keyboard-layout`                                                                                                           | Input method display/switch (Niri/Sway/Hyprland/localed)            |
+| **systemd-actions** | `session`                                                                                                                   | Lock, logout, reboot, shutdown, suspend via systemd login1          |
+| **bluez**           | `bluetooth-adapter`, `bluetooth-device`                                                                                     | Bluetooth device management (BlueZ D-Bus)                           |
+| **audio**           | `audio-device`                                                                                                              | Volume sliders, device selection (pactl)                            |
+| **networkmanager**  | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn`                                                             | WiFi/Ethernet/VPN management (nmrs + zbus)                          |
+| **weather**         | `weather`                                                                                                                   | Weather information via HTTP API                                    |
+| **notifications**   | `notification`, `dnd`, `notification-group`, `notification-profile`, `active-profile`, `sound-config`, `notification-sound` | D-Bus notification server, toasts, DND, filtering, sound management |
+| **eds**             | `calendar-event`                                                                                                            | EDS calendar integration                                            |
+| **sunsetr**         | `night-light`                                                                                                               | Night light control via sunsetr CLI                                 |
+| **syncthing**       | `backup-method`                                                                                                             | Syncthing service toggle                                            |
 
-Additionally, *session lock detection* is an internal feature in `crates/overview/src/features/session/`.
+Additionally, _session lock detection_ is an internal feature in `crates/overview/src/features/session/`.
 
 ### Entity-Based Architecture
 
@@ -122,6 +124,7 @@ Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK overlay)
 ```
 
 **Central daemon (`waft`):**
+
 - Discovers plugin binaries (`waft-*-daemon`) via `WAFT_DAEMON_DIR` env var or auto-detection (`./target/{debug,release}`, `/usr/bin`)
 - Spawns plugins on demand when an app first subscribes to their entity types
 - Routes entity updates from plugins to subscribed apps, actions from apps to plugins
@@ -132,12 +135,14 @@ Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK overlay)
 - Handles `Describe` requests: returns `PluginDescription` data cached from plugin discovery
 
 **Plugin SDK (`waft-plugin`):**
+
 - `Plugin` trait (Send+Sync): `get_entities()`, `handle_action()`, `can_stop()`, `describe()` (optional)
 - `PluginRuntime` manages socket connection and message handling
 - `EntityNotifier` pushes updates via `notify()`
 - `PluginManifest`: `entity_types`, optional `name`, `description`; extended `provides --describe` returns `PluginDescription`
 
 **Protocol (`waft-protocol`):**
+
 - Entity types organized by domain (e.g. `entity::display::DarkMode`, `entity::audio::AudioDevice`)
 - URN format: `{plugin}/{entity-type}/{id}[/{entity-type}/{id}]*`
 - Messages: `AppMessage` (Subscribe, TriggerAction, Describe), `PluginMessage` (EntityUpdated, EntityRemoved, ActionSuccess/Error), `AppNotification` (DescribeResponse)
@@ -146,12 +151,14 @@ Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK overlay)
 - Transport: 4-byte big-endian length prefix + JSON payload over Unix sockets
 
 **Overview app (`waft-overview`):**
+
 - `WaftClient` connects to `$XDG_RUNTIME_DIR/waft/daemon.sock` with retry + D-Bus activation
 - `EntityRenderer` maps entity types to GTK widgets via `WidgetReconciler`
 - Write path: `std::sync::mpsc` + OS thread (GTK->daemon, bypasses tokio)
 - Read path: tokio task -> flume -> `glib::spawn_future_local`
 
 **Plugin Pattern:**
+
 ```rust
 #[async_trait::async_trait]
 impl Plugin for MyPlugin {
@@ -165,6 +172,7 @@ runtime.run().await?;
 ```
 
 **Main function pattern:**
+
 ```rust
 fn main() -> Result<()> {
     if waft_plugin::manifest::handle_provides(&[ENTITY_TYPE]) { return Ok(()); }
@@ -240,12 +248,14 @@ crates/
 ### Key Architectural Patterns
 
 **Async-First Architecture with Clear Threading Boundaries:**
+
 - **Overview (main thread):** GTK widgets and UI rendering (not `Send`/`Sync`)
 - **Daemon plugins:** Pure tokio, all `Send + Sync`, no GTK dependency
 - **Tokio Runtime:** All async I/O, D-Bus, file operations, background tasks
 - **Channel-based Communication:** flume (executor-agnostic) for tokio <-> glib in overview
 
 **Session Lock Awareness:**
+
 - `on_session_lock()` hook pauses animations and expensive operations when locked
 - Reduces power consumption and visual artifacts during lock screen
 
@@ -296,13 +306,14 @@ mod network_scanner;    // Network scanning functionality
 ```
 
 This rule applies to:
+
 - Module names (`mod foo`)
 - File names (`foo.rs`)
 - Directory names (`src/features/foo/`)
 
 **Boolean field naming: State, not question**
 
-Boolean fields should be named as states/properties, not as questions. Reserve the "is_/has_/can_" prefix for functions/methods that return booleans.
+Boolean fields should be named as states/properties, not as questions. Reserve the "is*/has*/can\_" prefix for functions/methods that return booleans.
 
 ```rust
 // BAD - sounds like a function/question
@@ -325,7 +336,7 @@ impl AudioDevice {
 }
 ```
 
-Rationale: Boolean fields are answers to questions, not questions themselves. The "is_/has_" prefix suggests a method that returns a boolean. Use simple, direct property names for boolean fields.
+Rationale: Boolean fields are answers to questions, not questions themselves. The "is*/has*" prefix suggests a method that returns a boolean. Use simple, direct property names for boolean fields.
 
 ### Icon Usage Rule
 
@@ -386,12 +397,14 @@ entity_store.subscribe_type(EntityType::ENTITY_TYPE, move || {
 ### Threading Model
 
 **Overview (GTK host):**
+
 - GTK widgets are **not** `Send`/`Sync` -- live on main thread only
 - Never mutate GTK from Tokio tasks
 - Use channels or `glib::MainContext::invoke_local` for GTK updates from async code
 - Anything moved into `tokio::spawn(...)` must be `Send`
 
 **Daemon plugins:**
+
 - All `Send + Sync` (enforced by `Plugin` trait)
 - Pure tokio context -- no GTK, no glib
 - Shared state: `Arc<StdMutex<T>>` between plugin struct and monitoring tasks
@@ -406,6 +419,7 @@ Never run tokio-dependent futures inside `glib::spawn_future_local()` -- causes 
 ### Incremental UI Updates (must follow)
 
 For DBus-driven UIs:
+
 - Update only affected widgets, don't rebuild entire trees (causes flicker)
 - Keep stable ordering (don't reorder rows on state changes)
 - Use wake-on-demand invalidate queues for DBus signal bursts
@@ -414,6 +428,7 @@ For DBus-driven UIs:
 ### Layer-Shell Window Dynamic Resizing
 
 Layer-shell windows don't auto-resize when content changes. To trigger resize:
+
 1. Call `window.set_default_size(width, -1)` when content changes (height `-1` = recalculate from content)
 2. For animated content (revealers), trigger resize after animation completes via `revealer.connect_child_revealed_notify()`
 3. Use `idle_add_local_once` to defer resize until after GTK event processing
@@ -435,6 +450,7 @@ To constrain max height, use `ScrolledWindow.set_max_content_height()` -- CSS `m
 ### App Icon Lookup (current limitation)
 
 When no explicit notification icon is provided:
+
 - Try notification app name as themed icon via `gtk::IconTheme::has_icon`
 - Apply normalization (lowercase, whitespace -> `-`, strip punctuation)
 - Fall back to default icon
@@ -656,8 +672,6 @@ let handle = match self.field.as_ref() {
 - `waft-settings` with Bluetooth, WiFi, Wired, Display, Keyboard, Notifications, Sounds, Weather, Plugins pages
 
 **Legacy crates** (`waft-ipc`, parts of `waft-core`) are still in the workspace but being phased out.
-
-**Main Branch:** `relm4` (integration target)
 **Active Branch:** `larger-larger-picture`
 
 ---
