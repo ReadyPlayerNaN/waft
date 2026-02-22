@@ -3,7 +3,7 @@ use std::any::Any;
 use gtk::prelude::*;
 
 use super::component::AnyWidget;
-use super::vnode::VNode;
+use super::vnode::{ComponentDesc, VNode, VNodeKind};
 
 struct ReconcilerEntry {
     component:  Box<dyn AnyWidget>,
@@ -72,35 +72,40 @@ impl Reconciler {
         // 2. Update existing entries and insert new ones.
         // TODO: reorder pre-existing widgets to match new order when required.
         for (key, vnode) in keyed {
+            let desc = match vnode.kind {
+                VNodeKind::Component(desc) => desc,
+                _ => unimplemented!("primitive VNodeKinds handled in next task"),
+            };
+
             match self.children.iter().position(|(k, _)| k == &key) {
                 Some(pos) => {
                     let entry = &mut self.children[pos].1;
 
-                    if entry.type_id != vnode.type_id {
+                    if entry.type_id != desc.type_id {
                         // Type changed: destroy old widget, build new one.
                         self.container.remove(&entry.component.widget());
-                        let component = (vnode.build)();
+                        let component = (desc.build)();
                         self.container.append(&component.widget());
                         self.children[pos].1 = ReconcilerEntry {
-                            last_props: vnode.props,
-                            type_id:    vnode.type_id,
+                            last_props: desc.props,
+                            type_id:    desc.type_id,
                             component,
                         };
-                    } else if !(vnode.props_eq)(&entry.last_props) {
+                    } else if !(desc.props_eq)(&entry.last_props) {
                         // Same type, props changed: update in place.
-                        (vnode.update)(entry.component.as_ref());
-                        entry.last_props = vnode.props;
+                        (desc.update)(entry.component.as_ref());
+                        entry.last_props = desc.props;
                     }
                     // else: same type, same props — nothing to do.
                 }
 
                 None => {
                     // New key: build and append.
-                    let component = (vnode.build)();
+                    let component = (desc.build)();
                     self.container.append(&component.widget());
                     self.children.push((key, ReconcilerEntry {
-                        last_props: vnode.props,
-                        type_id:    vnode.type_id,
+                        last_props: desc.props,
+                        type_id:    desc.type_id,
                         component,
                     }));
                 }
