@@ -114,6 +114,8 @@ impl Plugin for InternalAppsPlugin {
             name: "Settings".to_string(),
             icon: "preferences-system-symbolic".to_string(),
             available: true,
+            keywords: vec![],
+            description: None,
         };
 
         vec![Entity::new(

@@ -11,6 +11,7 @@ use waft_protocol::{AppMessage, AppNotification, PluginCommand, PluginMessage};
 use waft_protocol::entity::plugin::{self as plugin_entity, PluginState, PluginStatus};
 
 use crate::action_tracker::ActionTracker;
+use crate::claim_tracker::{ClaimResolution, ClaimTracker};
 use crate::connection::{ClientKind, Connection, ConnectionError, ReadHalf};
 use crate::crash_tracker::{CrashOutcome, CrashTracker};
 use crate::plugin_discovery::PluginDiscoveryCache;
@@ -48,6 +49,7 @@ pub struct WaftDaemon {
     entity_cache: HashMap<String, CachedEntity>,
     /// Pending CanStop retries: plugin_name -> retry info.
     pending_can_stops: HashMap<String, PendingCanStop>,
+    claim_tracker: ClaimTracker,
     plugin_spawner: PluginSpawner,
     crash_tracker: CrashTracker,
     /// Plugins currently in a graceful CanStop shutdown (not a crash).
@@ -76,6 +78,7 @@ impl WaftDaemon {
             action_tracker: ActionTracker::new(),
             entity_cache: HashMap::new(),
             pending_can_stops: HashMap::new(),
+            claim_tracker: ClaimTracker::new(),
             plugin_spawner,
             crash_tracker: CrashTracker::new(),
             graceful_stops: HashSet::new(),
@@ -85,7 +88,7 @@ impl WaftDaemon {
         })
     }
 
-    /// Compute the next wakeup time: the earliest of action timeout or CanStop retry.
+    /// Compute the next wakeup time: the earliest of action timeout, CanStop retry, or claim deadline.
     fn next_wakeup(&self) -> Option<tokio::time::Instant> {
         let action_deadline = self
             .action_tracker
@@ -94,12 +97,15 @@ impl WaftDaemon {
 
         let can_stop_deadline = self.pending_can_stops.values().map(|p| p.retry_at).min();
 
-        match (action_deadline, can_stop_deadline) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (Some(a), None) => Some(a),
-            (None, Some(b)) => Some(b),
-            (None, None) => None,
-        }
+        let claim_deadline = self
+            .claim_tracker
+            .next_deadline()
+            .map(tokio::time::Instant::from_std);
+
+        [action_deadline, can_stop_deadline, claim_deadline]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     pub async fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -356,6 +362,51 @@ impl WaftDaemon {
                 }
             }
 
+            PluginMessage::ClaimCheck { ref urn, claim_id } => {
+                let entity_type = urn.entity_type().to_string();
+                let subscribers = self.app_registry.subscribers(&entity_type);
+
+                if subscribers.is_empty() {
+                    // No subscribers — immediately resolve as not claimed
+                    debug!("ClaimCheck for {urn}: no subscribers, resolving immediately");
+                    let cmd = PluginCommand::ClaimResult {
+                        urn: urn.clone(),
+                        claim_id,
+                        claimed: false,
+                    };
+                    if let Some(conn) = self.connections.get(&conn_id) {
+                        if let Err(e) = conn.send(&cmd).await {
+                            warn!("failed to send immediate ClaimResult to plugin: {e}");
+                        }
+                    }
+                } else {
+                    // Track the claim and broadcast to all subscribers
+                    self.claim_tracker.start(
+                        claim_id,
+                        urn.clone(),
+                        entity_type.clone(),
+                        conn_id,
+                        subscribers.iter().copied().collect(),
+                    );
+
+                    let notification = AppNotification::ClaimCheck {
+                        urn: urn.clone(),
+                        claim_id,
+                    };
+                    for app_id in &subscribers {
+                        if let Some(conn) = self.connections.get(app_id) {
+                            if let Err(e) = conn.send(&notification).await {
+                                warn!("failed to send ClaimCheck to {app_id}: {e}");
+                            }
+                        }
+                    }
+                    debug!(
+                        "ClaimCheck for {urn}: broadcast to {} subscribers",
+                        subscribers.len()
+                    );
+                }
+            }
+
             PluginMessage::StopResponse { can_stop } => {
                 let plugin_name = self.connections.get(&conn_id).and_then(|c| match &c.kind {
                     ClientKind::Plugin { name } => Some(name.clone()),
@@ -496,6 +547,14 @@ impl WaftDaemon {
                 }
             }
 
+            AppMessage::ClaimResponse { claim_id, claimed } => {
+                if let Some(resolution) =
+                    self.claim_tracker.record_response(claim_id, conn_id, claimed)
+                {
+                    self.send_claim_result(&resolution).await;
+                }
+            }
+
             AppMessage::Describe { plugin_name } => {
                 let plugins: Vec<_> = if let Some(ref name) = plugin_name {
                     self.plugin_spawner
@@ -529,7 +588,7 @@ impl WaftDaemon {
         Ok(())
     }
 
-    /// Check for timed-out actions and notify the requesting apps.
+    /// Check for timed-out actions and claims, and notify the requesting apps/plugins.
     async fn handle_timeouts(&mut self) {
         let timed_out = self.action_tracker.drain_timed_out();
         for action in timed_out {
@@ -545,6 +604,11 @@ impl WaftDaemon {
                     })
                     .await;
             }
+        }
+
+        // Resolve timed-out claims (treat non-respondents as "pass")
+        for resolution in self.claim_tracker.drain_timed_out() {
+            self.send_claim_result(&resolution).await;
         }
     }
 
@@ -569,6 +633,23 @@ impl WaftDaemon {
                         warn!("failed to send CanStop retry to {name}: {e}");
                     }
                 }
+            }
+        }
+    }
+
+    /// Send a ClaimResult back to the originating plugin.
+    async fn send_claim_result(&self, resolution: &ClaimResolution) {
+        let cmd = PluginCommand::ClaimResult {
+            urn: resolution.urn.clone(),
+            claim_id: resolution.claim_id,
+            claimed: resolution.claimed,
+        };
+        if let Some(conn) = self.connections.get(&resolution.plugin_conn_id) {
+            if let Err(e) = conn.send(&cmd).await {
+                warn!(
+                    "failed to send ClaimResult to plugin {}: {e}",
+                    resolution.plugin_conn_id
+                );
             }
         }
     }
@@ -664,6 +745,15 @@ impl WaftDaemon {
             self.pending_can_stops.remove(name.as_str());
         }
 
+        // Cancel any pending claims from this plugin
+        let cancelled = self.claim_tracker.remove_plugin_conn(conn_id);
+        if !cancelled.is_empty() {
+            debug!(
+                "cancelled {} pending claims for disconnected plugin",
+                cancelled.len()
+            );
+        }
+
         self.plugin_registry.remove_connection(conn_id);
 
         // Handle plugin crash detection and restart
@@ -730,6 +820,11 @@ impl WaftDaemon {
         }
 
         self.app_registry.remove_connection(conn_id);
+
+        // Treat disconnecting app as having responded "pass" for all pending claims
+        for resolution in self.claim_tracker.remove_app_conn(conn_id) {
+            self.send_claim_result(&resolution).await;
+        }
 
         // When an app disconnects, check if any plugins now have zero subscribers
         if plugin_name.is_none() {

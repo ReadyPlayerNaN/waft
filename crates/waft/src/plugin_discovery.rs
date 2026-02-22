@@ -42,8 +42,10 @@ struct PluginListEntry {
 
 /// Cached mapping from entity type to plugin binary for on-demand spawning.
 pub struct PluginDiscoveryCache {
-    /// entity_type -> (plugin_name, binary_path)
-    type_to_binary: HashMap<String, (String, PathBuf)>,
+    /// entity_type -> list of (plugin_name, binary_path) providers.
+    /// Multiple plugins may provide the same entity type (e.g. `app` is provided
+    /// by both `internal-apps` and `xdg-apps`), so all of them are stored.
+    type_to_binaries: HashMap<String, Vec<(String, PathBuf)>>,
     /// plugin_name -> PluginDescription (only for plugins that support --describe)
     descriptions: HashMap<String, PluginDescription>,
 }
@@ -59,15 +61,15 @@ impl PluginDiscoveryCache {
         let daemon_dir = detect_daemon_dir();
         let plugins = discover_plugins(&daemon_dir);
 
-        let mut type_to_binary = HashMap::new();
+        let mut type_to_binaries: HashMap<String, Vec<(String, PathBuf)>> = HashMap::new();
         let mut descriptions = HashMap::new();
 
         for plugin in &plugins {
             for entity_type in &plugin.entity_types {
-                type_to_binary.insert(
-                    entity_type.clone(),
-                    (plugin.id.clone(), plugin.binary_path.clone()),
-                );
+                type_to_binaries
+                    .entry(entity_type.clone())
+                    .or_default()
+                    .push((plugin.id.clone(), plugin.binary_path.clone()));
             }
             if let Some(ref desc) = plugin.plugin_description {
                 descriptions.insert(plugin.id.clone(), desc.clone());
@@ -77,21 +79,25 @@ impl PluginDiscoveryCache {
         let desc_count = descriptions.len();
         info!(
             "discovery cache: {} entity types from {} plugins ({desc_count} with descriptions)",
-            type_to_binary.len(),
+            type_to_binaries.len(),
             plugins.len(),
         );
 
         PluginDiscoveryCache {
-            type_to_binary,
+            type_to_binaries,
             descriptions,
         }
     }
 
-    /// Look up which binary provides a given entity type.
-    pub fn binary_for_entity_type(&self, entity_type: &str) -> Option<(&str, &PathBuf)> {
-        self.type_to_binary
+    /// Look up all binaries that provide a given entity type.
+    ///
+    /// Multiple plugins may claim the same entity type; all are returned so the
+    /// spawner can start each of them.
+    pub fn binaries_for_entity_type(&self, entity_type: &str) -> &[(String, PathBuf)] {
+        self.type_to_binaries
             .get(entity_type)
-            .map(|(name, path)| (name.as_str(), path))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Get the cached description for a specific plugin.
@@ -111,11 +117,13 @@ impl PluginDiscoveryCache {
     /// Returns a sorted list of (plugin_name, entity_types) pairs.
     pub fn all_plugins(&self) -> Vec<(String, Vec<String>)> {
         let mut plugins: HashMap<String, Vec<String>> = HashMap::new();
-        for (entity_type, (plugin_name, _)) in &self.type_to_binary {
-            plugins
-                .entry(plugin_name.clone())
-                .or_default()
-                .push(entity_type.clone());
+        for (entity_type, providers) in &self.type_to_binaries {
+            for (plugin_name, _) in providers {
+                plugins
+                    .entry(plugin_name.clone())
+                    .or_default()
+                    .push(entity_type.clone());
+            }
         }
         // Sort entity types within each plugin
         for types in plugins.values_mut() {
@@ -871,7 +879,7 @@ mod tests {
     #[test]
     fn discovery_cache_description_methods() {
         let cache = PluginDiscoveryCache {
-            type_to_binary: HashMap::new(),
+            type_to_binaries: HashMap::new(),
             descriptions: {
                 let mut m = HashMap::new();
                 m.insert(

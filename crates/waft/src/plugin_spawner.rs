@@ -49,22 +49,27 @@ impl PluginSpawner {
             return;
         }
 
-        let (plugin_name, binary_path) =
-            match self.discovery_cache.binary_for_entity_type(entity_type) {
-                Some((name, path)) => (name.to_string(), path.clone()),
-                None => {
-                    debug!("no plugin known for entity type '{entity_type}'");
-                    return;
-                }
-            };
+        let providers: Vec<(String, PathBuf)> = self
+            .discovery_cache
+            .binaries_for_entity_type(entity_type)
+            .iter()
+            .cloned()
+            .collect();
 
-        // Already spawned this plugin (it may provide multiple entity types)
-        if self.spawned.contains_key(&plugin_name) {
+        if providers.is_empty() {
+            debug!("no plugin known for entity type '{entity_type}'");
             self.spawn_attempted.insert(entity_type.to_string());
             return;
         }
 
-        self.spawn_plugin(&plugin_name, &binary_path);
+        for (plugin_name, binary_path) in &providers {
+            // Already spawned this plugin (it may provide multiple entity types)
+            if self.spawned.contains_key(plugin_name) {
+                continue;
+            }
+            self.spawn_plugin(plugin_name, binary_path);
+        }
+
         self.spawn_attempted.insert(entity_type.to_string());
     }
 
@@ -126,11 +131,12 @@ impl PluginSpawner {
     pub fn mark_disconnected(&mut self, plugin_name: &str) {
         self.spawned.remove(plugin_name);
         self.spawn_attempted.retain(|et| {
-            // Clear entity types that belong to this plugin
-            self.discovery_cache
-                .binary_for_entity_type(et)
-                .map(|(name, _)| name != plugin_name)
-                .unwrap_or(true)
+            // Clear entity types that belong to this plugin (may have co-providers)
+            !self
+                .discovery_cache
+                .binaries_for_entity_type(et)
+                .iter()
+                .any(|(name, _)| name == plugin_name)
         });
     }
 
