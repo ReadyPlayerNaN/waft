@@ -38,6 +38,7 @@
 //! }
 //! ```
 
+pub mod claim;
 pub mod config;
 pub mod dbus_monitor;
 pub mod manifest;
@@ -46,6 +47,7 @@ pub mod plugin;
 pub mod runtime;
 pub mod transport;
 
+pub use claim::ClaimSender;
 pub use notifier::EntityNotifier;
 pub use plugin::{Entity, Plugin};
 pub use runtime::{PluginRuntime, daemon_socket_path};

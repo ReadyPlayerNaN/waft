@@ -22,10 +22,17 @@ impl EntityNotifier {
     }
 
     /// Signal that entity state has changed.
-    pub fn notify(&self) {
+    ///
+    /// Returns `true` if the runtime is still running, `false` if it has
+    /// stopped (receiver dropped). Background tasks should break their loop
+    /// when this returns `false`.
+    pub fn notify(&self) -> bool {
         let cur = *self.tx.borrow();
         if self.tx.send(cur.wrapping_add(1)).is_err() {
             log::warn!("[plugin] notifier send failed — runtime may have stopped");
+            false
+        } else {
+            true
         }
     }
 }
@@ -49,9 +56,15 @@ mod tests {
     }
 
     #[test]
-    fn notify_after_receiver_drop_logs_but_no_panic() {
+    fn notify_returns_true_while_runtime_alive() {
+        let (notifier, _rx) = EntityNotifier::new();
+        assert!(notifier.notify());
+    }
+
+    #[test]
+    fn notify_returns_false_after_receiver_drop() {
         let (notifier, rx) = EntityNotifier::new();
         drop(rx);
-        notifier.notify(); // should not panic
+        assert!(!notifier.notify());
     }
 }

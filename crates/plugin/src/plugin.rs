@@ -5,8 +5,11 @@
 //! widget descriptions, `Plugin` returns domain data as entities.
 
 use serde::Serialize;
+use uuid::Uuid;
 use waft_protocol::PluginDescription;
 use waft_protocol::urn::Urn;
+
+use crate::claim::ClaimSender;
 
 /// A domain entity produced by a plugin.
 ///
@@ -85,4 +88,17 @@ pub trait Plugin: Send + Sync {
     fn describe(&self) -> Option<PluginDescription> {
         None
     }
+
+    /// Called by the runtime once before `run()` to give the plugin a claim sender.
+    ///
+    /// Override to store the sender for use in `handle_action`.
+    fn set_claim_sender(&self, _sender: ClaimSender) {}
+
+    /// Called by the runtime when the daemon resolves a ClaimCheck.
+    ///
+    /// `claimed: true` means at least one subscriber still wants the entity -- keep it.
+    /// `claimed: false` means no subscriber wants it -- the plugin should remove it.
+    ///
+    /// Default: no-op (plugin ignores claim results).
+    async fn handle_claim_result(&self, _urn: Urn, _claim_id: Uuid, _claimed: bool) {}
 }

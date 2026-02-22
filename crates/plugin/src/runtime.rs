@@ -71,6 +71,18 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
         let previous: Arc<Mutex<HashMap<String, serde_json::Value>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
+        // Claim check channel: plugin -> runtime.
+        //
+        // We pass a *clone* of the sender to the plugin and retain the original
+        // in this scope. Plugins with a no-op set_claim_sender() drop the
+        // ClaimSender immediately; without this keepalive the channel would
+        // close instantly and claim_rx.recv() would return None on every poll
+        // iteration, causing the select! loop below to busy-spin at 100% CPU.
+        let (claim_tx, mut claim_rx) =
+            tokio::sync::mpsc::channel::<crate::claim::ClaimRequest>(16);
+        self.plugin
+            .set_claim_sender(crate::claim::ClaimSender::new(claim_tx.clone()));
+
         // Send initial entities
         send_all_entities(&*self.plugin, &write_tx, &self.name, &previous).await;
 
@@ -111,6 +123,18 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                                         log::warn!("[{}] failed to send StopResponse: {e}", self.name);
                                     }
                                 }
+                                PluginCommand::ClaimResult { urn, claim_id, claimed } => {
+                                    let ctx = ActionContext {
+                                        plugin: self.plugin.clone(),
+                                        tx: write_tx.clone(),
+                                        name: self.name.clone(),
+                                        previous: previous.clone(),
+                                    };
+                                    tokio::spawn(async move {
+                                        ctx.plugin.handle_claim_result(urn, claim_id, claimed).await;
+                                        send_all_entities(&*ctx.plugin, &ctx.tx, &ctx.name, &ctx.previous).await;
+                                    });
+                                }
                             }
                         }
                         Ok(None) => {
@@ -121,6 +145,22 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                             log::error!("[{}] read error: {e}", self.name);
                             break;
                         }
+                    }
+                }
+
+                // Plugin requested a claim check
+                claim_req = claim_rx.recv() => {
+                    if let Some(req) = claim_req {
+                        let msg = PluginMessage::ClaimCheck {
+                            urn: req.urn,
+                            claim_id: req.claim_id,
+                        };
+                        if write_tx.send(msg).await.is_err() {
+                            log::warn!("[{}] write channel closed sending ClaimCheck", self.name);
+                            break;
+                        }
+                    } else {
+                        log::debug!("[{}] claim channel closed", self.name);
                     }
                 }
             }
@@ -255,6 +295,81 @@ async fn write_loop(
         }
     }
     log::info!("[{name}] write loop exited");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use waft_protocol::urn::Urn;
+
+    use crate::claim::{ClaimRequest, ClaimSender};
+    use crate::plugin::{Entity, Plugin};
+
+    struct NoOpPlugin;
+
+    #[async_trait::async_trait]
+    impl Plugin for NoOpPlugin {
+        fn get_entities(&self) -> Vec<Entity> {
+            vec![]
+        }
+
+        async fn handle_action(
+            &self,
+            _urn: Urn,
+            _action: String,
+            _params: serde_json::Value,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            Ok(())
+        }
+    }
+
+    /// Regression test for the 100% CPU busy-spin caused by a prematurely
+    /// closed claim channel.
+    ///
+    /// The bug: `claim_tx` was moved into `ClaimSender::new(claim_tx)` and
+    /// passed to the plugin. The default no-op `set_claim_sender()` drops it
+    /// immediately, closing the channel. `claim_rx.recv()` then returned `None`
+    /// on every poll. The `else` branch in the `select!` loop logged but did
+    /// not `break`, so the runtime spun at 100% CPU with zero syscalls.
+    ///
+    /// The fix: the runtime passes a clone to the plugin and retains the
+    /// original `claim_tx`, keeping the channel open for the entire duration of
+    /// `run()`. This test verifies that `claim_rx.recv()` properly awaits after
+    /// a no-op `set_claim_sender()` rather than returning `None` immediately.
+    #[tokio::test]
+    async fn claim_channel_stays_open_after_noop_set_claim_sender() {
+        let plugin = Arc::new(NoOpPlugin);
+
+        let (claim_tx, mut claim_rx) = tokio::sync::mpsc::channel::<ClaimRequest>(16);
+
+        // Replicate the fixed pattern from PluginRuntime::run(): pass a clone
+        // to the plugin and retain the original as a keepalive.
+        plugin.set_claim_sender(ClaimSender::new(claim_tx.clone()));
+
+        // NoOpPlugin drops the ClaimSender immediately. The retained claim_tx
+        // must keep the channel open so recv() properly awaits instead of
+        // returning None (which would trigger a busy-spin in the select! loop).
+        let timed_out = tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            claim_rx.recv(),
+        )
+        .await
+        .is_err();
+
+        assert!(
+            timed_out,
+            "claim_rx.recv() returned immediately — channel was closed prematurely; \
+             the keepalive is broken and the runtime would busy-spin"
+        );
+
+        // Dropping the keepalive closes the channel cleanly.
+        drop(claim_tx);
+        assert!(
+            claim_rx.recv().await.is_none(),
+            "channel should be closed after the keepalive is dropped"
+        );
+    }
 }
 
 /// Get the daemon socket path.
