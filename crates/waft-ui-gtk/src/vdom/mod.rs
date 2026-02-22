@@ -7,6 +7,7 @@ mod vnode;
 pub use component::{Component, RenderCallback, RenderFn};
 pub use reconciler::Reconciler;
 pub use render_component::RenderComponent;
+pub use primitives::{VBox, VButton, VLabel, VSwitch};
 pub use vnode::VNode;
 
 #[cfg(test)]
