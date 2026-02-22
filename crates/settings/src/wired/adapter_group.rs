@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::EntityActionCallback;
+use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::t;
 use waft_protocol::Urn;
@@ -17,6 +18,7 @@ use waft_protocol::entity::network::{EthernetConnection, IpInfo};
 use super::connection_row::{ConnectionRowOutput, ConnectionRowProps, WiredConnectionRow};
 
 /// Props for creating or updating a wired adapter group.
+#[derive(Clone, PartialEq)]
 pub struct WiredAdapterGroupProps {
     pub name: String,
     pub connected: bool,
@@ -46,8 +48,11 @@ pub struct WiredAdapterGroup {
     connection_rows: HashMap<String, WiredConnectionRow>,
 }
 
-impl WiredAdapterGroup {
-    pub fn new(props: &WiredAdapterGroupProps) -> Self {
+impl Component for WiredAdapterGroup {
+    type Props = WiredAdapterGroupProps;
+    type Output = WiredAdapterGroupOutput;
+
+    fn build(props: &Self::Props) -> Self {
         let group = adw::PreferencesGroup::builder().title(&props.name).build();
 
         let connected_row = adw::SwitchRow::builder().title(t("wired-connected")).build();
@@ -96,12 +101,11 @@ impl WiredAdapterGroup {
             connection_rows: HashMap::new(),
         };
 
-        adapter.apply_props(props);
+        adapter.update(props);
         adapter
     }
 
-    /// Update the group to reflect new adapter state.
-    pub fn apply_props(&self, props: &WiredAdapterGroupProps) {
+    fn update(&self, props: &Self::Props) {
         *self.updating.borrow_mut() = true;
 
         self.root.set_title(&props.name);
@@ -133,6 +137,16 @@ impl WiredAdapterGroup {
         *self.updating.borrow_mut() = false;
     }
 
+    fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+
+    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
+        *self.output_cb.borrow_mut() = Some(Box::new(callback));
+    }
+}
+
+impl WiredAdapterGroup {
     /// Reconcile connection profile rows with new data.
     ///
     /// Adds, updates, or removes connection rows to match the provided list.
@@ -153,9 +167,9 @@ impl WiredAdapterGroup {
             };
 
             if let Some(existing) = self.connection_rows.get(&urn_str) {
-                existing.apply_props(&props);
+                existing.update(&props);
             } else {
-                let row = WiredConnectionRow::new(&props);
+                let row = WiredConnectionRow::build(&props);
                 let urn_clone = urn.clone();
                 let cb = action_callback.clone();
                 row.connect_output(move |output| {
@@ -186,10 +200,5 @@ impl WiredAdapterGroup {
                 self.root.remove(&row.root);
             }
         }
-    }
-
-    /// Register a callback for adapter group output events.
-    pub fn connect_output<F: Fn(WiredAdapterGroupOutput) + 'static>(&self, callback: F) {
-        *self.output_cb.borrow_mut() = Some(Box::new(callback));
     }
 }

@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+use waft_ui_gtk::vdom::Component;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, EthernetConnection, NetworkAdapter,
@@ -147,9 +148,9 @@ impl WiredPage {
             };
 
             if let Some(existing) = state.adapter_groups.get(&urn_str) {
-                existing.apply_props(&props);
+                existing.update(&props);
             } else {
-                let group = WiredAdapterGroup::new(&props);
+                let group = WiredAdapterGroup::build(&props);
                 let urn_clone = (*urn).clone();
                 let cb = action_callback.clone();
                 group.connect_output(move |output| {

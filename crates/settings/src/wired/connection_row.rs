@@ -8,10 +8,12 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_ui_gtk::icons::IconWidget;
+use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::t;
 
 /// Props for creating or updating a connection row.
+#[derive(Clone, PartialEq)]
 pub struct ConnectionRowProps {
     pub name: String,
     pub active: bool,
@@ -37,8 +39,11 @@ pub struct WiredConnectionRow {
     output_cb: OutputCallback,
 }
 
-impl WiredConnectionRow {
-    pub fn new(props: &ConnectionRowProps) -> Self {
+impl Component for WiredConnectionRow {
+    type Props = ConnectionRowProps;
+    type Output = ConnectionRowOutput;
+
+    fn build(props: &Self::Props) -> Self {
         let check_icon = IconWidget::from_name("object-select-symbolic", 16);
 
         let row = adw::ActionRow::builder().title(&props.name).build();
@@ -74,12 +79,11 @@ impl WiredConnectionRow {
             output_cb,
         };
 
-        connection_row.apply_props(props);
+        connection_row.update(props);
         connection_row
     }
 
-    /// Update the row to reflect new connection state.
-    pub fn apply_props(&self, props: &ConnectionRowProps) {
+    fn update(&self, props: &Self::Props) {
         *self.active.borrow_mut() = props.active;
         self.root.set_title(&props.name);
         self.check_icon.widget().set_visible(props.active);
@@ -93,8 +97,11 @@ impl WiredConnectionRow {
         }
     }
 
-    /// Register a callback for connection row output events.
-    pub fn connect_output<F: Fn(ConnectionRowOutput) + 'static>(&self, callback: F) {
+    fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+
+    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
         *self.output_cb.borrow_mut() = Some(Box::new(callback));
     }
 }

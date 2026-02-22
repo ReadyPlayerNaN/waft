@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::EntityStore;
+use waft_ui_gtk::vdom::Component;
 use waft_protocol::Urn;
 use waft_protocol::entity::plugin::{self, PluginStatus};
 
@@ -133,9 +134,9 @@ impl PluginsPage {
             };
 
             if let Some(existing) = state.plugin_rows.get(&plugin.name) {
-                existing.apply_props(&props);
+                existing.update(&props);
             } else {
-                let row = PluginRow::new(&props);
+                let row = PluginRow::build(&props);
                 // Insert in sorted position
                 let pos = current_names
                     .iter()

@@ -4,8 +4,10 @@
 
 use adw::prelude::*;
 use waft_protocol::entity::plugin::PluginState;
+use waft_ui_gtk::vdom::Component;
 
 /// Input data for constructing or updating a plugin row.
+#[derive(Clone, PartialEq)]
 pub struct PluginRowProps {
     pub name: String,
     pub state: PluginState,
@@ -18,8 +20,11 @@ pub struct PluginRow {
     state_label: gtk::Label,
 }
 
-impl PluginRow {
-    pub fn new(props: &PluginRowProps) -> Self {
+impl Component for PluginRow {
+    type Props = PluginRowProps;
+    type Output = ();
+
+    fn build(props: &Self::Props) -> Self {
         let state_label = gtk::Label::builder()
             .label(props.state.to_string())
             .css_classes(Self::css_classes_for_state(&props.state))
@@ -39,7 +44,7 @@ impl PluginRow {
         }
     }
 
-    pub fn apply_props(&self, props: &PluginRowProps) {
+    fn update(&self, props: &Self::Props) {
         self.root.set_title(&props.name);
         self.root.set_subtitle(&props.entity_types.join(", "));
         self.state_label.set_label(&props.state.to_string());
@@ -53,6 +58,14 @@ impl PluginRow {
         }
     }
 
+    fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+
+    fn connect_output<F: Fn(Self::Output) + 'static>(&self, _callback: F) {}
+}
+
+impl PluginRow {
     fn css_classes_for_state(state: &PluginState) -> Vec<&'static str> {
         match state {
             PluginState::Available => vec!["dim-label"],
