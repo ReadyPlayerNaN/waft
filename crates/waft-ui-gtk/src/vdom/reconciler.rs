@@ -4,7 +4,9 @@ use gtk::glib;
 use gtk::prelude::*;
 
 use super::component::AnyWidget;
-use super::primitives::{VBox, VButton, VLabel, VSwitch};
+use crate::icons::IconWidget;
+
+use super::primitives::{VBox, VButton, VIcon, VLabel, VSpinner, VSwitch};
 use super::vnode::{ComponentDesc, VNode, VNodeKind};
 
 // -- Kind tag -----------------------------------------------------------------
@@ -17,6 +19,8 @@ enum KindTag {
     Box,
     Button,
     Switch,
+    Spinner,
+    Icon,
 }
 
 // -- Live entries -------------------------------------------------------------
@@ -42,26 +46,36 @@ enum ReconcilerEntry {
         widget:     gtk::Switch,
         handler_id: Option<glib::SignalHandlerId>,
     },
+    Spinner {
+        widget: gtk::Spinner,
+    },
+    Icon {
+        widget: IconWidget,
+    },
 }
 
 impl ReconcilerEntry {
     fn widget(&self) -> gtk::Widget {
         match self {
             Self::Component { component, .. } => component.widget(),
-            Self::Label { widget }            => widget.clone().upcast(),
-            Self::Box   { widget, .. }        => widget.clone().upcast(),
-            Self::Button { widget, .. }       => widget.clone().upcast(),
-            Self::Switch { widget, .. }       => widget.clone().upcast(),
+            Self::Label   { widget }          => widget.clone().upcast(),
+            Self::Box     { widget, .. }      => widget.clone().upcast(),
+            Self::Button  { widget, .. }      => widget.clone().upcast(),
+            Self::Switch  { widget, .. }      => widget.clone().upcast(),
+            Self::Spinner { widget }          => widget.clone().upcast(),
+            Self::Icon    { widget }          => widget.widget().clone().upcast(),
         }
     }
 
     fn kind_tag(&self) -> KindTag {
         match self {
             Self::Component { type_id, .. } => KindTag::Component(*type_id),
-            Self::Label  { .. }             => KindTag::Label,
-            Self::Box    { .. }             => KindTag::Box,
-            Self::Button { .. }             => KindTag::Button,
-            Self::Switch { .. }             => KindTag::Switch,
+            Self::Label   { .. }            => KindTag::Label,
+            Self::Box     { .. }            => KindTag::Box,
+            Self::Button  { .. }            => KindTag::Button,
+            Self::Switch  { .. }            => KindTag::Switch,
+            Self::Spinner { .. }            => KindTag::Spinner,
+            Self::Icon    { .. }            => KindTag::Icon,
         }
     }
 }
@@ -161,16 +175,20 @@ fn kind_tag_of(vnode: &VNode) -> KindTag {
         VNodeKind::Box(_)          => KindTag::Box,
         VNodeKind::Button(_)       => KindTag::Button,
         VNodeKind::Switch(_)       => KindTag::Switch,
+        VNodeKind::Spinner(_)      => KindTag::Spinner,
+        VNodeKind::Icon(_)         => KindTag::Icon,
     }
 }
 
 fn build_entry(vnode: VNode) -> ReconcilerEntry {
     match vnode.kind {
-        VNodeKind::Component(desc) => build_component_entry(desc),
-        VNodeKind::Label(vlabel)   => build_label_entry(vlabel),
-        VNodeKind::Box(vbox)       => build_box_entry(vbox),
-        VNodeKind::Button(vbtn)    => build_button_entry(vbtn),
-        VNodeKind::Switch(vsw)     => build_switch_entry(vsw),
+        VNodeKind::Component(desc)  => build_component_entry(desc),
+        VNodeKind::Label(vlabel)    => build_label_entry(vlabel),
+        VNodeKind::Box(vbox)        => build_box_entry(vbox),
+        VNodeKind::Button(vbtn)     => build_button_entry(vbtn),
+        VNodeKind::Switch(vsw)      => build_switch_entry(vsw),
+        VNodeKind::Spinner(vsp)     => build_spinner_entry(vsp),
+        VNodeKind::Icon(vi)         => build_icon_entry(vi),
     }
 }
 
@@ -204,10 +222,25 @@ fn build_button_entry(vbtn: VButton) -> ReconcilerEntry {
     ReconcilerEntry::Button { widget, handler_id }
 }
 
+fn build_icon_entry(vi: VIcon) -> ReconcilerEntry {
+    let widget = IconWidget::new(vi.hints, vi.pixel_size);
+    widget.widget().set_visible(vi.visible);
+    ReconcilerEntry::Icon { widget }
+}
+
+fn build_spinner_entry(vsp: VSpinner) -> ReconcilerEntry {
+    let widget = gtk::Spinner::new();
+    widget.set_spinning(vsp.spinning);
+    widget.set_visible(vsp.visible);
+    ReconcilerEntry::Spinner { widget }
+}
+
 fn build_switch_entry(vsw: VSwitch) -> ReconcilerEntry {
     let widget = gtk::Switch::new();
     widget.set_active(vsw.active);
     widget.set_sensitive(vsw.sensitive);
+    let classes: Vec<&str> = vsw.css_classes.iter().map(|s| s.as_str()).collect();
+    widget.set_css_classes(&classes);
     let handler_id = connect_switch_handler(&widget, &vsw.on_toggle);
     ReconcilerEntry::Switch { widget, handler_id }
 }
@@ -247,7 +280,17 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             // Set active BEFORE reconnecting handler to avoid spurious callbacks.
             widget.set_active(vsw.active);
             widget.set_sensitive(vsw.sensitive);
+            let classes: Vec<&str> = vsw.css_classes.iter().map(|s| s.as_str()).collect();
+            widget.set_css_classes(&classes);
             *handler_id = connect_switch_handler(widget, &vsw.on_toggle);
+        }
+        (ReconcilerEntry::Spinner { widget }, VNodeKind::Spinner(vsp)) => {
+            widget.set_spinning(vsp.spinning);
+            widget.set_visible(vsp.visible);
+        }
+        (ReconcilerEntry::Icon { widget }, VNodeKind::Icon(vi)) => {
+            widget.update_icon(vi.hints);
+            widget.widget().set_visible(vi.visible);
         }
         // Mismatched arms are prevented by kind_tag_of check above; unreachable.
         _ => unreachable!("update_entry called with mismatched entry and VNodeKind"),
@@ -263,11 +306,16 @@ fn apply_label_props(widget: &gtk::Label, vlabel: &VLabel) {
         widget.set_xalign(x);
     }
     widget.set_hexpand(vlabel.hexpand);
+    if let Some(mode) = vlabel.ellipsize {
+        widget.set_ellipsize(mode);
+    }
 }
 
 fn apply_box_props(widget: &gtk::Box, vbox: &VBox) {
     let classes: Vec<&str> = vbox.css_classes.iter().map(|s| s.as_str()).collect();
     widget.set_css_classes(&classes);
+    if let Some(a) = vbox.valign { widget.set_valign(a); }
+    if let Some(a) = vbox.halign { widget.set_halign(a); }
     // orientation and spacing are set at construction and cannot be changed cheaply.
     // If they change, the parent Reconciler rebuilds the entry (kind stays Box,
     // but in practice these fields are always the same for a given slot).

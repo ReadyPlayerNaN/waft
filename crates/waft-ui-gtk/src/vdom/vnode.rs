@@ -2,7 +2,7 @@ use std::any::{Any, TypeId};
 use std::rc::Rc;
 
 use super::component::{AnyWidget, Component};
-use super::primitives::{VBox, VButton, VLabel, VSwitch};
+use super::primitives::{VBox, VButton, VIcon, VLabel, VSpinner, VSwitch};
 
 // -- Component descriptor (what VNode currently stores at the top level) ---
 
@@ -26,6 +26,8 @@ pub(super) enum VNodeKind {
     Box(VBox),
     Button(VButton),
     Switch(VSwitch),
+    Spinner(VSpinner),
+    Icon(VIcon),
 }
 
 // -- VNode --------------------------------------------------------------------
@@ -79,6 +81,16 @@ impl VNode {
     /// Build a `VSwitch` descriptor and wrap it in a `VNode`.
     pub fn switch(v: VSwitch) -> Self {
         Self { key: None, kind: VNodeKind::Switch(v) }
+    }
+
+    /// Build a `VSpinner` descriptor and wrap it in a `VNode`.
+    pub fn spinner(v: VSpinner) -> Self {
+        Self { key: None, kind: VNodeKind::Spinner(v) }
+    }
+
+    /// Build a `VIcon` descriptor and wrap it in a `VNode`.
+    pub fn icon(v: VIcon) -> Self {
+        Self { key: None, kind: VNodeKind::Icon(v) }
     }
 }
 

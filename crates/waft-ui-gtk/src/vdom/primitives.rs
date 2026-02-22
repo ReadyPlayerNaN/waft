@@ -1,11 +1,14 @@
 use std::rc::Rc;
 
+use crate::icons::Icon;
+
 /// Descriptor for a `gtk::Label` primitive VNode.
 pub struct VLabel {
     pub text:        String,
     pub css_classes: Vec<String>,
     pub xalign:      Option<f32>,
     pub hexpand:     bool,
+    pub ellipsize:   Option<gtk::pango::EllipsizeMode>,
 }
 
 impl VLabel {
@@ -15,6 +18,7 @@ impl VLabel {
             css_classes: Vec::new(),
             xalign:      None,
             hexpand:     false,
+            ellipsize:   None,
         }
     }
 
@@ -32,6 +36,11 @@ impl VLabel {
         self.hexpand = v;
         self
     }
+
+    pub fn ellipsize(mut self, mode: gtk::pango::EllipsizeMode) -> Self {
+        self.ellipsize = Some(mode);
+        self
+    }
 }
 
 /// Descriptor for a `gtk::Box` container with child VNodes.
@@ -41,6 +50,8 @@ pub struct VBox {
     pub css_classes: Vec<String>,
     /// Child VNodes. Reconciled by a child `Reconciler` inside the live entry.
     pub children:    Vec<super::VNode>,
+    pub valign:      Option<gtk::Align>,
+    pub halign:      Option<gtk::Align>,
 }
 
 impl VBox {
@@ -50,6 +61,8 @@ impl VBox {
             spacing,
             css_classes: Vec::new(),
             children:    Vec::new(),
+            valign:      None,
+            halign:      None,
         }
     }
 
@@ -59,6 +72,8 @@ impl VBox {
             spacing,
             css_classes: Vec::new(),
             children:    Vec::new(),
+            valign:      None,
+            halign:      None,
         }
     }
 
@@ -69,6 +84,16 @@ impl VBox {
 
     pub fn child(mut self, node: super::VNode) -> Self {
         self.children.push(node);
+        self
+    }
+
+    pub fn valign(mut self, a: gtk::Align) -> Self {
+        self.valign = Some(a);
+        self
+    }
+
+    pub fn halign(mut self, a: gtk::Align) -> Self {
+        self.halign = Some(a);
         self
     }
 }
@@ -97,21 +122,62 @@ impl VButton {
     }
 }
 
+/// Descriptor for an `IconWidget` primitive VNode.
+pub struct VIcon {
+    pub hints:      Vec<Icon>,
+    pub pixel_size: i32,
+    pub visible:    bool,
+}
+
+impl VIcon {
+    pub fn new(hints: Vec<Icon>, pixel_size: i32) -> Self {
+        Self { hints, pixel_size, visible: true }
+    }
+
+    pub fn visible(mut self, v: bool) -> Self {
+        self.visible = v;
+        self
+    }
+}
+
+/// Descriptor for a `gtk::Spinner` primitive VNode.
+pub struct VSpinner {
+    pub spinning: bool,
+    pub visible:  bool,
+}
+
+impl VSpinner {
+    pub fn new(spinning: bool) -> Self {
+        Self { spinning, visible: spinning }
+    }
+
+    pub fn visible(mut self, v: bool) -> Self {
+        self.visible = v;
+        self
+    }
+}
+
 /// Descriptor for a `gtk::Switch` primitive VNode.
 pub struct VSwitch {
-    pub active:    bool,
-    pub sensitive: bool,
+    pub active:      bool,
+    pub sensitive:   bool,
+    pub css_classes: Vec<String>,
     /// Callback reconnected on every update.
-    pub on_toggle: Option<Rc<dyn Fn(bool)>>,
+    pub on_toggle:   Option<Rc<dyn Fn(bool)>>,
 }
 
 impl VSwitch {
     pub fn new(active: bool) -> Self {
-        Self { active, sensitive: true, on_toggle: None }
+        Self { active, sensitive: true, css_classes: Vec::new(), on_toggle: None }
     }
 
     pub fn sensitive(mut self, v: bool) -> Self {
         self.sensitive = v;
+        self
+    }
+
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
         self
     }
 
