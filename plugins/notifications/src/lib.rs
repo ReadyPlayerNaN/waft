@@ -125,6 +125,7 @@ pub struct NotificationsPlugin {
     sound_policy: Arc<StdMutex<sound::policy::SoundPolicy>>,
     sound_gallery: Arc<StdMutex<sound::gallery::SoundGallery>>,
     sound_player: Arc<sound::player::SoundPlayer>,
+    claim_sender: Arc<StdMutex<Option<waft_plugin::ClaimSender>>>,
 }
 
 impl NotificationsPlugin {
@@ -152,6 +153,7 @@ impl NotificationsPlugin {
             sound_policy: Arc::new(StdMutex::new(policy)),
             sound_gallery: Arc::new(StdMutex::new(gallery)),
             sound_player: Arc::new(sound::player::SoundPlayer::new()),
+            claim_sender: Arc::new(StdMutex::new(None)),
         }
     }
 
@@ -346,6 +348,7 @@ impl Plugin for NotificationsPlugin {
                 resident: notif.resident,
                 workspace: notif.workspace.as_ref().map(|w| w.to_string()),
                 suppress_toast: notif.suppress_toast,
+                ttl: notif.ttl,
             };
 
             entities.push(Entity::new(
@@ -534,6 +537,69 @@ impl Plugin for NotificationsPlugin {
                     .is_err()
                 {
                     warn!("[notifications] outbound channel closed on dismiss");
+                }
+            }
+
+            ("notification", "expire") => {
+                let id: u64 = entity_id.parse().map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("invalid notification id: {e}"),
+                    )) as Box<dyn std::error::Error + Send + Sync>
+                })?;
+
+                // Check if notification still exists before initiating claim
+                {
+                    let guard = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            warn!(
+                                "[notifications] mutex poisoned in expire handler, recovering: {e}"
+                            );
+                            e.into_inner()
+                        }
+                    };
+                    if guard.get_notification(&id).is_none() {
+                        debug!(
+                            "[notifications] expire: notification {id} already gone, skip claim"
+                        );
+                        return Ok(());
+                    }
+                }
+
+                // Request claim check -- daemon will ask other subscribers if they still want it
+                let claim_sender = {
+                    match self.claim_sender.lock() {
+                        Ok(g) => g.clone(),
+                        Err(e) => e.into_inner().clone(),
+                    }
+                };
+
+                if let Some(ref sender) = claim_sender {
+                    let _claim_id = sender.request(urn.clone()).await;
+                    info!(
+                        "[notifications] expire: initiated claim check for notification {id}"
+                    );
+                } else {
+                    // No claim sender (runtime not attached), fall back to dismiss
+                    warn!(
+                        "[notifications] expire: no claim sender, falling back to dismiss for {id}"
+                    );
+                    let mut guard = match self.state.lock() {
+                        Ok(g) => g,
+                        Err(e) => e.into_inner(),
+                    };
+                    process_op(&mut guard, NotificationOp::NotificationDismiss(id));
+                    if self
+                        .outbound_tx
+                        .send(OutboundEvent::NotificationClosed {
+                            id: id as u32,
+                            reason: close_reasons::EXPIRED,
+                        })
+                        .is_err()
+                    {
+                        warn!("[notifications] outbound channel closed in expire fallback");
+                    }
                 }
             }
 
@@ -902,6 +968,64 @@ impl Plugin for NotificationsPlugin {
     fn can_stop(&self) -> bool {
         // Must keep running to receive D-Bus notifications
         false
+    }
+
+    fn set_claim_sender(&self, sender: waft_plugin::ClaimSender) {
+        match self.claim_sender.lock() {
+            Ok(mut g) => *g = Some(sender),
+            Err(e) => *e.into_inner() = Some(sender),
+        }
+    }
+
+    async fn handle_claim_result(
+        &self,
+        urn: Urn,
+        _claim_id: uuid::Uuid,
+        claimed: bool,
+    ) {
+        if claimed {
+            debug!("[notifications] ClaimResult: {urn} claimed by a subscriber, keeping");
+            return;
+        }
+
+        // Parse notification ID from URN (format: notifications/notification/{id})
+        let parts: Vec<&str> = urn.as_str().split('/').collect();
+        let id: u64 = match parts.get(2).and_then(|s| s.parse().ok()) {
+            Some(id) => id,
+            None => {
+                warn!(
+                    "[notifications] ClaimResult: cannot parse notification id from {urn}"
+                );
+                return;
+            }
+        };
+
+        info!("[notifications] ClaimResult: {urn} not claimed, removing");
+
+        {
+            let mut guard = match self.state.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    warn!(
+                        "[notifications] mutex poisoned in handle_claim_result, recovering: {e}"
+                    );
+                    e.into_inner()
+                }
+            };
+            process_op(&mut guard, NotificationOp::NotificationDismiss(id));
+        }
+
+        // Emit D-Bus NotificationClosed(EXPIRED) -- reason code 1
+        if self
+            .outbound_tx
+            .send(OutboundEvent::NotificationClosed {
+                id: id as u32,
+                reason: close_reasons::EXPIRED,
+            })
+            .is_err()
+        {
+            warn!("[notifications] outbound channel closed in handle_claim_result");
+        }
     }
 }
 
