@@ -1,93 +1,37 @@
 //! Caffeine (sleep inhibitor) toggle component.
 //!
-//! Subscribes to the `sleep-inhibitor` entity type from the caffeine plugin
-//! and renders a FeatureToggleWidget that prevents the screen from sleeping.
+//! Subscribes to the `sleep-inhibitor` entity type and renders a
+//! FeatureToggleWidget that prevents the screen from sleeping.
 //! Hidden until entity data arrives from the daemon.
 
-use std::cell::Cell;
 use std::rc::Rc;
 
-use waft_protocol::Urn;
-use waft_protocol::entity;
-use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
-
-use crate::layout::types::WidgetFeatureToggle;
+use waft_protocol::{Urn, entity};
 use waft_client::{EntityActionCallback, EntityStore};
 
-/// Toggle for enabling/disabling screen sleep inhibition (caffeine mode).
-///
-/// Reports zero toggles until the first entity arrives, then one toggle.
-pub struct CaffeineToggle {
-    toggle: Rc<FeatureToggleWidget>,
-    available: Rc<Cell<bool>>,
-}
+use super::simple_toggle::{SimpleToggle, SimpleToggleConfig, ToggleUpdate};
 
-impl CaffeineToggle {
-    pub fn new(
-        store: &Rc<EntityStore>,
-        action_callback: &EntityActionCallback,
-        rebuild_callback: Rc<dyn Fn()>,
-    ) -> Self {
-        let available = Rc::new(Cell::new(false));
-
-        let toggle = Rc::new(FeatureToggleWidget::new(
-            FeatureToggleProps {
-                active: false,
-                busy: false,
-                details: None,
-                expandable: false,
-                icon: "changes-allow-symbolic".to_string(),
-                title: crate::i18n::t("caffeine-title"),
-                menu_id: None,
-            },
-            None,
-        ));
-
-        // Connect output to route toggle actions to the daemon
-        let cb = action_callback.clone();
-        toggle.connect_output(move |_output| {
-            let urn = Urn::new("caffeine", "sleep-inhibitor", "default");
-            cb(urn, "toggle".to_string(), serde_json::Value::Null);
-        });
-
-        // Subscribe to entity changes and update the widget
-        let store_ref = store.clone();
-        let toggle_ref = toggle.clone();
-        let available_ref = available.clone();
-        store.subscribe_type(entity::session::SLEEP_INHIBITOR_ENTITY_TYPE, move || {
-            let entities: Vec<(Urn, entity::session::SleepInhibitor)> =
-                store_ref.get_entities_typed(entity::session::SLEEP_INHIBITOR_ENTITY_TYPE);
-
-            let was_available = available_ref.get();
-            let now_available = !entities.is_empty();
-
-            if let Some((_urn, inhibitor)) = entities.first() {
-                toggle_ref.set_active(inhibitor.active);
-                toggle_ref.set_details(if inhibitor.active {
-                    Some(crate::i18n::t("caffeine-active"))
-                } else {
-                    None
-                });
-            }
-
-            if was_available != now_available {
-                available_ref.set(now_available);
-                rebuild_callback();
-            }
-        });
-
-        Self { toggle, available }
-    }
-
-    pub fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
-        if !self.available.get() {
-            return Vec::new();
-        }
-        vec![Rc::new(WidgetFeatureToggle {
-            id: "caffeine-toggle".to_string(),
+pub fn caffeine_toggle(
+    store: &Rc<EntityStore>,
+    action_callback: &EntityActionCallback,
+    rebuild_callback: Rc<dyn Fn()>,
+) -> SimpleToggle {
+    SimpleToggle::new(
+        store,
+        action_callback,
+        rebuild_callback,
+        SimpleToggleConfig {
+            entity_type: entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
+            urn: Urn::new("caffeine", "sleep-inhibitor", "default"),
+            icon: "changes-allow-symbolic",
+            title: crate::i18n::t("caffeine-title"),
+            widget_id: "caffeine-toggle",
             weight: 300,
-            toggle: (*self.toggle).clone(),
-            menu: None,
-        })]
-    }
+            on_update: |i: &entity::session::SleepInhibitor| ToggleUpdate {
+                active: i.active,
+                details: i.active.then(|| crate::i18n::t("caffeine-active")),
+                icon: None,
+            },
+        },
+    )
 }
