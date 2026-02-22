@@ -4,12 +4,11 @@
 //! entity types. On entity changes, reconciles adapter groups and connection lists.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
-use waft_ui_gtk::vdom::Component;
+use waft_ui_gtk::vdom::{Reconciler, VNode};
 use waft_protocol::Urn;
 use waft_protocol::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, EthernetConnection, NetworkAdapter,
@@ -27,8 +26,7 @@ pub struct WiredPage {
 }
 
 struct WiredPageState {
-    adapter_groups: HashMap<String, WiredAdapterGroup>,
-    adapters_box: gtk::Box,
+    adapters_reconciler: Reconciler,
 }
 
 impl WiredPage {
@@ -59,9 +57,10 @@ impl WiredPage {
             idx.add_section("wired", &page_title, &t("wired-ip-address"), "wired-ip-address", &adapters_box);
         }
 
+        let adapters_reconciler = Reconciler::new(adapters_box);
+
         let state = Rc::new(RefCell::new(WiredPageState {
-            adapter_groups: HashMap::new(),
-            adapters_box,
+            adapters_reconciler,
         }));
 
         // Subscribe to adapter changes
@@ -73,11 +72,9 @@ impl WiredPage {
             entity_store.subscribe_type(ADAPTER_ENTITY_TYPE, move || {
                 let adapters: Vec<(Urn, NetworkAdapter)> =
                     store.get_entities_typed(ADAPTER_ENTITY_TYPE);
-                Self::reconcile_adapters(&state, &adapters, &cb);
-                // Also reconcile connections when adapter state changes
                 let connections: Vec<(Urn, EthernetConnection)> =
                     conn_store.get_entities_typed(EthernetConnection::ENTITY_TYPE);
-                Self::reconcile_connections(&state, &connections, &adapters, &cb);
+                Self::reconcile(&state, &adapters, &connections, &cb);
             });
         }
 
@@ -92,7 +89,7 @@ impl WiredPage {
                     store.get_entities_typed(EthernetConnection::ENTITY_TYPE);
                 let adapters: Vec<(Urn, NetworkAdapter)> =
                     adapter_store.get_entities_typed(ADAPTER_ENTITY_TYPE);
-                Self::reconcile_connections(&state, &connections, &adapters, &cb);
+                Self::reconcile(&state, &adapters, &connections, &cb);
             });
         }
 
@@ -114,8 +111,7 @@ impl WiredPage {
                         adapters.len(),
                         connections.len()
                     );
-                    Self::reconcile_adapters(&state_clone, &adapters, &cb_clone);
-                    Self::reconcile_connections(&state_clone, &connections, &adapters, &cb_clone);
+                    Self::reconcile(&state_clone, &adapters, &connections, &cb_clone);
                 }
             });
         }
@@ -123,93 +119,71 @@ impl WiredPage {
         Self { root }
     }
 
-    fn reconcile_adapters(
+    fn reconcile(
         state: &Rc<RefCell<WiredPageState>>,
         adapters: &[(Urn, NetworkAdapter)],
-        action_callback: &EntityActionCallback,
-    ) {
-        let mut state = state.borrow_mut();
-        let mut seen = std::collections::HashSet::new();
-
-        let wired_adapters: Vec<_> = adapters
-            .iter()
-            .filter(|(_, a)| a.kind == AdapterKind::Wired)
-            .collect();
-
-        for (urn, adapter) in &wired_adapters {
-            let urn_str = urn.as_str().to_string();
-            seen.insert(urn_str.clone());
-
-            let props = WiredAdapterGroupProps {
-                name: adapter.name.clone(),
-                connected: adapter.connected,
-                ip: adapter.ip.clone(),
-                public_ip: adapter.public_ip.clone(),
-            };
-
-            if let Some(existing) = state.adapter_groups.get(&urn_str) {
-                existing.update(&props);
-            } else {
-                let group = WiredAdapterGroup::build(&props);
-                let urn_clone = (*urn).clone();
-                let cb = action_callback.clone();
-                group.connect_output(move |output| {
-                    let action = match output {
-                        WiredAdapterGroupOutput::ToggleConnection => {
-                            // Toggle based on current state — the daemon handles the logic
-                            "activate"
-                        }
-                    };
-                    cb(
-                        urn_clone.clone(),
-                        action.to_string(),
-                        serde_json::Value::Null,
-                    );
-                });
-                state.adapters_box.append(&group.root);
-                state.adapter_groups.insert(urn_str, group);
-            }
-        }
-
-        // Remove adapter groups no longer present
-        let to_remove: Vec<String> = state
-            .adapter_groups
-            .keys()
-            .filter(|k| !seen.contains(*k))
-            .cloned()
-            .collect();
-
-        for key in to_remove {
-            if let Some(group) = state.adapter_groups.remove(&key) {
-                state.adapters_box.remove(&group.root);
-            }
-        }
-    }
-
-    fn reconcile_connections(
-        state: &Rc<RefCell<WiredPageState>>,
         connections: &[(Urn, EthernetConnection)],
-        adapters: &[(Urn, NetworkAdapter)],
         action_callback: &EntityActionCallback,
     ) {
         let mut state = state.borrow_mut();
 
-        // Group connections by parent adapter URN
-        // Connection URN format: networkmanager/network-adapter/{adapter}/ethernet-connection/{uuid}
-        // Adapter URN format: networkmanager/network-adapter/{adapter}
-        for (adapter_urn, _adapter) in adapters
-            .iter()
-            .filter(|(_, a)| a.kind == AdapterKind::Wired)
-        {
-            let adapter_urn_str = adapter_urn.as_str();
-            if let Some(group) = state.adapter_groups.get_mut(adapter_urn_str) {
-                let adapter_connections: Vec<(Urn, EthernetConnection)> = connections
-                    .iter()
-                    .filter(|(urn, _)| urn.as_str().starts_with(adapter_urn_str))
-                    .cloned()
-                    .collect();
-                group.reconcile_connections(&adapter_connections, action_callback);
-            }
-        }
+        state.adapters_reconciler.reconcile(
+            adapters
+                .iter()
+                .filter(|(_, a)| a.kind == AdapterKind::Wired)
+                .map(|(urn, adapter)| {
+                    let urn_key    = urn.as_str().to_string();
+                    let urn_clone  = urn.clone();
+                    let cb         = action_callback.clone();
+                    let adapter_urn_str = urn.as_str().to_string();
+
+                    // Collect connection profiles that belong to this adapter.
+                    // Connection URN format:
+                    //   networkmanager/network-adapter/{adapter}/ethernet-connection/{uuid}
+                    // Adapter URN format:
+                    //   networkmanager/network-adapter/{adapter}
+                    let adapter_connections: Vec<(Urn, EthernetConnection)> = connections
+                        .iter()
+                        .filter(|(conn_urn, _)| conn_urn.as_str().starts_with(&adapter_urn_str))
+                        .cloned()
+                        .collect();
+
+                    VNode::with_output::<WiredAdapterGroup>(
+                        WiredAdapterGroupProps {
+                            name:        adapter.name.clone(),
+                            connected:   adapter.connected,
+                            ip:          adapter.ip.clone(),
+                            public_ip:   adapter.public_ip.clone(),
+                            connections: adapter_connections,
+                        },
+                        move |output| {
+                            match output {
+                                WiredAdapterGroupOutput::ToggleConnection => {
+                                    cb(
+                                        urn_clone.clone(),
+                                        "activate".to_string(),
+                                        serde_json::Value::Null,
+                                    );
+                                }
+                                WiredAdapterGroupOutput::ActivateConnection(conn_urn) => {
+                                    cb(
+                                        conn_urn,
+                                        "activate".to_string(),
+                                        serde_json::Value::Null,
+                                    );
+                                }
+                                WiredAdapterGroupOutput::DeactivateConnection(conn_urn) => {
+                                    cb(
+                                        conn_urn,
+                                        "deactivate".to_string(),
+                                        serde_json::Value::Null,
+                                    );
+                                }
+                            }
+                        },
+                    )
+                    .key(urn_key)
+                }),
+        );
     }
 }

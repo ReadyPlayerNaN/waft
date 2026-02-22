@@ -2,18 +2,15 @@
 //!
 //! Dumb widget displaying WiFi adapter controls: enable toggle.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use adw::prelude::*;
-use waft_ui_gtk::vdom::Component;
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
+use waft_ui_gtk::vdom::primitives::{VPreferencesGroup, VSwitchRow};
 
 use crate::i18n::t;
 
 /// Props for creating or updating a WiFi adapter group.
 #[derive(Clone, PartialEq)]
 pub struct WifiAdapterGroupProps {
-    pub name: String,
+    pub name:    String,
     pub enabled: bool,
 }
 
@@ -23,77 +20,39 @@ pub enum WifiAdapterGroupOutput {
     Disable,
 }
 
-/// Callback type for WiFi adapter group output events.
-type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(WifiAdapterGroupOutput)>>>>;
+pub(crate) struct WifiAdapterGroupRender;
 
-/// Per-adapter WiFi preferences group with controls.
-pub struct WifiAdapterGroup {
-    pub root: adw::PreferencesGroup,
-    enabled_row: adw::SwitchRow,
-    enabled: Rc<RefCell<bool>>,
-    /// Guard against feedback loops when programmatically updating switch state.
-    updating: Rc<RefCell<bool>>,
-    output_cb: OutputCallback,
-}
-
-impl Component for WifiAdapterGroup {
-    type Props = WifiAdapterGroupProps;
+impl RenderFn for WifiAdapterGroupRender {
+    type Props  = WifiAdapterGroupProps;
     type Output = WifiAdapterGroupOutput;
 
-    fn build(props: &Self::Props) -> Self {
-        let group = adw::PreferencesGroup::builder().title(&props.name).build();
+    fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
+        let enabled = props.enabled;
 
-        let enabled_row = adw::SwitchRow::builder().title(t("wifi-adapter-enabled")).build();
-        group.add(&enabled_row);
-
-        let enabled = Rc::new(RefCell::new(props.enabled));
-        let updating = Rc::new(RefCell::new(false));
-        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
-
-        // Wire enable toggle
-        let cb = output_cb.clone();
-        let guard = updating.clone();
-        let en = enabled.clone();
-        enabled_row.connect_active_notify(move |_row| {
-            if *guard.borrow() {
-                return;
-            }
-            if let Some(ref callback) = *cb.borrow() {
-                if *en.borrow() {
-                    callback(WifiAdapterGroupOutput::Disable);
-                } else {
-                    callback(WifiAdapterGroupOutput::Enable);
-                }
-            }
-        });
-
-        let adapter = Self {
-            root: group,
-            enabled_row,
-            enabled,
-            updating,
-            output_cb,
-        };
-
-        adapter.update(props);
-        adapter
-    }
-
-    fn update(&self, props: &Self::Props) {
-        *self.updating.borrow_mut() = true;
-        *self.enabled.borrow_mut() = props.enabled;
-
-        self.root.set_title(&props.name);
-        self.enabled_row.set_active(props.enabled);
-
-        *self.updating.borrow_mut() = false;
-    }
-
-    fn widget(&self) -> gtk::Widget {
-        self.root.clone().upcast()
-    }
-
-    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
-        *self.output_cb.borrow_mut() = Some(Box::new(callback));
+        VNode::preferences_group(
+            VPreferencesGroup::new()
+                .title(&props.name)
+                .child(
+                    VNode::switch_row(
+                        VSwitchRow::new(t("wifi-adapter-enabled"), props.enabled)
+                            .on_toggle({
+                                let emit = emit.clone();
+                                move |_active| {
+                                    if let Some(ref cb) = *emit.borrow() {
+                                        let ev = if enabled {
+                                            WifiAdapterGroupOutput::Disable
+                                        } else {
+                                            WifiAdapterGroupOutput::Enable
+                                        };
+                                        cb(ev);
+                                    }
+                                }
+                            }),
+                    )
+                    .key("enabled"),
+                ),
+        )
     }
 }
+
+pub type WifiAdapterGroup = RenderComponent<WifiAdapterGroupRender>;

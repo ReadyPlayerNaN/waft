@@ -3,202 +3,125 @@
 //! Dumb widget displaying wired adapter status, IP information,
 //! and child connection profile rows.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-
-use adw::prelude::*;
-use waft_client::EntityActionCallback;
-use waft_ui_gtk::vdom::Component;
-
-use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::{EthernetConnection, IpInfo};
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
+use waft_ui_gtk::vdom::primitives::{VActionRow, VPreferencesGroup, VSwitchRow};
 
 use super::connection_row::{ConnectionRowOutput, ConnectionRowProps, WiredConnectionRow};
+use crate::i18n::t;
 
 /// Props for creating or updating a wired adapter group.
 #[derive(Clone, PartialEq)]
 pub struct WiredAdapterGroupProps {
-    pub name: String,
-    pub connected: bool,
-    pub ip: Option<IpInfo>,
-    pub public_ip: Option<String>,
+    pub name:        String,
+    pub connected:   bool,
+    pub ip:          Option<IpInfo>,
+    pub public_ip:   Option<String>,
+    pub connections: Vec<(Urn, EthernetConnection)>,
 }
 
 /// Output events from a wired adapter group.
 pub enum WiredAdapterGroupOutput {
     /// Toggle the wired connection on/off.
     ToggleConnection,
+    /// Activate a specific connection profile.
+    ActivateConnection(Urn),
+    /// Deactivate a specific connection profile.
+    DeactivateConnection(Urn),
 }
 
-/// Callback type for adapter group output events.
-type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(WiredAdapterGroupOutput)>>>>;
+pub(crate) struct WiredAdapterGroupRender;
 
-/// Per-adapter wired preferences group with connection details.
-pub struct WiredAdapterGroup {
-    pub root: adw::PreferencesGroup,
-    connected_row: adw::SwitchRow,
-    ip_row: adw::ActionRow,
-    gateway_row: adw::ActionRow,
-    public_ip_row: adw::ActionRow,
-    /// Guard against feedback loops when programmatically updating switch state.
-    updating: Rc<RefCell<bool>>,
-    output_cb: OutputCallback,
-    connection_rows: HashMap<String, WiredConnectionRow>,
-}
-
-impl Component for WiredAdapterGroup {
-    type Props = WiredAdapterGroupProps;
+impl RenderFn for WiredAdapterGroupRender {
+    type Props  = WiredAdapterGroupProps;
     type Output = WiredAdapterGroupOutput;
 
-    fn build(props: &Self::Props) -> Self {
-        let group = adw::PreferencesGroup::builder().title(&props.name).build();
-
-        let connected_row = adw::SwitchRow::builder().title(t("wired-connected")).build();
-        group.add(&connected_row);
-
-        let ip_row = adw::ActionRow::builder()
-            .title(t("wired-ip-address"))
-            .visible(false)
-            .build();
-        group.add(&ip_row);
-
-        let gateway_row = adw::ActionRow::builder()
-            .title(t("wired-gateway"))
-            .visible(false)
-            .build();
-        group.add(&gateway_row);
-
-        let public_ip_row = adw::ActionRow::builder()
-            .title(t("wired-public-ip"))
-            .visible(false)
-            .build();
-        group.add(&public_ip_row);
-
-        let updating = Rc::new(RefCell::new(false));
-        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
-
-        let cb = output_cb.clone();
-        let guard = updating.clone();
-        connected_row.connect_active_notify(move |_row| {
-            if *guard.borrow() {
-                return;
-            }
-            if let Some(ref callback) = *cb.borrow() {
-                callback(WiredAdapterGroupOutput::ToggleConnection);
-            }
-        });
-
-        let adapter = Self {
-            root: group,
-            connected_row,
-            ip_row,
-            gateway_row,
-            public_ip_row,
-            updating,
-            output_cb,
-            connection_rows: HashMap::new(),
-        };
-
-        adapter.update(props);
-        adapter
-    }
-
-    fn update(&self, props: &Self::Props) {
-        *self.updating.borrow_mut() = true;
-
-        self.root.set_title(&props.name);
-        self.connected_row.set_active(props.connected);
+    fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
+        let mut group = VPreferencesGroup::new()
+            .title(&props.name)
+            .child(
+                VNode::switch_row(
+                    VSwitchRow::new(t("wired-connected"), props.connected)
+                        .on_toggle({
+                            let emit = emit.clone();
+                            move |_active| {
+                                if let Some(ref cb) = *emit.borrow() {
+                                    cb(WiredAdapterGroupOutput::ToggleConnection);
+                                }
+                            }
+                        }),
+                )
+                .key("connected"),
+            );
 
         if let Some(ref ip) = props.ip {
-            self.ip_row
-                .set_subtitle(&format!("{}/{}", ip.address, ip.prefix));
-            self.ip_row.set_visible(true);
+            group = group.child(
+                VNode::action_row(
+                    VActionRow::new(t("wired-ip-address"))
+                        .subtitle(format!("{}/{}", ip.address, ip.prefix)),
+                )
+                .key("ip"),
+            );
 
             if let Some(ref gw) = ip.gateway {
-                self.gateway_row.set_subtitle(gw);
-                self.gateway_row.set_visible(true);
-            } else {
-                self.gateway_row.set_visible(false);
+                group = group.child(
+                    VNode::action_row(
+                        VActionRow::new(t("wired-gateway")).subtitle(gw.as_str()),
+                    )
+                    .key("gateway"),
+                );
             }
-        } else {
-            self.ip_row.set_visible(false);
-            self.gateway_row.set_visible(false);
         }
 
         if let Some(ref public_ip) = props.public_ip {
-            self.public_ip_row.set_subtitle(public_ip);
-            self.public_ip_row.set_visible(true);
-        } else {
-            self.public_ip_row.set_visible(false);
+            group = group.child(
+                VNode::action_row(
+                    VActionRow::new(t("wired-public-ip")).subtitle(public_ip.as_str()),
+                )
+                .key("public-ip"),
+            );
         }
 
-        *self.updating.borrow_mut() = false;
-    }
-
-    fn widget(&self) -> gtk::Widget {
-        self.root.clone().upcast()
-    }
-
-    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
-        *self.output_cb.borrow_mut() = Some(Box::new(callback));
-    }
-}
-
-impl WiredAdapterGroup {
-    /// Reconcile connection profile rows with new data.
-    ///
-    /// Adds, updates, or removes connection rows to match the provided list.
-    pub fn reconcile_connections(
-        &mut self,
-        connections: &[(Urn, EthernetConnection)],
-        action_callback: &EntityActionCallback,
-    ) {
-        let mut seen = std::collections::HashSet::new();
-
-        for (urn, connection) in connections {
-            let urn_str = urn.as_str().to_string();
-            seen.insert(urn_str.clone());
-
-            let props = ConnectionRowProps {
-                name: connection.name.clone(),
+        for (urn, connection) in &props.connections {
+            let conn_props = ConnectionRowProps {
+                name:   connection.name.clone(),
                 active: connection.active,
             };
+            let urn_key = urn.as_str().to_string();
+            let urn_activate   = urn.clone();
+            let urn_deactivate = urn.clone();
+            let emit_activate   = emit.clone();
+            let emit_deactivate = emit.clone();
 
-            if let Some(existing) = self.connection_rows.get(&urn_str) {
-                existing.update(&props);
-            } else {
-                let row = WiredConnectionRow::build(&props);
-                let urn_clone = urn.clone();
-                let cb = action_callback.clone();
-                row.connect_output(move |output| {
-                    let action = match output {
-                        ConnectionRowOutput::Activate => "activate",
-                        ConnectionRowOutput::Deactivate => "deactivate",
-                    };
-                    cb(
-                        urn_clone.clone(),
-                        action.to_string(),
-                        serde_json::Value::Null,
-                    );
-                });
-                self.root.add(&row.widget());
-                self.connection_rows.insert(urn_str, row);
-            }
+            group = group.child(
+                VNode::with_output::<WiredConnectionRow>(
+                    conn_props,
+                    move |output| {
+                        match output {
+                            ConnectionRowOutput::Activate => {
+                                if let Some(ref cb) = *emit_activate.borrow() {
+                                    cb(WiredAdapterGroupOutput::ActivateConnection(
+                                        urn_activate.clone(),
+                                    ));
+                                }
+                            }
+                            ConnectionRowOutput::Deactivate => {
+                                if let Some(ref cb) = *emit_deactivate.borrow() {
+                                    cb(WiredAdapterGroupOutput::DeactivateConnection(
+                                        urn_deactivate.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                    },
+                )
+                .key(urn_key),
+            );
         }
 
-        let to_remove: Vec<String> = self
-            .connection_rows
-            .keys()
-            .filter(|k| !seen.contains(*k))
-            .cloned()
-            .collect();
-
-        for key in to_remove {
-            if let Some(row) = self.connection_rows.remove(&key) {
-                self.root.remove(&row.widget());
-            }
-        }
+        VNode::preferences_group(group)
     }
 }
+
+pub type WiredAdapterGroup = RenderComponent<WiredAdapterGroupRender>;
