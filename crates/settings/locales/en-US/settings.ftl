@@ -38,6 +38,8 @@ audio-card-port = Port
 audio-card-mute = Mute { $name }
 audio-card-unmute = Unmute { $name }
 audio-card-set-default-tooltip = Set { $name } as default
+audio-port-connected = Connected
+audio-port-disconnected = Disconnected
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Enabled

@@ -38,6 +38,8 @@ audio-card-port = Port
 audio-card-mute = Ztlumit { $name }
 audio-card-unmute = Zrušit ztlumení { $name }
 audio-card-set-default-tooltip = Nastavit { $name } jako výchozí
+audio-port-connected = Připojeno
+audio-port-disconnected = Odpojeno
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Zapnuto
