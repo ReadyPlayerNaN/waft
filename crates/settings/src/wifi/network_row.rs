@@ -58,7 +58,7 @@ impl RenderFn for NetworkRowRender {
             )));
 
         if props.secure {
-            row = row.suffix(VNode::icon(VIcon::new(
+            row = row.prefix(VNode::icon(VIcon::new(
                 vec![Icon::Themed(Arc::from("network-wireless-encrypted-symbolic"))],
                 16,
             )));
