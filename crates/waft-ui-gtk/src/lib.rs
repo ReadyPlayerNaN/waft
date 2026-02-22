@@ -4,7 +4,6 @@
 
 pub mod audio;
 pub mod backup;
-pub mod battery;
 pub mod bluetooth;
 pub mod css;
 pub mod icons;
@@ -16,4 +15,4 @@ pub mod widgets;
 pub use widget_base::{Child, Children, WidgetBase};
 
 #[cfg(test)]
-pub mod test_utils;
+pub mod test_init;

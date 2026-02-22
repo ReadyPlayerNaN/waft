@@ -3,10 +3,7 @@
 //! Dumb widget displaying a single Bluetooth device as an `AdwActionRow`
 //! with appropriate icon, status text, and action buttons.
 
-use std::sync::Arc;
-
 use waft_protocol::entity::bluetooth::ConnectionState;
-use waft_ui_gtk::battery::resolve_battery_icon_name;
 use waft_ui_gtk::bluetooth::resolve_device_type_icon;
 use waft_ui_gtk::icons::Icon;
 use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
@@ -74,7 +71,7 @@ impl RenderFn for DeviceRowRender {
         let mut row = VActionRow::new(&props.name)
             .subtitle(&subtitle)
             .prefix(VNode::icon(VIcon::new(
-                vec![Icon::Themed(Arc::from(device_icon))],
+                vec![Icon::Themed(device_icon.to_string())],
                 32,
             )));
 
@@ -83,7 +80,7 @@ impl RenderFn for DeviceRowRender {
             if connected {
                 let batt_icon = resolve_battery_icon_name(pct);
                 row = row.suffix(VNode::icon(VIcon::new(
-                    vec![Icon::Themed(Arc::from(batt_icon))],
+                    vec![Icon::Themed(batt_icon.to_string())],
                     16,
                 )));
             }
@@ -121,7 +118,7 @@ impl RenderFn for DeviceRowRender {
             let emit_remove = emit.clone();
             row = row.suffix(VNode::custom_button(
                 VCustomButton::new(VNode::icon(VIcon::new(
-                    vec![Icon::Themed(Arc::from("user-trash-symbolic"))],
+                    vec![Icon::Themed("user-trash-symbolic".to_string())],
                     16,
                 )))
                 .css_classes(["flat", "destructive-action"])
@@ -139,3 +136,14 @@ impl RenderFn for DeviceRowRender {
 }
 
 pub type DeviceRow = RenderComponent<DeviceRowRender>;
+
+fn resolve_battery_icon_name(pct: u8) -> &'static str {
+    match pct {
+        0..=10 => "battery-level-0-symbolic",
+        11..=30 => "battery-caution-symbolic",
+        31..=50 => "battery-level-30-symbolic",
+        51..=70 => "battery-level-50-symbolic",
+        71..=90 => "battery-level-70-symbolic",
+        _ => "battery-full-symbolic",
+    }
+}

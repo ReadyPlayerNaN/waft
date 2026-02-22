@@ -15,8 +15,6 @@ use crate::menu_state::MenuStore;
 use crate::ui::main_window::trigger_window_resize;
 use waft_client::EntityStore;
 use waft_protocol::entity;
-use waft_ui_gtk::widget_base::WidgetBase as _;
-use waft_ui_gtk::widgets::spinner::SpinnerWidget;
 
 pub struct EventsComponent {
     container: gtk::Box,
@@ -62,15 +60,14 @@ impl EventsComponent {
         let past_btn = agenda.past_events_button().clone();
 
         // Spinner shown while the EDS plugin is actively refreshing calendar backends.
-        let sync_spinner = Rc::new(SpinnerWidget::new(false));
-        let spinner_widget = sync_spinner.widget();
-        spinner_widget.set_visible(false);
+        let sync_spinner = Rc::new(gtk::Spinner::new());
+        sync_spinner.set_visible(false);
 
         let controls = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(4)
             .build();
-        controls.append(&spinner_widget); // spinner left of toggle buttons
+        controls.append(sync_spinner.as_ref()); // spinner left of toggle buttons
         controls.append(&calendar_toggle);
         controls.append(&past_btn);
 

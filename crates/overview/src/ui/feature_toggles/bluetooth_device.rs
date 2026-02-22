@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use waft_ui_gtk::battery::resolve_battery_icon_name;
 use waft_ui_gtk::bluetooth::resolve_device_type_icon;
 use waft_ui_gtk::icons::Icon;
 use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
@@ -36,7 +33,7 @@ impl RenderFn for BluetoothDeviceRowRender {
         let device_icon = resolve_device_type_icon(&props.device_type);
         let secondary_icon = props
             .power
-            .map(|pwr| vec![Icon::parse(&Arc::from(resolve_battery_icon_name(pwr)))])
+            .map(|pwr| vec![Icon::parse(resolve_battery_icon_name(pwr))])
             .unwrap_or_default();
 
         VNode::with_output::<FeatureToggleMenuButton>(
@@ -44,7 +41,7 @@ impl RenderFn for BluetoothDeviceRowRender {
                 disabled:       false,
                 name:           props.name.clone(),
                 working:        props.transitioning,
-                primary_icon:   vec![Icon::parse(&Arc::from(device_icon))],
+                primary_icon:   vec![Icon::parse(device_icon)],
                 secondary_icon,
                 visible:        true,
                 switch_active:  Some(props.connected || props.transitioning),
@@ -59,3 +56,14 @@ impl RenderFn for BluetoothDeviceRowRender {
 }
 
 pub type BluetoothDeviceRow = RenderComponent<BluetoothDeviceRowRender>;
+
+fn resolve_battery_icon_name(pct: u8) -> &'static str {
+    match pct {
+        0..=10 => "battery-level-0-symbolic",
+        11..=30 => "battery-caution-symbolic",
+        31..=50 => "battery-level-30-symbolic",
+        51..=70 => "battery-level-50-symbolic",
+        71..=90 => "battery-level-70-symbolic",
+        _ => "battery-full-symbolic",
+    }
+}
