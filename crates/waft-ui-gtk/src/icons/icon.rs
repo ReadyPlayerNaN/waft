@@ -65,19 +65,28 @@ pub fn resolve_themed_icon(name: &str) -> Option<String> {
 #[derive(Clone)]
 pub struct IconWidget {
     image: gtk::Image,
+    fallback: bool,
 }
 
 impl IconWidget {
     /// Create a new icon widget, trying each icon hint until one succeeds.
     pub fn new(icon_hints: Vec<Icon>, pixel_size: i32) -> Self {
+        Self::with_fallback(icon_hints, pixel_size, true)
+    }
+
+    /// Create a new icon widget with explicit fallback control.
+    ///
+    /// When `fallback` is `true` (default), a failed resolution shows
+    /// `dialog-information-symbolic`. When `false`, the image is cleared.
+    pub fn with_fallback(icon_hints: Vec<Icon>, pixel_size: i32, fallback: bool) -> Self {
         let image = gtk::Image::builder()
             .pixel_size(pixel_size)
             .valign(gtk::Align::Center)
             .build();
 
-        Self::apply_first_valid_icon(&image, &icon_hints);
+        Self::apply_first_valid_icon(&image, &icon_hints, fallback);
 
-        Self { image }
+        Self { image, fallback }
     }
 
     /// Convenience constructor for a single named icon.
@@ -86,18 +95,22 @@ impl IconWidget {
     }
 
     /// Try each icon hint in order until one succeeds, falling back to default.
-    fn apply_first_valid_icon(image: &gtk::Image, icon_hints: &[Icon]) {
+    fn apply_first_valid_icon(image: &gtk::Image, icon_hints: &[Icon], fallback: bool) {
         for hint in icon_hints {
             if Self::try_apply_icon(image, hint) {
                 return;
             }
         }
 
-        // All hints failed, use default
+        // All hints failed
         // Note: set_paintable must be called BEFORE set_icon_name because
         // GTK4 Image displays based on the last property set
         image.set_paintable(gtk::gdk::Paintable::NONE);
-        image.set_icon_name(Some(DEFAULT_ICON));
+        if fallback {
+            image.set_icon_name(Some(DEFAULT_ICON));
+        } else {
+            image.set_icon_name(None);
+        }
     }
 
     /// Try to apply an icon hint. Returns true if successful.
@@ -134,7 +147,7 @@ impl IconWidget {
     /// Update the icon to a new set of hints.
     /// Tries each hint in order, falling back to default if all fail.
     pub fn update_icon(&self, icon_hints: Vec<Icon>) {
-        Self::apply_first_valid_icon(&self.image, &icon_hints);
+        Self::apply_first_valid_icon(&self.image, &icon_hints, self.fallback);
     }
 
     /// Update the icon to a single named icon.

@@ -313,7 +313,7 @@ fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
 }
 
 fn build_icon_entry(vi: VIcon) -> ReconcilerEntry {
-    let widget = IconWidget::new(vi.hints, vi.pixel_size);
+    let widget = IconWidget::with_fallback(vi.hints, vi.pixel_size, vi.fallback);
     widget.widget().set_visible(vi.visible);
     ReconcilerEntry::Icon { widget }
 }

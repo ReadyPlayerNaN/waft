@@ -176,15 +176,21 @@ pub struct VIcon {
     pub hints:      Vec<Icon>,
     pub pixel_size: i32,
     pub visible:    bool,
+    pub fallback:   bool,
 }
 
 impl VIcon {
     pub fn new(hints: Vec<Icon>, pixel_size: i32) -> Self {
-        Self { hints, pixel_size, visible: true }
+        Self { hints, pixel_size, visible: true, fallback: true }
     }
 
     pub fn visible(mut self, v: bool) -> Self {
         self.visible = v;
+        self
+    }
+
+    pub fn fallback(mut self, v: bool) -> Self {
+        self.fallback = v;
         self
     }
 }
