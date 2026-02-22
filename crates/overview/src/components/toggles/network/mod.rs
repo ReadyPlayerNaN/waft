@@ -23,6 +23,7 @@ use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidg
 use crate::i18n;
 use crate::layout::types::WidgetFeatureToggle;
 use crate::ui::feature_toggles::menu::FeatureToggleMenuWidget;
+use crate::ui::feature_toggles::menu_info_row::FeatureToggleMenuInfoRow;
 use crate::ui::feature_toggles::menu_settings::{
     FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
 };
@@ -34,7 +35,7 @@ pub(super) struct ToggleEntry {
     toggle: Rc<FeatureToggleWidget>,
     menu: FeatureToggleMenuWidget,
     network_rows: RefCell<Vec<NetworkRow>>,
-    info_rows: RefCell<Vec<gtk::Box>>,
+    info_rows: RefCell<Vec<FeatureToggleMenuInfoRow>>,
     weight: i32,
     /// Tracks connected state for click handler closures that need fresh state.
     connected: Rc<Cell<bool>>,
@@ -528,31 +529,6 @@ fn adapter_title(adapter: &entity::network::NetworkAdapter) -> String {
         entity::network::AdapterKind::Wireless => "Wi-Fi".to_string(),
         entity::network::AdapterKind::Tethering => "Tethering".to_string(),
     }
-}
-
-/// Build a non-interactive info label row for the menu.
-pub(super) fn build_info_row(label: &str, value: &str) -> gtk::Box {
-    let row = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(12)
-        .css_classes(["menu-row"])
-        .build();
-
-    let label_widget = gtk::Label::builder()
-        .label(label)
-        .xalign(0.0)
-        .css_classes(["dim-label"])
-        .build();
-    row.append(&label_widget);
-
-    let value_widget = gtk::Label::builder()
-        .label(value)
-        .hexpand(true)
-        .xalign(1.0)
-        .build();
-    row.append(&value_widget);
-
-    row
 }
 
 /// Build a settings button container (separator + button) for adapter menus.
