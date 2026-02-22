@@ -206,6 +206,34 @@ impl VSpinner {
     }
 }
 
+/// Descriptor for an `adw::PreferencesGroup` container VNode.
+pub struct VPreferencesGroup {
+    pub title:    Option<String>,
+    pub children: Vec<super::VNode>,
+}
+
+impl VPreferencesGroup {
+    pub fn new() -> Self {
+        Self { title: None, children: Vec::new() }
+    }
+
+    pub fn title(mut self, t: impl Into<String>) -> Self {
+        self.title = Some(t.into());
+        self
+    }
+
+    pub fn child(mut self, node: super::VNode) -> Self {
+        self.children.push(node);
+        self
+    }
+}
+
+impl Default for VPreferencesGroup {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Descriptor for a `gtk::Switch` primitive VNode.
 pub struct VSwitch {
     pub active:      bool,
