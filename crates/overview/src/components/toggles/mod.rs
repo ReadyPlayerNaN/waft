@@ -1,3 +1,4 @@
+pub mod simple_toggle;
 pub mod backup;
 pub mod bluetooth;
 pub mod caffeine;
