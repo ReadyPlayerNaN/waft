@@ -183,7 +183,7 @@ impl WiredAdapterGroup {
                         serde_json::Value::Null,
                     );
                 });
-                self.root.add(&row.root);
+                self.root.add(&row.widget());
                 self.connection_rows.insert(urn_str, row);
             }
         }
@@ -197,7 +197,7 @@ impl WiredAdapterGroup {
 
         for key in to_remove {
             if let Some(row) = self.connection_rows.remove(&key) {
-                self.root.remove(&row.root);
+                self.root.remove(&row.widget());
             }
         }
     }
