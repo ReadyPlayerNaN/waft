@@ -2,7 +2,7 @@ use std::any::{Any, TypeId};
 use std::rc::Rc;
 
 use super::component::{AnyWidget, Component};
-use super::primitives::{VBox, VButton, VCustomButton, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch};
+use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch};
 
 // -- Component descriptor (what VNode currently stores at the top level) ---
 
@@ -30,6 +30,7 @@ pub(super) enum VNodeKind {
     Icon(VIcon),
     CustomButton(VCustomButton),
     PreferencesGroup(VPreferencesGroup),
+    ActionRow(VActionRow),
 }
 
 // -- VNode --------------------------------------------------------------------
@@ -103,6 +104,11 @@ impl VNode {
     /// Build a `VPreferencesGroup` descriptor and wrap it in a `VNode`.
     pub fn preferences_group(v: VPreferencesGroup) -> Self {
         Self { key: None, kind: VNodeKind::PreferencesGroup(v) }
+    }
+
+    /// Build a `VActionRow` descriptor and wrap it in a `VNode`.
+    pub fn action_row(v: VActionRow) -> Self {
+        Self { key: None, kind: VNodeKind::ActionRow(v) }
     }
 }
 

@@ -5,10 +5,10 @@ use adw::prelude::*;
 use gtk::glib;
 
 use super::component::AnyWidget;
-use super::container::VdomContainer;
+use super::container::{ActionRowPrefixContainer, ActionRowSuffixContainer, VdomContainer};
 use crate::icons::IconWidget;
 
-use super::primitives::{VBox, VButton, VCustomButton, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch};
+use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch};
 use super::vnode::{ComponentDesc, VNode, VNodeKind};
 
 // -- Kind tag -----------------------------------------------------------------
@@ -25,6 +25,7 @@ enum KindTag {
     Icon,
     CustomButton,
     PreferencesGroup,
+    ActionRow,
 }
 
 // -- Live entries -------------------------------------------------------------
@@ -65,6 +66,12 @@ enum ReconcilerEntry {
         widget:           adw::PreferencesGroup,
         child_reconciler: std::boxed::Box<Reconciler<adw::PreferencesGroup>>,
     },
+    ActionRow {
+        widget:            adw::ActionRow,
+        handler_id:        Option<glib::SignalHandlerId>,
+        suffix_reconciler: std::boxed::Box<Reconciler<ActionRowSuffixContainer>>,
+        prefix_reconciler: std::boxed::Box<Reconciler<ActionRowPrefixContainer>>,
+    },
 }
 
 impl ReconcilerEntry {
@@ -79,6 +86,7 @@ impl ReconcilerEntry {
             Self::Icon             { widget }        => widget.widget().clone().upcast(),
             Self::CustomButton     { widget, .. }    => widget.clone().upcast(),
             Self::PreferencesGroup { widget, .. }    => widget.clone().upcast(),
+            Self::ActionRow        { widget, .. }    => widget.clone().upcast(),
         }
     }
 
@@ -93,6 +101,7 @@ impl ReconcilerEntry {
             Self::Icon             { .. }          => KindTag::Icon,
             Self::CustomButton     { .. }          => KindTag::CustomButton,
             Self::PreferencesGroup { .. }          => KindTag::PreferencesGroup,
+            Self::ActionRow        { .. }          => KindTag::ActionRow,
         }
     }
 }
@@ -199,6 +208,7 @@ fn kind_tag_of(vnode: &VNode) -> KindTag {
         VNodeKind::Icon(_)               => KindTag::Icon,
         VNodeKind::CustomButton(_)       => KindTag::CustomButton,
         VNodeKind::PreferencesGroup(_)   => KindTag::PreferencesGroup,
+        VNodeKind::ActionRow(_)          => KindTag::ActionRow,
     }
 }
 
@@ -213,6 +223,7 @@ fn build_entry(vnode: VNode) -> ReconcilerEntry {
         VNodeKind::Icon(vi)                => build_icon_entry(vi),
         VNodeKind::CustomButton(vcb)       => build_custom_button_entry(vcb),
         VNodeKind::PreferencesGroup(vpg)   => build_preferences_group_entry(vpg),
+        VNodeKind::ActionRow(vrow)         => build_action_row_entry(vrow),
     }
 }
 
@@ -296,6 +307,30 @@ fn build_preferences_group_entry(vpg: VPreferencesGroup) -> ReconcilerEntry {
     ReconcilerEntry::PreferencesGroup { widget, child_reconciler }
 }
 
+fn build_action_row_entry(vrow: VActionRow) -> ReconcilerEntry {
+    let widget = adw::ActionRow::new();
+    widget.set_title(&vrow.title);
+    if let Some(ref s) = vrow.subtitle { widget.set_subtitle(s); }
+    widget.set_activatable(vrow.activatable);
+
+    let handler_id = vrow.on_activate.as_ref().map(|f| {
+        let f = f.clone();
+        widget.connect_activated(move |_| f())
+    });
+
+    let mut suffix_reconciler = std::boxed::Box::new(
+        Reconciler::new(ActionRowSuffixContainer(widget.clone()))
+    );
+    suffix_reconciler.reconcile(vrow.suffix);
+
+    let mut prefix_reconciler = std::boxed::Box::new(
+        Reconciler::new(ActionRowPrefixContainer(widget.clone()))
+    );
+    prefix_reconciler.reconcile(vrow.prefix);
+
+    ReconcilerEntry::ActionRow { widget, handler_id, suffix_reconciler, prefix_reconciler }
+}
+
 // -- Update helpers -----------------------------------------------------------
 
 fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
@@ -360,6 +395,22 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
                 None        => widget.set_title(""),
             }
             child_reconciler.reconcile(vpg.children);
+        }
+        (ReconcilerEntry::ActionRow { widget, handler_id, suffix_reconciler, prefix_reconciler },
+         VNodeKind::ActionRow(vrow)) => {
+            widget.set_title(&vrow.title);
+            match vrow.subtitle {
+                Some(ref s) => widget.set_subtitle(s),
+                None        => widget.set_subtitle(""),
+            }
+            widget.set_activatable(vrow.activatable);
+            if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            *handler_id = vrow.on_activate.as_ref().map(|f| {
+                let f = f.clone();
+                widget.connect_activated(move |_| f())
+            });
+            suffix_reconciler.reconcile(vrow.suffix);
+            prefix_reconciler.reconcile(vrow.prefix);
         }
         // Mismatched arms are prevented by kind_tag_of check above; unreachable.
         _ => unreachable!("update_entry called with mismatched entry and VNodeKind"),

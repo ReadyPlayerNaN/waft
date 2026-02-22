@@ -234,6 +234,50 @@ impl Default for VPreferencesGroup {
     }
 }
 
+/// Descriptor for an `adw::ActionRow` VNode.
+pub struct VActionRow {
+    pub title:       String,
+    pub subtitle:    Option<String>,
+    pub suffix:      Vec<super::VNode>,
+    pub prefix:      Vec<super::VNode>,
+    pub activatable: bool,
+    pub on_activate: Option<Rc<dyn Fn()>>,
+}
+
+impl VActionRow {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title:       title.into(),
+            subtitle:    None,
+            suffix:      Vec::new(),
+            prefix:      Vec::new(),
+            activatable: false,
+            on_activate: None,
+        }
+    }
+
+    pub fn subtitle(mut self, s: impl Into<String>) -> Self {
+        self.subtitle = Some(s.into());
+        self
+    }
+
+    pub fn suffix(mut self, node: super::VNode) -> Self {
+        self.suffix.push(node);
+        self
+    }
+
+    pub fn prefix(mut self, node: super::VNode) -> Self {
+        self.prefix.push(node);
+        self
+    }
+
+    pub fn on_activate(mut self, f: impl Fn() + 'static) -> Self {
+        self.activatable = true;
+        self.on_activate = Some(Rc::new(f));
+        self
+    }
+}
+
 /// Descriptor for a `gtk::Switch` primitive VNode.
 pub struct VSwitch {
     pub active:      bool,

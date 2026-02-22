@@ -9,7 +9,7 @@ pub use component::{Component, RenderCallback, RenderFn};
 pub use container::{ActionRowPrefixContainer, ActionRowSuffixContainer, VdomContainer};
 pub use reconciler::Reconciler;
 pub use render_component::RenderComponent;
-pub use primitives::{VBox, VButton, VCustomButton, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch};
+pub use primitives::{VActionRow, VBox, VButton, VCustomButton, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch};
 pub use vnode::VNode;
 
 #[cfg(test)]
