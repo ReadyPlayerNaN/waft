@@ -6,10 +6,10 @@ use adw::prelude::*;
 use gtk::glib;
 
 use super::component::AnyWidget;
-use super::container::{ActionRowPrefixContainer, ActionRowSuffixContainer, VdomContainer};
+use super::container::{ActionRowPrefixContainer, ActionRowSuffixContainer, ButtonChildContainer, VdomContainer};
 use crate::icons::IconWidget;
 
-use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch, VSwitchRow};
+use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VProgressBar, VRevealer, VScale, VSpinner, VSwitch, VSwitchRow};
 use super::vnode::{ComponentDesc, VNode, VNodeKind};
 
 // -- Kind tag -----------------------------------------------------------------
@@ -29,6 +29,9 @@ enum KindTag {
     ActionRow,
     SwitchRow,
     EntryRow,
+    Revealer,
+    ProgressBar,
+    Scale,
 }
 
 // -- Live entries -------------------------------------------------------------
@@ -66,7 +69,7 @@ enum ReconcilerEntry {
         widget:           gtk::Button,
         handler_id:       Option<glib::SignalHandlerId>,
         cb:               Option<Rc<dyn Fn()>>,
-        child_reconciler: std::boxed::Box<Reconciler<gtk::Box>>,
+        child_reconciler: std::boxed::Box<Reconciler<ButtonChildContainer>>,
     },
     PreferencesGroup {
         widget:           adw::PreferencesGroup,
@@ -89,6 +92,26 @@ enum ReconcilerEntry {
         handler_id: Option<glib::SignalHandlerId>,
         cb:         Option<Rc<dyn Fn(String)>>,
     },
+    Revealer {
+        widget:           gtk::Revealer,
+        child_reconciler: std::boxed::Box<Reconciler<gtk::Box>>,
+    },
+    ProgressBar {
+        widget: gtk::ProgressBar,
+    },
+    Scale {
+        /// Outer wrapper box that holds the scale and receives gesture controllers.
+        scale_wrapper:    gtk::Box,
+        widget:           gtk::Scale,
+        handler_id:       glib::SignalHandlerId,
+        interacting:      Rc<std::cell::RefCell<bool>>,
+        #[allow(dead_code)]
+        pointer_down:     Rc<std::cell::RefCell<bool>>,
+        #[allow(dead_code)]
+        debounce_source:  Rc<std::cell::RefCell<Option<glib::SourceId>>>,
+        on_value_change:  Rc<std::cell::RefCell<Option<Rc<dyn Fn(f64)>>>>,
+        on_value_commit:  Rc<std::cell::RefCell<Option<Rc<dyn Fn(f64)>>>>,
+    },
 }
 
 impl ReconcilerEntry {
@@ -106,6 +129,9 @@ impl ReconcilerEntry {
             Self::ActionRow        { widget, .. }    => widget.clone().upcast(),
             Self::SwitchRow        { widget, .. }    => widget.clone().upcast(),
             Self::EntryRow         { widget, .. }    => widget.clone().upcast(),
+            Self::Revealer         { widget, .. }    => widget.clone().upcast(),
+            Self::ProgressBar      { widget }              => widget.clone().upcast(),
+            Self::Scale            { scale_wrapper, .. }   => scale_wrapper.clone().upcast(),
         }
     }
 
@@ -123,6 +149,9 @@ impl ReconcilerEntry {
             Self::ActionRow        { .. }          => KindTag::ActionRow,
             Self::SwitchRow        { .. }          => KindTag::SwitchRow,
             Self::EntryRow         { .. }          => KindTag::EntryRow,
+            Self::Revealer         { .. }          => KindTag::Revealer,
+            Self::ProgressBar      { .. }          => KindTag::ProgressBar,
+            Self::Scale            { .. }          => KindTag::Scale,
         }
     }
 }
@@ -226,6 +255,58 @@ impl<C: VdomContainer> Reconciler<C> {
     }
 }
 
+// -- SingleChildReconciler ----------------------------------------------------
+
+/// A reconciler that manages exactly one `VNode` with no container widget.
+///
+/// Unlike `Reconciler<C>`, which requires a `VdomContainer` to append children
+/// into, `SingleChildReconciler` holds the single `ReconcilerEntry` directly
+/// and exposes its widget via `widget()`. This is used by `RenderComponent` so
+/// that `widget()` returns the rendered widget itself rather than a wrapping
+/// `gtk::Box`.
+///
+/// If the `VNode` kind changes between calls to `reconcile()` the old entry is
+/// replaced and the previous widget is orphaned. In practice `RenderFn`
+/// implementations always return the same kind so this should never happen;
+/// in debug builds an assertion fires to catch violations early.
+pub struct SingleChildReconciler {
+    entry: Option<ReconcilerEntry>,
+}
+
+impl SingleChildReconciler {
+    pub fn new() -> Self {
+        Self { entry: None }
+    }
+
+    pub fn reconcile(&mut self, vnode: VNode) {
+        match self.entry.take() {
+            None => {
+                self.entry = Some(build_entry(vnode));
+            }
+            Some(mut entry) => {
+                if entry.kind_tag() == kind_tag_of(&vnode) {
+                    update_entry(&mut entry, vnode);
+                    self.entry = Some(entry);
+                } else {
+                    debug_assert!(
+                        false,
+                        "SingleChildReconciler: VNode kind changed between renders — \
+                         callers holding the old widget() reference are now stale"
+                    );
+                    self.entry = Some(build_entry(vnode));
+                }
+            }
+        }
+    }
+
+    pub fn widget(&self) -> gtk::Widget {
+        self.entry
+            .as_ref()
+            .expect("SingleChildReconciler: widget() called before reconcile()")
+            .widget()
+    }
+}
+
 // -- Build helpers ------------------------------------------------------------
 
 fn kind_tag_of(vnode: &VNode) -> KindTag {
@@ -242,6 +323,9 @@ fn kind_tag_of(vnode: &VNode) -> KindTag {
         VNodeKind::ActionRow(_)          => KindTag::ActionRow,
         VNodeKind::SwitchRow(_)          => KindTag::SwitchRow,
         VNodeKind::EntryRow(_)           => KindTag::EntryRow,
+        VNodeKind::Revealer(_)           => KindTag::Revealer,
+        VNodeKind::ProgressBar(_)        => KindTag::ProgressBar,
+        VNodeKind::Scale(_)              => KindTag::Scale,
     }
 }
 
@@ -259,6 +343,9 @@ fn build_entry(vnode: VNode) -> ReconcilerEntry {
         VNodeKind::ActionRow(vrow)         => build_action_row_entry(vrow),
         VNodeKind::SwitchRow(vsr)          => build_switch_row_entry(vsr),
         VNodeKind::EntryRow(ver)           => build_entry_row_entry(ver),
+        VNodeKind::Revealer(vrev)          => build_revealer_entry(vrev),
+        VNodeKind::ProgressBar(vpb)        => build_progress_bar_entry(vpb),
+        VNodeKind::Scale(vs)               => build_scale_entry(vs),
     }
 }
 
@@ -295,13 +382,7 @@ fn build_button_entry(vbtn: VButton) -> ReconcilerEntry {
 }
 
 fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
-    let child_container = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let mut child_reconciler: std::boxed::Box<Reconciler<gtk::Box>> =
-        std::boxed::Box::new(Reconciler::new(child_container.clone()));
-    child_reconciler.reconcile(std::iter::once(*vcb.child));
-
     let widget = gtk::Button::new();
-    widget.set_child(Some(&child_container));
     let classes: Vec<&str> = vcb.css_classes.iter().map(|s| s.as_str()).collect();
     widget.set_css_classes(&classes);
     widget.set_visible(vcb.visible);
@@ -309,12 +390,18 @@ fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
     let cb = vcb.on_click;
     let handler_id = connect_button_handler(&widget, &cb);
 
+    let mut child_reconciler: std::boxed::Box<Reconciler<ButtonChildContainer>> =
+        std::boxed::Box::new(Reconciler::new(ButtonChildContainer(widget.clone())));
+    child_reconciler.reconcile(std::iter::once(*vcb.child));
+
     ReconcilerEntry::CustomButton { widget, handler_id, cb, child_reconciler }
 }
 
 fn build_icon_entry(vi: VIcon) -> ReconcilerEntry {
     let widget = IconWidget::with_fallback(vi.hints, vi.pixel_size, vi.fallback);
     widget.widget().set_visible(vi.visible);
+    let classes: Vec<&str> = vi.css_classes.iter().map(|s| s.as_str()).collect();
+    widget.widget().set_css_classes(&classes);
     ReconcilerEntry::Icon { widget }
 }
 
@@ -399,6 +486,196 @@ fn build_entry_row_entry(ver: VEntryRow) -> ReconcilerEntry {
     ReconcilerEntry::EntryRow { widget, handler_id, cb }
 }
 
+fn build_revealer_entry(vrev: VRevealer) -> ReconcilerEntry {
+    let widget = gtk::Revealer::builder()
+        .transition_type(vrev.transition_type)
+        .transition_duration(vrev.transition_duration)
+        .reveal_child(vrev.reveal)
+        .build();
+
+    let child_container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    widget.set_child(Some(&child_container));
+
+    let mut child_reconciler: std::boxed::Box<Reconciler<gtk::Box>> =
+        std::boxed::Box::new(Reconciler::new(child_container));
+    child_reconciler.reconcile(std::iter::once(*vrev.child));
+
+    ReconcilerEntry::Revealer { widget, child_reconciler }
+}
+
+fn build_progress_bar_entry(vpb: VProgressBar) -> ReconcilerEntry {
+    let widget = gtk::ProgressBar::new();
+    widget.set_fraction(vpb.fraction);
+    let classes: Vec<&str> = vpb.css_classes.iter().map(|s| s.as_str()).collect();
+    widget.set_css_classes(&classes);
+    widget.set_visible(vpb.visible);
+    ReconcilerEntry::ProgressBar { widget }
+}
+
+/// Cancel any pending debounce for a scale and schedule a new one-shot timer.
+///
+/// When the timer fires, `interacting` is set to `false` and the commit
+/// callback is fired with the user's final value.
+fn schedule_scale_interaction_end(
+    debounce_source: &Rc<std::cell::RefCell<Option<glib::SourceId>>>,
+    interacting: &Rc<std::cell::RefCell<bool>>,
+    scale: &gtk::Scale,
+    on_value_commit: &Rc<std::cell::RefCell<Option<Rc<dyn Fn(f64)>>>>,
+    delay_ms: u64,
+) {
+    if let Some(source_id) = debounce_source.borrow_mut().take() {
+        source_id.remove();
+    }
+
+    let interacting = interacting.clone();
+    let scale = scale.clone();
+    let debounce_source_inner = debounce_source.clone();
+    let on_value_commit = on_value_commit.clone();
+
+    let source_id = glib::timeout_add_local_once(
+        std::time::Duration::from_millis(delay_ms),
+        move || {
+            *debounce_source_inner.borrow_mut() = None;
+            let committed_value = scale.value() / 100.0;
+            *interacting.borrow_mut() = false;
+            if let Some(ref callback) = *on_value_commit.borrow() {
+                callback(committed_value);
+            }
+        },
+    );
+
+    *debounce_source.borrow_mut() = Some(source_id);
+}
+
+fn build_scale_entry(vs: VScale) -> ReconcilerEntry {
+    use std::cell::RefCell;
+
+    let adjustment = gtk::Adjustment::new(vs.value * 100.0, 0.0, 100.0, 1.0, 10.0, 0.0);
+    let scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&adjustment));
+    scale.set_draw_value(false);
+    scale.set_hexpand(true);
+    let classes: Vec<&str> = vs.css_classes.iter().map(|s| s.as_str()).collect();
+    scale.set_css_classes(&classes);
+
+    let scale_wrapper = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    scale_wrapper.set_hexpand(true);
+    scale_wrapper.append(&scale);
+
+    let interacting: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
+    let pointer_down: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
+    let debounce_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+
+    // Wrap callbacks in Rc<RefCell<...>> so closures always read the latest version.
+    let on_value_change: Rc<RefCell<Option<Rc<dyn Fn(f64)>>>> =
+        Rc::new(RefCell::new(vs.on_value_change));
+    let on_value_commit: Rc<RefCell<Option<Rc<dyn Fn(f64)>>>> =
+        Rc::new(RefCell::new(vs.on_value_commit));
+
+    // Connect value-changed signal
+    let on_vc = on_value_change.clone();
+    let on_commit_vc = on_value_commit.clone();
+    let interacting_vc = interacting.clone();
+    let pointer_down_vc = pointer_down.clone();
+    let debounce_source_vc = debounce_source.clone();
+    let scale_vc = scale.clone();
+
+    let handler_id = scale.connect_value_changed(move |s| {
+        let v = s.value() / 100.0;
+        if !*pointer_down_vc.borrow() {
+            *interacting_vc.borrow_mut() = true;
+            schedule_scale_interaction_end(
+                &debounce_source_vc,
+                &interacting_vc,
+                &scale_vc,
+                &on_commit_vc,
+                200,
+            );
+        }
+        if let Some(ref callback) = *on_vc.borrow() {
+            callback(v);
+        }
+    });
+
+    // GestureClick for press/release detection
+    let gesture_click = gtk::GestureClick::new();
+
+    let interacting_pressed = interacting.clone();
+    let pointer_down_pressed = pointer_down.clone();
+    let debounce_source_pressed = debounce_source.clone();
+    gesture_click.connect_pressed(move |_, _, _, _| {
+        *pointer_down_pressed.borrow_mut() = true;
+        *interacting_pressed.borrow_mut() = true;
+        if let Some(source_id) = debounce_source_pressed.borrow_mut().take() {
+            source_id.remove();
+        }
+    });
+
+    let interacting_released = interacting.clone();
+    let pointer_down_released = pointer_down.clone();
+    let debounce_source_released = debounce_source.clone();
+    let scale_released = scale.clone();
+    let on_commit_released = on_value_commit.clone();
+    gesture_click.connect_released(move |_, _, _, _| {
+        *pointer_down_released.borrow_mut() = false;
+        schedule_scale_interaction_end(
+            &debounce_source_released,
+            &interacting_released,
+            &scale_released,
+            &on_commit_released,
+            100,
+        );
+    });
+
+    let interacting_cancel = interacting.clone();
+    let pointer_down_cancel = pointer_down.clone();
+    let debounce_source_cancel = debounce_source.clone();
+    let scale_cancel = scale.clone();
+    let on_commit_cancel = on_value_commit.clone();
+    gesture_click.connect_cancel(move |_, _| {
+        *pointer_down_cancel.borrow_mut() = false;
+        schedule_scale_interaction_end(
+            &debounce_source_cancel,
+            &interacting_cancel,
+            &scale_cancel,
+            &on_commit_cancel,
+            100,
+        );
+    });
+    scale_wrapper.add_controller(gesture_click);
+
+    // EventControllerScroll for mousewheel
+    let scroll_controller =
+        gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+
+    let interacting_scroll = interacting.clone();
+    let debounce_source_scroll = debounce_source.clone();
+    let scale_scroll = scale.clone();
+    let on_commit_scroll = on_value_commit.clone();
+    scroll_controller.connect_scroll(move |_, _, _| {
+        *interacting_scroll.borrow_mut() = true;
+        schedule_scale_interaction_end(
+            &debounce_source_scroll,
+            &interacting_scroll,
+            &scale_scroll,
+            &on_commit_scroll,
+            200,
+        );
+        glib::Propagation::Proceed
+    });
+    scale.add_controller(scroll_controller);
+
+    ReconcilerEntry::Scale {
+        scale_wrapper,
+        widget: scale,
+        handler_id,
+        interacting,
+        pointer_down,
+        debounce_source,
+        on_value_change,
+        on_value_commit,
+    }
+}
+
 // -- Update helpers -----------------------------------------------------------
 
 fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
@@ -449,6 +726,8 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
         (ReconcilerEntry::Icon { widget }, VNodeKind::Icon(vi)) => {
             widget.update_icon(vi.hints);
             widget.widget().set_visible(vi.visible);
+            let classes: Vec<&str> = vi.css_classes.iter().map(|s| s.as_str()).collect();
+            widget.widget().set_css_classes(&classes);
         }
         (ReconcilerEntry::CustomButton { widget, handler_id, cb, child_reconciler },
          VNodeKind::CustomButton(vcb)) => {
@@ -527,6 +806,36 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
                 *cb = ver.on_change;
             }
         }
+        (ReconcilerEntry::ProgressBar { widget }, VNodeKind::ProgressBar(vpb)) => {
+            widget.set_fraction(vpb.fraction);
+            let classes: Vec<&str> = vpb.css_classes.iter().map(|s| s.as_str()).collect();
+            widget.set_css_classes(&classes);
+            widget.set_visible(vpb.visible);
+        }
+        (ReconcilerEntry::Revealer { widget, child_reconciler },
+         VNodeKind::Revealer(vrev)) => {
+            widget.set_reveal_child(vrev.reveal);
+            widget.set_transition_type(vrev.transition_type);
+            widget.set_transition_duration(vrev.transition_duration);
+            child_reconciler.reconcile(std::iter::once(*vrev.child));
+        }
+        (ReconcilerEntry::Scale { widget, handler_id, interacting,
+                                  on_value_change, on_value_commit, .. },
+         VNodeKind::Scale(vs)) => {
+            // If the user is actively interacting, skip the backend value update.
+            if !*interacting.borrow() {
+                widget.block_signal(handler_id);
+                widget.set_value(vs.value * 100.0);
+                widget.unblock_signal(handler_id);
+            }
+            let classes: Vec<&str> = vs.css_classes.iter().map(|s| s.as_str()).collect();
+            widget.set_css_classes(&classes);
+            // Replace the inner callback values. All closures (value-changed
+            // handler, gesture handlers, scroll handler) hold Rc-clones of
+            // these RefCells and will read the updated value on next invocation.
+            *on_value_change.borrow_mut() = vs.on_value_change;
+            *on_value_commit.borrow_mut() = vs.on_value_commit;
+        }
         // Mismatched arms are prevented by kind_tag_of check above; unreachable.
         _ => unreachable!("update_entry called with mismatched entry and VNodeKind"),
     }
@@ -543,6 +852,10 @@ fn apply_label_props(widget: &gtk::Label, vlabel: &VLabel) {
     widget.set_hexpand(vlabel.hexpand);
     if let Some(mode) = vlabel.ellipsize {
         widget.set_ellipsize(mode);
+    }
+    widget.set_wrap(vlabel.wrap);
+    if let Some(mode) = vlabel.wrap_mode {
+        widget.set_wrap_mode(mode);
     }
 }
 

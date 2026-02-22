@@ -14,32 +14,27 @@ use gtk::prelude::*;
 use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_protocol::entity::audio::AudioDeviceKind;
-use waft_ui_gtk::audio::device_row::{AudioDeviceRow, AudioDeviceRowOutput, AudioDeviceRowProps};
-use waft_ui_gtk::menu_state::menu_id_for_widget;
+use waft_ui_gtk::audio::device_row::AudioDeviceRowProps;
+use waft_ui_gtk::audio::slider_menu::{
+    AudioSliderDevice, AudioSliderMenu, AudioSliderMenuOutput, AudioSliderMenuProps,
+};
+use waft_ui_gtk::menu_state::{is_menu_open, menu_id_for_widget, toggle_menu};
 use waft_ui_gtk::vdom::Component;
-use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
 
 use super::throttled_sender::ThrottledSender;
 use waft_client::{EntityActionCallback, EntityStore};
 
-/// A device row in the expandable menu.
-struct DeviceMenuRow {
-    urn_str: String,
-    row: Rc<AudioDeviceRow>,
-}
-
 /// A slider entry keyed by device kind (output or input).
 struct SliderEntry {
-    widget: Rc<SliderWidget>,
+    menu: Rc<AudioSliderMenu>,
     kind: AudioDeviceKind,
-    #[allow(dead_code)]
-    menu_revealer: gtk::Revealer,
-    menu_box: gtk::Box,
-    device_rows: RefCell<Vec<DeviceMenuRow>>,
-    /// The outer box wrapping slider + revealer.
-    wrapper: gtk::Box,
-    /// Throttled sender for real-time value changes during drag.
     throttle: ThrottledSender,
+    /// Current default device URN (updated on each reconciliation).
+    /// Shared with the output callback so it always uses the latest URN.
+    current_urn: Rc<RefCell<Option<Urn>>>,
+    /// Latest rendered props — updated by both entity and menu-store subscriptions
+    /// so each subscription can patch only its own fields before re-rendering.
+    current_props: Rc<RefCell<AudioSliderMenuProps>>,
 }
 
 /// Renders volume sliders for default audio output and input devices with
@@ -105,15 +100,25 @@ impl AudioSlidersComponent {
                 if let Some((default_urn, default_dev)) = default_device {
                     let icon = slider_icon(default_dev);
                     let has_multiple = devices.len() > 1;
+                    let menu_id = menu_id_for_widget(&format!("audio-{kind_key}"));
+                    let props = AudioSliderMenuProps {
+                        icon,
+                        value: default_dev.volume,
+                        disabled: default_dev.muted,
+                        expandable: has_multiple,
+                        expanded: is_menu_open(&menu_store_ref, &menu_id),
+                        devices: build_device_entries(devices),
+                    };
 
                     if let Some(entry) = sliders.get(kind_key) {
-                        // Update existing slider with default device state
-                        entry.widget.set_value(default_dev.volume);
-                        entry.widget.set_disabled(default_dev.muted);
-                        entry.widget.set_icon(&icon);
-                        entry.widget.set_expandable(has_multiple);
+                        // Update existing entry with default device state
+                        entry.menu.update(&props);
+                        *entry.current_props.borrow_mut() = props;
 
-                        // Reconnect value_change, value_commit, and icon_click to the new default URN
+                        // Update the current URN so callbacks use the right device
+                        *entry.current_urn.borrow_mut() = Some((*default_urn).clone());
+
+                        // Update throttle callback for the new default device
                         let urn_for_drag = (*default_urn).clone();
                         let cb_drag = cb.clone();
                         entry.throttle.set_callback(move |v| {
@@ -123,43 +128,15 @@ impl AudioSlidersComponent {
                                 serde_json::json!({ "value": v }),
                             );
                         });
-
-                        let urn_for_value = (*default_urn).clone();
-                        let cb_value = cb.clone();
-                        entry.widget.connect_value_commit(move |v| {
-                            cb_value(
-                                urn_for_value.clone(),
-                                "set-volume".to_string(),
-                                serde_json::json!({ "value": v }),
-                            );
-                        });
-
-                        let urn_for_mute = (*default_urn).clone();
-                        let cb_mute = cb.clone();
-                        entry.widget.connect_icon_click(move || {
-                            cb_mute(
-                                urn_for_mute.clone(),
-                                "toggle-mute".to_string(),
-                                serde_json::Value::Null,
-                            );
-                        });
-
-                        // Update device menu rows
-                        update_device_rows(entry, devices, &cb);
                     } else {
                         // Create new slider entry for this kind
                         let menu_id = menu_id_for_widget(&format!("audio-{kind_key}"));
+                        let current_props = Rc::new(RefCell::new(props.clone()));
+                        let menu = Rc::new(AudioSliderMenu::build(&props));
 
-                        let slider = Rc::new(SliderWidget::new(
-                            SliderProps {
-                                icon,
-                                value: default_dev.volume,
-                                disabled: default_dev.muted,
-                                expandable: has_multiple,
-                                menu_id: Some(menu_id.clone()),
-                            },
-                            Some(menu_store_ref.clone()),
-                        ));
+                        // Track the current default device URN
+                        let current_urn: Rc<RefCell<Option<Urn>>> =
+                            Rc::new(RefCell::new(Some((*default_urn).clone())));
 
                         // Wire value_change -> throttled set-volume during drag
                         let throttle = ThrottledSender::new(Duration::from_millis(50));
@@ -172,83 +149,76 @@ impl AudioSlidersComponent {
                                 serde_json::json!({ "value": v }),
                             );
                         });
-                        slider.connect_value_change(throttle.throttle_fn());
+                        let throttle_fn = throttle.throttle_fn();
 
-                        // Wire value_commit -> set-volume action (fires on drag release)
-                        let urn_for_value = (*default_urn).clone();
-                        let cb_value = cb.clone();
-                        slider.connect_value_commit(move |v| {
-                            cb_value(
-                                urn_for_value.clone(),
-                                "set-volume".to_string(),
-                                serde_json::json!({ "value": v }),
-                            );
+                        // Wire output events
+                        let current_urn_out = current_urn.clone();
+                        let cb_out = cb.clone();
+                        let menu_store_out = menu_store_ref.clone();
+                        let menu_id_out = menu_id.clone();
+                        menu.connect_output(move |output| match output {
+                            AudioSliderMenuOutput::ValueChanged(v) => {
+                                throttle_fn(v);
+                            }
+                            AudioSliderMenuOutput::ValueCommit(v) => {
+                                if let Some(ref urn) = *current_urn_out.borrow() {
+                                    cb_out(
+                                        urn.clone(),
+                                        "set-volume".to_string(),
+                                        serde_json::json!({ "value": v }),
+                                    );
+                                }
+                            }
+                            AudioSliderMenuOutput::IconClick => {
+                                if let Some(ref urn) = *current_urn_out.borrow() {
+                                    cb_out(
+                                        urn.clone(),
+                                        "toggle-mute".to_string(),
+                                        serde_json::Value::Null,
+                                    );
+                                }
+                            }
+                            AudioSliderMenuOutput::ExpandClick => {
+                                toggle_menu(&menu_store_out, &menu_id_out);
+                            }
+                            AudioSliderMenuOutput::SelectDevice(urn) => {
+                                cb_out(urn, "set-default".to_string(), serde_json::Value::Null);
+                            }
                         });
 
-                        // Wire icon_click -> toggle-mute action
-                        let urn_for_mute = (*default_urn).clone();
-                        let cb_mute = cb.clone();
-                        slider.connect_icon_click(move || {
-                            cb_mute(
-                                urn_for_mute.clone(),
-                                "toggle-mute".to_string(),
-                                serde_json::Value::Null,
-                            );
-                        });
-
-                        // Menu content box
-                        let menu_box = gtk::Box::builder()
-                            .orientation(gtk::Orientation::Vertical)
-                            .spacing(0)
-                            .css_classes(["menu-content"])
-                            .build();
-
-                        // Revealer for device list
-                        let menu_revealer = gtk::Revealer::builder()
-                            .transition_type(gtk::RevealerTransitionType::SlideDown)
-                            .transition_duration(200)
-                            .reveal_child(false)
-                            .build();
-                        menu_revealer.set_child(Some(&menu_box));
-
-                        // Subscribe to MenuStore to show/hide the revealer
+                        // Subscribe to MenuStore to sync expand state
                         let store_sub = menu_store_ref.clone();
                         let mid = menu_id.clone();
-                        let rev = menu_revealer.clone();
+                        let menu_for_sub = Rc::clone(&menu);
+                        let props_for_sub = Rc::clone(&current_props);
                         menu_store_ref.subscribe(move || {
                             let state = store_sub.get_state();
                             let open = state.active_menu_id.as_deref() == Some(mid.as_str());
-                            rev.set_reveal_child(open);
+                            let mut current = props_for_sub.borrow_mut();
+                            if current.expanded != open {
+                                current.expanded = open;
+                                menu_for_sub.update(&*current);
+                            }
                         });
 
-                        // Wrapper box for slider + revealer
-                        let wrapper = gtk::Box::builder()
-                            .orientation(gtk::Orientation::Vertical)
-                            .spacing(0)
-                            .build();
-                        wrapper.append(&slider.widget());
-                        wrapper.append(&menu_revealer);
+                        container_ref.append(&menu.widget());
 
-                        let entry = SliderEntry {
-                            widget: slider,
-                            kind,
-                            menu_revealer,
-                            menu_box,
-                            device_rows: RefCell::new(Vec::new()),
-                            wrapper,
-                            throttle,
-                        };
-
-                        // Populate device rows
-                        update_device_rows(&entry, devices, &cb);
-
-                        sliders.insert(kind_key.to_string(), entry);
+                        sliders.insert(
+                            kind_key.to_string(),
+                            SliderEntry {
+                                menu,
+                                kind,
+                                throttle,
+                                current_urn,
+                                current_props,
+                            },
+                        );
                         needs_sort = true;
                     }
                 } else if devices.is_empty() {
                     // No devices at all for this kind -- remove the slider
                     if let Some(entry) = sliders.remove(kind_key) {
-                        container_ref.remove(&entry.wrapper);
+                        container_ref.remove(&entry.menu.widget());
                         needs_sort = true;
                     }
                 }
@@ -274,7 +244,7 @@ impl AudioSlidersComponent {
                 });
 
                 for (_, entry) in &sorted {
-                    container_ref.append(&entry.wrapper);
+                    container_ref.append(&entry.menu.widget());
                 }
 
                 container_ref.set_visible(!sliders.is_empty());
@@ -291,64 +261,21 @@ impl AudioSlidersComponent {
     }
 }
 
-/// Update device menu rows for a slider entry.
-fn update_device_rows(
-    entry: &SliderEntry,
-    devices: &[&(Urn, entity::audio::AudioDevice)],
-    action_callback: &EntityActionCallback,
-) {
-    let mut rows = entry.device_rows.borrow_mut();
-
-    // Collect current device URN strings
-    let current_urns: Vec<String> = devices
+/// Build the device list for `AudioSliderMenuProps` from raw entity data.
+fn build_device_entries(devices: &[&(Urn, entity::audio::AudioDevice)]) -> Vec<AudioSliderDevice> {
+    devices
         .iter()
-        .map(|(urn, _)| urn.as_str().to_string())
-        .collect();
-
-    // Remove stale rows
-    rows.retain(|row| {
-        if current_urns.contains(&row.urn_str) {
-            true
-        } else {
-            row.row.widget().unparent();
-            false
-        }
-    });
-
-    // Update existing or create new rows
-    for (urn, device) in devices {
-        let urn_str = urn.as_str().to_string();
-        let props = AudioDeviceRowProps {
-            device_type: device.device_type.clone(),
-            connection_type: device.connection_type.clone(),
-            kind: device.kind,
-            name: device.name.clone(),
-            active: device.default,
-        };
-
-        if let Some(existing) = rows.iter().find(|r| r.urn_str == urn_str) {
-            existing.row.update(&props);
-        } else {
-            // Create new row
-            let device_row = Rc::new(AudioDeviceRow::build(&props));
-
-            let action_cb = action_callback.clone();
-            let urn_for_action = (*urn).clone();
-            device_row.connect_output(move |AudioDeviceRowOutput::SelectAsDefault| {
-                action_cb(
-                    urn_for_action.clone(),
-                    "set-default".to_string(),
-                    serde_json::Value::Null,
-                );
-            });
-
-            entry.menu_box.append(&device_row.widget());
-            rows.push(DeviceMenuRow {
-                urn_str,
-                row: device_row,
-            });
-        }
-    }
+        .map(|(urn, device)| AudioSliderDevice {
+            urn: (*urn).clone(),
+            props: AudioDeviceRowProps {
+                device_type: device.device_type.clone(),
+                connection_type: device.connection_type.clone(),
+                kind: device.kind,
+                name: device.name.clone(),
+                active: device.default,
+            },
+        })
+        .collect()
 }
 
 /// Compute the volume-level icon for an audio device slider.

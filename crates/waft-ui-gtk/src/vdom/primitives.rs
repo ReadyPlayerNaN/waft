@@ -58,6 +58,8 @@ pub struct VLabel {
     pub xalign:      Option<f32>,
     pub hexpand:     bool,
     pub ellipsize:   Option<gtk::pango::EllipsizeMode>,
+    pub wrap:        bool,
+    pub wrap_mode:   Option<gtk::pango::WrapMode>,
 }
 
 impl VLabel {
@@ -68,6 +70,8 @@ impl VLabel {
             xalign:      None,
             hexpand:     false,
             ellipsize:   None,
+            wrap:        false,
+            wrap_mode:   None,
         }
     }
 
@@ -88,6 +92,16 @@ impl VLabel {
 
     pub fn ellipsize(mut self, mode: gtk::pango::EllipsizeMode) -> Self {
         self.ellipsize = Some(mode);
+        self
+    }
+
+    pub fn wrap(mut self, v: bool) -> Self {
+        self.wrap = v;
+        self
+    }
+
+    pub fn wrap_mode(mut self, mode: gtk::pango::WrapMode) -> Self {
+        self.wrap_mode = Some(mode);
         self
     }
 }
@@ -173,15 +187,16 @@ impl VButton {
 
 /// Descriptor for an `IconWidget` primitive VNode.
 pub struct VIcon {
-    pub hints:      Vec<Icon>,
-    pub pixel_size: i32,
-    pub visible:    bool,
-    pub fallback:   bool,
+    pub hints:       Vec<Icon>,
+    pub pixel_size:  i32,
+    pub visible:     bool,
+    pub fallback:    bool,
+    pub css_classes: Vec<String>,
 }
 
 impl VIcon {
     pub fn new(hints: Vec<Icon>, pixel_size: i32) -> Self {
-        Self { hints, pixel_size, visible: true, fallback: true }
+        Self { hints, pixel_size, visible: true, fallback: true, css_classes: Vec::new() }
     }
 
     pub fn visible(mut self, v: bool) -> Self {
@@ -191,6 +206,43 @@ impl VIcon {
 
     pub fn fallback(mut self, v: bool) -> Self {
         self.fallback = v;
+        self
+    }
+
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    pub fn css_classes(mut self, classes: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.css_classes.extend(classes.into_iter().map(|c| c.into()));
+        self
+    }
+}
+
+/// Descriptor for a `gtk::ProgressBar` primitive VNode.
+pub struct VProgressBar {
+    pub fraction:    f64,
+    pub css_classes: Vec<String>,
+    pub visible:     bool,
+}
+
+impl VProgressBar {
+    pub fn new(fraction: f64) -> Self {
+        Self { fraction, css_classes: Vec::new(), visible: true }
+    }
+
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    pub fn css_class_if(self, condition: bool, class: impl Into<String>) -> Self {
+        if condition { self.css_class(class) } else { self }
+    }
+
+    pub fn visible(mut self, v: bool) -> Self {
+        self.visible = v;
         self
     }
 }
@@ -350,6 +402,73 @@ impl VEntryRow {
 
     pub fn on_change(mut self, f: impl Fn(String) + 'static) -> Self {
         self.on_change = Some(Rc::new(f));
+        self
+    }
+}
+
+/// Descriptor for a `gtk::Revealer` container VNode.
+pub struct VRevealer {
+    pub reveal:              bool,
+    pub transition_type:     gtk::RevealerTransitionType,
+    pub transition_duration: u32,
+    pub child:               Box<super::VNode>,
+}
+
+impl VRevealer {
+    pub fn new(reveal: bool, child: super::VNode) -> Self {
+        Self {
+            reveal,
+            transition_type: gtk::RevealerTransitionType::SlideDown,
+            transition_duration: 200,
+            child: Box::new(child),
+        }
+    }
+
+    pub fn transition_type(mut self, t: gtk::RevealerTransitionType) -> Self {
+        self.transition_type = t;
+        self
+    }
+
+    pub fn transition_duration(mut self, ms: u32) -> Self {
+        self.transition_duration = ms;
+        self
+    }
+}
+
+/// Descriptor for a `gtk::Scale` primitive VNode with interaction tracking.
+///
+/// The reconciler entry manages gesture controllers, signal blocking, and
+/// debounce timers. During active user interaction (drag, scroll, keyboard),
+/// backend value updates are suppressed to avoid fighting the user.
+pub struct VScale {
+    pub value:           f64,
+    pub css_classes:     Vec<String>,
+    pub on_value_change: Option<Rc<dyn Fn(f64)>>,
+    pub on_value_commit: Option<Rc<dyn Fn(f64)>>,
+}
+
+impl VScale {
+    pub fn new(value: f64) -> Self {
+        Self {
+            value,
+            css_classes: Vec::new(),
+            on_value_change: None,
+            on_value_commit: None,
+        }
+    }
+
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    pub fn on_value_change(mut self, f: impl Fn(f64) + 'static) -> Self {
+        self.on_value_change = Some(Rc::new(f));
+        self
+    }
+
+    pub fn on_value_commit(mut self, f: impl Fn(f64) + 'static) -> Self {
+        self.on_value_commit = Some(Rc::new(f));
         self
     }
 }

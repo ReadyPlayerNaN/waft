@@ -11,6 +11,7 @@ use gtk::prelude::*;
 use uuid::Uuid;
 
 use crate::icons::IconWidget;
+use crate::vdom::Component;
 use crate::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use waft_core::Callback;
 use waft_core::menu_state::{MenuOp, MenuStore};
@@ -128,11 +129,11 @@ impl FeatureToggleWidget {
         main_button.set_child(Some(&main_content));
 
         // Expand button (with menu chevron)
-        let menu_chevron = MenuChevronWidget::new(MenuChevronProps { expanded: false });
+        let menu_chevron = Rc::new(MenuChevronWidget::build(&MenuChevronProps { expanded: false }));
         let expand_button = gtk::Button::builder()
             .css_classes(["toggle-expand"])
             .build();
-        expand_button.set_child(Some(&menu_chevron.root));
+        expand_button.set_child(Some(&menu_chevron.widget()));
 
         // Wrap expand button in revealer for smooth slide-left transition
         let expand_revealer = gtk::Revealer::builder()
@@ -181,7 +182,7 @@ impl FeatureToggleWidget {
 
             // Subscribe to menu store updates
             let root_clone = root.clone();
-            let menu_chevron_clone = menu_chevron.clone();
+            let menu_chevron_clone = Rc::clone(&menu_chevron);
             let expanded_clone = expanded.clone();
             let active_clone = active.clone();
             let busy_clone = busy.clone();
@@ -194,7 +195,7 @@ impl FeatureToggleWidget {
                 let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id_clone);
 
                 *expanded_clone.borrow_mut() = should_be_open;
-                menu_chevron_clone.set_expanded(should_be_open);
+                menu_chevron_clone.update(&MenuChevronProps { expanded: should_be_open });
                 Self::update_css_classes(
                     &root_clone,
                     *active_clone.borrow(),
@@ -215,7 +216,7 @@ impl FeatureToggleWidget {
                 let should_be_open =
                     state.active_menu_id.as_ref() == Some(menu_id.as_ref().unwrap());
                 *expanded.borrow_mut() = should_be_open;
-                menu_chevron.set_expanded(should_be_open);
+                menu_chevron.update(&MenuChevronProps { expanded: should_be_open });
                 Self::update_css_classes(
                     &root,
                     *active.borrow(),

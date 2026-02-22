@@ -14,6 +14,7 @@ use gtk::prelude::*;
 use waft_protocol::Urn;
 use waft_protocol::entity::notification::{NotificationAction, NotificationIconHint};
 use waft_ui_gtk::icons::{Icon, IconWidget};
+use waft_ui_gtk::vdom::Component;
 use waft_ui_gtk::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use waft_ui_gtk::widgets::notification_card::{NotificationCard, NotificationCardOutput};
 
@@ -54,7 +55,7 @@ pub struct NotificationGroup {
     count_label: gtk::Label,
     expand_btn: gtk::Button,
     #[allow(dead_code)]
-    menu_chevron: MenuChevronWidget,
+    menu_chevron: Rc<MenuChevronWidget>,
     on_output: OutputCallback<NotificationGroupOutput>,
     #[allow(dead_code)]
     menu_id: String,
@@ -112,12 +113,12 @@ impl NotificationGroup {
             .build();
 
         // Expand/collapse button with menu chevron
-        let menu_chevron = MenuChevronWidget::new(MenuChevronProps { expanded: false });
+        let menu_chevron = Rc::new(MenuChevronWidget::build(&MenuChevronProps { expanded: false }));
         let expand_btn = gtk::Button::builder()
             .css_classes(["flat", "circular", "notification-expand"])
             .visible(false)
             .build();
-        expand_btn.set_child(Some(&menu_chevron.root));
+        expand_btn.set_child(Some(&menu_chevron.widget()));
 
         header.append(icon_widget.widget());
         header.append(&app_title_label);
@@ -164,14 +165,14 @@ impl NotificationGroup {
         // Subscribe to MenuStore for expand/collapse state
         {
             let hidden_cards_revealer_ref = hidden_cards_revealer.clone();
-            let menu_chevron_ref = menu_chevron.clone();
+            let menu_chevron_ref = Rc::clone(&menu_chevron);
             let menu_id_clone = menu_id.clone();
             let menu_store_ref = menu_store.clone();
             menu_store.subscribe(move || {
                 let state = menu_store_ref.get_state();
                 let expanded = state.active_menu_id.as_ref() == Some(&menu_id_clone);
                 hidden_cards_revealer_ref.set_reveal_child(expanded);
-                menu_chevron_ref.set_expanded(expanded);
+                menu_chevron_ref.update(&MenuChevronProps { expanded });
             });
         }
 

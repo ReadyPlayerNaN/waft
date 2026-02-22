@@ -8,7 +8,7 @@ use crate::icons::Icon;
 use crate::test_init::init_gtk_for_tests;
 use crate::vdom::{Component, Reconciler, VNode};
 use super::{RenderCallback, RenderComponent, RenderFn};
-use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch, VSwitchRow};
+use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VProgressBar, VRevealer, VScale, VSpinner, VSwitch, VSwitchRow};
 
 // ── Minimal test component ────────────────────────────────────────────────
 
@@ -295,11 +295,9 @@ fn test_render_component_builds_from_render_fn() {
         SimpleProps { text: "hello".into() },
     )]);
     assert_eq!(container.observe_children().n_items(), 1);
-    // Root widget is a gtk::Box wrapping the rendered label.
-    let root_box = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
-    assert_eq!(root_box.observe_children().n_items(), 1);
-    let inner = root_box.first_child().unwrap().downcast::<gtk::Label>().unwrap();
-    assert_eq!(inner.label(), "hello");
+    // Root widget is the rendered label directly — no gtk::Box wrapper.
+    let label = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(label.label(), "hello");
 }
 
 fn test_render_component_updates_on_props_change() {
@@ -322,15 +320,15 @@ fn test_render_component_updates_on_props_change() {
     )
     .key("rc")]);
 
-    let root_box = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
-    let inner = root_box.first_child().unwrap().downcast::<gtk::Label>().unwrap();
-    assert_eq!(inner.label(), "before");
+    // Root widget is the rendered label directly — no gtk::Box wrapper.
+    let label = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(label.label(), "before");
 
     r.reconcile([VNode::new::<RenderComponent<UpdatingRender>>(
         UpdatingProps { text: "after".into() },
     )
     .key("rc")]);
-    assert_eq!(inner.label(), "after");
+    assert_eq!(label.label(), "after");
 }
 
 fn test_render_component_emit_callback_wired() {
@@ -440,8 +438,9 @@ fn test_custom_button_builds_with_child_vnode() {
     )]);
     assert_eq!(container.observe_children().n_items(), 1);
     let btn = container.first_child().unwrap().downcast::<gtk::Button>().unwrap();
-    let inner_box = btn.child().unwrap().downcast::<gtk::Box>().unwrap();
-    assert_eq!(inner_box.observe_children().n_items(), 1);
+    // Child is set directly on the button — no intermediate gtk::Box wrapper.
+    let label = btn.child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(label.label(), "inner");
 }
 
 fn test_custom_button_updates_child_vnode() {
@@ -450,8 +449,8 @@ fn test_custom_button_updates_child_vnode() {
         VCustomButton::new(VNode::label(VLabel::new("before")).key("l")),
     ).key("cb")]);
     let btn = container.first_child().unwrap().downcast::<gtk::Button>().unwrap();
-    let inner_box = btn.child().unwrap().downcast::<gtk::Box>().unwrap();
-    let label = inner_box.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    // Child is set directly on the button — no intermediate gtk::Box wrapper.
+    let label = btn.child().unwrap().downcast::<gtk::Label>().unwrap();
     assert_eq!(label.label(), "before");
 
     r.reconcile([VNode::custom_button(
@@ -606,6 +605,114 @@ fn test_switch_updates_active_without_spurious_callback() {
     assert_eq!(*fired.borrow(), 0, "programmatic active change must not fire on_toggle");
 }
 
+// ── Revealer primitive tests ──────────────────────────────────────────────
+
+fn test_revealer_build_creates_widget() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::revealer(
+        VRevealer::new(true, VNode::label(VLabel::new("content"))),
+    )]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let rev = container.first_child().unwrap().downcast::<gtk::Revealer>().unwrap();
+    assert!(rev.reveals_child());
+    assert_eq!(rev.transition_type(), gtk::RevealerTransitionType::SlideDown);
+    assert_eq!(rev.transition_duration(), 200);
+}
+
+fn test_revealer_update_toggles_reveal() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::revealer(
+        VRevealer::new(true, VNode::label(VLabel::new("c"))),
+    ).key("rev")]);
+    let rev = container.first_child().unwrap().downcast::<gtk::Revealer>().unwrap();
+    assert!(rev.reveals_child());
+
+    r.reconcile([VNode::revealer(
+        VRevealer::new(false, VNode::label(VLabel::new("c"))),
+    ).key("rev")]);
+    assert!(!rev.reveals_child());
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+fn test_revealer_child_reconciled() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::revealer(
+        VRevealer::new(true, VNode::label(VLabel::new("before")).key("l")),
+    ).key("rev")]);
+    let rev = container.first_child().unwrap().downcast::<gtk::Revealer>().unwrap();
+    let inner_box = rev.child().unwrap().downcast::<gtk::Box>().unwrap();
+    let label = inner_box.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(label.label(), "before");
+
+    r.reconcile([VNode::revealer(
+        VRevealer::new(true, VNode::label(VLabel::new("after")).key("l")),
+    ).key("rev")]);
+    assert_eq!(label.label(), "after");
+}
+
+// ── ProgressBar primitive tests ───────────────────────────────────────────
+
+fn test_progress_bar_builds_widget() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::progress_bar(
+        VProgressBar::new(0.5).css_class("notification-progress"),
+    )]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let pb = container.first_child().unwrap().downcast::<gtk::ProgressBar>().unwrap();
+    assert!((pb.fraction() - 0.5).abs() < 0.001);
+    assert!(pb.css_classes().iter().any(|c| c == "notification-progress"));
+}
+
+fn test_progress_bar_updates_fraction() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::progress_bar(VProgressBar::new(0.3)).key("pb")]);
+    let pb = container.first_child().unwrap().downcast::<gtk::ProgressBar>().unwrap();
+    assert!((pb.fraction() - 0.3).abs() < 0.001);
+
+    r.reconcile([VNode::progress_bar(VProgressBar::new(0.7)).key("pb")]);
+    assert!((pb.fraction() - 0.7).abs() < 0.001);
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+// ── Scale primitive tests ────────────────────────────────────────────────
+
+fn test_scale_builds_widget() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::scale(VScale::new(0.5).css_class("slider-scale"))]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    // VScale renders as a gtk::Box wrapper containing the gtk::Scale.
+    let wrapper = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    let scale = wrapper.first_child().unwrap().downcast::<gtk::Scale>().unwrap();
+    assert!((scale.value() - 50.0).abs() < 0.1, "scale value should be 50.0, got {}", scale.value());
+    assert!(scale.css_classes().iter().any(|c| c == "slider-scale"));
+}
+
+fn test_scale_updates_value() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::scale(VScale::new(0.3)).key("sc")]);
+    let wrapper = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    let scale = wrapper.first_child().unwrap().downcast::<gtk::Scale>().unwrap();
+    assert!((scale.value() - 30.0).abs() < 0.1);
+
+    r.reconcile([VNode::scale(VScale::new(0.7)).key("sc")]);
+    assert!((scale.value() - 70.0).abs() < 0.1, "scale value should be 70.0 after update, got {}", scale.value());
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+// ── CountdownBarRender test ──────────────────────────────────────────────
+
+fn test_countdown_bar_render() {
+    use crate::widgets::countdown_bar::{CountdownBarComponent, CountdownBarProps};
+
+    let component = CountdownBarComponent::build(&CountdownBarProps {
+        fraction: 0.5,
+        paused: false,
+    });
+    let widget = component.widget();
+    // RenderComponent now returns the rendered widget directly — a gtk::ProgressBar.
+    assert!(widget.downcast::<gtk::ProgressBar>().is_ok(), "CountdownBarRender should produce a gtk::ProgressBar");
+}
+
 // ── Single GTK test entry point ───────────────────────────────────────────
 //
 // GTK requires the OS main thread. Rust's test harness spawns each #[test]
@@ -667,4 +774,14 @@ fn all_reconciler_tests() {
     test_switch_row_updates_active_without_spurious_callback();
     test_entry_row_builds_with_text();
     test_entry_row_updates_text_without_spurious_callback();
+
+    test_revealer_build_creates_widget();
+    test_revealer_update_toggles_reveal();
+    test_revealer_child_reconciled();
+
+    test_progress_bar_builds_widget();
+    test_progress_bar_updates_fraction();
+    test_scale_builds_widget();
+    test_scale_updates_value();
+    test_countdown_bar_render();
 }

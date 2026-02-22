@@ -27,6 +27,20 @@ impl VdomContainer for adw::PreferencesGroup {
     }
 }
 
+/// Wrapper giving a `VdomContainer` impl for the single-child slot of a
+/// `gtk::Button`. Uses `set_child()` to place exactly one widget.
+pub struct ButtonChildContainer(pub gtk::Button);
+
+impl VdomContainer for ButtonChildContainer {
+    fn vdom_append(&self, widget: &gtk::Widget) {
+        self.0.set_child(Some(widget));
+    }
+
+    fn vdom_remove(&self, _widget: &gtk::Widget) {
+        self.0.set_child(gtk::Widget::NONE);
+    }
+}
+
 /// Wrapper giving a `VdomContainer` impl for the **suffix** slot of an
 /// `adw::ActionRow`. Uses `add_suffix()` / `Widget::unparent()`.
 pub struct ActionRowSuffixContainer(pub adw::ActionRow);
