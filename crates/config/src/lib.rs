@@ -84,6 +84,25 @@ pub struct PluginConfigEntry {
     pub settings: toml::Table,
 }
 
+/// Launcher application configuration.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct LauncherConfig {
+    /// Boost recently/frequently used apps in search results.
+    pub rank_by_usage: bool,
+    /// Maximum number of search results to show.
+    pub max_results: usize,
+}
+
+impl Default for LauncherConfig {
+    fn default() -> Self {
+        Self {
+            rank_by_usage: true,
+            max_results: 20,
+        }
+    }
+}
+
 /// Top-level configuration.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
@@ -94,6 +113,8 @@ pub struct Config {
     pub toasts: ToastsConfig,
     #[serde(default)]
     pub plugins: Vec<PluginConfigEntry>,
+    #[serde(default)]
+    pub launcher: LauncherConfig,
 }
 
 impl Config {
@@ -140,6 +161,7 @@ mod tests {
         Config {
             system: SystemConfig::default(),
             toasts: ToastsConfig::default(),
+            launcher: LauncherConfig::default(),
             plugins: vec![
                 PluginConfigEntry {
                     id: "clock".to_string(),
@@ -344,5 +366,26 @@ daemon_mode = "opt-in"
         assert!(!ToastPosition::BottomLeft.newest_on_top());
         assert!(!ToastPosition::BottomCenter.newest_on_top());
         assert!(!ToastPosition::BottomRight.newest_on_top());
+    }
+
+    #[test]
+    fn launcher_config_defaults() {
+        let config: Config = toml::from_str("").unwrap();
+        assert!(config.launcher.rank_by_usage);
+        assert_eq!(config.launcher.max_results, 20);
+    }
+
+    #[test]
+    fn launcher_config_from_toml() {
+        let config: Config = toml::from_str(
+            r#"
+            [launcher]
+            rank_by_usage = false
+            max_results = 10
+        "#,
+        )
+        .unwrap();
+        assert!(!config.launcher.rank_by_usage);
+        assert_eq!(config.launcher.max_results, 10);
     }
 }
