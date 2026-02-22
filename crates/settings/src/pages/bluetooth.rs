@@ -12,8 +12,7 @@ use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
 use waft_ui_gtk::vdom::{Reconciler, VNode};
 
-use crate::bluetooth::adapter_group::{AdapterGroupOutput, AdapterGroupProps};
-use crate::bluetooth::adapter_group::AdapterGroup;
+use crate::bluetooth::adapter_group::{AdapterGroup, AdapterGroupOutput, AdapterGroupProps};
 use crate::bluetooth::discovered_devices_group::{
     DiscoveredDevicesGroup, DiscoveredDevicesGroupOutput,
 };
@@ -129,7 +128,33 @@ impl BluetoothPage {
                     "[bluetooth-page] Adapter subscription triggered: {} adapters",
                     adapters.len()
                 );
-                Self::reconcile_adapters(&state, &adapters, &cb);
+                {
+                    let mut st = state.borrow_mut();
+                    st.adapters_reconciler.reconcile(adapters.iter().map(|(urn, adapter)| {
+                        let key = urn.as_str().to_string();
+                        let urn = urn.clone();
+                        let cb = cb.clone();
+                        VNode::with_output::<AdapterGroup>(
+                            AdapterGroupProps {
+                                name:         adapter.name.clone(),
+                                powered:      adapter.powered,
+                                discoverable: adapter.discoverable,
+                            },
+                            move |output| {
+                                let (action, params) = match output {
+                                    AdapterGroupOutput::TogglePower =>
+                                        ("toggle-power", serde_json::Value::Null),
+                                    AdapterGroupOutput::ToggleDiscoverable =>
+                                        ("toggle-discoverable", serde_json::Value::Null),
+                                    AdapterGroupOutput::SetAlias(alias) =>
+                                        ("set-alias", serde_json::json!({ "alias": alias })),
+                                };
+                                cb(urn.clone(), action.to_string(), params);
+                            },
+                        )
+                        .key(key)
+                    }));
+                }
                 let devices: Vec<(Urn, BluetoothDevice)> =
                     device_store.get_entities_typed(BluetoothDevice::ENTITY_TYPE);
                 Self::reconcile_devices(&state, &devices, &adapters, &cb);
@@ -176,51 +201,39 @@ impl BluetoothPage {
                         adapters.len(),
                         devices.len()
                     );
-                    Self::reconcile_adapters(&state_clone, &adapters, &cb_clone);
+                    {
+                        let mut st = state_clone.borrow_mut();
+                        st.adapters_reconciler.reconcile(adapters.iter().map(|(urn, adapter)| {
+                            let key = urn.as_str().to_string();
+                            let urn = urn.clone();
+                            let cb = cb_clone.clone();
+                            VNode::with_output::<AdapterGroup>(
+                                AdapterGroupProps {
+                                    name:         adapter.name.clone(),
+                                    powered:      adapter.powered,
+                                    discoverable: adapter.discoverable,
+                                },
+                                move |output| {
+                                    let (action, params) = match output {
+                                        AdapterGroupOutput::TogglePower =>
+                                            ("toggle-power", serde_json::Value::Null),
+                                        AdapterGroupOutput::ToggleDiscoverable =>
+                                            ("toggle-discoverable", serde_json::Value::Null),
+                                        AdapterGroupOutput::SetAlias(alias) =>
+                                            ("set-alias", serde_json::json!({ "alias": alias })),
+                                    };
+                                    cb(urn.clone(), action.to_string(), params);
+                                },
+                            )
+                            .key(key)
+                        }));
+                    }
                     Self::reconcile_devices(&state_clone, &devices, &adapters, &cb_clone);
                 }
             });
         }
 
         Self { root }
-    }
-
-    /// Reconcile adapter groups with current adapter data using Reconciler.
-    fn reconcile_adapters(
-        state: &Rc<RefCell<BluetoothPageState>>,
-        adapters: &[(Urn, BluetoothAdapter)],
-        action_callback: &EntityActionCallback,
-    ) {
-        let mut state = state.borrow_mut();
-        state.adapters_reconciler.reconcile(
-            adapters.iter().map(|(urn, adapter)| {
-                let key = urn.as_str().to_string();
-                let urn = urn.clone();
-                let cb = action_callback.clone();
-                VNode::with_output::<AdapterGroup>(
-                    AdapterGroupProps {
-                        name: adapter.name.clone(),
-                        powered: adapter.powered,
-                        discoverable: adapter.discoverable,
-                    },
-                    move |output| {
-                        let (action, params) = match output {
-                            AdapterGroupOutput::TogglePower => {
-                                ("toggle-power", serde_json::Value::Null)
-                            }
-                            AdapterGroupOutput::ToggleDiscoverable => {
-                                ("toggle-discoverable", serde_json::Value::Null)
-                            }
-                            AdapterGroupOutput::SetAlias(alias) => {
-                                ("set-alias", serde_json::json!({ "alias": alias }))
-                            }
-                        };
-                        cb(urn.clone(), action.to_string(), params);
-                    },
-                )
-                .key(key)
-            }),
-        );
     }
 
     /// Reconcile device lists with current device data.

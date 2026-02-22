@@ -16,7 +16,7 @@ use waft_ui_gtk::vdom::{Reconciler, VNode};
 
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
-use crate::wifi::adapter_group::{WifiAdapterGroupOutput, WifiAdapterGroupProps};
+use crate::wifi::adapter_group::{WifiAdapterGroup, WifiAdapterGroupOutput, WifiAdapterGroupProps};
 use crate::wifi::available_networks_group::{AvailableNetworksGroup, AvailableNetworksGroupOutput};
 use crate::wifi::known_networks_group::KnownNetworksGroup;
 
@@ -107,7 +107,32 @@ impl WiFiPage {
             entity_store.subscribe_type(ADAPTER_ENTITY_TYPE, move || {
                 let adapters: Vec<(Urn, NetworkAdapter)> =
                     store.get_entities_typed(ADAPTER_ENTITY_TYPE);
-                Self::reconcile_adapters(&state, &adapters, &cb);
+                {
+                    let mut st = state.borrow_mut();
+                    st.adapters_reconciler.reconcile(
+                        adapters.iter()
+                            .filter(|(_, a)| a.kind == AdapterKind::Wireless)
+                            .map(|(urn, adapter)| {
+                                let urn_key = urn.as_str().to_string();
+                                let urn = urn.clone();
+                                let cb = cb.clone();
+                                VNode::with_output::<WifiAdapterGroup>(
+                                    WifiAdapterGroupProps {
+                                        name:    adapter.name.clone(),
+                                        enabled: adapter.enabled,
+                                    },
+                                    move |output| {
+                                        let action = match output {
+                                            WifiAdapterGroupOutput::Enable  => "activate",
+                                            WifiAdapterGroupOutput::Disable => "deactivate",
+                                        };
+                                        cb(urn.clone(), action.to_string(), serde_json::Value::Null);
+                                    },
+                                )
+                                .key(urn_key)
+                            }),
+                    );
+                }
                 // Also reconcile networks when adapter state changes (e.g. scanning state)
                 let networks: Vec<(Urn, WiFiNetwork)> =
                     network_store.get_entities_typed(WiFiNetwork::ENTITY_TYPE);
@@ -148,52 +173,38 @@ impl WiFiPage {
                         adapters.len(),
                         networks.len()
                     );
-                    Self::reconcile_adapters(&state_clone, &adapters, &cb_clone);
+                    {
+                        let mut st = state_clone.borrow_mut();
+                        st.adapters_reconciler.reconcile(
+                            adapters.iter()
+                                .filter(|(_, a)| a.kind == AdapterKind::Wireless)
+                                .map(|(urn, adapter)| {
+                                    let urn_key = urn.as_str().to_string();
+                                    let urn = urn.clone();
+                                    let cb = cb_clone.clone();
+                                    VNode::with_output::<WifiAdapterGroup>(
+                                        WifiAdapterGroupProps {
+                                            name:    adapter.name.clone(),
+                                            enabled: adapter.enabled,
+                                        },
+                                        move |output| {
+                                            let action = match output {
+                                                WifiAdapterGroupOutput::Enable  => "activate",
+                                                WifiAdapterGroupOutput::Disable => "deactivate",
+                                            };
+                                            cb(urn.clone(), action.to_string(), serde_json::Value::Null);
+                                        },
+                                    )
+                                    .key(urn_key)
+                                }),
+                        );
+                    }
                     Self::reconcile_networks(&state_clone, &networks, &adapters, &cb_clone);
                 }
             });
         }
 
         Self { root }
-    }
-
-    fn reconcile_adapters(
-        state: &Rc<RefCell<WiFiPageState>>,
-        adapters: &[(Urn, NetworkAdapter)],
-        action_callback: &EntityActionCallback,
-    ) {
-        let mut state = state.borrow_mut();
-
-        let wireless_adapters: Vec<_> = adapters
-            .iter()
-            .filter(|(_, a)| a.kind == AdapterKind::Wireless)
-            .collect();
-
-        state.adapters_reconciler.reconcile(
-            wireless_adapters.iter().map(|(urn, adapter)| {
-                let urn_key = urn.as_str().to_string();
-                let urn = (*urn).clone();
-                let cb = action_callback.clone();
-                VNode::with_output::<crate::wifi::adapter_group::WifiAdapterGroup>(
-                    WifiAdapterGroupProps {
-                        name: adapter.name.clone(),
-                        enabled: adapter.enabled,
-                    },
-                    move |output| {
-                        let action = match output {
-                            WifiAdapterGroupOutput::Enable => "activate",
-                            WifiAdapterGroupOutput::Disable => "deactivate",
-                        };
-                        cb(
-                            urn.clone(),
-                            action.to_string(),
-                            serde_json::Value::Null,
-                        );
-                    },
-                )
-                .key(urn_key)
-            }),
-        );
     }
 
     fn reconcile_networks(
