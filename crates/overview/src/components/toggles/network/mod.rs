@@ -5,6 +5,7 @@
 //! menus showing child networks/connections.
 
 mod network_menu_logic;
+mod vpn;
 pub(crate) use network_menu_logic::{details_text, should_be_expandable};
 
 use std::cell::{Cell, RefCell};
@@ -29,7 +30,7 @@ use crate::ui::feature_toggles::menu_settings::{
 use waft_client::{EntityActionCallback, EntityStore};
 
 /// A tracked toggle entry for a network adapter or VPN.
-struct ToggleEntry {
+pub(super) struct ToggleEntry {
     urn_str: String,
     toggle: Rc<FeatureToggleWidget>,
     menu: FeatureToggleMenuWidget,
@@ -44,7 +45,7 @@ struct ToggleEntry {
 
 /// A single network row in the menu — either a plain box (WiFi/Ethernet)
 /// or a ConnectionRow widget (VPN).
-enum NetworkRow {
+pub(super) enum NetworkRow {
     /// WiFi/Ethernet rows using plain gtk::Box layout.
     Plain { urn_str: String, root: gtk::Box },
     /// VPN rows using the extracted ConnectionRow widget.
@@ -362,7 +363,7 @@ impl NetworkManagerToggles {
                     entry.toggle.set_expandable(!vpns.is_empty());
 
                     // Update VPN menu rows
-                    Self::update_vpn_menu_rows(entry, &vpns, &cb);
+                    vpn::update_vpn_menu_rows(entry, &vpns, &cb);
                 } else {
                     // Create consolidated VPN toggle
                     let widget_id = "network-toggle-vpn-consolidated";
@@ -414,7 +415,7 @@ impl NetworkManagerToggles {
                     };
 
                     // Populate VPN menu rows
-                    Self::update_vpn_menu_rows(&entry, &vpns, &cb);
+                    vpn::update_vpn_menu_rows(&entry, &vpns, &cb);
 
                     entries_mut.push(entry);
                     drop(entries_mut);
@@ -617,83 +618,6 @@ impl NetworkManagerToggles {
                 entry
                     .menu
                     .reorder_child_after(&btn_container.widget(), entry.menu.last_child().as_ref());
-            }
-        }
-    }
-
-    /// Update VPN menu rows inside the consolidated VPN toggle.
-    ///
-    /// Uses ConnectionRow widgets with incremental updates instead of
-    /// full drain+recreate.
-    fn update_vpn_menu_rows(
-        entry: &ToggleEntry,
-        vpns: &[(Urn, entity::network::Vpn)],
-        action_callback: &EntityActionCallback,
-    ) {
-        let mut network_rows = entry.network_rows.borrow_mut();
-
-        // Remove rows for VPNs that no longer exist
-        let current_vpn_urns: Vec<String> = vpns
-            .iter()
-            .map(|(urn, _)| urn.as_str().to_string())
-            .collect();
-        network_rows.retain(|row| {
-            if current_vpn_urns.iter().any(|u| u == row.urn_str()) {
-                true
-            } else {
-                row.remove_from(&entry.menu.root());
-                false
-            }
-        });
-
-        // Update existing or create new rows
-        for (vpn_urn, vpn) in vpns {
-            let vpn_urn_str = vpn_urn.as_str().to_string();
-            let active = vpn.state == entity::network::VpnState::Connected;
-            let transitioning = matches!(
-                vpn.state,
-                entity::network::VpnState::Connecting | entity::network::VpnState::Disconnecting
-            );
-
-            if let Some(existing) = network_rows.iter().find(|r| r.urn_str() == vpn_urn_str) {
-                // Update existing ConnectionRow
-                if let NetworkRow::Connection { row, .. } = existing {
-                    row.set_name(&vpn.name);
-                    row.set_active(active);
-                    row.set_transitioning(transitioning);
-                }
-            } else {
-                // Create new ConnectionRow
-                let conn_row = Rc::new(ConnectionRow::new(ConnectionRowProps {
-                    name: vpn.name.clone(),
-                    active,
-                    transitioning,
-                    icon: Some(vpn_icon_name(&vpn.vpn_type)),
-                }));
-
-                let action_cb = action_callback.clone();
-                let urn_for_click = vpn_urn.clone();
-                let vpn_state = vpn.state;
-                conn_row.connect_output(move |ConnectionRowOutput::Toggle| {
-                    let action = match vpn_state {
-                        entity::network::VpnState::Connected => "disconnect",
-                        entity::network::VpnState::Disconnected => "connect",
-                        // Don't send actions during transitions
-                        _ => return,
-                    };
-                    action_cb(
-                        urn_for_click.clone(),
-                        action.to_string(),
-                        serde_json::Value::Null,
-                    );
-                });
-
-                entry.menu.append(&conn_row.root);
-
-                network_rows.push(NetworkRow::Connection {
-                    urn_str: vpn_urn_str,
-                    row: conn_row,
-                });
             }
         }
     }
@@ -949,14 +873,6 @@ fn adapter_icon(adapter: &entity::network::NetworkAdapter) -> String {
         entity::network::AdapterKind::Tethering => "network-cellular-symbolic",
     }
     .to_string()
-}
-
-/// Determine the icon name for a VPN connection based on its type.
-fn vpn_icon_name(vpn_type: &entity::network::VpnType) -> String {
-    match vpn_type {
-        entity::network::VpnType::Wireguard => "network-vpn-symbolic".to_string(),
-        entity::network::VpnType::Vpn => "network-vpn-symbolic".to_string(),
-    }
 }
 
 /// Determine the title for a network adapter based on its kind.
