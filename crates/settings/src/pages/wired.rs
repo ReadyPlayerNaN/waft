@@ -132,10 +132,9 @@ impl WiredPage {
                 .iter()
                 .filter(|(_, a)| a.kind == AdapterKind::Wired)
                 .map(|(urn, adapter)| {
-                    let urn_key    = urn.as_str().to_string();
-                    let urn_clone  = urn.clone();
-                    let cb         = action_callback.clone();
-                    let adapter_urn_str = urn.as_str().to_string();
+                    let urn_key     = urn.as_str().to_string();
+                    let adapter_urn = urn.clone();
+                    let cb          = action_callback.clone();
 
                     // Collect connection profiles that belong to this adapter.
                     // Connection URN format:
@@ -144,7 +143,7 @@ impl WiredPage {
                     //   networkmanager/network-adapter/{adapter}
                     let adapter_connections: Vec<(Urn, EthernetConnection)> = connections
                         .iter()
-                        .filter(|(conn_urn, _)| conn_urn.as_str().starts_with(&adapter_urn_str))
+                        .filter(|(conn_urn, _)| conn_urn.as_str().starts_with(urn_key.as_str()))
                         .cloned()
                         .collect();
 
@@ -160,7 +159,7 @@ impl WiredPage {
                             match output {
                                 WiredAdapterGroupOutput::ToggleConnection => {
                                     cb(
-                                        urn_clone.clone(),
+                                        adapter_urn.clone(),
                                         "activate".to_string(),
                                         serde_json::Value::Null,
                                     );

@@ -27,8 +27,6 @@ impl RenderFn for WifiAdapterGroupRender {
     type Output = WifiAdapterGroupOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
-        let enabled = props.enabled;
-
         VNode::preferences_group(
             VPreferencesGroup::new()
                 .title(&props.name)
@@ -37,12 +35,12 @@ impl RenderFn for WifiAdapterGroupRender {
                         VSwitchRow::new(t("wifi-adapter-enabled"), props.enabled)
                             .on_toggle({
                                 let emit = emit.clone();
-                                move |_active| {
+                                move |active| {
                                     if let Some(ref cb) = *emit.borrow() {
-                                        let ev = if enabled {
-                                            WifiAdapterGroupOutput::Disable
-                                        } else {
+                                        let ev = if active {
                                             WifiAdapterGroupOutput::Enable
+                                        } else {
+                                            WifiAdapterGroupOutput::Disable
                                         };
                                         cb(ev);
                                     }
