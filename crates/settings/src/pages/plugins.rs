@@ -142,7 +142,7 @@ impl PluginsPage {
                     .iter()
                     .position(|n| n == &plugin.name)
                     .unwrap_or(0);
-                state.list_box.insert(&row.root, pos as i32);
+                state.list_box.insert(&row.widget(), pos as i32);
                 state.plugin_rows.insert(plugin.name.clone(), row);
             }
         }
@@ -157,7 +157,7 @@ impl PluginsPage {
 
         for key in to_remove {
             if let Some(row) = state.plugin_rows.remove(&key) {
-                state.list_box.remove(&row.root);
+                state.list_box.remove(&row.widget());
             }
         }
 
