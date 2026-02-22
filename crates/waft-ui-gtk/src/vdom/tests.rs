@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk::prelude::*;
+use adw::prelude::*;
 
 use std::sync::Arc;
 
@@ -9,7 +10,7 @@ use crate::icons::Icon;
 use crate::test_utils::init_gtk_for_tests;
 use crate::vdom::{Component, Reconciler, VNode};
 use super::{RenderCallback, RenderComponent, RenderFn};
-use super::primitives::{VBox, VButton, VCustomButton, VIcon, VLabel, VSpinner, VSwitch};
+use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch, VSwitchRow};
 
 // ── Minimal test component ────────────────────────────────────────────────
 
@@ -473,6 +474,140 @@ fn test_custom_button_css_classes() {
     assert!(btn.css_classes().iter().any(|c| c == "device-row"));
 }
 
+// ── adw primitive tests ───────────────────────────────────────────────────
+
+fn test_preferences_group_builds_with_title() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::preferences_group(
+        VPreferencesGroup::new().title("Devices"),
+    )]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let pg = container.first_child().unwrap().downcast::<adw::PreferencesGroup>().unwrap();
+    assert_eq!(pg.title(), "Devices");
+}
+
+fn test_preferences_group_reconciles_children() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::preferences_group(
+        VPreferencesGroup::new()
+            .child(VNode::action_row(VActionRow::new("Row A")).key("a"))
+            .child(VNode::action_row(VActionRow::new("Row B")).key("b")),
+    ).key("pg")]);
+    // adw::PreferencesGroup manages its own internal header/footer widgets so
+    // observe_children() cannot be used to count rows directly. We verify that
+    // the outer container holds exactly 1 group and that re-reconciling with
+    // fewer children does not panic or duplicate the group. Removal correctness
+    // inside the group is covered by the reconciler's keyed-list logic shared
+    // with all other container primitives.
+    assert_eq!(container.observe_children().n_items(), 1);
+    r.reconcile([VNode::preferences_group(
+        VPreferencesGroup::new()
+            .child(VNode::action_row(VActionRow::new("Row A")).key("a")),
+    ).key("pg")]);
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+fn test_action_row_builds_with_title_and_subtitle() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::action_row(
+        VActionRow::new("My Row").subtitle("Details here"),
+    )]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let row = container.first_child().unwrap().downcast::<adw::ActionRow>().unwrap();
+    assert_eq!(row.title(), "My Row");
+    assert_eq!(row.subtitle().as_deref(), Some("Details here"));
+}
+
+fn test_action_row_updates_title() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::action_row(VActionRow::new("Before")).key("r")]);
+    let row = container.first_child().unwrap().downcast::<adw::ActionRow>().unwrap();
+    assert_eq!(row.title(), "Before");
+
+    r.reconcile([VNode::action_row(VActionRow::new("After")).key("r")]);
+    assert_eq!(row.title(), "After");
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+fn test_action_row_suffix_builds() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::action_row(
+        VActionRow::new("Row")
+            .suffix(VNode::label(VLabel::new("suffix text"))),
+    )]);
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+fn test_switch_row_builds_active() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::switch_row(VSwitchRow::new("Toggle", true))]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let sw = container.first_child().unwrap().downcast::<adw::SwitchRow>().unwrap();
+    assert_eq!(sw.title(), "Toggle");
+    assert!(sw.is_active());
+}
+
+fn test_switch_row_updates_active_without_spurious_callback() {
+    let fired = Rc::new(RefCell::new(0u32));
+    let fired_clone = fired.clone();
+
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::switch_row(
+        VSwitchRow::new("T", false).on_toggle(move |_| {
+            *fired_clone.borrow_mut() += 1;
+        }),
+    ).key("sw")]);
+    let sw = container.first_child().unwrap().downcast::<adw::SwitchRow>().unwrap();
+    // Programmatic update must not fire the callback.
+    r.reconcile([VNode::switch_row(VSwitchRow::new("T", true)).key("sw")]);
+    assert!(sw.is_active());
+    assert_eq!(*fired.borrow(), 0, "programmatic active change must not fire on_toggle");
+}
+
+fn test_entry_row_builds_with_text() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::entry_row(
+        VEntryRow::new("Name").text("hello"),
+    )]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let er = container.first_child().unwrap().downcast::<adw::EntryRow>().unwrap();
+    assert_eq!(er.title(), "Name");
+    assert_eq!(er.text().as_str(), "hello");
+}
+
+fn test_entry_row_updates_text_without_spurious_callback() {
+    let fired = Rc::new(RefCell::new(0u32));
+    let fired_clone = fired.clone();
+
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::entry_row(
+        VEntryRow::new("Label").text("a").on_change(move |_| {
+            *fired_clone.borrow_mut() += 1;
+        }),
+    ).key("er")]);
+    let er = container.first_child().unwrap().downcast::<adw::EntryRow>().unwrap();
+    r.reconcile([VNode::entry_row(VEntryRow::new("Label").text("b")).key("er")]);
+    assert_eq!(er.text().as_str(), "b");
+    assert_eq!(*fired.borrow(), 0, "programmatic text change must not fire on_change");
+}
+
+fn test_switch_updates_active_without_spurious_callback() {
+    let fired = Rc::new(RefCell::new(0u32));
+    let fired_clone = fired.clone();
+
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::switch(
+        VSwitch::new(false).on_toggle(move |_| {
+            *fired_clone.borrow_mut() += 1;
+        }),
+    ).key("sw")]);
+    let sw = container.first_child().unwrap().downcast::<gtk::Switch>().unwrap();
+    // Programmatic update must not fire the callback.
+    r.reconcile([VNode::switch(VSwitch::new(true)).key("sw")]);
+    assert!(sw.is_active());
+    assert_eq!(*fired.borrow(), 0, "programmatic active change must not fire on_toggle");
+}
+
 // ── Single GTK test entry point ───────────────────────────────────────────
 //
 // GTK requires the OS main thread. Rust's test harness spawns each #[test]
@@ -507,6 +642,7 @@ fn all_reconciler_tests() {
     test_vbox_reconciles_child_list();
     test_button_connects_click_handler();
     test_switch_sets_active_state();
+    test_switch_updates_active_without_spurious_callback();
     test_primitive_rebuilds_when_kind_changes();
 
     test_render_component_builds_from_render_fn();
@@ -523,4 +659,14 @@ fn all_reconciler_tests() {
     test_custom_button_builds_with_child_vnode();
     test_custom_button_updates_child_vnode();
     test_custom_button_css_classes();
+
+    test_preferences_group_builds_with_title();
+    test_preferences_group_reconciles_children();
+    test_action_row_builds_with_title_and_subtitle();
+    test_action_row_updates_title();
+    test_action_row_suffix_builds();
+    test_switch_row_builds_active();
+    test_switch_row_updates_active_without_spurious_callback();
+    test_entry_row_builds_with_text();
+    test_entry_row_updates_text_without_spurious_callback();
 }
