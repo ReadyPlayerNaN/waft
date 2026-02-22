@@ -1,0 +1,72 @@
+/* Launcher window — floating panel */
+.launcher-window {
+    background-color: @window_bg_color;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    border: 1px solid alpha(@window_fg_color, 0.08);
+}
+
+/* Search bar */
+.launcher-search-bar {
+    padding: 6px 12px;
+    border-radius: 8px 8px 0 0;
+    min-width: 480px;
+    font-size: 1.1em;
+}
+
+/* Search pane container */
+.search-pane {
+    padding: 12px;
+    min-width: 540px;
+}
+
+/* Result list */
+.search-result-list {
+    background: transparent;
+    padding: 4px 0;
+}
+
+/* Individual result button */
+.app-result-btn {
+    border-radius: 8px;
+    padding: 4px 8px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.app-result-btn:hover {
+    background-color: alpha(@window_fg_color, 0.07);
+}
+
+.app-result-btn.selected {
+    background-color: @accent_bg_color;
+    color: @accent_fg_color;
+}
+
+.app-result-btn.selected .app-result-name,
+.app-result-btn.selected .app-result-description {
+    color: @accent_fg_color;
+}
+
+/* Result row labels */
+.app-result-name {
+    font-weight: bold;
+}
+
+.app-result-description {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+/* Empty search state */
+.empty-search-state {
+    padding: 32px 16px;
+    opacity: 0.6;
+}
+
+/* Loading state */
+.launcher-loading-state {
+    padding: 32px 16px;
+    min-height: 120px;
+}
