@@ -73,6 +73,7 @@ impl SimpleToggle {
                 icon: config.icon.to_string(),
                 title: config.title,
                 menu_id: None,
+                expanded: false,
             },
             None,
         ));

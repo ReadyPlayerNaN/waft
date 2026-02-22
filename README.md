@@ -1,11 +1,43 @@
 # waft
 
-Inobtrusive set of Linux/Wayland apps intended to control primary system functions from single place.
+Inobtrusive set of Linux/Wayland/GTK apps intended to control primary system functions from single place.
 
 ## Components
 
-- **`waft-overview`** - GTK4/libadwaita overlay panel using Wayland layer-shell. Connects to the daemon, subscribes to entity types, and renders UI.
-- **`waft`** - Central daemon that discovers, spawns, and supervises plugins. Routes entity updates and actions between plugins and apps via Unix sockets. Registered as `org.waft.Daemon` on D-Bus.
+### `waft-overview`
+
+Pop up overview panel, that gives summary status of about everything to quickly see the situation report and do minor settings.
+
+* Audio volume
+* Bluetooth devices
+* Brightness
+* Dark mode
+* Keyboard layout
+* Notifications
+* Night Light
+* VPN
+* Time
+* Tiny calendar
+* Todays agenda
+* Wifi
+* Wired network
+* ...and more
+
+### `waft-toasts`
+
+This renders notification toasts. Expired toasts are still accessible in the `waft-overview`.
+
+### `waft-settings`
+
+Detailed control center for the entire system.
+
+### `waft-launcher`
+
+Tiny extensible pop up launcher.
+
+## Architecture
+
+Everything is built around the central daemon (`waft`) that discovers, spawns, and supervises plugins. It routes entity updates and actions between plugins and apps via Unix sockets. The plugins provide data and methods to the UI apps and the apps provide interface to the user.
 
 ## Building
 

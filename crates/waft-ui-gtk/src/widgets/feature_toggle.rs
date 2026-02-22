@@ -1,4 +1,4 @@
-//! Pure GTK4 Feature Toggle widget.
+//! Declarative feature toggle widget.
 //!
 //! A unified toggle button that can be simple or expandable.
 //! When expandable=false, only shows the main toggle button.
@@ -7,17 +7,13 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk::prelude::*;
-use uuid::Uuid;
-
-use crate::icons::IconWidget;
-use crate::vdom::Component;
+use crate::icons::Icon;
+use crate::vdom::primitives::{VBox, VCustomButton, VIcon, VLabel, VRevealer};
+use crate::vdom::{Component, RenderCallback, RenderComponent, RenderFn, VNode};
 use crate::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
-use waft_core::Callback;
-use waft_core::menu_state::{MenuOp, MenuStore};
 
-/// Properties for initializing a feature toggle.
-#[derive(Debug, Clone)]
+/// Properties for rendering a feature toggle.
+#[derive(Clone, PartialEq, Debug)]
 pub struct FeatureToggleProps {
     pub active: bool,
     pub busy: bool,
@@ -30,6 +26,8 @@ pub struct FeatureToggleProps {
     /// `menu_id_for_widget(widget_id)` to produce a stable ID that
     /// matches any external content revealer.
     pub menu_id: Option<String>,
+    /// Expanded state: tracks if the menu is open.
+    pub expanded: bool,
 }
 
 /// Output events from the feature toggle.
@@ -37,219 +35,140 @@ pub struct FeatureToggleProps {
 pub enum FeatureToggleOutput {
     Activate,
     Deactivate,
+    ExpandToggle(bool),
 }
 
-/// Pure GTK4 feature toggle widget with optional expandable menu support.
+/// Pure render function for the feature toggle widget.
+pub struct FeatureToggleRender;
+
+impl RenderFn for FeatureToggleRender {
+    type Props = FeatureToggleProps;
+    type Output = FeatureToggleOutput;
+
+    fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
+        // Title label
+        let title = VLabel::new(&props.title)
+            .css_class("heading")
+            .css_class("title")
+            .xalign(0.0);
+
+        // Build text content: title + optional details
+        let mut text_box = VBox::vertical(2).valign(gtk::Align::Center);
+        text_box = text_box.child(VNode::label(title));
+
+        // Details label (inside revealer)
+        let details_revealer = if let Some(ref details) = props.details {
+            let details_label = VLabel::new(details)
+                .css_class("dim-label")
+                .css_class("caption")
+                .xalign(0.0);
+            VNode::revealer(
+                VRevealer::new(true, VNode::label(details_label))
+                    .transition_type(gtk::RevealerTransitionType::SlideDown),
+            )
+        } else {
+            let empty_label = VLabel::new("")
+                .css_class("dim-label")
+                .css_class("caption")
+                .xalign(0.0);
+            VNode::revealer(
+                VRevealer::new(false, VNode::label(empty_label))
+                    .transition_type(gtk::RevealerTransitionType::SlideDown),
+            )
+        };
+        text_box = text_box.child(details_revealer);
+
+        // Main button content: icon + text_box
+        let icon = VIcon::new(vec![Icon::Themed(props.icon.clone())], 24);
+        let main_content = VBox::horizontal(12)
+            .valign(gtk::Align::Center)
+            .child(VNode::icon(icon))
+            .child(VNode::vbox(text_box));
+
+        // Main button: click emits Activate/Deactivate based on current state
+        let emit_main = emit.clone();
+        let is_active = props.active;
+        let main_button = VNode::custom_button(
+            VCustomButton::new(VNode::vbox(main_content))
+                .css_class("toggle-main")
+                .on_click(move || {
+                    if let Some(ref cb) = *emit_main.borrow() {
+                        if is_active {
+                            cb(FeatureToggleOutput::Deactivate);
+                        } else {
+                            cb(FeatureToggleOutput::Activate);
+                        }
+                    }
+                }),
+        );
+
+        // Expand button with MenuChevronWidget child
+        let emit_expand = emit.clone();
+        let expand_chevron = VNode::new::<MenuChevronWidget>(MenuChevronProps {
+            expanded: props.expanded,
+        });
+        let expand_button = VNode::custom_button(
+            VCustomButton::new(expand_chevron)
+                .css_class("toggle-expand")
+                .on_click(move || {
+                    if let Some(ref cb) = *emit_expand.borrow() {
+                        cb(FeatureToggleOutput::ExpandToggle(true));
+                    }
+                }),
+        );
+
+        // Wrap expand button in revealer with slide-left transition
+        let expand_revealer = VNode::revealer(
+            VRevealer::new(props.expandable, expand_button)
+                .transition_type(gtk::RevealerTransitionType::SlideLeft)
+                .transition_duration(200),
+        );
+
+        // Root box: main button + expand revealer (horizontal layout)
+        let mut root = VBox::horizontal(0).css_class("feature-toggle");
+
+        // Apply state CSS classes
+        if props.active {
+            root = root.css_class("active");
+        }
+        if props.busy {
+            root = root.css_class("busy");
+        }
+        if props.expandable {
+            root = root.css_class("expandable");
+        }
+        if props.expanded {
+            root = root.css_class("expanded");
+        }
+
+        let root = root.child(main_button).child(expand_revealer);
+
+        VNode::vbox(root)
+    }
+}
+
+/// Wrapper around RenderComponent<FeatureToggleRender> with backward-compatible API.
 #[derive(Clone)]
 pub struct FeatureToggleWidget {
-    pub root: gtk::Box,
-    expand_revealer: gtk::Revealer,
-    icon_widget: IconWidget,
-    title_label: gtk::Label,
-    details_label: gtk::Label,
-    details_revealer: gtk::Revealer,
-    active: Rc<RefCell<bool>>,
-    busy: Rc<RefCell<bool>>,
-    expandable: Rc<RefCell<bool>>,
-    expanded: Rc<RefCell<bool>>,
-    on_output: Callback<FeatureToggleOutput>,
-    on_expand: Callback<bool>,
+    inner: Rc<RenderComponent<FeatureToggleRender>>,
+    props: Rc<RefCell<FeatureToggleProps>>,
     pub menu_id: Option<String>,
 }
 
 impl FeatureToggleWidget {
-    /// Create a new feature toggle widget.
-    ///
-    /// If menu_store is provided, the widget can be made expandable.
-    /// The expand button visibility is controlled by the "expandable" CSS class.
-    pub fn new(props: FeatureToggleProps, menu_store: Option<Rc<MenuStore>>) -> Self {
-        // Use provided deterministic menu ID, or fall back to random UUID
-        let menu_id = menu_store.as_ref().map(|_| {
-            props
-                .menu_id
-                .clone()
-                .unwrap_or_else(|| Uuid::new_v4().to_string())
-        });
-
-        // Root container: horizontal box containing main button + expand button
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(0)
-            .hexpand(true)
-            .css_classes(["feature-toggle"])
-            .build();
-
-        // Main button (toggle on/off)
-        let main_button = gtk::Button::builder()
-            .hexpand(true)
-            .css_classes(["toggle-main"])
-            .build();
-
-        let main_content = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(12)
-            .valign(gtk::Align::Center)
-            .build();
-
-        let icon_widget = IconWidget::from_name(&props.icon, 24);
-        icon_widget.widget().set_height_request(24);
-
-        let text_content = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .valign(gtk::Align::Center)
-            .spacing(2)
-            .css_classes(["text-content"])
-            .build();
-
-        let title_label = gtk::Label::builder()
-            .label(&props.title)
-            .css_classes(["heading", "title"])
-            .xalign(0.0)
-            .build();
-
-        let details_revealer = gtk::Revealer::builder()
-            .transition_type(gtk::RevealerTransitionType::SlideDown)
-            .reveal_child(props.details.is_some())
-            .build();
-
-        let details_label = gtk::Label::builder()
-            .label(props.details.as_deref().unwrap_or(""))
-            .css_classes(["dim-label", "caption"])
-            .xalign(0.0)
-            .build();
-
-        details_revealer.set_child(Some(&details_label));
-
-        text_content.append(&title_label);
-        text_content.append(&details_revealer);
-
-        main_content.append(icon_widget.widget());
-        main_content.append(&text_content);
-
-        main_button.set_child(Some(&main_content));
-
-        // Expand button (with menu chevron)
-        let menu_chevron = Rc::new(MenuChevronWidget::build(&MenuChevronProps { expanded: false }));
-        let expand_button = gtk::Button::builder()
-            .css_classes(["toggle-expand"])
-            .build();
-        expand_button.set_child(Some(&menu_chevron.widget()));
-
-        // Wrap expand button in revealer for smooth slide-left transition
-        let expand_revealer = gtk::Revealer::builder()
-            .transition_type(gtk::RevealerTransitionType::SlideLeft)
-            .transition_duration(200) // 200ms transition
-            .reveal_child(props.expandable)
-            .build();
-        expand_revealer.set_child(Some(&expand_button));
-
-        // Add main button and revealer to root
-        root.append(&main_button);
-        root.append(&expand_revealer);
-
-        let active = Rc::new(RefCell::new(props.active));
-        let busy = Rc::new(RefCell::new(props.busy));
-        let expandable = Rc::new(RefCell::new(props.expandable));
-        let expanded = Rc::new(RefCell::new(false));
-        let on_output: Callback<FeatureToggleOutput> = Rc::new(RefCell::new(None));
-        let on_expand: Callback<bool> = Rc::new(RefCell::new(None));
-
-        // Update CSS classes based on initial state
-        Self::update_css_classes(&root, props.active, props.busy, props.expandable, false);
-
-        // Connect main button click handler
-        let active_ref = active.clone();
-        let on_output_ref = on_output.clone();
-        main_button.connect_clicked(move |_| {
-            let is_active = *active_ref.borrow();
-            if let Some(ref callback) = *on_output_ref.borrow() {
-                if is_active {
-                    callback(FeatureToggleOutput::Deactivate);
-                } else {
-                    callback(FeatureToggleOutput::Activate);
-                }
-            }
-        });
-
-        // Connect expand button click handler (if menu_store provided)
-        if let Some(ref store) = menu_store {
-            let menu_store_clone = store.clone();
-            let menu_id_clone = menu_id.clone().unwrap();
-            expand_button.connect_clicked(move |_| {
-                // Always emit OpenMenu - MenuStore will handle toggle logic
-                menu_store_clone.emit(MenuOp::OpenMenu(menu_id_clone.clone()));
-            });
-
-            // Subscribe to menu store updates
-            let root_clone = root.clone();
-            let menu_chevron_clone = Rc::clone(&menu_chevron);
-            let expanded_clone = expanded.clone();
-            let active_clone = active.clone();
-            let busy_clone = busy.clone();
-            let expandable_clone = expandable.clone();
-            let menu_store_clone = store.clone();
-            let menu_id_clone = menu_id.clone().unwrap();
-            let on_expand_clone = on_expand.clone();
-            store.subscribe(move || {
-                let state = menu_store_clone.get_state();
-                let should_be_open = state.active_menu_id.as_ref() == Some(&menu_id_clone);
-
-                *expanded_clone.borrow_mut() = should_be_open;
-                menu_chevron_clone.update(&MenuChevronProps { expanded: should_be_open });
-                Self::update_css_classes(
-                    &root_clone,
-                    *active_clone.borrow(),
-                    *busy_clone.borrow(),
-                    *expandable_clone.borrow(),
-                    should_be_open,
-                );
-
-                // Notify plugin of expand state change
-                if let Some(ref callback) = *on_expand_clone.borrow() {
-                    callback(should_be_open);
-                }
-            });
-
-            // Sync initial state
-            {
-                let state = store.get_state();
-                let should_be_open =
-                    state.active_menu_id.as_ref() == Some(menu_id.as_ref().unwrap());
-                *expanded.borrow_mut() = should_be_open;
-                menu_chevron.update(&MenuChevronProps { expanded: should_be_open });
-                Self::update_css_classes(
-                    &root,
-                    *active.borrow(),
-                    *busy.borrow(),
-                    props.expandable,
-                    should_be_open,
-                );
-            }
-        }
-
+    /// Create a new feature toggle widget (backward-compatible factory).
+    pub fn new(props: FeatureToggleProps, _menu_store: Option<std::rc::Rc<waft_core::menu_state::MenuStore>>) -> Self {
+        let menu_id = props.menu_id.clone();
+        let props_with_expanded = FeatureToggleProps {
+            expanded: false,
+            ..props
+        };
+        let inner = Rc::new(RenderComponent::<FeatureToggleRender>::build(&props_with_expanded));
         Self {
-            root,
-            expand_revealer,
-            icon_widget,
-            title_label,
-            details_label,
-            details_revealer,
-            active,
-            busy,
-            expandable,
-            expanded,
-            on_output,
-            on_expand,
+            inner,
+            props: Rc::new(RefCell::new(props_with_expanded)),
             menu_id,
         }
-    }
-
-    /// Set the callback for expand state changes.
-    pub fn set_expand_callback<F>(&self, callback: F)
-    where
-        F: Fn(bool) + 'static,
-    {
-        *self.on_expand.borrow_mut() = Some(Box::new(callback));
     }
 
     /// Set the callback for output events.
@@ -257,87 +176,75 @@ impl FeatureToggleWidget {
     where
         F: Fn(FeatureToggleOutput) + 'static,
     {
-        *self.on_output.borrow_mut() = Some(Box::new(callback));
+        self.inner.connect_output(callback);
     }
 
     /// Update the active state.
     pub fn set_active(&self, active: bool) {
-        *self.active.borrow_mut() = active;
-        Self::update_css_classes(
-            &self.root,
-            active,
-            *self.busy.borrow(),
-            *self.expandable.borrow(),
-            *self.expanded.borrow(),
-        );
+        let mut props = self.props.borrow_mut();
+        if props.active != active {
+            props.active = active;
+            self.inner.update(&*props);
+        }
     }
 
     /// Update the busy state.
     pub fn set_busy(&self, busy: bool) {
-        *self.busy.borrow_mut() = busy;
-        Self::update_css_classes(
-            &self.root,
-            *self.active.borrow(),
-            busy,
-            *self.expandable.borrow(),
-            *self.expanded.borrow(),
-        );
+        let mut props = self.props.borrow_mut();
+        if props.busy != busy {
+            props.busy = busy;
+            self.inner.update(&*props);
+        }
     }
 
     /// Update the expandable state.
-    /// When false, the expand button slides out (hidden).
-    /// When true, the expand button slides in (visible).
     pub fn set_expandable(&self, expandable: bool) {
-        *self.expandable.borrow_mut() = expandable;
-        self.expand_revealer.set_reveal_child(expandable);
-        Self::update_css_classes(
-            &self.root,
-            *self.active.borrow(),
-            *self.busy.borrow(),
-            expandable,
-            *self.expanded.borrow(),
-        );
+        let mut props = self.props.borrow_mut();
+        if props.expandable != expandable {
+            props.expandable = expandable;
+            self.inner.update(&*props);
+        }
     }
 
     /// Update the details text.
     pub fn set_details(&self, details: Option<String>) {
-        self.details_revealer.set_reveal_child(details.is_some());
-        self.details_label
-            .set_label(details.as_deref().unwrap_or(""));
+        let mut props = self.props.borrow_mut();
+        if props.details != details {
+            props.details = details;
+            self.inner.update(&*props);
+        }
     }
 
     /// Update the icon.
     pub fn set_icon(&self, icon: &str) {
-        self.icon_widget.set_icon(icon);
+        let mut props = self.props.borrow_mut();
+        if props.icon != icon {
+            props.icon = icon.to_string();
+            self.inner.update(&*props);
+        }
     }
 
     /// Update the title text.
     pub fn set_title(&self, title: &str) {
-        self.title_label.set_label(title);
+        let mut props = self.props.borrow_mut();
+        if props.title != title {
+            props.title = title.to_string();
+            self.inner.update(&*props);
+        }
+    }
+
+    /// Update the expanded state (called by parent when MenuStore changes).
+    pub fn set_expanded(&self, expanded: bool) {
+        let mut props = self.props.borrow_mut();
+        if props.expanded != expanded {
+            props.expanded = expanded;
+            self.inner.update(&*props);
+        }
     }
 
     /// Get a reference to the root widget.
     pub fn widget(&self) -> gtk::Widget {
-        self.root.clone().upcast::<gtk::Widget>()
-    }
-
-    fn update_css_classes(
-        container: &gtk::Box,
-        active: bool,
-        busy: bool,
-        expandable: bool,
-        expanded: bool,
-    ) {
-        crate::css::apply_state_classes(
-            container,
-            Some("feature-toggle"),
-            &[
-                ("active", active),
-                ("busy", busy),
-                ("expandable", expandable),
-                ("expanded", expanded),
-            ],
-        );
+        self.inner.widget()
     }
 }
 

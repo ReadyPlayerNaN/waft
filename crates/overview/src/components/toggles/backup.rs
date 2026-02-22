@@ -58,6 +58,7 @@ impl BackupToggle {
                 icon: "drive-harddisk-symbolic".to_string(),
                 title: i18n::t("backup-title"),
                 menu_id: Some(menu_id.clone()),
+                expanded: false,
             },
             Some(menu_store.clone()),
         ));

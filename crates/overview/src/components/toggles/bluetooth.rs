@@ -163,6 +163,7 @@ impl BluetoothToggles {
                                 icon: icon.to_string(),
                                 title: "Bluetooth".to_string(),
                                 menu_id: Some(menu_id.clone()),
+                                expanded: false,
                             },
                             Some(menu_store_ref.clone()),
                         ));
