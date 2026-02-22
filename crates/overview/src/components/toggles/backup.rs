@@ -12,6 +12,7 @@ use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::backup::method_row::{BackupMethodRow, BackupMethodRowProps};
 use waft_ui_gtk::menu_state::menu_id_for_widget;
+use waft_ui_gtk::vdom::Component;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
 use crate::i18n;
@@ -121,12 +122,12 @@ impl BackupToggle {
 
                 // Remove old rows
                 for entry in borrowed.drain(..) {
-                    menu_box_ref.remove(&entry.row.root);
+                    menu_box_ref.remove(&entry.row.widget());
                 }
 
                 // Add new rows
                 for (urn, method) in &entities {
-                    let row = BackupMethodRow::new(BackupMethodRowProps {
+                    let row = BackupMethodRow::build(&BackupMethodRowProps {
                         icon: method.icon.clone(),
                         name: method.name.clone(),
                         enabled: method.enabled,
@@ -142,7 +143,7 @@ impl BackupToggle {
                         );
                     });
 
-                    menu_box_ref.append(&row.root);
+                    menu_box_ref.append(&row.widget());
                     borrowed.push(MethodEntry {
                         urn: urn.clone(),
                         row,

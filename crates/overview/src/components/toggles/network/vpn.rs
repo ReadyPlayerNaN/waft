@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use waft_protocol::Urn;
 use waft_protocol::entity;
+use waft_ui_gtk::vdom::Component;
 use waft_ui_gtk::widgets::connection_row::{
     ConnectionRow, ConnectionRowOutput, ConnectionRowProps,
 };
@@ -49,13 +50,16 @@ pub(super) fn update_vpn_menu_rows(
         if let Some(existing) = network_rows.iter().find(|r| r.urn_str() == vpn_urn_str) {
             // Update existing ConnectionRow
             if let NetworkRow::Connection { row, .. } = existing {
-                row.set_name(&vpn.name);
-                row.set_active(active);
-                row.set_transitioning(transitioning);
+                row.update(&ConnectionRowProps {
+                    name: vpn.name.clone(),
+                    active,
+                    transitioning,
+                    icon: Some(vpn_icon_name(&vpn.vpn_type)),
+                });
             }
         } else {
             // Create new ConnectionRow
-            let conn_row = Rc::new(ConnectionRow::new(ConnectionRowProps {
+            let conn_row = Rc::new(ConnectionRow::build(&ConnectionRowProps {
                 name: vpn.name.clone(),
                 active,
                 transitioning,
@@ -79,7 +83,7 @@ pub(super) fn update_vpn_menu_rows(
                 );
             });
 
-            entry.menu.append(&conn_row.root);
+            entry.menu.append(&conn_row.widget());
 
             network_rows.push(NetworkRow::Connection {
                 urn_str: vpn_urn_str,

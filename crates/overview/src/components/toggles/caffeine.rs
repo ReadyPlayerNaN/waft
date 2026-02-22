@@ -9,7 +9,7 @@ use std::rc::Rc;
 use waft_protocol::{Urn, entity};
 use waft_client::{EntityActionCallback, EntityStore};
 
-use super::simple_toggle::{SimpleToggle, SimpleToggleConfig, ToggleUpdate};
+use crate::ui::feature_toggles::simple_toggle::{SimpleToggle, SimpleToggleConfig, ToggleUpdate};
 
 pub fn caffeine_toggle(
     store: &Rc<EntityStore>,

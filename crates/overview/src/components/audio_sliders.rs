@@ -16,6 +16,7 @@ use waft_protocol::entity;
 use waft_protocol::entity::audio::AudioDeviceKind;
 use waft_ui_gtk::audio::device_row::{AudioDeviceRow, AudioDeviceRowOutput, AudioDeviceRowProps};
 use waft_ui_gtk::menu_state::menu_id_for_widget;
+use waft_ui_gtk::vdom::Component;
 use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
 
 use super::throttled_sender::ThrottledSender;
@@ -309,7 +310,7 @@ fn update_device_rows(
         if current_urns.contains(&row.urn_str) {
             true
         } else {
-            row.row.root.unparent();
+            row.row.widget().unparent();
             false
         }
     });
@@ -317,24 +318,19 @@ fn update_device_rows(
     // Update existing or create new rows
     for (urn, device) in devices {
         let urn_str = urn.as_str().to_string();
+        let props = AudioDeviceRowProps {
+            device_type: device.device_type.clone(),
+            connection_type: device.connection_type.clone(),
+            kind: device.kind,
+            name: device.name.clone(),
+            active: device.default,
+        };
 
         if let Some(existing) = rows.iter().find(|r| r.urn_str == urn_str) {
-            // Update in place
-            existing.row.set_name(&device.name);
-            existing.row.set_device_icon(&device.device_type, device.kind);
-            existing
-                .row
-                .set_connection_icon(device.connection_type.as_deref());
-            existing.row.set_active(device.default);
+            existing.row.update(&props);
         } else {
             // Create new row
-            let device_row = Rc::new(AudioDeviceRow::new(AudioDeviceRowProps {
-                device_type: device.device_type.clone(),
-                connection_type: device.connection_type.clone(),
-                kind: device.kind,
-                name: device.name.clone(),
-                active: device.default,
-            }));
+            let device_row = Rc::new(AudioDeviceRow::build(&props));
 
             let action_cb = action_callback.clone();
             let urn_for_action = (*urn).clone();
@@ -346,7 +342,7 @@ fn update_device_rows(
                 );
             });
 
-            entry.menu_box.append(&device_row.root);
+            entry.menu_box.append(&device_row.widget());
             rows.push(DeviceMenuRow {
                 urn_str,
                 row: device_row,

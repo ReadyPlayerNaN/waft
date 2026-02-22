@@ -31,7 +31,7 @@ use crate::components::toggles::dark_mode::dark_mode_toggle;
 use crate::components::toggles::dnd::dnd_toggle;
 use crate::components::toggles::network::NetworkManagerToggles;
 use crate::components::toggles::night_light::night_light_toggle;
-use crate::components::toggles::simple_toggle::SimpleToggle;
+use crate::ui::feature_toggles::simple_toggle::SimpleToggle;
 use crate::components::weather::WeatherComponent;
 use crate::layout::model::LayoutNode;
 use crate::layout::types::WidgetFeatureToggle;

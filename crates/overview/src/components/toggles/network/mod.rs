@@ -17,6 +17,7 @@ use gtk::prelude::*;
 use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::menu_state::menu_id_for_widget;
+use waft_ui_gtk::vdom::Component;
 use waft_ui_gtk::widgets::connection_row::ConnectionRow;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
@@ -27,7 +28,6 @@ use crate::ui::feature_toggles::menu_info_row::FeatureToggleMenuInfoRow;
 use crate::ui::feature_toggles::menu_settings::{
     FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
 };
-use waft_ui_gtk::vdom::Component;
 use waft_client::{EntityActionCallback, EntityStore};
 
 /// A tracked toggle entry for a network adapter or VPN.
@@ -69,7 +69,7 @@ impl NetworkRow {
     fn remove_from(&self, parent: &gtk::Box) {
         match self {
             NetworkRow::Plain { root, .. } => parent.remove(root),
-            NetworkRow::Connection { row, .. } => parent.remove(&row.root),
+            NetworkRow::Connection { row, .. } => parent.remove(&row.widget()),
         }
     }
 }

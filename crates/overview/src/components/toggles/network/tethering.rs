@@ -6,6 +6,7 @@ use std::rc::Rc;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity;
+use waft_ui_gtk::vdom::Component;
 use waft_ui_gtk::widgets::connection_row::{
     ConnectionRow, ConnectionRowOutput, ConnectionRowProps,
 };
@@ -71,7 +72,7 @@ pub(super) fn update_tethering_menus(
                 network_rows.retain(|r| r.urn_str() != conn_urn_str);
             }
 
-            let conn_row = Rc::new(ConnectionRow::new(ConnectionRowProps {
+            let conn_row = Rc::new(ConnectionRow::build(&ConnectionRowProps {
                 name: conn.name.clone(),
                 active: conn.active,
                 transitioning: false,
@@ -90,7 +91,7 @@ pub(super) fn update_tethering_menus(
                 );
             });
 
-            entry.menu.append(&conn_row.root);
+            entry.menu.append(&conn_row.widget());
 
             network_rows.push(NetworkRow::Connection {
                 urn_str: conn_urn_str,
