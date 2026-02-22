@@ -65,11 +65,6 @@ impl SettingsAppTracker {
         self.available.get()
     }
 
-    /// Current waft-settings URN, if available.
-    pub fn urn(&self) -> Option<Urn> {
-        self.urn.borrow().clone()
-    }
-
     /// Build a settings button that dispatches `open-page` to waft-settings.
     ///
     /// The button uses the tracker's stored URN at click time, so it remains
