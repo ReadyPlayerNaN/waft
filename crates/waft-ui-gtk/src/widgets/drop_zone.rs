@@ -6,25 +6,57 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk::prelude::*;
-
-use crate::css::{add_class, remove_class};
+use crate::vdom::{Component, RenderCallback, RenderComponent, RenderFn, VNode};
+use crate::vdom::primitives::VBox;
 use crate::widget_base::WidgetBase;
 
-/// Properties for initializing a drop zone.
-#[derive(Clone)]
+/// Properties for the drop zone.
+#[derive(Clone, PartialEq, Debug)]
 pub struct DropZoneProps {
     /// Index where items will be inserted if dropped here.
     pub index: usize,
     /// Whether the drop zone is visible.
     pub visible: bool,
+    /// Whether the drop zone is being hovered.
+    pub hover: bool,
 }
 
-/// DropZone widget - thin line showing where items can be dropped.
+pub enum DropZoneOutput {}
+
+/// Pure render function for the drop zone visual.
+pub struct DropZoneRender;
+
+impl RenderFn for DropZoneRender {
+    type Props = DropZoneProps;
+    type Output = DropZoneOutput;
+
+    fn render(props: &Self::Props, _emit: &RenderCallback<Self::Output>) -> VNode {
+        let mut vbox = VBox::horizontal(0).css_class("drop-zone");
+
+        if props.visible {
+            vbox = vbox.css_class("visible");
+        }
+
+        if props.hover {
+            vbox = vbox.css_class("hover");
+        }
+
+        VNode::vbox(vbox)
+    }
+}
+
+/// Type alias for the drop zone component.
+pub type DropZoneComponent = RenderComponent<DropZoneRender>;
+
+/// Backward-compatible wrapper for DropZone.
+///
+/// Provides a stateful interface that tracks index, visible, and hover states
+/// and updates the render component accordingly.
 #[derive(Clone)]
 pub struct DropZone {
-    pub root: gtk::Box,
-    index: usize,
+    pub root: gtk::Widget,
+    inner: Rc<DropZoneComponent>,
+    index: Rc<RefCell<usize>>,
     visible: Rc<RefCell<bool>>,
     hover: Rc<RefCell<bool>>,
 }
@@ -32,62 +64,52 @@ pub struct DropZone {
 impl DropZone {
     /// Create a new drop zone.
     pub fn new(props: DropZoneProps) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .css_classes(["drop-zone"])
-            .build();
-
-        if props.visible {
-            add_class(&root, "visible");
-        }
-
-        let visible = Rc::new(RefCell::new(props.visible));
-        let hover = Rc::new(RefCell::new(false));
+        let inner = Rc::new(DropZoneComponent::build(&props));
+        let root = inner.widget();
 
         Self {
             root,
-            index: props.index,
-            visible,
-            hover,
+            inner,
+            index: Rc::new(RefCell::new(props.index)),
+            visible: Rc::new(RefCell::new(props.visible)),
+            hover: Rc::new(RefCell::new(props.hover)),
         }
     }
 
     /// Get the insert index for this drop zone.
     pub fn index(&self) -> usize {
-        self.index
+        *self.index.borrow()
     }
 
     /// Set the index for this drop zone.
     pub fn set_index(&mut self, index: usize) {
-        self.index = index;
+        *self.index.borrow_mut() = index;
     }
 
     /// Show or hide the drop zone.
     pub fn set_visible(&self, visible: bool) {
         *self.visible.borrow_mut() = visible;
-        remove_class(&self.root, "visible");
-        if visible {
-            add_class(&self.root, "visible");
-        }
+        self.update_render();
     }
 
     /// Set hover state (highlighted when true).
     pub fn set_hover(&self, hover: bool) {
         *self.hover.borrow_mut() = hover;
-        self.update_css_classes();
+        self.update_render();
     }
 
-    fn update_css_classes(&self) {
-        crate::css::apply_state_classes(
-            &self.root,
-            Some("drop-zone"),
-            &[("hover", *self.hover.borrow())],
-        );
+    fn update_render(&self) {
+        let props = DropZoneProps {
+            index: *self.index.borrow(),
+            visible: *self.visible.borrow(),
+            hover: *self.hover.borrow(),
+        };
+        self.inner.update(&props);
     }
 }
 
 impl WidgetBase for DropZone {
     fn widget(&self) -> gtk::Widget {
-        self.root.clone().upcast::<gtk::Widget>()
+        self.root.clone()
     }
 }

@@ -208,6 +208,7 @@ impl OrderedList {
         let zone = DropZone::new(DropZoneProps {
             index,
             visible: false,
+            hover: false,
         });
 
         self.setup_drop_zone_target(&zone);
@@ -238,6 +239,7 @@ impl OrderedList {
             let zone = DropZone::new(DropZoneProps {
                 index: i,
                 visible: false,
+                hover: false,
             });
             self.setup_drop_zone_target(&zone);
             self.root.append(&zone.root);
@@ -251,6 +253,7 @@ impl OrderedList {
         let zone = DropZone::new(DropZoneProps {
             index: state.rows.len(),
             visible: false,
+            hover: false,
         });
         self.setup_drop_zone_target(&zone);
         self.root.append(&zone.root);
