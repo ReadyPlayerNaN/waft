@@ -8,7 +8,7 @@ use super::component::AnyWidget;
 use super::container::{ActionRowPrefixContainer, ActionRowSuffixContainer, VdomContainer};
 use crate::icons::IconWidget;
 
-use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch};
+use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch, VSwitchRow};
 use super::vnode::{ComponentDesc, VNode, VNodeKind};
 
 // -- Kind tag -----------------------------------------------------------------
@@ -26,6 +26,8 @@ enum KindTag {
     CustomButton,
     PreferencesGroup,
     ActionRow,
+    SwitchRow,
+    EntryRow,
 }
 
 // -- Live entries -------------------------------------------------------------
@@ -72,6 +74,14 @@ enum ReconcilerEntry {
         suffix_reconciler: std::boxed::Box<Reconciler<ActionRowSuffixContainer>>,
         prefix_reconciler: std::boxed::Box<Reconciler<ActionRowPrefixContainer>>,
     },
+    SwitchRow {
+        widget:     adw::SwitchRow,
+        handler_id: Option<glib::SignalHandlerId>,
+    },
+    EntryRow {
+        widget:     adw::EntryRow,
+        handler_id: Option<glib::SignalHandlerId>,
+    },
 }
 
 impl ReconcilerEntry {
@@ -87,6 +97,8 @@ impl ReconcilerEntry {
             Self::CustomButton     { widget, .. }    => widget.clone().upcast(),
             Self::PreferencesGroup { widget, .. }    => widget.clone().upcast(),
             Self::ActionRow        { widget, .. }    => widget.clone().upcast(),
+            Self::SwitchRow        { widget, .. }    => widget.clone().upcast(),
+            Self::EntryRow         { widget, .. }    => widget.clone().upcast(),
         }
     }
 
@@ -102,6 +114,8 @@ impl ReconcilerEntry {
             Self::CustomButton     { .. }          => KindTag::CustomButton,
             Self::PreferencesGroup { .. }          => KindTag::PreferencesGroup,
             Self::ActionRow        { .. }          => KindTag::ActionRow,
+            Self::SwitchRow        { .. }          => KindTag::SwitchRow,
+            Self::EntryRow         { .. }          => KindTag::EntryRow,
         }
     }
 }
@@ -209,6 +223,8 @@ fn kind_tag_of(vnode: &VNode) -> KindTag {
         VNodeKind::CustomButton(_)       => KindTag::CustomButton,
         VNodeKind::PreferencesGroup(_)   => KindTag::PreferencesGroup,
         VNodeKind::ActionRow(_)          => KindTag::ActionRow,
+        VNodeKind::SwitchRow(_)          => KindTag::SwitchRow,
+        VNodeKind::EntryRow(_)           => KindTag::EntryRow,
     }
 }
 
@@ -224,6 +240,8 @@ fn build_entry(vnode: VNode) -> ReconcilerEntry {
         VNodeKind::CustomButton(vcb)       => build_custom_button_entry(vcb),
         VNodeKind::PreferencesGroup(vpg)   => build_preferences_group_entry(vpg),
         VNodeKind::ActionRow(vrow)         => build_action_row_entry(vrow),
+        VNodeKind::SwitchRow(vsr)          => build_switch_row_entry(vsr),
+        VNodeKind::EntryRow(ver)           => build_entry_row_entry(ver),
     }
 }
 
@@ -331,6 +349,33 @@ fn build_action_row_entry(vrow: VActionRow) -> ReconcilerEntry {
     ReconcilerEntry::ActionRow { widget, handler_id, suffix_reconciler, prefix_reconciler }
 }
 
+fn build_switch_row_entry(vsr: VSwitchRow) -> ReconcilerEntry {
+    let widget = adw::SwitchRow::new();
+    widget.set_title(&vsr.title);
+    if let Some(ref s) = vsr.subtitle { widget.set_subtitle(s); }
+    widget.set_sensitive(vsr.sensitive);
+    // Set active before connecting handler to avoid spurious callback.
+    widget.set_active(vsr.active);
+    let handler_id = vsr.on_toggle.as_ref().map(|f| {
+        let f = f.clone();
+        widget.connect_active_notify(move |sw| f(sw.is_active()))
+    });
+    ReconcilerEntry::SwitchRow { widget, handler_id }
+}
+
+fn build_entry_row_entry(ver: VEntryRow) -> ReconcilerEntry {
+    let widget = adw::EntryRow::new();
+    widget.set_title(&ver.title);
+    // Set text before connecting handler to avoid spurious on_change on build.
+    widget.set_text(&ver.text);
+    widget.set_sensitive(ver.sensitive);
+    let handler_id = ver.on_change.as_ref().map(|f| {
+        let f = f.clone();
+        widget.connect_text_notify(move |er| f(er.text().into()))
+    });
+    ReconcilerEntry::EntryRow { widget, handler_id }
+}
+
 // -- Update helpers -----------------------------------------------------------
 
 fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
@@ -411,6 +456,31 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             });
             suffix_reconciler.reconcile(vrow.suffix);
             prefix_reconciler.reconcile(vrow.prefix);
+        }
+        (ReconcilerEntry::SwitchRow { widget, handler_id }, VNodeKind::SwitchRow(vsr)) => {
+            widget.set_title(&vsr.title);
+            match vsr.subtitle {
+                Some(ref s) => widget.set_subtitle(s),
+                None        => widget.set_subtitle(""),
+            }
+            widget.set_sensitive(vsr.sensitive);
+            if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            // Set active AFTER disconnect to suppress spurious callback.
+            widget.set_active(vsr.active);
+            *handler_id = vsr.on_toggle.as_ref().map(|f| {
+                let f = f.clone();
+                widget.connect_active_notify(move |sw| f(sw.is_active()))
+            });
+        }
+        (ReconcilerEntry::EntryRow { widget, handler_id }, VNodeKind::EntryRow(ver)) => {
+            widget.set_title(&ver.title);
+            widget.set_sensitive(ver.sensitive);
+            if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            widget.set_text(&ver.text);
+            *handler_id = ver.on_change.as_ref().map(|f| {
+                let f = f.clone();
+                widget.connect_text_notify(move |er| f(er.text().into()))
+            });
         }
         // Mismatched arms are prevented by kind_tag_of check above; unreachable.
         _ => unreachable!("update_entry called with mismatched entry and VNodeKind"),

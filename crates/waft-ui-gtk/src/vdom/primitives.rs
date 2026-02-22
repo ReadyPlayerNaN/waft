@@ -278,6 +278,76 @@ impl VActionRow {
     }
 }
 
+/// Descriptor for an `adw::SwitchRow` VNode.
+pub struct VSwitchRow {
+    pub title:     String,
+    pub subtitle:  Option<String>,
+    pub active:    bool,
+    pub sensitive: bool,
+    pub on_toggle: Option<Rc<dyn Fn(bool)>>,
+}
+
+impl VSwitchRow {
+    pub fn new(title: impl Into<String>, active: bool) -> Self {
+        Self {
+            title:     title.into(),
+            subtitle:  None,
+            active,
+            sensitive: true,
+            on_toggle: None,
+        }
+    }
+
+    pub fn subtitle(mut self, s: impl Into<String>) -> Self {
+        self.subtitle = Some(s.into());
+        self
+    }
+
+    pub fn sensitive(mut self, v: bool) -> Self {
+        self.sensitive = v;
+        self
+    }
+
+    pub fn on_toggle(mut self, f: impl Fn(bool) + 'static) -> Self {
+        self.on_toggle = Some(Rc::new(f));
+        self
+    }
+}
+
+/// Descriptor for an `adw::EntryRow` VNode.
+pub struct VEntryRow {
+    pub title:     String,
+    pub text:      String,
+    pub sensitive: bool,
+    pub on_change: Option<Rc<dyn Fn(String)>>,
+}
+
+impl VEntryRow {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title:     title.into(),
+            text:      String::new(),
+            sensitive: true,
+            on_change: None,
+        }
+    }
+
+    pub fn text(mut self, t: impl Into<String>) -> Self {
+        self.text = t.into();
+        self
+    }
+
+    pub fn sensitive(mut self, v: bool) -> Self {
+        self.sensitive = v;
+        self
+    }
+
+    pub fn on_change(mut self, f: impl Fn(String) + 'static) -> Self {
+        self.on_change = Some(Rc::new(f));
+        self
+    }
+}
+
 /// Descriptor for a `gtk::Switch` primitive VNode.
 pub struct VSwitch {
     pub active:      bool,
