@@ -20,13 +20,11 @@ use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::connection_row::ConnectionRow;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
-use crate::i18n;
+use crate::components::toggles::settings_app_tracker::SettingsAppTracker;
 use crate::layout::types::WidgetFeatureToggle;
 use crate::ui::feature_toggles::menu::FeatureToggleMenuWidget;
 use crate::ui::feature_toggles::menu_info_row::FeatureToggleMenuInfoRow;
-use crate::ui::feature_toggles::menu_settings::{
-    FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
-};
+use crate::ui::feature_toggles::menu_settings::FeatureToggleMenuSettingsButton;
 use waft_client::{EntityActionCallback, EntityStore};
 
 /// A tracked toggle entry for a network adapter or VPN.
@@ -84,9 +82,9 @@ pub struct NetworkManagerToggles {
     action_callback: EntityActionCallback,
     #[allow(dead_code)]
     menu_store: Rc<waft_core::menu_state::MenuStore>,
-    /// Whether the settings app entity is available.
+    /// Tracks whether the waft-settings app entity is available.
     #[allow(dead_code)]
-    settings_available: Rc<Cell<bool>>,
+    settings_tracker: Rc<SettingsAppTracker>,
 }
 
 impl NetworkManagerToggles {
@@ -102,7 +100,26 @@ impl NetworkManagerToggles {
     ) -> Self {
         let entries: Rc<RefCell<Vec<ToggleEntry>>> = Rc::new(RefCell::new(Vec::new()));
         let settings_available: Rc<Cell<bool>> = Rc::new(Cell::new(false));
-        let settings_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
+
+        // Track waft-settings app availability for settings button visibility.
+        let settings_tracker: Rc<SettingsAppTracker> = {
+            let entries_ref = entries.clone();
+            let settings_available_ref = settings_available.clone();
+            Rc::new(SettingsAppTracker::new(store, move |is_available| {
+                settings_available_ref.set(is_available);
+                let entries = entries_ref.borrow();
+                for entry in entries.iter() {
+                    if let Some(ref btn) = entry.settings_button {
+                        btn.set_visible(is_available);
+                        let has_info = !entry.info_rows.borrow().is_empty();
+                        let has_children = !entry.network_rows.borrow().is_empty();
+                        entry
+                            .toggle
+                            .set_expandable(has_info || has_children || is_available);
+                    }
+                }
+            }))
+        };
 
         // Subscribe to network adapter changes
         {
@@ -112,7 +129,7 @@ impl NetworkManagerToggles {
             let rebuild = rebuild_callback.clone();
             let menu_store_ref = menu_store.clone();
             let settings_available_ref = settings_available.clone();
-            let settings_urn_ref = settings_urn.clone();
+            let settings_tracker_for_adapter = settings_tracker.clone();
             // Extra clones for update_wifi_menus call after entry changes
             let wifi_menu_store_ref = store.clone();
             let wifi_menu_entries_ref = entries.clone();
@@ -208,21 +225,19 @@ impl NetworkManagerToggles {
                         // Create settings button for wired and wireless adapters
                         let settings_button = match adapter.kind {
                             entity::network::AdapterKind::Wired => {
-                                let btn = build_settings_button(
-                                    &settings_urn_ref,
+                                let btn = settings_tracker_for_adapter.build_settings_button(
                                     &cb,
                                     "wired",
-                                    "wired-settings-button",
+                                    crate::i18n::t("wired-settings-button"),
                                 );
                                 menu.append(&btn.widget());
                                 Some(btn)
                             }
                             entity::network::AdapterKind::Wireless => {
-                                let btn = build_settings_button(
-                                    &settings_urn_ref,
+                                let btn = settings_tracker_for_adapter.build_settings_button(
                                     &cb,
                                     "wifi",
-                                    "wifi-settings-button",
+                                    crate::i18n::t("wifi-settings-button"),
                                 );
                                 menu.append(&btn.widget());
                                 Some(btn)
@@ -424,47 +439,6 @@ impl NetworkManagerToggles {
             });
         }
 
-        // Subscribe to app entity changes (for settings button visibility).
-        // Uses a shared reconcile closure for both subscribe_type and initial
-        // reconciliation via idle_add_local_once — required because
-        // subscribe_type only fires on changes, not for entities already cached.
-        {
-            let reconcile = {
-                let entries_ref = entries.clone();
-                let settings_available_ref = settings_available.clone();
-                let settings_urn_ref = settings_urn.clone();
-                let store_ref = store.clone();
-
-                move || {
-                    let apps: Vec<(Urn, entity::app::App)> =
-                        store_ref.get_entities_typed(entity::app::ENTITY_TYPE);
-
-                    let settings_app_urn = find_settings_app_urn(&apps);
-                    let has_settings = settings_app_urn.is_some();
-                    let was_available = settings_available_ref.get();
-                    settings_available_ref.set(has_settings);
-                    *settings_urn_ref.borrow_mut() = settings_app_urn;
-
-                    if has_settings != was_available {
-                        let entries = entries_ref.borrow();
-                        for entry in entries.iter() {
-                            if let Some(ref btn_container) = entry.settings_button {
-                                btn_container.set_visible(has_settings);
-                                let has_info = !entry.info_rows.borrow().is_empty();
-                                let has_children = !entry.network_rows.borrow().is_empty();
-                                entry
-                                    .toggle
-                                    .set_expandable(has_info || has_children || has_settings);
-                            }
-                        }
-                    }
-                }
-            };
-
-            store.subscribe_type(entity::app::ENTITY_TYPE, reconcile.clone());
-            gtk::glib::idle_add_local_once(reconcile);
-        }
-
         // Subscribe to tethering connection changes
         {
             let entries_ref = entries.clone();
@@ -483,7 +457,7 @@ impl NetworkManagerToggles {
             store: store.clone(),
             action_callback: action_callback.clone(),
             menu_store: menu_store.clone(),
-            settings_available,
+            settings_tracker,
         }
     }
 
@@ -533,103 +507,4 @@ fn adapter_title(adapter: &entity::network::NetworkAdapter) -> String {
         entity::network::AdapterKind::Wireless => "Wi-Fi".to_string(),
         entity::network::AdapterKind::Tethering => "Tethering".to_string(),
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use waft_protocol::entity;
-
-    fn make_app_entry(plugin: &str, id: &str) -> (Urn, entity::app::App) {
-        let urn = Urn::new(plugin, entity::app::ENTITY_TYPE, id);
-        let app = entity::app::App {
-            name: "Test App".to_string(),
-            icon: "test-icon".to_string(),
-            available: true,
-            keywords: vec![],
-            description: None,
-        };
-        (urn, app)
-    }
-
-    #[test]
-    fn settings_urn_found_when_internal_apps_present() {
-        let apps = vec![make_app_entry("internal-apps", "waft-settings")];
-        let expected = Urn::new("internal-apps", entity::app::ENTITY_TYPE, "waft-settings");
-        assert_eq!(find_settings_app_urn(&apps), Some(expected));
-    }
-
-    #[test]
-    fn settings_urn_none_when_only_xdg_apps_present() {
-        let apps = vec![
-            make_app_entry("xdg-apps", "firefox"),
-            make_app_entry("xdg-apps", "nautilus"),
-        ];
-        assert_eq!(find_settings_app_urn(&apps), None);
-    }
-
-    #[test]
-    fn settings_urn_found_among_mixed_app_entities() {
-        let settings_urn = Urn::new("internal-apps", entity::app::ENTITY_TYPE, "waft-settings");
-        let apps = vec![
-            make_app_entry("xdg-apps", "firefox"),
-            make_app_entry("xdg-apps", "nautilus"),
-            (
-                settings_urn.clone(),
-                entity::app::App {
-                    name: "Settings".to_string(),
-                    icon: "preferences-system-symbolic".to_string(),
-                    available: true,
-                    keywords: vec![],
-                    description: None,
-                },
-            ),
-        ];
-        assert_eq!(find_settings_app_urn(&apps), Some(settings_urn));
-    }
-
-    #[test]
-    fn settings_urn_none_when_no_apps() {
-        assert_eq!(find_settings_app_urn(&[]), None);
-    }
-}
-
-/// Find the waft-settings app entity URN from a list of app entities.
-///
-/// Returns `Some(urn)` only for `internal-apps/app/waft-settings`, which is
-/// the only entity that handles the `open-page` action for settings navigation.
-fn find_settings_app_urn(apps: &[(Urn, entity::app::App)]) -> Option<Urn> {
-    apps.iter()
-        .find(|(urn, _)| urn.plugin() == "internal-apps" && urn.id() == "waft-settings")
-        .map(|(urn, _)| urn.clone())
-}
-
-/// Build a settings button container (separator + button) for adapter menus.
-///
-/// Returns a vertical `gtk::Box` containing a separator and a button row.
-/// Visibility is controlled by `settings_available`.
-fn build_settings_button(
-    settings_urn: &Rc<RefCell<Option<Urn>>>,
-    action_callback: &EntityActionCallback,
-    page: &str,
-    i18n_key: &str,
-) -> FeatureToggleMenuSettingsButton {
-    let button = FeatureToggleMenuSettingsButton::new(FeatureToggleMenuSettingsButtonProps {
-        label: i18n::t(i18n_key),
-    });
-
-    let settings_urn_ref = settings_urn.clone();
-    let cb = action_callback.clone();
-    let page = page.to_string();
-
-    button.on_click(move |_| {
-        if let Some(ref urn) = *settings_urn_ref.borrow() {
-            cb(
-                urn.clone(),
-                "open-page".to_string(),
-                serde_json::json!({ "page": page }),
-            );
-        }
-    });
-    button
 }
