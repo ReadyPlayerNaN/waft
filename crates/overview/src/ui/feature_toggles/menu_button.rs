@@ -18,7 +18,7 @@ pub enum FeatureToggleMenuButtonOutput {
     Click,
 }
 
-struct FeatureToggleMenuButtonRender;
+pub(crate) struct FeatureToggleMenuButtonRender;
 
 impl RenderFn for FeatureToggleMenuButtonRender {
     type Props  = FeatureToggleMenuButtonProps;

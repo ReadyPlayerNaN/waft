@@ -1,107 +1,61 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
 
-use gtk::prelude::*;
-use waft_core::Callback;
 use waft_ui_gtk::battery::resolve_battery_icon_name;
 use waft_ui_gtk::bluetooth::resolve_device_type_icon;
 use waft_ui_gtk::icons::Icon;
-use waft_ui_gtk::vdom::Component;
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
-use crate::ui::feature_toggles::menu_button::{
+use super::menu_button::{
     FeatureToggleMenuButton, FeatureToggleMenuButtonProps,
 };
 
-/// Properties for initializing a bluetooth device row.
+/// Properties for a single Bluetooth device row.
 #[derive(Clone, PartialEq)]
 pub struct BluetoothDeviceRowProps {
-    pub device_type: String,
-    pub name: String,
-    pub connected: bool,
-    pub power: Option<u8>,
+    pub device_type:   String,
+    pub name:          String,
+    pub connected:     bool,
+    pub power:         Option<u8>,
     pub transitioning: bool,
 }
 
-/// Output events from the bluetooth device row.
+/// Output events from the Bluetooth device row.
 pub enum BluetoothDeviceRowOutput {
     ToggleConnect,
 }
 
-/// A horizontal button row for a single Bluetooth device.
-///
-/// Layout: `Button > Box(H) > [icon_box(device_icon + battery_icon), name_label(hexpand), right_box(spinner + switch)]`
-pub struct BluetoothDeviceRow {
-    root: FeatureToggleMenuButton,
-    switch: gtk::Switch,
-    on_output: Callback<BluetoothDeviceRowOutput>,
-}
+pub(crate) struct BluetoothDeviceRowRender;
 
-impl Component for BluetoothDeviceRow {
-    type Props = BluetoothDeviceRowProps;
+impl RenderFn for BluetoothDeviceRowRender {
+    type Props  = BluetoothDeviceRowProps;
     type Output = BluetoothDeviceRowOutput;
 
-    fn build(props: &Self::Props) -> Self {
-        let root = FeatureToggleMenuButton::new(FeatureToggleMenuButtonProps {
-            disabled: false,
-            name: props.name.clone(),
-            working: false,
-        });
+    fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
+        let emit_clone = emit.clone();
 
         let device_icon = resolve_device_type_icon(&props.device_type);
-        let battery_icon = resolve_battery_icon_name(props.power.unwrap_or(0));
+        let secondary_icon = props
+            .power
+            .map(|pwr| vec![Icon::parse(&Arc::from(resolve_battery_icon_name(pwr)))])
+            .unwrap_or_default();
 
-        root.set_primary_icon(vec![Icon::parse(&Arc::from(device_icon))]);
-        root.set_secondary_icon(vec![Icon::parse(&Arc::from(battery_icon))]);
-
-        let switch = gtk::Switch::builder()
-            .active(props.connected)
-            .sensitive(false) // display-only
-            .valign(gtk::Align::Center)
-            .css_classes(["device-switch"])
-            .build();
-
-        root.get_right_box().append(&switch);
-
-        let on_output: Callback<BluetoothDeviceRowOutput> = Rc::new(RefCell::new(None));
-        let on_output_ref = on_output.clone();
-        root.connect_output(move |_| {
-            if let Some(ref callback) = *on_output_ref.borrow() {
-                callback(BluetoothDeviceRowOutput::ToggleConnect);
-            }
-        });
-
-        Self {
-            root,
-            switch,
-            on_output,
-        }
-    }
-
-    fn update(&self, props: &Self::Props) {
-        self.root.set_name(&props.name);
-
-        let device_icon = resolve_device_type_icon(&props.device_type);
-        self.root
-            .set_primary_icon(vec![Icon::parse(&Arc::from(device_icon))]);
-
-        if let Some(value) = props.power {
-            let battery_icon = resolve_battery_icon_name(value);
-            self.root
-                .set_secondary_icon(vec![Icon::parse(&Arc::from(battery_icon))]);
-        } else {
-            self.root.set_secondary_icon(vec![]);
-        }
-
-        self.switch.set_active(props.connected);
-        self.root.set_working(props.transitioning);
-    }
-
-    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
-        *self.on_output.borrow_mut() = Some(Box::new(callback));
-    }
-
-    fn widget(&self) -> gtk::Widget {
-        self.root.widget()
+        VNode::with_output::<FeatureToggleMenuButton>(
+            FeatureToggleMenuButtonProps {
+                disabled:       false,
+                name:           props.name.clone(),
+                working:        props.transitioning,
+                primary_icon:   vec![Icon::parse(&Arc::from(device_icon))],
+                secondary_icon,
+                visible:        true,
+                switch_active:  Some(props.connected || props.transitioning),
+            },
+            move |_click| {
+                if let Some(ref cb) = *emit_clone.borrow() {
+                    cb(BluetoothDeviceRowOutput::ToggleConnect);
+                }
+            },
+        )
     }
 }
+
+pub type BluetoothDeviceRow = RenderComponent<BluetoothDeviceRowRender>;
