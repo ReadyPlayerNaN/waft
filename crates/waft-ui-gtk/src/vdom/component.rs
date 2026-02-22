@@ -39,3 +39,38 @@ impl<C: Component> AnyWidget for C {
         self
     }
 }
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// Callback type used to emit output events from a rendered component.
+pub type RenderCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
+
+/// A component that declares its GTK content as a pure function of props.
+///
+/// Implement this trait instead of `Component` when your widget is fully
+/// described by its props and does not store individual widget references.
+/// Wrap with `RenderComponent<F>` to satisfy the `Component` trait.
+///
+/// # Example
+/// ```rust
+/// struct MyRow;
+/// impl RenderFn for MyRow {
+///     type Props  = MyRowProps;
+///     type Output = ();
+///     fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
+///         VNode::label(VLabel::new(&props.text).css_class("row"))
+///     }
+/// }
+/// type MyRowComponent = RenderComponent<MyRow>;
+/// ```
+pub trait RenderFn: 'static {
+    type Props: Clone + PartialEq + 'static;
+    type Output: 'static;
+
+    /// Return a `VNode` describing the full content of this component.
+    ///
+    /// `emit` is the output callback — clone it into button/switch closures
+    /// to fire output events. For `Output = ()` it can be ignored.
+    fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> super::VNode;
+}
