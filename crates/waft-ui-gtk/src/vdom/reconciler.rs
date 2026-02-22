@@ -4,6 +4,7 @@ use gtk::glib;
 use gtk::prelude::*;
 
 use super::component::AnyWidget;
+use super::container::VdomContainer;
 use crate::icons::IconWidget;
 
 use super::primitives::{VBox, VButton, VCustomButton, VIcon, VLabel, VSpinner, VSwitch};
@@ -37,7 +38,7 @@ enum ReconcilerEntry {
     },
     Box {
         widget:           gtk::Box,
-        child_reconciler: std::boxed::Box<Reconciler>,
+        child_reconciler: std::boxed::Box<Reconciler<gtk::Box>>,
     },
     Button {
         widget:     gtk::Button,
@@ -56,7 +57,7 @@ enum ReconcilerEntry {
     CustomButton {
         widget:           gtk::Button,
         handler_id:       Option<glib::SignalHandlerId>,
-        child_reconciler: std::boxed::Box<Reconciler>,
+        child_reconciler: std::boxed::Box<Reconciler<gtk::Box>>,
     },
 }
 
@@ -91,21 +92,24 @@ impl ReconcilerEntry {
 // -- Reconciler ---------------------------------------------------------------
 
 /// Maintains a keyed list of live component or primitive instances inside a
-/// `gtk::Box`. Call `reconcile()` with a new list of `VNode`s on every state
-/// change.
+/// container widget. Call `reconcile()` with a new list of `VNode`s on every
+/// state change.
+///
+/// The type parameter `C` must implement `VdomContainer`. It defaults to
+/// `gtk::Box`, so all existing call sites compile unchanged.
 ///
 /// Operations per call:
 /// - **Key present, same kind, props unchanged** → kept as-is (components only).
 /// - **Key present, same kind, props changed** → widget updated in place.
 /// - **Key present, kind changed** → old widget removed, new one built.
 /// - **Key absent from new list** → widget removed from container.
-pub struct Reconciler {
+pub struct Reconciler<C: VdomContainer = gtk::Box> {
     children:  Vec<(String, ReconcilerEntry)>,
-    container: gtk::Box,
+    container: C,
 }
 
-impl Reconciler {
-    pub fn new(container: gtk::Box) -> Self {
+impl<C: VdomContainer> Reconciler<C> {
+    pub fn new(container: C) -> Self {
         Self { children: Vec::new(), container }
     }
 
@@ -140,7 +144,7 @@ impl Reconciler {
                 .position(|(k, _)| k == key)
                 .expect("key in to_remove must exist in children");
             let (_, entry) = self.children.remove(pos);
-            self.container.remove(&entry.widget());
+            self.container.vdom_remove(&entry.widget());
         }
 
         // 2. Update existing entries and insert new ones.
@@ -153,9 +157,9 @@ impl Reconciler {
 
                     if old_tag != new_tag {
                         // Kind changed: destroy old widget, build new one.
-                        self.container.remove(&self.children[pos].1.widget());
+                        self.container.vdom_remove(&self.children[pos].1.widget());
                         let entry = build_entry(vnode);
-                        self.container.append(&entry.widget());
+                        self.container.vdom_append(&entry.widget());
                         self.children[pos].1 = entry;
                     } else {
                         // Same kind: update in place.
@@ -166,7 +170,7 @@ impl Reconciler {
                 None => {
                     // New key: build and append.
                     let entry = build_entry(vnode);
-                    self.container.append(&entry.widget());
+                    self.container.vdom_append(&entry.widget());
                     self.children.push((key, entry));
                 }
             }
@@ -220,7 +224,8 @@ fn build_label_entry(vlabel: VLabel) -> ReconcilerEntry {
 fn build_box_entry(vbox: VBox) -> ReconcilerEntry {
     let widget = gtk::Box::new(vbox.orientation, vbox.spacing);
     apply_box_props(&widget, &vbox);
-    let mut child_reconciler = std::boxed::Box::new(Reconciler::new(widget.clone()));
+    let mut child_reconciler: std::boxed::Box<Reconciler<gtk::Box>> =
+        std::boxed::Box::new(Reconciler::new(widget.clone()));
     child_reconciler.reconcile(vbox.children);
     ReconcilerEntry::Box { widget, child_reconciler }
 }
@@ -234,7 +239,8 @@ fn build_button_entry(vbtn: VButton) -> ReconcilerEntry {
 
 fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
     let child_container = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let mut child_reconciler = std::boxed::Box::new(Reconciler::new(child_container.clone()));
+    let mut child_reconciler: std::boxed::Box<Reconciler<gtk::Box>> =
+        std::boxed::Box::new(Reconciler::new(child_container.clone()));
     child_reconciler.reconcile(std::iter::once(*vcb.child));
 
     let widget = gtk::Button::new();
