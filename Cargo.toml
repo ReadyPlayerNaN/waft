@@ -11,6 +11,7 @@ members = [
     "crates/protocol",
     "crates/toasts",
     "crates/settings",
+    "crates/launcher",
     "crates/waft",
     "crates/waft-ui-gtk",
     "plugins/clock",
@@ -30,5 +31,6 @@ members = [
     "plugins/syncthing",
     "plugins/swww",
     "plugins/internal-apps",
+    "plugins/xdg-apps",
     "plugins/niri",
 ]
