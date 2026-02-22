@@ -19,6 +19,7 @@ pub struct ToggleUpdate {
     /// None keeps existing details text; Some(_) replaces it.
     pub details: Option<String>,
     /// None keeps the current icon; Some("name") replaces it.
+    /// Must be a `'static` string literal; runtime-computed icon names are not supported.
     pub icon: Option<&'static str>,
 }
 
@@ -78,6 +79,7 @@ impl SimpleToggle {
 
         let cb = action_callback.clone();
         let urn = config.urn;
+        // SimpleToggle has exactly one output variant; all clicks dispatch "toggle".
         toggle.connect_output(move |_output| {
             cb(urn.clone(), "toggle".to_string(), serde_json::Value::Null);
         });
@@ -88,26 +90,52 @@ impl SimpleToggle {
         let entity_type = config.entity_type;
         let on_update = config.on_update;
 
-        store.subscribe_type(entity_type, move || {
-            let entities: Vec<(Urn, E)> = store_ref.get_entities_typed(entity_type);
+        {
+            let store_ref_sub = store_ref.clone();
+            let toggle_ref_sub = toggle_ref.clone();
+            let available_ref_sub = available_ref.clone();
+            let rebuild_callback_sub = rebuild_callback.clone();
+            store.subscribe_type(entity_type, move || {
+                let entities: Vec<(Urn, E)> = store_ref_sub.get_entities_typed(entity_type);
 
-            let was_available = available_ref.get();
-            let now_available = !entities.is_empty();
+                let was_available = available_ref_sub.get();
+                let now_available = !entities.is_empty();
 
-            if let Some((_urn, entity)) = entities.first() {
-                let update = on_update(entity);
-                toggle_ref.set_active(update.active);
-                toggle_ref.set_details(update.details);
-                if let Some(icon) = update.icon {
-                    toggle_ref.set_icon(icon);
+                if let Some((_urn, entity)) = entities.first() {
+                    let update = on_update(entity);
+                    toggle_ref_sub.set_active(update.active);
+                    toggle_ref_sub.set_details(update.details);
+                    if let Some(icon) = update.icon {
+                        toggle_ref_sub.set_icon(icon);
+                    }
                 }
-            }
 
-            if was_available != now_available {
-                available_ref.set(now_available);
-                rebuild_callback();
-            }
-        });
+                if was_available != now_available {
+                    available_ref_sub.set(now_available);
+                    rebuild_callback_sub();
+                }
+            });
+        }
+
+        // Initial reconciliation: catch entities already cached before subscription was registered.
+        {
+            gtk::glib::idle_add_local_once(move || {
+                let entities: Vec<(Urn, E)> = store_ref.get_entities_typed(entity_type);
+                let now_available = !entities.is_empty();
+                if now_available && !available_ref.get() {
+                    if let Some((_urn, entity)) = entities.first() {
+                        let update = on_update(entity);
+                        toggle_ref.set_active(update.active);
+                        toggle_ref.set_details(update.details);
+                        if let Some(icon) = update.icon {
+                            toggle_ref.set_icon(icon);
+                        }
+                    }
+                    available_ref.set(true);
+                    rebuild_callback();
+                }
+            });
+        }
 
         Self {
             toggle,
