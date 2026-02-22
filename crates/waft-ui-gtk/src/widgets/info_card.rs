@@ -5,7 +5,7 @@
 
 use gtk::prelude::*;
 
-use crate::widgets::icon::IconWidget;
+use crate::icons::IconWidget;
 
 /// Pure GTK4 info card widget.
 #[derive(Clone)]

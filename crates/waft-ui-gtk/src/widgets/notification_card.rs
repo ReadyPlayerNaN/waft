@@ -20,8 +20,8 @@ use waft_protocol::Urn;
 use waft_protocol::entity::notification::{NotificationAction, NotificationIconHint};
 
 use super::countdown_bar::{CountdownBarOutput, CountdownBarWidget};
-use super::icon::{Icon, IconWidget};
 use super::notification_markup;
+use crate::icons::{Icon, IconWidget};
 
 /// Type alias for output callback to reduce complexity.
 type OutputCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;

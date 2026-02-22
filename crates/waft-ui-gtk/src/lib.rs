@@ -4,8 +4,10 @@
 
 pub mod audio;
 pub mod backup;
+pub mod battery;
 pub mod bluetooth;
 pub mod css;
+pub mod icons;
 pub mod menu_state;
 pub mod widget_base;
 pub mod widgets;

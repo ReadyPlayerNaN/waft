@@ -1,7 +1,7 @@
 //! IconList widget -- a list with a leading icon and child widgets.
 
 use crate::widget_base::Children;
-use crate::widgets::icon::IconWidget;
+use crate::icons::IconWidget;
 use gtk::prelude::*;
 
 /// GTK4 icon list widget -- horizontal box with icon + vertical children.

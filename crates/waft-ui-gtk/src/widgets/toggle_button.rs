@@ -1,6 +1,6 @@
 //! ToggleButton widget - icon toggle button with active state
 
-use crate::widgets::icon::IconWidget;
+use crate::icons::IconWidget;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -9,7 +9,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use waft_core::Callback;
 
-use crate::widgets::icon::IconWidget;
+use crate::icons::IconWidget;
 
 /// Properties for initializing a connection row.
 pub struct ConnectionRowProps {

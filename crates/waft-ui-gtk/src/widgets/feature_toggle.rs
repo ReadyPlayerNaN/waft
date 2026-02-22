@@ -10,7 +10,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use uuid::Uuid;
 
-use crate::widgets::icon::IconWidget;
+use crate::icons::IconWidget;
 use crate::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use waft_core::Callback;
 use waft_core::menu_state::{MenuOp, MenuStore};

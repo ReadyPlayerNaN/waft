@@ -4,7 +4,7 @@
 //! in-place property updates without recreating the GTK tree.
 
 use crate::menu_state::{is_menu_open, toggle_menu};
-use crate::widgets::icon::IconWidget;
+use crate::icons::IconWidget;
 use crate::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use gtk::glib;
 use gtk::prelude::*;

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
-use crate::widgets::icon::IconWidget;
+use crate::icons::IconWidget;
 
 /// An option for StatusCycleButton.
 #[derive(Clone, Debug)]
