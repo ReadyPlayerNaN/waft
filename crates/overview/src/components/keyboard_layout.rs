@@ -11,7 +11,7 @@ use gtk::prelude::*;
 
 use waft_protocol::Urn;
 use waft_protocol::entity;
-use waft_ui_gtk::widgets::status_cycle_button::{StatusCycleButtonWidget, StatusOption};
+use waft_ui_gtk::widgets::status_cycle_button::{StatusCycleButtonWidget, StatusOption, StatusCycleButtonOutput};
 
 use waft_client::{EntityActionCallback, EntityStore};
 
@@ -36,24 +36,28 @@ impl KeyboardLayoutComponent {
             "",
             "input-keyboard-symbolic",
             &[],
-            {
-                let cb = action_callback.clone();
-                let urn_ref = current_urn.clone();
-                Rc::new(move |layout_id: String| {
-                    if let Some(urn) = urn_ref.borrow().as_ref() {
-                        cb(
-                            urn.clone(),
-                            "cycle".to_string(),
-                            serde_json::json!(layout_id),
-                        );
-                    } else {
-                        log::warn!(
-                            "[keyboard-layout] action triggered before entity URN is known, ignoring"
-                        );
-                    }
-                })
-            },
         ));
+
+        // Wire up the output callback
+        {
+            let cb = action_callback.clone();
+            let urn_ref = current_urn.clone();
+            button.connect_output(move |output| {
+                let StatusCycleButtonOutput::Cycle(layout_id) = output;
+                if let Some(urn) = urn_ref.borrow().as_ref() {
+                    cb(
+                        urn.clone(),
+                        "cycle".to_string(),
+                        serde_json::json!(layout_id),
+                    );
+                } else {
+                    log::warn!(
+                        "[keyboard-layout] action triggered before entity URN is known, ignoring"
+                    );
+                }
+            });
+        }
+
         container.append(&button.widget());
 
         let store_ref = store.clone();
