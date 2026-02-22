@@ -78,12 +78,11 @@ pub(super) fn update_ethernet_menus(
         for (conn_urn, conn) in &adapter_connections {
             let conn_urn_str = conn_urn.as_str().to_string();
 
+            // Remove stale row if it exists (always recreate to reflect fresh conn.active state)
             if let Some(existing) = network_rows.iter().find(|r| r.urn_str() == conn_urn_str) {
-                // Update existing row - rebuild checkmark state
-                // Remove old row and recreate (simple approach for state updates)
                 existing.remove_from(&entry.menu.root());
-                network_rows.retain(|r| r.urn_str() != conn_urn_str);
             }
+            network_rows.retain(|r| r.urn_str() != conn_urn_str);
 
             // Create connection profile row
             let row_box = gtk::Box::builder()

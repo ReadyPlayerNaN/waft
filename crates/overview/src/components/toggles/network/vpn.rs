@@ -90,7 +90,7 @@ pub(super) fn update_vpn_menu_rows(
 }
 
 /// Determine the icon name for a VPN connection based on its type.
-pub(super) fn vpn_icon_name(vpn_type: &entity::network::VpnType) -> String {
+fn vpn_icon_name(vpn_type: &entity::network::VpnType) -> String {
     match vpn_type {
         entity::network::VpnType::Wireguard => "network-vpn-symbolic".to_string(),
         entity::network::VpnType::Vpn => "network-vpn-symbolic".to_string(),
