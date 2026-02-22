@@ -53,7 +53,7 @@ impl RenderFn for NetworkRowRender {
         let mut row = VActionRow::new(&props.ssid)
             .subtitle(&subtitle)
             .prefix(VNode::icon(VIcon::new(
-                vec![Icon::parse(&Arc::from(signal_icon))],
+                vec![Icon::Themed(Arc::from(signal_icon))],
                 16,
             )));
 

@@ -45,10 +45,6 @@ impl RenderFn for DeviceRowRender {
         let device_icon = resolve_device_type_icon(&props.device_type);
         let connected   = matches!(props.connection_state, ConnectionState::Connected);
 
-        let emit_connect = emit.clone();
-        let emit_pair    = emit.clone();
-        let emit_remove  = emit.clone();
-
         // Build subtitle and button label based on connection state and paired status
         let (subtitle, action_label, sensitive) = if props.paired {
             match props.connection_state {
@@ -78,7 +74,7 @@ impl RenderFn for DeviceRowRender {
         let mut row = VActionRow::new(&props.name)
             .subtitle(&subtitle)
             .prefix(VNode::icon(VIcon::new(
-                vec![Icon::parse(&Arc::from(device_icon))],
+                vec![Icon::Themed(Arc::from(device_icon))],
                 32,
             )));
 
@@ -87,7 +83,7 @@ impl RenderFn for DeviceRowRender {
             if connected {
                 let batt_icon = resolve_battery_icon_name(pct);
                 row = row.suffix(VNode::icon(VIcon::new(
-                    vec![Icon::parse(&Arc::from(batt_icon))],
+                    vec![Icon::Themed(Arc::from(batt_icon))],
                     16,
                 )));
             }
@@ -95,6 +91,7 @@ impl RenderFn for DeviceRowRender {
 
         // Action button: Connect/Disconnect for paired, Pair for unpaired
         if props.paired {
+            let emit_connect = emit.clone();
             row = row.suffix(VNode::custom_button(
                 VCustomButton::new(VNode::label(VLabel::new(&action_label)))
                     .css_class("flat")
@@ -106,6 +103,7 @@ impl RenderFn for DeviceRowRender {
                     }),
             ));
         } else {
+            let emit_pair = emit.clone();
             row = row.suffix(VNode::custom_button(
                 VCustomButton::new(VNode::label(VLabel::new(&action_label)))
                     .css_classes(["flat", "suggested-action"])
@@ -120,6 +118,7 @@ impl RenderFn for DeviceRowRender {
 
         // Remove button (always shown for paired; hidden for unpaired)
         if props.paired {
+            let emit_remove = emit.clone();
             row = row.suffix(VNode::custom_button(
                 VCustomButton::new(VNode::icon(VIcon::new(
                     vec![Icon::Themed(Arc::from("user-trash-symbolic"))],
