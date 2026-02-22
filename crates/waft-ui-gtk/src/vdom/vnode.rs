@@ -8,14 +8,14 @@ use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIc
 
 type BuildFn   = Rc<dyn Fn() -> Box<dyn AnyWidget>>;
 type UpdateFn  = Rc<dyn Fn(&dyn AnyWidget)>;
-type PropsEqFn = Rc<dyn Fn(&Box<dyn Any>) -> bool>;
+type PropsEqFn = Rc<dyn Fn(&Rc<dyn Any>) -> bool>;
 
 pub(super) struct ComponentDesc {
     pub(super) type_id:  TypeId,
     pub(super) build:    BuildFn,
     pub(super) update:   UpdateFn,
     pub(super) props_eq: PropsEqFn,
-    pub(super) props:    Box<dyn Any>,
+    pub(super) props:    Rc<dyn Any>,
 }
 
 // -- VNodeKind ----------------------------------------------------------------
@@ -130,34 +130,44 @@ fn make_component_desc<C: Component>(
     props: C::Props,
     on_output: impl Fn(C::Output) + 'static,
 ) -> ComponentDesc {
-    let props_build  = props.clone();
-    let props_update = props.clone();
-    let props_eq     = props.clone();
-    let on_output    = Rc::new(on_output);
+    let shared    = Rc::new(props);
+    let on_output = Rc::new(on_output);
+
+    let build = {
+        let p  = Rc::clone(&shared);
+        let cb = Rc::clone(&on_output);
+        Rc::new(move || -> Box<dyn AnyWidget> {
+            let comp = C::build(&*p);
+            let cb   = Rc::clone(&cb);
+            comp.connect_output(move |output| cb(output));
+            Box::new(comp)
+        }) as BuildFn
+    };
+
+    let update = {
+        let p = Rc::clone(&shared);
+        Rc::new(move |any: &dyn AnyWidget| {
+            if let Some(comp) = any.as_any().downcast_ref::<C>() {
+                comp.update(&*p);
+            }
+        }) as UpdateFn
+    };
+
+    let props_eq = {
+        let p = Rc::clone(&shared);
+        Rc::new(move |stored: &Rc<dyn Any>| {
+            stored
+                .downcast_ref::<C::Props>()
+                .map(|old| old == &*p)
+                .unwrap_or(false)
+        }) as PropsEqFn
+    };
 
     ComponentDesc {
         type_id: TypeId::of::<C>(),
-
-        build: Rc::new(move || {
-            let comp = C::build(&props_build);
-            let cb   = on_output.clone();
-            comp.connect_output(move |output| cb(output));
-            Box::new(comp)
-        }),
-
-        update: Rc::new(move |any: &dyn AnyWidget| {
-            if let Some(comp) = any.as_any().downcast_ref::<C>() {
-                comp.update(&props_update);
-            }
-        }),
-
-        props_eq: Rc::new(move |stored: &Box<dyn Any>| {
-            stored
-                .downcast_ref::<C::Props>()
-                .map(|old| old == &props_eq)
-                .unwrap_or(false)
-        }),
-
-        props: Box::new(props),
+        build,
+        update,
+        props_eq,
+        props: shared,
     }
 }

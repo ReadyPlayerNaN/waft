@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::rc::Rc;
 
 use gtk::prelude::*;
 use adw::prelude::*;
@@ -35,7 +36,7 @@ enum KindTag {
 enum ReconcilerEntry {
     Component {
         component:  Box<dyn AnyWidget>,
-        last_props: Box<dyn Any>,
+        last_props: Rc<dyn Any>,
         type_id:    std::any::TypeId,
     },
     Label {
@@ -48,10 +49,12 @@ enum ReconcilerEntry {
     Button {
         widget:     gtk::Button,
         handler_id: Option<glib::SignalHandlerId>,
+        cb:         Option<Rc<dyn Fn()>>,
     },
     Switch {
         widget:     gtk::Switch,
         handler_id: Option<glib::SignalHandlerId>,
+        cb:         Option<Rc<dyn Fn(bool)>>,
     },
     Spinner {
         widget: gtk::Spinner,
@@ -62,6 +65,7 @@ enum ReconcilerEntry {
     CustomButton {
         widget:           gtk::Button,
         handler_id:       Option<glib::SignalHandlerId>,
+        cb:               Option<Rc<dyn Fn()>>,
         child_reconciler: std::boxed::Box<Reconciler<gtk::Box>>,
     },
     PreferencesGroup {
@@ -71,16 +75,19 @@ enum ReconcilerEntry {
     ActionRow {
         widget:            adw::ActionRow,
         handler_id:        Option<glib::SignalHandlerId>,
+        cb:                Option<Rc<dyn Fn()>>,
         suffix_reconciler: std::boxed::Box<Reconciler<ActionRowSuffixContainer>>,
         prefix_reconciler: std::boxed::Box<Reconciler<ActionRowPrefixContainer>>,
     },
     SwitchRow {
         widget:     adw::SwitchRow,
         handler_id: Option<glib::SignalHandlerId>,
+        cb:         Option<Rc<dyn Fn(bool)>>,
     },
     EntryRow {
         widget:     adw::EntryRow,
         handler_id: Option<glib::SignalHandlerId>,
+        cb:         Option<Rc<dyn Fn(String)>>,
     },
 }
 
@@ -136,12 +143,17 @@ impl ReconcilerEntry {
 /// - **Key absent from new list** → widget removed from container.
 pub struct Reconciler<C: VdomContainer = gtk::Box> {
     children:  Vec<(String, ReconcilerEntry)>,
+    key_index: std::collections::HashMap<String, usize>,
     container: C,
 }
 
 impl<C: VdomContainer> Reconciler<C> {
     pub fn new(container: C) -> Self {
-        Self { children: Vec::new(), container }
+        Self {
+            children:  Vec::new(),
+            key_index: std::collections::HashMap::new(),
+            container,
+        }
     }
 
     pub fn reconcile(&mut self, nodes: impl IntoIterator<Item = VNode>) {
@@ -169,19 +181,22 @@ impl<C: VdomContainer> Reconciler<C> {
             .collect();
 
         for key in &to_remove {
-            let pos = self
-                .children
-                .iter()
-                .position(|(k, _)| k == key)
-                .expect("key in to_remove must exist in children");
-            let (_, entry) = self.children.remove(pos);
-            self.container.vdom_remove(&entry.widget());
+            if let Some(pos) = self.key_index.remove(key) {
+                let (_, entry) = self.children.remove(pos);
+                self.container.vdom_remove(&entry.widget());
+                // Shift indices above the removed position down by 1.
+                for idx in self.key_index.values_mut() {
+                    if *idx > pos {
+                        *idx -= 1;
+                    }
+                }
+            }
         }
 
         // 2. Update existing entries and insert new ones.
         // TODO: reorder pre-existing widgets to match new order when required.
         for (key, vnode) in keyed {
-            match self.children.iter().position(|(k, _)| k == &key) {
+            match self.key_index.get(&key).copied() {
                 Some(pos) => {
                     let new_tag = kind_tag_of(&vnode);
                     let old_tag = self.children[pos].1.kind_tag();
@@ -202,6 +217,8 @@ impl<C: VdomContainer> Reconciler<C> {
                     // New key: build and append.
                     let entry = build_entry(vnode);
                     self.container.vdom_append(&entry.widget());
+                    let pos = self.children.len();
+                    self.key_index.insert(key.clone(), pos);
                     self.children.push((key, entry));
                 }
             }
@@ -248,7 +265,7 @@ fn build_entry(vnode: VNode) -> ReconcilerEntry {
 fn build_component_entry(desc: ComponentDesc) -> ReconcilerEntry {
     let component = (desc.build)();
     ReconcilerEntry::Component {
-        last_props: desc.props,
+        last_props: Rc::clone(&desc.props),
         type_id:    desc.type_id,
         component,
     }
@@ -272,8 +289,9 @@ fn build_box_entry(vbox: VBox) -> ReconcilerEntry {
 fn build_button_entry(vbtn: VButton) -> ReconcilerEntry {
     let widget = gtk::Button::with_label(&vbtn.label);
     widget.set_sensitive(vbtn.sensitive);
-    let handler_id = connect_button_handler(&widget, &vbtn.on_click);
-    ReconcilerEntry::Button { widget, handler_id }
+    let cb = vbtn.on_click;
+    let handler_id = connect_button_handler(&widget, &cb);
+    ReconcilerEntry::Button { widget, handler_id, cb }
 }
 
 fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
@@ -288,9 +306,10 @@ fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
     widget.set_css_classes(&classes);
     widget.set_visible(vcb.visible);
     widget.set_sensitive(vcb.sensitive);
-    let handler_id = connect_button_handler(&widget, &vcb.on_click);
+    let cb = vcb.on_click;
+    let handler_id = connect_button_handler(&widget, &cb);
 
-    ReconcilerEntry::CustomButton { widget, handler_id, child_reconciler }
+    ReconcilerEntry::CustomButton { widget, handler_id, cb, child_reconciler }
 }
 
 fn build_icon_entry(vi: VIcon) -> ReconcilerEntry {
@@ -312,8 +331,9 @@ fn build_switch_entry(vsw: VSwitch) -> ReconcilerEntry {
     widget.set_sensitive(vsw.sensitive);
     let classes: Vec<&str> = vsw.css_classes.iter().map(|s| s.as_str()).collect();
     widget.set_css_classes(&classes);
-    let handler_id = connect_switch_handler(&widget, &vsw.on_toggle);
-    ReconcilerEntry::Switch { widget, handler_id }
+    let cb = vsw.on_toggle;
+    let handler_id = connect_switch_handler(&widget, &cb);
+    ReconcilerEntry::Switch { widget, handler_id, cb }
 }
 
 fn build_preferences_group_entry(vpg: VPreferencesGroup) -> ReconcilerEntry {
@@ -331,7 +351,8 @@ fn build_action_row_entry(vrow: VActionRow) -> ReconcilerEntry {
     if let Some(ref s) = vrow.subtitle { widget.set_subtitle(s); }
     widget.set_activatable(vrow.activatable);
 
-    let handler_id = vrow.on_activate.as_ref().map(|f| {
+    let cb = vrow.on_activate;
+    let handler_id = cb.as_ref().map(|f| {
         let f = f.clone();
         widget.connect_activated(move |_| f())
     });
@@ -346,7 +367,7 @@ fn build_action_row_entry(vrow: VActionRow) -> ReconcilerEntry {
     );
     prefix_reconciler.reconcile(vrow.prefix);
 
-    ReconcilerEntry::ActionRow { widget, handler_id, suffix_reconciler, prefix_reconciler }
+    ReconcilerEntry::ActionRow { widget, handler_id, cb, suffix_reconciler, prefix_reconciler }
 }
 
 fn build_switch_row_entry(vsr: VSwitchRow) -> ReconcilerEntry {
@@ -356,11 +377,12 @@ fn build_switch_row_entry(vsr: VSwitchRow) -> ReconcilerEntry {
     widget.set_sensitive(vsr.sensitive);
     // Set active before connecting handler to avoid spurious callback.
     widget.set_active(vsr.active);
-    let handler_id = vsr.on_toggle.as_ref().map(|f| {
+    let cb = vsr.on_toggle;
+    let handler_id = cb.as_ref().map(|f| {
         let f = f.clone();
         widget.connect_active_notify(move |sw| f(sw.is_active()))
     });
-    ReconcilerEntry::SwitchRow { widget, handler_id }
+    ReconcilerEntry::SwitchRow { widget, handler_id, cb }
 }
 
 fn build_entry_row_entry(ver: VEntryRow) -> ReconcilerEntry {
@@ -369,11 +391,12 @@ fn build_entry_row_entry(ver: VEntryRow) -> ReconcilerEntry {
     // Set text before connecting handler to avoid spurious on_change on build.
     widget.set_text(&ver.text);
     widget.set_sensitive(ver.sensitive);
-    let handler_id = ver.on_change.as_ref().map(|f| {
+    let cb = ver.on_change;
+    let handler_id = cb.as_ref().map(|f| {
         let f = f.clone();
         widget.connect_text_notify(move |er| f(er.text().into()))
     });
-    ReconcilerEntry::EntryRow { widget, handler_id }
+    ReconcilerEntry::EntryRow { widget, handler_id, cb }
 }
 
 // -- Update helpers -----------------------------------------------------------
@@ -383,7 +406,7 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
         (ReconcilerEntry::Component { component, last_props, .. }, VNodeKind::Component(desc)) => {
             if !(desc.props_eq)(last_props) {
                 (desc.update)(component.as_ref());
-                *last_props = desc.props;
+                *last_props = Rc::clone(&desc.props);
             }
             // else: props unchanged — no GTK call.
         }
@@ -395,25 +418,29 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             apply_box_props(widget, &vbox);
             child_reconciler.reconcile(vbox.children);
         }
-        (ReconcilerEntry::Button { widget, handler_id }, VNodeKind::Button(vbtn)) => {
+        (ReconcilerEntry::Button { widget, handler_id, cb }, VNodeKind::Button(vbtn)) => {
             widget.set_label(&vbtn.label);
             widget.set_sensitive(vbtn.sensitive);
-            // Callbacks have no identity — always disconnect old, connect new.
-            if let Some(id) = handler_id.take() {
-                widget.disconnect(id);
+            if !rc_option_ptr_eq(cb, &vbtn.on_click) {
+                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+                *handler_id = connect_button_handler(widget, &vbtn.on_click);
+                *cb = vbtn.on_click;
             }
-            *handler_id = connect_button_handler(widget, &vbtn.on_click);
         }
-        (ReconcilerEntry::Switch { widget, handler_id }, VNodeKind::Switch(vsw)) => {
-            if let Some(id) = handler_id.take() {
-                widget.disconnect(id);
+        (ReconcilerEntry::Switch { widget, handler_id, cb }, VNodeKind::Switch(vsw)) => {
+            let same_cb = rc_option_ptr_eq(cb, &vsw.on_toggle);
+            if !same_cb {
+                if let Some(id) = handler_id.take() { widget.disconnect(id); }
             }
             // Set active BEFORE reconnecting handler to avoid spurious callbacks.
             widget.set_active(vsw.active);
             widget.set_sensitive(vsw.sensitive);
             let classes: Vec<&str> = vsw.css_classes.iter().map(|s| s.as_str()).collect();
             widget.set_css_classes(&classes);
-            *handler_id = connect_switch_handler(widget, &vsw.on_toggle);
+            if !same_cb {
+                *handler_id = connect_switch_handler(widget, &vsw.on_toggle);
+                *cb = vsw.on_toggle;
+            }
         }
         (ReconcilerEntry::Spinner { widget }, VNodeKind::Spinner(vsp)) => {
             widget.set_spinning(vsp.spinning);
@@ -423,14 +450,17 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             widget.update_icon(vi.hints);
             widget.widget().set_visible(vi.visible);
         }
-        (ReconcilerEntry::CustomButton { widget, handler_id, child_reconciler },
+        (ReconcilerEntry::CustomButton { widget, handler_id, cb, child_reconciler },
          VNodeKind::CustomButton(vcb)) => {
             let classes: Vec<&str> = vcb.css_classes.iter().map(|s| s.as_str()).collect();
             widget.set_css_classes(&classes);
             widget.set_visible(vcb.visible);
             widget.set_sensitive(vcb.sensitive);
-            if let Some(id) = handler_id.take() { widget.disconnect(id); }
-            *handler_id = connect_button_handler(widget, &vcb.on_click);
+            if !rc_option_ptr_eq(cb, &vcb.on_click) {
+                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+                *handler_id = connect_button_handler(widget, &vcb.on_click);
+                *cb = vcb.on_click;
+            }
             child_reconciler.reconcile(std::iter::once(*vcb.child));
         }
         (ReconcilerEntry::PreferencesGroup { widget, child_reconciler },
@@ -441,7 +471,7 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             }
             child_reconciler.reconcile(vpg.children);
         }
-        (ReconcilerEntry::ActionRow { widget, handler_id, suffix_reconciler, prefix_reconciler },
+        (ReconcilerEntry::ActionRow { widget, handler_id, cb, suffix_reconciler, prefix_reconciler },
          VNodeKind::ActionRow(vrow)) => {
             widget.set_title(&vrow.title);
             match vrow.subtitle {
@@ -449,38 +479,53 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
                 None        => widget.set_subtitle(""),
             }
             widget.set_activatable(vrow.activatable);
-            if let Some(id) = handler_id.take() { widget.disconnect(id); }
-            *handler_id = vrow.on_activate.as_ref().map(|f| {
-                let f = f.clone();
-                widget.connect_activated(move |_| f())
-            });
+            if !rc_option_ptr_eq(cb, &vrow.on_activate) {
+                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+                *handler_id = vrow.on_activate.as_ref().map(|f| {
+                    let f = f.clone();
+                    widget.connect_activated(move |_| f())
+                });
+                *cb = vrow.on_activate;
+            }
             suffix_reconciler.reconcile(vrow.suffix);
             prefix_reconciler.reconcile(vrow.prefix);
         }
-        (ReconcilerEntry::SwitchRow { widget, handler_id }, VNodeKind::SwitchRow(vsr)) => {
+        (ReconcilerEntry::SwitchRow { widget, handler_id, cb }, VNodeKind::SwitchRow(vsr)) => {
             widget.set_title(&vsr.title);
             match vsr.subtitle {
                 Some(ref s) => widget.set_subtitle(s),
                 None        => widget.set_subtitle(""),
             }
             widget.set_sensitive(vsr.sensitive);
-            if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            let same_cb = rc_option_ptr_eq(cb, &vsr.on_toggle);
+            if !same_cb {
+                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            }
             // Set active AFTER disconnect to suppress spurious callback.
             widget.set_active(vsr.active);
-            *handler_id = vsr.on_toggle.as_ref().map(|f| {
-                let f = f.clone();
-                widget.connect_active_notify(move |sw| f(sw.is_active()))
-            });
+            if !same_cb {
+                *handler_id = vsr.on_toggle.as_ref().map(|f| {
+                    let f = f.clone();
+                    widget.connect_active_notify(move |sw| f(sw.is_active()))
+                });
+                *cb = vsr.on_toggle;
+            }
         }
-        (ReconcilerEntry::EntryRow { widget, handler_id }, VNodeKind::EntryRow(ver)) => {
+        (ReconcilerEntry::EntryRow { widget, handler_id, cb }, VNodeKind::EntryRow(ver)) => {
             widget.set_title(&ver.title);
             widget.set_sensitive(ver.sensitive);
-            if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            let same_cb = rc_option_ptr_eq(cb, &ver.on_change);
+            if !same_cb {
+                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            }
             widget.set_text(&ver.text);
-            *handler_id = ver.on_change.as_ref().map(|f| {
-                let f = f.clone();
-                widget.connect_text_notify(move |er| f(er.text().into()))
-            });
+            if !same_cb {
+                *handler_id = ver.on_change.as_ref().map(|f| {
+                    let f = f.clone();
+                    widget.connect_text_notify(move |er| f(er.text().into()))
+                });
+                *cb = ver.on_change;
+            }
         }
         // Mismatched arms are prevented by kind_tag_of check above; unreachable.
         _ => unreachable!("update_entry called with mismatched entry and VNodeKind"),
@@ -509,6 +554,15 @@ fn apply_box_props(widget: &gtk::Box, vbox: &VBox) {
     // orientation and spacing are set at construction and cannot be changed cheaply.
     // If they change, the parent Reconciler rebuilds the entry (kind stays Box,
     // but in practice these fields are always the same for a given slot).
+}
+
+/// Returns `true` when both options hold `Rc`s pointing to the same allocation.
+fn rc_option_ptr_eq<T: ?Sized>(a: &Option<Rc<T>>, b: &Option<Rc<T>>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+        (None,    None)    => true,
+        _                  => false,
+    }
 }
 
 fn connect_button_handler(
