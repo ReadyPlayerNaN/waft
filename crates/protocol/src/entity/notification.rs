@@ -23,6 +23,10 @@ pub struct Notification {
     /// If true, suppress toast popup (still show in panel).
     #[serde(default)]
     pub suppress_toast: bool,
+    /// Sender-specified lifetime in milliseconds. None = no deadline (server decides).
+    /// Positive values come from the D-Bus Notify() expire_timeout parameter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl: Option<u64>,
 }
 
 /// Notification urgency level per the freedesktop specification.
@@ -86,6 +90,7 @@ mod tests {
             resident: false,
             workspace: None,
             suppress_toast: false,
+            ttl: None,
         };
         let json = serde_json::to_value(&notification).unwrap();
         let decoded: Notification = serde_json::from_value(json).unwrap();
@@ -106,6 +111,7 @@ mod tests {
             resident: false,
             workspace: Some("Engineering".to_string()),
             suppress_toast: false,
+            ttl: None,
         };
         let json = serde_json::to_value(&notification).unwrap();
         let decoded: Notification = serde_json::from_value(json).unwrap();
@@ -145,10 +151,53 @@ mod tests {
             resident: true,
             workspace: None,
             suppress_toast: false,
+            ttl: None,
         };
         let json = serde_json::to_value(&notification).unwrap();
         let decoded: Notification = serde_json::from_value(json).unwrap();
         assert_eq!(notification, decoded);
+    }
+
+    #[test]
+    fn notification_with_ttl_serde_roundtrip() {
+        let notification = Notification {
+            title: "Timer".to_string(),
+            description: "5 seconds".to_string(),
+            app_name: None,
+            app_id: None,
+            urgency: NotificationUrgency::Normal,
+            actions: vec![],
+            icon_hints: vec![],
+            created_at_ms: 1707753600000,
+            resident: false,
+            workspace: None,
+            suppress_toast: false,
+            ttl: Some(5000),
+        };
+        let json = serde_json::to_value(&notification).unwrap();
+        assert_eq!(json["ttl"], 5000);
+        let decoded: Notification = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.ttl, Some(5000));
+    }
+
+    #[test]
+    fn notification_without_ttl_omits_field_in_json() {
+        let notification = Notification {
+            title: "No TTL".to_string(),
+            description: "".to_string(),
+            app_name: None,
+            app_id: None,
+            urgency: NotificationUrgency::Normal,
+            actions: vec![],
+            icon_hints: vec![],
+            created_at_ms: 0,
+            resident: false,
+            workspace: None,
+            suppress_toast: false,
+            ttl: None,
+        };
+        let json = serde_json::to_value(&notification).unwrap();
+        assert!(!json.as_object().unwrap().contains_key("ttl"));
     }
 
     #[test]

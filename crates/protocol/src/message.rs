@@ -39,6 +39,9 @@ pub enum AppMessage {
         /// If set, describe only this plugin. If None, describe all.
         plugin_name: Option<String>,
     },
+
+    /// Respond to a ClaimCheck: does this app still want the entity?
+    ClaimResponse { claim_id: Uuid, claimed: bool },
 }
 
 /// Messages sent from a plugin to the waft daemon.
@@ -63,6 +66,9 @@ pub enum PluginMessage {
 
     /// Response to a CanStop command.
     StopResponse { can_stop: bool },
+
+    /// Request a claim check from app subscribers: do they still want this entity?
+    ClaimCheck { urn: Urn, claim_id: Uuid },
 }
 
 /// Notifications sent from the waft daemon to an app.
@@ -95,6 +101,9 @@ pub enum AppNotification {
     DescribeResponse {
         plugins: Vec<PluginDescription>,
     },
+
+    /// Ask whether the app still wants a specific entity (from daemon, originated by plugin).
+    ClaimCheck { urn: Urn, claim_id: Uuid },
 }
 
 /// Commands sent from the waft daemon to a plugin.
@@ -111,6 +120,9 @@ pub enum PluginCommand {
         action_id: Uuid,
         params: serde_json::Value,
     },
+
+    /// Aggregated result of a claim check: whether any subscriber claimed the entity.
+    ClaimResult { urn: Urn, claim_id: Uuid, claimed: bool },
 }
 
 #[cfg(test)]
@@ -312,6 +324,47 @@ mod tests {
     fn app_notification_describe_response_empty() {
         roundtrip_json(&AppNotification::DescribeResponse {
             plugins: vec![],
+        });
+    }
+
+    #[test]
+    fn plugin_message_claim_check() {
+        roundtrip_json(&PluginMessage::ClaimCheck {
+            urn: Urn::new("notifications", "notification", "42"),
+            claim_id: Uuid::nil(),
+        });
+    }
+
+    #[test]
+    fn app_notification_claim_check() {
+        roundtrip_json(&AppNotification::ClaimCheck {
+            urn: Urn::new("notifications", "notification", "42"),
+            claim_id: Uuid::nil(),
+        });
+    }
+
+    #[test]
+    fn app_message_claim_response_claimed() {
+        roundtrip_json(&AppMessage::ClaimResponse {
+            claim_id: Uuid::nil(),
+            claimed: true,
+        });
+    }
+
+    #[test]
+    fn app_message_claim_response_not_claimed() {
+        roundtrip_json(&AppMessage::ClaimResponse {
+            claim_id: Uuid::nil(),
+            claimed: false,
+        });
+    }
+
+    #[test]
+    fn plugin_command_claim_result() {
+        roundtrip_json(&PluginCommand::ClaimResult {
+            urn: Urn::new("notifications", "notification", "42"),
+            claim_id: Uuid::nil(),
+            claimed: false,
         });
     }
 }
