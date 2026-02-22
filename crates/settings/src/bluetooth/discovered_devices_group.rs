@@ -15,6 +15,8 @@ use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::BluetoothDevice;
 
+use waft_ui_gtk::vdom::Component;
+
 use super::device_row::{DeviceRow, DeviceRowOutput, DeviceRowProps};
 
 /// Output events from the discovered devices group.
@@ -123,9 +125,9 @@ impl DiscoveredDevicesGroup {
             };
 
             if let Some(existing) = self.rows.get(&urn_str) {
-                existing.apply_props(&props);
+                existing.update(&props);
             } else {
-                let row = DeviceRow::new(&props);
+                let row = DeviceRow::build(&props);
                 let urn_clone = urn.clone();
                 let cb = action_callback.clone();
                 row.connect_output(move |output| {

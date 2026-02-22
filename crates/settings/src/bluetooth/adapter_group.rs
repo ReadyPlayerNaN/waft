@@ -7,10 +7,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
+use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::t;
 
 /// Props for creating or updating an adapter group.
+#[derive(Clone, PartialEq)]
 pub struct AdapterGroupProps {
     pub name: String,
     pub powered: bool,
@@ -41,8 +43,11 @@ pub struct AdapterGroup {
     output_cb: OutputCallback,
 }
 
-impl AdapterGroup {
-    pub fn new(props: &AdapterGroupProps) -> Self {
+impl Component for AdapterGroup {
+    type Props = AdapterGroupProps;
+    type Output = AdapterGroupOutput;
+
+    fn build(props: &Self::Props) -> Self {
         let group = adw::PreferencesGroup::builder().title(&props.name).build();
 
         // Power switch
@@ -108,12 +113,11 @@ impl AdapterGroup {
             output_cb,
         };
 
-        adapter_group.apply_props(props);
+        adapter_group.update(props);
         adapter_group
     }
 
-    /// Update the group to reflect new adapter state.
-    pub fn apply_props(&self, props: &AdapterGroupProps) {
+    fn update(&self, props: &Self::Props) {
         *self.updating.borrow_mut() = true;
 
         self.root.set_title(&props.name);
@@ -126,8 +130,11 @@ impl AdapterGroup {
         *self.updating.borrow_mut() = false;
     }
 
-    /// Register a callback for adapter group output events.
-    pub fn connect_output<F: Fn(AdapterGroupOutput) + 'static>(&self, callback: F) {
+    fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+
+    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
         *self.output_cb.borrow_mut() = Some(Box::new(callback));
     }
 }

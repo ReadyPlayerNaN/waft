@@ -9,10 +9,12 @@ use std::rc::Rc;
 use adw::prelude::*;
 use waft_protocol::entity::bluetooth::ConnectionState;
 use waft_ui_gtk::bluetooth::device_icon::BluetoothDeviceIcon;
+use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::{t, t_args};
 
 /// Props for creating or updating a device row.
+#[derive(Clone, PartialEq)]
 pub struct DeviceRowProps {
     pub name: String,
     pub device_type: String,
@@ -45,8 +47,11 @@ pub struct DeviceRow {
     output_cb: OutputCallback,
 }
 
-impl DeviceRow {
-    pub fn new(props: &DeviceRowProps) -> Self {
+impl Component for DeviceRow {
+    type Props = DeviceRowProps;
+    type Output = DeviceRowOutput;
+
+    fn build(props: &Self::Props) -> Self {
         let icon = BluetoothDeviceIcon::new(&props.device_type, Some(32));
         let row = adw::ActionRow::builder().title(&props.name).build();
 
@@ -110,12 +115,11 @@ impl DeviceRow {
             output_cb,
         };
 
-        device_row.apply_props(props);
+        device_row.update(props);
         device_row
     }
 
-    /// Update the row to reflect new device state.
-    pub fn apply_props(&self, props: &DeviceRowProps) {
+    fn update(&self, props: &Self::Props) {
         self.root.set_title(&props.name);
         self.icon.set_device_type(&props.device_type);
 
@@ -160,8 +164,11 @@ impl DeviceRow {
         }
     }
 
-    /// Register a callback for device row output events.
-    pub fn connect_output<F: Fn(DeviceRowOutput) + 'static>(&self, callback: F) {
+    fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+
+    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
         *self.output_cb.borrow_mut() = Some(Box::new(callback));
     }
 }

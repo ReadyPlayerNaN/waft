@@ -4,15 +4,16 @@
 //! entity types. On entity changes, reconciles adapter groups and device lists.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
+use waft_ui_gtk::vdom::{Reconciler, VNode};
 
-use crate::bluetooth::adapter_group::{AdapterGroup, AdapterGroupOutput, AdapterGroupProps};
+use crate::bluetooth::adapter_group::{AdapterGroupOutput, AdapterGroupProps};
+use crate::bluetooth::adapter_group::AdapterGroup;
 use crate::bluetooth::discovered_devices_group::{
     DiscoveredDevicesGroup, DiscoveredDevicesGroupOutput,
 };
@@ -30,10 +31,9 @@ pub struct BluetoothPage {
 
 /// Internal mutable state for the Bluetooth page.
 struct BluetoothPageState {
-    adapter_groups: HashMap<String, AdapterGroup>,
+    adapters_reconciler: Reconciler,
     paired_group: PairedDevicesGroup,
     discovered_group: DiscoveredDevicesGroup,
-    adapters_box: gtk::Box,
 }
 
 impl BluetoothPage {
@@ -57,6 +57,7 @@ impl BluetoothPage {
             .spacing(24)
             .build();
         root.append(&adapters_box);
+        let adapters_reconciler = Reconciler::new(adapters_box);
 
         // Paired devices group
         let paired_group = PairedDevicesGroup::new();
@@ -110,10 +111,9 @@ impl BluetoothPage {
         }
 
         let state = Rc::new(RefCell::new(BluetoothPageState {
-            adapter_groups: HashMap::new(),
+            adapters_reconciler,
             paired_group,
             discovered_group,
-            adapters_box,
         }));
 
         // Subscribe to adapter changes
@@ -185,63 +185,42 @@ impl BluetoothPage {
         Self { root }
     }
 
-    /// Reconcile adapter groups with current adapter data.
+    /// Reconcile adapter groups with current adapter data using Reconciler.
     fn reconcile_adapters(
         state: &Rc<RefCell<BluetoothPageState>>,
         adapters: &[(Urn, BluetoothAdapter)],
         action_callback: &EntityActionCallback,
     ) {
         let mut state = state.borrow_mut();
-        let mut seen = std::collections::HashSet::new();
-
-        for (urn, adapter) in adapters {
-            let urn_str = urn.as_str().to_string();
-            seen.insert(urn_str.clone());
-
-            let props = AdapterGroupProps {
-                name: adapter.name.clone(),
-                powered: adapter.powered,
-                discoverable: adapter.discoverable,
-            };
-
-            if let Some(existing) = state.adapter_groups.get(&urn_str) {
-                existing.apply_props(&props);
-            } else {
-                let group = AdapterGroup::new(&props);
-                let urn_clone = urn.clone();
+        state.adapters_reconciler.reconcile(
+            adapters.iter().map(|(urn, adapter)| {
+                let key = urn.as_str().to_string();
+                let urn = urn.clone();
                 let cb = action_callback.clone();
-                group.connect_output(move |output| {
-                    let (action, params) = match output {
-                        AdapterGroupOutput::TogglePower => {
-                            ("toggle-power", serde_json::Value::Null)
-                        }
-                        AdapterGroupOutput::ToggleDiscoverable => {
-                            ("toggle-discoverable", serde_json::Value::Null)
-                        }
-                        AdapterGroupOutput::SetAlias(alias) => {
-                            ("set-alias", serde_json::json!({ "alias": alias }))
-                        }
-                    };
-                    cb(urn_clone.clone(), action.to_string(), params);
-                });
-                state.adapters_box.append(&group.root);
-                state.adapter_groups.insert(urn_str, group);
-            }
-        }
-
-        // Remove adapter groups no longer present
-        let to_remove: Vec<String> = state
-            .adapter_groups
-            .keys()
-            .filter(|k| !seen.contains(*k))
-            .cloned()
-            .collect();
-
-        for key in to_remove {
-            if let Some(group) = state.adapter_groups.remove(&key) {
-                state.adapters_box.remove(&group.root);
-            }
-        }
+                VNode::with_output::<AdapterGroup>(
+                    AdapterGroupProps {
+                        name: adapter.name.clone(),
+                        powered: adapter.powered,
+                        discoverable: adapter.discoverable,
+                    },
+                    move |output| {
+                        let (action, params) = match output {
+                            AdapterGroupOutput::TogglePower => {
+                                ("toggle-power", serde_json::Value::Null)
+                            }
+                            AdapterGroupOutput::ToggleDiscoverable => {
+                                ("toggle-discoverable", serde_json::Value::Null)
+                            }
+                            AdapterGroupOutput::SetAlias(alias) => {
+                                ("set-alias", serde_json::json!({ "alias": alias }))
+                            }
+                        };
+                        cb(urn.clone(), action.to_string(), params);
+                    },
+                )
+                .key(key)
+            }),
+        );
     }
 
     /// Reconcile device lists with current device data.
