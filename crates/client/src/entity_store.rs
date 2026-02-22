@@ -80,6 +80,11 @@ impl EntityStore {
                 // Description responses are handled by CLI/settings, not the entity store.
                 log::debug!("[entity-store] received DescribeResponse (ignored by entity store)");
             }
+            AppNotification::ClaimCheck { .. } => {
+                // ClaimCheck is handled at the app level, not the entity store.
+                // The app must respond via WaftClient::send_claim_response().
+                log::debug!("[entity-store] received ClaimCheck (handled by app, not entity store)");
+            }
         }
     }
 
@@ -141,6 +146,11 @@ impl EntityStore {
                     None
                 }
             })
+    }
+
+    /// Returns true if the entity with this URN is currently in the store.
+    pub fn has_entity(&self, urn: &Urn) -> bool {
+        self.cache.borrow().contains_key(urn.as_str())
     }
 
     /// Get all cached entities of a given type as raw (Urn, Value) pairs.

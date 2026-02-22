@@ -211,6 +211,17 @@ impl WaftClient {
         }
         action_id
     }
+
+    /// Send a ClaimResponse to the daemon.
+    ///
+    /// Called when the app receives a ClaimCheck and determines whether it
+    /// still wants the entity. Safe to call from the GTK main thread.
+    pub fn send_claim_response(&self, claim_id: Uuid, claimed: bool) {
+        let msg = AppMessage::ClaimResponse { claim_id, claimed };
+        if let Err(e) = self.write_tx.send(msg) {
+            log::warn!("[waft-client] failed to send ClaimResponse: {e}");
+        }
+    }
 }
 
 /// Resolve the daemon socket path from `$XDG_RUNTIME_DIR/waft/daemon.sock`.
