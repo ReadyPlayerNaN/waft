@@ -194,7 +194,7 @@ pub fn apply_state_classes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::init_gtk_for_tests;
+    use crate::test_init::init_gtk_for_tests;
 
     // NOTE: GTK widget tests require the main thread to run.
     // Rust's test harness spawns tests on worker threads, which causes GTK to panic.

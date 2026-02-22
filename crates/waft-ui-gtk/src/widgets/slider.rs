@@ -403,7 +403,7 @@ impl crate::widget_base::WidgetBase for SliderWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::init_gtk_for_tests;
+    use crate::test_init::init_gtk_for_tests;
     use std::cell::RefCell;
     use waft_core::menu_state::create_menu_store;
 

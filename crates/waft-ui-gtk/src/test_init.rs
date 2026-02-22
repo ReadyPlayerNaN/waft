@@ -14,7 +14,7 @@ use std::sync::Once;
 /// # Example
 ///
 /// ```rust,no_run
-/// use waft_ui_gtk::test_utils::init_gtk_for_tests;
+/// use waft_ui_gtk::test_init::init_gtk_for_tests;
 ///
 /// #[test]
 /// fn test_widget() {

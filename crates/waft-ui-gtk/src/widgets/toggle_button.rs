@@ -66,7 +66,7 @@ impl crate::widget_base::WidgetBase for ToggleButtonWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::init_gtk_for_tests;
+    use crate::test_init::init_gtk_for_tests;
 
     #[test]
     #[ignore = "Requires GTK main thread - run with --test-threads=1"]
