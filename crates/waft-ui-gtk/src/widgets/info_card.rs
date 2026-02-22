@@ -1,92 +1,102 @@
-//! Pure GTK4 InfoCard widget.
+//! Declarative info card widget.
 //!
 //! A card with icon, title, and optional description.
 //! Layout: `[Icon 32x32] [Title (bold) / Description (dim)]`
 
-use gtk::prelude::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use crate::icons::IconWidget;
+use crate::icons::Icon;
+use crate::vdom::primitives::{VBox, VIcon, VLabel};
+use crate::vdom::{Component, RenderCallback, RenderComponent, RenderFn, VNode};
 
-/// Pure GTK4 info card widget.
+/// Properties for the info card.
+#[derive(Clone, PartialEq, Debug)]
+pub struct InfoCardProps {
+    pub icon: String,
+    pub title: String,
+    pub description: Option<String>,
+}
+
+pub struct InfoCardRender;
+
+impl RenderFn for InfoCardRender {
+    type Props = InfoCardProps;
+    type Output = ();
+
+    fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
+        let icon = VIcon::new(vec![Icon::parse(&props.icon)], 32);
+
+        let title = VLabel::new(&props.title)
+            .css_class("title-3")
+            .xalign(0.0);
+
+        let mut labels_box = VBox::vertical(0)
+            .valign(gtk::Align::Center)
+            .child(VNode::label(title));
+
+        // Add description label only if Some
+        if let Some(desc) = &props.description {
+            let description = VLabel::new(desc)
+                .css_class("dim-label")
+                .xalign(0.0);
+            labels_box = labels_box.child(VNode::label(description));
+        }
+
+        let content_box = VBox::horizontal(8)
+            .child(VNode::icon(icon))
+            .child(VNode::vbox(labels_box));
+
+        VNode::vbox(content_box)
+    }
+}
+
+/// Wrapper around RenderComponent<InfoCardRender> with state tracking.
 #[derive(Clone)]
 pub struct InfoCardWidget {
-    root: gtk::Widget,
-    icon_widget: IconWidget,
-    title_label: gtk::Label,
-    description_label: gtk::Label,
+    inner: Rc<RenderComponent<InfoCardRender>>,
+    props: Rc<RefCell<InfoCardProps>>,
 }
 
 impl InfoCardWidget {
-    /// Create a new info card widget.
+    /// Create a new info card widget (backward-compatible factory).
     pub fn new(icon: &str, title: &str, description: Option<&str>) -> Self {
-        let content_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(8)
-            .build();
-
-        let icon_widget = IconWidget::from_name(icon, 32);
-        icon_widget.widget().set_height_request(32);
-
-        let labels_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(0)
-            .valign(gtk::Align::Center)
-            .build();
-
-        let title_label = gtk::Label::builder()
-            .label(title)
-            .css_classes(["title-3"])
-            .xalign(0.0)
-            .build();
-
-        let description_label = gtk::Label::builder()
-            .label(description.unwrap_or(""))
-            .css_classes(["dim-label"])
-            .xalign(0.0)
-            .visible(description.is_some())
-            .build();
-
-        labels_box.append(&title_label);
-        labels_box.append(&description_label);
-
-        content_box.append(icon_widget.widget());
-        content_box.append(&labels_box);
-
+        let props = InfoCardProps {
+            icon: icon.to_string(),
+            title: title.to_string(),
+            description: description.map(|s| s.to_string()),
+        };
+        let inner = Rc::new(RenderComponent::<InfoCardRender>::build(&props));
         Self {
-            root: content_box.upcast(),
-            icon_widget,
-            title_label,
-            description_label,
+            inner,
+            props: Rc::new(RefCell::new(props)),
         }
     }
 
     /// Update the icon.
     pub fn set_icon(&self, icon: &str) {
-        self.icon_widget.set_icon(icon);
+        let mut props = self.props.borrow_mut();
+        props.icon = icon.to_string();
+        self.inner.update(&*props);
     }
 
     /// Update the title text.
     pub fn set_title(&self, title: &str) {
-        self.title_label.set_label(title);
+        let mut props = self.props.borrow_mut();
+        props.title = title.to_string();
+        self.inner.update(&*props);
     }
 
     /// Update the description text and visibility.
     pub fn set_description(&self, description: Option<&str>) {
-        match description {
-            Some(text) => {
-                self.description_label.set_label(text);
-                self.description_label.set_visible(true);
-            }
-            None => {
-                self.description_label.set_label("");
-                self.description_label.set_visible(false);
-            }
-        }
+        let mut props = self.props.borrow_mut();
+        props.description = description.map(|s| s.to_string());
+        self.inner.update(&*props);
     }
 
     /// Get a reference to the root widget.
     pub fn widget(&self) -> gtk::Widget {
-        self.root.clone()
+        self.inner.widget()
     }
 }
 
