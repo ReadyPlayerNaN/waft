@@ -89,28 +89,20 @@ impl RenderFn for WiredAdapterGroupRender {
                 active: connection.active,
             };
             let urn_key = urn.as_str().to_string();
-            let urn_activate   = urn.clone();
-            let urn_deactivate = urn.clone();
-            let emit_activate   = emit.clone();
-            let emit_deactivate = emit.clone();
+            let urn     = urn.clone();
 
             group = group.child(
                 VNode::with_output::<WiredConnectionRow>(
                     conn_props,
-                    move |output| {
-                        match output {
-                            ConnectionRowOutput::Activate => {
-                                if let Some(ref cb) = *emit_activate.borrow() {
-                                    cb(WiredAdapterGroupOutput::ActivateConnection(
-                                        urn_activate.clone(),
-                                    ));
-                                }
-                            }
-                            ConnectionRowOutput::Deactivate => {
-                                if let Some(ref cb) = *emit_deactivate.borrow() {
-                                    cb(WiredAdapterGroupOutput::DeactivateConnection(
-                                        urn_deactivate.clone(),
-                                    ));
+                    {
+                        let emit = emit.clone();
+                        move |output| {
+                            if let Some(ref cb) = *emit.borrow() {
+                                match output {
+                                    ConnectionRowOutput::Activate =>
+                                        cb(WiredAdapterGroupOutput::ActivateConnection(urn.clone())),
+                                    ConnectionRowOutput::Deactivate =>
+                                        cb(WiredAdapterGroupOutput::DeactivateConnection(urn.clone())),
                                 }
                             }
                         }
