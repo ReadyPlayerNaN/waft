@@ -1,0 +1,27 @@
+[package]
+name = "waft-plugin-xdg-apps"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "waft_xdg_apps"
+path = "src/lib.rs"
+
+[[bin]]
+name = "waft-xdg-apps-daemon"
+path = "bin/waft-xdg-apps-daemon.rs"
+
+[dependencies]
+waft-plugin = { path = "../../crates/plugin" }
+waft-protocol = { path = "../../crates/protocol" }
+async-trait = "0.1"
+anyhow = "1"
+log = "0.4"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+notify = "7"
+
+[dev-dependencies]
+tempfile = "3"
