@@ -7,7 +7,7 @@
 //! When a `waft-settings` app entity is present, a "Settings" button row is
 //! appended to each adapter's expandable menu.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -18,15 +18,14 @@ use waft_protocol::entity;
 use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
+use crate::components::toggles::settings_app_tracker::SettingsAppTracker;
 use crate::i18n;
 use crate::layout::types::WidgetFeatureToggle;
 use crate::ui::feature_toggles::bluetooth_device::{
     BluetoothDeviceRow, BluetoothDeviceRowOutput, BluetoothDeviceRowProps,
 };
 use crate::ui::feature_toggles::menu::FeatureToggleMenuWidget;
-use crate::ui::feature_toggles::menu_settings::{
-    FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
-};
+use crate::ui::feature_toggles::menu_settings::FeatureToggleMenuSettingsButton;
 
 /// A tracked toggle entry for a single Bluetooth adapter.
 struct ToggleEntry {
@@ -59,29 +58,6 @@ pub struct BluetoothToggles {
     menu_store: Rc<waft_core::menu_state::MenuStore>,
 }
 
-/// Build a settings button for use in the adapter menu.
-fn build_settings_button(
-    action_callback: &EntityActionCallback,
-    settings_urn: &Rc<RefCell<Option<Urn>>>,
-) -> FeatureToggleMenuSettingsButton {
-    let button = FeatureToggleMenuSettingsButton::new(FeatureToggleMenuSettingsButtonProps {
-        label: i18n::t("bluetooth-settings-button"),
-    });
-    let cb = action_callback.clone();
-    let urn_ref = settings_urn.clone();
-
-    button.on_click(move |_| {
-        if let Some(ref urn) = *urn_ref.borrow() {
-            cb(
-                urn.clone(),
-                "open-page".to_string(),
-                serde_json::json!({"page": "bluetooth"}),
-            );
-        }
-    });
-    button
-}
-
 impl BluetoothToggles {
     /// Create a new BluetoothToggles that subscribes to the entity store.
     ///
@@ -94,16 +70,24 @@ impl BluetoothToggles {
         rebuild_callback: Rc<dyn Fn()>,
     ) -> Self {
         let entries: Rc<RefCell<Vec<ToggleEntry>>> = Rc::new(RefCell::new(Vec::new()));
-        let settings_available: Rc<Cell<bool>> = Rc::new(Cell::new(false));
-        let settings_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
+
+        let entries_for_tracker = entries.clone();
+        let settings_tracker = Rc::new(SettingsAppTracker::new(store, move |is_available| {
+            let entries_borrowed = entries_for_tracker.borrow();
+            for entry in entries_borrowed.iter() {
+                entry.settings_separator.set_visible(is_available);
+                entry.settings_button.set_visible(is_available);
+                let has_devices = !entry.device_rows.borrow().is_empty();
+                entry.toggle.set_expandable(has_devices || is_available);
+            }
+        }));
 
         let store_ref = store.clone();
         let entries_ref = entries.clone();
         let cb = action_callback.clone();
         let rebuild = rebuild_callback.clone();
         let menu_store_ref = menu_store.clone();
-        let settings_available_for_adapter = settings_available.clone();
-        let settings_urn_for_adapter = settings_urn.clone();
+        let settings_tracker_for_adapter = settings_tracker.clone();
 
         store.subscribe_type(
             entity::bluetooth::BluetoothAdapter::ENTITY_TYPE,
@@ -150,8 +134,12 @@ impl BluetoothToggles {
 
                         // Create settings button row (initially hidden based on availability)
                         let settings_separator = gtk::Separator::new(gtk::Orientation::Horizontal);
-                        let settings_button = build_settings_button(&cb, &settings_urn_for_adapter);
-                        let has_settings = settings_available_for_adapter.get();
+                        let settings_button = settings_tracker_for_adapter.build_settings_button(
+                            &cb,
+                            "bluetooth",
+                            i18n::t("bluetooth-settings-button"),
+                        );
+                        let has_settings = settings_tracker_for_adapter.is_available();
                         settings_separator.set_visible(has_settings);
                         settings_button.set_visible(has_settings);
                         menu.append(&settings_separator);
@@ -162,7 +150,7 @@ impl BluetoothToggles {
                                 active: adapter.powered,
                                 busy: false,
                                 details: None,
-                                expandable: has_settings, // Expandable if settings available
+                                expandable: has_settings,
                                 icon: icon.to_string(),
                                 title: "Bluetooth".to_string(),
                                 menu_id: Some(menu_id.clone()),
@@ -204,77 +192,15 @@ impl BluetoothToggles {
         let entries_ref_devices = entries.clone();
         let store_ref_devices = store.clone();
         let cb_devices = action_callback.clone();
-        let settings_available_for_devices = settings_available.clone();
+        let settings_tracker_for_devices = settings_tracker.clone();
         store.subscribe_type(entity::bluetooth::BluetoothDevice::ENTITY_TYPE, move || {
             Self::update_device_menus(
                 &entries_ref_devices,
                 &store_ref_devices,
                 &cb_devices,
-                &settings_available_for_devices,
+                &settings_tracker_for_devices,
             );
         });
-
-        // Subscribe to app entity type for settings availability
-        {
-            let entries_for_app = entries.clone();
-            let store_for_app = store.clone();
-            let settings_available_ref = settings_available.clone();
-            let settings_urn_ref = settings_urn.clone();
-
-            store.subscribe_type(entity::app::ENTITY_TYPE, move || {
-                let apps: Vec<(Urn, entity::app::App)> =
-                    store_for_app.get_entities_typed(entity::app::ENTITY_TYPE);
-
-                let settings_app = apps
-                    .iter()
-                    .find(|(_, app)| app.available && app.icon == "preferences-system-symbolic");
-
-                let now_available = settings_app.is_some();
-                let was_available = settings_available_ref.get();
-
-                // Update stored URN
-                *settings_urn_ref.borrow_mut() = settings_app.map(|(urn, _)| urn.clone());
-                settings_available_ref.set(now_available);
-
-                if was_available != now_available {
-                    let entries_borrowed = entries_for_app.borrow();
-                    for entry in entries_borrowed.iter() {
-                        entry.settings_separator.set_visible(now_available);
-                        entry.settings_button.set_visible(now_available);
-
-                        // Re-evaluate expandable state: has devices or has settings
-                        let has_devices = !entry.device_rows.borrow().is_empty();
-                        entry.toggle.set_expandable(has_devices || now_available);
-                    }
-                }
-            });
-
-            // Initial reconciliation for app entity
-            let entries_for_init = entries.clone();
-            let store_for_init = store.clone();
-            let settings_available_init = settings_available.clone();
-            let settings_urn_init = settings_urn.clone();
-            gtk::glib::idle_add_local_once(move || {
-                let apps: Vec<(Urn, entity::app::App)> =
-                    store_for_init.get_entities_typed(entity::app::ENTITY_TYPE);
-
-                let settings_app = apps
-                    .iter()
-                    .find(|(_, app)| app.available && app.icon == "preferences-system-symbolic");
-
-                if let Some((urn, _)) = settings_app {
-                    *settings_urn_init.borrow_mut() = Some(urn.clone());
-                    settings_available_init.set(true);
-
-                    let entries_borrowed = entries_for_init.borrow();
-                    for entry in entries_borrowed.iter() {
-                        entry.settings_separator.set_visible(true);
-                        entry.settings_button.set_visible(true);
-                        entry.toggle.set_expandable(true);
-                    }
-                }
-            });
-        }
 
         Self {
             entries,
@@ -289,14 +215,14 @@ impl BluetoothToggles {
         entries: &Rc<RefCell<Vec<ToggleEntry>>>,
         store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
-        settings_available: &Rc<Cell<bool>>,
+        settings_tracker: &Rc<SettingsAppTracker>,
     ) {
         let devices: Vec<(Urn, entity::bluetooth::BluetoothDevice)> =
             store.get_entities_typed(entity::bluetooth::BluetoothDevice::ENTITY_TYPE);
         let devices: Vec<_> = devices.into_iter().filter(|(_, d)| d.paired).collect();
 
         let entries_mut = entries.borrow();
-        let has_settings = settings_available.get();
+        let has_settings = settings_tracker.is_available();
 
         for entry in entries_mut.iter() {
             // Find devices for this adapter by checking URN prefix
