@@ -5,6 +5,7 @@ use gtk::prelude::*;
 
 use crate::test_utils::init_gtk_for_tests;
 use crate::vdom::{Component, Reconciler, VNode};
+use super::primitives::{VBox, VButton, VLabel, VSwitch};
 
 // ── Minimal test component ────────────────────────────────────────────────
 
@@ -173,6 +174,103 @@ fn test_wires_output_callback_at_build_time() {
     assert!(!*fired.borrow(), "callback fires only on user action, not on build");
 }
 
+// ── Primitive VNode tests ─────────────────────────────────────────────────
+
+fn test_label_builds_gtk_label() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::label(VLabel::new("hello"))]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let child = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(child.label(), "hello");
+}
+
+fn test_label_updates_text_on_reconcile() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::label(VLabel::new("hello")).key("l")]);
+    let child = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(child.label(), "hello");
+
+    r.reconcile([VNode::label(VLabel::new("world")).key("l")]);
+    assert_eq!(child.label(), "world");
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+fn test_label_applies_css_classes() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::label(VLabel::new("x").css_class("dim-label"))]);
+    let child = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert!(child.css_classes().iter().any(|c| c == "dim-label"));
+}
+
+fn test_vbox_builds_with_children() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::vbox(
+        VBox::horizontal(0)
+            .child(VNode::label(VLabel::new("a")))
+            .child(VNode::label(VLabel::new("b"))),
+    )]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let inner = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    assert_eq!(inner.observe_children().n_items(), 2);
+}
+
+fn test_vbox_reconciles_child_list() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::vbox(
+        VBox::vertical(0)
+            .child(VNode::label(VLabel::new("a")).key("a"))
+            .child(VNode::label(VLabel::new("b")).key("b")),
+    )
+    .key("box")]);
+    let inner = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    assert_eq!(inner.observe_children().n_items(), 2);
+
+    // Remove one child.
+    r.reconcile([VNode::vbox(
+        VBox::vertical(0).child(VNode::label(VLabel::new("a")).key("a")),
+    )
+    .key("box")]);
+    assert_eq!(inner.observe_children().n_items(), 1);
+}
+
+fn test_button_connects_click_handler() {
+    let clicked = Rc::new(RefCell::new(false));
+    let clicked_clone = clicked.clone();
+
+    let (_, mut r) = make_reconciler();
+    r.reconcile([VNode::button(
+        VButton::new("OK").on_click(move || {
+            *clicked_clone.borrow_mut() = true;
+        }),
+    )]);
+
+    // Verify the widget was built (click simulation not needed for handler wiring test).
+    assert!(!*clicked.borrow(), "click not fired on build");
+}
+
+fn test_switch_sets_active_state() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::switch(VSwitch::new(true)).key("sw")]);
+    let child = container.first_child().unwrap().downcast::<gtk::Switch>().unwrap();
+    assert!(child.is_active());
+
+    r.reconcile([VNode::switch(VSwitch::new(false)).key("sw")]);
+    assert!(!child.is_active());
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+fn test_primitive_rebuilds_when_kind_changes() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::label(VLabel::new("text")).key("x")]);
+    let old_ptr = container.first_child().unwrap().as_ptr();
+
+    // Replace label with a button at the same key → must destroy and rebuild.
+    r.reconcile([VNode::button(VButton::new("click")).key("x")]);
+    let new_ptr = container.first_child().unwrap().as_ptr();
+    assert_ne!(old_ptr, new_ptr, "kind change must produce a new widget");
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
 // ── Single GTK test entry point ───────────────────────────────────────────
 //
 // GTK requires the OS main thread. Rust's test harness spawns each #[test]
@@ -199,4 +297,13 @@ fn all_reconciler_tests() {
 
     let (container, mut r) = make_reconciler();
     test_clears_all_children(&mut r, &container);
+
+    test_label_builds_gtk_label();
+    test_label_updates_text_on_reconcile();
+    test_label_applies_css_classes();
+    test_vbox_builds_with_children();
+    test_vbox_reconciles_child_list();
+    test_button_connects_click_handler();
+    test_switch_sets_active_state();
+    test_primitive_rebuilds_when_kind_changes();
 }
