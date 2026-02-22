@@ -11,7 +11,9 @@ use std::rc::Rc;
 use chrono::{Datelike, NaiveDate};
 use gtk::prelude::*;
 
-use super::day_cell::{DayCell, DayCellOutput, DayCellProps};
+use waft_ui_gtk::vdom::Component;
+
+use super::day_cell::{DayCellComponent, DayCellOutput, DayCellProps};
 
 /// Type alias for output callback to reduce complexity.
 type OutputCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
@@ -139,7 +141,7 @@ impl MonthGrid {
                     event_count,
                 };
 
-                let cell = DayCell::new(&cell_props);
+                let cell = DayCellComponent::build(&cell_props);
 
                 let on_output_ref = on_output.clone();
                 if let Some(date) = cell_date {
@@ -150,7 +152,7 @@ impl MonthGrid {
                     });
                 }
 
-                grid.attach(&cell.root, col, row, 1, 1);
+                grid.attach(&cell.widget(), col, row, 1, 1);
                 cell_index += 1;
             }
         }
@@ -186,7 +188,7 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
 
     #[test]

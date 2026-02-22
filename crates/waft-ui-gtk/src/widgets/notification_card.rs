@@ -182,7 +182,7 @@ impl NotificationCard {
         // Countdown bar (when toast_ttl is set)
         let countdown_bar = toast_ttl.map(|ttl_ms| {
             let bar = CountdownBarWidget::new(ttl_ms);
-            card_box.append(&bar.root);
+            card_box.append(&bar.root());
 
             // Wire Elapsed -> TimedOut output
             let on_output_timeout = on_output.clone();
@@ -204,7 +204,7 @@ impl NotificationCard {
         // Hover detection: pause/resume countdown on mouse enter/leave
         if let Some(ref bar) = countdown_bar {
             let running = bar.running_handle();
-            let bar_root = bar.root.clone();
+            let bar_root = bar.root();
 
             let running_enter = running.clone();
             let bar_root_enter = bar_root.clone();

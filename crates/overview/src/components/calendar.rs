@@ -15,9 +15,8 @@ use gtk::prelude::*;
 use waft_protocol::entity;
 
 use crate::calendar_selection::{CalendarSelectionOp, CalendarSelectionStore};
+use crate::ui::calendar::month_grid::{MonthGrid, MonthGridOutput, MonthGridProps};
 use waft_client::EntityStore;
-
-use super::month_grid::{MonthGrid, MonthGridOutput, MonthGridProps};
 
 /// Calendar month-grid component with navigation and event dots.
 ///

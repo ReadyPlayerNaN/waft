@@ -1,8 +1,10 @@
 //! Network adapter and VPN toggle components.
 //!
-//! Subscribes to `network-adapter`, `wifi-network`, `ethernet-connection`, and `vpn`
-//! entity types. Dynamically creates FeatureToggleWidget per adapter/VPN with expandable
-//! menus showing child networks/connections.
+//! Each network type has its own toggle struct:
+//! - `WifiToggles` -- wireless adapters + wifi-network menus
+//! - `WiredToggles` -- wired adapters + ethernet-connection profiles + IP info
+//! - `VpnToggles` -- consolidated VPN toggle with per-connection rows
+//! - `TetheringToggles` -- tethering adapters + tethering-connection rows
 
 mod network_menu_logic;
 mod tethering;
@@ -10,25 +12,23 @@ mod vpn;
 mod wifi;
 mod wired;
 
+pub use tethering::TetheringToggles;
+pub use vpn::VpnToggles;
+pub use wifi::WifiToggles;
+pub use wired::WiredToggles;
+
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::prelude::*;
-use waft_protocol::Urn;
 use waft_protocol::entity;
-use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::vdom::Component;
-use waft_ui_gtk::widgets::connection_row::ConnectionRow;
-use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
+use waft_ui_gtk::widgets::feature_toggle::FeatureToggleWidget;
 
-use crate::components::toggles::settings_app_tracker::SettingsAppTracker;
-use crate::layout::types::WidgetFeatureToggle;
 use crate::ui::feature_toggles::menu::FeatureToggleMenuWidget;
 use crate::ui::feature_toggles::menu_info_row::FeatureToggleMenuInfoRow;
-use crate::ui::feature_toggles::menu_settings::{
-    FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
-};
-use waft_client::{EntityActionCallback, EntityStore};
+use crate::ui::feature_toggles::menu_settings::FeatureToggleMenuSettingsButton;
+use waft_ui_gtk::widgets::connection_row::ConnectionRow;
 
 /// A tracked toggle entry for a network adapter or VPN.
 pub(super) struct ToggleEntry {
@@ -40,18 +40,18 @@ pub(super) struct ToggleEntry {
     weight: i32,
     /// Tracks connected state for click handler closures that need fresh state.
     connected: Rc<Cell<bool>>,
-    /// Settings button for wired adapter menus (None for WiFi/VPN/Tethering).
+    /// Settings button for adapter menus (None for VPN/Tethering).
     settings_button: Option<FeatureToggleMenuSettingsButton>,
     /// Label for the settings button (needed for update() calls).
     settings_button_label: Option<String>,
 }
 
-/// A single network row in the menu — either a plain box (WiFi/Ethernet)
-/// or a ConnectionRow widget (VPN).
+/// A single network row in the menu -- either a plain box (WiFi/Ethernet)
+/// or a ConnectionRow widget (VPN/Tethering).
 pub(super) enum NetworkRow {
     /// WiFi/Ethernet rows using plain gtk::Box layout.
     Plain { urn_str: String, root: gtk::Box },
-    /// VPN rows using the extracted ConnectionRow widget.
+    /// VPN/Tethering rows using the extracted ConnectionRow widget.
     Connection {
         urn_str: String,
         row: Rc<ConnectionRow>,
@@ -71,427 +71,6 @@ impl NetworkRow {
             NetworkRow::Plain { root, .. } => parent.remove(root),
             NetworkRow::Connection { row, .. } => parent.remove(&row.widget()),
         }
-    }
-}
-
-/// Dynamic set of toggles for network adapters and VPN connections.
-///
-/// Maintains one FeatureToggleWidget per network-adapter entity and one per
-/// VPN entity. Subscribes to both entity types and keeps the toggle set
-/// in sync as entities appear, change, or are removed.
-pub struct NetworkManagerToggles {
-    entries: Rc<RefCell<Vec<ToggleEntry>>>,
-    #[allow(dead_code)]
-    store: Rc<EntityStore>,
-    #[allow(dead_code)]
-    action_callback: EntityActionCallback,
-    #[allow(dead_code)]
-    menu_store: Rc<waft_core::menu_state::MenuStore>,
-    /// Tracks whether the waft-settings app entity is available.
-    #[allow(dead_code)]
-    settings_tracker: Rc<SettingsAppTracker>,
-}
-
-impl NetworkManagerToggles {
-    /// Create a new NetworkManagerToggles that subscribes to the entity store.
-    ///
-    /// `rebuild_callback` is invoked whenever the set of toggles changes
-    /// (adapter/VPN added or removed) so the parent grid can rebuild.
-    pub fn new(
-        store: &Rc<EntityStore>,
-        action_callback: &EntityActionCallback,
-        menu_store: &Rc<waft_core::menu_state::MenuStore>,
-        rebuild_callback: Rc<dyn Fn()>,
-    ) -> Self {
-        let entries: Rc<RefCell<Vec<ToggleEntry>>> = Rc::new(RefCell::new(Vec::new()));
-        let settings_available: Rc<Cell<bool>> = Rc::new(Cell::new(false));
-
-        // Track waft-settings app availability for settings button visibility.
-        let settings_tracker: Rc<SettingsAppTracker> = {
-            let entries_ref = entries.clone();
-            let settings_available_ref = settings_available.clone();
-            Rc::new(SettingsAppTracker::new(store, move |is_available| {
-                settings_available_ref.set(is_available);
-                let entries = entries_ref.borrow();
-                for entry in entries.iter() {
-                    if let Some(ref btn) = entry.settings_button {
-                        if let Some(ref label) = entry.settings_button_label {
-                            btn.update(&FeatureToggleMenuSettingsButtonProps {
-                                label: label.clone(),
-                                visible: is_available,
-                            });
-                        }
-                        let has_info = !entry.info_rows.borrow().is_empty();
-                        let has_children = !entry.network_rows.borrow().is_empty();
-                        entry
-                            .toggle
-                            .set_expandable(has_info || has_children || is_available);
-                    }
-                }
-            }))
-        };
-
-        // Subscribe to network adapter changes
-        {
-            let store_ref = store.clone();
-            let entries_ref = entries.clone();
-            let cb = action_callback.clone();
-            let rebuild = rebuild_callback.clone();
-            let menu_store_ref = menu_store.clone();
-            let settings_available_ref = settings_available.clone();
-            let settings_tracker_for_adapter = settings_tracker.clone();
-            // Extra clones for update_wifi_menus call after entry changes
-            let wifi_menu_store_ref = store.clone();
-            let wifi_menu_entries_ref = entries.clone();
-            let wifi_menu_cb = action_callback.clone();
-            let wifi_menu_settings_ref = settings_available.clone();
-
-            store.subscribe_type(entity::network::ADAPTER_ENTITY_TYPE, move || {
-                let adapters: Vec<(Urn, entity::network::NetworkAdapter)> =
-                    store_ref.get_entities_typed(entity::network::ADAPTER_ENTITY_TYPE);
-
-                let mut entries_mut = entries_ref.borrow_mut();
-                let mut changed = false;
-
-                // Current adapter URN strings
-                let current_urns: Vec<String> = adapters
-                    .iter()
-                    .map(|(urn, _)| urn.as_str().to_string())
-                    .collect();
-
-                // Remove adapter toggles that no longer exist
-                let before_len = entries_mut.len();
-                entries_mut.retain(|entry| {
-                    // Keep VPN entries (not our responsibility) and current adapter entries
-                    !entry.urn_str.contains("/network-adapter/")
-                        || current_urns.contains(&entry.urn_str)
-                });
-                if entries_mut.len() != before_len {
-                    changed = true;
-                }
-
-                // Update existing or create new adapter toggles
-                for (urn, adapter) in &adapters {
-                    let urn_str = urn.as_str().to_string();
-                    let icon = adapter_icon(adapter);
-                    let title = adapter_title(adapter);
-
-                    if let Some(entry) = entries_mut.iter().find(|e| e.urn_str == urn_str) {
-                        // Update existing toggle
-                        entry.toggle.set_active(adapter.connected);
-                        entry.toggle.set_busy(false);
-                        entry.toggle.set_icon(&icon);
-                        entry.connected.set(adapter.connected);
-
-                        // Update IP info rows for wired adapters
-                        if matches!(adapter.kind, entity::network::AdapterKind::Wired) {
-                            wired::update_wired_info_rows(entry, adapter, &settings_available_ref);
-                        }
-                    } else {
-                        // Create new toggle for this adapter
-                        let widget_id = format!("network-toggle-{}", urn_str);
-                        let menu_id = menu_id_for_widget(&widget_id);
-
-                        // Create menu container for networks/connections
-                        let menu = FeatureToggleMenuWidget::new();
-                        let connected = Rc::new(Cell::new(adapter.connected));
-
-                        let toggle = Rc::new(FeatureToggleWidget::new(
-                            FeatureToggleProps {
-                                active: adapter.connected,
-                                busy: false,
-                                details: None,
-                                expandable: false, // Will be updated based on child count
-                                icon,
-                                title,
-                                menu_id: Some(menu_id.clone()),
-                            },
-                            Some(menu_store_ref.clone()),
-                        ));
-
-                        let action_cb = cb.clone();
-                        let action_urn = urn.clone();
-                        let adapter_kind = adapter.kind.clone();
-                        let connected_for_click = connected.clone();
-                        toggle.connect_output(move |_output| {
-                            let action = match adapter_kind {
-                                entity::network::AdapterKind::Wireless => "activate",
-                                entity::network::AdapterKind::Wired => "activate",
-                                entity::network::AdapterKind::Tethering => {
-                                    if connected_for_click.get() {
-                                        "deactivate"
-                                    } else {
-                                        "activate"
-                                    }
-                                }
-                            };
-                            action_cb(
-                                action_urn.clone(),
-                                action.to_string(),
-                                serde_json::Value::Null,
-                            );
-                        });
-
-                        // Create settings button for wired and wireless adapters
-                        let has_settings = settings_tracker_for_adapter.is_available();
-                        let (settings_button, settings_button_label) = match adapter.kind {
-                            entity::network::AdapterKind::Wired => {
-                                let label = crate::i18n::t("wired-settings-button");
-                                let btn = settings_tracker_for_adapter.build_settings_button(
-                                    &cb,
-                                    "wired",
-                                    label.clone(),
-                                    has_settings,
-                                );
-                                menu.append(&btn.widget());
-                                (Some(btn), Some(label))
-                            }
-                            entity::network::AdapterKind::Wireless => {
-                                let label = crate::i18n::t("wifi-settings-button");
-                                let btn = settings_tracker_for_adapter.build_settings_button(
-                                    &cb,
-                                    "wifi",
-                                    label.clone(),
-                                    has_settings,
-                                );
-                                menu.append(&btn.widget());
-                                (Some(btn), Some(label))
-                            }
-                            _ => (None, None),
-                        };
-
-                        let entry = ToggleEntry {
-                            urn_str,
-                            toggle,
-                            menu,
-                            network_rows: RefCell::new(Vec::new()),
-                            info_rows: RefCell::new(Vec::new()),
-                            weight: 150,
-                            connected,
-                            settings_button,
-                            settings_button_label,
-                        };
-
-                        // Initialize IP info rows for wired adapters
-                        if matches!(adapter.kind, entity::network::AdapterKind::Wired) {
-                            wired::update_wired_info_rows(&entry, adapter, &settings_available_ref);
-                        }
-
-                        entries_mut.push(entry);
-                        changed = true;
-                    }
-                }
-
-                if changed {
-                    drop(entries_mut);
-                    // Re-evaluate WiFi menus immediately so newly-created toggle entries
-                    // pick up the correct expandable state based on current has_settings
-                    // and any wifi-network entities already in the store.
-                    wifi::update_wifi_menus(
-                        &wifi_menu_entries_ref,
-                        &wifi_menu_store_ref,
-                        &wifi_menu_cb,
-                        &wifi_menu_settings_ref,
-                    );
-                    rebuild();
-                }
-            });
-        }
-
-        // Subscribe to WiFi network changes
-        {
-            let entries_ref = entries.clone();
-            let store_ref = store.clone();
-            let cb = action_callback.clone();
-            let settings_available_ref = settings_available.clone();
-            store.subscribe_type(entity::network::WIFI_NETWORK_ENTITY_TYPE, move || {
-                wifi::update_wifi_menus(&entries_ref, &store_ref, &cb, &settings_available_ref);
-            });
-        }
-
-        // Subscribe to Ethernet connection profile changes
-        {
-            let entries_ref = entries.clone();
-            let store_ref = store.clone();
-            let cb = action_callback.clone();
-            let settings_available_ref = settings_available.clone();
-            store.subscribe_type(
-                entity::network::ETHERNET_CONNECTION_ENTITY_TYPE,
-                move || {
-                    wired::update_ethernet_menus(
-                        &entries_ref,
-                        &store_ref,
-                        &cb,
-                        &settings_available_ref,
-                    );
-                },
-            );
-        }
-
-        // Subscribe to VPN changes - single consolidated toggle
-        {
-            let store_ref = store.clone();
-            let entries_ref = entries.clone();
-            let cb = action_callback.clone();
-            let rebuild = rebuild_callback.clone();
-            let menu_store_ref = menu_store.clone();
-
-            // Track VPN URNs + states for the click handler
-            let vpn_states: Rc<RefCell<Vec<(Urn, entity::network::VpnState)>>> =
-                Rc::new(RefCell::new(Vec::new()));
-
-            store.subscribe_type(entity::network::VPN_ENTITY_TYPE, move || {
-                let vpns: Vec<(Urn, entity::network::Vpn)> =
-                    store_ref.get_entities_typed(entity::network::VPN_ENTITY_TYPE);
-
-                // Update tracked VPN states
-                {
-                    let mut states = vpn_states.borrow_mut();
-                    states.clear();
-                    for (urn, vpn) in &vpns {
-                        states.push((urn.clone(), vpn.state));
-                    }
-                }
-
-                let mut entries_mut = entries_ref.borrow_mut();
-
-                if vpns.is_empty() {
-                    // Remove consolidated VPN toggle if no VPNs exist
-                    let before_len = entries_mut.len();
-                    entries_mut.retain(|entry| entry.urn_str != "vpn-consolidated");
-                    if entries_mut.len() != before_len {
-                        drop(entries_mut);
-                        rebuild();
-                    }
-                    return;
-                }
-
-                // Compute consolidated state
-                let any_active = vpns.iter().any(|(_urn, vpn)| {
-                    matches!(
-                        vpn.state,
-                        entity::network::VpnState::Connected
-                            | entity::network::VpnState::Connecting
-                    )
-                });
-                let any_busy = vpns.iter().any(|(_urn, vpn)| {
-                    matches!(
-                        vpn.state,
-                        entity::network::VpnState::Connecting
-                            | entity::network::VpnState::Disconnecting
-                    )
-                });
-                let details = vpns
-                    .iter()
-                    .find(|(_, vpn)| vpn.state == entity::network::VpnState::Connected)
-                    .map(|(_, vpn)| vpn.name.clone());
-
-                if let Some(entry) = entries_mut.iter().find(|e| e.urn_str == "vpn-consolidated") {
-                    // Update existing consolidated toggle
-                    entry.toggle.set_active(any_active);
-                    entry.toggle.set_busy(any_busy);
-                    entry.toggle.set_details(details.clone());
-                    entry.toggle.set_expandable(!vpns.is_empty());
-
-                    // Update VPN menu rows
-                    vpn::update_vpn_menu_rows(entry, &vpns, &cb);
-                } else {
-                    // Create consolidated VPN toggle
-                    let widget_id = "network-toggle-vpn-consolidated";
-                    let menu_id = menu_id_for_widget(widget_id);
-
-                    let menu = FeatureToggleMenuWidget::new();
-                    let toggle = Rc::new(FeatureToggleWidget::new(
-                        FeatureToggleProps {
-                            active: any_active,
-                            busy: any_busy,
-                            details,
-                            expandable: !vpns.is_empty(),
-                            icon: "network-vpn-symbolic".to_string(),
-                            title: "VPN".to_string(),
-                            menu_id: Some(menu_id.clone()),
-                        },
-                        Some(menu_store_ref.clone()),
-                    ));
-
-                    // Toggle click: disconnect ALL connected VPNs
-                    let action_cb = cb.clone();
-                    let vpn_states_for_click = vpn_states.clone();
-                    toggle.connect_output(move |_output| {
-                        let states = vpn_states_for_click.borrow();
-                        for (urn, state) in states.iter() {
-                            if matches!(
-                                state,
-                                entity::network::VpnState::Connected
-                                    | entity::network::VpnState::Connecting
-                            ) {
-                                action_cb(
-                                    urn.clone(),
-                                    "disconnect".to_string(),
-                                    serde_json::Value::Null,
-                                );
-                            }
-                        }
-                    });
-
-                    let entry = ToggleEntry {
-                        urn_str: "vpn-consolidated".to_string(),
-                        toggle,
-                        menu,
-                        network_rows: RefCell::new(Vec::new()),
-                        info_rows: RefCell::new(Vec::new()),
-                        weight: 160,
-                        connected: Rc::new(Cell::new(any_active)),
-                        settings_button: None,
-                        settings_button_label: None,
-                    };
-
-                    // Populate VPN menu rows
-                    vpn::update_vpn_menu_rows(&entry, &vpns, &cb);
-
-                    entries_mut.push(entry);
-                    drop(entries_mut);
-                    rebuild();
-                }
-            });
-        }
-
-        // Subscribe to tethering connection changes
-        {
-            let entries_ref = entries.clone();
-            let store_ref = store.clone();
-            let cb = action_callback.clone();
-            store.subscribe_type(
-                entity::network::TETHERING_CONNECTION_ENTITY_TYPE,
-                move || {
-                    tethering::update_tethering_menus(&entries_ref, &store_ref, &cb);
-                },
-            );
-        }
-
-        Self {
-            entries,
-            store: store.clone(),
-            action_callback: action_callback.clone(),
-            menu_store: menu_store.clone(),
-            settings_tracker,
-        }
-    }
-
-    /// Return all current toggles as feature toggle widgets for the grid.
-    pub fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
-        self.entries
-            .borrow()
-            .iter()
-            .map(|entry| {
-                Rc::new(WidgetFeatureToggle {
-                    id: format!("network-toggle-{}", entry.urn_str),
-                    weight: entry.weight,
-                    toggle: (*entry.toggle).clone(),
-                    menu: Some(entry.menu.widget().clone()),
-                })
-            })
-            .collect()
     }
 }
 

@@ -76,14 +76,12 @@ impl RenderFn for DeviceRowRender {
             )));
 
         // Battery icon (only when connected with battery info)
-        if let Some(pct) = props.battery_percentage {
-            if connected {
-                let batt_icon = resolve_battery_icon_name(pct);
-                row = row.suffix(VNode::icon(VIcon::new(
-                    vec![Icon::Themed(batt_icon.to_string())],
-                    16,
-                )));
-            }
+        if let Some(pct) = props.battery_percentage && connected {
+            let batt_icon = resolve_battery_icon_name(pct);
+            row = row.suffix(VNode::icon(VIcon::new(
+                vec![Icon::Themed(batt_icon.to_string())],
+                16,
+            )));
         }
 
         // Action button: Connect/Disconnect for paired, Pair for unpaired

@@ -1,16 +1,19 @@
 //! SearchPaneWidget -- composite search bar + result list.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::prelude::*;
 use waft_core::Callback;
 
+use crate::vdom::Component;
 use crate::widget_base::WidgetBase;
 use crate::widgets::app_result_row::AppResultRowProps;
 use crate::widgets::empty_search_state::{EmptySearchStateProps, EmptySearchStateWidget};
 use crate::widgets::search_bar::{SearchBarOutput, SearchBarWidget};
-use crate::widgets::search_result_list::{SearchResultListOutput, SearchResultListWidget};
+use crate::widgets::search_result_list::{
+    SearchResultListOutput, SearchResultListProps, SearchResultListWidget,
+};
 
 /// Output events from the search pane.
 #[derive(Debug, Clone)]
@@ -32,10 +35,12 @@ pub enum SearchPaneOutput {
 pub struct SearchPaneWidget {
     root: gtk::Box,
     pub search_bar: SearchBarWidget,
-    pub result_list: SearchResultListWidget,
+    result_list: Rc<SearchResultListWidget>,
     empty_state: EmptySearchStateWidget,
     stack: gtk::Stack,
     on_output: Callback<SearchPaneOutput>,
+    selected: Rc<Cell<usize>>,
+    items: Rc<RefCell<Vec<AppResultRowProps>>>,
 }
 
 impl SearchPaneWidget {
@@ -49,7 +54,11 @@ impl SearchPaneWidget {
         let search_bar = SearchBarWidget::new(placeholder);
         root.append(&search_bar.widget());
 
-        let result_list = SearchResultListWidget::new();
+        let result_list = Rc::new(SearchResultListWidget::build(&SearchResultListProps {
+            items: Vec::new(),
+            selected: 0,
+        }));
+
         let empty_state = EmptySearchStateWidget::new(EmptySearchStateProps {
             query: String::new(),
         });
@@ -70,16 +79,27 @@ impl SearchPaneWidget {
         loading_box.append(&spinner);
         loading_box.append(&loading_label);
 
+        // Wrap the result list's ScrolledWindow in the stack
+        let scroll = gtk::ScrolledWindow::builder()
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .max_content_height(400)
+            .propagate_natural_height(true)
+            .child(&result_list.widget())
+            .build();
+
         let stack = gtk::Stack::builder()
             .transition_type(gtk::StackTransitionType::None)
             .build();
-        stack.add_named(&result_list.widget(), Some("results"));
+        stack.add_named(&scroll, Some("results"));
         stack.add_named(&empty_state.widget(), Some("empty"));
         stack.add_named(&loading_box, Some("loading"));
         stack.set_visible_child_name("results");
         root.append(&stack);
 
         let on_output: Callback<SearchPaneOutput> = Rc::new(RefCell::new(None));
+        let selected = Rc::new(Cell::new(0usize));
+        let items: Rc<RefCell<Vec<AppResultRowProps>>> = Rc::new(RefCell::new(Vec::new()));
 
         // Wire search bar output
         let on_output_bar = on_output.clone();
@@ -98,9 +118,6 @@ impl SearchPaneWidget {
         result_list.connect_output(move |event| {
             if let Some(ref cb) = *on_output_list.borrow() {
                 match event {
-                    SearchResultListOutput::SelectionChanged(i) => {
-                        cb(SearchPaneOutput::ResultSelected(i))
-                    }
                     SearchResultListOutput::Activated(i) => {
                         cb(SearchPaneOutput::ResultActivated(i))
                     }
@@ -115,6 +132,8 @@ impl SearchPaneWidget {
             empty_state,
             stack,
             on_output,
+            selected,
+            items,
         }
     }
 
@@ -135,24 +154,60 @@ impl SearchPaneWidget {
             self.empty_state.set_query(query);
             self.stack.set_visible_child_name("empty");
         } else {
-            self.result_list.set_items(items);
+            self.selected.set(0);
+            *self.items.borrow_mut() = items.clone();
+            self.result_list.update(&SearchResultListProps {
+                items,
+                selected: 0,
+            });
             self.stack.set_visible_child_name("results");
         }
     }
 
     /// Move keyboard selection down.
     pub fn select_next(&self) {
-        self.result_list.select_next();
+        let items = self.items.borrow();
+        let count = items.len();
+        if count == 0 {
+            return;
+        }
+        let next = (self.selected.get() + 1).min(count - 1);
+        self.selected.set(next);
+        self.result_list.update(&SearchResultListProps {
+            items: items.clone(),
+            selected: next,
+        });
+        if let Some(ref cb) = *self.on_output.borrow() {
+            cb(SearchPaneOutput::ResultSelected(next));
+        }
     }
 
     /// Move keyboard selection up.
     pub fn select_prev(&self) {
-        self.result_list.select_prev();
+        let items = self.items.borrow();
+        let count = items.len();
+        if count == 0 {
+            return;
+        }
+        let prev = self.selected.get().saturating_sub(1);
+        self.selected.set(prev);
+        self.result_list.update(&SearchResultListProps {
+            items: items.clone(),
+            selected: prev,
+        });
+        if let Some(ref cb) = *self.on_output.borrow() {
+            cb(SearchPaneOutput::ResultSelected(prev));
+        }
     }
 
     /// Currently selected index in the result list.
     pub fn selected_index(&self) -> Option<usize> {
-        self.result_list.selected_index()
+        let count = self.items.borrow().len();
+        if count == 0 {
+            None
+        } else {
+            Some(self.selected.get())
+        }
     }
 
     /// Register output callback.

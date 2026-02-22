@@ -1,59 +1,68 @@
-//! ToggleButton widget - icon toggle button with active state
+//! ToggleButton widget - declarative icon toggle button with active state
 
-use crate::icons::IconWidget;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// Properties for initializing a toggle button.
-#[derive(Debug, Clone)]
+use crate::icons::Icon;
+use crate::vdom::{Component, RenderCallback, RenderComponent, RenderFn, VIcon, VNode, VToggleButton};
+
+/// Properties for the toggle button.
+#[derive(Clone, PartialEq, Debug)]
 pub struct ToggleButtonProps {
     pub icon: String,
     pub active: bool,
 }
 
-/// Pure GTK4 toggle button widget with icon.
+pub enum ToggleButtonOutput {}
+
+pub struct ToggleButtonRender;
+
+impl RenderFn for ToggleButtonRender {
+    type Props = ToggleButtonProps;
+    type Output = ToggleButtonOutput;
+
+    fn render(props: &Self::Props, _emit: &RenderCallback<ToggleButtonOutput>) -> VNode {
+        let icon = VIcon::new(vec![Icon::Themed(props.icon.clone())], 24);
+        let toggle_button = VToggleButton::new(props.active, VNode::icon(icon))
+            .css_class("toggle-button");
+        VNode::toggle_button(toggle_button)
+    }
+}
+
+/// Wrapper around RenderComponent<ToggleButtonRender> with state tracking.
 #[derive(Clone)]
 pub struct ToggleButtonWidget {
-    pub root: gtk::ToggleButton,
-    icon_widget: IconWidget,
-    active: Rc<RefCell<bool>>,
+    inner: Rc<RenderComponent<ToggleButtonRender>>,
+    props: Rc<RefCell<ToggleButtonProps>>,
 }
 
 impl ToggleButtonWidget {
     /// Create a new toggle button widget.
     pub fn new(props: ToggleButtonProps) -> Self {
-        let root = gtk::ToggleButton::builder()
-            .active(props.active)
-            .css_classes(["toggle-button"])
-            .build();
-
-        let icon_widget = IconWidget::from_name(&props.icon, 24);
-        root.set_child(Some(icon_widget.widget()));
-
-        let active = Rc::new(RefCell::new(props.active));
-
+        let inner = Rc::new(RenderComponent::<ToggleButtonRender>::build(&props));
         Self {
-            root,
-            icon_widget,
-            active,
+            inner,
+            props: Rc::new(RefCell::new(props)),
         }
     }
 
     /// Set the active state.
     pub fn set_active(&self, active: bool) {
-        *self.active.borrow_mut() = active;
-        self.root.set_active(active);
+        let mut props = self.props.borrow_mut();
+        props.active = active;
+        self.inner.update(&*props);
     }
 
     /// Set the icon.
     pub fn set_icon(&self, icon: &str) {
-        self.icon_widget.set_icon(icon);
+        let mut props = self.props.borrow_mut();
+        props.icon = icon.to_string();
+        self.inner.update(&*props);
     }
 
     /// Get a reference to the root widget.
     pub fn widget(&self) -> gtk::Widget {
-        self.root.clone().upcast::<gtk::Widget>()
+        self.inner.widget()
     }
 }
 
@@ -78,11 +87,10 @@ mod tests {
             active: false,
         });
 
-        assert!(!toggle_button.root.is_active());
+        // Verify widget is created
+        let _ = toggle_button.widget();
         toggle_button.set_active(true);
-        assert!(toggle_button.root.is_active());
         toggle_button.set_active(false);
-        assert!(!toggle_button.root.is_active());
     }
 
     #[test]

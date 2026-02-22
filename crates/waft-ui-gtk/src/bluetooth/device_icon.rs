@@ -19,12 +19,12 @@ pub struct BluetoothDeviceIcon {
 impl BluetoothDeviceIcon {
     pub fn new(device_type: &str, size: Option<i32>) -> Self {
         let icon = resolve_device_type_icon(device_type);
-        let root = IconWidget::from_name(&icon, size.unwrap_or(16));
+        let root = IconWidget::from_name(icon, size.unwrap_or(16));
         Self { icon: root }
     }
 
     pub fn set_device_type(&self, device_type: &str) {
-        self.icon.set_icon(resolve_device_type_icon(&device_type));
+        self.icon.set_icon(resolve_device_type_icon(device_type));
     }
 
     pub fn set_size(&self, size: i32) {
@@ -32,6 +32,6 @@ impl BluetoothDeviceIcon {
     }
 
     pub fn widget(&self) -> &gtk::Image {
-        &self.icon.widget()
+        self.icon.widget()
     }
 }

@@ -1,11 +1,11 @@
 # waft
 
-A Wayland-native overlay panel built with Rust, GTK4, and libadwaita. Plugins run as daemon processes communicating through a central daemon (`waft`) that routes entity data and actions.
+Inobtrusive set of Linux/Wayland apps intended to control primary system functions from single place.
 
 ## Components
 
-- **`waft`** - Central daemon that discovers, spawns, and supervises plugins. Routes entity updates and actions between plugins and apps via Unix sockets. Registered as `org.waft.Daemon` on D-Bus.
 - **`waft-overview`** - GTK4/libadwaita overlay panel using Wayland layer-shell. Connects to the daemon, subscribes to entity types, and renders UI.
+- **`waft`** - Central daemon that discovers, spawns, and supervises plugins. Routes entity updates and actions between plugins and apps via Unix sockets. Registered as `org.waft.Daemon` on D-Bus.
 
 ## Building
 

@@ -502,3 +502,45 @@ impl VSwitch {
         self
     }
 }
+
+/// Descriptor for a `gtk::ToggleButton` primitive VNode with a child VNode.
+pub struct VToggleButton {
+    pub active:      bool,
+    pub sensitive:   bool,
+    pub css_classes: Vec<String>,
+    pub child:       Box<super::VNode>,
+    /// Callback reconnected on every update.
+    pub on_toggle:   Option<Rc<dyn Fn(bool)>>,
+}
+
+impl VToggleButton {
+    pub fn new(active: bool, child: super::VNode) -> Self {
+        Self {
+            active,
+            sensitive: true,
+            css_classes: Vec::new(),
+            child: Box::new(child),
+            on_toggle: None,
+        }
+    }
+
+    pub fn sensitive(mut self, v: bool) -> Self {
+        self.sensitive = v;
+        self
+    }
+
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    pub fn css_classes(mut self, classes: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.css_classes.extend(classes.into_iter().map(|c| c.into()));
+        self
+    }
+
+    pub fn on_toggle(mut self, f: impl Fn(bool) + 'static) -> Self {
+        self.on_toggle = Some(Rc::new(f));
+        self
+    }
+}

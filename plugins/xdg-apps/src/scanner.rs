@@ -73,10 +73,8 @@ fn scan_dir(dir: &Path) -> std::io::Result<Vec<DiscoveredApp>> {
         if stem.is_empty() {
             continue;
         }
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Some(entry) = parse_desktop_entry(&content) {
-                apps.push(DiscoveredApp { stem, path, entry });
-            }
+        if let Ok(content) = std::fs::read_to_string(&path) && let Some(entry) = parse_desktop_entry(&content) {
+            apps.push(DiscoveredApp { stem, path, entry });
         }
     }
     Ok(apps)

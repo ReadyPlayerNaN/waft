@@ -16,6 +16,8 @@ use crate::ranking::rank_apps;
 use crate::usage::{load_usage, record_launch_in, save_usage_to, usage_file_path};
 use crate::window::LauncherWindow;
 
+type ActionSender = Rc<RefCell<Option<std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>>>>;
+
 const ENTITY_TYPES: &[&str] = &[entity::app::ENTITY_TYPE];
 
 pub fn run() -> anyhow::Result<()> {
@@ -63,7 +65,7 @@ pub fn run() -> anyhow::Result<()> {
     // connect_startup requires Fn (not FnOnce) but fires exactly once.
     let event_rx_slot: Rc<RefCell<Option<flume::Receiver<ClientEvent>>>> =
         Rc::new(RefCell::new(Some(event_rx)));
-    let action_tx_slot: Rc<RefCell<Option<std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>>>> =
+    let action_tx_slot: ActionSender =
         Rc::new(RefCell::new(Some(action_tx)));
 
     app.connect_startup(move |app| {
@@ -129,18 +131,18 @@ pub fn run() -> anyhow::Result<()> {
                     let idx = win_ref.search_pane().selected_index().unwrap_or(0);
                     if let Some((urn, _)) = win_ref.result_at(idx) {
                         launch_app(&action_tx, &urn);
-                        win_ref.window.hide();
+                        win_ref.window.set_visible(false);
                     }
                 }
                 SearchPaneOutput::ResultActivated(index) => {
                     if let Some((urn, _)) = win_ref.result_at(index) {
                         launch_app(&action_tx, &urn);
-                        win_ref.window.hide();
+                        win_ref.window.set_visible(false);
                     }
                 }
                 SearchPaneOutput::ResultSelected(_) => {} // selection tracked internally
                 SearchPaneOutput::Stopped => {
-                    win_ref.window.hide();
+                    win_ref.window.set_visible(false);
                 }
             });
         }

@@ -16,7 +16,7 @@ use crate::components::agenda::AgendaComponent;
 use crate::components::audio_sliders::AudioSlidersComponent;
 use crate::components::battery::BatteryComponent;
 use crate::components::brightness_sliders::BrightnessSlidersComponent;
-use crate::components::calendar_grid::CalendarComponent;
+use crate::components::calendar::CalendarComponent;
 use crate::components::clock::ClockComponent;
 use crate::components::events::EventsComponent;
 use crate::components::keyboard_layout::KeyboardLayoutComponent;
@@ -29,7 +29,9 @@ use crate::components::toggles::bluetooth::BluetoothToggles;
 use crate::components::toggles::caffeine::caffeine_toggle;
 use crate::components::toggles::dark_mode::dark_mode_toggle;
 use crate::components::toggles::dnd::dnd_toggle;
-use crate::components::toggles::network::NetworkManagerToggles;
+use crate::components::toggles::network::{
+    TetheringToggles, VpnToggles, WifiToggles, WiredToggles,
+};
 use crate::components::toggles::night_light::night_light_toggle;
 use crate::ui::feature_toggles::simple_toggle::SimpleToggle;
 use crate::components::weather::WeatherComponent;
@@ -405,15 +407,45 @@ fn render_feature_toggle_grid(
                         dynamic_sources.push(bt.clone());
                         keep.push(Box::new(bt));
                     }
-                    "NetworkToggles" => {
-                        let net = Rc::new(NetworkManagerToggles::new(
+                    "WifiToggles" => {
+                        let t = Rc::new(WifiToggles::new(
                             &ctx.store,
                             &ctx.action_callback,
                             menu_store,
                             dynamic_rebuild.clone(),
                         ));
-                        dynamic_sources.push(net.clone());
-                        keep.push(Box::new(net));
+                        dynamic_sources.push(t.clone());
+                        keep.push(Box::new(t));
+                    }
+                    "WiredToggles" => {
+                        let t = Rc::new(WiredToggles::new(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            menu_store,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
+                        keep.push(Box::new(t));
+                    }
+                    "VpnToggles" => {
+                        let t = Rc::new(VpnToggles::new(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            menu_store,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
+                        keep.push(Box::new(t));
+                    }
+                    "TetheringToggles" => {
+                        let t = Rc::new(TetheringToggles::new(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            menu_store,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
+                        keep.push(Box::new(t));
                     }
                     "BackupToggle" => {
                         let t = Rc::new(BackupToggle::new(
@@ -478,9 +510,27 @@ impl DynamicToggleSource for BluetoothToggles {
     }
 }
 
-impl DynamicToggleSource for NetworkManagerToggles {
+impl DynamicToggleSource for WifiToggles {
     fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
-        NetworkManagerToggles::as_feature_toggles(self)
+        WifiToggles::as_feature_toggles(self)
+    }
+}
+
+impl DynamicToggleSource for WiredToggles {
+    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        WiredToggles::as_feature_toggles(self)
+    }
+}
+
+impl DynamicToggleSource for VpnToggles {
+    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        VpnToggles::as_feature_toggles(self)
+    }
+}
+
+impl DynamicToggleSource for TetheringToggles {
+    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        TetheringToggles::as_feature_toggles(self)
     }
 }
 

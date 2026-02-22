@@ -1,15 +1,21 @@
 use std::any::Any;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 use gtk::prelude::*;
+
+// Type aliases for complex callback types
+type ValueCallback = Rc<RefCell<Option<Rc<dyn Fn(f64)>>>>;
+type BoolRefCell = Rc<RefCell<bool>>;
+type SourceIdRefCell = Rc<RefCell<Option<glib::SourceId>>>;
 use adw::prelude::*;
 use gtk::glib;
 
 use super::component::AnyWidget;
-use super::container::{ActionRowPrefixContainer, ActionRowSuffixContainer, ButtonChildContainer, VdomContainer};
+use super::container::{ActionRowPrefixContainer, ActionRowSuffixContainer, ButtonChildContainer, ToggleButtonChildContainer, VdomContainer};
 use crate::icons::IconWidget;
 
-use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VProgressBar, VRevealer, VScale, VSpinner, VSwitch, VSwitchRow};
+use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VProgressBar, VRevealer, VScale, VSpinner, VSwitch, VToggleButton, VSwitchRow};
 use super::vnode::{ComponentDesc, VNode, VNodeKind};
 
 // -- Kind tag -----------------------------------------------------------------
@@ -22,6 +28,7 @@ enum KindTag {
     Box,
     Button,
     Switch,
+    ToggleButton,
     Spinner,
     Icon,
     CustomButton,
@@ -58,6 +65,12 @@ enum ReconcilerEntry {
         widget:     gtk::Switch,
         handler_id: Option<glib::SignalHandlerId>,
         cb:         Option<Rc<dyn Fn(bool)>>,
+    },
+    ToggleButton {
+        widget:           gtk::ToggleButton,
+        handler_id:       Option<glib::SignalHandlerId>,
+        cb:               Option<Rc<dyn Fn(bool)>>,
+        child_reconciler: std::boxed::Box<Reconciler<ToggleButtonChildContainer>>,
     },
     Spinner {
         widget: gtk::Spinner,
@@ -109,8 +122,8 @@ enum ReconcilerEntry {
         pointer_down:     Rc<std::cell::RefCell<bool>>,
         #[allow(dead_code)]
         debounce_source:  Rc<std::cell::RefCell<Option<glib::SourceId>>>,
-        on_value_change:  Rc<std::cell::RefCell<Option<Rc<dyn Fn(f64)>>>>,
-        on_value_commit:  Rc<std::cell::RefCell<Option<Rc<dyn Fn(f64)>>>>,
+        on_value_change:  ValueCallback,
+        on_value_commit:  ValueCallback,
     },
 }
 
@@ -122,6 +135,7 @@ impl ReconcilerEntry {
             Self::Box              { widget, .. }    => widget.clone().upcast(),
             Self::Button           { widget, .. }    => widget.clone().upcast(),
             Self::Switch           { widget, .. }    => widget.clone().upcast(),
+            Self::ToggleButton     { widget, .. }    => widget.clone().upcast(),
             Self::Spinner          { widget }        => widget.clone().upcast(),
             Self::Icon             { widget }        => widget.widget().clone().upcast(),
             Self::CustomButton     { widget, .. }    => widget.clone().upcast(),
@@ -142,6 +156,7 @@ impl ReconcilerEntry {
             Self::Box              { .. }          => KindTag::Box,
             Self::Button           { .. }          => KindTag::Button,
             Self::Switch           { .. }          => KindTag::Switch,
+            Self::ToggleButton     { .. }          => KindTag::ToggleButton,
             Self::Spinner          { .. }          => KindTag::Spinner,
             Self::Icon             { .. }          => KindTag::Icon,
             Self::CustomButton     { .. }          => KindTag::CustomButton,
@@ -273,6 +288,12 @@ pub struct SingleChildReconciler {
     entry: Option<ReconcilerEntry>,
 }
 
+impl Default for SingleChildReconciler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SingleChildReconciler {
     pub fn new() -> Self {
         Self { entry: None }
@@ -316,6 +337,7 @@ fn kind_tag_of(vnode: &VNode) -> KindTag {
         VNodeKind::Box(_)                => KindTag::Box,
         VNodeKind::Button(_)             => KindTag::Button,
         VNodeKind::Switch(_)             => KindTag::Switch,
+        VNodeKind::ToggleButton(_)       => KindTag::ToggleButton,
         VNodeKind::Spinner(_)            => KindTag::Spinner,
         VNodeKind::Icon(_)               => KindTag::Icon,
         VNodeKind::CustomButton(_)       => KindTag::CustomButton,
@@ -336,6 +358,7 @@ fn build_entry(vnode: VNode) -> ReconcilerEntry {
         VNodeKind::Box(vbox)               => build_box_entry(vbox),
         VNodeKind::Button(vbtn)            => build_button_entry(vbtn),
         VNodeKind::Switch(vsw)             => build_switch_entry(vsw),
+        VNodeKind::ToggleButton(vtb)       => build_toggle_button_entry(vtb),
         VNodeKind::Spinner(vsp)            => build_spinner_entry(vsp),
         VNodeKind::Icon(vi)                => build_icon_entry(vi),
         VNodeKind::CustomButton(vcb)       => build_custom_button_entry(vcb),
@@ -421,6 +444,22 @@ fn build_switch_entry(vsw: VSwitch) -> ReconcilerEntry {
     let cb = vsw.on_toggle;
     let handler_id = connect_switch_handler(&widget, &cb);
     ReconcilerEntry::Switch { widget, handler_id, cb }
+}
+
+fn build_toggle_button_entry(vtb: VToggleButton) -> ReconcilerEntry {
+    let widget = gtk::ToggleButton::new();
+    widget.set_active(vtb.active);
+    widget.set_sensitive(vtb.sensitive);
+    let classes: Vec<&str> = vtb.css_classes.iter().map(|s| s.as_str()).collect();
+    widget.set_css_classes(&classes);
+    let cb = vtb.on_toggle;
+    let handler_id = connect_toggle_button_handler(&widget, &cb);
+
+    let mut child_reconciler: std::boxed::Box<Reconciler<ToggleButtonChildContainer>> =
+        std::boxed::Box::new(Reconciler::new(ToggleButtonChildContainer(widget.clone())));
+    child_reconciler.reconcile(std::iter::once(*vtb.child));
+
+    ReconcilerEntry::ToggleButton { widget, handler_id, cb, child_reconciler }
 }
 
 fn build_preferences_group_entry(vpg: VPreferencesGroup) -> ReconcilerEntry {
@@ -517,10 +556,10 @@ fn build_progress_bar_entry(vpb: VProgressBar) -> ReconcilerEntry {
 /// When the timer fires, `interacting` is set to `false` and the commit
 /// callback is fired with the user's final value.
 fn schedule_scale_interaction_end(
-    debounce_source: &Rc<std::cell::RefCell<Option<glib::SourceId>>>,
-    interacting: &Rc<std::cell::RefCell<bool>>,
+    debounce_source: &SourceIdRefCell,
+    interacting: &BoolRefCell,
     scale: &gtk::Scale,
-    on_value_commit: &Rc<std::cell::RefCell<Option<Rc<dyn Fn(f64)>>>>,
+    on_value_commit: &ValueCallback,
     delay_ms: u64,
 ) {
     if let Some(source_id) = debounce_source.borrow_mut().take() {
@@ -548,8 +587,6 @@ fn schedule_scale_interaction_end(
 }
 
 fn build_scale_entry(vs: VScale) -> ReconcilerEntry {
-    use std::cell::RefCell;
-
     let adjustment = gtk::Adjustment::new(vs.value * 100.0, 0.0, 100.0, 1.0, 10.0, 0.0);
     let scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&adjustment));
     scale.set_draw_value(false);
@@ -561,14 +598,14 @@ fn build_scale_entry(vs: VScale) -> ReconcilerEntry {
     scale_wrapper.set_hexpand(true);
     scale_wrapper.append(&scale);
 
-    let interacting: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
-    let pointer_down: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
-    let debounce_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+    let interacting: BoolRefCell = Rc::new(RefCell::new(false));
+    let pointer_down: BoolRefCell = Rc::new(RefCell::new(false));
+    let debounce_source: SourceIdRefCell = Rc::new(RefCell::new(None));
 
     // Wrap callbacks in Rc<RefCell<...>> so closures always read the latest version.
-    let on_value_change: Rc<RefCell<Option<Rc<dyn Fn(f64)>>>> =
+    let on_value_change: ValueCallback =
         Rc::new(RefCell::new(vs.on_value_change));
-    let on_value_commit: Rc<RefCell<Option<Rc<dyn Fn(f64)>>>> =
+    let on_value_commit: ValueCallback =
         Rc::new(RefCell::new(vs.on_value_commit));
 
     // Connect value-changed signal
@@ -706,8 +743,8 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
         }
         (ReconcilerEntry::Switch { widget, handler_id, cb }, VNodeKind::Switch(vsw)) => {
             let same_cb = rc_option_ptr_eq(cb, &vsw.on_toggle);
-            if !same_cb {
-                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            if !same_cb && let Some(id) = handler_id.take() {
+                widget.disconnect(id);
             }
             // Set active BEFORE reconnecting handler to avoid spurious callbacks.
             widget.set_active(vsw.active);
@@ -718,6 +755,23 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
                 *handler_id = connect_switch_handler(widget, &vsw.on_toggle);
                 *cb = vsw.on_toggle;
             }
+        }
+        (ReconcilerEntry::ToggleButton { widget, handler_id, cb, child_reconciler },
+         VNodeKind::ToggleButton(vtb)) => {
+            let same_cb = rc_option_ptr_eq(cb, &vtb.on_toggle);
+            if !same_cb && let Some(id) = handler_id.take() {
+                widget.disconnect(id);
+            }
+            // Set active BEFORE reconnecting handler to avoid spurious callbacks.
+            widget.set_active(vtb.active);
+            widget.set_sensitive(vtb.sensitive);
+            let classes: Vec<&str> = vtb.css_classes.iter().map(|s| s.as_str()).collect();
+            widget.set_css_classes(&classes);
+            if !same_cb {
+                *handler_id = connect_toggle_button_handler(widget, &vtb.on_toggle);
+                *cb = vtb.on_toggle;
+            }
+            child_reconciler.reconcile(std::iter::once(*vtb.child));
         }
         (ReconcilerEntry::Spinner { widget }, VNodeKind::Spinner(vsp)) => {
             widget.set_spinning(vsp.spinning);
@@ -777,8 +831,8 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             }
             widget.set_sensitive(vsr.sensitive);
             let same_cb = rc_option_ptr_eq(cb, &vsr.on_toggle);
-            if !same_cb {
-                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            if !same_cb && let Some(id) = handler_id.take() {
+                widget.disconnect(id);
             }
             // Set active AFTER disconnect to suppress spurious callback.
             widget.set_active(vsr.active);
@@ -794,8 +848,8 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             widget.set_title(&ver.title);
             widget.set_sensitive(ver.sensitive);
             let same_cb = rc_option_ptr_eq(cb, &ver.on_change);
-            if !same_cb {
-                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            if !same_cb && let Some(id) = handler_id.take() {
+                widget.disconnect(id);
             }
             widget.set_text(&ver.text);
             if !same_cb {
@@ -895,5 +949,15 @@ fn connect_switch_handler(
     on_toggle.as_ref().map(|f| {
         let f = f.clone();
         widget.connect_active_notify(move |sw| f(sw.is_active()))
+    })
+}
+
+fn connect_toggle_button_handler(
+    widget: &gtk::ToggleButton,
+    on_toggle: &Option<std::rc::Rc<dyn Fn(bool)>>,
+) -> Option<glib::SignalHandlerId> {
+    on_toggle.as_ref().map(|f| {
+        let f = f.clone();
+        widget.connect_toggled(move |tb| f(tb.is_active()))
     })
 }

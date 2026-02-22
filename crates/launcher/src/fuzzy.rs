@@ -30,10 +30,8 @@ pub fn fuzzy_score(query: &str, target: &str) -> Option<f64> {
                 first_match = Some(ti);
             }
             // Contiguous bonus
-            if let Some(last) = last_match {
-                if last + 1 == ti {
-                    contiguous_bonus += 0.1;
-                }
+            if let Some(last) = last_match && last + 1 == ti {
+                contiguous_bonus += 0.1;
             }
             last_match = Some(ti);
             matched += 1;

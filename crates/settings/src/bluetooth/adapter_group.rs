@@ -75,10 +75,8 @@ impl RenderFn for AdapterGroupRender {
                             .on_change({
                                 let emit = emit.clone();
                                 move |text| {
-                                    if !text.is_empty() {
-                                        if let Some(ref cb) = *emit.borrow() {
-                                            cb(AdapterGroupOutput::SetAlias(text));
-                                        }
+                                    if !text.is_empty() && let Some(ref cb) = *emit.borrow() {
+                                        cb(AdapterGroupOutput::SetAlias(text));
                                     }
                                 }
                             }),

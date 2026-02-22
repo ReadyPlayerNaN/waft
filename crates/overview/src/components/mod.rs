@@ -1,9 +1,8 @@
 pub mod agenda;
-pub mod agenda_ui;
 pub mod audio_sliders;
 pub mod battery;
 pub mod brightness_sliders;
-pub mod calendar_grid;
+pub mod calendar;
 pub mod clock;
 pub mod events;
 pub mod keyboard_layout;

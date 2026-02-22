@@ -52,9 +52,7 @@ impl PluginSpawner {
         let providers: Vec<(String, PathBuf)> = self
             .discovery_cache
             .binaries_for_entity_type(entity_type)
-            .iter()
-            .cloned()
-            .collect();
+            .to_vec();
 
         if providers.is_empty() {
             debug!("no plugin known for entity type '{entity_type}'");

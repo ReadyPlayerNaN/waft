@@ -55,7 +55,7 @@ impl LauncherWindow {
         // Auto-hide on focus loss (hide, not quit — launcher stays in background)
         widget.window.connect_is_active_notify(|w| {
             if !w.is_active() {
-                w.hide();
+                w.set_visible(false);
             }
         });
 
@@ -76,7 +76,7 @@ impl LauncherWindow {
                 // Fallback: Escape when focus is not inside the search entry.
                 // When focus is in the entry, stop-search fires first and reaches
                 // SearchPaneOutput::Stopped before this handler.
-                win_ref.hide();
+                win_ref.set_visible(false);
                 gtk::glib::Propagation::Stop
             }
             _ => gtk::glib::Propagation::Proceed,

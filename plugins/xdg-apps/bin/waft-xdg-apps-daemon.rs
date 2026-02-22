@@ -225,10 +225,8 @@ async fn watch_dirs(
         .context("failed to create file watcher")?;
 
     for dir in &dirs {
-        if dir.exists() {
-            if let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive) {
-                log::warn!("[xdg-apps] could not watch {dir:?}: {e}");
-            }
+        if dir.exists() && let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive) {
+            log::warn!("[xdg-apps] could not watch {dir:?}: {e}");
         }
     }
 

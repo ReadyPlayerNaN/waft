@@ -22,6 +22,7 @@ pub struct WiredAdapterGroupProps {
 }
 
 /// Output events from a wired adapter group.
+#[allow(clippy::enum_variant_names)]
 pub enum WiredAdapterGroupOutput {
     /// Toggle the wired connection on/off.
     ToggleConnection,

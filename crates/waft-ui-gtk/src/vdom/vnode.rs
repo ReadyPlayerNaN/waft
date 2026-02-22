@@ -2,7 +2,7 @@ use std::any::{Any, TypeId};
 use std::rc::Rc;
 
 use super::component::{AnyWidget, Component};
-use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch, VSwitchRow};
+use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VProgressBar, VRevealer, VScale, VSpinner, VSwitch, VToggleButton, VSwitchRow};
 
 // -- Component descriptor (what VNode currently stores at the top level) ---
 
@@ -26,6 +26,7 @@ pub(super) enum VNodeKind {
     Box(VBox),
     Button(VButton),
     Switch(VSwitch),
+    ToggleButton(VToggleButton),
     Spinner(VSpinner),
     Icon(VIcon),
     CustomButton(VCustomButton),
@@ -33,6 +34,9 @@ pub(super) enum VNodeKind {
     ActionRow(VActionRow),
     SwitchRow(VSwitchRow),
     EntryRow(VEntryRow),
+    Revealer(VRevealer),
+    ProgressBar(VProgressBar),
+    Scale(VScale),
 }
 
 // -- VNode --------------------------------------------------------------------
@@ -88,6 +92,11 @@ impl VNode {
         Self { key: None, kind: VNodeKind::Switch(v) }
     }
 
+    /// Build a `VToggleButton` descriptor and wrap it in a `VNode`.
+    pub fn toggle_button(v: VToggleButton) -> Self {
+        Self { key: None, kind: VNodeKind::ToggleButton(v) }
+    }
+
     /// Build a `VSpinner` descriptor and wrap it in a `VNode`.
     pub fn spinner(v: VSpinner) -> Self {
         Self { key: None, kind: VNodeKind::Spinner(v) }
@@ -121,6 +130,21 @@ impl VNode {
     /// Build a `VEntryRow` descriptor and wrap it in a `VNode`.
     pub fn entry_row(v: VEntryRow) -> Self {
         Self { key: None, kind: VNodeKind::EntryRow(v) }
+    }
+
+    /// Build a `VRevealer` descriptor and wrap it in a `VNode`.
+    pub fn revealer(v: VRevealer) -> Self {
+        Self { key: None, kind: VNodeKind::Revealer(v) }
+    }
+
+    /// Build a `VProgressBar` descriptor and wrap it in a `VNode`.
+    pub fn progress_bar(v: VProgressBar) -> Self {
+        Self { key: None, kind: VNodeKind::ProgressBar(v) }
+    }
+
+    /// Build a `VScale` descriptor and wrap it in a `VNode`.
+    pub fn scale(v: VScale) -> Self {
+        Self { key: None, kind: VNodeKind::Scale(v) }
     }
 }
 

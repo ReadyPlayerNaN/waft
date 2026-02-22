@@ -374,10 +374,8 @@ impl WaftDaemon {
                         claim_id,
                         claimed: false,
                     };
-                    if let Some(conn) = self.connections.get(&conn_id) {
-                        if let Err(e) = conn.send(&cmd).await {
-                            warn!("failed to send immediate ClaimResult to plugin: {e}");
-                        }
+                    if let Some(conn) = self.connections.get(&conn_id) && let Err(e) = conn.send(&cmd).await {
+                        warn!("failed to send immediate ClaimResult to plugin: {e}");
                     }
                 } else {
                     // Track the claim and broadcast to all subscribers
@@ -394,10 +392,8 @@ impl WaftDaemon {
                         claim_id,
                     };
                     for app_id in &subscribers {
-                        if let Some(conn) = self.connections.get(app_id) {
-                            if let Err(e) = conn.send(&notification).await {
-                                warn!("failed to send ClaimCheck to {app_id}: {e}");
-                            }
+                        if let Some(conn) = self.connections.get(app_id) && let Err(e) = conn.send(&notification).await {
+                            warn!("failed to send ClaimCheck to {app_id}: {e}");
                         }
                     }
                     debug!(
@@ -644,13 +640,11 @@ impl WaftDaemon {
             claim_id: resolution.claim_id,
             claimed: resolution.claimed,
         };
-        if let Some(conn) = self.connections.get(&resolution.plugin_conn_id) {
-            if let Err(e) = conn.send(&cmd).await {
-                warn!(
-                    "failed to send ClaimResult to plugin {}: {e}",
-                    resolution.plugin_conn_id
-                );
-            }
+        if let Some(conn) = self.connections.get(&resolution.plugin_conn_id) && let Err(e) = conn.send(&cmd).await {
+            warn!(
+                "failed to send ClaimResult to plugin {}: {e}",
+                resolution.plugin_conn_id
+            );
         }
     }
 

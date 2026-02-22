@@ -12,13 +12,16 @@ use gtk::prelude::*;
 
 use waft_protocol::Urn;
 use waft_protocol::entity;
-use waft_ui_gtk::widgets::slider::{SliderProps, SliderWidget};
+use waft_ui_gtk::vdom::Component;
+use waft_ui_gtk::widgets::slider::{SliderRenderOutput, SliderRenderProps, SliderWidget};
 
 use super::throttled_sender::ThrottledSender;
 use waft_client::{EntityActionCallback, EntityStore};
 
 struct SliderEntry {
     widget: Rc<SliderWidget>,
+    #[allow(dead_code)]
+    throttle: ThrottledSender,
 }
 
 /// Renders brightness sliders for all connected displays.
@@ -77,18 +80,22 @@ impl BrightnessSlidersComponent {
                 let urn_str = urn.as_str().to_string();
 
                 if let Some(entry) = sliders.get(&urn_str) {
-                    entry.widget.set_value(display.brightness);
+                    entry.widget.update(&SliderRenderProps {
+                        icon: "display-brightness-symbolic".to_string(),
+                        value: display.brightness,
+                        disabled: false,
+                        expandable: false,
+                        expanded: false,
+                    });
                 } else {
-                    let slider = Rc::new(SliderWidget::new(
-                        SliderProps {
-                            icon: "display-brightness-symbolic".to_string(),
-                            value: display.brightness,
-                            disabled: false,
-                            expandable: false,
-                            menu_id: None,
-                        },
-                        None,
-                    ));
+                    let props = SliderRenderProps {
+                        icon: "display-brightness-symbolic".to_string(),
+                        value: display.brightness,
+                        disabled: false,
+                        expandable: false,
+                        expanded: false,
+                    };
+                    let slider = Rc::new(SliderWidget::build(&props));
 
                     // Wire value_change -> throttled set-brightness during drag
                     let throttle = ThrottledSender::new(Duration::from_millis(200));
@@ -101,25 +108,27 @@ impl BrightnessSlidersComponent {
                             serde_json::json!({ "value": v }),
                         );
                     });
-                    slider.connect_value_change(throttle.throttle_fn());
+                    let throttle_fn = throttle.throttle_fn();
 
-                    // Wire value_commit -> set-brightness action (fires on drag release)
+                    // Wire output events
                     let urn_for_value = urn.clone();
                     let cb_value = cb.clone();
-                    slider.connect_value_commit(move |v| {
-                        cb_value(
-                            urn_for_value.clone(),
-                            "set-brightness".to_string(),
-                            serde_json::json!({ "value": v }),
-                        );
+                    slider.connect_output(move |output| match output {
+                        SliderRenderOutput::ValueChanged(v) => {
+                            throttle_fn(v);
+                        }
+                        SliderRenderOutput::ValueCommit(v) => {
+                            cb_value(
+                                urn_for_value.clone(),
+                                "set-brightness".to_string(),
+                                serde_json::json!({ "value": v }),
+                            );
+                        }
+                        SliderRenderOutput::IconClick | SliderRenderOutput::ExpandClick => {}
                     });
 
-                    // Icon click is a noop for brightness sliders
-                    slider.connect_icon_click(|| {});
-
                     container_ref.append(&slider.widget());
-
-                    sliders.insert(urn_str, SliderEntry { widget: slider });
+                    sliders.insert(urn_str, SliderEntry { widget: slider, throttle });
                 }
             }
 

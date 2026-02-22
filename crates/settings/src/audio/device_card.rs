@@ -697,12 +697,10 @@ impl AudioDeviceCard {
                         *debounce_inner.borrow_mut() = None;
                         *interacting_d.borrow_mut() = false;
                         // Apply any backend value that arrived during interaction.
-                        if let Some(v) = pending_d.borrow_mut().take() {
-                            if let Some(ref hid) = *holder_d.borrow() {
-                                slider_d.block_signal(hid);
-                                slider_d.set_value(v);
-                                slider_d.unblock_signal(hid);
-                            }
+                        if let Some(v) = pending_d.borrow_mut().take() && let Some(ref hid) = *holder_d.borrow() {
+                            slider_d.block_signal(hid);
+                            slider_d.set_value(v);
+                            slider_d.unblock_signal(hid);
                         }
                     },
                 );
@@ -958,12 +956,10 @@ impl AudioDeviceCard {
                     move || {
                         *debounce_inner.borrow_mut() = None;
                         *interacting_d.borrow_mut() = false;
-                        if let Some(v) = pending_d.borrow_mut().take() {
-                            if let Some(ref hid) = *holder_d.borrow() {
-                                slider_d.block_signal(hid);
-                                slider_d.set_value(v);
-                                slider_d.unblock_signal(hid);
-                            }
+                        if let Some(v) = pending_d.borrow_mut().take() && let Some(ref hid) = *holder_d.borrow() {
+                            slider_d.block_signal(hid);
+                            slider_d.set_value(v);
+                            slider_d.unblock_signal(hid);
                         }
                     },
                 );

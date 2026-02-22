@@ -1,69 +1,55 @@
 //! AppResultRowWidget -- dumb row for a single app search result.
 
-use gtk::prelude::*;
-
-use crate::widget_base::WidgetBase;
-use crate::icons::IconWidget;
+use crate::icons::Icon;
+use crate::vdom::{RenderCallback, RenderComponent, RenderFn, VBox, VIcon, VLabel, VNode};
 
 /// Properties for an app result row.
+#[derive(Clone, PartialEq)]
 pub struct AppResultRowProps {
     pub name: String,
     pub icon: String,
     pub description: Option<String>,
 }
 
-/// Horizontal row: 48px icon + vertical label stack (name + optional description).
+/// Renders a horizontal row: 48px icon + vertical label stack (name + optional description).
 ///
 /// No Output enum -- selection and activation are handled at the list level.
-pub struct AppResultRowWidget {
-    root: gtk::Box,
-}
+pub struct AppResultRowRender;
 
-impl AppResultRowWidget {
-    pub fn new(props: AppResultRowProps) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(12)
-            .margin_top(6)
-            .margin_bottom(6)
-            .margin_start(12)
-            .margin_end(12)
-            .css_classes(["app-result-row"])
-            .build();
+impl RenderFn for AppResultRowRender {
+    type Props = AppResultRowProps;
+    type Output = ();
 
-        let icon = IconWidget::from_name(&props.icon, 48);
-        root.append(&WidgetBase::widget(&icon));
-
-        let label_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
+    fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
+        let mut label_box = VBox::vertical(2)
             .valign(gtk::Align::Center)
-            .spacing(2)
-            .build();
+            .child(VNode::label(
+                VLabel::new(&props.name)
+                    .css_class("app-result-name")
+                    .xalign(0.0),
+            ));
 
-        let name_label = gtk::Label::builder()
-            .label(&props.name)
-            .halign(gtk::Align::Start)
-            .css_classes(["app-result-name"])
-            .build();
-        label_box.append(&name_label);
-
-        if let Some(desc) = &props.description {
-            let desc_label = gtk::Label::builder()
-                .label(desc.as_str())
-                .halign(gtk::Align::Start)
-                .css_classes(["app-result-description", "dim-label"])
-                .ellipsize(gtk::pango::EllipsizeMode::End)
-                .build();
-            label_box.append(&desc_label);
+        if let Some(ref desc) = props.description {
+            label_box = label_box.child(VNode::label(
+                VLabel::new(desc)
+                    .css_class("app-result-description")
+                    .css_class("dim-label")
+                    .ellipsize(gtk::pango::EllipsizeMode::End)
+                    .xalign(0.0),
+            ));
         }
 
-        root.append(&label_box);
-        Self { root }
+        VNode::vbox(
+            VBox::horizontal(12)
+                .css_class("app-result-row")
+                .child(VNode::icon(VIcon::new(
+                    vec![Icon::Themed(props.icon.clone())],
+                    48,
+                )))
+                .child(VNode::vbox(label_box)),
+        )
     }
 }
 
-impl WidgetBase for AppResultRowWidget {
-    fn widget(&self) -> gtk::Widget {
-        self.root.clone().upcast()
-    }
-}
+/// Type alias preserving the old name for callers.
+pub type AppResultRowWidget = RenderComponent<AppResultRowRender>;
