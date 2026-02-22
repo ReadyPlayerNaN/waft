@@ -271,10 +271,10 @@ pub fn derive_icon_hints(notification: &IngressedNotification) -> Vec<Notificati
         let trimmed = de.trim();
         if !trimmed.is_empty() {
             let without_suffix = trimmed.strip_suffix(".desktop").unwrap_or(trimmed);
-            out.push(NotificationIcon::parse(&Arc::from(without_suffix)));
-            out.push(NotificationIcon::parse(&Arc::from(normalize_icon_name(
+            out.push(NotificationIcon::parse(without_suffix));
+            out.push(NotificationIcon::parse(&normalize_icon_name(
                 without_suffix,
-            ))));
+            )));
         }
     }
 
@@ -282,7 +282,7 @@ pub fn derive_icon_hints(notification: &IngressedNotification) -> Vec<Notificati
         let trimmed = app_name.trim();
         if !trimmed.is_empty() {
             out.push(NotificationIcon::Themed(
-                normalize_icon_name(app_name).into(),
+                normalize_icon_name(app_name),
             ));
         }
     }

@@ -12,8 +12,8 @@ use std::time::SystemTime;
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
 pub enum NotificationIcon {
     Bytes(Vec<u8>),
-    FilePath(Arc<PathBuf>),
-    Themed(Arc<str>),
+    FilePath(PathBuf),
+    Themed(String),
 }
 
 impl NotificationIcon {
@@ -21,12 +21,12 @@ impl NotificationIcon {
     ///
     /// If the string contains path-like characters (`/`, `.`, `~`),
     /// it's treated as a file path. Otherwise, it's treated as a themed icon name.
-    pub fn parse(str: &Arc<str>) -> Self {
-        let s: &str = str.trim();
+    pub fn parse(s: &str) -> Self {
+        let s = s.trim();
         if s.contains('/') || s.starts_with('.') || s.starts_with('~') {
-            Self::FilePath(Arc::new(PathBuf::from(s)))
+            Self::FilePath(PathBuf::from(s))
         } else {
-            Self::Themed(Arc::from(s))
+            Self::Themed(s.to_string())
         }
     }
 }

@@ -4,10 +4,8 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use adw::prelude::*;
 
-use std::sync::Arc;
-
 use crate::icons::Icon;
-use crate::test_utils::init_gtk_for_tests;
+use crate::test_init::init_gtk_for_tests;
 use crate::vdom::{Component, Reconciler, VNode};
 use super::{RenderCallback, RenderComponent, RenderFn};
 use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VSpinner, VSwitch, VSwitchRow};
@@ -397,7 +395,7 @@ fn test_spinner_updates_state() {
 fn test_icon_builds() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::icon(VIcon::new(
-        vec![Icon::Themed(Arc::from("dialog-information-symbolic"))],
+        vec![Icon::Themed("dialog-information-symbolic".to_string())],
         16,
     ))]);
     assert_eq!(container.observe_children().n_items(), 1);

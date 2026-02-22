@@ -4,7 +4,6 @@
 //! Tries each icon hint in order until one succeeds, falling back to a default.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 const DEFAULT_ICON: &str = "dialog-information-symbolic";
 
@@ -13,9 +12,9 @@ const DEFAULT_ICON: &str = "dialog-information-symbolic";
 pub enum Icon {
     Bytes(Vec<u8>),
     /// A file path to an image (png/svg/etc). Will be loaded and scaled to fit.
-    FilePath(Arc<PathBuf>),
+    FilePath(PathBuf),
     /// A themed icon name, e.g. `"dialog-information-symbolic"`.
-    Themed(Arc<str>),
+    Themed(String),
 }
 
 impl Icon {
@@ -23,12 +22,12 @@ impl Icon {
     ///
     /// If the string contains path-like characters (`/`, `.`, `~`),
     /// it's treated as a file path. Otherwise, it's treated as a themed icon name.
-    pub fn parse(str: &Arc<str>) -> Self {
-        let s: &str = str.trim();
+    pub fn parse(s: &str) -> Self {
+        let s = s.trim();
         if s.contains('/') || s.starts_with('.') || s.starts_with('~') {
-            Self::FilePath(Arc::new(PathBuf::from(s)))
+            Self::FilePath(PathBuf::from(s))
         } else {
-            Self::Themed(Arc::from(s))
+            Self::Themed(s.to_string())
         }
     }
 }
@@ -83,7 +82,7 @@ impl IconWidget {
 
     /// Convenience constructor for a single named icon.
     pub fn from_name(icon_name: &str, pixel_size: i32) -> Self {
-        Self::new(vec![Icon::Themed(Arc::from(icon_name))], pixel_size)
+        Self::new(vec![Icon::Themed(icon_name.to_string())], pixel_size)
     }
 
     /// Try each icon hint in order until one succeeds, falling back to default.
@@ -113,7 +112,7 @@ impl IconWidget {
                 false
             }
             Icon::FilePath(path) => {
-                if let Ok(tex) = gtk::gdk::Texture::from_filename(path.as_ref()) {
+                if let Ok(tex) = gtk::gdk::Texture::from_filename(path) {
                     image.set_icon_name(None);
                     image.set_paintable(Some(&tex));
                     return true;
@@ -141,7 +140,7 @@ impl IconWidget {
     /// Update the icon to a single named icon.
     /// Convenience method for updating to a themed icon name.
     pub fn set_icon(&self, icon_name: &str) {
-        self.update_icon(vec![Icon::Themed(Arc::from(icon_name))]);
+        self.update_icon(vec![Icon::Themed(icon_name.to_string())]);
     }
 
     pub fn set_size(&self, size: i32) {
@@ -160,14 +159,13 @@ impl crate::widget_base::WidgetBase for IconWidget {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use std::sync::Arc;
 
     #[test]
     fn test_absolute_path_detection() {
-        let icon = Icon::parse(&Arc::from("/usr/share/icons/test.png"));
+        let icon = Icon::parse("/usr/share/icons/test.png");
         match icon {
             Icon::FilePath(path) => {
-                assert_eq!(path.as_ref(), &PathBuf::from("/usr/share/icons/test.png"));
+                assert_eq!(path, PathBuf::from("/usr/share/icons/test.png"));
             }
             _ => panic!("Expected Icon::FilePath, got {:?}", icon),
         }
@@ -175,10 +173,10 @@ mod tests {
 
     #[test]
     fn test_relative_path_with_dot() {
-        let icon = Icon::parse(&Arc::from("./icons/test.png"));
+        let icon = Icon::parse("./icons/test.png");
         match icon {
             Icon::FilePath(path) => {
-                assert_eq!(path.as_ref(), &PathBuf::from("./icons/test.png"));
+                assert_eq!(path, PathBuf::from("./icons/test.png"));
             }
             _ => panic!("Expected Icon::FilePath, got {:?}", icon),
         }
@@ -186,10 +184,10 @@ mod tests {
 
     #[test]
     fn test_home_directory_path() {
-        let icon = Icon::parse(&Arc::from("~/icons/test.png"));
+        let icon = Icon::parse("~/icons/test.png");
         match icon {
             Icon::FilePath(path) => {
-                assert_eq!(path.as_ref(), &PathBuf::from("~/icons/test.png"));
+                assert_eq!(path, PathBuf::from("~/icons/test.png"));
             }
             _ => panic!("Expected Icon::FilePath, got {:?}", icon),
         }
@@ -197,11 +195,10 @@ mod tests {
 
     #[test]
     fn test_themed_icon_name() {
-        let icon_name = Arc::from("dialog-information");
-        let icon = Icon::parse(&icon_name);
+        let icon = Icon::parse("dialog-information");
         match icon {
             Icon::Themed(name) => {
-                assert_eq!(name.as_ref(), "dialog-information");
+                assert_eq!(name, "dialog-information");
             }
             _ => panic!("Expected Icon::Themed, got {:?}", icon),
         }
@@ -209,10 +206,10 @@ mod tests {
 
     #[test]
     fn test_whitespace_trimming_themed() {
-        let icon = Icon::parse(&Arc::from("  dialog-information  "));
+        let icon = Icon::parse("  dialog-information  ");
         match icon {
             Icon::Themed(name) => {
-                assert_eq!(name.as_ref(), "dialog-information");
+                assert_eq!(name, "dialog-information");
             }
             _ => panic!("Expected Icon::Themed, got {:?}", icon),
         }
@@ -220,10 +217,10 @@ mod tests {
 
     #[test]
     fn test_whitespace_trimming_filepath() {
-        let icon = Icon::parse(&Arc::from("  /usr/share/icons/test.png  "));
+        let icon = Icon::parse("  /usr/share/icons/test.png  ");
         match icon {
             Icon::FilePath(path) => {
-                assert_eq!(path.as_ref(), &PathBuf::from("/usr/share/icons/test.png"));
+                assert_eq!(path, PathBuf::from("/usr/share/icons/test.png"));
             }
             _ => panic!("Expected Icon::FilePath, got {:?}", icon),
         }
@@ -287,8 +284,8 @@ mod tests {
     fn test_icon_widget_update_icon_with_hints() {
         let widget = IconWidget::from_name("dialog-information-symbolic", 24);
         widget.update_icon(vec![
-            Icon::Themed(Arc::from("non-existent-icon")),
-            Icon::Themed(Arc::from("dialog-warning-symbolic")),
+            Icon::Themed("non-existent-icon".to_string()),
+            Icon::Themed("dialog-warning-symbolic".to_string()),
         ]);
         assert_eq!(widget.widget().pixel_size(), 24);
     }

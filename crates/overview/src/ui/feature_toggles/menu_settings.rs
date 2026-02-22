@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use waft_ui_gtk::icons::Icon;
 use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
@@ -26,7 +24,7 @@ impl RenderFn for FeatureToggleMenuSettingsButtonRender {
                 disabled:       false,
                 name:           props.label.clone(),
                 working:        false,
-                primary_icon:   vec![Icon::parse(&Arc::from("preferences-system-symbolic"))],
+                primary_icon:   vec![Icon::parse("preferences-system-symbolic")],
                 secondary_icon: vec![],
                 visible:        props.visible,
                 switch_active:  None,

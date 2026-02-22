@@ -8,7 +8,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gtk::prelude::*;
 
@@ -342,8 +341,8 @@ fn convert_icon_hints(hints: &[NotificationIconHint]) -> Vec<Icon> {
     hints
         .iter()
         .map(|h| match h {
-            NotificationIconHint::Themed(name) => Icon::Themed(Arc::from(name.as_str())),
-            NotificationIconHint::FilePath(path) => Icon::FilePath(Arc::new(PathBuf::from(path))),
+            NotificationIconHint::Themed(name) => Icon::Themed(name.to_string()),
+            NotificationIconHint::FilePath(path) => Icon::FilePath(PathBuf::from(path)),
             NotificationIconHint::Bytes(bytes) => Icon::Bytes(bytes.clone()),
         })
         .collect()

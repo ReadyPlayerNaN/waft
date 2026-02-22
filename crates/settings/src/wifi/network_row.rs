@@ -3,8 +3,6 @@
 //! Dumb widget displaying a single WiFi network as an `AdwActionRow`
 //! with signal strength icon, security indicator, and connect button.
 
-use std::sync::Arc;
-
 use waft_ui_gtk::icons::Icon;
 use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VActionRow, VCustomButton, VIcon, VLabel};
@@ -52,13 +50,13 @@ impl RenderFn for NetworkRowRender {
         let mut row = VActionRow::new(&props.ssid)
             .subtitle(&subtitle)
             .prefix(VNode::icon(VIcon::new(
-                vec![Icon::Themed(Arc::from(signal_icon))],
+                vec![Icon::Themed(signal_icon.to_string())],
                 16,
             )));
 
         if props.secure {
             row = row.prefix(VNode::icon(VIcon::new(
-                vec![Icon::Themed(Arc::from("network-wireless-encrypted-symbolic"))],
+                vec![Icon::Themed("network-wireless-encrypted-symbolic".to_string())],
                 16,
             )));
         }
