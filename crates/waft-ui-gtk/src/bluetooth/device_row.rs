@@ -9,7 +9,9 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use waft_core::Callback;
 
-use crate::widgets::icon::IconWidget;
+use crate::icons::IconWidget;
+
+use super::device_icon::BluetoothDeviceIcon;
 
 /// Resolve device_type string to a themed icon name.
 pub fn device_type_icon(device_type: &str) -> &'static str {
@@ -38,7 +40,7 @@ pub fn battery_icon_name(pct: u8) -> &'static str {
 
 /// Properties for initializing a bluetooth device row.
 pub struct BluetoothDeviceRowProps {
-    pub device_icon: String,
+    pub device_type: String,
     pub name: String,
     pub battery_icon: Option<String>,
     pub connected: bool,
@@ -56,7 +58,7 @@ pub enum BluetoothDeviceRowOutput {
 pub struct BluetoothDeviceRow {
     pub root: gtk::Button,
     name_label: gtk::Label,
-    device_icon: IconWidget,
+    device_icon: BluetoothDeviceIcon,
     battery_icon: IconWidget,
     battery_icon_widget: gtk::Widget,
     spinner: gtk::Spinner,
@@ -78,7 +80,7 @@ impl BluetoothDeviceRow {
             .valign(gtk::Align::Center)
             .build();
 
-        let device_icon = IconWidget::from_name(&props.device_icon, 16);
+        let device_icon = BluetoothDeviceIcon::new(&props.device_type, None);
         icon_box.append(device_icon.widget());
 
         let battery_icon = IconWidget::from_name(
@@ -163,8 +165,8 @@ impl BluetoothDeviceRow {
         self.name_label.set_label(name);
     }
 
-    pub fn set_device_icon(&self, icon_name: &str) {
-        self.device_icon.set_icon(icon_name);
+    pub fn set_device_type(&self, device_type: &str) {
+        self.device_icon.set_device_type(device_type);
     }
 
     pub fn set_battery_icon(&self, icon_name: Option<&str>) {

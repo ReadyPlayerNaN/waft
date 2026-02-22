@@ -12,7 +12,7 @@ use waft_core::Callback;
 use waft_protocol::entity::audio::AudioDeviceKind;
 
 use crate::audio::icon::{audio_connection_icon, audio_device_icon};
-use crate::widgets::icon::IconWidget;
+use crate::icons::IconWidget;
 
 /// Properties for initializing an audio device row.
 pub struct AudioDeviceRowProps {
