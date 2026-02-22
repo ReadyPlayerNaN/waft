@@ -37,7 +37,6 @@ impl RenderFn for ConnectionRowRender {
         let btn_label = if props.active { t("wired-disconnect") } else { t("wired-connect") };
         let active    = props.active;
 
-        let emit_clone = emit.clone();
         VNode::action_row(
             VActionRow::new(&props.name)
                 .subtitle(&subtitle)
@@ -51,14 +50,17 @@ impl RenderFn for ConnectionRowRender {
                 .suffix(VNode::custom_button(
                     VCustomButton::new(VNode::label(VLabel::new(&btn_label)))
                         .css_class("flat")
-                        .on_click(move || {
-                            if let Some(ref cb) = *emit_clone.borrow() {
-                                let ev = if active {
-                                    ConnectionRowOutput::Deactivate
-                                } else {
-                                    ConnectionRowOutput::Activate
-                                };
-                                cb(ev);
+                        .on_click({
+                            let emit = emit.clone();
+                            move || {
+                                if let Some(ref cb) = *emit.borrow() {
+                                    let ev = if active {
+                                        ConnectionRowOutput::Deactivate
+                                    } else {
+                                        ConnectionRowOutput::Activate
+                                    };
+                                    cb(ev);
+                                }
                             }
                         }),
                 )),

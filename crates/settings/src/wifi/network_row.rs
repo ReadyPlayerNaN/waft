@@ -45,7 +45,6 @@ impl RenderFn for NetworkRowRender {
     type Output = NetworkRowOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
-        let emit_clone  = emit.clone();
         let signal_icon = signal_icon_name(props.strength);
         let subtitle    = if props.connected { t("wifi-connected") } else { String::new() };
         let btn_label   = if props.connected { t("wifi-disconnect") } else { t("wifi-connect") };
@@ -68,14 +67,17 @@ impl RenderFn for NetworkRowRender {
         row = row.suffix(VNode::custom_button(
             VCustomButton::new(VNode::label(VLabel::new(&btn_label)))
                 .css_class("flat")
-                .on_click(move || {
-                    if let Some(ref cb) = *emit_clone.borrow() {
-                        let ev = if connected {
-                            NetworkRowOutput::Disconnect
-                        } else {
-                            NetworkRowOutput::Connect
-                        };
-                        cb(ev);
+                .on_click({
+                    let emit = emit.clone();
+                    move || {
+                        if let Some(ref cb) = *emit.borrow() {
+                            let ev = if connected {
+                                NetworkRowOutput::Disconnect
+                            } else {
+                                NetworkRowOutput::Connect
+                            };
+                            cb(ev);
+                        }
                     }
                 }),
         ));
