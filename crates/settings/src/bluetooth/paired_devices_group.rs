@@ -75,7 +75,7 @@ impl PairedDevicesGroup {
                     };
                     cb(urn_clone.clone(), action.to_string(), params);
                 });
-                self.root.add(&row.root);
+                self.root.add(&row.widget());
                 self.rows.insert(urn_str, row);
             }
         }
@@ -90,7 +90,7 @@ impl PairedDevicesGroup {
 
         for key in to_remove {
             if let Some(row) = self.rows.remove(&key) {
-                self.root.remove(&row.root);
+                self.root.remove(&row.widget());
             }
         }
 

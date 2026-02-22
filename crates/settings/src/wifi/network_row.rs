@@ -3,21 +3,20 @@
 //! Dumb widget displaying a single WiFi network as an `AdwActionRow`
 //! with signal strength icon, security indicator, and connect button.
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
 
-use adw::prelude::*;
-use waft_ui_gtk::icons::IconWidget;
-use waft_ui_gtk::vdom::Component;
+use waft_ui_gtk::icons::Icon;
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
+use waft_ui_gtk::vdom::primitives::{VActionRow, VCustomButton, VIcon, VLabel};
 
 use crate::i18n::t;
 
 /// Props for creating or updating a network row.
 #[derive(Clone, PartialEq)]
 pub struct NetworkRowProps {
-    pub ssid: String,
-    pub strength: u8,
-    pub secure: bool,
+    pub ssid:      String,
+    pub strength:  u8,
+    pub secure:    bool,
     pub connected: bool,
 }
 
@@ -26,9 +25,6 @@ pub enum NetworkRowOutput {
     Connect,
     Disconnect,
 }
-
-/// Callback type for network row output events.
-type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(NetworkRowOutput)>>>>;
 
 fn signal_icon_name(strength: u8) -> &'static str {
     if strength > 75 {
@@ -42,83 +38,50 @@ fn signal_icon_name(strength: u8) -> &'static str {
     }
 }
 
-/// A single WiFi network row.
-pub struct NetworkRow {
-    pub root: adw::ActionRow,
-    signal_icon: IconWidget,
-    secure_icon: IconWidget,
-    action_button: gtk::Button,
-    connected: Rc<RefCell<bool>>,
-    output_cb: OutputCallback,
-}
+pub(crate) struct NetworkRowRender;
 
-impl Component for NetworkRow {
-    type Props = NetworkRowProps;
+impl RenderFn for NetworkRowRender {
+    type Props  = NetworkRowProps;
     type Output = NetworkRowOutput;
 
-    fn build(props: &Self::Props) -> Self {
-        let signal_icon = IconWidget::from_name(signal_icon_name(props.strength), 16);
-        let secure_icon = IconWidget::from_name("channel-secure-symbolic", 16);
+    fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
+        let emit_clone  = emit.clone();
+        let signal_icon = signal_icon_name(props.strength);
+        let subtitle    = if props.connected { t("wifi-connected") } else { String::new() };
+        let btn_label   = if props.connected { t("wifi-disconnect") } else { t("wifi-connect") };
 
-        let row = adw::ActionRow::builder().title(&props.ssid).build();
+        let mut row = VActionRow::new(&props.ssid)
+            .subtitle(&subtitle)
+            .prefix(VNode::icon(VIcon::new(
+                vec![Icon::parse(&Arc::from(signal_icon))],
+                16,
+            )));
 
-        row.add_prefix(signal_icon.widget());
-        row.add_suffix(secure_icon.widget());
-
-        let action_button = gtk::Button::builder()
-            .valign(gtk::Align::Center)
-            .css_classes(["flat"])
-            .build();
-        row.add_suffix(&action_button);
-
-        let connected = Rc::new(RefCell::new(props.connected));
-        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
-
-        let cb = output_cb.clone();
-        let conn = connected.clone();
-        action_button.connect_clicked(move |_| {
-            if let Some(ref callback) = *cb.borrow() {
-                if *conn.borrow() {
-                    callback(NetworkRowOutput::Disconnect);
-                } else {
-                    callback(NetworkRowOutput::Connect);
-                }
-            }
-        });
-
-        let network_row = Self {
-            root: row,
-            signal_icon,
-            secure_icon,
-            action_button,
-            connected,
-            output_cb,
-        };
-
-        network_row.update(props);
-        network_row
-    }
-
-    fn update(&self, props: &Self::Props) {
-        *self.connected.borrow_mut() = props.connected;
-        self.root.set_title(&props.ssid);
-        self.signal_icon.set_icon(signal_icon_name(props.strength));
-        self.secure_icon.widget().set_visible(props.secure);
-
-        if props.connected {
-            self.root.set_subtitle(&t("wifi-connected"));
-            self.action_button.set_label(&t("wifi-disconnect"));
-        } else {
-            self.root.set_subtitle("");
-            self.action_button.set_label(&t("wifi-connect"));
+        if props.secure {
+            row = row.suffix(VNode::icon(VIcon::new(
+                vec![Icon::Themed(Arc::from("network-wireless-encrypted-symbolic"))],
+                16,
+            )));
         }
-    }
 
-    fn widget(&self) -> gtk::Widget {
-        self.root.clone().upcast()
-    }
+        let connected = props.connected;
+        row = row.suffix(VNode::custom_button(
+            VCustomButton::new(VNode::label(VLabel::new(&btn_label)))
+                .css_class("flat")
+                .on_click(move || {
+                    if let Some(ref cb) = *emit_clone.borrow() {
+                        let ev = if connected {
+                            NetworkRowOutput::Disconnect
+                        } else {
+                            NetworkRowOutput::Connect
+                        };
+                        cb(ev);
+                    }
+                }),
+        ));
 
-    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
-        *self.output_cb.borrow_mut() = Some(Box::new(callback));
+        VNode::action_row(row)
     }
 }
+
+pub type NetworkRow = RenderComponent<NetworkRowRender>;

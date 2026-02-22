@@ -73,7 +73,7 @@ impl KnownNetworksGroup {
                         serde_json::Value::Null,
                     );
                 });
-                self.root.add(&row.root);
+                self.root.add(&row.widget());
                 self.rows.insert(urn_str, row);
             }
         }
@@ -88,7 +88,7 @@ impl KnownNetworksGroup {
 
         for key in to_remove {
             if let Some(row) = self.rows.remove(&key) {
-                self.root.remove(&row.root);
+                self.root.remove(&row.widget());
             }
         }
 
