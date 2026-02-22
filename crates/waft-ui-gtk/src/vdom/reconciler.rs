@@ -6,7 +6,7 @@ use gtk::prelude::*;
 use super::component::AnyWidget;
 use crate::icons::IconWidget;
 
-use super::primitives::{VBox, VButton, VIcon, VLabel, VSpinner, VSwitch};
+use super::primitives::{VBox, VButton, VCustomButton, VIcon, VLabel, VSpinner, VSwitch};
 use super::vnode::{ComponentDesc, VNode, VNodeKind};
 
 // -- Kind tag -----------------------------------------------------------------
@@ -21,6 +21,7 @@ enum KindTag {
     Switch,
     Spinner,
     Icon,
+    CustomButton,
 }
 
 // -- Live entries -------------------------------------------------------------
@@ -52,30 +53,37 @@ enum ReconcilerEntry {
     Icon {
         widget: IconWidget,
     },
+    CustomButton {
+        widget:           gtk::Button,
+        handler_id:       Option<glib::SignalHandlerId>,
+        child_reconciler: std::boxed::Box<Reconciler>,
+    },
 }
 
 impl ReconcilerEntry {
     fn widget(&self) -> gtk::Widget {
         match self {
-            Self::Component { component, .. } => component.widget(),
-            Self::Label   { widget }          => widget.clone().upcast(),
-            Self::Box     { widget, .. }      => widget.clone().upcast(),
-            Self::Button  { widget, .. }      => widget.clone().upcast(),
-            Self::Switch  { widget, .. }      => widget.clone().upcast(),
-            Self::Spinner { widget }          => widget.clone().upcast(),
-            Self::Icon    { widget }          => widget.widget().clone().upcast(),
+            Self::Component    { component, .. } => component.widget(),
+            Self::Label        { widget }        => widget.clone().upcast(),
+            Self::Box          { widget, .. }    => widget.clone().upcast(),
+            Self::Button       { widget, .. }    => widget.clone().upcast(),
+            Self::Switch       { widget, .. }    => widget.clone().upcast(),
+            Self::Spinner      { widget }        => widget.clone().upcast(),
+            Self::Icon         { widget }        => widget.widget().clone().upcast(),
+            Self::CustomButton { widget, .. }    => widget.clone().upcast(),
         }
     }
 
     fn kind_tag(&self) -> KindTag {
         match self {
-            Self::Component { type_id, .. } => KindTag::Component(*type_id),
-            Self::Label   { .. }            => KindTag::Label,
-            Self::Box     { .. }            => KindTag::Box,
-            Self::Button  { .. }            => KindTag::Button,
-            Self::Switch  { .. }            => KindTag::Switch,
-            Self::Spinner { .. }            => KindTag::Spinner,
-            Self::Icon    { .. }            => KindTag::Icon,
+            Self::Component    { type_id, .. } => KindTag::Component(*type_id),
+            Self::Label        { .. }          => KindTag::Label,
+            Self::Box          { .. }          => KindTag::Box,
+            Self::Button       { .. }          => KindTag::Button,
+            Self::Switch       { .. }          => KindTag::Switch,
+            Self::Spinner      { .. }          => KindTag::Spinner,
+            Self::Icon         { .. }          => KindTag::Icon,
+            Self::CustomButton { .. }          => KindTag::CustomButton,
         }
     }
 }
@@ -170,25 +178,27 @@ impl Reconciler {
 
 fn kind_tag_of(vnode: &VNode) -> KindTag {
     match &vnode.kind {
-        VNodeKind::Component(desc) => KindTag::Component(desc.type_id),
-        VNodeKind::Label(_)        => KindTag::Label,
-        VNodeKind::Box(_)          => KindTag::Box,
-        VNodeKind::Button(_)       => KindTag::Button,
-        VNodeKind::Switch(_)       => KindTag::Switch,
-        VNodeKind::Spinner(_)      => KindTag::Spinner,
-        VNodeKind::Icon(_)         => KindTag::Icon,
+        VNodeKind::Component(desc)  => KindTag::Component(desc.type_id),
+        VNodeKind::Label(_)         => KindTag::Label,
+        VNodeKind::Box(_)           => KindTag::Box,
+        VNodeKind::Button(_)        => KindTag::Button,
+        VNodeKind::Switch(_)        => KindTag::Switch,
+        VNodeKind::Spinner(_)       => KindTag::Spinner,
+        VNodeKind::Icon(_)          => KindTag::Icon,
+        VNodeKind::CustomButton(_)  => KindTag::CustomButton,
     }
 }
 
 fn build_entry(vnode: VNode) -> ReconcilerEntry {
     match vnode.kind {
-        VNodeKind::Component(desc)  => build_component_entry(desc),
-        VNodeKind::Label(vlabel)    => build_label_entry(vlabel),
-        VNodeKind::Box(vbox)        => build_box_entry(vbox),
-        VNodeKind::Button(vbtn)     => build_button_entry(vbtn),
-        VNodeKind::Switch(vsw)      => build_switch_entry(vsw),
-        VNodeKind::Spinner(vsp)     => build_spinner_entry(vsp),
-        VNodeKind::Icon(vi)         => build_icon_entry(vi),
+        VNodeKind::Component(desc)     => build_component_entry(desc),
+        VNodeKind::Label(vlabel)       => build_label_entry(vlabel),
+        VNodeKind::Box(vbox)           => build_box_entry(vbox),
+        VNodeKind::Button(vbtn)        => build_button_entry(vbtn),
+        VNodeKind::Switch(vsw)         => build_switch_entry(vsw),
+        VNodeKind::Spinner(vsp)        => build_spinner_entry(vsp),
+        VNodeKind::Icon(vi)            => build_icon_entry(vi),
+        VNodeKind::CustomButton(vcb)   => build_custom_button_entry(vcb),
     }
 }
 
@@ -220,6 +230,22 @@ fn build_button_entry(vbtn: VButton) -> ReconcilerEntry {
     widget.set_sensitive(vbtn.sensitive);
     let handler_id = connect_button_handler(&widget, &vbtn.on_click);
     ReconcilerEntry::Button { widget, handler_id }
+}
+
+fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
+    let child_container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let mut child_reconciler = std::boxed::Box::new(Reconciler::new(child_container.clone()));
+    child_reconciler.reconcile(std::iter::once(*vcb.child));
+
+    let widget = gtk::Button::new();
+    widget.set_child(Some(&child_container));
+    let classes: Vec<&str> = vcb.css_classes.iter().map(|s| s.as_str()).collect();
+    widget.set_css_classes(&classes);
+    widget.set_visible(vcb.visible);
+    widget.set_sensitive(vcb.sensitive);
+    let handler_id = connect_button_handler(&widget, &vcb.on_click);
+
+    ReconcilerEntry::CustomButton { widget, handler_id, child_reconciler }
 }
 
 fn build_icon_entry(vi: VIcon) -> ReconcilerEntry {
@@ -291,6 +317,16 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
         (ReconcilerEntry::Icon { widget }, VNodeKind::Icon(vi)) => {
             widget.update_icon(vi.hints);
             widget.widget().set_visible(vi.visible);
+        }
+        (ReconcilerEntry::CustomButton { widget, handler_id, child_reconciler },
+         VNodeKind::CustomButton(vcb)) => {
+            let classes: Vec<&str> = vcb.css_classes.iter().map(|s| s.as_str()).collect();
+            widget.set_css_classes(&classes);
+            widget.set_visible(vcb.visible);
+            widget.set_sensitive(vcb.sensitive);
+            if let Some(id) = handler_id.take() { widget.disconnect(id); }
+            *handler_id = connect_button_handler(widget, &vcb.on_click);
+            child_reconciler.reconcile(std::iter::once(*vcb.child));
         }
         // Mismatched arms are prevented by kind_tag_of check above; unreachable.
         _ => unreachable!("update_entry called with mismatched entry and VNodeKind"),

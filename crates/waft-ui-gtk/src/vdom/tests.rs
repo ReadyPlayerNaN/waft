@@ -3,10 +3,13 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
+use std::sync::Arc;
+
+use crate::icons::Icon;
 use crate::test_utils::init_gtk_for_tests;
 use crate::vdom::{Component, Reconciler, VNode};
 use super::{RenderCallback, RenderComponent, RenderFn};
-use super::primitives::{VBox, VButton, VLabel, VSwitch};
+use super::primitives::{VBox, VButton, VCustomButton, VIcon, VLabel, VSpinner, VSwitch};
 
 // ── Minimal test component ────────────────────────────────────────────────
 
@@ -369,6 +372,107 @@ fn test_render_component_emit_callback_wired() {
     assert!(!*fired.borrow());
 }
 
+// ── New/extended primitive tests ──────────────────────────────────────────
+
+fn test_spinner_builds_and_reflects_state() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::spinner(VSpinner::new(true))]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let spinner = container.first_child().unwrap().downcast::<gtk::Spinner>().unwrap();
+    assert!(spinner.is_spinning());
+    assert!(spinner.is_visible());
+}
+
+fn test_spinner_updates_state() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::spinner(VSpinner::new(true)).key("s")]);
+    let spinner = container.first_child().unwrap().downcast::<gtk::Spinner>().unwrap();
+    r.reconcile([VNode::spinner(VSpinner::new(false).visible(false)).key("s")]);
+    assert!(!spinner.is_spinning());
+    assert!(!spinner.is_visible());
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+fn test_icon_builds() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::icon(VIcon::new(
+        vec![Icon::Themed(Arc::from("dialog-information-symbolic"))],
+        16,
+    ))]);
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+fn test_icon_hidden_when_invisible() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::icon(VIcon::new(vec![], 16).visible(false))]);
+    let child = container.first_child().unwrap();
+    assert!(!child.is_visible());
+}
+
+fn test_vbox_valign_applied() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::vbox(
+        VBox::horizontal(4).valign(gtk::Align::Center),
+    )]);
+    let child = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    assert_eq!(child.valign(), gtk::Align::Center);
+}
+
+fn test_vswitch_css_classes_applied() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::switch(VSwitch::new(false).css_class("device-switch"))]);
+    let child = container.first_child().unwrap().downcast::<gtk::Switch>().unwrap();
+    assert!(child.css_classes().iter().any(|c| c == "device-switch"));
+}
+
+fn test_vlabel_ellipsize_applied() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::label(
+        VLabel::new("long text").ellipsize(gtk::pango::EllipsizeMode::End),
+    )]);
+    let child = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(child.ellipsize(), gtk::pango::EllipsizeMode::End);
+}
+
+fn test_custom_button_builds_with_child_vnode() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::custom_button(
+        VCustomButton::new(VNode::label(VLabel::new("inner"))),
+    )]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    let btn = container.first_child().unwrap().downcast::<gtk::Button>().unwrap();
+    let inner_box = btn.child().unwrap().downcast::<gtk::Box>().unwrap();
+    assert_eq!(inner_box.observe_children().n_items(), 1);
+}
+
+fn test_custom_button_updates_child_vnode() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::custom_button(
+        VCustomButton::new(VNode::label(VLabel::new("before")).key("l")),
+    ).key("cb")]);
+    let btn = container.first_child().unwrap().downcast::<gtk::Button>().unwrap();
+    let inner_box = btn.child().unwrap().downcast::<gtk::Box>().unwrap();
+    let label = inner_box.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(label.label(), "before");
+
+    r.reconcile([VNode::custom_button(
+        VCustomButton::new(VNode::label(VLabel::new("after")).key("l")),
+    ).key("cb")]);
+    assert_eq!(label.label(), "after");
+    assert_eq!(container.observe_children().n_items(), 1);
+}
+
+fn test_custom_button_css_classes() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::custom_button(
+        VCustomButton::new(VNode::label(VLabel::new("x")))
+            .css_classes(["flat", "device-row"]),
+    )]);
+    let btn = container.first_child().unwrap().downcast::<gtk::Button>().unwrap();
+    assert!(btn.css_classes().iter().any(|c| c == "flat"));
+    assert!(btn.css_classes().iter().any(|c| c == "device-row"));
+}
+
 // ── Single GTK test entry point ───────────────────────────────────────────
 //
 // GTK requires the OS main thread. Rust's test harness spawns each #[test]
@@ -408,4 +512,15 @@ fn all_reconciler_tests() {
     test_render_component_builds_from_render_fn();
     test_render_component_updates_on_props_change();
     test_render_component_emit_callback_wired();
+
+    test_spinner_builds_and_reflects_state();
+    test_spinner_updates_state();
+    test_icon_builds();
+    test_icon_hidden_when_invisible();
+    test_vbox_valign_applied();
+    test_vswitch_css_classes_applied();
+    test_vlabel_ellipsize_applied();
+    test_custom_button_builds_with_child_vnode();
+    test_custom_button_updates_child_vnode();
+    test_custom_button_css_classes();
 }

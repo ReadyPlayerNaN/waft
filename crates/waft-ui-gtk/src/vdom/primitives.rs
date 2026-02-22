@@ -2,6 +2,55 @@ use std::rc::Rc;
 
 use crate::icons::Icon;
 
+/// Descriptor for a `gtk::Button` with a `VNode` child tree (not a text label).
+///
+/// The button's content is a `VNode` reconciled inside a `gtk::Box` child
+/// container. Use `VButton` instead when all you need is a text label.
+pub struct VCustomButton {
+    pub child:       Box<super::VNode>,
+    pub css_classes: Vec<String>,
+    pub visible:     bool,
+    pub sensitive:   bool,
+    pub on_click:    Option<Rc<dyn Fn()>>,
+}
+
+impl VCustomButton {
+    pub fn new(child: super::VNode) -> Self {
+        Self {
+            child:       Box::new(child),
+            css_classes: Vec::new(),
+            visible:     true,
+            sensitive:   true,
+            on_click:    None,
+        }
+    }
+
+    pub fn css_class(mut self, class: impl Into<String>) -> Self {
+        self.css_classes.push(class.into());
+        self
+    }
+
+    pub fn css_classes(mut self, classes: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.css_classes.extend(classes.into_iter().map(|c| c.into()));
+        self
+    }
+
+    pub fn visible(mut self, v: bool) -> Self {
+        self.visible = v;
+        self
+    }
+
+    pub fn sensitive(mut self, v: bool) -> Self {
+        self.sensitive = v;
+        self
+    }
+
+    pub fn on_click(mut self, f: impl Fn() + 'static) -> Self {
+        self.on_click = Some(Rc::new(f));
+        self
+    }
+}
+
 /// Descriptor for a `gtk::Label` primitive VNode.
 pub struct VLabel {
     pub text:        String,
