@@ -10,7 +10,9 @@ use waft_protocol::entity;
 use waft_ui_gtk::icons::IconWidget;
 
 use super::{NetworkRow, ToggleEntry};
-use super::build_info_row;
+use crate::ui::feature_toggles::menu_info_row::{
+    FeatureToggleMenuInfoRow, FeatureToggleMenuInfoRowProps,
+};
 
 /// Update Ethernet connection profile menus for wired adapters.
 pub(super) fn update_ethernet_menus(
@@ -147,7 +149,7 @@ pub(super) fn update_wired_info_rows(
 
     // Remove old info rows
     for row in info_rows.drain(..) {
-        entry.menu.remove(&row);
+        entry.menu.remove(&row.widget());
     }
 
     // Only show info when connected with IP data
@@ -168,21 +170,30 @@ pub(super) fn update_wired_info_rows(
 
     // Local IP row
     let local_label = format!("{}/{}", ip.address, ip.prefix);
-    let local_row = build_info_row("Local IP", &local_label);
-    entry.menu.append(&local_row);
+    let local_row = FeatureToggleMenuInfoRow::new(FeatureToggleMenuInfoRowProps {
+        label: "Local IP".to_string(),
+        value: local_label,
+    });
+    entry.menu.append(&local_row.widget());
     info_rows.push(local_row);
 
     // Gateway row
     if let Some(ref gateway) = ip.gateway {
-        let gw_row = build_info_row("Gateway", gateway);
-        entry.menu.append(&gw_row);
+        let gw_row = FeatureToggleMenuInfoRow::new(FeatureToggleMenuInfoRowProps {
+            label: "Gateway".to_string(),
+            value: gateway.clone(),
+        });
+        entry.menu.append(&gw_row.widget());
         info_rows.push(gw_row);
     }
 
     // Public IP row
     let public_text = adapter.public_ip.as_deref().unwrap_or("Unavailable");
-    let public_row = build_info_row("Public IP", public_text);
-    entry.menu.append(&public_row);
+    let public_row = FeatureToggleMenuInfoRow::new(FeatureToggleMenuInfoRowProps {
+        label: "Public IP".to_string(),
+        value: public_text.to_string(),
+    });
+    entry.menu.append(&public_row.widget());
     info_rows.push(public_row);
 
     // Re-append settings button to keep it last in the menu
