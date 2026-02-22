@@ -14,7 +14,6 @@ use waft_client::EntityActionCallback;
 use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::BluetoothDevice;
-use waft_ui_gtk::bluetooth::device_row::device_type_icon;
 
 use super::device_row::{DeviceRow, DeviceRowOutput, DeviceRowProps};
 
@@ -116,7 +115,7 @@ impl DiscoveredDevicesGroup {
 
             let props = DeviceRowProps {
                 name: device.name.clone(),
-                device_icon: device_type_icon(&device.device_type).to_string(),
+                device_type: device.device_type.clone(),
                 connection_state: device.connection_state,
                 paired: false,
                 battery_percentage: device.battery_percentage,
@@ -162,15 +161,13 @@ impl DiscoveredDevicesGroup {
             self.search_button
                 .set_tooltip_text(Some(&t("bt-adapter-stop-scanning")));
             if self.rows.is_empty() {
-                self.root
-                    .set_description(Some(&t("bt-searching-devices")));
+                self.root.set_description(Some(&t("bt-searching-devices")));
             } else {
                 self.root.set_description(None::<&str>);
             }
         } else {
             self.spinner.stop();
-            self.search_button
-                .set_icon_name("system-search-symbolic");
+            self.search_button.set_icon_name("system-search-symbolic");
             self.search_button
                 .set_tooltip_text(Some(&t("bt-adapter-start-scanning")));
             if self.rows.is_empty() {

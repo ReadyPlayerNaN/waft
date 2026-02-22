@@ -4,7 +4,7 @@
 //! Hidden until `apply_props` is called with data.
 
 use adw::prelude::*;
-use waft_ui_gtk::widgets::icon::IconWidget;
+use waft_ui_gtk::icons::IconWidget;
 
 use crate::i18n::t;
 

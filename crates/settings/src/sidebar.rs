@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk::glib;
-use waft_ui_gtk::widgets::icon::IconWidget;
+use waft_ui_gtk::icons::IconWidget;
 
 use crate::i18n::t;
 use crate::search_index::SearchIndex;

@@ -13,7 +13,7 @@ use waft_protocol::entity::audio::{
     AudioCard, AudioCardSink, AudioCardSource, AudioDeviceKind, AudioPort,
 };
 use waft_ui_gtk::audio::icon::audio_device_icon;
-use waft_ui_gtk::widgets::icon::IconWidget;
+use waft_ui_gtk::icons::IconWidget;
 
 use crate::i18n::{t, t_args};
 
@@ -94,11 +94,8 @@ struct SinkRow {
     info_row: adw::ActionRow,
     mute_button: gtk::Button,
     default_button: gtk::Button,
-    /// Port combo row (hidden when <=1 port).
-    port_row: adw::ComboRow,
-    port_model: gtk::StringList,
-    /// Stored port names for mapping combo index -> port name.
-    port_names: Rc<RefCell<Vec<String>>>,
+    /// Individual port rows — always visible, one per port.
+    port_rows: Vec<PortRow>,
 }
 
 /// A per-source row widget with interaction tracking state.
@@ -116,9 +113,8 @@ struct SourceRow {
     info_row: adw::ActionRow,
     mute_button: gtk::Button,
     default_button: gtk::Button,
-    port_row: adw::ComboRow,
-    port_model: gtk::StringList,
-    port_names: Rc<RefCell<Vec<String>>>,
+    /// Individual port rows — always visible, one per port.
+    port_rows: Vec<PortRow>,
 }
 
 impl SinkRow {
@@ -150,6 +146,89 @@ impl SourceRow {
     }
 }
 
+/// A port row widget for an individual sink or source port.
+///
+/// Always visible, shows connected/disconnected status and a checkmark
+/// when this port is the active port. Activatable only when connected.
+struct PortRow {
+    root: adw::ActionRow,
+    port_name: String,
+    /// Trailing icon indicating connected/disconnected state (dimmed when disconnected).
+    status_icon: IconWidget,
+    /// Trailing checkmark icon — visible only when this port is the active port.
+    active_icon: IconWidget,
+}
+
+impl PortRow {
+    /// Create a new port row.
+    ///
+    /// `on_activate` is called with the port's internal name when the row is
+    /// activated (clicked). The closure produces the correct `AudioDeviceCardOutput`
+    /// variant (SetSinkPort or SetSourcePort) for the parent device.
+    fn new<F>(
+        port: &AudioPort,
+        active_port: Option<&str>,
+        on_activate: F,
+        output_cb: &OutputCallback,
+    ) -> Self
+    where
+        F: Fn(String) -> AudioDeviceCardOutput + 'static,
+    {
+        let row = adw::ActionRow::builder()
+            .title(&port.description)
+            .build();
+
+        let status_icon = IconWidget::from_name("audio-card-symbolic", 16);
+        row.add_suffix(status_icon.widget());
+
+        let active_icon = IconWidget::from_name("object-select-symbolic", 16);
+        row.add_suffix(active_icon.widget());
+
+        // Wire activation: only fires when the row is activatable (i.e. port is connected).
+        {
+            let cb = output_cb.clone();
+            let port_name = port.name.clone();
+            row.connect_activated(move |_| {
+                if let Some(ref callback) = *cb.borrow() {
+                    callback(on_activate(port_name.clone()));
+                }
+            });
+        }
+
+        let this = Self {
+            root: row,
+            port_name: port.name.clone(),
+            status_icon,
+            active_icon,
+        };
+        this.apply(port, active_port);
+        this
+    }
+
+    /// Update the row to reflect the current port state.
+    fn apply(&self, port: &AudioPort, active_port: Option<&str>) {
+        let subtitle = if port.available {
+            t("audio-port-connected")
+        } else {
+            t("audio-port-disconnected")
+        };
+        self.root.set_subtitle(&subtitle);
+
+        if port.available {
+            self.status_icon.widget().remove_css_class("dim-label");
+            self.root.set_activatable(true);
+            self.root.remove_css_class("dim-label");
+        } else {
+            self.status_icon.widget().add_css_class("dim-label");
+            self.root.set_activatable(false);
+            self.root.add_css_class("dim-label");
+        }
+
+        let is_active = active_port == Some(self.port_name.as_str());
+        self.active_icon.widget().set_visible(is_active);
+    }
+}
+
 /// A physical audio card widget for the settings page.
 pub struct AudioDeviceCard {
     pub root: adw::PreferencesGroup,
@@ -175,6 +254,15 @@ impl AudioDeviceCard {
         let root = adw::PreferencesGroup::builder()
             .title(&card.name)
             .build();
+
+        // Device-type icon in the group header (right side via header_suffix).
+        {
+            let header_icon = IconWidget::from_name(
+                audio_device_icon(&card.device_type, AudioDeviceKind::Output),
+                24,
+            );
+            root.set_header_suffix(Some(header_icon.widget()));
+        }
 
         // Profile combo row
         let profile_model = gtk::StringList::new(&[]);
@@ -325,7 +413,7 @@ impl AudioDeviceCard {
 
         // Update existing rows in place, create new rows for new sinks
         for sink in sinks {
-            if let Some(existing) = rows.iter().find(|r| r.sink_name == sink.sink_name) {
+            if let Some(existing) = rows.iter_mut().find(|r| r.sink_name == sink.sink_name) {
                 // Volume — respects interaction guard
                 existing.set_volume(sink.volume);
 
@@ -355,18 +443,30 @@ impl AudioDeviceCard {
                     existing.default_button.set_visible(true);
                 }
 
-                // Port selection — guarded by `updating` flag to suppress the
-                // combo's `selected-notify` while we programmatically set it.
-                *self.updating.borrow_mut() = true;
-                Self::update_port_row(
-                    &existing.port_row,
-                    &existing.port_model,
-                    &existing.port_names,
-                    &sink.ports,
-                    sink.active_port.as_deref(),
-                );
-                existing.port_row.set_visible(sink.ports.len() > 1);
-                *self.updating.borrow_mut() = false;
+                // Port rows — update in place if count unchanged, rebuild otherwise.
+                if existing.port_rows.len() == sink.ports.len() {
+                    for (pr, port) in existing.port_rows.iter().zip(sink.ports.iter()) {
+                        pr.apply(port, sink.active_port.as_deref());
+                    }
+                } else {
+                    for pr in &existing.port_rows {
+                        existing.root.remove(pr.root.upcast_ref::<gtk::Widget>());
+                    }
+                    existing.port_rows = sink.ports.iter().map(|port| {
+                        let sink_name = existing.sink_name.clone();
+                        let pr = PortRow::new(
+                            port,
+                            sink.active_port.as_deref(),
+                            move |port_name| AudioDeviceCardOutput::SetSinkPort {
+                                sink: sink_name.clone(),
+                                port: port_name,
+                            },
+                            &self.output_cb,
+                        );
+                        existing.root.append(pr.root.upcast_ref::<gtk::Widget>());
+                        pr
+                    }).collect();
+                }
             } else {
                 let row = self.build_sink_row(sink);
                 self.sinks_box.append(&row.root);
@@ -394,7 +494,7 @@ impl AudioDeviceCard {
 
         // Update existing rows in place, create new rows for new sources
         for source in sources {
-            if let Some(existing) = rows.iter().find(|r| r.source_name == source.source_name) {
+            if let Some(existing) = rows.iter_mut().find(|r| r.source_name == source.source_name) {
                 existing.set_volume(source.volume);
 
                 let mute_icon = if source.muted {
@@ -421,16 +521,30 @@ impl AudioDeviceCard {
                     existing.default_button.set_visible(true);
                 }
 
-                *self.updating.borrow_mut() = true;
-                Self::update_port_row(
-                    &existing.port_row,
-                    &existing.port_model,
-                    &existing.port_names,
-                    &source.ports,
-                    source.active_port.as_deref(),
-                );
-                existing.port_row.set_visible(source.ports.len() > 1);
-                *self.updating.borrow_mut() = false;
+                // Port rows — update in place if count unchanged, rebuild otherwise.
+                if existing.port_rows.len() == source.ports.len() {
+                    for (pr, port) in existing.port_rows.iter().zip(source.ports.iter()) {
+                        pr.apply(port, source.active_port.as_deref());
+                    }
+                } else {
+                    for pr in &existing.port_rows {
+                        existing.root.remove(pr.root.upcast_ref::<gtk::Widget>());
+                    }
+                    existing.port_rows = source.ports.iter().map(|port| {
+                        let source_name = existing.source_name.clone();
+                        let pr = PortRow::new(
+                            port,
+                            source.active_port.as_deref(),
+                            move |port_name| AudioDeviceCardOutput::SetSourcePort {
+                                source: source_name.clone(),
+                                port: port_name,
+                            },
+                            &self.output_cb,
+                        );
+                        existing.root.append(pr.root.upcast_ref::<gtk::Widget>());
+                        pr
+                    }).collect();
+                }
             } else {
                 let row = self.build_source_row(source);
                 self.sources_box.append(&row.root);
@@ -515,18 +629,21 @@ impl AudioDeviceCard {
         slider_row.append(&scale_wrapper);
         root.append(&slider_row);
 
-        // Port combo row (if > 1 port)
-        let port_model = gtk::StringList::new(&[]);
-        let port_row = adw::ComboRow::builder()
-            .title(t("audio-card-port"))
-            .model(&port_model)
-            .build();
-
-        let port_names_vec =
-            Self::init_port_row(&port_row, &port_model, &sink.ports, sink.active_port.as_deref());
-        let port_names: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(port_names_vec));
-        port_row.set_visible(sink.ports.len() > 1);
-        root.append(&port_row);
+        // Port rows — one adw::ActionRow per port, always visible.
+        let port_rows: Vec<PortRow> = sink.ports.iter().map(|port| {
+            let sink_name = sink.sink_name.clone();
+            let pr = PortRow::new(
+                port,
+                sink.active_port.as_deref(),
+                move |port_name| AudioDeviceCardOutput::SetSinkPort {
+                    sink: sink_name.clone(),
+                    port: port_name,
+                },
+                &self.output_cb,
+            );
+            root.append(pr.root.upcast_ref::<gtk::Widget>());
+            pr
+        }).collect();
 
         // Default indicator
         if sink.default {
@@ -692,29 +809,6 @@ impl AudioDeviceCard {
             });
         }
 
-        // Wire port combo
-        {
-            let cb = self.output_cb.clone();
-            let updating_ref = self.updating.clone();
-            let name = sink_name.clone();
-            let port_names_clone = port_names.clone();
-            port_row.connect_selected_notify(move |combo| {
-                if *updating_ref.borrow() {
-                    return;
-                }
-                let idx = combo.selected() as usize;
-                let names = port_names_clone.borrow();
-                if let Some(port_name) = names.get(idx)
-                    && let Some(ref callback) = *cb.borrow()
-                {
-                    callback(AudioDeviceCardOutput::SetSinkPort {
-                        sink: name.clone(),
-                        port: port_name.clone(),
-                    });
-                }
-            });
-        }
-
         SinkRow {
             root,
             sink_name: sink.sink_name.clone(),
@@ -727,9 +821,7 @@ impl AudioDeviceCard {
             info_row,
             mute_button,
             default_button,
-            port_row,
-            port_model,
-            port_names,
+            port_rows,
         }
     }
 
@@ -803,22 +895,21 @@ impl AudioDeviceCard {
         slider_row.append(&scale_wrapper);
         root.append(&slider_row);
 
-        // Port combo row
-        let port_model = gtk::StringList::new(&[]);
-        let port_row = adw::ComboRow::builder()
-            .title(t("audio-card-port"))
-            .model(&port_model)
-            .build();
-
-        let port_names_vec = Self::init_port_row(
-            &port_row,
-            &port_model,
-            &source.ports,
-            source.active_port.as_deref(),
-        );
-        let port_names: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(port_names_vec));
-        port_row.set_visible(source.ports.len() > 1);
-        root.append(&port_row);
+        // Port rows — one adw::ActionRow per port, always visible.
+        let port_rows: Vec<PortRow> = source.ports.iter().map(|port| {
+            let source_name = source.source_name.clone();
+            let pr = PortRow::new(
+                port,
+                source.active_port.as_deref(),
+                move |port_name| AudioDeviceCardOutput::SetSourcePort {
+                    source: source_name.clone(),
+                    port: port_name,
+                },
+                &self.output_cb,
+            );
+            root.append(pr.root.upcast_ref::<gtk::Widget>());
+            pr
+        }).collect();
 
         // Default indicator
         if source.default {
@@ -974,29 +1065,6 @@ impl AudioDeviceCard {
             });
         }
 
-        // Wire port combo
-        {
-            let cb = self.output_cb.clone();
-            let updating_ref = self.updating.clone();
-            let name = source_name.clone();
-            let port_names_clone = port_names.clone();
-            port_row.connect_selected_notify(move |combo| {
-                if *updating_ref.borrow() {
-                    return;
-                }
-                let idx = combo.selected() as usize;
-                let names = port_names_clone.borrow();
-                if let Some(port_name) = names.get(idx)
-                    && let Some(ref callback) = *cb.borrow()
-                {
-                    callback(AudioDeviceCardOutput::SetSourcePort {
-                        source: name.clone(),
-                        port: port_name.clone(),
-                    });
-                }
-            });
-        }
-
         SourceRow {
             root,
             source_name: source.source_name.clone(),
@@ -1009,53 +1077,8 @@ impl AudioDeviceCard {
             info_row,
             mute_button,
             default_button,
-            port_row,
-            port_model,
-            port_names,
+            port_rows,
         }
-    }
-
-    /// Populate a port combo row for the first time and return the port name list.
-    fn init_port_row(
-        row: &adw::ComboRow,
-        model: &gtk::StringList,
-        ports: &[AudioPort],
-        active_port: Option<&str>,
-    ) -> Vec<String> {
-        let descriptions: Vec<&str> = ports.iter().map(|p| p.description.as_str()).collect();
-        model.splice(0, model.n_items(), &descriptions);
-
-        let names: Vec<String> = ports.iter().map(|p| p.name.clone()).collect();
-
-        if let Some(active) = active_port
-            && let Some(idx) = names.iter().position(|n| n == active)
-        {
-            row.set_selected(idx as u32);
-        }
-
-        names
-    }
-
-    /// Update a port combo row in place, refreshing the names vec.
-    fn update_port_row(
-        row: &adw::ComboRow,
-        model: &gtk::StringList,
-        port_names: &Rc<RefCell<Vec<String>>>,
-        ports: &[AudioPort],
-        active_port: Option<&str>,
-    ) {
-        let descriptions: Vec<&str> = ports.iter().map(|p| p.description.as_str()).collect();
-        model.splice(0, model.n_items(), &descriptions);
-
-        let names: Vec<String> = ports.iter().map(|p| p.name.clone()).collect();
-
-        if let Some(active) = active_port
-            && let Some(idx) = names.iter().position(|n| n == active)
-        {
-            row.set_selected(idx as u32);
-        }
-
-        *port_names.borrow_mut() = names;
     }
 
     /// Register a callback for card output events.

@@ -8,14 +8,14 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_protocol::entity::bluetooth::ConnectionState;
-use waft_ui_gtk::widgets::icon::IconWidget;
+use waft_ui_gtk::bluetooth::device_icon::BluetoothDeviceIcon;
 
 use crate::i18n::{t, t_args};
 
 /// Props for creating or updating a device row.
 pub struct DeviceRowProps {
     pub name: String,
-    pub device_icon: String,
+    pub device_type: String,
     pub connection_state: ConnectionState,
     pub paired: bool,
     pub battery_percentage: Option<u8>,
@@ -38,7 +38,7 @@ type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(DeviceRowOutput)>>>>;
 /// A single Bluetooth device row.
 pub struct DeviceRow {
     pub root: adw::ActionRow,
-    icon: IconWidget,
+    icon: BluetoothDeviceIcon,
     connect_button: gtk::Button,
     remove_button: gtk::Button,
     pair_button: gtk::Button,
@@ -47,8 +47,7 @@ pub struct DeviceRow {
 
 impl DeviceRow {
     pub fn new(props: &DeviceRowProps) -> Self {
-        let icon = IconWidget::from_name(&props.device_icon, 16);
-
+        let icon = BluetoothDeviceIcon::new(&props.device_type, Some(32));
         let row = adw::ActionRow::builder().title(&props.name).build();
 
         row.add_prefix(icon.widget());
@@ -118,7 +117,7 @@ impl DeviceRow {
     /// Update the row to reflect new device state.
     pub fn apply_props(&self, props: &DeviceRowProps) {
         self.root.set_title(&props.name);
-        self.icon.set_icon(&props.device_icon);
+        self.icon.set_device_type(&props.device_type);
 
         if props.paired {
             // Paired device: show connect/remove buttons, hide pair button
@@ -136,9 +135,7 @@ impl DeviceRow {
                     (text, t("bt-disconnect"), true)
                 }
                 ConnectionState::Connecting => (t("bt-connecting"), t("bt-cancel"), false),
-                ConnectionState::Disconnecting => {
-                    (t("bt-disconnecting"), t("bt-wait"), false)
-                }
+                ConnectionState::Disconnecting => (t("bt-disconnecting"), t("bt-wait"), false),
                 ConnectionState::Disconnected => (t("bt-disconnected"), t("bt-connect"), true),
             };
 

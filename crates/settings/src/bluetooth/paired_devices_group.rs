@@ -11,7 +11,6 @@ use waft_client::EntityActionCallback;
 use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::BluetoothDevice;
-use waft_ui_gtk::bluetooth::device_row::device_type_icon;
 
 use super::device_row::{DeviceRow, DeviceRowOutput, DeviceRowProps};
 
@@ -51,7 +50,7 @@ impl PairedDevicesGroup {
 
             let props = DeviceRowProps {
                 name: device.name.clone(),
-                device_icon: device_type_icon(&device.device_type).to_string(),
+                device_type: device.device_type.clone(),
                 connection_state: device.connection_state,
                 paired: true,
                 battery_percentage: device.battery_percentage,
