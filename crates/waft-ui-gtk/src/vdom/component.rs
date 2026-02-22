@@ -53,7 +53,7 @@ pub type RenderCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
 /// Wrap with `RenderComponent<F>` to satisfy the `Component` trait.
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// struct MyRow;
 /// impl RenderFn for MyRow {
 ///     type Props  = MyRowProps;

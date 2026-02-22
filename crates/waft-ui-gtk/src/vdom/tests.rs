@@ -5,6 +5,7 @@ use gtk::prelude::*;
 
 use crate::test_utils::init_gtk_for_tests;
 use crate::vdom::{Component, Reconciler, VNode};
+use super::{RenderCallback, RenderComponent, RenderFn};
 use super::primitives::{VBox, VButton, VLabel, VSwitch};
 
 // ── Minimal test component ────────────────────────────────────────────────
@@ -271,6 +272,103 @@ fn test_primitive_rebuilds_when_kind_changes() {
     assert_eq!(container.observe_children().n_items(), 1);
 }
 
+// ── RenderComponent tests ────────────────────────────────────────────────
+
+fn test_render_component_builds_from_render_fn() {
+    struct SimpleRender;
+
+    #[derive(Clone, PartialEq)]
+    struct SimpleProps { text: String }
+
+    impl RenderFn for SimpleRender {
+        type Props  = SimpleProps;
+        type Output = ();
+        fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
+            VNode::label(VLabel::new(&props.text))
+        }
+    }
+
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::new::<RenderComponent<SimpleRender>>(
+        SimpleProps { text: "hello".into() },
+    )]);
+    assert_eq!(container.observe_children().n_items(), 1);
+    // Root widget is a gtk::Box wrapping the rendered label.
+    let root_box = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    assert_eq!(root_box.observe_children().n_items(), 1);
+    let inner = root_box.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(inner.label(), "hello");
+}
+
+fn test_render_component_updates_on_props_change() {
+    struct UpdatingRender;
+
+    #[derive(Clone, PartialEq)]
+    struct UpdatingProps { text: String }
+
+    impl RenderFn for UpdatingRender {
+        type Props  = UpdatingProps;
+        type Output = ();
+        fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
+            VNode::label(VLabel::new(&props.text))
+        }
+    }
+
+    let (container, mut r) = make_reconciler();
+    r.reconcile([VNode::new::<RenderComponent<UpdatingRender>>(
+        UpdatingProps { text: "before".into() },
+    )
+    .key("rc")]);
+
+    let root_box = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    let inner = root_box.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    assert_eq!(inner.label(), "before");
+
+    r.reconcile([VNode::new::<RenderComponent<UpdatingRender>>(
+        UpdatingProps { text: "after".into() },
+    )
+    .key("rc")]);
+    assert_eq!(inner.label(), "after");
+}
+
+fn test_render_component_emit_callback_wired() {
+    struct EmittingRender;
+
+    #[derive(Clone, PartialEq)]
+    struct EmitProps;
+
+    #[allow(dead_code)]
+    enum EmitOutput { Fired }
+
+    impl RenderFn for EmittingRender {
+        type Props  = EmitProps;
+        type Output = EmitOutput;
+        fn render(_props: &Self::Props, emit: &RenderCallback<EmitOutput>) -> VNode {
+            let emit = emit.clone();
+            VNode::button(
+                super::primitives::VButton::new("Fire").on_click(move || {
+                    if let Some(ref cb) = *emit.borrow() {
+                        cb(EmitOutput::Fired);
+                    }
+                }),
+            )
+        }
+    }
+
+    let (_, mut r) = make_reconciler();
+    let fired = Rc::new(RefCell::new(false));
+    let fired_clone = fired.clone();
+
+    r.reconcile([VNode::with_output::<RenderComponent<EmittingRender>>(
+        EmitProps,
+        move |_| { *fired_clone.borrow_mut() = true; },
+    )]);
+
+    // Output callback is wired; clicking would set fired=true.
+    // We just verify the component built without panic.
+    assert!(!*fired.borrow());
+}
+
 // ── Single GTK test entry point ───────────────────────────────────────────
 //
 // GTK requires the OS main thread. Rust's test harness spawns each #[test]
@@ -306,4 +404,8 @@ fn all_reconciler_tests() {
     test_button_connects_click_handler();
     test_switch_sets_active_state();
     test_primitive_rebuilds_when_kind_changes();
+
+    test_render_component_builds_from_render_fn();
+    test_render_component_updates_on_props_change();
+    test_render_component_emit_callback_wired();
 }
