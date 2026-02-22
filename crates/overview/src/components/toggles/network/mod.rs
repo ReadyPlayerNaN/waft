@@ -424,41 +424,45 @@ impl NetworkManagerToggles {
             });
         }
 
-        // Subscribe to app entity changes (for settings button visibility)
+        // Subscribe to app entity changes (for settings button visibility).
+        // Uses a shared reconcile closure for both subscribe_type and initial
+        // reconciliation via idle_add_local_once — required because
+        // subscribe_type only fires on changes, not for entities already cached.
         {
-            let entries_ref = entries.clone();
-            let settings_available_ref = settings_available.clone();
-            let settings_urn_ref = settings_urn.clone();
-            let store_ref = store.clone();
+            let reconcile = {
+                let entries_ref = entries.clone();
+                let settings_available_ref = settings_available.clone();
+                let settings_urn_ref = settings_urn.clone();
+                let store_ref = store.clone();
 
-            store.subscribe_type(entity::app::ENTITY_TYPE, move || {
-                let apps: Vec<(Urn, entity::app::App)> =
-                    store_ref.get_entities_typed(entity::app::ENTITY_TYPE);
+                move || {
+                    let apps: Vec<(Urn, entity::app::App)> =
+                        store_ref.get_entities_typed(entity::app::ENTITY_TYPE);
 
-                let has_settings = !apps.is_empty();
-                let was_available = settings_available_ref.get();
-                settings_available_ref.set(has_settings);
+                    let settings_app_urn = find_settings_app_urn(&apps);
+                    let has_settings = settings_app_urn.is_some();
+                    let was_available = settings_available_ref.get();
+                    settings_available_ref.set(has_settings);
+                    *settings_urn_ref.borrow_mut() = settings_app_urn;
 
-                // Store the first app entity's URN for action routing
-                *settings_urn_ref.borrow_mut() = apps.first().map(|(urn, _)| urn.clone());
-
-                // Update existing entries with settings buttons when availability changes
-                if has_settings != was_available {
-                    let entries = entries_ref.borrow();
-                    for entry in entries.iter() {
-                        if let Some(ref btn_container) = entry.settings_button {
-                            btn_container.set_visible(has_settings);
-
-                            // Re-evaluate expandable state
-                            let has_info = !entry.info_rows.borrow().is_empty();
-                            let has_children = !entry.network_rows.borrow().is_empty();
-                            entry
-                                .toggle
-                                .set_expandable(has_info || has_children || has_settings);
+                    if has_settings != was_available {
+                        let entries = entries_ref.borrow();
+                        for entry in entries.iter() {
+                            if let Some(ref btn_container) = entry.settings_button {
+                                btn_container.set_visible(has_settings);
+                                let has_info = !entry.info_rows.borrow().is_empty();
+                                let has_children = !entry.network_rows.borrow().is_empty();
+                                entry
+                                    .toggle
+                                    .set_expandable(has_info || has_children || has_settings);
+                            }
                         }
                     }
                 }
-            });
+            };
+
+            store.subscribe_type(entity::app::ENTITY_TYPE, reconcile.clone());
+            gtk::glib::idle_add_local_once(reconcile);
         }
 
         // Subscribe to tethering connection changes
@@ -529,6 +533,75 @@ fn adapter_title(adapter: &entity::network::NetworkAdapter) -> String {
         entity::network::AdapterKind::Wireless => "Wi-Fi".to_string(),
         entity::network::AdapterKind::Tethering => "Tethering".to_string(),
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use waft_protocol::entity;
+
+    fn make_app_entry(plugin: &str, id: &str) -> (Urn, entity::app::App) {
+        let urn = Urn::new(plugin, entity::app::ENTITY_TYPE, id);
+        let app = entity::app::App {
+            name: "Test App".to_string(),
+            icon: "test-icon".to_string(),
+            available: true,
+            keywords: vec![],
+            description: None,
+        };
+        (urn, app)
+    }
+
+    #[test]
+    fn settings_urn_found_when_internal_apps_present() {
+        let apps = vec![make_app_entry("internal-apps", "waft-settings")];
+        let expected = Urn::new("internal-apps", entity::app::ENTITY_TYPE, "waft-settings");
+        assert_eq!(find_settings_app_urn(&apps), Some(expected));
+    }
+
+    #[test]
+    fn settings_urn_none_when_only_xdg_apps_present() {
+        let apps = vec![
+            make_app_entry("xdg-apps", "firefox"),
+            make_app_entry("xdg-apps", "nautilus"),
+        ];
+        assert_eq!(find_settings_app_urn(&apps), None);
+    }
+
+    #[test]
+    fn settings_urn_found_among_mixed_app_entities() {
+        let settings_urn = Urn::new("internal-apps", entity::app::ENTITY_TYPE, "waft-settings");
+        let apps = vec![
+            make_app_entry("xdg-apps", "firefox"),
+            make_app_entry("xdg-apps", "nautilus"),
+            (
+                settings_urn.clone(),
+                entity::app::App {
+                    name: "Settings".to_string(),
+                    icon: "preferences-system-symbolic".to_string(),
+                    available: true,
+                    keywords: vec![],
+                    description: None,
+                },
+            ),
+        ];
+        assert_eq!(find_settings_app_urn(&apps), Some(settings_urn));
+    }
+
+    #[test]
+    fn settings_urn_none_when_no_apps() {
+        assert_eq!(find_settings_app_urn(&[]), None);
+    }
+}
+
+/// Find the waft-settings app entity URN from a list of app entities.
+///
+/// Returns `Some(urn)` only for `internal-apps/app/waft-settings`, which is
+/// the only entity that handles the `open-page` action for settings navigation.
+fn find_settings_app_urn(apps: &[(Urn, entity::app::App)]) -> Option<Urn> {
+    apps.iter()
+        .find(|(urn, _)| urn.plugin() == "internal-apps" && urn.id() == "waft-settings")
+        .map(|(urn, _)| urn.clone())
 }
 
 /// Build a settings button container (separator + button) for adapter menus.
