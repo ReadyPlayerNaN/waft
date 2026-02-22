@@ -70,6 +70,7 @@ impl Reconciler {
         }
 
         // 2. Update existing entries and insert new ones.
+        // TODO: reorder pre-existing widgets to match new order when required.
         for (key, vnode) in keyed {
             match self.children.iter().position(|(k, _)| k == &key) {
                 Some(pos) => {
