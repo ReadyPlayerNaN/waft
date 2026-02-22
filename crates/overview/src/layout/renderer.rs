@@ -26,11 +26,12 @@ use crate::components::session_actions::SessionActionsComponent;
 use crate::components::system_actions::SystemActionsComponent;
 use crate::components::toggles::backup::BackupToggle;
 use crate::components::toggles::bluetooth::BluetoothToggles;
-use crate::components::toggles::caffeine::CaffeineToggle;
-use crate::components::toggles::dark_mode::DarkModeToggle;
-use crate::components::toggles::dnd::DoNotDisturbToggle;
+use crate::components::toggles::caffeine::caffeine_toggle;
+use crate::components::toggles::dark_mode::dark_mode_toggle;
+use crate::components::toggles::dnd::dnd_toggle;
 use crate::components::toggles::network::NetworkManagerToggles;
-use crate::components::toggles::night_light::NightLightToggle;
+use crate::components::toggles::night_light::night_light_toggle;
+use crate::components::toggles::simple_toggle::SimpleToggle;
 use crate::components::weather::WeatherComponent;
 use crate::layout::model::LayoutNode;
 use crate::layout::types::WidgetFeatureToggle;
@@ -359,7 +360,7 @@ fn render_feature_toggle_grid(
             match child {
                 LayoutNode::Component { name } => match name.as_str() {
                     "DndToggle" => {
-                        let t = Rc::new(DoNotDisturbToggle::new(
+                        let t = Rc::new(dnd_toggle(
                             &ctx.store,
                             &ctx.action_callback,
                             dynamic_rebuild.clone(),
@@ -368,7 +369,7 @@ fn render_feature_toggle_grid(
                         keep.push(Box::new(t));
                     }
                     "CaffeineToggle" => {
-                        let t = Rc::new(CaffeineToggle::new(
+                        let t = Rc::new(caffeine_toggle(
                             &ctx.store,
                             &ctx.action_callback,
                             dynamic_rebuild.clone(),
@@ -377,7 +378,7 @@ fn render_feature_toggle_grid(
                         keep.push(Box::new(t));
                     }
                     "DarkModeToggle" => {
-                        let t = Rc::new(DarkModeToggle::new(
+                        let t = Rc::new(dark_mode_toggle(
                             &ctx.store,
                             &ctx.action_callback,
                             dynamic_rebuild.clone(),
@@ -386,7 +387,7 @@ fn render_feature_toggle_grid(
                         keep.push(Box::new(t));
                     }
                     "NightLightToggle" => {
-                        let t = Rc::new(NightLightToggle::new(
+                        let t = Rc::new(night_light_toggle(
                             &ctx.store,
                             &ctx.action_callback,
                             dynamic_rebuild.clone(),
@@ -483,27 +484,9 @@ impl DynamicToggleSource for NetworkManagerToggles {
     }
 }
 
-impl DynamicToggleSource for DarkModeToggle {
+impl DynamicToggleSource for SimpleToggle {
     fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
-        DarkModeToggle::as_feature_toggles(self)
-    }
-}
-
-impl DynamicToggleSource for NightLightToggle {
-    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
-        NightLightToggle::as_feature_toggles(self)
-    }
-}
-
-impl DynamicToggleSource for CaffeineToggle {
-    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
-        CaffeineToggle::as_feature_toggles(self)
-    }
-}
-
-impl DynamicToggleSource for DoNotDisturbToggle {
-    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
-        DoNotDisturbToggle::as_feature_toggles(self)
+        SimpleToggle::as_feature_toggles(self)
     }
 }
 
