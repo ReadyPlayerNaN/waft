@@ -1,3 +1,4 @@
+use gtk::prelude::*;
 use adw::prelude::*;
 
 /// Abstraction over a GTK4 widget container.
