@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 #
-# diagnose-cpu.sh — Attach to a running sacrebleui process and collect
+# diagnose-cpu.sh — Attach to a running waft daemon process and collect
 # evidence to pinpoint 100% CPU usage.
+#
+# Usage:
+#   ./scripts/diagnose-cpu.sh                     # list running waft daemons
+#   ./scripts/diagnose-cpu.sh waft-clock-daemon   # diagnose by name
+#   ./scripts/diagnose-cpu.sh 12345               # diagnose by PID
 #
 # Requires: gdb, strace, ps, pgrep (standard Linux tools)
 # Non-destructive: only reads state, does not modify the running process.
@@ -13,8 +18,58 @@
 set -euo pipefail
 
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-LOGFILE="diagnose-cpu-${TIMESTAMP}.log"
 CPU_THRESHOLD=5
+
+# ---------------------------------------------------------------------------
+# Argument parsing: name, PID, or list mode
+# ---------------------------------------------------------------------------
+
+TARGET="${1:-}"
+
+if [[ -z "$TARGET" ]]; then
+    echo "Running waft daemons:"
+    echo ""
+    pgrep -a -f 'waft-.*-daemon|waft$' 2>/dev/null | sort -k2 || echo "  (none found)"
+    echo ""
+    echo "Usage: $0 <daemon-name-or-pid>"
+    echo "  e.g: $0 waft-clock-daemon"
+    echo "       $0 waft-audio-daemon"
+    echo "       $0 waft"
+    echo "       $0 12345"
+    exit 0
+fi
+
+# Resolve PID
+if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
+    PID="$TARGET"
+    DAEMON_NAME=$(ps -p "$PID" -o comm= 2>/dev/null || echo "unknown")
+else
+    DAEMON_NAME="$TARGET"
+    # pgrep -x matches exact comm (process name, not full path)
+    PID=$(pgrep -x "$DAEMON_NAME" 2>/dev/null || true)
+
+    if [[ -z "$PID" ]]; then
+        # Fall back to full cmdline match (handles path prefixes)
+        PID=$(pgrep -f "$DAEMON_NAME" 2>/dev/null | head -1 || true)
+    fi
+
+    if [[ -z "$PID" ]]; then
+        echo "ERROR: No process matching '${DAEMON_NAME}' found."
+        echo ""
+        echo "Running waft daemons:"
+        pgrep -a -f 'waft-.*-daemon|waft$' 2>/dev/null | sort -k2 || echo "  (none found)"
+        exit 1
+    fi
+
+    # If multiple PIDs matched, pick the first and warn
+    if [[ $(echo "$PID" | wc -l) -gt 1 ]]; then
+        echo "WARNING: multiple PIDs matched '${DAEMON_NAME}', using first:"
+        echo "$PID"
+        PID=$(echo "$PID" | head -1)
+    fi
+fi
+
+LOGFILE="diagnose-cpu-${DAEMON_NAME}-${TIMESTAMP}.log"
 
 log() {
     echo "$@" | tee -a "$LOGFILE"
@@ -28,19 +83,20 @@ section() {
     log ""
 }
 
-# ---------------------------------------------------------------------------
-# Step 1: Find the process
-# ---------------------------------------------------------------------------
-section "Step 1: Find sacrebleui process"
+log "Diagnosing: ${DAEMON_NAME} (PID ${PID})"
+log "Log file:   ${LOGFILE}"
 
-PID=$(pgrep -x sacrebleui 2>/dev/null || true)
+# ---------------------------------------------------------------------------
+# Step 1: Confirm process is alive
+# ---------------------------------------------------------------------------
+section "Step 1: Process info"
 
-if [[ -z "$PID" ]]; then
-    log "ERROR: sacrebleui is not running."
+if ! kill -0 "$PID" 2>/dev/null; then
+    log "ERROR: PID $PID is not running."
     exit 1
 fi
 
-log "Found sacrebleui PID: $PID"
+ps -p "$PID" -o pid,ppid,pcpu,pmem,vsz,rss,stat,comm,args 2>&1 | tee -a "$LOGFILE"
 
 # ---------------------------------------------------------------------------
 # Step 2: Per-thread CPU snapshot
@@ -55,7 +111,6 @@ HOT_TIDS=()
 while IFS= read -r line; do
     tid=$(echo "$line" | awk '{print $2}')
     cpu=$(echo "$line" | awk '{print $3}')
-    # Compare as floating point: cpu > threshold
     if awk "BEGIN {exit !($cpu > $CPU_THRESHOLD)}"; then
         HOT_TIDS+=("$tid")
     fi
@@ -65,9 +120,9 @@ log ""
 log "Hot threads (>${CPU_THRESHOLD}% CPU): ${HOT_TIDS[*]:-none}"
 
 # ---------------------------------------------------------------------------
-# Step 3: Check child processes
+# Step 3: Child processes
 # ---------------------------------------------------------------------------
-section "Step 3: Child processes (is pactl subscribe alive?)"
+section "Step 3: Child processes"
 
 CHILDREN=$(pgrep -P "$PID" -a 2>/dev/null || true)
 if [[ -n "$CHILDREN" ]]; then
@@ -84,7 +139,6 @@ section "Step 4: strace hot threads"
 for TID in "${HOT_TIDS[@]}"; do
     log "--- strace syscall summary for TID $TID (2 seconds) ---"
 
-    # Syscall summary (count mode)
     timeout 3 strace -p "$TID" -c -e trace=all 2>&1 | tee -a "$LOGFILE" &
     STRACE_PID=$!
     sleep 2
@@ -94,7 +148,6 @@ for TID in "${HOT_TIDS[@]}"; do
     log ""
     log "--- strace raw trace snippet for TID $TID (first 200 lines) ---"
 
-    # Raw trace snippet
     timeout 5 strace -p "$TID" -tt -T -e trace=all 2>&1 | head -200 | tee -a "$LOGFILE" || true
 
     log ""
@@ -105,7 +158,7 @@ if [[ ${#HOT_TIDS[@]} -eq 0 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 5: gdb thread backtraces (all threads)
+# Step 5: gdb all-thread backtraces
 # ---------------------------------------------------------------------------
 section "Step 5: gdb all-thread backtraces"
 
@@ -161,7 +214,10 @@ section "Done"
 log "Diagnostic output saved to: $LOGFILE"
 log ""
 log "Review hints:"
-log "  - If strace shows millions of poll/futex/epoll_wait with 0 timeout → busy-wait"
-log "  - If gdb backtrace shows a glib/tokio poll loop → glib↔tokio contention"
-log "  - If pactl subprocess is missing → audio plugin sender dropped, possible spin"
-log "  - If DBus MessageStream is in the hot path → zbus error tight-loop"
+log "  - strace shows rapid poll/futex/epoll_wait with timeout=0 → busy-wait loop"
+log "  - strace shows rapid recvmsg/sendmsg on a socket → message flood (check entity updates)"
+log "  - gdb backtrace shows tokio park/poll loop → check for 0-timeout wakers or channel floods"
+log "  - gdb shows ClaimTracker/handle_timeouts in hot path → claim loop firing too fast"
+log "  - gdb shows notify() in tight loop → inotify feedback loop (Access events from own reads)"
+log "  - DBus MessageStream in hot path → zbus error tight-loop"
+log "  - Many open sockets with (deleted) pipes → runtime dropped receiver, sender spinning"
