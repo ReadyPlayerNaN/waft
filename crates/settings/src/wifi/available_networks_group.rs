@@ -12,6 +12,7 @@ use adw::prelude::*;
 use waft_client::EntityActionCallback;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::WiFiNetwork;
+use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::t;
 
@@ -31,7 +32,6 @@ pub struct AvailableNetworksGroup {
     pub root: adw::PreferencesGroup,
     spinner: gtk::Spinner,
     search_button: gtk::Button,
-    scanning: Rc<RefCell<bool>>,
     rows: HashMap<String, NetworkRow>,
     output_cb: OutputCallback,
 }
@@ -60,7 +60,6 @@ impl AvailableNetworksGroup {
 
         group.set_header_suffix(Some(&header_box));
 
-        let scanning = Rc::new(RefCell::new(false));
         let output_cb: OutputCallback = Rc::new(RefCell::new(None));
 
         // Wire search button click
@@ -75,7 +74,6 @@ impl AvailableNetworksGroup {
             root: group,
             spinner,
             search_button,
-            scanning,
             rows: HashMap::new(),
             output_cb,
         }
@@ -97,8 +95,6 @@ impl AvailableNetworksGroup {
         scanning: bool,
         action_callback: &EntityActionCallback,
     ) {
-        *self.scanning.borrow_mut() = scanning;
-
         let mut seen = std::collections::HashSet::new();
 
         for (urn, network) in networks {
@@ -113,9 +109,9 @@ impl AvailableNetworksGroup {
             };
 
             if let Some(existing) = self.rows.get(&urn_str) {
-                existing.apply_props(&props);
+                existing.update(&props);
             } else {
-                let row = NetworkRow::new(&props);
+                let row = NetworkRow::build(&props);
                 let urn_clone = urn.clone();
                 let cb = action_callback.clone();
                 row.connect_output(move |output| {

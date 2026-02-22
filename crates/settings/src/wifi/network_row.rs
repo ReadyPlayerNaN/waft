@@ -8,10 +8,12 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_ui_gtk::icons::IconWidget;
+use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::t;
 
 /// Props for creating or updating a network row.
+#[derive(Clone, PartialEq)]
 pub struct NetworkRowProps {
     pub ssid: String,
     pub strength: u8,
@@ -50,8 +52,11 @@ pub struct NetworkRow {
     output_cb: OutputCallback,
 }
 
-impl NetworkRow {
-    pub fn new(props: &NetworkRowProps) -> Self {
+impl Component for NetworkRow {
+    type Props = NetworkRowProps;
+    type Output = NetworkRowOutput;
+
+    fn build(props: &Self::Props) -> Self {
         let signal_icon = IconWidget::from_name(signal_icon_name(props.strength), 16);
         let secure_icon = IconWidget::from_name("channel-secure-symbolic", 16);
 
@@ -90,12 +95,11 @@ impl NetworkRow {
             output_cb,
         };
 
-        network_row.apply_props(props);
+        network_row.update(props);
         network_row
     }
 
-    /// Update the row to reflect new network state.
-    pub fn apply_props(&self, props: &NetworkRowProps) {
+    fn update(&self, props: &Self::Props) {
         *self.connected.borrow_mut() = props.connected;
         self.root.set_title(&props.ssid);
         self.signal_icon.set_icon(signal_icon_name(props.strength));
@@ -110,8 +114,11 @@ impl NetworkRow {
         }
     }
 
-    /// Register a callback for network row output events.
-    pub fn connect_output<F: Fn(NetworkRowOutput) + 'static>(&self, callback: F) {
+    fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+
+    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
         *self.output_cb.borrow_mut() = Some(Box::new(callback));
     }
 }

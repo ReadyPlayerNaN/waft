@@ -6,10 +6,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
+use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::t;
 
 /// Props for creating or updating a WiFi adapter group.
+#[derive(Clone, PartialEq)]
 pub struct WifiAdapterGroupProps {
     pub name: String,
     pub enabled: bool,
@@ -34,8 +36,11 @@ pub struct WifiAdapterGroup {
     output_cb: OutputCallback,
 }
 
-impl WifiAdapterGroup {
-    pub fn new(props: &WifiAdapterGroupProps) -> Self {
+impl Component for WifiAdapterGroup {
+    type Props = WifiAdapterGroupProps;
+    type Output = WifiAdapterGroupOutput;
+
+    fn build(props: &Self::Props) -> Self {
         let group = adw::PreferencesGroup::builder().title(&props.name).build();
 
         let enabled_row = adw::SwitchRow::builder().title(t("wifi-adapter-enabled")).build();
@@ -70,12 +75,11 @@ impl WifiAdapterGroup {
             output_cb,
         };
 
-        adapter.apply_props(props);
+        adapter.update(props);
         adapter
     }
 
-    /// Update the group to reflect new adapter state.
-    pub fn apply_props(&self, props: &WifiAdapterGroupProps) {
+    fn update(&self, props: &Self::Props) {
         *self.updating.borrow_mut() = true;
         *self.enabled.borrow_mut() = props.enabled;
 
@@ -85,8 +89,11 @@ impl WifiAdapterGroup {
         *self.updating.borrow_mut() = false;
     }
 
-    /// Register a callback for WiFi adapter group output events.
-    pub fn connect_output<F: Fn(WifiAdapterGroupOutput) + 'static>(&self, callback: F) {
+    fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+
+    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
         *self.output_cb.borrow_mut() = Some(Box::new(callback));
     }
 }

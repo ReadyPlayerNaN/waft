@@ -4,7 +4,6 @@
 //! entity types. On entity changes, reconciles adapter groups and network lists.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -13,10 +12,11 @@ use waft_protocol::Urn;
 use waft_protocol::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, NetworkAdapter, WiFiNetwork,
 };
+use waft_ui_gtk::vdom::{Reconciler, VNode};
 
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
-use crate::wifi::adapter_group::{WifiAdapterGroup, WifiAdapterGroupOutput, WifiAdapterGroupProps};
+use crate::wifi::adapter_group::{WifiAdapterGroupOutput, WifiAdapterGroupProps};
 use crate::wifi::available_networks_group::{AvailableNetworksGroup, AvailableNetworksGroupOutput};
 use crate::wifi::known_networks_group::KnownNetworksGroup;
 
@@ -26,10 +26,9 @@ pub struct WiFiPage {
 }
 
 struct WiFiPageState {
-    adapter_groups: HashMap<String, WifiAdapterGroup>,
+    adapters_reconciler: Reconciler,
     known_group: KnownNetworksGroup,
     available_group: AvailableNetworksGroup,
-    adapters_box: gtk::Box,
 }
 
 impl WiFiPage {
@@ -91,11 +90,12 @@ impl WiFiPage {
             });
         }
 
+        let adapters_reconciler = Reconciler::new(adapters_box);
+
         let state = Rc::new(RefCell::new(WiFiPageState {
-            adapter_groups: HashMap::new(),
+            adapters_reconciler,
             known_group,
             available_group,
-            adapters_box,
         }));
 
         // Subscribe to adapter changes
@@ -163,57 +163,37 @@ impl WiFiPage {
         action_callback: &EntityActionCallback,
     ) {
         let mut state = state.borrow_mut();
-        let mut seen = std::collections::HashSet::new();
 
         let wireless_adapters: Vec<_> = adapters
             .iter()
             .filter(|(_, a)| a.kind == AdapterKind::Wireless)
             .collect();
 
-        for (urn, adapter) in &wireless_adapters {
-            let urn_str = urn.as_str().to_string();
-            seen.insert(urn_str.clone());
-
-            let props = WifiAdapterGroupProps {
-                name: adapter.name.clone(),
-                enabled: adapter.enabled,
-            };
-
-            if let Some(existing) = state.adapter_groups.get(&urn_str) {
-                existing.apply_props(&props);
-            } else {
-                let group = WifiAdapterGroup::new(&props);
-                let urn_clone = (*urn).clone();
+        state.adapters_reconciler.reconcile(
+            wireless_adapters.iter().map(|(urn, adapter)| {
+                let urn_key = urn.as_str().to_string();
+                let urn = (*urn).clone();
                 let cb = action_callback.clone();
-                group.connect_output(move |output| {
-                    let action = match output {
-                        WifiAdapterGroupOutput::Enable => "activate",
-                        WifiAdapterGroupOutput::Disable => "deactivate",
-                    };
-                    cb(
-                        urn_clone.clone(),
-                        action.to_string(),
-                        serde_json::Value::Null,
-                    );
-                });
-                state.adapters_box.append(&group.root);
-                state.adapter_groups.insert(urn_str, group);
-            }
-        }
-
-        // Remove adapter groups no longer present
-        let to_remove: Vec<String> = state
-            .adapter_groups
-            .keys()
-            .filter(|k| !seen.contains(*k))
-            .cloned()
-            .collect();
-
-        for key in to_remove {
-            if let Some(group) = state.adapter_groups.remove(&key) {
-                state.adapters_box.remove(&group.root);
-            }
-        }
+                VNode::with_output::<crate::wifi::adapter_group::WifiAdapterGroup>(
+                    WifiAdapterGroupProps {
+                        name: adapter.name.clone(),
+                        enabled: adapter.enabled,
+                    },
+                    move |output| {
+                        let action = match output {
+                            WifiAdapterGroupOutput::Enable => "activate",
+                            WifiAdapterGroupOutput::Disable => "deactivate",
+                        };
+                        cb(
+                            urn.clone(),
+                            action.to_string(),
+                            serde_json::Value::Null,
+                        );
+                    },
+                )
+                .key(urn_key)
+            }),
+        );
     }
 
     fn reconcile_networks(

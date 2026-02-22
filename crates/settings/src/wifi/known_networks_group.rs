@@ -9,6 +9,7 @@ use adw::prelude::*;
 use waft_client::EntityActionCallback;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::WiFiNetwork;
+use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::t;
 
@@ -56,9 +57,9 @@ impl KnownNetworksGroup {
             };
 
             if let Some(existing) = self.rows.get(&urn_str) {
-                existing.apply_props(&props);
+                existing.update(&props);
             } else {
-                let row = NetworkRow::new(&props);
+                let row = NetworkRow::build(&props);
                 let urn_clone = urn.clone();
                 let cb = action_callback.clone();
                 row.connect_output(move |output| {
