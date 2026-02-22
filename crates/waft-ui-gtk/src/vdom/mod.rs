@@ -1,6 +1,6 @@
 mod component;
 mod reconciler;
-pub(super) mod primitives;
+pub mod primitives;
 mod render_component;
 mod vnode;
 
