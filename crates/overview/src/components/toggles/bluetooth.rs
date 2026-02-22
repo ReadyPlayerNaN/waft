@@ -11,28 +11,31 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::prelude::*;
+
+use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity;
-use waft_ui_gtk::bluetooth::device_row::{
-    BluetoothDeviceRow, BluetoothDeviceRowOutput, BluetoothDeviceRowProps, battery_icon_name,
-    device_type_icon,
-};
 use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
-use waft_ui_gtk::widgets::icon::IconWidget;
 
 use crate::i18n;
 use crate::layout::types::WidgetFeatureToggle;
-use waft_client::{EntityActionCallback, EntityStore};
+use crate::ui::feature_toggles::bluetooth_device::{
+    BluetoothDeviceRow, BluetoothDeviceRowOutput, BluetoothDeviceRowProps,
+};
+use crate::ui::feature_toggles::menu::FeatureToggleMenuWidget;
+use crate::ui::feature_toggles::menu_settings::{
+    FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
+};
 
 /// A tracked toggle entry for a single Bluetooth adapter.
 struct ToggleEntry {
     urn_str: String,
     toggle: Rc<FeatureToggleWidget>,
-    menu: gtk::Box,
+    menu: FeatureToggleMenuWidget,
     device_rows: RefCell<Vec<DeviceRow>>,
     settings_separator: gtk::Separator,
-    settings_button: gtk::Button,
+    settings_button: FeatureToggleMenuSettingsButton,
 }
 
 /// A single device row wrapper holding the URN and the extracted widget.
@@ -60,29 +63,14 @@ pub struct BluetoothToggles {
 fn build_settings_button(
     action_callback: &EntityActionCallback,
     settings_urn: &Rc<RefCell<Option<Urn>>>,
-) -> gtk::Button {
-    let icon = IconWidget::from_name("preferences-system-symbolic", 16);
-    let label = gtk::Label::builder()
-        .label(i18n::t("bluetooth-settings-button"))
-        .halign(gtk::Align::Start)
-        .hexpand(true)
-        .build();
-
-    let content = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(12)
-        .build();
-    content.append(icon.widget());
-    content.append(&label);
-
-    let button = gtk::Button::builder()
-        .child(&content)
-        .css_classes(["flat", "menu-row"])
-        .build();
-
+) -> FeatureToggleMenuSettingsButton {
+    let button = FeatureToggleMenuSettingsButton::new(FeatureToggleMenuSettingsButtonProps {
+        label: i18n::t("bluetooth-settings-button"),
+    });
     let cb = action_callback.clone();
     let urn_ref = settings_urn.clone();
-    button.connect_clicked(move |_| {
+
+    button.on_click(move |_| {
         if let Some(ref urn) = *urn_ref.borrow() {
             cb(
                 urn.clone(),
@@ -91,7 +79,6 @@ fn build_settings_button(
             );
         }
     });
-
     button
 }
 
@@ -159,21 +146,16 @@ impl BluetoothToggles {
                         let menu_id = menu_id_for_widget(&widget_id);
 
                         // Create menu container for devices
-                        let menu = gtk::Box::builder()
-                            .orientation(gtk::Orientation::Vertical)
-                            .spacing(0)
-                            .css_classes(["menu-content"])
-                            .build();
+                        let menu = FeatureToggleMenuWidget::new();
 
                         // Create settings button row (initially hidden based on availability)
                         let settings_separator = gtk::Separator::new(gtk::Orientation::Horizontal);
-                        let settings_button =
-                            build_settings_button(&cb, &settings_urn_for_adapter);
+                        let settings_button = build_settings_button(&cb, &settings_urn_for_adapter);
                         let has_settings = settings_available_for_adapter.get();
                         settings_separator.set_visible(has_settings);
                         settings_button.set_visible(has_settings);
                         menu.append(&settings_separator);
-                        menu.append(&settings_button);
+                        menu.append(&settings_button.widget());
 
                         let toggle = Rc::new(FeatureToggleWidget::new(
                             FeatureToggleProps {
@@ -262,9 +244,7 @@ impl BluetoothToggles {
 
                         // Re-evaluate expandable state: has devices or has settings
                         let has_devices = !entry.device_rows.borrow().is_empty();
-                        entry
-                            .toggle
-                            .set_expandable(has_devices || now_available);
+                        entry.toggle.set_expandable(has_devices || now_available);
                     }
                 }
             });
@@ -357,7 +337,7 @@ impl BluetoothToggles {
                 if current_device_urns.contains(&row.urn_str) {
                     true
                 } else {
-                    row.row.root.unparent();
+                    row.row.widget().unparent();
                     false
                 }
             });
@@ -365,28 +345,18 @@ impl BluetoothToggles {
             // Update or create rows for each device
             for (device_urn, device) in &adapter_devices {
                 let device_urn_str = device_urn.as_str().to_string();
+                let props = BluetoothDeviceRowProps {
+                    connected: device.connected(),
+                    device_type: device.device_type.to_string(),
+                    name: device.name.clone(),
+                    power: device.battery_percentage,
+                    transitioning: device.transitioning(),
+                };
 
                 if let Some(row) = device_rows.iter().find(|r| r.urn_str == device_urn_str) {
-                    // Update existing row via setters
-                    row.row.set_name(&device.name);
-                    row.row
-                        .set_device_icon(device_type_icon(&device.device_type));
-                    row.row
-                        .set_battery_icon(device.battery_percentage.map(battery_icon_name));
-                    row.row.set_connected(device.connected());
-                    row.row.set_transitioning(device.transitioning());
+                    row.row.update(props);
                 } else {
-                    // Create new device row -- insert before the settings separator
-                    let bt_row = Rc::new(BluetoothDeviceRow::new(BluetoothDeviceRowProps {
-                        device_icon: device_type_icon(&device.device_type).to_string(),
-                        name: device.name.clone(),
-                        battery_icon: device
-                            .battery_percentage
-                            .map(|pct| battery_icon_name(pct).to_string()),
-                        connected: device.connected(),
-                        transitioning: device.transitioning(),
-                    }));
-
+                    let bt_row = Rc::new(BluetoothDeviceRow::new(props));
                     let action_cb = action_callback.clone();
                     let urn_for_click = (*device_urn).clone();
                     bt_row.connect_output(move |BluetoothDeviceRowOutput::ToggleConnect| {
@@ -399,8 +369,10 @@ impl BluetoothToggles {
 
                     // Insert before the settings separator to keep it at bottom
                     {
-                        let sibling = device_rows.last().map(|r| r.row.root.upcast_ref::<gtk::Widget>());
-                        entry.menu.insert_child_after(&bt_row.root, sibling);
+                        let sibling = device_rows.last().map(|r| r.row.widget());
+                        entry
+                            .menu
+                            .insert_child_after(&bt_row.widget(), sibling.as_ref());
                     }
                     device_rows.push(DeviceRow {
                         urn_str: device_urn_str,
@@ -422,7 +394,7 @@ impl BluetoothToggles {
                     id: format!("bluetooth-toggle-{}", entry.urn_str),
                     weight: 500 + i as i32,
                     toggle: (*entry.toggle).clone(),
-                    menu: Some(entry.menu.clone().upcast::<gtk::Widget>()),
+                    menu: Some(entry.menu.widget().clone()),
                 })
             })
             .collect()

@@ -14,7 +14,7 @@ use gtk::prelude::*;
 
 use waft_protocol::Urn;
 use waft_protocol::entity::notification::{NotificationAction, NotificationIconHint};
-use waft_ui_gtk::widgets::icon::{Icon, IconWidget};
+use waft_ui_gtk::icons::{Icon, IconWidget};
 use waft_ui_gtk::widgets::menu_chevron::{MenuChevronProps, MenuChevronWidget};
 use waft_ui_gtk::widgets::notification_card::{NotificationCard, NotificationCardOutput};
 

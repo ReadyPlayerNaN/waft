@@ -8,7 +8,6 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk::prelude::*;
 use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::backup::method_row::{BackupMethodRow, BackupMethodRowProps};
@@ -17,6 +16,7 @@ use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidg
 
 use crate::i18n;
 use crate::layout::types::WidgetFeatureToggle;
+use crate::ui::feature_toggles::menu::FeatureToggleMenuWidget;
 use waft_client::{EntityActionCallback, EntityStore};
 
 /// A backup method row with its associated URN for action routing.
@@ -31,7 +31,7 @@ struct MethodEntry {
 /// Shows a single "Backup" feature toggle with an expandable menu of methods.
 pub struct BackupToggle {
     toggle: Rc<FeatureToggleWidget>,
-    menu_box: gtk::Box,
+    menu: FeatureToggleMenuWidget,
     available: Rc<Cell<bool>>,
     #[allow(dead_code)]
     entries: Rc<RefCell<Vec<MethodEntry>>>,
@@ -47,11 +47,7 @@ impl BackupToggle {
         let menu_id = menu_id_for_widget("backup-toggle");
         let available = Rc::new(Cell::new(false));
 
-        let menu_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(4)
-            .build();
-
+        let menu_box = FeatureToggleMenuWidget::new();
         let toggle = Rc::new(FeatureToggleWidget::new(
             FeatureToggleProps {
                 active: false,
@@ -162,7 +158,7 @@ impl BackupToggle {
 
         Self {
             toggle,
-            menu_box,
+            menu: menu_box,
             available,
             entries,
         }
@@ -176,7 +172,7 @@ impl BackupToggle {
             id: "backup-toggle".to_string(),
             weight: 350,
             toggle: (*self.toggle).clone(),
-            menu: Some(self.menu_box.clone().upcast()),
+            menu: Some(self.menu.widget().clone()),
         })]
     }
 }

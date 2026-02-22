@@ -10,7 +10,7 @@ use gtk::prelude::*;
 
 use waft_protocol::Urn;
 use waft_protocol::entity;
-use waft_ui_gtk::widgets::icon::IconWidget;
+use waft_ui_gtk::icons::IconWidget;
 
 use waft_client::{EntityActionCallback, EntityStore};
 
@@ -35,11 +35,8 @@ impl SettingsButtonComponent {
         let label = i18n::t("settings-button");
         let icon = IconWidget::from_name("preferences-system-symbolic", 16);
 
-        let button_content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        button_content.append(icon.widget());
-
         let button = gtk::Button::builder()
-            .child(&button_content)
+            .child(icon.widget())
             .tooltip_text(&label)
             .css_classes(["flat", "circular"])
             .build();
@@ -50,11 +47,7 @@ impl SettingsButtonComponent {
             let urn_ref = current_urn.clone();
             button.connect_clicked(move |_| {
                 if let Some(urn) = urn_ref.borrow().as_ref() {
-                    cb(
-                        urn.clone(),
-                        "open".to_string(),
-                        serde_json::Value::Null,
-                    );
+                    cb(urn.clone(), "open".to_string(), serde_json::Value::Null);
                 } else {
                     log::warn!(
                         "[settings-button] action triggered before entity URN is known, ignoring"
@@ -76,7 +69,10 @@ impl SettingsButtonComponent {
             move || {
                 let entities =
                     store_ref.get_entities_typed::<entity::app::App>(entity::app::ENTITY_TYPE);
-                match entities.first() {
+                let settings_entry = entities.iter().find(|(urn, _)| {
+                    urn.plugin() == "internal-apps" && urn.id() == "waft-settings"
+                });
+                match settings_entry {
                     Some((urn, _app)) => {
                         *urn_for_sub.borrow_mut() = Some(urn.clone());
                         container_ref.set_visible(true);

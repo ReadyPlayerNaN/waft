@@ -416,14 +416,35 @@ pub async fn setup() -> Result<adw::Application> {
                 && let Some(event_rx) = rx_slot.take() {
                     let store_for_events = entity_store.clone();
                     let clip_for_events = main_window.clip.clone();
+                    let waft_client_for_claims = waft_client_slot.clone();
                     // Start with UI disabled — the connection task will send Connected
                     // once the daemon is reachable.
                     clip_for_events.set_sensitive(false);
                     glib::spawn_future_local(async move {
                         while let Ok(event) = event_rx.recv_async().await {
                             match event {
-                                ClientEvent::Notification(notification) => {
-                                    store_for_events.handle_notification(notification);
+                                ClientEvent::Notification(ref notification) => {
+                                    // Intercept ClaimCheck to respond via WaftClient
+                                    if let waft_protocol::AppNotification::ClaimCheck {
+                                        urn,
+                                        claim_id,
+                                    } = notification
+                                    {
+                                        let claimed = store_for_events.has_entity(urn);
+                                        let guard = match waft_client_for_claims.lock() {
+                                            Ok(g) => g,
+                                            Err(e) => {
+                                                warn!(
+                                                    "[app] WaftClient mutex poisoned in claim response: {e}"
+                                                );
+                                                e.into_inner()
+                                            }
+                                        };
+                                        if let Some(ref client) = *guard {
+                                            client.send_claim_response(*claim_id, claimed);
+                                        }
+                                    }
+                                    store_for_events.handle_notification(notification.clone());
                                 }
                                 ClientEvent::Connected => {
                                     log::info!("[app] daemon connected, enabling UI");

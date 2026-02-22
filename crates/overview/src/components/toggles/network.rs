@@ -13,28 +13,33 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use waft_protocol::Urn;
 use waft_protocol::entity;
+use waft_ui_gtk::icons::IconWidget;
 use waft_ui_gtk::menu_state::menu_id_for_widget;
 use waft_ui_gtk::widgets::connection_row::{
     ConnectionRow, ConnectionRowOutput, ConnectionRowProps,
 };
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
-use waft_ui_gtk::widgets::icon::IconWidget;
 
+use crate::i18n;
 use crate::layout::types::WidgetFeatureToggle;
+use crate::ui::feature_toggles::menu::FeatureToggleMenuWidget;
+use crate::ui::feature_toggles::menu_settings::{
+    FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
+};
 use waft_client::{EntityActionCallback, EntityStore};
 
 /// A tracked toggle entry for a network adapter or VPN.
 struct ToggleEntry {
     urn_str: String,
     toggle: Rc<FeatureToggleWidget>,
-    menu: gtk::Box,
+    menu: FeatureToggleMenuWidget,
     network_rows: RefCell<Vec<NetworkRow>>,
     info_rows: RefCell<Vec<gtk::Box>>,
     weight: i32,
     /// Tracks connected state for click handler closures that need fresh state.
     connected: Rc<Cell<bool>>,
     /// Settings button for wired adapter menus (None for WiFi/VPN/Tethering).
-    settings_button: Option<gtk::Box>,
+    settings_button: Option<FeatureToggleMenuSettingsButton>,
 }
 
 /// A single network row in the menu — either a plain box (WiFi/Ethernet)
@@ -152,11 +157,7 @@ impl NetworkManagerToggles {
 
                         // Update IP info rows for wired adapters
                         if matches!(adapter.kind, entity::network::AdapterKind::Wired) {
-                            update_wired_info_rows(
-                                entry,
-                                adapter,
-                                &settings_available_ref,
-                            );
+                            update_wired_info_rows(entry, adapter, &settings_available_ref);
                         }
                     } else {
                         // Create new toggle for this adapter
@@ -164,12 +165,7 @@ impl NetworkManagerToggles {
                         let menu_id = menu_id_for_widget(&widget_id);
 
                         // Create menu container for networks/connections
-                        let menu = gtk::Box::builder()
-                            .orientation(gtk::Orientation::Vertical)
-                            .spacing(0)
-                            .css_classes(["menu-content"])
-                            .build();
-
+                        let menu = FeatureToggleMenuWidget::new();
                         let connected = Rc::new(Cell::new(adapter.connected));
 
                         let toggle = Rc::new(FeatureToggleWidget::new(
@@ -211,26 +207,24 @@ impl NetworkManagerToggles {
                         // Create settings button for wired and wireless adapters
                         let settings_button = match adapter.kind {
                             entity::network::AdapterKind::Wired => {
-                                let container = build_settings_button(
-                                    &settings_available_ref,
+                                let btn = build_settings_button(
                                     &settings_urn_ref,
                                     &cb,
                                     "wired",
                                     "wired-settings-button",
                                 );
-                                menu.append(&container);
-                                Some(container)
+                                menu.append(&btn.widget());
+                                Some(btn)
                             }
                             entity::network::AdapterKind::Wireless => {
-                                let container = build_settings_button(
-                                    &settings_available_ref,
+                                let btn = build_settings_button(
                                     &settings_urn_ref,
                                     &cb,
                                     "wifi",
                                     "wifi-settings-button",
                                 );
-                                menu.append(&container);
-                                Some(container)
+                                menu.append(&btn.widget());
+                                Some(btn)
                             }
                             _ => None,
                         };
@@ -248,11 +242,7 @@ impl NetworkManagerToggles {
 
                         // Initialize IP info rows for wired adapters
                         if matches!(adapter.kind, entity::network::AdapterKind::Wired) {
-                            update_wired_info_rows(
-                                &entry,
-                                adapter,
-                                &settings_available_ref,
-                            );
+                            update_wired_info_rows(&entry, adapter, &settings_available_ref);
                         }
 
                         entries_mut.push(entry);
@@ -378,12 +368,7 @@ impl NetworkManagerToggles {
                     let widget_id = "network-toggle-vpn-consolidated";
                     let menu_id = menu_id_for_widget(widget_id);
 
-                    let menu = gtk::Box::builder()
-                        .orientation(gtk::Orientation::Vertical)
-                        .spacing(0)
-                        .css_classes(["menu-content"])
-                        .build();
-
+                    let menu = FeatureToggleMenuWidget::new();
                     let toggle = Rc::new(FeatureToggleWidget::new(
                         FeatureToggleProps {
                             active: any_active,
@@ -528,12 +513,15 @@ impl NetworkManagerToggles {
                 .iter()
                 .map(|(urn, net)| ((*urn).clone(), (*net).clone()))
                 .collect();
-            entry
-                .toggle
-                .set_expandable(should_be_expandable(adapter_networks_owned.len(), has_settings));
+            entry.toggle.set_expandable(should_be_expandable(
+                adapter_networks_owned.len(),
+                has_settings,
+            ));
 
             // Update details text
-            entry.toggle.set_details(details_text(&adapter_networks_owned));
+            entry
+                .toggle
+                .set_details(details_text(&adapter_networks_owned));
 
             // Update network rows
             let mut network_rows = entry.network_rows.borrow_mut();
@@ -547,7 +535,7 @@ impl NetworkManagerToggles {
                 if current_network_urns.iter().any(|u| u == row.urn_str()) {
                     true
                 } else {
-                    row.remove_from(&entry.menu);
+                    row.remove_from(entry.menu.root());
                     false
                 }
             });
@@ -626,7 +614,9 @@ impl NetworkManagerToggles {
 
             // Re-append settings button to keep it last in the menu
             if let Some(ref btn_container) = entry.settings_button {
-                entry.menu.reorder_child_after(btn_container, entry.menu.last_child().as_ref());
+                entry
+                    .menu
+                    .reorder_child_after(&btn_container.widget(), entry.menu.last_child().as_ref());
             }
         }
     }
@@ -651,7 +641,7 @@ impl NetworkManagerToggles {
             if current_vpn_urns.iter().any(|u| u == row.urn_str()) {
                 true
             } else {
-                row.remove_from(&entry.menu);
+                row.remove_from(&entry.menu.root());
                 false
             }
         });
@@ -742,7 +732,7 @@ impl NetworkManagerToggles {
             if !show_profiles {
                 // Remove any existing profile rows
                 for row in network_rows.drain(..) {
-                    row.remove_from(&entry.menu);
+                    row.remove_from(&entry.menu.root());
                 }
                 // Re-evaluate expandable: info rows or settings button may still warrant it
                 let has_info = !entry.info_rows.borrow().is_empty();
@@ -766,7 +756,7 @@ impl NetworkManagerToggles {
                 if current_conn_urns.iter().any(|u| u == row.urn_str()) {
                     true
                 } else {
-                    row.remove_from(&entry.menu);
+                    row.remove_from(&entry.menu.root());
                     false
                 }
             });
@@ -777,7 +767,7 @@ impl NetworkManagerToggles {
                 if let Some(existing) = network_rows.iter().find(|r| r.urn_str() == conn_urn_str) {
                     // Update existing row - rebuild checkmark state
                     // Remove old row and recreate (simple approach for state updates)
-                    existing.remove_from(&entry.menu);
+                    existing.remove_from(&entry.menu.root());
                     network_rows.retain(|r| r.urn_str() != conn_urn_str);
                 }
 
@@ -827,7 +817,9 @@ impl NetworkManagerToggles {
 
             // Re-append settings button to keep it last in the menu
             if let Some(ref btn_container) = entry.settings_button {
-                entry.menu.reorder_child_after(btn_container, entry.menu.last_child().as_ref());
+                entry
+                    .menu
+                    .reorder_child_after(&btn_container.widget(), entry.menu.last_child().as_ref());
             }
         }
     }
@@ -877,7 +869,7 @@ impl NetworkManagerToggles {
                 if current_urns.iter().any(|u| u == row.urn_str()) {
                     true
                 } else {
-                    row.remove_from(&entry.menu);
+                    row.remove_from(&entry.menu.root());
                     false
                 }
             });
@@ -887,7 +879,7 @@ impl NetworkManagerToggles {
                 let conn_urn_str = conn_urn.as_str().to_string();
 
                 if let Some(existing) = network_rows.iter().find(|r| r.urn_str() == conn_urn_str) {
-                    existing.remove_from(&entry.menu);
+                    existing.remove_from(&entry.menu.root());
                     network_rows.retain(|r| r.urn_str() != conn_urn_str);
                 }
 
@@ -930,7 +922,7 @@ impl NetworkManagerToggles {
                     id: format!("network-toggle-{}", entry.urn_str),
                     weight: entry.weight,
                     toggle: (*entry.toggle).clone(),
-                    menu: Some(entry.menu.clone().upcast::<gtk::Widget>()),
+                    menu: Some(entry.menu.widget().clone()),
                 })
             })
             .collect()
@@ -1028,7 +1020,7 @@ fn update_wired_info_rows(
     if let Some(ref btn_container) = entry.settings_button {
         entry
             .menu
-            .reorder_child_after(btn_container, entry.menu.last_child().as_ref());
+            .reorder_child_after(&btn_container.widget(), entry.menu.last_child().as_ref());
     }
 }
 
@@ -1062,49 +1054,20 @@ fn build_info_row(label: &str, value: &str) -> gtk::Box {
 /// Returns a vertical `gtk::Box` containing a separator and a button row.
 /// Visibility is controlled by `settings_available`.
 fn build_settings_button(
-    settings_available: &Rc<Cell<bool>>,
     settings_urn: &Rc<RefCell<Option<Urn>>>,
     action_callback: &EntityActionCallback,
     page: &str,
     i18n_key: &str,
-) -> gtk::Box {
-    let container = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(0)
-        .visible(settings_available.get())
-        .build();
-
-    let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
-    container.append(&separator);
-
-    let button = gtk::Button::builder()
-        .css_classes(["menu-row", "flat"])
-        .build();
-
-    let button_content = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(12)
-        .build();
-
-    let icon = IconWidget::from_name("preferences-system-symbolic", 24);
-    button_content.append(icon.widget());
-
-    let label = gtk::Label::builder()
-        .label(crate::i18n::t(i18n_key))
-        .hexpand(true)
-        .xalign(0.0)
-        .build();
-    button_content.append(&label);
-
-    let chevron = IconWidget::from_name("go-next-symbolic", 16);
-    button_content.append(chevron.widget());
-
-    button.set_child(Some(&button_content));
+) -> FeatureToggleMenuSettingsButton {
+    let button = FeatureToggleMenuSettingsButton::new(FeatureToggleMenuSettingsButtonProps {
+        label: i18n::t(i18n_key),
+    });
 
     let settings_urn_ref = settings_urn.clone();
     let cb = action_callback.clone();
     let page = page.to_string();
-    button.connect_clicked(move |_| {
+
+    button.on_click(move |_| {
         if let Some(ref urn) = *settings_urn_ref.borrow() {
             cb(
                 urn.clone(),
@@ -1113,7 +1076,5 @@ fn build_settings_button(
             );
         }
     });
-
-    container.append(&button);
-    container
+    button
 }
