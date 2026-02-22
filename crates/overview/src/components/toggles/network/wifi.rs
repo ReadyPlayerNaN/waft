@@ -9,6 +9,8 @@ use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::icons::IconWidget;
 
+use waft_ui_gtk::vdom::Component;
+
 use super::{NetworkRow, ToggleEntry};
 use super::network_menu_logic::{details_text, should_be_expandable};
 

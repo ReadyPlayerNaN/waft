@@ -11,6 +11,8 @@ use gtk::glib;
 use waft_protocol::{Urn, entity};
 use waft_client::{EntityActionCallback, EntityStore};
 
+use waft_ui_gtk::vdom::Component;
+
 use crate::ui::feature_toggles::menu_settings::{
     FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
 };
@@ -74,14 +76,16 @@ impl SettingsAppTracker {
         action_callback: &EntityActionCallback,
         page: &'static str,
         label: String,
+        visible: bool,
     ) -> FeatureToggleMenuSettingsButton {
-        let button = FeatureToggleMenuSettingsButton::new(FeatureToggleMenuSettingsButtonProps {
+        let button = FeatureToggleMenuSettingsButton::build(&FeatureToggleMenuSettingsButtonProps {
             label,
+            visible,
         });
 
         let urn_ref = self.urn.clone();
         let cb = action_callback.clone();
-        button.on_click(move |_| {
+        button.connect_output(move |_| {
             if let Some(ref urn) = *urn_ref.borrow() {
                 cb(
                     urn.clone(),

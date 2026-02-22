@@ -9,6 +9,8 @@ use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::icons::IconWidget;
 
+use waft_ui_gtk::vdom::Component;
+
 use super::{NetworkRow, ToggleEntry};
 use crate::ui::feature_toggles::menu_info_row::{
     FeatureToggleMenuInfoRow, FeatureToggleMenuInfoRowProps,
@@ -170,7 +172,7 @@ pub(super) fn update_wired_info_rows(
 
     // Local IP row
     let local_label = format!("{}/{}", ip.address, ip.prefix);
-    let local_row = FeatureToggleMenuInfoRow::new(FeatureToggleMenuInfoRowProps {
+    let local_row = FeatureToggleMenuInfoRow::build(&FeatureToggleMenuInfoRowProps {
         label: "Local IP".to_string(),
         value: local_label,
     });
@@ -179,7 +181,7 @@ pub(super) fn update_wired_info_rows(
 
     // Gateway row
     if let Some(ref gateway) = ip.gateway {
-        let gw_row = FeatureToggleMenuInfoRow::new(FeatureToggleMenuInfoRowProps {
+        let gw_row = FeatureToggleMenuInfoRow::build(&FeatureToggleMenuInfoRowProps {
             label: "Gateway".to_string(),
             value: gateway.clone(),
         });
@@ -189,7 +191,7 @@ pub(super) fn update_wired_info_rows(
 
     // Public IP row
     let public_text = adapter.public_ip.as_deref().unwrap_or("Unavailable");
-    let public_row = FeatureToggleMenuInfoRow::new(FeatureToggleMenuInfoRowProps {
+    let public_row = FeatureToggleMenuInfoRow::build(&FeatureToggleMenuInfoRowProps {
         label: "Public IP".to_string(),
         value: public_text.to_string(),
     });

@@ -1,5 +1,7 @@
 use gtk::prelude::*;
+use waft_ui_gtk::vdom::Component;
 
+#[derive(Clone, PartialEq)]
 pub struct FeatureToggleMenuInfoRowProps {
     pub label: String,
     pub value: String,
@@ -7,6 +9,8 @@ pub struct FeatureToggleMenuInfoRowProps {
 
 pub struct FeatureToggleMenuInfoRow {
     root: gtk::Box,
+    label_widget: gtk::Label,
+    value_widget: gtk::Label,
 }
 
 fn create_label_box() -> gtk::Box {
@@ -17,8 +21,11 @@ fn create_label_box() -> gtk::Box {
         .build()
 }
 
-impl FeatureToggleMenuInfoRow {
-    pub fn new(props: FeatureToggleMenuInfoRowProps) -> Self {
+impl Component for FeatureToggleMenuInfoRow {
+    type Props = FeatureToggleMenuInfoRowProps;
+    type Output = ();
+
+    fn build(props: &Self::Props) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(12)
@@ -44,10 +51,21 @@ impl FeatureToggleMenuInfoRow {
         root.append(&label_box);
         root.append(&value_box);
 
-        Self { root }
+        Self {
+            root,
+            label_widget,
+            value_widget,
+        }
     }
 
-    pub fn widget(&self) -> gtk::Widget {
+    fn update(&self, props: &Self::Props) {
+        self.label_widget.set_label(&props.label);
+        self.value_widget.set_label(&props.value);
+    }
+
+    fn connect_output<F: Fn(()) + 'static>(&self, _callback: F) {}
+
+    fn widget(&self) -> gtk::Widget {
         self.root.clone().upcast::<gtk::Widget>()
     }
 }

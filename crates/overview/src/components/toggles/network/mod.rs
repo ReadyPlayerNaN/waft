@@ -24,7 +24,10 @@ use crate::components::toggles::settings_app_tracker::SettingsAppTracker;
 use crate::layout::types::WidgetFeatureToggle;
 use crate::ui::feature_toggles::menu::FeatureToggleMenuWidget;
 use crate::ui::feature_toggles::menu_info_row::FeatureToggleMenuInfoRow;
-use crate::ui::feature_toggles::menu_settings::FeatureToggleMenuSettingsButton;
+use crate::ui::feature_toggles::menu_settings::{
+    FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
+};
+use waft_ui_gtk::vdom::Component;
 use waft_client::{EntityActionCallback, EntityStore};
 
 /// A tracked toggle entry for a network adapter or VPN.
@@ -39,6 +42,8 @@ pub(super) struct ToggleEntry {
     connected: Rc<Cell<bool>>,
     /// Settings button for wired adapter menus (None for WiFi/VPN/Tethering).
     settings_button: Option<FeatureToggleMenuSettingsButton>,
+    /// Label for the settings button (needed for update() calls).
+    settings_button_label: Option<String>,
 }
 
 /// A single network row in the menu — either a plain box (WiFi/Ethernet)
@@ -110,7 +115,12 @@ impl NetworkManagerToggles {
                 let entries = entries_ref.borrow();
                 for entry in entries.iter() {
                     if let Some(ref btn) = entry.settings_button {
-                        btn.set_visible(is_available);
+                        if let Some(ref label) = entry.settings_button_label {
+                            btn.update(&FeatureToggleMenuSettingsButtonProps {
+                                label: label.clone(),
+                                visible: is_available,
+                            });
+                        }
                         let has_info = !entry.info_rows.borrow().is_empty();
                         let has_children = !entry.network_rows.borrow().is_empty();
                         entry
@@ -223,26 +233,31 @@ impl NetworkManagerToggles {
                         });
 
                         // Create settings button for wired and wireless adapters
-                        let settings_button = match adapter.kind {
+                        let has_settings = settings_tracker_for_adapter.is_available();
+                        let (settings_button, settings_button_label) = match adapter.kind {
                             entity::network::AdapterKind::Wired => {
+                                let label = crate::i18n::t("wired-settings-button");
                                 let btn = settings_tracker_for_adapter.build_settings_button(
                                     &cb,
                                     "wired",
-                                    crate::i18n::t("wired-settings-button"),
+                                    label.clone(),
+                                    has_settings,
                                 );
                                 menu.append(&btn.widget());
-                                Some(btn)
+                                (Some(btn), Some(label))
                             }
                             entity::network::AdapterKind::Wireless => {
+                                let label = crate::i18n::t("wifi-settings-button");
                                 let btn = settings_tracker_for_adapter.build_settings_button(
                                     &cb,
                                     "wifi",
-                                    crate::i18n::t("wifi-settings-button"),
+                                    label.clone(),
+                                    has_settings,
                                 );
                                 menu.append(&btn.widget());
-                                Some(btn)
+                                (Some(btn), Some(label))
                             }
-                            _ => None,
+                            _ => (None, None),
                         };
 
                         let entry = ToggleEntry {
@@ -254,6 +269,7 @@ impl NetworkManagerToggles {
                             weight: 150,
                             connected,
                             settings_button,
+                            settings_button_label,
                         };
 
                         // Initialize IP info rows for wired adapters
@@ -427,6 +443,7 @@ impl NetworkManagerToggles {
                         weight: 160,
                         connected: Rc::new(Cell::new(any_active)),
                         settings_button: None,
+                        settings_button_label: None,
                     };
 
                     // Populate VPN menu rows

@@ -7,12 +7,14 @@ use waft_core::Callback;
 use waft_ui_gtk::battery::resolve_battery_icon_name;
 use waft_ui_gtk::bluetooth::resolve_device_type_icon;
 use waft_ui_gtk::icons::Icon;
+use waft_ui_gtk::vdom::Component;
 
 use crate::ui::feature_toggles::menu_button::{
     FeatureToggleMenuButton, FeatureToggleMenuButtonProps,
 };
 
 /// Properties for initializing a bluetooth device row.
+#[derive(Clone, PartialEq)]
 pub struct BluetoothDeviceRowProps {
     pub device_type: String,
     pub name: String,
@@ -35,11 +37,14 @@ pub struct BluetoothDeviceRow {
     on_output: Callback<BluetoothDeviceRowOutput>,
 }
 
-impl BluetoothDeviceRow {
-    pub fn new(props: BluetoothDeviceRowProps) -> Self {
+impl Component for BluetoothDeviceRow {
+    type Props = BluetoothDeviceRowProps;
+    type Output = BluetoothDeviceRowOutput;
+
+    fn build(props: &Self::Props) -> Self {
         let root = FeatureToggleMenuButton::new(FeatureToggleMenuButtonProps {
             disabled: false,
-            name: props.name,
+            name: props.name.clone(),
             working: false,
         });
 
@@ -73,50 +78,30 @@ impl BluetoothDeviceRow {
         }
     }
 
-    pub fn update(&self, props: BluetoothDeviceRowProps) {
-        self.set_name(&props.name);
-        self.set_device_type(&props.device_type);
-        self.set_battery_power(props.power);
-        self.set_connected(props.connected);
-        self.set_transitioning(props.transitioning);
-    }
+    fn update(&self, props: &Self::Props) {
+        self.root.set_name(&props.name);
 
-    pub fn connect_output<F>(&self, callback: F)
-    where
-        F: Fn(BluetoothDeviceRowOutput) + 'static,
-    {
-        *self.on_output.borrow_mut() = Some(Box::new(callback));
-    }
-
-    pub fn set_name(&self, name: &str) {
-        self.root.set_name(name);
-    }
-
-    pub fn set_device_type(&self, device_type: &str) {
-        let device_icon = resolve_device_type_icon(&device_type);
+        let device_icon = resolve_device_type_icon(&props.device_type);
         self.root
             .set_primary_icon(vec![Icon::parse(&Arc::from(device_icon))]);
-    }
 
-    pub fn set_battery_power(&self, pct: Option<u8>) {
-        if let Some(value) = pct {
-            let device_icon = resolve_battery_icon_name(value);
+        if let Some(value) = props.power {
+            let battery_icon = resolve_battery_icon_name(value);
             self.root
-                .set_secondary_icon(vec![Icon::parse(&Arc::from(device_icon))]);
+                .set_secondary_icon(vec![Icon::parse(&Arc::from(battery_icon))]);
         } else {
             self.root.set_secondary_icon(vec![]);
         }
+
+        self.switch.set_active(props.connected);
+        self.root.set_working(props.transitioning);
     }
 
-    pub fn set_connected(&self, connected: bool) {
-        self.switch.set_active(connected);
+    fn connect_output<F: Fn(Self::Output) + 'static>(&self, callback: F) {
+        *self.on_output.borrow_mut() = Some(Box::new(callback));
     }
 
-    pub fn set_transitioning(&self, transitioning: bool) {
-        self.root.set_working(transitioning);
-    }
-
-    pub fn widget(&self) -> gtk::Widget {
+    fn widget(&self) -> gtk::Widget {
         self.root.widget()
     }
 }

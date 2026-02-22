@@ -21,11 +21,15 @@ use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidg
 use crate::components::toggles::settings_app_tracker::SettingsAppTracker;
 use crate::i18n;
 use crate::layout::types::WidgetFeatureToggle;
+use waft_ui_gtk::vdom::Component;
+
 use crate::ui::feature_toggles::bluetooth_device::{
     BluetoothDeviceRow, BluetoothDeviceRowOutput, BluetoothDeviceRowProps,
 };
 use crate::ui::feature_toggles::menu::FeatureToggleMenuWidget;
-use crate::ui::feature_toggles::menu_settings::FeatureToggleMenuSettingsButton;
+use crate::ui::feature_toggles::menu_settings::{
+    FeatureToggleMenuSettingsButton, FeatureToggleMenuSettingsButtonProps,
+};
 
 /// A tracked toggle entry for a single Bluetooth adapter.
 struct ToggleEntry {
@@ -35,6 +39,7 @@ struct ToggleEntry {
     device_rows: RefCell<Vec<DeviceRow>>,
     settings_separator: gtk::Separator,
     settings_button: FeatureToggleMenuSettingsButton,
+    settings_button_label: String,
 }
 
 /// A single device row wrapper holding the URN and the extracted widget.
@@ -76,7 +81,10 @@ impl BluetoothToggles {
             let entries_borrowed = entries_for_tracker.borrow();
             for entry in entries_borrowed.iter() {
                 entry.settings_separator.set_visible(is_available);
-                entry.settings_button.set_visible(is_available);
+                entry.settings_button.update(&FeatureToggleMenuSettingsButtonProps {
+                    label: entry.settings_button_label.clone(),
+                    visible: is_available,
+                });
                 let has_devices = !entry.device_rows.borrow().is_empty();
                 entry.toggle.set_expandable(has_devices || is_available);
             }
@@ -134,14 +142,15 @@ impl BluetoothToggles {
 
                         // Create settings button row (initially hidden based on availability)
                         let settings_separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+                        let has_settings = settings_tracker_for_adapter.is_available();
+                        let settings_button_label = i18n::t("bluetooth-settings-button");
                         let settings_button = settings_tracker_for_adapter.build_settings_button(
                             &cb,
                             "bluetooth",
-                            i18n::t("bluetooth-settings-button"),
+                            settings_button_label.clone(),
+                            has_settings,
                         );
-                        let has_settings = settings_tracker_for_adapter.is_available();
                         settings_separator.set_visible(has_settings);
-                        settings_button.set_visible(has_settings);
                         menu.append(&settings_separator);
                         menu.append(&settings_button.widget());
 
@@ -175,6 +184,7 @@ impl BluetoothToggles {
                             device_rows: RefCell::new(Vec::new()),
                             settings_separator,
                             settings_button,
+                            settings_button_label,
                         });
                         changed = true;
                     }
@@ -280,9 +290,9 @@ impl BluetoothToggles {
                 };
 
                 if let Some(row) = device_rows.iter().find(|r| r.urn_str == device_urn_str) {
-                    row.row.update(props);
+                    row.row.update(&props);
                 } else {
-                    let bt_row = Rc::new(BluetoothDeviceRow::new(props));
+                    let bt_row = Rc::new(BluetoothDeviceRow::build(&props));
                     let action_cb = action_callback.clone();
                     let urn_for_click = (*device_urn).clone();
                     bt_row.connect_output(move |BluetoothDeviceRowOutput::ToggleConnect| {
