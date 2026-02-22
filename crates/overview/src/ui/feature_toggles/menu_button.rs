@@ -1,139 +1,77 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use waft_ui_gtk::icons::Icon;
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
+use waft_ui_gtk::vdom::primitives::{VBox, VCustomButton, VIcon, VLabel, VSpinner, VSwitch};
 
-use gtk::prelude::*;
-use waft_core::Callback;
-use waft_ui_gtk::icons::{Icon, IconWidget};
-
+#[derive(Clone, PartialEq)]
 pub struct FeatureToggleMenuButtonProps {
-    pub disabled: bool,
-    pub name: String,
-    pub working: bool,
+    pub disabled:       bool,
+    pub name:           String,
+    pub working:        bool,
+    pub primary_icon:   Vec<Icon>,
+    pub secondary_icon: Vec<Icon>,
+    pub visible:        bool,
+    /// When `Some`, renders a non-interactive display-only switch in the right slot.
+    pub switch_active:  Option<bool>,
 }
 
 pub enum FeatureToggleMenuButtonOutput {
     Click,
 }
 
-pub struct FeatureToggleMenuButton {
-    name_label: gtk::Label,
-    on_output: Callback<FeatureToggleMenuButtonOutput>,
-    primary_icon: IconWidget,
-    right_box: gtk::Box,
-    root: gtk::Button,
-    secondary_icon: IconWidget,
-    spinner: gtk::Spinner,
-}
+struct FeatureToggleMenuButtonRender;
 
-fn create_item_box() -> gtk::Box {
-    gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(4)
-        .valign(gtk::Align::Center)
-        .build()
-}
+impl RenderFn for FeatureToggleMenuButtonRender {
+    type Props  = FeatureToggleMenuButtonProps;
+    type Output = FeatureToggleMenuButtonOutput;
 
-fn update_icon(target: &IconWidget, icon_hints: Vec<Icon>) {
-    if icon_hints.is_empty() {
-        target.widget().set_visible(false);
-    } else {
-        target.update_icon(icon_hints);
-        target.widget().set_visible(true);
-    }
-}
+    fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
+        let emit_clone = emit.clone();
 
-impl FeatureToggleMenuButton {
-    pub fn new(props: FeatureToggleMenuButtonProps) -> Self {
-        let inner = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(8)
-            .build();
+        let icon_box = VBox::horizontal(4)
+            .valign(gtk::Align::Center)
+            .child(VNode::icon(
+                VIcon::new(props.primary_icon.clone(), 16)
+                    .visible(!props.primary_icon.is_empty()),
+            ))
+            .child(VNode::icon(
+                VIcon::new(props.secondary_icon.clone(), 16)
+                    .visible(!props.secondary_icon.is_empty()),
+            ));
 
-        let icon_box = create_item_box();
-        let right_box = create_item_box();
-        let name_label = gtk::Label::builder()
-            .label(&props.name)
-            .hexpand(true)
-            .xalign(0.0)
-            .ellipsize(gtk::pango::EllipsizeMode::End)
-            .build();
-
-        let spinner = gtk::Spinner::builder()
-            .visible(props.working)
-            .spinning(props.working)
-            .build();
-
-        let primary_icon = IconWidget::new(vec![], 16);
-        let secondary_icon = IconWidget::new(vec![], 16);
-
-        primary_icon.widget().set_visible(false);
-        secondary_icon.widget().set_visible(false);
-        icon_box.append(primary_icon.widget());
-        icon_box.append(secondary_icon.widget());
-
-        inner.append(&icon_box);
-        inner.append(&name_label);
-        inner.append(&right_box);
-
-        let root = gtk::Button::builder()
-            .child(&inner)
-            .css_classes(["flat", "device-row"])
-            .sensitive(!props.disabled)
-            .build();
-
-        let on_output: Callback<FeatureToggleMenuButtonOutput> = Rc::new(RefCell::new(None));
-        let on_output_ref = on_output.clone();
-        root.connect_clicked(move |_| {
-            if let Some(ref callback) = *on_output_ref.borrow() {
-                callback(FeatureToggleMenuButtonOutput::Click);
-            }
-        });
-
-        Self {
-            name_label,
-            on_output,
-            primary_icon,
-            root,
-            secondary_icon,
-            spinner,
-            right_box,
+        let mut right_box = VBox::horizontal(4).valign(gtk::Align::Center);
+        if let Some(active) = props.switch_active {
+            right_box = right_box.child(VNode::switch(
+                VSwitch::new(active)
+                    .sensitive(false)
+                    .css_class("device-switch"),
+            ));
         }
-    }
 
-    pub fn connect_output<F>(&self, callback: F)
-    where
-        F: Fn(FeatureToggleMenuButtonOutput) + 'static,
-    {
-        *self.on_output.borrow_mut() = Some(Box::new(callback));
-    }
+        let inner = VBox::horizontal(8)
+            .child(VNode::vbox(icon_box))
+            .child(VNode::label(
+                VLabel::new(&props.name)
+                    .hexpand(true)
+                    .xalign(0.0)
+                    .ellipsize(gtk::pango::EllipsizeMode::End),
+            ))
+            .child(VNode::spinner(
+                VSpinner::new(props.working).visible(props.working),
+            ))
+            .child(VNode::vbox(right_box));
 
-    pub fn get_right_box(&self) -> &gtk::Box {
-        &self.right_box
-    }
-
-    pub fn set_primary_icon(&self, icon_hints: Vec<Icon>) {
-        update_icon(&self.primary_icon, icon_hints);
-    }
-
-    pub fn set_name(&self, name: &str) {
-        self.name_label.set_label(name);
-    }
-
-    pub fn set_secondary_icon(&self, icon_hints: Vec<Icon>) {
-        update_icon(&self.secondary_icon, icon_hints);
-    }
-
-    pub fn set_visible(&self, visible: bool) {
-        self.root.set_visible(visible);
-    }
-
-    pub fn set_working(&self, working: bool) {
-        self.spinner.set_visible(working);
-        self.spinner.set_spinning(working);
-        self.root.set_sensitive(!working);
-    }
-
-    pub fn widget(&self) -> gtk::Widget {
-        self.root.clone().upcast()
+        VNode::custom_button(
+            VCustomButton::new(VNode::vbox(inner))
+                .css_classes(["flat", "device-row"])
+                .sensitive(!props.disabled && !props.working)
+                .visible(props.visible)
+                .on_click(move || {
+                    if let Some(ref cb) = *emit_clone.borrow() {
+                        cb(FeatureToggleMenuButtonOutput::Click);
+                    }
+                }),
+        )
     }
 }
+
+pub type FeatureToggleMenuButton = RenderComponent<FeatureToggleMenuButtonRender>;
