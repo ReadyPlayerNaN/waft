@@ -28,12 +28,32 @@ impl ToastItem {
     }
 }
 
-/// Determine TTL for a notification based on urgency.
-/// Returns None for Critical (no expiry).
+/// Determine the toast display TTL.
+///
+/// - Critical: no auto-expire (None).
+/// - Has sender TTL: use it, capped at DEFAULT_TOAST_TTL_MS.
+/// - No sender TTL: use DEFAULT_TOAST_TTL_MS.
 fn toast_ttl_for(notification: &Notification) -> Option<u64> {
     match notification.urgency {
         NotificationUrgency::Critical => None,
-        _ => Some(DEFAULT_TOAST_TTL_MS),
+        _ => {
+            let display_ttl = notification
+                .ttl
+                .map(|sender_ttl| sender_ttl.min(DEFAULT_TOAST_TTL_MS))
+                .unwrap_or(DEFAULT_TOAST_TTL_MS);
+            Some(display_ttl)
+        }
+    }
+}
+
+/// Priority value: higher = shown first.
+fn urgency_priority(urgency: NotificationUrgency, has_ttl: bool) -> u8 {
+    match (urgency, has_ttl) {
+        (NotificationUrgency::Critical, _) => 4,
+        (NotificationUrgency::Normal, true) => 3,
+        (NotificationUrgency::Normal, false) => 2,
+        (NotificationUrgency::Low, true) => 1,
+        (NotificationUrgency::Low, false) => 0,
     }
 }
 
@@ -44,6 +64,7 @@ pub struct ToastManager {
     pending_queue: RefCell<VecDeque<ToastItem>>,
     widgets: RefCell<HashMap<Urn, Rc<NotificationCard>>>,
     action_tx: std::sync::mpsc::Sender<(Urn, String, Value)>,
+    claim_tx: std::sync::mpsc::Sender<(uuid::Uuid, bool)>,
     dnd_active: Cell<bool>,
     window_resize_callback: Rc<dyn Fn()>,
     window_visibility_callback: Rc<dyn Fn(bool)>,
@@ -53,6 +74,7 @@ impl ToastManager {
     pub fn new(
         container: gtk::Box,
         action_tx: std::sync::mpsc::Sender<(Urn, String, Value)>,
+        claim_tx: std::sync::mpsc::Sender<(uuid::Uuid, bool)>,
         window_resize_callback: Rc<dyn Fn()>,
         window_visibility_callback: Rc<dyn Fn(bool)>,
         position: ToastPosition,
@@ -64,6 +86,7 @@ impl ToastManager {
             pending_queue: RefCell::new(VecDeque::new()),
             widgets: RefCell::new(HashMap::new()),
             action_tx,
+            claim_tx,
             dnd_active: Cell::new(false),
             window_resize_callback,
             window_visibility_callback,
@@ -83,13 +106,41 @@ impl ToastManager {
         } else if item.entity.urgency == NotificationUrgency::Critical {
             self.bump_oldest_non_critical(item);
         } else {
-            self.pending_queue.borrow_mut().push_back(item);
+            // Priority: Critical > (same urgency, has TTL) > (same urgency, no TTL)
+            let item_has_ttl = item.entity.ttl.is_some();
+            let item_urgency = item.entity.urgency;
+            let mut queue = self.pending_queue.borrow_mut();
+
+            // Find insertion point: after all items with higher-or-equal priority
+            let pos = queue.iter().position(|queued| {
+                let queued_has_ttl = queued.entity.ttl.is_some();
+                let queued_urgency = queued.entity.urgency;
+                // Insert before first item with LOWER priority
+                urgency_priority(queued_urgency, queued_has_ttl)
+                    < urgency_priority(item_urgency, item_has_ttl)
+            });
+
+            match pos {
+                Some(idx) => queue.insert(idx, item),
+                None => queue.push_back(item),
+            }
         }
     }
 
     /// Handle DND entity update.
     pub fn handle_dnd(&self, dnd: &Dnd) {
         self.dnd_active.set(dnd.active);
+    }
+
+    /// Handle a ClaimCheck from the daemon: respond whether we still want this entity.
+    pub fn handle_claim_check(&self, urn: &Urn, claim_id: uuid::Uuid) {
+        let in_active = self.active_toasts.borrow().iter().any(|item| &item.urn == urn);
+        let in_pending = self.pending_queue.borrow().iter().any(|item| &item.urn == urn);
+        let claimed = in_active || in_pending;
+
+        if self.claim_tx.send((claim_id, claimed)).is_err() {
+            log::warn!("[toast-manager] claim response channel closed");
+        }
     }
 
     /// Handle entity removal (notification retracted).
@@ -132,13 +183,27 @@ impl ToastManager {
                 }
             }
             NotificationCardOutput::TimedOut(urn) => {
-                if action_tx
-                    .send((urn.clone(), "dismiss".into(), Value::Null))
-                    .is_err()
-                {
-                    log::warn!("[toast-manager] action channel closed on timeout");
-                }
                 if let Some(mgr) = self_weak.upgrade() {
+                    // Determine which path based on whether sender specified a TTL
+                    let has_sender_ttl = mgr
+                        .active_toasts
+                        .borrow()
+                        .iter()
+                        .find(|item| item.urn == urn)
+                        .map(|item| item.entity.ttl.is_some())
+                        .unwrap_or(false);
+
+                    if !has_sender_ttl {
+                        // No sender TTL: initiate claim check so plugin can decide lifecycle
+                        if action_tx
+                            .send((urn.clone(), "expire".into(), Value::Null))
+                            .is_err()
+                        {
+                            log::warn!("[toast-manager] action channel closed on expire");
+                        }
+                    }
+                    // With sender TTL: no action sent -- plugin's TTL timer handles entity lifecycle
+
                     mgr.dismiss_toast(&urn);
                     mgr.show_next_pending();
                 }

@@ -25,6 +25,7 @@ pub async fn setup(
     let (event_tx, event_rx) = flume::unbounded::<ClientEvent>();
     let (action_tx, action_rx) =
         std::sync::mpsc::channel::<(waft_protocol::Urn, String, serde_json::Value)>();
+    let (claim_tx, claim_rx) = std::sync::mpsc::channel::<(uuid::Uuid, bool)>();
 
     // 2. Create client handle for write path
     let client_handle: Arc<Mutex<Option<WaftClient>>> = Arc::new(Mutex::new(None));
@@ -58,6 +59,26 @@ pub async fn setup(
         log::debug!("[toasts] action writer thread exiting");
     });
 
+    // 4b. Spawn claim response writer thread
+    let client_handle_claim = client_handle.clone();
+    std::thread::spawn(move || {
+        while let Ok((claim_id, claimed)) = claim_rx.recv() {
+            match client_handle_claim.lock() {
+                Ok(guard) => {
+                    if let Some(ref client) = *guard {
+                        client.send_claim_response(claim_id, claimed);
+                    }
+                }
+                Err(e) => {
+                    if let Some(ref client) = *e.into_inner() {
+                        client.send_claim_response(claim_id, claimed);
+                    }
+                }
+            }
+        }
+        log::debug!("[toasts] claim response writer thread exiting");
+    });
+
     // 5. Create GTK application
     let app = adw::Application::builder()
         .application_id("com.waft.toasts")
@@ -85,6 +106,7 @@ pub async fn setup(
         let toast_manager = Rc::new(ToastManager::new(
             toast_window.container.clone(),
             action_tx.clone(),
+            claim_tx.clone(),
             resize_callback,
             visibility_callback,
             position,
@@ -151,6 +173,9 @@ fn handle_notification(notification: AppNotification, manager: &Rc<ToastManager>
             if entity_type == "notification" {
                 manager.handle_entity_removed(&urn);
             }
+        }
+        AppNotification::ClaimCheck { urn, claim_id } => {
+            manager.handle_claim_check(&urn, claim_id);
         }
         _ => {} // Ignore ActionSuccess, ActionError
     }

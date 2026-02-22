@@ -19,5 +19,6 @@ waft-config = { path = "../config" }
 waft-ui-gtk = { path = "../waft-ui-gtk" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+uuid = "1"
 log = "0.4"
 env_logger = "0.11"
