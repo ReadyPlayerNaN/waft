@@ -102,12 +102,12 @@ All 15 plugins are standalone daemon binaries implementing the `Plugin` trait fr
 | **battery**         | `battery`                                                                                                                   | Battery percentage, health, charging (UPower D-Bus)                 |
 | **brightness**      | `display`                                                                                                                   | Display brightness (brightnessctl/ddcutil)                          |
 | **keyboard-layout** | `keyboard-layout`                                                                                                           | Input method display/switch (Niri/Sway/Hyprland/localed)            |
-| **systemd-actions** | `session`                                                                                                                   | Lock, logout, reboot, shutdown, suspend via systemd login1          |
+| **systemd**         | `session`, `user-service`                                                                                                   | Session actions and user service management via systemd             |
 | **bluez**           | `bluetooth-adapter`, `bluetooth-device`                                                                                     | Bluetooth device management (BlueZ D-Bus)                           |
 | **audio**           | `audio-device`                                                                                                              | Volume sliders, device selection (pactl)                            |
 | **networkmanager**  | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn`                                                             | WiFi/Ethernet/VPN management (nmrs + zbus)                          |
 | **weather**         | `weather`                                                                                                                   | Weather information via HTTP API                                    |
-| **notifications**   | `notification`, `dnd`, `notification-group`, `notification-profile`, `active-profile`, `sound-config`, `notification-sound` | D-Bus notification server, toasts, DND, filtering, sound management |
+| **notifications**   | `notification`, `dnd`, `notification-group`, `notification-profile`, `active-profile`, `sound-config`, `notification-sound`, `recording` | D-Bus notification server, toasts, DND, filtering, sound, recording |
 | **eds**             | `calendar-event`                                                                                                            | EDS calendar integration                                            |
 | **sunsetr**         | `night-light`                                                                                                               | Night light control via sunsetr CLI                                 |
 | **syncthing**       | `backup-method`                                                                                                             | Syncthing service toggle                                            |
@@ -212,12 +212,12 @@ plugins/
     battery/        bin/          # Entity types: battery
     brightness/     bin/          # Entity types: display
     keyboard-layout/ bin/         # Entity types: keyboard-layout
-    systemd-actions/ bin/         # Entity types: session
+    systemd/        bin/          # Entity types: session, user-service
     bluez/          bin/          # Entity types: bluetooth-adapter, bluetooth-device
     audio/          bin/          # Entity types: audio-device
     networkmanager/ bin/          # Entity types: network-adapter, wifi-network, etc.
     weather/        bin/          # Entity types: weather
-    notifications/  bin/          # Entity types: notification, dnd
+    notifications/  bin/          # Entity types: notification, dnd, recording
     eds/            bin/          # Entity types: calendar-event
     sunsetr/        bin/          # Entity types: night-light
     syncthing/      bin/          # Entity types: backup-method

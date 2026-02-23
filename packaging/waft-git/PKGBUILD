@@ -30,7 +30,7 @@ build() {
   cargo build --frozen --release \
     --bin waft \
     --bin waft-clock-daemon \
-    --bin waft-systemd-actions-daemon
+    --bin waft-systemd-daemon
 }
 
 check() {
@@ -44,7 +44,7 @@ package() {
   cd "$srcdir/$pkgname"
   install -Dm755 "target/release/waft" "$pkgdir/usr/bin/waft"
   install -Dm755 "target/release/waft-clock-daemon" "$pkgdir/usr/bin/waft-clock-daemon"
-  install -Dm755 "target/release/waft-systemd-actions-daemon" "$pkgdir/usr/bin/waft-systemd-actions-daemon"
+  install -Dm755 "target/release/waft-systemd-daemon" "$pkgdir/usr/bin/waft-systemd-daemon"
   install -Dm644 "data/org.waft.Daemon.service" "$pkgdir/usr/share/dbus-1/services/org.waft.Daemon.service"
   install -Dm644 "data/waft.service" "$pkgdir/usr/lib/systemd/user/waft.service"
   install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
