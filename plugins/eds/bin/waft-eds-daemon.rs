@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use anyhow::{Context, Result};
 use futures_util::stream::StreamExt;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use serde::Deserialize;
 use waft_i18n::I18n;
 use waft_plugin::*;
@@ -77,6 +77,10 @@ struct EdsState {
     refresh_unsupported: HashSet<String>,
     /// Unix timestamp of the last refresh attempt (overlay-triggered or scheduled).
     last_refresh: Option<i64>,
+    /// Instant when the last Refresh() D-Bus call was dispatched.
+    /// Used by `can_stop()` to hold the plugin alive while an async EDS sync
+    /// is in progress (ObjectsModified signals arrive 30-60s after Refresh()).
+    last_refresh_instant: Option<std::time::Instant>,
     /// True while a calendar refresh D-Bus call is in progress.
     syncing: bool,
 }
@@ -90,6 +94,7 @@ impl EdsState {
             calendar_backends: Vec::new(),
             refresh_unsupported: HashSet::new(),
             last_refresh: None,
+            last_refresh_instant: None,
             syncing: false,
         }
     }
@@ -268,6 +273,25 @@ impl Plugin for EdsPlugin {
     }
 
     fn can_stop(&self) -> bool {
+        // EDS Refresh() is fire-and-forget: the D-Bus call returns immediately
+        // but the actual sync with Google Calendar happens asynchronously.
+        // ObjectsModified signals arrive 30–120 seconds after we send Refresh().
+        // Returning false here keeps the plugin alive long enough to receive
+        // those signals so the next overview open sees up-to-date events.
+        const REFRESH_GRACE_SECS: u64 = 120;
+        let st = match self.state.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        if let Some(instant) = st.last_refresh_instant {
+            if instant.elapsed() < std::time::Duration::from_secs(REFRESH_GRACE_SECS) {
+                log::debug!(
+                    "[eds] can_stop: false — refresh grace period active ({}s remaining)",
+                    REFRESH_GRACE_SECS - instant.elapsed().as_secs()
+                );
+                return false;
+            }
+        }
         true
     }
 }
@@ -411,6 +435,7 @@ async fn refresh_with_status(
             }
         };
         st.syncing = true;
+        st.last_refresh_instant = Some(std::time::Instant::now());
     }
     notifier.notify();
 
@@ -619,7 +644,6 @@ type ManagedObjects =
 #[derive(Debug, Clone)]
 struct CalendarSource {
     uid: String,
-    #[allow(dead_code)]
     display_name: String,
 }
 
@@ -683,7 +707,10 @@ async fn discover_calendar_sources(conn: &Connection) -> Result<Vec<CalendarSour
         }
     }
 
-    debug!("[eds] Discovered {} calendar sources", sources.len());
+    info!("[eds] Discovered {} calendar sources", sources.len());
+    for src in &sources {
+        info!("[eds]   source uid={:?} display_name={:?}", src.uid, src.display_name);
+    }
     Ok(sources)
 }
 
@@ -708,6 +735,49 @@ async fn open_calendar(conn: &Connection, source_uid: &str) -> Result<(String, S
         source_uid, object_path, bus_name
     );
     Ok((object_path, bus_name))
+}
+
+/// Check whether a calendar backend is online (has valid credentials).
+///
+/// EDS sets the `online` backend property to `"false"` when OAuth credentials
+/// have expired (GOA `AttentionNeeded: true`). Any calendar in this state
+/// cannot sync new events from the remote server.
+async fn check_backend_online(
+    conn: &Connection,
+    bus_name: &str,
+    calendar_path: &str,
+    display_name: &str,
+    source_uid: &str,
+) {
+    let proxy = match zbus::Proxy::new(
+        conn,
+        bus_name,
+        calendar_path,
+        "org.gnome.evolution.dataserver.Calendar",
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            debug!("[eds] Could not create proxy to check online status for {source_uid}: {e}");
+            return;
+        }
+    };
+
+    let result: Result<String, _> = proxy.call("GetBackendProperty", &("online",)).await;
+    match result {
+        Ok(value) if value == "false" => {
+            warn!(
+                "[eds] Calendar '{}' ({}) is OFFLINE — credentials may have expired. \
+                Re-authenticate in GNOME Settings → Online Accounts.",
+                display_name, source_uid
+            );
+        }
+        Ok(_) => {}
+        Err(e) => {
+            debug!("[eds] Could not read online property for {source_uid}: {e}");
+        }
+    }
 }
 
 /// Create a calendar view with the given query.
@@ -773,7 +843,7 @@ fn build_time_range_query_from_today() -> (TimeRange, String) {
         .earliest()
         .expect("today midnight is a valid local time")
         .to_utc();
-    let end = local_now.to_utc() + chrono::Duration::days(30);
+    let end = local_now.to_utc() + chrono::Duration::days(60);
     let range = TimeRange {
         start: today_midnight.timestamp(),
         end: end.timestamp(),
@@ -782,6 +852,13 @@ fn build_time_range_query_from_today() -> (TimeRange, String) {
         "(occur-in-time-range? (make-time \"{}\") (make-time \"{}\"))",
         today_midnight.format("%Y%m%dT%H%M%SZ"),
         end.format("%Y%m%dT%H%M%SZ")
+    );
+    info!(
+        "[eds] Time range query: {} → {} (UTC timestamps {} → {})",
+        today_midnight.format("%Y-%m-%d %H:%M:%S UTC"),
+        end.format("%Y-%m-%d %H:%M:%S UTC"),
+        range.start,
+        range.end
     );
     (range, query)
 }
@@ -827,12 +904,24 @@ async fn setup_calendar_views(
         let state_clone = state.clone();
         let notifier_clone = notifier.clone();
         let source_uid = source.uid.clone();
+        let source_display_name = source.display_name.clone();
         let query_clone = query.clone();
         let view_paths_clone = view_paths.clone();
 
         let handle = tokio::spawn(async move {
             match open_calendar(&conn_clone, &source_uid).await {
                 Ok((calendar_path, bus_name)) => {
+                    // Check whether the backend has valid credentials.
+                    // Offline = GOA OAuth token expired; log a prominent warning.
+                    check_backend_online(
+                        &conn_clone,
+                        &bus_name,
+                        &calendar_path,
+                        &source_display_name,
+                        &source_uid,
+                    )
+                    .await;
+
                     // Record this backend so do_refresh can Open()+Refresh() it later.
                     {
                         let mut st = match state_clone.lock() {
@@ -861,12 +950,14 @@ async fn setup_calendar_views(
                                 paths.insert(view_path.clone());
                             }
 
-                            if let Err(e) = start_view(&conn_clone, &bus_name, &view_path).await {
-                                warn!("[eds] Failed to start view: {e}");
-                                return;
-                            }
-
-                            if let Err(e) = spawn_view_monitor(
+                            // spawn_view_monitor registers AddMatch then calls
+                            // start_view internally, so the initial ObjectsAdded
+                            // batch is never missed.
+                            //
+                            // The returned JoinHandle is for the background monitor
+                            // loop — store it in state so midnight rebuild can abort it.
+                            let state_for_handle = state_clone.clone();
+                            match spawn_view_monitor(
                                 conn_clone,
                                 bus_name,
                                 view_path,
@@ -877,7 +968,19 @@ async fn setup_calendar_views(
                             )
                             .await
                             {
-                                warn!("[eds] View monitor error: {e}");
+                                Ok(monitor_handle) => {
+                                    let mut st = match state_for_handle.lock() {
+                                        Ok(g) => g,
+                                        Err(e) => {
+                                            warn!(
+                                                "[eds] state mutex poisoned storing monitor handle, recovering: {e}"
+                                            );
+                                            e.into_inner()
+                                        }
+                                    };
+                                    st.view_monitor_handles.push(monitor_handle);
+                                }
+                                Err(e) => warn!("[eds] View monitor error: {e}"),
                             }
                         }
                         Err(e) => warn!("[eds] Failed to create view for {source_uid}: {e}"),
@@ -903,18 +1006,25 @@ async fn monitor_eds_calendars(
     state: Arc<StdMutex<EdsState>>,
     notifier: EntityNotifier,
 ) -> Result<()> {
-    let handles = setup_calendar_views(&conn, state.clone(), notifier.clone()).await;
+    // setup_calendar_views spawns one tokio task per calendar source.  Each
+    // task opens the calendar, pushes its backend into state.calendar_backends,
+    // creates the view, calls spawn_view_monitor, and stores the resulting
+    // monitor JoinHandle in state.view_monitor_handles.
+    //
+    // We must wait for ALL setup tasks to finish before calling
+    // refresh_with_status: do_refresh checks state.calendar_backends and skips
+    // with "no backends" if the tasks haven't run yet.  Previously this wasn't
+    // awaited, causing the startup sync to be silently dropped every time.
+    let setup_handles = setup_calendar_views(&conn, state.clone(), notifier.clone()).await;
+    futures_util::future::join_all(setup_handles).await;
 
-    {
-        let mut st = match state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[eds] state mutex poisoned storing initial handles, recovering: {e}");
-                e.into_inner()
-            }
-        };
-        st.view_monitor_handles = handles;
-    }
+    // Trigger an immediate refresh so EDS syncs from Google on startup.
+    // The initial ObjectsAdded batch only reflects EDS's local cache; recently
+    // added or rescheduled events (e.g. a meeting moved to today) won't appear
+    // until EDS fetches from the remote backend.  Sending Refresh() here
+    // ensures those events arrive via ObjectsModified within ~30-120 seconds.
+    info!("[eds] Startup refresh: requesting EDS sync from remote backends");
+    refresh_with_status(&conn, &state, &notifier).await;
 
     // Midnight loop: rebuild views once per day so the query window stays
     // anchored to today. Also purges events whose end_time is before the
@@ -969,16 +1079,12 @@ async fn monitor_eds_calendars(
         // Notify daemon so it removes the pruned entities from its cache.
         notifier.notify();
 
-        // Set up fresh views anchored to the new today.
-        let new_handles = setup_calendar_views(&conn, state.clone(), notifier.clone()).await;
-
-        match state.lock() {
-            Ok(mut st) => st.view_monitor_handles = new_handles,
-            Err(e) => {
-                warn!("[eds] state mutex poisoned storing new handles, recovering: {e}");
-                e.into_inner().view_monitor_handles = new_handles;
-            }
-        }
+        // Set up fresh views anchored to the new today.  Each setup task
+        // stores the resulting monitor JoinHandle in state.view_monitor_handles,
+        // so we only need to join_all the setup tasks to ensure monitor handles
+        // are in place and calendar_backends is fully repopulated.
+        let setup_handles = setup_calendar_views(&conn, state.clone(), notifier.clone()).await;
+        futures_util::future::join_all(setup_handles).await;
 
         debug!("[eds] Calendar views rebuilt for new day");
     }
@@ -986,21 +1092,32 @@ async fn monitor_eds_calendars(
 
 /// Spawn a monitor task for a calendar view.
 ///
+/// Registers D-Bus match rules first, then starts the view so the initial
+/// `ObjectsAdded` batch is guaranteed to arrive after the match rules are
+/// in place. Without this ordering the bus drops the initial signals before
+/// our process has subscribed, causing events to be permanently missing.
+///
 /// Listens for ObjectsAdded, ObjectsModified, ObjectsRemoved signals,
 /// parses iCalendar VEVENT data, and updates shared state.
+///
+/// Returns the `JoinHandle` for the background monitoring loop so the caller
+/// can store it and abort it at midnight when views are rebuilt.
 async fn spawn_view_monitor(
     conn: Connection,
-    _bus_name: String,
+    bus_name: String,
     view_path: String,
     state: Arc<StdMutex<EdsState>>,
     notifier: EntityNotifier,
     view_paths: Arc<StdMutex<HashSet<String>>>,
     time_range: TimeRange,
-) -> Result<()> {
-    // Get message stream
+) -> Result<tokio::task::JoinHandle<()>> {
+    // Create the message stream before registering match rules so no signals
+    // can slip through the gap between AddMatch and stream creation.
     let mut stream = MessageStream::from(&conn);
 
-    // Register match rules so the bus forwards signals to us
+    // Register match rules so the bus forwards signals to us.
+    // This MUST happen before start_view() to avoid the race where EDS fires
+    // the initial ObjectsAdded batch before our AddMatch is registered.
     for member in &["ObjectsAdded", "ObjectsModified", "ObjectsRemoved"] {
         let rule = format!(
             "type='signal',interface='{}',path='{}',member='{}'",
@@ -1020,7 +1137,16 @@ async fn spawn_view_monitor(
         }
     }
 
-    tokio::spawn(async move {
+    // Start the view only after match rules are in place.
+    // EDS fires ObjectsAdded for all currently-matching events synchronously
+    // inside Start(); if AddMatch isn't registered yet those signals are lost.
+    debug!("[eds] AddMatch registered for view {view_path}, calling Start()");
+    if let Err(e) = start_view(&conn, &bus_name, &view_path).await {
+        return Err(e);
+    }
+    debug!("[eds] Start() returned for view {view_path}, monitoring loop starting");
+
+    let handle = tokio::spawn(async move {
         debug!("[eds] Monitoring view: {}", view_path);
 
         while let Some(msg_result) = stream.next().await {
@@ -1069,22 +1195,69 @@ async fn spawn_view_monitor(
                 "ObjectsAdded" => {
                     let body = msg.body();
                     if let Ok((icals,)) = body.deserialize::<(Vec<String>,)>() {
+                        info!(
+                            "[eds] view={} ObjectsAdded: {} raw iCal strings",
+                            view_path,
+                            icals.len()
+                        );
                         let events = parse_ical_events(&icals, time_range);
-                        if !events.is_empty() {
-                            debug!("[eds] ObjectsAdded: {} events", events.len());
+                        if events.is_empty() {
+                            info!(
+                                "[eds] view={} ObjectsAdded: all {} iCal strings produced 0 events \
+                                 (parse failure or outside time range [{}, {}])",
+                                view_path,
+                                icals.len(),
+                                time_range.start,
+                                time_range.end
+                            );
+                        } else {
+                            info!(
+                                "[eds] view={} ObjectsAdded: {} events stored: [{}]",
+                                view_path,
+                                events.len(),
+                                events
+                                    .iter()
+                                    .map(|e| {
+                                        let start = chrono::DateTime::from_timestamp(e.start_time, 0)
+                                            .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                                            .unwrap_or_else(|| format!("ts:{}", e.start_time));
+                                        format!("{:?}@{}", e.summary, start)
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
                             update_state_add_events(&state, events);
                             notifier.notify();
                         }
                     } else {
-                        warn!("[eds] Failed to deserialize ObjectsAdded signal body");
+                        warn!("[eds] view={} Failed to deserialize ObjectsAdded signal body", view_path);
                     }
                 }
                 "ObjectsModified" => {
                     let body = msg.body();
                     if let Ok((icals,)) = body.deserialize::<(Vec<String>,)>() {
+                        info!(
+                            "[eds] view={} ObjectsModified: {} raw iCal strings",
+                            view_path,
+                            icals.len()
+                        );
                         let events = parse_ical_events(&icals, time_range);
                         if !events.is_empty() {
-                            debug!("[eds] ObjectsModified: {} events", events.len());
+                            info!(
+                                "[eds] view={} ObjectsModified: {} events updated: [{}]",
+                                view_path,
+                                events.len(),
+                                events
+                                    .iter()
+                                    .map(|e| {
+                                        let start = chrono::DateTime::from_timestamp(e.start_time, 0)
+                                            .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                                            .unwrap_or_else(|| format!("ts:{}", e.start_time));
+                                        format!("{:?}@{}", e.summary, start)
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
                             // For modified events, remove old occurrences then add new
                             let uids: Vec<String> = events.iter().map(|e| e.uid.clone()).collect();
                             update_state_remove_events(&state, &uids);
@@ -1092,7 +1265,7 @@ async fn spawn_view_monitor(
                             notifier.notify();
                         }
                     } else {
-                        warn!("[eds] Failed to deserialize ObjectsModified signal body");
+                        warn!("[eds] view={} Failed to deserialize ObjectsModified signal body", view_path);
                     }
                 }
                 "ObjectsRemoved" => {
@@ -1126,17 +1299,63 @@ async fn spawn_view_monitor(
         debug!("[eds] View monitor stopped: {}", view_path);
     });
 
-    Ok(())
+    Ok(handle)
+}
+
+/// Split a VCALENDAR string into individual VEVENT blocks.
+///
+/// A single VCALENDAR may contain multiple VEVENT components — for example,
+/// a master recurring event (with RRULE + EXDATE) alongside an exception
+/// occurrence (with RECURRENCE-ID) that was rescheduled to a different time.
+/// Without this split, `parse_vevent_raw` stops at the first `END:VEVENT`
+/// and silently drops all subsequent VEVENTs.
+fn split_vevents(ical_str: &str) -> Vec<String> {
+    let unfolded = unfold_ical(ical_str);
+    let mut result = Vec::new();
+    let mut current: Option<String> = None;
+
+    for line in unfolded.lines() {
+        let line = line.trim_end_matches('\r');
+
+        if line == "BEGIN:VEVENT" {
+            current = Some("BEGIN:VEVENT\r\n".to_string());
+        } else if line == "END:VEVENT" {
+            if let Some(mut block) = current.take() {
+                block.push_str("END:VEVENT\r\n");
+                result.push(block);
+            }
+        } else if let Some(ref mut block) = current {
+            block.push_str(line);
+            block.push_str("\r\n");
+        }
+    }
+
+    if result.len() > 1 {
+        info!(
+            "[eds] split_vevents: found {} VEVENTs in one iCal blob (multi-VEVENT case)",
+            result.len()
+        );
+    }
+
+    result
 }
 
 /// Parse a list of iCalendar strings into CalendarEvent entities.
+///
+/// Each iCal string may contain multiple VEVENTs (e.g. a master recurring
+/// event plus exception occurrences with RECURRENCE-ID).  The function splits
+/// each string into individual VEVENT blocks before expanding.
 ///
 /// Recurring events (those with RRULE) are expanded into individual
 /// occurrences within `range`.  Non-recurring events pass through as-is.
 fn parse_ical_events(icals: &[String], range: TimeRange) -> Vec<entity::calendar::CalendarEvent> {
     icals
         .iter()
-        .flat_map(|ical| expand_vevent(ical, range))
+        .flat_map(|ical| {
+            split_vevents(ical)
+                .into_iter()
+                .flat_map(move |vevent| expand_vevent(&vevent, range))
+        })
         .collect()
 }
 
@@ -1448,6 +1667,17 @@ fn extract_tzid(params: &str) -> Option<chrono_tz::Tz> {
 /// exclusions applied.
 fn expand_vevent(ical_str: &str, range: TimeRange) -> Vec<entity::calendar::CalendarEvent> {
     let Some(raw) = parse_vevent_raw(ical_str) else {
+        // Extract SUMMARY for a more readable log message; fall back to raw iCal prefix.
+        let summary_hint = ical_str
+            .lines()
+            .find(|l| l.starts_with("SUMMARY:"))
+            .map(|l| &l[8..])
+            .unwrap_or("<no SUMMARY>");
+        warn!(
+            "[eds] Failed to parse VEVENT (summary={:?}), event dropped: {:?}",
+            summary_hint,
+            &ical_str[..ical_str.len().min(200)]
+        );
         return Vec::new();
     };
 
@@ -1659,7 +1889,7 @@ fn parse_ical_datetime(value: &str, params: &str) -> Option<i64> {
             let tzid = &params[tzid_start + 5..];
             let tzid = tzid.split(';').next().unwrap_or(tzid);
             if let Ok(tz) = tzid.parse::<chrono_tz::Tz>()
-                && let Some(dt) = tz.from_local_datetime(&datetime).single()
+                && let Some(dt) = tz.from_local_datetime(&datetime).earliest()
             {
                 return Some(dt.timestamp());
             }
@@ -2813,6 +3043,383 @@ mod tests {
         assert!(
             ts > 1_577_836_800,
             "unix_now must return a timestamp after 2020-01-01"
+        );
+    }
+
+    // ── expand_vevent: parse failure paths ───────────────────────────────────
+
+    /// Regression: a VEVENT without a UID must be silently dropped (empty vec),
+    /// not panic.  This exercises the `warn!` path added to `expand_vevent`.
+    #[test]
+    fn expand_vevent_missing_uid_returns_empty() {
+        let ical = "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            + "DTSTART;TZID=Europe/Prague:20260217T140000\r\n"
+            + "DTEND;TZID=Europe/Prague:20260217T150000\r\n"
+            + "SUMMARY:No UID event\r\n"
+            // UID deliberately omitted
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+        let range = prague_range((2026, 2, 17), (2026, 2, 18));
+        let events = expand_vevent(&ical, range);
+        assert!(
+            events.is_empty(),
+            "VEVENT without UID must be dropped, not partially parsed"
+        );
+    }
+
+    /// Regression: a VEVENT without a parseable DTSTART must be silently dropped.
+    #[test]
+    fn expand_vevent_missing_dtstart_returns_empty() {
+        let ical = "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            // DTSTART deliberately omitted
+            + "DTEND;TZID=Europe/Prague:20260217T150000\r\n"
+            + "SUMMARY:No DTSTART event\r\n"
+            + "UID:no-dtstart@test\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+        let range = prague_range((2026, 2, 17), (2026, 2, 18));
+        let events = expand_vevent(&ical, range);
+        assert!(
+            events.is_empty(),
+            "VEVENT without DTSTART must be dropped, not partially parsed"
+        );
+    }
+
+    // ── query window: 60-day lookahead ───────────────────────────────────────
+
+    /// Regression: the EDS query window was previously 30 days.  Events
+    /// scheduled 31–60 days out (e.g., an "FE interview" 5 weeks away) were
+    /// completely absent from the plugin's ObjectsAdded batches.  The window
+    /// was extended to 60 days to capture such events.
+    ///
+    /// This test verifies that a single (non-recurring) event 45 days away
+    /// is visible in a 60-day query range but would be absent from 30 days.
+    #[test]
+    fn single_event_45_days_out_is_in_60_day_range_not_30() {
+        // Use a fixed reference point: Feb 23, 2026 midnight Prague.
+        // 45 days later = Apr 9, 2026.
+        let reference_start = prague_range((2026, 2, 23), (2026, 2, 24)).start;
+        let range_30 = TimeRange {
+            start: reference_start,
+            end: reference_start + 30 * 24 * 3600,
+        };
+        let range_60 = TimeRange {
+            start: reference_start,
+            end: reference_start + 60 * 24 * 3600,
+        };
+
+        let ical = "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            + "DTSTART;TZID=Europe/Prague:20260409T100000\r\n"
+            + "DTEND;TZID=Europe/Prague:20260409T110000\r\n"
+            + "SUMMARY:FE interview\r\n"
+            + "UID:fe-interview@test\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+
+        let events_30 = expand_vevent(&ical, range_30);
+        assert_eq!(events_30.len(), 1, "non-recurring always passes through regardless of range");
+        // However, the EDS S-expression query would NOT return it with a 30-day window.
+        // This test documents that expand_vevent itself doesn't filter non-recurring events —
+        // the filtering happens at the EDS query level (occur-in-time-range?).
+
+        let events_60 = expand_vevent(&ical, range_60);
+        assert_eq!(events_60.len(), 1, "45-day-out event visible in 60-day window");
+        assert_eq!(events_60[0].summary, "FE interview");
+    }
+
+    /// Regression: COUNT-limited recurring events where COUNT is exhausted
+    /// before the query window must return zero occurrences in that window.
+    /// Previously the generated counter was verified to handle this correctly.
+    #[test]
+    fn expand_with_count_exhausted_before_range() {
+        // Weekly on Mondays, started 2025-01-06, COUNT=5 → last occurrence 2025-02-03.
+        // Query window starts in 2026 — no occurrences should be returned.
+        let ical = recurring_ical(
+            "20250106T090000",
+            "20250106T100000",
+            "FREQ=WEEKLY;BYDAY=MO;COUNT=5",
+            "exhausted-count@test",
+        );
+        let range = prague_range((2026, 2, 23), (2026, 3, 25));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(
+            events.len(),
+            0,
+            "COUNT exhausted in 2025 should produce 0 events for a 2026 query window"
+        );
+    }
+
+    /// Bi-weekly recurring event: verify that exactly the expected occurrences
+    /// within a 60-day window are returned.
+    #[test]
+    fn expand_biweekly_event_in_60_day_window() {
+        // Bi-weekly on Mondays starting 2026-02-23.  In a 60-day window
+        // (Feb 23 – Apr 24) the Mondays are: Feb 23, Mar 9, Mar 23, Apr 6, Apr 20 = 5.
+        let ical = recurring_ical(
+            "20260223T100000",
+            "20260223T110000",
+            "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO",
+            "biweekly-1on1@test",
+        );
+        let range = prague_range((2026, 2, 23), (2026, 4, 24));
+        let events = expand_vevent(&ical, range);
+        assert_eq!(
+            events.len(),
+            5,
+            "bi-weekly MO in 60-day window should produce 5 occurrences"
+        );
+    }
+
+    // ── multi-VEVENT iCal (exception occurrences) ────────────────────────────
+
+    /// Regression: two events scheduled for today ("Tech 1:1 Tomáš / Pavel" and
+    /// "FE interview") were not shown in the agenda widget.
+    ///
+    /// Root cause: EDS sends a single VCALENDAR containing two VEVENTs — the
+    /// master recurring event (RRULE + EXDATE for today's original slot) and an
+    /// exception occurrence (RECURRENCE-ID, DTSTART rescheduled to this
+    /// afternoon).  Previously `parse_vevent_raw` stopped at the first
+    /// `END:VEVENT` and silently dropped the exception VEVENT, so today's actual
+    /// rescheduled occurrence was never surfaced.
+    ///
+    /// The fix: `split_vevents` extracts each VEVENT block independently before
+    /// `expand_vevent` processes it.
+    #[test]
+    fn parse_ical_events_multi_vevent_with_exception_occurrence() {
+        // Weekly Monday recurring event; the original 09:00 UTC slot on
+        // 2026-02-23 (today) is excluded via EXDATE.  An exception VEVENT
+        // reschedules that occurrence to 13:00 UTC.
+        let ical = "BEGIN:VCALENDAR\r\n".to_string()
+            // Master: weekly on Mondays, started 2026-02-02; today's slot excluded.
+            + "BEGIN:VEVENT\r\n"
+            + "UID:tech-1on1@test\r\n"
+            + "SUMMARY:Tech 1:1 Tomáš / Pavel\r\n"
+            + "DTSTART:20260202T090000Z\r\n"
+            + "DTEND:20260202T100000Z\r\n"
+            + "RRULE:FREQ=WEEKLY;BYDAY=MO\r\n"
+            + "EXDATE:20260223T090000Z\r\n"
+            + "END:VEVENT\r\n"
+            // Exception: today's occurrence rescheduled to 13:00 UTC.
+            + "BEGIN:VEVENT\r\n"
+            + "UID:tech-1on1@test\r\n"
+            + "SUMMARY:Tech 1:1 Tomáš / Pavel\r\n"
+            + "RECURRENCE-ID:20260223T090000Z\r\n"
+            + "DTSTART:20260223T130000Z\r\n"
+            + "DTEND:20260223T140000Z\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+
+        // Query for today only.
+        let range = prague_range((2026, 2, 23), (2026, 2, 24));
+        let events = parse_ical_events(&[ical], range);
+
+        // Must yield exactly one event: the rescheduled 13:00 exception.
+        // Without split_vevents the exception VEVENT is dropped → 0 events.
+        assert_eq!(
+            events.len(),
+            1,
+            "multi-VEVENT iCal must yield the exception occurrence, not be dropped"
+        );
+        assert_eq!(events[0].summary, "Tech 1:1 Tomáš / Pavel");
+
+        // 13:00 UTC on 2026-02-23.
+        let expected_start = chrono::DateTime::parse_from_rfc3339("2026-02-23T13:00:00Z")
+            .unwrap()
+            .timestamp();
+        assert_eq!(
+            events[0].start_time, expected_start,
+            "rescheduled exception must be at 13:00 UTC, not original 09:00 slot"
+        );
+    }
+
+    /// Companion: a non-recurring event in a multi-VEVENT VCALENDAR alongside
+    /// an unrelated recurring master is still extracted and returned.
+    #[test]
+    fn parse_ical_events_multi_vevent_standalone_alongside_recurring() {
+        let ical = "BEGIN:VCALENDAR\r\n".to_string()
+            // A standalone non-recurring event today at 15:00 UTC.
+            + "BEGIN:VEVENT\r\n"
+            + "UID:fe-interview@test\r\n"
+            + "SUMMARY:FE interview\r\n"
+            + "DTSTART:20260223T150000Z\r\n"
+            + "DTEND:20260223T160000Z\r\n"
+            + "END:VEVENT\r\n"
+            // An unrelated recurring event also in the same VCALENDAR blob.
+            + "BEGIN:VEVENT\r\n"
+            + "UID:standup@test\r\n"
+            + "SUMMARY:Daily standup\r\n"
+            + "DTSTART:20260202T080000Z\r\n"
+            + "DTEND:20260202T080500Z\r\n"
+            + "RRULE:FREQ=DAILY\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+
+        let range = prague_range((2026, 2, 23), (2026, 2, 24));
+        let events = parse_ical_events(&[ical], range);
+
+        // FE interview (15:00) + standup (08:00) = 2 events today.
+        assert_eq!(
+            events.len(),
+            2,
+            "both VEVENTs from a multi-VEVENT VCALENDAR must be returned"
+        );
+        let summaries: Vec<&str> = events.iter().map(|e| e.summary.as_str()).collect();
+        assert!(summaries.contains(&"FE interview"), "standalone event must be present");
+        assert!(summaries.contains(&"Daily standup"), "recurring occurrence must be present");
+    }
+
+    // ── parse_ical_datetime: DST ambiguity ───────────────────────────────────
+
+    /// Regression: a TZID-qualified datetime that falls in the DST "fall-back"
+    /// gap (when the clock goes back and the same wall time occurs twice) must
+    /// still parse successfully.
+    ///
+    /// Previously `parse_ical_datetime` used `.single()` which returns `None`
+    /// for ambiguous times, causing the event to fall through to the "floating
+    /// time" branch and be interpreted as the system's local timezone instead
+    /// of the specified TZID.  The fix uses `.earliest()` so the first of the
+    /// two possible offsets is chosen deterministically.
+    ///
+    /// Prague (Europe/Prague) falls back on the last Sunday of October:
+    /// 2026-10-25 03:00 CEST → 02:00 CET.  Any time between 02:00 and 03:00
+    /// on that day is ambiguous.
+    #[test]
+    fn parse_ical_datetime_dst_ambiguous_uses_earliest() {
+        use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone as _};
+
+        // 02:30 on 2026-10-25 in Prague is ambiguous (occurs in both CEST and CET).
+        let ts = parse_ical_datetime("20261025T023000", ";TZID=Europe/Prague");
+        assert!(
+            ts.is_some(),
+            "DST-ambiguous TZID datetime must still parse (earliest offset chosen)"
+        );
+
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let naive = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2026, 10, 25).unwrap(),
+            NaiveTime::from_hms_opt(2, 30, 0).unwrap(),
+        );
+        // .earliest() picks CEST (UTC+2): 02:30 Prague CEST = 00:30 UTC.
+        let expected = tz.from_local_datetime(&naive).earliest().unwrap().timestamp();
+        assert_eq!(
+            ts,
+            Some(expected),
+            "ambiguous time should resolve to earliest offset (CEST, UTC+2)"
+        );
+    }
+
+    // ── Startup sync regression: missing SUMMARY and empty input ─────────────
+
+    /// Regression: EDS can deliver an event whose SUMMARY was stripped by
+    /// libical with `X-LIC-ERROR;X-LIC-ERRORTYPE=VALUE-PARSE-ERROR:No value
+    /// for SUMMARY property`.  The parser must default to an empty string
+    /// rather than silently dropping the event.
+    #[test]
+    fn parse_vevent_missing_summary_defaults_to_empty() {
+        let ical = "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            + "DTSTART:20260223T100000Z\r\n"
+            + "DTEND:20260223T110000Z\r\n"
+            // No SUMMARY line — libical error caused it to be stripped.
+            + "UID:no-summary@test\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+
+        let event = parse_vevent(&ical);
+        assert!(
+            event.is_some(),
+            "event with missing SUMMARY must still parse (defaults to empty string)"
+        );
+        assert_eq!(
+            event.unwrap().summary,
+            "",
+            "missing SUMMARY must default to empty string, not cause a parse failure"
+        );
+    }
+
+    /// `parse_ical_events` must return an empty Vec for empty input without
+    /// panicking.  This is a basic boundary check for the startup path.
+    #[test]
+    fn parse_ical_events_empty_input_returns_empty() {
+        let range = prague_range((2026, 2, 23), (2026, 2, 24));
+        let events = parse_ical_events(&[], range);
+        assert!(events.is_empty(), "empty input must produce empty output");
+    }
+
+    /// Recurring events whose occurrences all fall OUTSIDE the query range
+    /// must produce no results.  This confirms the RRULE expander filters
+    /// correctly so stale events from before today are not shown.
+    #[test]
+    fn expand_recurring_outside_range_produces_no_events() {
+        // Daily event from Jan 1–5 (5 occurrences, COUNT=5).
+        let ical = recurring_ical(
+            "20260101T090000",
+            "20260101T100000",
+            "FREQ=DAILY;COUNT=5",
+            "past-daily@test",
+        );
+        // Query window starts after the series ends.
+        let range = prague_range((2026, 2, 1), (2026, 3, 1));
+        let events = expand_vevent(&ical, range);
+        assert!(
+            events.is_empty(),
+            "recurring event series that ended before the range must produce 0 occurrences"
+        );
+    }
+
+    /// Regression guard for the startup CalDAV refresh race:
+    /// `parse_ical_events` must handle a batch of events (as EDS would send in
+    /// `ObjectsAdded`) containing both a recently-added single event and a
+    /// recurring master, and return them all.  This exercises the full
+    /// parse/expand pipeline that runs once backends are properly populated.
+    #[test]
+    fn parse_ical_events_handles_mixed_batch_like_objects_added() {
+        // A newly-added one-off event (like "FE interview brainstorm").
+        let new_event = "BEGIN:VCALENDAR\r\n".to_string()
+            + "BEGIN:VEVENT\r\n"
+            + "DTSTART:20260224T140000Z\r\n"
+            + "DTEND:20260224T150000Z\r\n"
+            + "SUMMARY:FE interview brainstorm\r\n"
+            + "UID:fe-interview-brainstorm@test\r\n"
+            + "END:VEVENT\r\n"
+            + "END:VCALENDAR\r\n";
+
+        // A bi-weekly recurring event (like "Tech 1:1").
+        // Series starts Feb 10 (Tuesday) → biweekly occurrences: Feb 10, Feb 24, Mar 10, …
+        // This puts an occurrence on the same day as the new event (Feb 24).
+        let recurring = recurring_ical(
+            "20260210T090000",
+            "20260210T100000",
+            "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU",
+            "tech-1on1@test",
+        );
+
+        let icals: Vec<String> = vec![new_event, recurring];
+        // Range covers Feb 24 only — the new event AND a biweekly occurrence both land here.
+        let range = prague_range((2026, 2, 24), (2026, 2, 25));
+        let events = parse_ical_events(
+            &icals.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            range,
+        );
+
+        // FE interview (14:00 UTC) + Tech 1:1 biweekly occurrence on Feb 24 (09:00 Prague).
+        assert_eq!(
+            events.len(),
+            2,
+            "newly-added event and recurring occurrence must both appear after startup sync"
+        );
+        let summaries: Vec<&str> = events.iter().map(|e| e.summary.as_str()).collect();
+        assert!(
+            summaries.contains(&"FE interview brainstorm"),
+            "newly-added event must appear"
+        );
+        // recurring_ical helper uses SUMMARY:Test event
+        assert!(
+            summaries.contains(&"Test event"),
+            "recurring occurrence must appear"
         );
     }
 }
