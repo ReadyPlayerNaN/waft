@@ -11,9 +11,9 @@ use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::icons::IconWidget;
-use waft_ui_gtk::menu_state::menu_id_for_widget;
+use waft_ui_gtk::menu_state::{menu_id_for_widget, toggle_menu};
 use waft_ui_gtk::vdom::Component;
-use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
+use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 use super::network_menu_logic::{details_text, should_be_expandable};
 use super::{NetworkRow, ToggleEntry, adapter_icon, adapter_title};
@@ -145,12 +145,21 @@ impl WifiToggles {
 
                         let action_cb = cb.clone();
                         let action_urn = urn.clone();
-                        toggle.connect_output(move |_output| {
-                            action_cb(
-                                action_urn.clone(),
-                                "activate".to_string(),
-                                serde_json::Value::Null,
-                            );
+                        let menu_id_for_expand = menu_id.clone();
+                        let menu_store_for_expand = menu_store_ref.clone();
+                        toggle.connect_output(move |output| {
+                            match output {
+                                FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
+                                    action_cb(
+                                        action_urn.clone(),
+                                        "activate".to_string(),
+                                        serde_json::Value::Null,
+                                    );
+                                }
+                                FeatureToggleOutput::ExpandToggle(_) => {
+                                    toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
+                                }
+                            }
                         });
 
                         // Create settings button

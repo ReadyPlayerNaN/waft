@@ -11,9 +11,9 @@ use std::rc::Rc;
 use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::backup::method_row::{BackupMethodRow, BackupMethodRowProps};
-use waft_ui_gtk::menu_state::menu_id_for_widget;
+use waft_ui_gtk::menu_state::{menu_id_for_widget, toggle_menu};
 use waft_ui_gtk::vdom::Component;
-use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
+use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 use crate::i18n;
 use crate::layout::types::WidgetFeatureToggle;
@@ -70,19 +70,28 @@ impl BackupToggle {
         let cb = action_callback.clone();
         let entries_ref = entries.clone();
         let any_enabled_ref = any_enabled.clone();
-        toggle.connect_output(move |_output| {
-            let action = if any_enabled_ref.get() {
-                "disable"
-            } else {
-                "enable"
-            };
-            let borrowed = entries_ref.borrow();
-            for entry in borrowed.iter() {
-                cb(
-                    entry.urn.clone(),
-                    action.to_string(),
-                    serde_json::Value::Null,
-                );
+        let menu_id_for_expand = menu_id.clone();
+        let menu_store_for_expand = menu_store.clone();
+        toggle.connect_output(move |output| {
+            match output {
+                FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
+                    let action = if any_enabled_ref.get() {
+                        "disable"
+                    } else {
+                        "enable"
+                    };
+                    let borrowed = entries_ref.borrow();
+                    for entry in borrowed.iter() {
+                        cb(
+                            entry.urn.clone(),
+                            action.to_string(),
+                            serde_json::Value::Null,
+                        );
+                    }
+                }
+                FeatureToggleOutput::ExpandToggle(_) => {
+                    toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
+                }
             }
         });
 

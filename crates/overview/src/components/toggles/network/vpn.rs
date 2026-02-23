@@ -9,12 +9,12 @@ use std::rc::Rc;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity;
-use waft_ui_gtk::menu_state::menu_id_for_widget;
+use waft_ui_gtk::menu_state::{menu_id_for_widget, toggle_menu};
 use waft_ui_gtk::vdom::Component;
 use waft_ui_gtk::widgets::connection_row::{
     ConnectionRow, ConnectionRowOutput, ConnectionRowProps,
 };
-use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
+use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
 
 use super::{NetworkRow, ToggleEntry};
 use crate::layout::types::WidgetFeatureToggle;
@@ -132,19 +132,28 @@ impl VpnToggles {
                     // Toggle click: disconnect ALL connected VPNs
                     let action_cb = cb.clone();
                     let vpn_states_for_click = vpn_states.clone();
-                    toggle.connect_output(move |_output| {
-                        let states = vpn_states_for_click.borrow();
-                        for (urn, state) in states.iter() {
-                            if matches!(
-                                state,
-                                entity::network::VpnState::Connected
-                                    | entity::network::VpnState::Connecting
-                            ) {
-                                action_cb(
-                                    urn.clone(),
-                                    "disconnect".to_string(),
-                                    serde_json::Value::Null,
-                                );
+                    let menu_id_for_expand = menu_id.clone();
+                    let menu_store_for_expand = menu_store_ref.clone();
+                    toggle.connect_output(move |output| {
+                        match output {
+                            FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
+                                let states = vpn_states_for_click.borrow();
+                                for (urn, state) in states.iter() {
+                                    if matches!(
+                                        state,
+                                        entity::network::VpnState::Connected
+                                            | entity::network::VpnState::Connecting
+                                    ) {
+                                        action_cb(
+                                            urn.clone(),
+                                            "disconnect".to_string(),
+                                            serde_json::Value::Null,
+                                        );
+                                    }
+                                }
+                            }
+                            FeatureToggleOutput::ExpandToggle(_) => {
+                                toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
                             }
                         }
                     });
