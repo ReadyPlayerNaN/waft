@@ -66,6 +66,39 @@ impl Default for SoundConfig {
     }
 }
 
+/// Recording configuration.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct RecordingConfig {
+    pub recording: bool,
+}
+
+impl Default for RecordingConfig {
+    fn default() -> Self {
+        Self { recording: false }
+    }
+}
+
+/// Load recording configuration from waft config.
+///
+/// Reads the `recording` boolean from `plugin::notifications` settings.
+/// Defaults to `false` if not found or if parsing fails.
+pub fn load_recording_config() -> RecordingConfig {
+    let config = waft_config::Config::load();
+    let Some(settings) = config.get_plugin_settings("plugin::notifications") else {
+        log::debug!("[notifications/config] no plugin config found, recording defaults to off");
+        return RecordingConfig::default();
+    };
+
+    let recording = settings
+        .get("recording")
+        .and_then(|v| v.clone().try_into::<bool>().ok())
+        .unwrap_or(false);
+
+    log::info!("[notifications/config] recording config: {recording}");
+    RecordingConfig { recording }
+}
+
 /// Load sound configuration from waft config.
 ///
 /// Looks for the `sounds` table within the `plugin::notifications` plugin

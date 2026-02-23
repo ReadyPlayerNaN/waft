@@ -26,6 +26,7 @@ use self::types::{NotificationIcon, NotificationUrgency};
 pub mod config;
 pub mod dbus;
 pub mod filter;
+pub mod recording;
 pub mod sound;
 pub mod store;
 pub mod ttl;
@@ -126,6 +127,7 @@ pub struct NotificationsPlugin {
     sound_gallery: Arc<StdMutex<sound::gallery::SoundGallery>>,
     sound_player: Arc<sound::player::SoundPlayer>,
     claim_sender: Arc<StdMutex<Option<waft_plugin::ClaimSender>>>,
+    recorder: Arc<recording::NotificationRecorder>,
 }
 
 impl NotificationsPlugin {
@@ -137,6 +139,7 @@ impl NotificationsPlugin {
         profiles: Vec<NotificationProfile>,
         active_profile_id: String,
         sound_cfg: config::SoundConfig,
+        recording: bool,
     ) -> Self {
         let compiled_matchers = compile_groups(&groups);
         let policy = sound::policy::SoundPolicy::new(sound_cfg.clone());
@@ -154,6 +157,7 @@ impl NotificationsPlugin {
             sound_gallery: Arc::new(StdMutex::new(gallery)),
             sound_player: Arc::new(sound::player::SoundPlayer::new()),
             claim_sender: Arc::new(StdMutex::new(None)),
+            recorder: Arc::new(recording::NotificationRecorder::new(recording)),
         }
     }
 
@@ -172,6 +176,14 @@ impl NotificationsPlugin {
             profiles: self.profiles.clone(),
             active_profile_id: self.active_profile_id.clone(),
         }
+    }
+
+    /// Get a shareable recorder handle for use in the ingress monitor task.
+    ///
+    /// Must be called before passing the plugin to `PluginRuntime::new()`,
+    /// since the runtime consumes the plugin.
+    pub fn recorder(&self) -> Arc<recording::NotificationRecorder> {
+        self.recorder.clone()
     }
 
     /// Ingest a notification from the D-Bus server into the store.
@@ -297,6 +309,15 @@ impl Plugin for NotificationsPlugin {
             Urn::new("notifications", proto::DND_ENTITY_TYPE, "default"),
             proto::DND_ENTITY_TYPE,
             &dnd,
+        ));
+
+        // Recording entity
+        entities.push(Entity::new(
+            Urn::new("notifications", proto::RECORDING_ENTITY_TYPE, "default"),
+            proto::RECORDING_ENTITY_TYPE,
+            &proto::Recording {
+                active: self.recorder.is_active(),
+            },
         ));
 
         // One entity per visible panel notification
@@ -505,6 +526,12 @@ impl Plugin for NotificationsPlugin {
                 let new_dnd = !guard.dnd;
                 process_op(&mut guard, NotificationOp::SetDnd(new_dnd));
                 info!("[notifications] DND toggled to {new_dnd}");
+            }
+
+            ("recording", "toggle") => {
+                let new_active = !self.recorder.is_active();
+                self.recorder.set_active(new_active);
+                info!("[notifications] recording toggled to {new_active}");
             }
 
             ("notification", "dismiss") => {
@@ -1052,7 +1079,7 @@ mod tests {
     }
 
     fn make_plugin(state: Arc<StdMutex<State>>, tx: flume::Sender<OutboundEvent>) -> NotificationsPlugin {
-        NotificationsPlugin::new(state, tx, Vec::new(), Vec::new(), String::new(), config::SoundConfig::default())
+        NotificationsPlugin::new(state, tx, Vec::new(), Vec::new(), String::new(), config::SoundConfig::default(), false)
     }
 
     #[test]
@@ -1250,6 +1277,7 @@ mod tests {
             Vec::new(),
             String::new(),
             config::SoundConfig::default(),
+            false,
         );
 
         let notif = make_notification(1); // app_name = "test-app"
@@ -1303,6 +1331,7 @@ mod tests {
             profiles,
             "work".to_string(),
             config::SoundConfig::default(),
+            false,
         );
 
         let actions = plugin.get_filter_actions(Some("test-group"));

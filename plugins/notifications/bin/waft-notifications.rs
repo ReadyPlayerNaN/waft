@@ -38,7 +38,7 @@ use waft_plugin_notifications::sound::player::SoundPlayer;
 use waft_plugin_notifications::sound::policy::{NotificationContext, SoundDecision};
 use waft_plugin_notifications::store::{NotificationOp, State, process_op};
 use waft_plugin_notifications::ttl;
-use waft_protocol::entity::notification::{DND_ENTITY_TYPE, NOTIFICATION_ENTITY_TYPE};
+use waft_protocol::entity::notification::{DND_ENTITY_TYPE, NOTIFICATION_ENTITY_TYPE, RECORDING_ENTITY_TYPE};
 use waft_protocol::entity::notification_filter::{
     ACTIVE_PROFILE_ENTITY_TYPE, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE,
     SOUND_CONFIG_ENTITY_TYPE,
@@ -51,6 +51,7 @@ fn main() -> Result<()> {
         &[
             NOTIFICATION_ENTITY_TYPE,
             DND_ENTITY_TYPE,
+            RECORDING_ENTITY_TYPE,
             NOTIFICATION_GROUP_ENTITY_TYPE,
             NOTIFICATION_PROFILE_ENTITY_TYPE,
             ACTIVE_PROFILE_ENTITY_TYPE,
@@ -96,7 +97,10 @@ fn main() -> Result<()> {
         // Load sound configuration
         let sound_config = config::load_sound_config();
 
-        // Create the plugin with filter and sound config
+        // Load recording configuration
+        let recording_config = config::load_recording_config();
+
+        // Create the plugin with filter, sound, and recording config
         let plugin = NotificationsPlugin::new(
             state.clone(),
             outbound_tx.clone(),
@@ -104,12 +108,14 @@ fn main() -> Result<()> {
             profiles,
             active_profile_id,
             sound_config,
+            recording_config.recording,
         );
 
         // Get handles BEFORE passing the plugin to the runtime
         // (the runtime consumes the plugin, so we extract shared state first)
         let filter_handle = plugin.filter_handle();
         let sound_policy_handle = plugin.sound_policy_handle();
+        let ingress_recorder = plugin.recorder();
 
         // Create the plugin runtime (connects to waft daemon)
         let (runtime, notifier) = PluginRuntime::new("notifications", plugin);
@@ -207,7 +213,88 @@ fn main() -> Result<()> {
                             policy.evaluate(&ctx)
                         };
 
-                        // 5. Mutate state and apply suppress_toast
+                        // 5. Record notification (if recording is active)
+                        {
+                            let urn_str = format!(
+                                "notifications/{}/{}",
+                                NOTIFICATION_ENTITY_TYPE, notification.id
+                            );
+                            let proto_notif = waft_protocol::entity::notification::Notification {
+                                title: notification.title.to_string(),
+                                description: notification.description.to_string(),
+                                app_name: notification
+                                    .app_name
+                                    .as_ref()
+                                    .map(|s| s.to_string()),
+                                app_id: notification
+                                    .hints
+                                    .desktop_entry
+                                    .as_ref()
+                                    .map(|s| s.to_string()),
+                                urgency: match notification.hints.urgency {
+                                    waft_plugin_notifications::types::NotificationUrgency::Low => {
+                                        waft_protocol::entity::notification::NotificationUrgency::Low
+                                    }
+                                    waft_plugin_notifications::types::NotificationUrgency::Normal => {
+                                        waft_protocol::entity::notification::NotificationUrgency::Normal
+                                    }
+                                    waft_plugin_notifications::types::NotificationUrgency::Critical => {
+                                        waft_protocol::entity::notification::NotificationUrgency::Critical
+                                    }
+                                },
+                                actions: notification
+                                    .actions
+                                    .chunks(2)
+                                    .filter_map(|chunk| {
+                                        if chunk.len() == 2 {
+                                            Some(waft_protocol::entity::notification::NotificationAction {
+                                                key: chunk[0].to_string(),
+                                                label: chunk[1].to_string(),
+                                            })
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect(),
+                                icon_hints: {
+                                    let mut hints = Vec::new();
+                                    if let Some(ref data) = notification.hints.image_data {
+                                        hints.push(
+                                            waft_protocol::entity::notification::NotificationIconHint::Bytes(
+                                                data.clone(),
+                                            ),
+                                        );
+                                    }
+                                    if let Some(ref path) = notification.hints.image_path {
+                                        hints.push(
+                                            waft_protocol::entity::notification::NotificationIconHint::FilePath(
+                                                path.to_string(),
+                                            ),
+                                        );
+                                    }
+                                    if let Some(ref icon) = notification.icon {
+                                        hints.push(
+                                            waft_protocol::entity::notification::NotificationIconHint::Themed(
+                                                icon.to_string(),
+                                            ),
+                                        );
+                                    }
+                                    hints
+                                },
+                                created_at_ms: notification
+                                    .created_at
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_millis() as i64)
+                                    .unwrap_or(0),
+                                resident: notification.hints.resident,
+                                workspace: None,
+                                suppress_toast: filter_actions.no_toast,
+                                ttl: notification.ttl,
+                            };
+                            ingress_recorder.record(&proto_notif, &urn_str);
+                        }
+
+                        // 6. Mutate state and apply suppress_toast
                         let notif_id = notification.id;
                         {
                             let mut guard = match ingress_state.lock() {
