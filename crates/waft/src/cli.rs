@@ -31,6 +31,18 @@ pub enum Command {
         #[arg(short, long)]
         verbose: bool,
     },
+    /// Query live entity state from the daemon
+    #[command(alias = "state")]
+    Query {
+        /// Entity type to query (omit for all types)
+        entity_type: Option<String>,
+        /// Start the plugin if not running
+        #[arg(short, long)]
+        start: bool,
+        /// Timeout in milliseconds (used with --start)
+        #[arg(long, default_value = "5000")]
+        timeout_ms: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -184,6 +196,93 @@ mod tests {
                 assert_eq!(entity_type.as_deref(), Some("audio-device"));
             }
             _ => panic!("expected Protocol command"),
+        }
+    }
+
+    #[test]
+    fn query_no_args() {
+        let cli = Cli::try_parse_from(["waft", "query"]).unwrap();
+        match cli.command {
+            Some(Command::Query { entity_type, start, timeout_ms }) => {
+                assert_eq!(entity_type, None);
+                assert!(!start);
+                assert_eq!(timeout_ms, 5000);
+            }
+            _ => panic!("expected Query command"),
+        }
+    }
+
+    #[test]
+    fn query_with_entity_type() {
+        let cli = Cli::try_parse_from(["waft", "query", "battery"]).unwrap();
+        match cli.command {
+            Some(Command::Query { entity_type, start, timeout_ms }) => {
+                assert_eq!(entity_type.as_deref(), Some("battery"));
+                assert!(!start);
+                assert_eq!(timeout_ms, 5000);
+            }
+            _ => panic!("expected Query command"),
+        }
+    }
+
+    #[test]
+    fn state_alias() {
+        let cli = Cli::try_parse_from(["waft", "state", "battery"]).unwrap();
+        match cli.command {
+            Some(Command::Query { entity_type, .. }) => {
+                assert_eq!(entity_type.as_deref(), Some("battery"));
+            }
+            _ => panic!("expected Query command via state alias"),
+        }
+    }
+
+    #[test]
+    fn query_with_start_flag() {
+        let cli = Cli::try_parse_from(["waft", "query", "audio-device", "--start"]).unwrap();
+        match cli.command {
+            Some(Command::Query { entity_type, start, timeout_ms }) => {
+                assert_eq!(entity_type.as_deref(), Some("audio-device"));
+                assert!(start);
+                assert_eq!(timeout_ms, 5000);
+            }
+            _ => panic!("expected Query command"),
+        }
+    }
+
+    #[test]
+    fn query_with_start_short_flag() {
+        let cli = Cli::try_parse_from(["waft", "query", "-s", "audio-device"]).unwrap();
+        match cli.command {
+            Some(Command::Query { entity_type, start, .. }) => {
+                assert_eq!(entity_type.as_deref(), Some("audio-device"));
+                assert!(start);
+            }
+            _ => panic!("expected Query command"),
+        }
+    }
+
+    #[test]
+    fn query_with_timeout() {
+        let cli = Cli::try_parse_from(["waft", "query", "--start", "--timeout-ms", "10000", "battery"]).unwrap();
+        match cli.command {
+            Some(Command::Query { entity_type, start, timeout_ms }) => {
+                assert_eq!(entity_type.as_deref(), Some("battery"));
+                assert!(start);
+                assert_eq!(timeout_ms, 10000);
+            }
+            _ => panic!("expected Query command"),
+        }
+    }
+
+    #[test]
+    fn query_with_json_flag() {
+        let cli = Cli::try_parse_from(["waft", "-j", "query", "clock"]).unwrap();
+        assert!(cli.json);
+        match cli.command {
+            Some(Command::Query { entity_type, .. }) => {
+                assert_eq!(entity_type.as_deref(), Some("clock"));
+            }
+            _ => panic!("expected Query command"),
         }
     }
 }

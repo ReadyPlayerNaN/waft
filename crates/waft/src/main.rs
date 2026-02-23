@@ -7,6 +7,7 @@ mod daemon;
 mod plugin_discovery;
 mod plugin_spawner;
 mod protocol_command;
+mod query_command;
 mod registry;
 
 use std::path::PathBuf;
@@ -45,6 +46,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entity_type.as_deref(),
                 domain.as_deref(),
             );
+        }
+        Some(Command::Query { entity_type, start, timeout_ms }) => {
+            query_command::run(cli.json, entity_type.as_deref(), start, timeout_ms);
         }
     }
 
