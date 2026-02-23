@@ -1,7 +1,7 @@
 //! Session actions header component.
 //!
 //! Provides lock and logout buttons that trigger actions on the
-//! systemd-actions plugin's session entity.
+//! systemd plugin's session entity.
 
 use gtk::prelude::*;
 
@@ -11,7 +11,7 @@ use waft_ui_gtk::icons::IconWidget;
 
 use waft_client::EntityActionCallback;
 
-const SESSION_URN_PLUGIN: &str = "systemd-actions";
+const SESSION_URN_PLUGIN: &str = "systemd";
 const SESSION_URN_ID: &str = "default";
 
 /// Provides lock and logout buttons for the current session.

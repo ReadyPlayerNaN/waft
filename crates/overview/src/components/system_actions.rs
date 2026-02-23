@@ -1,7 +1,7 @@
 //! System actions header component.
 //!
 //! Provides reboot, shutdown, and suspend buttons that trigger actions
-//! on the systemd-actions plugin's session entity.
+//! on the systemd plugin's session entity.
 
 use gtk::prelude::*;
 
@@ -11,7 +11,7 @@ use waft_ui_gtk::icons::IconWidget;
 
 use waft_client::EntityActionCallback;
 
-const SESSION_URN_PLUGIN: &str = "systemd-actions";
+const SESSION_URN_PLUGIN: &str = "systemd";
 const SESSION_URN_ID: &str = "default";
 
 /// Provides reboot, shutdown, and suspend buttons for system power management.
