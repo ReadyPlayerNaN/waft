@@ -368,9 +368,28 @@ impl AgendaComponent {
             (start_of_today, end_of_tomorrow)
         };
 
+        log::info!(
+            "[agenda] filter window: [{}, {}), {} total entities",
+            chrono::DateTime::from_timestamp(filter_start, 0)
+                .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_default(),
+            chrono::DateTime::from_timestamp(filter_end, 0)
+                .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_default(),
+            entities.len()
+        );
         let mut entities: Vec<_> = entities
             .into_iter()
-            .filter(|(_, event)| event.start_time < filter_end && event.end_time > filter_start)
+            .filter(|(_, event)| {
+                let passes = event.start_time < filter_end && event.end_time > filter_start;
+                if !passes {
+                    let start = chrono::DateTime::from_timestamp(event.start_time, 0)
+                        .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                        .unwrap_or_default();
+                    log::info!("[agenda] filtered out {:?} starting {}", event.summary, start);
+                }
+                passes
+            })
             .collect();
 
         // Sort by start_time, then end_time
