@@ -1,11 +1,11 @@
 [package]
-name = "waft-plugin-systemd-actions"
+name = "waft-plugin-systemd"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "waft-systemd-actions-daemon"
-path = "bin/waft-systemd-actions-daemon.rs"
+name = "waft-systemd-daemon"
+path = "bin/waft-systemd-daemon.rs"
 
 [dependencies]
 waft-plugin = { path = "../../crates/plugin" }
@@ -13,6 +13,7 @@ waft-i18n = { path = "../../crates/i18n" }
 waft-protocol = { path = "../../crates/protocol" }
 async-trait = "0.1"
 anyhow = "1"
+futures-util = "0.3"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }

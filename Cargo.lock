@@ -3735,11 +3735,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "waft-plugin-systemd-actions"
+name = "waft-plugin-systemd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "futures-util",
  "log",
  "serde_json",
  "tokio",

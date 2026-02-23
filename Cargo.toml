@@ -22,7 +22,7 @@ members = [
     "plugins/brightness",
     "plugins/caffeine",
     "plugins/sunsetr",
-    "plugins/systemd-actions",
+    "plugins/systemd",
     "plugins/weather",
     "plugins/keyboard-layout",
     "plugins/networkmanager",
