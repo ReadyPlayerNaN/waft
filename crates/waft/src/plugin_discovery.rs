@@ -624,7 +624,7 @@ mod tests {
 
     #[test]
     fn title_case_multiple_hyphens() {
-        assert_eq!(title_case("systemd-actions"), "Systemd Actions");
+        assert_eq!(title_case("systemd-actions"), "Systemd Actions"); // historical test case for title_case utility
     }
 
     #[test]
