@@ -636,6 +636,19 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             ],
         },
 
+        EntityTypeInfo {
+            entity_type: super::notification::RECORDING_ENTITY_TYPE,
+            domain: "notification",
+            description: "Notification recording state for debugging",
+            urn_pattern: "{plugin}/recording/{id}",
+            properties: &[
+                PropertyInfo { name: "active", type_description: "bool", description: "Whether recording is active", optional: false },
+            ],
+            actions: &[
+                ActionInfo { name: "toggle", description: "Toggle notification recording on/off", params: &[] },
+            ],
+        },
+
         // ── notification_filter ──
         EntityTypeInfo {
             entity_type: super::notification_filter::ACTIVE_PROFILE_ENTITY_TYPE,
@@ -787,6 +800,26 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             ],
         },
 
+        EntityTypeInfo {
+            entity_type: super::session::USER_SERVICE_ENTITY_TYPE,
+            domain: "session",
+            description: "A user-level systemd service",
+            urn_pattern: "{plugin}/user-service/{unit-name}",
+            properties: &[
+                PropertyInfo { name: "unit", type_description: "string", description: "Full unit name (e.g. pipewire.service)", optional: false },
+                PropertyInfo { name: "description", type_description: "string", description: "Human-readable description from unit file", optional: false },
+                PropertyInfo { name: "active_state", type_description: "string", description: "Current state (active/inactive/activating/deactivating/failed)", optional: false },
+                PropertyInfo { name: "enabled", type_description: "bool", description: "Whether the unit starts on login", optional: false },
+                PropertyInfo { name: "sub_state", type_description: "string", description: "Detailed sub-state (e.g. running/dead/exited)", optional: false },
+            ],
+            actions: &[
+                ActionInfo { name: "start", description: "Start the service", params: &[] },
+                ActionInfo { name: "stop", description: "Stop the service", params: &[] },
+                ActionInfo { name: "enable", description: "Enable the service on login", params: &[] },
+                ActionInfo { name: "disable", description: "Disable the service on login", params: &[] },
+            ],
+        },
+
         // ── storage ──
         EntityTypeInfo {
             entity_type: super::storage::BACKUP_METHOD_ENTITY_TYPE,
@@ -857,6 +890,7 @@ mod tests {
             super::super::network::TETHERING_CONNECTION_ENTITY_TYPE,
             super::super::notification::NOTIFICATION_ENTITY_TYPE,
             super::super::notification::DND_ENTITY_TYPE,
+            super::super::notification::RECORDING_ENTITY_TYPE,
             super::super::notification_filter::NOTIFICATION_GROUP_ENTITY_TYPE,
             super::super::notification_filter::NOTIFICATION_PROFILE_ENTITY_TYPE,
             super::super::notification_filter::ACTIVE_PROFILE_ENTITY_TYPE,
@@ -866,6 +900,7 @@ mod tests {
             super::super::power::ENTITY_TYPE,
             super::super::session::SESSION_ENTITY_TYPE,
             super::super::session::SLEEP_INHIBITOR_ENTITY_TYPE,
+            super::super::session::USER_SERVICE_ENTITY_TYPE,
             super::super::storage::BACKUP_METHOD_ENTITY_TYPE,
             super::super::weather::ENTITY_TYPE,
         ];

@@ -6,6 +6,9 @@ pub const NOTIFICATION_ENTITY_TYPE: &str = "notification";
 /// Entity type identifier for Do Not Disturb state.
 pub const DND_ENTITY_TYPE: &str = "dnd";
 
+/// Entity type identifier for notification recording state.
+pub const RECORDING_ENTITY_TYPE: &str = "recording";
+
 /// A desktop notification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Notification {
@@ -57,6 +60,12 @@ pub enum NotificationIconHint {
 /// Do Not Disturb state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dnd {
+    pub active: bool,
+}
+
+/// Notification recording state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Recording {
     pub active: bool,
 }
 
@@ -206,5 +215,18 @@ mod tests {
         let json = serde_json::to_value(dnd).unwrap();
         let decoded: Dnd = serde_json::from_value(json).unwrap();
         assert_eq!(dnd, decoded);
+    }
+
+    #[test]
+    fn recording_serde_roundtrip() {
+        let recording = Recording { active: true };
+        let json = serde_json::to_value(recording).unwrap();
+        let decoded: Recording = serde_json::from_value(json).unwrap();
+        assert_eq!(recording, decoded);
+
+        let recording_off = Recording { active: false };
+        let json = serde_json::to_value(recording_off).unwrap();
+        let decoded: Recording = serde_json::from_value(json).unwrap();
+        assert_eq!(recording_off, decoded);
     }
 }

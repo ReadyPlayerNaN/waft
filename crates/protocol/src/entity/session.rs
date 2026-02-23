@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 /// Entity type identifier for session state.
 pub const SESSION_ENTITY_TYPE: &str = "session";
 
+/// Entity type identifier for user-level systemd services.
+pub const USER_SERVICE_ENTITY_TYPE: &str = "user-service";
+
 /// Entity type identifier for sleep inhibitors.
 pub const SLEEP_INHIBITOR_ENTITY_TYPE: &str = "sleep-inhibitor";
 
@@ -11,6 +14,16 @@ pub const SLEEP_INHIBITOR_ENTITY_TYPE: &str = "sleep-inhibitor";
 pub struct Session {
     pub user_name: Option<String>,
     pub screen_name: Option<String>,
+}
+
+/// A user-level systemd service.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserService {
+    pub unit: String,
+    pub description: String,
+    pub active_state: String,
+    pub enabled: bool,
+    pub sub_state: String,
 }
 
 /// A sleep/screensaver inhibitor (caffeine mode).
@@ -43,6 +56,34 @@ mod tests {
         let json = serde_json::to_value(&session).unwrap();
         let decoded: Session = serde_json::from_value(json).unwrap();
         assert_eq!(session, decoded);
+    }
+
+    #[test]
+    fn user_service_serde_roundtrip() {
+        let service = UserService {
+            unit: "pipewire.service".to_string(),
+            description: "PipeWire Multimedia Service".to_string(),
+            active_state: "active".to_string(),
+            enabled: true,
+            sub_state: "running".to_string(),
+        };
+        let json = serde_json::to_value(&service).unwrap();
+        let decoded: UserService = serde_json::from_value(json).unwrap();
+        assert_eq!(service, decoded);
+    }
+
+    #[test]
+    fn user_service_serde_roundtrip_inactive() {
+        let service = UserService {
+            unit: "mako.service".to_string(),
+            description: "Lightweight notification daemon".to_string(),
+            active_state: "inactive".to_string(),
+            enabled: false,
+            sub_state: "dead".to_string(),
+        };
+        let json = serde_json::to_value(&service).unwrap();
+        let decoded: UserService = serde_json::from_value(json).unwrap();
+        assert_eq!(service, decoded);
     }
 
     #[test]
