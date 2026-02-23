@@ -410,6 +410,8 @@ fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
     widget.set_css_classes(&classes);
     widget.set_visible(vcb.visible);
     widget.set_sensitive(vcb.sensitive);
+    widget.set_hexpand(vcb.hexpand);
+    widget.set_vexpand(vcb.vexpand);
     let cb = vcb.on_click;
     let handler_id = connect_button_handler(&widget, &cb);
 
@@ -533,6 +535,7 @@ fn build_revealer_entry(vrev: VRevealer) -> ReconcilerEntry {
         .build();
 
     let child_container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    child_container.set_vexpand(vrev.vexpand);
     widget.set_child(Some(&child_container));
 
     let mut child_reconciler: std::boxed::Box<Reconciler<gtk::Box>> =
@@ -789,6 +792,8 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             widget.set_css_classes(&classes);
             widget.set_visible(vcb.visible);
             widget.set_sensitive(vcb.sensitive);
+            widget.set_hexpand(vcb.hexpand);
+            widget.set_vexpand(vcb.vexpand);
             if !rc_option_ptr_eq(cb, &vcb.on_click) {
                 if let Some(id) = handler_id.take() { widget.disconnect(id); }
                 *handler_id = connect_button_handler(widget, &vcb.on_click);
@@ -918,6 +923,8 @@ fn apply_box_props(widget: &gtk::Box, vbox: &VBox) {
     widget.set_css_classes(&classes);
     if let Some(a) = vbox.valign { widget.set_valign(a); }
     if let Some(a) = vbox.halign { widget.set_halign(a); }
+    widget.set_hexpand(vbox.hexpand);
+    widget.set_vexpand(vbox.vexpand);
     // orientation and spacing are set at construction and cannot be changed cheaply.
     // If they change, the parent Reconciler rebuilds the entry (kind stays Box,
     // but in practice these fields are always the same for a given slot).

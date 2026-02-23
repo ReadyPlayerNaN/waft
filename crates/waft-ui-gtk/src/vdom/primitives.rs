@@ -11,6 +11,8 @@ pub struct VCustomButton {
     pub css_classes: Vec<String>,
     pub visible:     bool,
     pub sensitive:   bool,
+    pub hexpand:     bool,
+    pub vexpand:     bool,
     pub on_click:    Option<Rc<dyn Fn()>>,
 }
 
@@ -21,6 +23,8 @@ impl VCustomButton {
             css_classes: Vec::new(),
             visible:     true,
             sensitive:   true,
+            hexpand:     false,
+            vexpand:     false,
             on_click:    None,
         }
     }
@@ -42,6 +46,16 @@ impl VCustomButton {
 
     pub fn sensitive(mut self, v: bool) -> Self {
         self.sensitive = v;
+        self
+    }
+
+    pub fn hexpand(mut self, v: bool) -> Self {
+        self.hexpand = v;
+        self
+    }
+
+    pub fn vexpand(mut self, v: bool) -> Self {
+        self.vexpand = v;
         self
     }
 
@@ -115,6 +129,8 @@ pub struct VBox {
     pub children:    Vec<super::VNode>,
     pub valign:      Option<gtk::Align>,
     pub halign:      Option<gtk::Align>,
+    pub hexpand:     bool,
+    pub vexpand:     bool,
 }
 
 impl VBox {
@@ -126,6 +142,8 @@ impl VBox {
             children:    Vec::new(),
             valign:      None,
             halign:      None,
+            hexpand:     false,
+            vexpand:     false,
         }
     }
 
@@ -137,6 +155,8 @@ impl VBox {
             children:    Vec::new(),
             valign:      None,
             halign:      None,
+            hexpand:     false,
+            vexpand:     false,
         }
     }
 
@@ -157,6 +177,16 @@ impl VBox {
 
     pub fn halign(mut self, a: gtk::Align) -> Self {
         self.halign = Some(a);
+        self
+    }
+
+    pub fn hexpand(mut self, v: bool) -> Self {
+        self.hexpand = v;
+        self
+    }
+
+    pub fn vexpand(mut self, v: bool) -> Self {
+        self.vexpand = v;
         self
     }
 }
@@ -412,6 +442,7 @@ pub struct VRevealer {
     pub transition_type:     gtk::RevealerTransitionType,
     pub transition_duration: u32,
     pub child:               Box<super::VNode>,
+    pub vexpand:             bool,
 }
 
 impl VRevealer {
@@ -421,6 +452,7 @@ impl VRevealer {
             transition_type: gtk::RevealerTransitionType::SlideDown,
             transition_duration: 200,
             child: Box::new(child),
+            vexpand: false,
         }
     }
 
@@ -431,6 +463,11 @@ impl VRevealer {
 
     pub fn transition_duration(mut self, ms: u32) -> Self {
         self.transition_duration = ms;
+        self
+    }
+
+    pub fn vexpand(mut self, v: bool) -> Self {
+        self.vexpand = v;
         self
     }
 }

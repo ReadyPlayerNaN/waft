@@ -91,6 +91,7 @@ impl RenderFn for FeatureToggleRender {
         let main_button = VNode::custom_button(
             VCustomButton::new(VNode::vbox(main_content))
                 .css_class("toggle-main")
+                .hexpand(true)
                 .on_click(move || {
                     if let Some(ref cb) = *emit_main.borrow() {
                         if is_active {
@@ -110,6 +111,7 @@ impl RenderFn for FeatureToggleRender {
         let expand_button = VNode::custom_button(
             VCustomButton::new(expand_chevron)
                 .css_class("toggle-expand")
+                .vexpand(true)
                 .on_click(move || {
                     if let Some(ref cb) = *emit_expand.borrow() {
                         cb(FeatureToggleOutput::ExpandToggle(true));
@@ -121,11 +123,12 @@ impl RenderFn for FeatureToggleRender {
         let expand_revealer = VNode::revealer(
             VRevealer::new(props.expandable, expand_button)
                 .transition_type(gtk::RevealerTransitionType::SlideLeft)
-                .transition_duration(200),
+                .transition_duration(200)
+                .vexpand(true),
         );
 
         // Root box: main button + expand revealer (horizontal layout)
-        let mut root = VBox::horizontal(0).css_class("feature-toggle");
+        let mut root = VBox::horizontal(0).css_class("feature-toggle").hexpand(true);
 
         // Apply state CSS classes
         if props.active {
