@@ -362,7 +362,21 @@ wallpaper-dir = Adresář tapet
 wallpaper-sync = Synchronizovat výstupy
 wallpaper-sync-sub = Použít stejnou tapetu na všechny monitory
 
+# Notifications -- Recording
+notif-recording = Nahrávání oznámení
+notif-recording-desc = Zaznamenávat všechna přijatá oznámení do souboru pro ladění. Oznámení mohou obsahovat citlivý obsah.
+
 # Plugins
 plugins-title = Doplňky
 plugins-no-plugins = Žádné doplňky
 plugins-no-plugins-desc = Démon neobjevil žádné doplňky.
+
+# Služby
+settings-services = Služby
+services-title = Uživatelské služby
+services-no-services = Žádné služby
+services-no-services-desc = Momentálně nejsou načteny žádné uživatelské systemd služby.
+services-start = Spustit
+services-stop = Zastavit
+services-enable = Povolit
+services-disable = Zakázat

@@ -5,6 +5,7 @@ pub mod display;
 pub mod keyboard;
 pub mod notifications;
 pub mod plugins;
+pub mod services;
 pub mod sounds;
 pub mod wallpaper;
 pub mod weather;

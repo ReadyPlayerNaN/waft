@@ -362,7 +362,21 @@ wallpaper-dir = Wallpaper Directory
 wallpaper-sync = Synchronize Outputs
 wallpaper-sync-sub = Apply the same wallpaper to all monitors
 
+# Notifications -- Recording
+notif-recording = Notification Recording
+notif-recording-desc = Log all received notifications to a file for debugging. Notifications may contain sensitive content.
+
 # Plugins
 plugins-title = Plugins
 plugins-no-plugins = No Plugins
 plugins-no-plugins-desc = No plugins were discovered by the daemon.
+
+# Services
+settings-services = Services
+services-title = User Services
+services-no-services = No services found
+services-no-services-desc = No systemd user services are currently loaded.
+services-start = Start
+services-stop = Stop
+services-enable = Enable
+services-disable = Disable

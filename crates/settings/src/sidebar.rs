@@ -149,12 +149,20 @@ fn categories() -> Vec<SidebarCategory> {
         },
         SidebarCategory {
             label: t("sidebar-system"),
-            items: vec![SidebarItem {
-                page_id: "plugins",
-                title: t("settings-plugins"),
-                icon: "application-x-addon-symbolic",
-                visible: true,
-            }],
+            items: vec![
+                SidebarItem {
+                    page_id: "plugins",
+                    title: t("settings-plugins"),
+                    icon: "application-x-addon-symbolic",
+                    visible: true,
+                },
+                SidebarItem {
+                    page_id: "services",
+                    title: t("settings-services"),
+                    icon: "system-run-symbolic",
+                    visible: true,
+                },
+            ],
         },
     ]
 }

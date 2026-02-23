@@ -10,6 +10,7 @@ mod notifications;
 mod pages;
 mod plugins;
 mod search_index;
+mod services;
 mod search_results;
 mod sidebar;
 mod sounds;

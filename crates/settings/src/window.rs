@@ -20,6 +20,7 @@ use crate::pages::display::DisplayPage;
 use crate::pages::keyboard::KeyboardPage;
 use crate::pages::notifications::NotificationsPage;
 use crate::pages::plugins::PluginsPage;
+use crate::pages::services::ServicesPage;
 use crate::pages::sounds::SoundsPage;
 use crate::pages::wallpaper::WallpaperPage;
 use crate::pages::weather::WeatherPage;
@@ -43,6 +44,7 @@ fn page_title(page_id: &str) -> String {
         "wallpaper" => "settings-wallpaper",
         "weather" => "settings-weather",
         "plugins" => "settings-plugins",
+        "services" => "settings-services",
         _ => "settings-bluetooth",
     };
     t(key)
@@ -115,6 +117,7 @@ impl SettingsWindow {
             idx.add_page("notifications", &t("settings-notifications"), "settings-notifications");
             idx.add_page("sounds", &t("settings-sounds"), "settings-sounds");
             idx.add_page("plugins", &t("settings-plugins"), "settings-plugins");
+            idx.add_page("services", &t("settings-services"), "settings-services");
         }
 
         let audio_page = AudioPage::new(entity_store, action_callback, &search_index);
@@ -129,6 +132,7 @@ impl SettingsWindow {
         let notifications_page = NotificationsPage::new(entity_store, action_callback, &search_index);
         let sounds_page = SoundsPage::new(entity_store, action_callback, &search_index);
         let plugins_page = PluginsPage::new(entity_store, &search_index);
+        let services_page = ServicesPage::new(entity_store, action_callback, &search_index);
 
         // Wrap each page in a clamp for consistent max width
         let audio_clamp = adw::Clamp::builder()
@@ -182,6 +186,11 @@ impl SettingsWindow {
             .child(&plugins_page.root)
             .build();
 
+        let services_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&services_page.root)
+            .build();
+
         // Stack for page switching (keyed by stable page_id)
         let stack = gtk::Stack::builder()
             .transition_type(gtk::StackTransitionType::Crossfade)
@@ -198,6 +207,7 @@ impl SettingsWindow {
         stack.add_named(&notif_clamp, Some("notifications"));
         stack.add_named(&sounds_clamp, Some("sounds"));
         stack.add_named(&plugins_clamp, Some("plugins"));
+        stack.add_named(&services_clamp, Some("services"));
         // Navigate to the requested page, or default to bluetooth
         let default_page = initial_page.unwrap_or("bluetooth");
         if stack.child_by_name(default_page).is_some() {
