@@ -14,6 +14,7 @@ use crate::notifications::active_profile_section::ActiveProfileSection;
 use crate::notifications::dnd_section::DndSection;
 use crate::notifications::groups_section::GroupsSection;
 use crate::notifications::profiles_section::ProfilesSection;
+use crate::notifications::recording_section::RecordingSection;
 use crate::search_index::SearchIndex;
 use crate::sounds::defaults_section::DefaultsSection;
 
@@ -51,6 +52,9 @@ impl NotificationsPage {
 
         let profiles = ProfilesSection::new(entity_store, action_callback, search_index);
         root.append(&profiles.root);
+
+        let recording = RecordingSection::new(entity_store, action_callback, search_index);
+        root.append(&recording.root);
 
         Self { root }
     }
