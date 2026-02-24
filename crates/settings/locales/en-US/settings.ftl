@@ -361,6 +361,11 @@ wallpaper-config = Configuration
 wallpaper-dir = Wallpaper Directory
 wallpaper-sync = Synchronize Outputs
 wallpaper-sync-sub = Apply the same wallpaper to all monitors
+wallpaper-gallery-static = Wallpapers
+wallpaper-gallery-dark = Dark Mode
+wallpaper-gallery-light = Light Mode
+wallpaper-gallery-add = Add wallpaper to this gallery
+wallpaper-gallery-empty = No wallpapers in this folder. Click + to add one.
 
 # Notifications -- Recording
 notif-recording = Notification Recording
@@ -371,6 +376,18 @@ plugins-title = Plugins
 plugins-no-plugins = No Plugins
 plugins-no-plugins-desc = No plugins were discovered by the daemon.
 
+# Startup
+settings-startup = Startup
+startup-entries = Startup Applications
+startup-add = Add Application
+startup-no-entries = No startup applications
+startup-parse-error = Config file could not be parsed — editing disabled
+startup-entry-command = Command
+startup-entry-args = Arguments
+startup-edit = Edit
+startup-delete = Remove
+startup-save = Save
+
 # Services
 settings-services = Services
 services-title = User Services
@@ -380,3 +397,21 @@ services-start = Start
 services-stop = Stop
 services-enable = Enable
 services-disable = Disable
+
+# Keyboard Shortcuts
+settings-keyboard-shortcuts = Keyboard Shortcuts
+kb-shortcuts-add = Add Shortcut
+kb-shortcuts-no-entries = No custom shortcuts
+kb-shortcuts-custom = Custom Shortcuts
+kb-shortcuts-advanced = Advanced Binds
+kb-modifier-mod = Super
+kb-modifier-shift = Shift
+kb-modifier-ctrl = Ctrl
+kb-modifier-alt = Alt
+kb-key = Key
+kb-action = Action
+kb-action-spawn = Run command
+kb-allow-when-locked = Allow when locked
+kb-hotkey-title = Hotkey overlay title
+kb-shortcuts-parse-error = Config file could not be parsed — editing disabled
+kb-shortcuts-read-only = Read-only

@@ -8,8 +8,8 @@
     <Row halign="end">
       <KeyboardLayout />
       <SettingsButton />
-      <SessionActions />
-      <SystemActions />
+      <ControlsTabButton />
+      <ExitTabButton />
     </Row>
   </Header>
   <Divider />
@@ -19,21 +19,29 @@
       <NotificationList />
     </Col>
     <Col>
-      <AudioSliders />
-      <BrightnessSliders />
-      <FeatureToggleGrid>
-        <DndToggle />
-        <CaffeineToggle />
-        <DarkModeToggle />
-        <NightLightToggle />
-        <BluetoothToggles />
-        <WifiToggles />
-        <WiredToggles />
-        <VpnToggles />
-        <TetheringToggles />
-        <BackupToggle />
-      </FeatureToggleGrid>
-      <Unmatched />
+      <RightColumnStack>
+        <Controls>
+          <AudioSliders />
+          <BrightnessSliders />
+          <FeatureToggleGrid>
+            <DndToggle />
+            <CaffeineToggle />
+            <DarkModeToggle />
+            <NightLightToggle />
+            <BluetoothToggles />
+            <WifiToggles />
+            <WiredToggles />
+            <VpnToggles />
+            <TetheringToggles />
+            <BackupToggle />
+          </FeatureToggleGrid>
+          <Unmatched />
+        </Controls>
+        <Exit>
+          <SessionActions />
+          <SystemActions />
+        </Exit>
+      </RightColumnStack>
     </Col>
   </TwoColumns>
 </Overview>

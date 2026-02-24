@@ -111,5 +111,9 @@ battery-time-remaining = { $time } remaining
 battery-time-to-full = { $time } to full
 battery-time-less-than-minute = < 1min
 
+# Right Column Tabs
+tab-controls = Controls
+tab-exit = Exit
+
 # Settings
 settings-button = Settings

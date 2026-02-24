@@ -11,12 +11,13 @@ use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{
-    WallpaperManager, WALLPAPER_MANAGER_ENTITY_TYPE,
+    WallpaperManager, WallpaperMode, WALLPAPER_MANAGER_ENTITY_TYPE,
 };
 
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
 use crate::wallpaper::config_section::{ConfigSection, ConfigSectionOutput};
+use crate::wallpaper::gallery_section::GallerySection;
 use crate::wallpaper::mode_section::{ModeSection, ModeSectionOutput};
 use crate::wallpaper::preview_section::{PreviewSection, PreviewSectionOutput};
 use crate::wallpaper::transition_section::{TransitionSection, TransitionSectionOutput};
@@ -53,6 +54,9 @@ impl WallpaperPage {
         let config = Rc::new(ConfigSection::new());
         root.append(&config.root);
 
+        let gallery = Rc::new(GallerySection::new(action_callback));
+        root.append(&gallery.root);
+
         // Register search entries
         {
             let mut idx = search_index.borrow_mut();
@@ -70,9 +74,11 @@ impl WallpaperPage {
         {
             let cb = action_callback.clone();
             let urn_ref = current_urn.clone();
+            let preview_ref = preview.clone();
             mode.connect_output(move |output| {
                 if let Some(ref urn) = *urn_ref.borrow() {
                     let ModeSectionOutput::ModeChanged { mode } = output;
+                    preview_ref.set_browse_visible(mode == "static");
                     cb(
                         urn.clone(),
                         "set-mode".to_string(),
@@ -161,6 +167,7 @@ impl WallpaperPage {
             preview: &Rc<PreviewSection>,
             transition: &Rc<TransitionSection>,
             config: &Rc<ConfigSection>,
+            gallery: &Rc<GallerySection>,
         ) {
             // Prefer the "all" entity for display
             let target = entities
@@ -180,6 +187,7 @@ impl WallpaperPage {
                     manager.current_wallpaper.as_deref(),
                     manager.available,
                 );
+                preview.set_browse_visible(matches!(manager.mode, WallpaperMode::Static));
                 transition.apply_props(
                     &manager.transition.transition_type,
                     manager.transition.fps,
@@ -189,6 +197,12 @@ impl WallpaperPage {
                 transition.set_sensitive(manager.available);
                 config.apply_props(&manager.wallpaper_dir, manager.sync, &manager.mode);
                 config.set_sensitive(manager.available);
+                gallery.apply_props(
+                    &manager.wallpaper_dir,
+                    &manager.mode,
+                    manager.current_wallpaper.as_deref(),
+                    urn,
+                );
             }
         }
 
@@ -200,11 +214,12 @@ impl WallpaperPage {
             let preview_ref = preview.clone();
             let transition_ref = transition.clone();
             let config_ref = config.clone();
+            let gallery_ref = gallery.clone();
 
             entity_store.subscribe_type(WALLPAPER_MANAGER_ENTITY_TYPE, move || {
                 let entities: Vec<(Urn, WallpaperManager)> =
                     store.get_entities_typed(WALLPAPER_MANAGER_ENTITY_TYPE);
-                reconcile(&entities, &urn_ref, &mode_ref, &preview_ref, &transition_ref, &config_ref);
+                reconcile(&entities, &urn_ref, &mode_ref, &preview_ref, &transition_ref, &config_ref, &gallery_ref);
             });
         }
 
@@ -216,6 +231,7 @@ impl WallpaperPage {
             let preview_ref = preview.clone();
             let transition_ref = transition.clone();
             let config_ref = config.clone();
+            let gallery_ref = gallery.clone();
 
             gtk::glib::idle_add_local_once(move || {
                 let entities: Vec<(Urn, WallpaperManager)> =
@@ -225,7 +241,7 @@ impl WallpaperPage {
                         "[wallpaper-page] Initial reconciliation: {} entities",
                         entities.len()
                     );
-                    reconcile(&entities, &urn_ref, &mode_ref, &preview_ref, &transition_ref, &config_ref);
+                    reconcile(&entities, &urn_ref, &mode_ref, &preview_ref, &transition_ref, &config_ref, &gallery_ref);
                 }
             });
         }
@@ -235,6 +251,7 @@ impl WallpaperPage {
         std::mem::forget(preview);
         std::mem::forget(transition);
         std::mem::forget(config);
+        std::mem::forget(gallery);
 
         Self { root }
     }

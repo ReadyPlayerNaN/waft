@@ -20,13 +20,14 @@ use waft_protocol::entity::display::{
 };
 use waft_protocol::entity::keyboard::CONFIG_ENTITY_TYPE as KEYBOARD_CONFIG_ENTITY_TYPE;
 use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, EthernetConnection, WiFiNetwork};
-use waft_protocol::entity::notification::DND_ENTITY_TYPE;
+use waft_protocol::entity::notification::{DND_ENTITY_TYPE, RECORDING_ENTITY_TYPE};
 use waft_protocol::entity::notification_filter::{
     ACTIVE_PROFILE_ENTITY_TYPE, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE,
     SOUND_CONFIG_ENTITY_TYPE,
 };
 use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
 use waft_protocol::entity::plugin::ENTITY_TYPE as PLUGIN_STATUS_ENTITY_TYPE;
+use waft_protocol::entity::session;
 use waft_protocol::entity::weather;
 
 use crate::window::SettingsWindow;
@@ -55,6 +56,8 @@ const ENTITY_TYPES: &[&str] = &[
     DND_ENTITY_TYPE,
     SOUND_CONFIG_ENTITY_TYPE,
     NOTIFICATION_SOUND_ENTITY_TYPE,
+    RECORDING_ENTITY_TYPE,
+    session::USER_SERVICE_ENTITY_TYPE,
     PLUGIN_STATUS_ENTITY_TYPE,
 ];
 
@@ -272,6 +275,16 @@ fn load_css() {
         }
         .search-highlight {
             animation: search-highlight-pulse 1.5s ease-out;
+        }
+
+        /* Wallpaper gallery thumbnails */
+        .wallpaper-thumbnail {
+            border: 2px solid transparent;
+            border-radius: 6px;
+            padding: 4px;
+        }
+        .wallpaper-thumbnail.selected {
+            border-color: @accent_bg_color;
         }
     "#;
 

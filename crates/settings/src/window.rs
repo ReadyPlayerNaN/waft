@@ -18,10 +18,12 @@ use crate::pages::audio::AudioPage;
 use crate::pages::bluetooth::BluetoothPage;
 use crate::pages::display::DisplayPage;
 use crate::pages::keyboard::KeyboardPage;
+use crate::pages::keyboard_shortcuts::KeyboardShortcutsPage;
 use crate::pages::notifications::NotificationsPage;
 use crate::pages::plugins::PluginsPage;
 use crate::pages::services::ServicesPage;
 use crate::pages::sounds::SoundsPage;
+use crate::pages::startup::StartupPage;
 use crate::pages::wallpaper::WallpaperPage;
 use crate::pages::weather::WeatherPage;
 use crate::pages::wifi::WiFiPage;
@@ -45,6 +47,8 @@ fn page_title(page_id: &str) -> String {
         "weather" => "settings-weather",
         "plugins" => "settings-plugins",
         "services" => "settings-services",
+        "startup" => "settings-startup",
+        "keyboard-shortcuts" => "settings-keyboard-shortcuts",
         _ => "settings-bluetooth",
     };
     t(key)
@@ -118,6 +122,8 @@ impl SettingsWindow {
             idx.add_page("sounds", &t("settings-sounds"), "settings-sounds");
             idx.add_page("plugins", &t("settings-plugins"), "settings-plugins");
             idx.add_page("services", &t("settings-services"), "settings-services");
+            idx.add_page("startup", &t("settings-startup"), "settings-startup");
+            idx.add_page("keyboard-shortcuts", &t("settings-keyboard-shortcuts"), "settings-keyboard-shortcuts");
         }
 
         let audio_page = AudioPage::new(entity_store, action_callback, &search_index);
@@ -129,9 +135,11 @@ impl SettingsWindow {
         let display_page = DisplayPage::new(entity_store, action_callback, &search_index);
         let wallpaper_page = WallpaperPage::new(entity_store, action_callback, &search_index);
         let keyboard_page = KeyboardPage::new(entity_store, action_callback, &search_index);
+        let keyboard_shortcuts_page = KeyboardShortcutsPage::new(&search_index);
         let notifications_page = NotificationsPage::new(entity_store, action_callback, &search_index);
         let sounds_page = SoundsPage::new(entity_store, action_callback, &search_index);
         let plugins_page = PluginsPage::new(entity_store, &search_index);
+        let startup_page = StartupPage::new(&search_index);
         let services_page = ServicesPage::new(entity_store, action_callback, &search_index);
 
         // Wrap each page in a clamp for consistent max width
@@ -186,6 +194,16 @@ impl SettingsWindow {
             .child(&plugins_page.root)
             .build();
 
+        let kb_shortcuts_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&keyboard_shortcuts_page.root)
+            .build();
+
+        let startup_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&startup_page.root)
+            .build();
+
         let services_clamp = adw::Clamp::builder()
             .maximum_size(600)
             .child(&services_page.root)
@@ -204,10 +222,12 @@ impl SettingsWindow {
         stack.add_named(&display_clamp, Some("display"));
         stack.add_named(&wallpaper_clamp, Some("wallpaper"));
         stack.add_named(&keyboard_clamp, Some("keyboard"));
+        stack.add_named(&kb_shortcuts_clamp, Some("keyboard-shortcuts"));
         stack.add_named(&notif_clamp, Some("notifications"));
         stack.add_named(&sounds_clamp, Some("sounds"));
         stack.add_named(&plugins_clamp, Some("plugins"));
         stack.add_named(&services_clamp, Some("services"));
+        stack.add_named(&startup_clamp, Some("startup"));
         // Navigate to the requested page, or default to bluetooth
         let default_page = initial_page.unwrap_or("bluetooth");
         if stack.child_by_name(default_page).is_some() {

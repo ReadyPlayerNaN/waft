@@ -822,6 +822,22 @@ impl MainWindowWidget {
                 border-radius: 50%;
             }}
 
+            .tab-pill {{
+                border-radius: 999px;
+                padding: 4px 12px;
+                min-height: 24px;
+            }}
+
+            .tab-pill:checked {{
+                background-color: @accent_bg_color;
+                color: @accent_fg_color;
+            }}
+
+            .calendar-week-number {{
+                min-width: 2em;
+                font-size: smaller;
+            }}
+
             .calendar-weekday-header {{
                 font-size: 11px;
                 font-weight: 600;

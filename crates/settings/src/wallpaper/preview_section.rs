@@ -155,6 +155,11 @@ impl PreviewSection {
         self.random_button.set_sensitive(available);
     }
 
+    /// Show or hide the browse button (only relevant in Static mode).
+    pub fn set_browse_visible(&self, visible: bool) {
+        self.browse_button.set_visible(visible);
+    }
+
     /// Register a callback for output events.
     pub fn connect_output<F: Fn(PreviewSectionOutput) + 'static>(&self, callback: F) {
         *self.output_cb.borrow_mut() = Some(Box::new(callback));

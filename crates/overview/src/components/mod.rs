@@ -8,6 +8,7 @@ pub mod events;
 pub mod keyboard_layout;
 pub mod notification_group;
 pub mod notification_list;
+pub mod right_column_stack;
 pub mod session_actions;
 pub mod settings_button;
 pub mod system_actions;

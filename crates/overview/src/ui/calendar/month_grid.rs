@@ -1,14 +1,14 @@
 //! Month grid widget for the calendar.
 //!
-//! A dumb presentational widget that renders a 7-column, 6-row grid
-//! of day cells for a given month. Includes weekday headers and
-//! overflow days from adjacent months (dimmed).
+//! A dumb presentational widget that renders a grid of day cells for a
+//! given month with ISO week numbers, weekday headers, and overflow
+//! days from adjacent months (dimmed).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, Duration, NaiveDate};
 use gtk::prelude::*;
 
 use waft_ui_gtk::vdom::Component;
@@ -52,13 +52,21 @@ impl MonthGrid {
             .build();
 
         let grid = gtk::Grid::builder()
-            .column_homogeneous(true)
+            .column_homogeneous(false)
             .row_homogeneous(true)
             .column_spacing(0)
             .row_spacing(0)
             .build();
 
-        // Row 0: Weekday headers (Mon-Sun, locale-independent short labels)
+        // Row 0, Col 0: Week number header
+        let week_header = gtk::Label::builder()
+            .label("W")
+            .css_classes(["calendar-week-number", "dim-label"])
+            .halign(gtk::Align::Center)
+            .build();
+        grid.attach(&week_header, 0, 0, 1, 1);
+
+        // Row 0, Cols 1-7: Weekday headers (Mon-Sun, locale-independent short labels)
         let weekday_labels = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
         for (col, label) in weekday_labels.iter().enumerate() {
             let lbl = gtk::Label::builder()
@@ -66,7 +74,7 @@ impl MonthGrid {
                 .css_classes(["calendar-weekday-header"])
                 .halign(gtk::Align::Center)
                 .build();
-            grid.attach(&lbl, col as i32, 0, 1, 1);
+            grid.attach(&lbl, col as i32 + 1, 0, 1, 1);
         }
 
         let on_output: OutputCallback<MonthGridOutput> = Rc::new(RefCell::new(None));
@@ -105,9 +113,22 @@ impl MonthGrid {
             (props.year, props.month + 1)
         };
 
+        // The date of the first cell in the grid (may be in previous month)
+        let start_date = first_of_month - Duration::days(start_weekday as i64);
+
         // Build 6 rows x 7 cols = 42 cells
         let mut cell_index = 0u32;
         for row in 1..=6 {
+            // Week number label at column 0
+            let row_first_date = start_date + Duration::days(((row - 1) * 7) as i64);
+            let week_num = row_first_date.iso_week().week();
+            let week_label = gtk::Label::builder()
+                .label(week_num.to_string())
+                .css_classes(["calendar-week-number", "dim-label"])
+                .halign(gtk::Align::Center)
+                .build();
+            grid.attach(&week_label, 0, row, 1, 1);
+
             for col in 0..7 {
                 let (day, year, month, current_month) = if cell_index < start_weekday {
                     // Previous month overflow
@@ -152,7 +173,8 @@ impl MonthGrid {
                     });
                 }
 
-                grid.attach(&cell.widget(), col, row, 1, 1);
+                // Day cells at columns 1-7 (column 0 is week numbers)
+                grid.attach(&cell.widget(), col + 1, row, 1, 1);
                 cell_index += 1;
             }
         }

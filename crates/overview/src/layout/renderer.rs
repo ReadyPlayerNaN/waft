@@ -13,6 +13,7 @@ type RebuildSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 use crate::calendar_selection::CalendarSelectionStore;
 use crate::components::agenda::AgendaComponent;
+use crate::components::right_column_stack::RightColumnStackComponent;
 use crate::components::audio_sliders::AudioSlidersComponent;
 use crate::components::battery::BatteryComponent;
 use crate::components::brightness_sliders::BrightnessSlidersComponent;
@@ -50,6 +51,10 @@ pub struct RenderContext {
     pub calendar_selection: Rc<CalendarSelectionStore>,
     /// Keeps components alive (entity subscriptions, toggle state).
     keep_alive: RefCell<Vec<Box<dyn std::any::Any>>>,
+    /// Pre-created tab buttons for the right column stack. Created eagerly so
+    /// they can be placed in the header before the RightColumnStack is rendered.
+    controls_tab_btn: gtk::ToggleButton,
+    exit_tab_btn: gtk::ToggleButton,
 }
 
 impl RenderContext {
@@ -58,11 +63,26 @@ impl RenderContext {
         action_callback: EntityActionCallback,
         calendar_selection: Rc<CalendarSelectionStore>,
     ) -> Self {
+        let controls_tab_btn = gtk::ToggleButton::builder()
+            .label(crate::i18n::t("tab-controls"))
+            .css_classes(["tab-pill", "flat"])
+            .active(true)
+            .build();
+
+        let exit_tab_btn = gtk::ToggleButton::builder()
+            .label(crate::i18n::t("tab-exit"))
+            .css_classes(["tab-pill", "flat"])
+            .build();
+
+        exit_tab_btn.set_group(Some(&controls_tab_btn));
+
         Self {
             store,
             action_callback,
             calendar_selection,
             keep_alive: RefCell::new(Vec::new()),
+            controls_tab_btn,
+            exit_tab_btn,
         }
     }
 }
@@ -218,6 +238,38 @@ fn render_node(
 
         LayoutNode::FeatureToggleGrid { children } => {
             render_feature_toggle_grid(children, ctx, menu_store)
+        }
+
+        LayoutNode::RightColumnStack { controls, exit } => {
+            let controls_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
+            for child in controls {
+                let widget = render_node(child, ctx, menu_store);
+                controls_box.append(&widget);
+            }
+
+            let exit_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
+            for child in exit {
+                let widget = render_node(child, ctx, menu_store);
+                exit_box.append(&widget);
+            }
+
+            let component = RightColumnStackComponent::new(
+                controls_box.upcast(),
+                exit_box.upcast(),
+                &ctx.controls_tab_btn,
+                &ctx.exit_tab_btn,
+            );
+            let widget = component.widget();
+            ctx.keep_alive.borrow_mut().push(Box::new(component));
+            widget
+        }
+
+        LayoutNode::ControlsTabButton => {
+            ctx.controls_tab_btn.clone().upcast()
+        }
+
+        LayoutNode::ExitTabButton => {
+            ctx.exit_tab_btn.clone().upcast()
         }
 
         // Legacy Widget and Unmatched nodes are no longer supported

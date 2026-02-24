@@ -115,5 +115,9 @@ battery-time-remaining = zbývá { $time }
 battery-time-to-full = { $time } do plného nabití
 battery-time-less-than-minute = < 1min
 
+# Right Column Tabs
+tab-controls = Ovládání
+tab-exit = Ukončení
+
 # Settings
 settings-button = Nastavení

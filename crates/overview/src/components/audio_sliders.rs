@@ -262,20 +262,124 @@ impl AudioSlidersComponent {
 }
 
 /// Build the device list for `AudioSliderMenuProps` from raw entity data.
+///
+/// Uses [`deduplicate_device_names`] to disambiguate devices that share the
+/// same name (e.g. two "Built-in Audio" entries on different connection types).
 fn build_device_entries(devices: &[&(Urn, entity::audio::AudioDevice)]) -> Vec<AudioSliderDevice> {
+    let pairs: Vec<(Urn, entity::audio::AudioDevice)> = devices
+        .iter()
+        .map(|(u, d)| ((*u).clone(), d.clone()))
+        .collect();
+    let display_names = deduplicate_device_names(&pairs);
+
     devices
         .iter()
-        .map(|(urn, device)| AudioSliderDevice {
+        .zip(display_names)
+        .map(|((urn, device), (_, display_label))| AudioSliderDevice {
             urn: (*urn).clone(),
             props: AudioDeviceRowProps {
                 device_type: device.device_type.clone(),
                 connection_type: device.connection_type.clone(),
                 kind: device.kind,
-                name: device.name.clone(),
+                name: display_label,
                 active: device.default,
             },
         })
         .collect()
+}
+
+/// Produces display labels for a list of audio devices, disambiguating
+/// devices that share the same `name` by appending a connection-type suffix.
+///
+/// Unique names pass through unchanged. Colliding names become
+/// `"{name} ({TYPE} {n})"` where `TYPE` is `connection_type` uppercased
+/// (or `"DEVICE"` when absent) and `n` is a 1-based counter within that name
+/// group.
+fn deduplicate_device_names(
+    devices: &[(Urn, entity::audio::AudioDevice)],
+) -> Vec<(Urn, String)> {
+    // Count how many devices share each name.
+    let mut name_counts: HashMap<&str, usize> = HashMap::new();
+    for (_, device) in devices {
+        *name_counts.entry(&device.name).or_insert(0) += 1;
+    }
+
+    // Assign display labels: unique names stay as-is, duplicates get a suffix.
+    let mut name_counters: HashMap<&str, usize> = HashMap::new();
+    devices
+        .iter()
+        .map(|(urn, device)| {
+            let count = name_counts.get(device.name.as_str()).copied().unwrap_or(1);
+            let label = if count > 1 {
+                let n = name_counters.entry(&device.name).or_insert(0);
+                *n += 1;
+                let conn = device
+                    .connection_type
+                    .as_deref()
+                    .unwrap_or("Device")
+                    .to_uppercase();
+                format!("{} ({} {})", device.name, conn, n)
+            } else {
+                device.name.clone()
+            };
+            (urn.clone(), label)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use entity::audio::{AudioDevice, AudioDeviceKind};
+
+    fn make_device(name: &str, connection_type: Option<&str>) -> AudioDevice {
+        AudioDevice {
+            name: name.to_string(),
+            device_type: "card".to_string(),
+            connection_type: connection_type.map(|s| s.to_string()),
+            volume: 0.5,
+            muted: false,
+            default: false,
+            kind: AudioDeviceKind::Output,
+        }
+    }
+
+    fn make_urn(id: &str) -> Urn {
+        Urn::parse(id).expect("valid URN")
+    }
+
+    #[test]
+    fn unique_names_unchanged() {
+        let devices = vec![
+            (make_urn("audio/audio-device/speakers"), make_device("Speakers", Some("jack"))),
+            (make_urn("audio/audio-device/headset"), make_device("Headset", Some("bluetooth"))),
+        ];
+        let result = deduplicate_device_names(&devices);
+        assert_eq!(result[0].1, "Speakers");
+        assert_eq!(result[1].1, "Headset");
+    }
+
+    #[test]
+    fn duplicates_with_connection_type() {
+        let devices = vec![
+            (make_urn("audio/audio-device/builtin1"), make_device("Built-in Audio", Some("jack"))),
+            (make_urn("audio/audio-device/builtin2"), make_device("Built-in Audio", Some("hdmi"))),
+        ];
+        let result = deduplicate_device_names(&devices);
+        assert_eq!(result[0].1, "Built-in Audio (JACK 1)");
+        assert_eq!(result[1].1, "Built-in Audio (HDMI 2)");
+    }
+
+    #[test]
+    fn duplicates_without_connection_type() {
+        let devices = vec![
+            (make_urn("audio/audio-device/dev1"), make_device("Monitor", None)),
+            (make_urn("audio/audio-device/dev2"), make_device("Monitor", None)),
+        ];
+        let result = deduplicate_device_names(&devices);
+        assert_eq!(result[0].1, "Monitor (DEVICE 1)");
+        assert_eq!(result[1].1, "Monitor (DEVICE 2)");
+    }
 }
 
 /// Compute the volume-level icon for an audio device slider.

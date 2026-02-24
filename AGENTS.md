@@ -86,7 +86,7 @@ When implementing features:
 - **`waft-ui-gtk`** - GTK4 widget library: `WidgetBase` trait, `Child`/`Children` container types, `WidgetReconciler`, widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`).
 - **`waft-config`** - Configuration loading from `~/.config/waft/config.toml`
 - **`waft-i18n`** - Fluent localization: `system_locale()` returns BCP47 locale, `I18n` struct for translations with `t()` and `t_args()`.
-- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with categorized sidebar and `gtk::Stack` for page switching. Pages: Bluetooth, WiFi, Wired (Connectivity); Display, Keyboard (Visual/Inputs); Notifications, Sounds (Feedback); Weather (Info); Plugins (System). Uses same `WaftClient` + `EntityStore` pattern as overview.
+- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with categorized sidebar and `gtk::Stack` for page switching. Pages: Bluetooth, WiFi, Wired (Connectivity); Appearance, Display, Wallpaper (Visual); Audio, Notifications, Sounds (Feedback); Keyboard, Keyboard Shortcuts (Inputs); Weather (Info); Plugins, Services, Startup (System). Uses same `WaftClient` + `EntityStore` pattern as overview. Startup and Keyboard Shortcuts pages use direct KDL config file editing (niri config) rather than entity-based approach.
 - **`waft-core`** - Common types: `Callback<T>`, `VoidCallback`, `DbusHandle` (zbus wrapper). Re-exports `waft-config`.
 - **`waft-ipc`** - Legacy widget protocol types (being phased out).
 
@@ -195,7 +195,11 @@ crates/
             main.rs               # Tokio entrypoint
             app.rs                # Window setup, entity event loop
             waft_client.rs        # WaftClient, daemon_connection_task, OverviewEvent
-            ui/                   # UI components (main_window, feature_grid, etc.)
+            ui/
+                calendar/
+                    month_grid.rs # Calendar grid with ISO week numbers
+            components/
+                right_column_stack.rs  # Tabbable right column (controls/exit ViewStack)
             features/
                 session/          # Session lock detection (internal, not a plugin)
     waft-ui-gtk/                  # GTK4 widget library
@@ -234,13 +238,20 @@ crates/
                 wired.rs          # Smart container: Ethernet adapters + connection profiles
                 display.rs        # Smart container: per-output display controls
                 keyboard.rs       # Smart container: keyboard layout selection
+                keyboard_shortcuts.rs  # Smart container: niri keyboard bind management (KDL)
                 notifications.rs  # Smart container: groups, profiles, DND
                 sounds.rs         # Thin composer: defaults + gallery sections
+                startup.rs        # Smart container: niri spawn-at-startup entries (KDL)
+                wallpaper.rs      # Smart container: wallpaper mode, preview, gallery
                 weather.rs        # Smart container: weather display
                 plugins.rs        # Smart container: plugin lifecycle status
+                services.rs       # Smart container: systemd user services
             bluetooth/            # Dumb widgets: adapter_group, device_row, paired/discovered groups
             wifi/                 # Dumb widgets: adapter_group, network_row, known/available groups
             wired/                # Dumb widgets: adapter_group, connection_row
+            wallpaper/            # Widgets: gallery_section, thumbnail_widget, preview_section, mode_section
+            startup/              # Widgets: startup_row, entry_dialog
+            keyboard_shortcuts/   # Widgets: bind_row, bind_editor
             plugins/              # Dumb widgets: plugin_row
             sounds/               # Smart sections: defaults_section, gallery_section
 ```
@@ -668,8 +679,8 @@ let handle = match self.field.as_ref() {
 - `waft-protocol` with entity types, messages, URN, transport, static entity registry, plugin descriptions
 - `waft-plugin` with `Plugin` trait, `PluginRuntime`, `EntityNotifier`, extended manifest (`provides --describe`)
 - `waft` central daemon with discovery, spawning, routing, crash recovery, CLI (clap), plugin-status meta-entities
-- `waft-overview` with `WaftClient`, `EntityRenderer`, socket reconnection
-- `waft-settings` with Bluetooth, WiFi, Wired, Display, Keyboard, Notifications, Sounds, Weather, Plugins pages
+- `waft-overview` with `WaftClient`, `EntityRenderer`, socket reconnection, right column tabs (controls/exit), ISO week numbers in calendar, audio device name deduplication
+- `waft-settings` with Bluetooth, WiFi, Wired, Appearance, Display, Wallpaper (with gallery), Audio, Notifications (with recording toggle), Sounds, Keyboard, Keyboard Shortcuts, Weather, Plugins, Services, Startup pages
 
 **Legacy crates** (`waft-ipc`, parts of `waft-core`) are still in the workspace but being phased out.
 **Active Branch:** `larger-larger-picture`

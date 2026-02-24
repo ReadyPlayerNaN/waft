@@ -131,12 +131,20 @@ fn categories() -> Vec<SidebarCategory> {
         },
         SidebarCategory {
             label: t("sidebar-inputs"),
-            items: vec![SidebarItem {
-                page_id: "keyboard",
-                title: t("settings-keyboard"),
-                icon: "input-keyboard-symbolic",
-                visible: true,
-            }],
+            items: vec![
+                SidebarItem {
+                    page_id: "keyboard",
+                    title: t("settings-keyboard"),
+                    icon: "input-keyboard-symbolic",
+                    visible: true,
+                },
+                SidebarItem {
+                    page_id: "keyboard-shortcuts",
+                    title: t("settings-keyboard-shortcuts"),
+                    icon: "preferences-desktop-keyboard-shortcuts-symbolic",
+                    visible: true,
+                },
+            ],
         },
         SidebarCategory {
             label: t("sidebar-info"),
@@ -159,6 +167,12 @@ fn categories() -> Vec<SidebarCategory> {
                 SidebarItem {
                     page_id: "services",
                     title: t("settings-services"),
+                    icon: "system-run-symbolic",
+                    visible: true,
+                },
+                SidebarItem {
+                    page_id: "startup",
+                    title: t("settings-startup"),
                     icon: "system-run-symbolic",
                     visible: true,
                 },

@@ -371,6 +371,18 @@ plugins-title = Doplňky
 plugins-no-plugins = Žádné doplňky
 plugins-no-plugins-desc = Démon neobjevil žádné doplňky.
 
+# Spouštění
+settings-startup = Spouštění
+startup-entries = Spouštěcí aplikace
+startup-add = Přidat aplikaci
+startup-no-entries = Žádné spouštěcí aplikace
+startup-parse-error = Konfigurační soubor nelze zpracovat — úpravy jsou zakázány
+startup-entry-command = Příkaz
+startup-entry-args = Argumenty
+startup-edit = Upravit
+startup-delete = Odebrat
+startup-save = Uložit
+
 # Služby
 settings-services = Služby
 services-title = Uživatelské služby
@@ -380,3 +392,21 @@ services-start = Spustit
 services-stop = Zastavit
 services-enable = Povolit
 services-disable = Zakázat
+
+# Klávesové zkratky
+settings-keyboard-shortcuts = Klávesové zkratky
+kb-shortcuts-add = Přidat zkratku
+kb-shortcuts-no-entries = Žádné vlastní zkratky
+kb-shortcuts-custom = Vlastní zkratky
+kb-shortcuts-advanced = Pokročilé zkratky
+kb-modifier-mod = Super
+kb-modifier-shift = Shift
+kb-modifier-ctrl = Ctrl
+kb-modifier-alt = Alt
+kb-key = Klávesa
+kb-action = Akce
+kb-action-spawn = Spustit příkaz
+kb-allow-when-locked = Povolit při zamčení
+kb-hotkey-title = Název v překryvném okně
+kb-shortcuts-parse-error = Konfigurační soubor nelze zpracovat — úpravy jsou zakázány
+kb-shortcuts-read-only = Pouze pro čtení

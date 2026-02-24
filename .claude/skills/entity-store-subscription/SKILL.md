@@ -1,6 +1,6 @@
 ---
 name: entity-store-subscription
-description: Pattern for subscribing to entity types in EntityStore with initial reconciliation. Use when building smart container pages in waft-settings or any GTK component that consumes entity data from the daemon.
+description: Pattern for subscribing to entity types in EntityStore with Reconciler-based widget management and initial reconciliation.
 ---
 
 # EntityStore Subscription with Initial Reconciliation
@@ -16,25 +16,26 @@ Every smart container that subscribes to entity types must do TWO things:
 1. **Subscribe to changes** via `subscribe_type()`
 2. **Trigger initial reconciliation** via `gtk::glib::idle_add_local_once()`
 
-## Template
+## Template (Reconciler-Based)
 
 ```rust
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+use waft_ui_gtk::vdom::{Reconciler, VNode};
 use waft_protocol::Urn;
 use waft_protocol::entity::your_domain::{YourEntity, ENTITY_TYPE};
+
+use crate::your_widget::{YourWidget, YourWidgetOutput, YourWidgetProps};
 
 pub struct YourPage {
     pub root: gtk::Box,
 }
 
 struct YourPageState {
-    widgets: HashMap<String, YourWidget>,
-    container: gtk::Box,
+    reconciler: Reconciler,
 }
 
 impl YourPage {
@@ -54,9 +55,10 @@ impl YourPage {
             .build();
         root.append(&container);
 
+        let reconciler = Reconciler::new(container);
+
         let state = Rc::new(RefCell::new(YourPageState {
-            widgets: HashMap::new(),
-            container,
+            reconciler,
         }));
 
         // 1. Subscribe to entity changes
@@ -99,46 +101,38 @@ impl YourPage {
         action_callback: &EntityActionCallback,
     ) {
         let mut state = state.borrow_mut();
-        let mut seen = std::collections::HashSet::new();
 
-        for (urn, entity) in entities {
-            let urn_str = urn.as_str().to_string();
-            seen.insert(urn_str.clone());
-
-            if let Some(existing) = state.widgets.get(&urn_str) {
-                existing.apply_props(/* ... */);
-            } else {
-                let widget = YourWidget::new(/* props */);
-                // Connect output callback
+        state.reconciler.reconcile(
+            entities.iter().map(|(urn, entity)| {
+                let urn_key = urn.as_str().to_string();
                 let urn_clone = urn.clone();
                 let cb = action_callback.clone();
-                widget.connect_output(move |output| {
-                    let (action, params) = match output {
-                        // Map output events to entity actions
-                    };
-                    cb(urn_clone.clone(), action.to_string(), params);
-                });
-                state.container.append(&widget.root);
-                state.widgets.insert(urn_str, widget);
-            }
-        }
 
-        // Remove widgets for entities no longer present
-        let to_remove: Vec<String> = state
-            .widgets
-            .keys()
-            .filter(|k| !seen.contains(*k))
-            .cloned()
-            .collect();
-
-        for key in to_remove {
-            if let Some(widget) = state.widgets.remove(&key) {
-                state.container.remove(&widget.root);
-            }
-        }
+                VNode::with_output::<YourWidget>(
+                    YourWidgetProps {
+                        // ... map entity fields to props ...
+                    },
+                    move |output| {
+                        let (action, params) = match output {
+                            YourWidgetOutput::Toggle => ("toggle", serde_json::Value::Null),
+                            // ... map other outputs to actions ...
+                        };
+                        cb(urn_clone.clone(), action.to_string(), params);
+                    },
+                )
+                .key(urn_key)  // Stable key for diffing
+            }),
+        );
     }
 }
 ```
+
+The `Reconciler` automatically handles:
+- **Adding** widgets for new keys
+- **Updating** widgets when props change (skips if unchanged)
+- **Removing** widgets when keys disappear
+
+No manual `HashMap<String, Widget>`, no `seen` HashSet, no `to_remove` loop.
 
 ## Why `idle_add_local_once`?
 
@@ -149,13 +143,13 @@ impl YourPage {
 ## Key Rules
 
 1. Always subscribe BEFORE the idle_add initial reconciliation
-2. The reconcile function must handle both create and update paths
-3. Sort entities for stable ordering (prevents visual jumps)
-4. Always remove stale widgets when entities disappear
+2. The Reconciler handles create/update/remove via VNode keys
+3. Use `.key(urn.as_str())` for stable entity identity
+4. Sort entities before passing to reconciler if stable visual ordering matters
 
 ## Reference Implementations
 
-- `crates/settings/src/pages/bluetooth.rs` -- subscribes to two entity types (adapters + devices)
-- `crates/settings/src/pages/wifi.rs` -- same pattern with WiFi adapters + networks
-- `crates/settings/src/pages/wired.rs` -- Ethernet adapters + connection profiles
-- `crates/settings/src/pages/plugins.rs` -- clean single entity type example with empty state
+- `crates/settings/src/pages/wired.rs` -- primary Reconciler example with two entity types
+- `crates/settings/src/pages/bluetooth.rs` -- multi-entity-type with Reconciler
+- `crates/settings/src/pages/wifi.rs` -- WiFi adapters + networks with Reconciler
+- `crates/settings/src/pages/plugins.rs` -- simpler example using direct Component::build/update (no Reconciler)

@@ -34,6 +34,15 @@ pub enum LayoutNode {
     Component { name: String },
     /// Widget placeholder, matches by ID pattern (supports `*` suffix wildcard)
     Widget { id: String },
+    /// Tabbable right column with "controls" and "exit" pages
+    RightColumnStack {
+        controls: Vec<LayoutNode>,
+        exit: Vec<LayoutNode>,
+    },
+    /// Toggle button that activates the "controls" tab of a RightColumnStack
+    ControlsTabButton,
+    /// Toggle button that activates the "exit" tab of a RightColumnStack
+    ExitTabButton,
     /// Catch-all for widgets not matched by any pattern
     Unmatched,
 }

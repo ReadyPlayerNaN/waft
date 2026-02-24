@@ -54,6 +54,20 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
                 .ok_or_else(|| anyhow!("Widget element missing 'id' attribute"))?;
             Ok(LayoutNode::Widget { id: id.to_string() })
         }
+        "RightColumnStack" => {
+            let mut controls = Vec::new();
+            let mut exit = Vec::new();
+            for child in node.children().filter(|n| n.is_element()) {
+                match child.tag_name().name() {
+                    "Controls" => controls = parse_children(&child)?,
+                    "Exit" => exit = parse_children(&child)?,
+                    tag => return Err(anyhow!("Unknown RightColumnStack child tag: {}", tag)),
+                }
+            }
+            Ok(LayoutNode::RightColumnStack { controls, exit })
+        }
+        "ControlsTabButton" => Ok(LayoutNode::ControlsTabButton),
+        "ExitTabButton" => Ok(LayoutNode::ExitTabButton),
         "Unmatched" => Ok(LayoutNode::Unmatched),
         tag @ ("Clock" | "Battery" | "Weather" | "KeyboardLayout" | "SettingsButton"
         | "SessionActions" | "SystemActions" | "Calendar" | "Agenda" | "Events"
@@ -157,12 +171,8 @@ mod tests {
                         assert!(
                             matches!(&children[1], LayoutNode::Component { name } if name == "SettingsButton")
                         );
-                        assert!(
-                            matches!(&children[2], LayoutNode::Component { name } if name == "SessionActions")
-                        );
-                        assert!(
-                            matches!(&children[3], LayoutNode::Component { name } if name == "SystemActions")
-                        );
+                        assert!(matches!(&children[2], LayoutNode::ControlsTabButton));
+                        assert!(matches!(&children[3], LayoutNode::ExitTabButton));
                     }
                 }
 
@@ -182,42 +192,57 @@ mod tests {
                             matches!(&children[1], LayoutNode::Component { name } if name == "NotificationList")
                         );
                     }
-                    // Right column: AudioSliders, BrightnessSliders, FeatureToggleGrid, Unmatched
+                    // Right column: RightColumnStack inside a Col
                     if let LayoutNode::Col { children, .. } = &col_children[1] {
-                        assert_eq!(children.len(), 4);
-                        assert!(
-                            matches!(&children[0], LayoutNode::Component { name } if name == "AudioSliders")
-                        );
-                        assert!(
-                            matches!(&children[1], LayoutNode::Component { name } if name == "BrightnessSliders")
-                        );
-                        assert!(matches!(&children[2], LayoutNode::FeatureToggleGrid { .. }));
-                        assert!(matches!(&children[3], LayoutNode::Unmatched));
+                        assert_eq!(children.len(), 1);
+                        if let LayoutNode::RightColumnStack { controls, exit } = &children[0] {
+                            // Controls page: AudioSliders, BrightnessSliders, FeatureToggleGrid, Unmatched
+                            assert_eq!(controls.len(), 4);
+                            assert!(
+                                matches!(&controls[0], LayoutNode::Component { name } if name == "AudioSliders")
+                            );
+                            assert!(
+                                matches!(&controls[1], LayoutNode::Component { name } if name == "BrightnessSliders")
+                            );
+                            assert!(matches!(&controls[2], LayoutNode::FeatureToggleGrid { .. }));
+                            assert!(matches!(&controls[3], LayoutNode::Unmatched));
 
-                        // FeatureToggleGrid children
-                        if let LayoutNode::FeatureToggleGrid {
-                            children: toggle_children,
-                        } = &children[2]
-                        {
-                            assert_eq!(toggle_children.len(), 10);
+                            // FeatureToggleGrid children
+                            if let LayoutNode::FeatureToggleGrid {
+                                children: toggle_children,
+                            } = &controls[2]
+                            {
+                                assert_eq!(toggle_children.len(), 10);
+                                assert!(
+                                    matches!(&toggle_children[0], LayoutNode::Component { name } if name == "DndToggle")
+                                );
+                                assert!(
+                                    matches!(&toggle_children[5], LayoutNode::Component { name } if name == "WifiToggles")
+                                );
+                                assert!(
+                                    matches!(&toggle_children[6], LayoutNode::Component { name } if name == "WiredToggles")
+                                );
+                                assert!(
+                                    matches!(&toggle_children[7], LayoutNode::Component { name } if name == "VpnToggles")
+                                );
+                                assert!(
+                                    matches!(&toggle_children[8], LayoutNode::Component { name } if name == "TetheringToggles")
+                                );
+                                assert!(
+                                    matches!(&toggle_children[9], LayoutNode::Component { name } if name == "BackupToggle")
+                                );
+                            }
+
+                            // Exit page: SessionActions, SystemActions
+                            assert_eq!(exit.len(), 2);
                             assert!(
-                                matches!(&toggle_children[0], LayoutNode::Component { name } if name == "DndToggle")
+                                matches!(&exit[0], LayoutNode::Component { name } if name == "SessionActions")
                             );
                             assert!(
-                                matches!(&toggle_children[5], LayoutNode::Component { name } if name == "WifiToggles")
+                                matches!(&exit[1], LayoutNode::Component { name } if name == "SystemActions")
                             );
-                            assert!(
-                                matches!(&toggle_children[6], LayoutNode::Component { name } if name == "WiredToggles")
-                            );
-                            assert!(
-                                matches!(&toggle_children[7], LayoutNode::Component { name } if name == "VpnToggles")
-                            );
-                            assert!(
-                                matches!(&toggle_children[8], LayoutNode::Component { name } if name == "TetheringToggles")
-                            );
-                            assert!(
-                                matches!(&toggle_children[9], LayoutNode::Component { name } if name == "BackupToggle")
-                            );
+                        } else {
+                            panic!("expected RightColumnStack in right column");
                         }
                     }
                 }
