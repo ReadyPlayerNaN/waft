@@ -5,6 +5,7 @@ mod audio;
 mod bluetooth;
 mod display;
 mod i18n;
+mod kdl_config;
 mod keyboard;
 mod keyboard_shortcuts;
 mod notifications;

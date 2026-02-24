@@ -163,6 +163,40 @@ impl SystemdPlugin {
                 log::warn!("[systemd] Failed to list user services: {e}");
             }
         }
+
+        // Discover additional enabled/disabled unit files not currently loaded
+        match self.list_unit_files().await {
+            Ok(unit_files) => {
+                let mut services = match self.services.lock() {
+                    Ok(g) => g,
+                    Err(e) => {
+                        log::warn!("[systemd] mutex poisoned, recovering: {e}");
+                        e.into_inner()
+                    }
+                };
+                let mut added = 0usize;
+                for (unit_name, file_state) in unit_files {
+                    let urn_id = unit_to_urn_id(&unit_name);
+                    if services.contains_key(&urn_id) {
+                        continue;
+                    }
+                    services.insert(urn_id, UserService {
+                        unit: unit_name,
+                        description: String::new(),
+                        active_state: "inactive".to_string(),
+                        sub_state: "dead".to_string(),
+                        enabled: unit_file_state_to_enabled(&file_state),
+                    });
+                    added += 1;
+                }
+                if added > 0 {
+                    log::info!("[systemd] Discovered {} additional unit files", added);
+                }
+            }
+            Err(e) => {
+                log::warn!("[systemd] Failed to list unit files (continuing with loaded services only): {e}");
+            }
+        }
     }
 
     /// List loaded .service units from the user systemd instance.
@@ -239,6 +273,47 @@ impl SystemdPlugin {
         }
     }
 
+    /// List unit files matching `*.service` from the user systemd instance.
+    /// Calls `ListUnitFilesByPatterns([], ["*.service"])` which returns `a(ss)` pairs
+    /// of (unit_file_path, state). Extracts unit name from file path basename.
+    /// Filters out template units (names containing `@`).
+    async fn list_unit_files(&self) -> Result<Vec<(String, String)>> {
+        let proxy = zbus::Proxy::new(
+            &self.session_conn,
+            SYSTEMD1_DESTINATION,
+            SYSTEMD1_MANAGER_PATH,
+            SYSTEMD1_MANAGER_INTERFACE,
+        )
+        .await
+        .context("Failed to create systemd1 manager proxy")?;
+
+        let files: Vec<(String, String)> = proxy
+            .call(
+                "ListUnitFilesByPatterns",
+                &(
+                    Vec::<&str>::new(),
+                    vec!["*.service"] as Vec<&str>,
+                ),
+            )
+            .await
+            .context("Failed to call ListUnitFilesByPatterns")?;
+
+        let mut result = Vec::with_capacity(files.len());
+        for (file_path, state) in files {
+            let basename = file_path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&file_path);
+            // Filter out template units
+            if basename.contains('@') {
+                continue;
+            }
+            result.push((basename.to_string(), state));
+        }
+
+        Ok(result)
+    }
+
     /// Refresh a single service's state and update the services map.
     /// Returns true if the service state changed.
     async fn refresh_service(&self, unit: &str) -> bool {
@@ -265,7 +340,8 @@ impl SystemdPlugin {
             Ok(p) => p,
             Err(e) => {
                 log::debug!("[systemd] Failed to GetUnit {}: {e}", unit);
-                // Unit might have been unloaded - remove from services
+                // Unit unloaded -- update in-place to inactive/dead, preserve identity
+                let enabled = self.get_unit_file_state(unit).await;
                 let mut services = match self.services.lock() {
                     Ok(g) => g,
                     Err(e) => {
@@ -274,7 +350,16 @@ impl SystemdPlugin {
                     }
                 };
                 let urn_id = unit_to_urn_id(unit);
-                return services.remove(&urn_id).is_some();
+                if let Some(svc) = services.get_mut(&urn_id) {
+                    let was_different = svc.active_state != "inactive"
+                        || svc.sub_state != "dead"
+                        || svc.enabled != enabled;
+                    svc.active_state = "inactive".to_string();
+                    svc.sub_state = "dead".to_string();
+                    svc.enabled = enabled;
+                    return was_different;
+                }
+                return false;
             }
         };
 
@@ -483,6 +568,77 @@ impl Plugin for SystemdPlugin {
     }
 }
 
+/// Refresh the `enabled` field for all known services by re-querying `GetUnitFileState`.
+/// Clones the service keys to avoid holding the mutex during D-Bus calls.
+/// Returns true if any service's enabled state changed.
+async fn refresh_all_enabled_states(
+    services: &Arc<StdMutex<HashMap<String, UserService>>>,
+    conn: &Connection,
+) -> bool {
+    let keys: Vec<(String, String)> = {
+        let svc = match services.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("[systemd] mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        svc.iter().map(|(k, v)| (k.clone(), v.unit.clone())).collect()
+    };
+
+    let proxy = match zbus::Proxy::new(
+        conn,
+        SYSTEMD1_DESTINATION,
+        SYSTEMD1_MANAGER_PATH,
+        SYSTEMD1_MANAGER_INTERFACE,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("[systemd] Failed to create proxy for enabled state refresh: {e}");
+            return false;
+        }
+    };
+
+    let mut updates: Vec<(String, bool)> = Vec::new();
+    for (urn_id, unit_name) in &keys {
+        let state: Result<String, _> = proxy.call("GetUnitFileState", &(unit_name.as_str(),)).await;
+        let enabled = match state {
+            Ok(s) => unit_file_state_to_enabled(&s),
+            Err(e) => {
+                log::debug!("[systemd] Failed to get unit file state for {}: {e}", unit_name);
+                false
+            }
+        };
+        updates.push((urn_id.clone(), enabled));
+    }
+
+    let mut svc = match services.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            log::warn!("[systemd] mutex poisoned, recovering: {e}");
+            e.into_inner()
+        }
+    };
+
+    let mut any_changed = false;
+    for (urn_id, enabled) in updates {
+        if let Some(service) = svc.get_mut(&urn_id) {
+            if service.enabled != enabled {
+                log::info!(
+                    "[systemd] {} enabled: {} -> {}",
+                    service.unit, service.enabled, enabled,
+                );
+                service.enabled = enabled;
+                any_changed = true;
+            }
+        }
+    }
+
+    any_changed
+}
+
 /// Monitor PropertiesChanged, UnitNew, and UnitRemoved signals on the session bus.
 async fn monitor_service_signals(
     conn: Connection,
@@ -600,7 +756,16 @@ async fn monitor_service_signals(
                     e.into_inner()
                 }
             };
-            changed = svc.remove(&urn_id).is_some();
+            if let Some(service) = svc.get_mut(&urn_id) {
+                if service.active_state != "inactive" || service.sub_state != "dead" {
+                    service.active_state = "inactive".to_string();
+                    service.sub_state = "dead".to_string();
+                    changed = true;
+                }
+            }
+        } else if iface == SYSTEMD1_MANAGER_INTERFACE && member == "UnitFilesChanged" {
+            log::info!("[systemd] UnitFilesChanged signal received");
+            changed = refresh_all_enabled_states(&services, &conn).await;
         }
 
         if changed {
@@ -824,6 +989,397 @@ mod tests {
         assert!(!unit_file_state_to_enabled("static"));
         assert!(!unit_file_state_to_enabled("masked"));
         assert!(!unit_file_state_to_enabled("indirect"));
+    }
+
+    /// Helper: simulates the UnitRemoved in-place update logic from monitor_service_signals().
+    /// Returns (changed, service_still_in_map).
+    fn simulate_unit_removed(
+        services: &mut HashMap<String, UserService>,
+        unit_name: &str,
+    ) -> (bool, bool) {
+        let urn_id = unit_to_urn_id(unit_name);
+        let mut changed = false;
+        if let Some(service) = services.get_mut(&urn_id) {
+            if service.active_state != "inactive" || service.sub_state != "dead" {
+                service.active_state = "inactive".to_string();
+                service.sub_state = "dead".to_string();
+                changed = true;
+            }
+        }
+        let still_present = services.contains_key(&urn_id);
+        (changed, still_present)
+    }
+
+    /// Helper: simulates the refresh_service() GetUnit failure in-place update logic.
+    /// Returns whether the service was considered changed.
+    fn simulate_refresh_failure_update(
+        services: &mut HashMap<String, UserService>,
+        unit: &str,
+        enabled: bool,
+    ) -> bool {
+        let urn_id = unit_to_urn_id(unit);
+        if let Some(svc) = services.get_mut(&urn_id) {
+            let was_different = svc.active_state != "inactive"
+                || svc.sub_state != "dead"
+                || svc.enabled != enabled;
+            svc.active_state = "inactive".to_string();
+            svc.sub_state = "dead".to_string();
+            svc.enabled = enabled;
+            return was_different;
+        }
+        false
+    }
+
+    fn make_service(active_state: &str, sub_state: &str, enabled: bool) -> UserService {
+        UserService {
+            unit: "test.service".to_string(),
+            description: "Test service".to_string(),
+            active_state: active_state.to_string(),
+            enabled,
+            sub_state: sub_state.to_string(),
+        }
+    }
+
+    #[test]
+    fn unit_removed_updates_active_service_in_place() {
+        let mut services = HashMap::new();
+        services.insert("test".to_string(), make_service("active", "running", true));
+
+        let (changed, still_present) = simulate_unit_removed(&mut services, "test.service");
+
+        assert!(changed, "should report changed when transitioning from active to inactive");
+        assert!(still_present, "service must NOT be removed from the map");
+        let svc = &services["test"];
+        assert_eq!(svc.active_state, "inactive");
+        assert_eq!(svc.sub_state, "dead");
+        // enabled and description must be preserved
+        assert!(svc.enabled);
+        assert_eq!(svc.description, "Test service");
+    }
+
+    #[test]
+    fn unit_removed_noop_for_already_inactive() {
+        let mut services = HashMap::new();
+        services.insert("test".to_string(), make_service("inactive", "dead", false));
+
+        let (changed, still_present) = simulate_unit_removed(&mut services, "test.service");
+
+        assert!(!changed, "should not report changed when already inactive/dead");
+        assert!(still_present, "service must remain in the map");
+    }
+
+    #[test]
+    fn unit_removed_ignores_unknown_service() {
+        let mut services = HashMap::new();
+        services.insert("known".to_string(), make_service("active", "running", true));
+
+        let (changed, still_present) = simulate_unit_removed(&mut services, "unknown.service");
+
+        assert!(!changed, "should not report changed for unknown service");
+        assert!(!still_present, "unknown service should not appear in map");
+        // known service must be untouched
+        assert_eq!(services["known"].active_state, "active");
+    }
+
+    #[test]
+    fn refresh_failure_updates_active_service_in_place() {
+        let mut services = HashMap::new();
+        services.insert("pipewire".to_string(), make_service("active", "running", true));
+
+        let changed = simulate_refresh_failure_update(&mut services, "pipewire.service", false);
+
+        assert!(changed, "should report changed when state differs");
+        let svc = &services["pipewire"];
+        assert_eq!(svc.active_state, "inactive");
+        assert_eq!(svc.sub_state, "dead");
+        assert!(!svc.enabled, "enabled should be updated to the queried value");
+        assert_eq!(svc.description, "Test service", "description must be preserved");
+    }
+
+    #[test]
+    fn refresh_failure_detects_enabled_change_only() {
+        let mut services = HashMap::new();
+        services.insert("test".to_string(), make_service("inactive", "dead", true));
+
+        let changed = simulate_refresh_failure_update(&mut services, "test.service", false);
+
+        assert!(changed, "should report changed when only enabled differs");
+        assert!(!services["test"].enabled);
+    }
+
+    #[test]
+    fn refresh_failure_noop_when_already_matching() {
+        let mut services = HashMap::new();
+        services.insert("test".to_string(), make_service("inactive", "dead", false));
+
+        let changed = simulate_refresh_failure_update(&mut services, "test.service", false);
+
+        assert!(!changed, "should not report changed when state already matches");
+    }
+
+    #[test]
+    fn refresh_failure_returns_false_for_unknown_service() {
+        let mut services = HashMap::new();
+
+        let changed = simulate_refresh_failure_update(&mut services, "unknown.service", true);
+
+        assert!(!changed, "should return false for unknown service");
+        assert!(!services.contains_key("unknown"), "should not insert unknown service");
+    }
+
+    /// Helper: simulates the basename extraction + template filtering from list_unit_files().
+    fn filter_unit_file_path(file_path: &str) -> Option<String> {
+        let basename = file_path.rsplit('/').next().unwrap_or(file_path);
+        if basename.contains('@') {
+            return None;
+        }
+        Some(basename.to_string())
+    }
+
+    /// Helper: simulates the load_services() merge logic for unit files.
+    /// Inserts new services with inactive/dead state, skips existing entries.
+    /// Returns count of added services.
+    fn simulate_unit_file_merge(
+        services: &mut HashMap<String, UserService>,
+        unit_files: &[(&str, &str)],
+    ) -> usize {
+        let mut added = 0;
+        for (unit_name, file_state) in unit_files {
+            let urn_id = unit_to_urn_id(unit_name);
+            if services.contains_key(&urn_id) {
+                continue;
+            }
+            services.insert(urn_id, UserService {
+                unit: unit_name.to_string(),
+                description: String::new(),
+                active_state: "inactive".to_string(),
+                sub_state: "dead".to_string(),
+                enabled: unit_file_state_to_enabled(file_state),
+            });
+            added += 1;
+        }
+        added
+    }
+
+    /// Helper: simulates the refresh_all_enabled_states() update logic.
+    /// Given a list of (urn_id, new_enabled) pairs, applies updates to the map.
+    /// Returns true if any service changed.
+    fn simulate_enabled_state_refresh(
+        services: &mut HashMap<String, UserService>,
+        updates: &[(&str, bool)],
+    ) -> bool {
+        let mut any_changed = false;
+        for (urn_id, enabled) in updates {
+            if let Some(service) = services.get_mut(*urn_id) {
+                if service.enabled != *enabled {
+                    service.enabled = *enabled;
+                    any_changed = true;
+                }
+            }
+        }
+        any_changed
+    }
+
+    #[test]
+    fn filter_unit_file_extracts_basename() {
+        assert_eq!(
+            filter_unit_file_path("/usr/lib/systemd/user/pipewire.service"),
+            Some("pipewire.service".to_string()),
+        );
+    }
+
+    #[test]
+    fn filter_unit_file_handles_bare_name() {
+        assert_eq!(
+            filter_unit_file_path("pipewire.service"),
+            Some("pipewire.service".to_string()),
+        );
+    }
+
+    #[test]
+    fn filter_unit_file_rejects_template_units() {
+        assert_eq!(
+            filter_unit_file_path("/usr/lib/systemd/user/dbus-broker@.service"),
+            None,
+        );
+        assert_eq!(
+            filter_unit_file_path("/usr/lib/systemd/user/app-flatpak-com.example@123.service"),
+            None,
+        );
+    }
+
+    #[test]
+    fn unit_file_merge_inserts_new_services() {
+        let mut services = HashMap::new();
+
+        let added = simulate_unit_file_merge(
+            &mut services,
+            &[
+                ("pipewire.service", "enabled"),
+                ("wireplumber.service", "disabled"),
+            ],
+        );
+
+        assert_eq!(added, 2);
+        assert_eq!(services.len(), 2);
+        let pw = &services["pipewire"];
+        assert_eq!(pw.active_state, "inactive");
+        assert_eq!(pw.sub_state, "dead");
+        assert!(pw.enabled);
+        assert!(pw.description.is_empty());
+
+        let wp = &services["wireplumber"];
+        assert!(!wp.enabled);
+    }
+
+    #[test]
+    fn unit_file_merge_skips_existing_services() {
+        let mut services = HashMap::new();
+        services.insert("pipewire".to_string(), make_service("active", "running", true));
+
+        let added = simulate_unit_file_merge(
+            &mut services,
+            &[
+                ("pipewire.service", "disabled"),
+                ("wireplumber.service", "enabled"),
+            ],
+        );
+
+        assert_eq!(added, 1, "should only add wireplumber, not overwrite pipewire");
+        assert_eq!(services.len(), 2);
+        // pipewire must retain its original state
+        assert_eq!(services["pipewire"].active_state, "active");
+        assert!(services["pipewire"].enabled, "existing pipewire must not be overwritten");
+    }
+
+    #[test]
+    fn enabled_state_refresh_updates_changed_services() {
+        let mut services = HashMap::new();
+        services.insert("pipewire".to_string(), make_service("active", "running", true));
+        services.insert("wireplumber".to_string(), make_service("active", "running", false));
+
+        let changed = simulate_enabled_state_refresh(
+            &mut services,
+            &[("pipewire", false), ("wireplumber", true)],
+        );
+
+        assert!(changed);
+        assert!(!services["pipewire"].enabled);
+        assert!(services["wireplumber"].enabled);
+    }
+
+    #[test]
+    fn enabled_state_refresh_noop_when_unchanged() {
+        let mut services = HashMap::new();
+        services.insert("pipewire".to_string(), make_service("active", "running", true));
+
+        let changed = simulate_enabled_state_refresh(
+            &mut services,
+            &[("pipewire", true)],
+        );
+
+        assert!(!changed, "should not report changed when enabled state is the same");
+    }
+
+    #[test]
+    fn enabled_state_refresh_ignores_unknown_services() {
+        let mut services = HashMap::new();
+        services.insert("pipewire".to_string(), make_service("active", "running", true));
+
+        let changed = simulate_enabled_state_refresh(
+            &mut services,
+            &[("unknown", false)],
+        );
+
+        assert!(!changed, "should not report changed for unknown service");
+        assert!(!services.contains_key("unknown"));
+    }
+
+    /// Task 3 / Test 5.1: After the GetUnit-failure update path runs, the service
+    /// remains in the map with active_state "inactive" and sub_state "dead".
+    /// Uses the extracted pure function `simulate_refresh_failure_update`.
+    #[test]
+    fn refresh_service_preserves_on_get_unit_failure() {
+        let mut services = HashMap::new();
+        services.insert(
+            "pipewire".to_string(),
+            UserService {
+                unit: "pipewire.service".to_string(),
+                description: "PipeWire Multimedia Service".to_string(),
+                active_state: "active".to_string(),
+                enabled: true,
+                sub_state: "running".to_string(),
+            },
+        );
+
+        let changed = simulate_refresh_failure_update(&mut services, "pipewire.service", true);
+
+        assert!(changed);
+        assert!(services.contains_key("pipewire"), "service must remain in map");
+        let svc = &services["pipewire"];
+        assert_eq!(svc.active_state, "inactive");
+        assert_eq!(svc.sub_state, "dead");
+        assert_eq!(svc.unit, "pipewire.service", "unit must be preserved");
+        assert_eq!(svc.description, "PipeWire Multimedia Service", "description must be preserved");
+    }
+
+    /// Task 3 / Test 5.2: Given an active service, simulating UnitRemoved sets
+    /// active_state to "inactive" and sub_state to "dead" without removing the entry.
+    /// Uses the extracted pure function `simulate_unit_removed`.
+    #[test]
+    fn unit_removed_preserves_tracked_service() {
+        let mut services = HashMap::new();
+        services.insert(
+            "wireplumber".to_string(),
+            UserService {
+                unit: "wireplumber.service".to_string(),
+                description: "WirePlumber Session Manager".to_string(),
+                active_state: "active".to_string(),
+                enabled: true,
+                sub_state: "running".to_string(),
+            },
+        );
+
+        let (changed, still_present) = simulate_unit_removed(&mut services, "wireplumber.service");
+
+        assert!(changed, "active -> inactive should report changed");
+        assert!(still_present, "service must NOT be removed from the map");
+        let svc = &services["wireplumber"];
+        assert_eq!(svc.active_state, "inactive");
+        assert_eq!(svc.sub_state, "dead");
+        assert_eq!(svc.unit, "wireplumber.service", "unit must be preserved");
+        assert_eq!(svc.description, "WirePlumber Session Manager", "description must be preserved");
+        assert!(svc.enabled, "enabled must be preserved");
+    }
+
+    /// Task 3 / Test 5.3: Calling enabled-state update with "disabled" sets enabled
+    /// to false and returns true (changed). Calling again returns false (unchanged).
+    /// Uses the extracted pure function `simulate_enabled_state_refresh`.
+    #[test]
+    fn unit_file_state_refresh_updates_enabled() {
+        let mut services = HashMap::new();
+        services.insert("xdg-desktop-portal".to_string(), UserService {
+            unit: "xdg-desktop-portal.service".to_string(),
+            description: "Portal service".to_string(),
+            active_state: "active".to_string(),
+            enabled: true,
+            sub_state: "running".to_string(),
+        });
+
+        // First call: enabled true -> false should report changed
+        let changed = simulate_enabled_state_refresh(
+            &mut services,
+            &[("xdg-desktop-portal", false)],
+        );
+        assert!(changed, "enabled true->false should report changed");
+        assert!(!services["xdg-desktop-portal"].enabled);
+
+        // Second call: enabled false -> false should report no change
+        let changed = simulate_enabled_state_refresh(
+            &mut services,
+            &[("xdg-desktop-portal", false)],
+        );
+        assert!(!changed, "same enabled state should not report changed");
     }
 }
 

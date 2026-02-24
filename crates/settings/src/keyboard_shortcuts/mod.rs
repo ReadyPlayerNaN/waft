@@ -8,6 +8,8 @@ pub mod bind_row;
 use std::fmt;
 use std::path::Path;
 
+use crate::kdl_config::KdlConfigFile;
+
 /// Keyboard modifier keys.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Modifier {
@@ -99,20 +101,9 @@ pub struct LoadedBinds {
 ///
 /// Returns parsed entries and a list of unparseable bind node names.
 pub fn load_binds(config_path: &Path) -> Result<LoadedBinds, String> {
-    let content = match std::fs::read_to_string(config_path) {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(LoadedBinds {
-                entries: Vec::new(),
-                raw: Vec::new(),
-            })
-        }
-        Err(e) => return Err(format!("Failed to read config: {e}")),
-    };
+    let config = KdlConfigFile::load(config_path)?;
 
-    let doc: kdl::KdlDocument = content.parse().map_err(|e| format!("KDL parse error: {e}"))?;
-
-    let binds_node = doc.nodes().iter().find(|n| n.name().value() == "binds");
+    let binds_node = config.doc().nodes().iter().find(|n| n.name().value() == "binds");
     let binds_doc = match binds_node {
         Some(node) => match node.children() {
             Some(children) => children,
@@ -263,17 +254,9 @@ pub fn save_binds(
     entries: &[BindEntry],
     raw_nodes: &[String],
 ) -> Result<(), String> {
-    let mut doc: kdl::KdlDocument = if config_path.exists() {
-        let content =
-            std::fs::read_to_string(config_path).map_err(|e| format!("Failed to read config: {e}"))?;
-        content.parse().map_err(|e| format!("KDL parse error: {e}"))?
-    } else {
-        kdl::KdlDocument::new()
-    };
+    let mut config = KdlConfigFile::load(config_path)?;
 
-    // Remove existing binds block
-    doc.nodes_mut()
-        .retain(|node| node.name().value() != "binds");
+    config.remove_nodes_by_name("binds");
 
     // Build new binds block
     let mut binds_node = kdl::KdlNode::new("binds");
@@ -330,27 +313,9 @@ pub fn save_binds(
     }
 
     binds_node.set_children(binds_children);
-    doc.nodes_mut().push(binds_node);
+    config.doc_mut().nodes_mut().push(binds_node);
 
-    // Backup existing file
-    if config_path.exists() {
-        let backup_path = config_path.with_extension("kdl.bak");
-        if let Err(e) = std::fs::copy(config_path, &backup_path) {
-            log::warn!("[keyboard-shortcuts] Failed to create backup: {e}");
-        }
-    }
-
-    // Ensure parent directory exists
-    if let Some(parent) = config_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return Err(format!("Failed to create config directory: {e}"));
-        }
-    }
-
-    let output = doc.to_string();
-    std::fs::write(config_path, output).map_err(|e| format!("Failed to write config: {e}"))?;
-
-    Ok(())
+    config.save()
 }
 
 /// Curated allowlist of XKB key names.
@@ -633,5 +598,36 @@ mod tests {
             repeat: None,
         };
         assert_eq!(entry.key_chord(), "Mod+Shift+T");
+    }
+
+    #[test]
+    fn save_spawn_bind_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.kdl");
+
+        let entries = vec![BindEntry {
+            modifiers: vec![Modifier::Mod],
+            key: "T".to_string(),
+            action: BindAction::Spawn {
+                command: "sh".to_string(),
+                args: vec!["-c".to_string(), "notify-send hello world".to_string()],
+            },
+            hotkey_overlay_title: None,
+            allow_when_locked: false,
+            repeat: None,
+        }];
+        save_binds(&path, &entries, &[]).unwrap();
+
+        let loaded = load_binds(&path).unwrap();
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(loaded.entries[0].key_chord(), "Mod+T");
+        assert_eq!(
+            loaded.entries[0].action,
+            BindAction::Spawn {
+                command: "sh".to_string(),
+                args: vec!["-c".to_string(), "notify-send hello world".to_string()],
+            },
+            "spawn action args must survive save-reload round trip"
+        );
     }
 }

@@ -7,6 +7,8 @@ pub mod startup_row;
 
 use std::path::Path;
 
+use crate::kdl_config::KdlConfigFile;
+
 /// A single `spawn-at-startup` entry from niri config.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StartupEntry {
@@ -19,16 +21,10 @@ pub struct StartupEntry {
 /// Returns an empty vec if the file does not exist.
 /// Returns an error string if the file exists but cannot be parsed.
 pub fn load_startup_entries(config_path: &Path) -> Result<Vec<StartupEntry>, String> {
-    let content = match std::fs::read_to_string(config_path) {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(format!("Failed to read config: {e}")),
-    };
-
-    let doc: kdl::KdlDocument = content.parse().map_err(|e| format!("KDL parse error: {e}"))?;
+    let config = KdlConfigFile::load(config_path)?;
 
     let mut entries = Vec::new();
-    for node in doc.nodes() {
+    for node in config.doc().nodes() {
         if node.name().value() == "spawn-at-startup" {
             let args: Vec<String> = node
                 .entries()
@@ -53,19 +49,11 @@ pub fn load_startup_entries(config_path: &Path) -> Result<Vec<StartupEntry>, Str
 ///
 /// Reads the existing document (preserving all non-startup content),
 /// removes all `spawn-at-startup` nodes, appends the new entries,
-/// creates a backup before writing.
+/// validates and writes with backup.
 pub fn save_startup_entries(config_path: &Path, entries: &[StartupEntry]) -> Result<(), String> {
-    let mut doc: kdl::KdlDocument = if config_path.exists() {
-        let content =
-            std::fs::read_to_string(config_path).map_err(|e| format!("Failed to read config: {e}"))?;
-        content.parse().map_err(|e| format!("KDL parse error: {e}"))?
-    } else {
-        kdl::KdlDocument::new()
-    };
+    let mut config = KdlConfigFile::load(config_path)?;
 
-    // Remove all existing spawn-at-startup nodes
-    doc.nodes_mut()
-        .retain(|node| node.name().value() != "spawn-at-startup");
+    config.remove_nodes_by_name("spawn-at-startup");
 
     // Append new entries
     for entry in entries {
@@ -74,37 +62,10 @@ pub fn save_startup_entries(config_path: &Path, entries: &[StartupEntry]) -> Res
         for arg in &entry.args {
             node.push(kdl::KdlEntry::new(arg.clone()));
         }
-        doc.nodes_mut().push(node);
+        config.doc_mut().nodes_mut().push(node);
     }
 
-    // Backup existing file
-    if config_path.exists() {
-        let backup_path = config_path.with_extension("kdl.bak");
-        if let Err(e) = std::fs::copy(config_path, &backup_path) {
-            log::warn!("[startup] Failed to create backup: {e}");
-        }
-    }
-
-    // Ensure parent directory exists
-    if let Some(parent) = config_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return Err(format!("Failed to create config directory: {e}"));
-        }
-    }
-
-    let output = doc.to_string();
-    std::fs::write(config_path, output).map_err(|e| format!("Failed to write config: {e}"))?;
-
-    Ok(())
-}
-
-/// Default niri config path.
-pub fn niri_config_path() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-    std::path::PathBuf::from(home)
-        .join(".config")
-        .join("niri")
-        .join("config.kdl")
+    config.save()
 }
 
 #[cfg(test)]
@@ -178,5 +139,55 @@ mod tests {
         let loaded = load_startup_entries(&path).unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].command, "waybar");
+    }
+
+    #[test]
+    fn save_multi_arg_entry_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.kdl");
+
+        let entries = vec![
+            StartupEntry {
+                command: "sh".to_string(),
+                args: vec!["-c".to_string(), "echo hello".to_string()],
+            },
+            StartupEntry {
+                command: "bash".to_string(),
+                args: vec!["-l".to_string(), "-c".to_string(), "notify-send test".to_string()],
+            },
+        ];
+        save_startup_entries(&path, &entries).unwrap();
+
+        let loaded = load_startup_entries(&path).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].command, "sh");
+        assert_eq!(loaded[0].args, vec!["-c", "echo hello"]);
+        assert_eq!(loaded[1].command, "bash");
+        assert_eq!(loaded[1].args, vec!["-l", "-c", "notify-send test"]);
+    }
+
+    #[test]
+    fn save_entry_with_spaces_in_args() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.kdl");
+
+        let entries = vec![StartupEntry {
+            command: "sh".to_string(),
+            args: vec!["-c".to_string(), "echo hello world".to_string()],
+        }];
+        save_startup_entries(&path, &entries).unwrap();
+
+        // Verify raw file contains quoted strings (KDL v1 quoting)
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            raw.contains("\"echo hello world\""),
+            "arg with spaces must be quoted in output, got: {raw}"
+        );
+
+        // Verify round-trip preserves the space-containing arg
+        let loaded = load_startup_entries(&path).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].command, "sh");
+        assert_eq!(loaded[0].args, vec!["-c", "echo hello world"]);
     }
 }

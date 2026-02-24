@@ -14,7 +14,7 @@ use crate::keyboard_shortcuts::bind_editor::BindEditor;
 use crate::keyboard_shortcuts::bind_row::{BindRow, BindRowOutput, BindRowProps};
 use crate::keyboard_shortcuts::{self, BindEntry};
 use crate::search_index::SearchIndex;
-use crate::startup; // reuse niri_config_path()
+use crate::kdl_config;
 
 /// Smart container for the Keyboard Shortcuts settings page.
 pub struct KeyboardShortcutsPage {
@@ -103,7 +103,7 @@ impl KeyboardShortcutsPage {
             );
         }
 
-        let config_path = startup::niri_config_path();
+        let config_path = kdl_config::niri_config_path();
 
         // Load initial entries
         let (initial_entries, initial_raw, parse_error) =

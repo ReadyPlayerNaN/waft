@@ -13,6 +13,7 @@ use crate::i18n::t;
 use crate::search_index::SearchIndex;
 use crate::startup::entry_dialog::EntryDialog;
 use crate::startup::startup_row::{StartupRow, StartupRowOutput, StartupRowProps};
+use crate::kdl_config;
 use crate::startup::{self, StartupEntry};
 
 /// Smart container for the Startup settings page.
@@ -88,7 +89,7 @@ impl StartupPage {
             );
         }
 
-        let config_path = startup::niri_config_path();
+        let config_path = kdl_config::niri_config_path();
 
         // Load initial entries
         let (initial_entries, parse_error) = match startup::load_startup_entries(&config_path) {
