@@ -131,6 +131,22 @@ display-vrr = Variable Refresh Rate
 display-apply = Apply
 display-reset = Reset
 
+# Display -- Sub-page navigation
+display-dark-mode-settings = Dark Mode Settings
+display-night-light-settings = Night Light Settings
+
+# Display -- Accent Colour
+display-accent-colour = Accent Colour
+display-accent-blue = Blue
+display-accent-teal = Teal
+display-accent-green = Green
+display-accent-yellow = Yellow
+display-accent-orange = Orange
+display-accent-red = Red
+display-accent-pink = Pink
+display-accent-purple = Purple
+display-accent-slate = Slate
+
 # Display -- Dark Mode Automation
 display-dark-mode-automation = Dark Mode Automation
 display-latitude = Latitude
@@ -366,6 +382,46 @@ wallpaper-gallery-dark = Dark Mode
 wallpaper-gallery-light = Light Mode
 wallpaper-gallery-add = Add wallpaper to this gallery
 wallpaper-gallery-empty = No wallpapers in this folder. Click + to add one.
+wallpaper-background-color = Background Colour
+wallpaper-background-color-sub = Default workspace background when no wallpaper is set
+wallpaper-background-color-clear = Clear
+
+# Windows
+settings-windows = Windows
+windows-prefer-no-csd = Prefer No Client-Side Decorations
+windows-prefer-no-csd-sub = Ask applications to omit their decorations so niri can draw focus rings and borders
+windows-derive-colors = Derive Colours from GTK Theme
+windows-derive-colors-sub = Use the GTK accent colour for focus ring, border, and tab indicator
+windows-derive-colors-unavailable = GTK appearance plugin required
+windows-focus-ring = Focus Ring
+windows-border = Border
+windows-shadow = Shadow
+windows-tab-indicator = Tab Indicator
+windows-gaps = Gaps
+windows-struts = Struts
+windows-enabled = Enabled
+windows-width = Width
+windows-active-color = Active Colour
+windows-inactive-color = Inactive Colour
+windows-urgent-color = Urgent Colour
+windows-softness = Softness
+windows-spread = Spread
+windows-offset-x = Horizontal Offset
+windows-offset-y = Vertical Offset
+windows-color = Colour
+windows-position = Position
+windows-position-left = Left
+windows-position-right = Right
+windows-position-top = Top
+windows-position-bottom = Bottom
+windows-gap = Gap
+windows-corner-radius = Corner Radius
+windows-struts-left = Left
+windows-struts-right = Right
+windows-struts-top = Top
+windows-struts-bottom = Bottom
+windows-parse-error = Config file could not be parsed — editing disabled
+windows-reload-hint = Reload niri config to apply changes
 
 # Notifications -- Recording
 notif-recording = Notification Recording

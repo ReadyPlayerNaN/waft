@@ -15,7 +15,9 @@ use waft_protocol::entity::display::{
 };
 
 use crate::i18n::t;
+use crate::kdl_config;
 use crate::search_index::SearchIndex;
+use crate::wallpaper::background_color_section::BackgroundColorSection;
 use crate::wallpaper::config_section::{ConfigSection, ConfigSectionOutput};
 use crate::wallpaper::gallery_section::GallerySection;
 use crate::wallpaper::mode_section::{ModeSection, ModeSectionOutput};
@@ -54,6 +56,10 @@ impl WallpaperPage {
         let config = Rc::new(ConfigSection::new());
         root.append(&config.root);
 
+        let bg_color_path = kdl_config::niri_config_path();
+        let bg_color = Rc::new(BackgroundColorSection::new(&bg_color_path));
+        root.append(&bg_color.root);
+
         let gallery = Rc::new(GallerySection::new(action_callback));
         root.append(&gallery.root);
 
@@ -65,6 +71,7 @@ impl WallpaperPage {
             idx.add_section("wallpaper", &page_title, &t("wallpaper-current"), "wallpaper-current", &preview.root);
             idx.add_section("wallpaper", &page_title, &t("wallpaper-transition"), "wallpaper-transition", &transition.root);
             idx.add_section("wallpaper", &page_title, &t("wallpaper-config"), "wallpaper-config", &config.root);
+            idx.add_section("wallpaper", &page_title, &t("wallpaper-background-color"), "wallpaper-background-color", &bg_color.root);
         }
 
         // Current URN for the "all" entity (or first output)
@@ -251,6 +258,7 @@ impl WallpaperPage {
         std::mem::forget(preview);
         std::mem::forget(transition);
         std::mem::forget(config);
+        std::mem::forget(bg_color);
         std::mem::forget(gallery);
 
         Self { root }

@@ -86,13 +86,13 @@ When implementing features:
 - **`waft-ui-gtk`** - GTK4 widget library: `WidgetBase` trait, `Child`/`Children` container types, `WidgetReconciler`, widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`).
 - **`waft-config`** - Configuration loading from `~/.config/waft/config.toml`
 - **`waft-i18n`** - Fluent localization: `system_locale()` returns BCP47 locale, `I18n` struct for translations with `t()` and `t_args()`.
-- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with categorized sidebar and `gtk::Stack` for page switching. Pages: Bluetooth, WiFi, Wired (Connectivity); Appearance, Display, Wallpaper (Visual); Audio, Notifications, Sounds (Feedback); Keyboard, Keyboard Shortcuts (Inputs); Weather (Info); Plugins, Services, Startup (System). Uses same `WaftClient` + `EntityStore` pattern as overview. Startup and Keyboard Shortcuts pages use direct KDL config file editing (niri config) rather than entity-based approach.
+- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with categorized sidebar, `gtk::Stack` for page switching, and `adw::NavigationView` for sub-page drill-down. Pages: Bluetooth, WiFi, Wired (Connectivity); Appearance, Display, Windows, Wallpaper (Visual); Audio, Notifications, Sounds (Feedback); Keyboard, Keyboard Shortcuts (Inputs); Weather (Info); Plugins, Services, Startup (System). Uses same `WaftClient` + `EntityStore` pattern as overview. Startup, Keyboard Shortcuts, and Windows pages use direct KDL config file editing (niri config) rather than entity-based approach. Appearance page has sub-pages for dark mode automation and night light configuration. Settings-app-specific preferences stored in `~/.config/waft/settings-app.toml`.
 - **`waft-core`** - Common types: `Callback<T>`, `VoidCallback`, `DbusHandle` (zbus wrapper). Re-exports `waft-config`.
 - **`waft-ipc`** - Legacy widget protocol types (being phased out).
 
 ### Plugins
 
-All 15 plugins are standalone daemon binaries implementing the `Plugin` trait from `waft-plugin`. They provide domain entities to the central daemon, which routes updates to subscribed apps.
+All 16 plugins are standalone daemon binaries implementing the `Plugin` trait from `waft-plugin`. They provide domain entities to the central daemon, which routes updates to subscribed apps.
 
 | Plugin              | Entity Types                                                                                                                | Purpose                                                             |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -109,6 +109,7 @@ All 15 plugins are standalone daemon binaries implementing the `Plugin` trait fr
 | **weather**         | `weather`                                                                                                                   | Weather information via HTTP API                                    |
 | **notifications**   | `notification`, `dnd`, `notification-group`, `notification-profile`, `active-profile`, `sound-config`, `notification-sound`, `recording` | D-Bus notification server, toasts, DND, filtering, sound, recording |
 | **eds**             | `calendar-event`                                                                                                            | EDS calendar integration                                            |
+| **gsettings**       | `gtk-appearance`                                                                                                            | GTK accent colour configuration via gsettings CLI                   |
 | **sunsetr**         | `night-light`                                                                                                               | Night light control via sunsetr CLI                                 |
 | **syncthing**       | `backup-method`                                                                                                             | Syncthing service toggle                                            |
 
@@ -223,6 +224,7 @@ plugins/
     weather/        bin/          # Entity types: weather
     notifications/  bin/          # Entity types: notification, dnd, recording
     eds/            bin/          # Entity types: calendar-event
+    gsettings/      bin/          # Entity types: gtk-appearance
     sunsetr/        bin/          # Entity types: night-light
     syncthing/      bin/          # Entity types: backup-method
 crates/
@@ -233,12 +235,14 @@ crates/
             window.rs             # AdwNavigationSplitView with gtk::Stack page switching
             sidebar.rs            # Categorized sidebar (Connectivity, Visual, Feedback, Inputs, Info, System)
             pages/
+                appearance.rs     # Thin composer: dark mode, night light, accent colour sections + sub-page navigation
                 bluetooth.rs      # Smart container: adapter groups + device lists
                 wifi.rs           # Smart container: WiFi adapters + network lists
                 wired.rs          # Smart container: Ethernet adapters + connection profiles
                 display.rs        # Smart container: per-output display controls
                 keyboard.rs       # Smart container: keyboard layout selection
                 keyboard_shortcuts.rs  # Smart container: niri keyboard bind management (KDL)
+                niri_windows.rs   # Smart container: niri window appearance settings (KDL)
                 notifications.rs  # Smart container: groups, profiles, DND
                 sounds.rs         # Thin composer: defaults + gallery sections
                 startup.rs        # Smart container: niri spawn-at-startup entries (KDL)
@@ -247,13 +251,17 @@ crates/
                 plugins.rs        # Smart container: plugin lifecycle status
                 services.rs       # Smart container: systemd user services
             bluetooth/            # Dumb widgets: adapter_group, device_row, paired/discovered groups
+            display/              # Widgets: accent_colour_section, dark_mode_settings_page, night_light_settings_page, and more
             wifi/                 # Dumb widgets: adapter_group, network_row, known/available groups
             wired/                # Dumb widgets: adapter_group, connection_row
-            wallpaper/            # Widgets: gallery_section, thumbnail_widget, preview_section, mode_section
+            niri_windows/         # Dumb widgets: focus_ring, border, shadow, tab_indicator, gaps, struts, derive_colors sections
+            wallpaper/            # Widgets: gallery_section, thumbnail_widget, preview_section, mode_section, background_color_section
             startup/              # Widgets: startup_row, entry_dialog
             keyboard_shortcuts/   # Widgets: bind_row, bind_editor
             plugins/              # Dumb widgets: plugin_row
             sounds/               # Smart sections: defaults_section, gallery_section
+            kdl_niri_windows.rs   # KDL I/O for niri layout block (focus-ring, border, shadow, etc.)
+            prefs.rs              # Settings-app-specific preferences (settings-app.toml)
 ```
 
 ### Key Architectural Patterns
@@ -674,13 +682,13 @@ let handle = match self.field.as_ref() {
 
 ## Current Status
 
-**All 15 plugins use the entity-based architecture** with central daemon routing.
+**All 16 plugins use the entity-based architecture** with central daemon routing.
 
 - `waft-protocol` with entity types, messages, URN, transport, static entity registry, plugin descriptions
 - `waft-plugin` with `Plugin` trait, `PluginRuntime`, `EntityNotifier`, extended manifest (`provides --describe`)
 - `waft` central daemon with discovery, spawning, routing, crash recovery, CLI (clap), plugin-status meta-entities
 - `waft-overview` with `WaftClient`, `EntityRenderer`, socket reconnection, right column tabs (controls/exit), ISO week numbers in calendar, audio device name deduplication
-- `waft-settings` with Bluetooth, WiFi, Wired, Appearance, Display, Wallpaper (with gallery), Audio, Notifications (with recording toggle), Sounds, Keyboard, Keyboard Shortcuts, Weather, Plugins, Services, Startup pages
+- `waft-settings` with Bluetooth, WiFi, Wired, Appearance (with sub-pages and accent colour), Display, Wallpaper (with gallery and background colour), Windows (niri layout settings), Audio, Notifications (with recording toggle), Sounds, Keyboard, Keyboard Shortcuts, Weather, Plugins, Services, Startup pages
 
 **Legacy crates** (`waft-ipc`, parts of `waft-core`) are still in the workspace but being phased out.
 **Active Branch:** `larger-larger-picture`

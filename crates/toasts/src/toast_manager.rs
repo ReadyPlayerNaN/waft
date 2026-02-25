@@ -170,7 +170,14 @@ impl ToastManager {
         let self_weak = Rc::downgrade(self);
         card.connect_output(move |output| match output {
             NotificationCardOutput::ActionClick(urn, action) => {
-                if action_tx.send((urn, action, Value::Null)).is_err() {
+                if action_tx
+                    .send((
+                        urn,
+                        "invoke-action".into(),
+                        serde_json::json!({ "key": action }),
+                    ))
+                    .is_err()
+                {
                     log::warn!("[toast-manager] action channel closed");
                 }
             }

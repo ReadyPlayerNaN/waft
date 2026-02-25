@@ -4,6 +4,7 @@ pub mod bluetooth;
 pub mod display;
 pub mod keyboard;
 pub mod keyboard_shortcuts;
+pub mod niri_windows;
 pub mod notifications;
 pub mod plugins;
 pub mod services;

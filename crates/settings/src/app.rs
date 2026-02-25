@@ -11,6 +11,7 @@ use gtk::prelude::*;
 use waft_client::{
     ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
 };
+use waft_protocol::entity::appearance::GTK_APPEARANCE_ENTITY_TYPE;
 use waft_protocol::entity::audio;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
 use waft_protocol::entity::display::{
@@ -48,6 +49,7 @@ const ENTITY_TYPES: &[&str] = &[
     NIGHT_LIGHT_ENTITY_TYPE,
     NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
     WALLPAPER_MANAGER_ENTITY_TYPE,
+    GTK_APPEARANCE_ENTITY_TYPE,
     KEYBOARD_CONFIG_ENTITY_TYPE,
     weather::ENTITY_TYPE,
     NOTIFICATION_GROUP_ENTITY_TYPE,

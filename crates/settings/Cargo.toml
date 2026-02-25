@@ -26,6 +26,7 @@ waft-protocol = { path = "../protocol" }
 waft-i18n = { path = "../i18n" }
 waft-ui-gtk = { path = "../waft-ui-gtk" }
 kdl = { version = "6", features = ["v1-fallback"] }
+toml = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

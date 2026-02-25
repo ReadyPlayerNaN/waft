@@ -362,6 +362,34 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             ],
         },
         EntityTypeInfo {
+            entity_type: super::appearance::GTK_APPEARANCE_ENTITY_TYPE,
+            domain: "display",
+            description: "GTK appearance settings including accent colour",
+            urn_pattern: "{plugin}/gtk-appearance/{id}",
+            properties: &[
+                PropertyInfo {
+                    name: "accent_color",
+                    type_description: "string",
+                    description: "Current accent colour (blue, teal, green, yellow, orange, red, pink, purple, slate)",
+                    optional: false,
+                },
+            ],
+            actions: &[
+                ActionInfo {
+                    name: "set-accent-color",
+                    description: "Set the system accent colour",
+                    params: &[
+                        ParamInfo {
+                            name: "color",
+                            type_description: "string",
+                            description: "Accent colour name (blue, teal, green, yellow, orange, red, pink, purple, slate)",
+                            required: true,
+                        },
+                    ],
+                },
+            ],
+        },
+        EntityTypeInfo {
             entity_type: super::display::NIGHT_LIGHT_ENTITY_TYPE,
             domain: "display",
             description: "Night light (blue light filter) state",
@@ -874,6 +902,7 @@ mod tests {
             super::super::calendar::ENTITY_TYPE,
             super::super::calendar::CALENDAR_SYNC_ENTITY_TYPE,
             super::super::clock::ENTITY_TYPE,
+            super::super::appearance::GTK_APPEARANCE_ENTITY_TYPE,
             super::super::display::DISPLAY_ENTITY_TYPE,
             super::super::display::DISPLAY_OUTPUT_ENTITY_TYPE,
             super::super::display::DARK_MODE_ENTITY_TYPE,

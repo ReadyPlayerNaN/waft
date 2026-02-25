@@ -19,6 +19,7 @@ use crate::pages::bluetooth::BluetoothPage;
 use crate::pages::display::DisplayPage;
 use crate::pages::keyboard::KeyboardPage;
 use crate::pages::keyboard_shortcuts::KeyboardShortcutsPage;
+use crate::pages::niri_windows::NiriWindowsPage;
 use crate::pages::notifications::NotificationsPage;
 use crate::pages::plugins::PluginsPage;
 use crate::pages::services::ServicesPage;
@@ -44,6 +45,7 @@ fn page_title(page_id: &str) -> String {
         "sounds" => "settings-sounds",
         "keyboard" => "settings-keyboard",
         "wallpaper" => "settings-wallpaper",
+        "windows" => "settings-windows",
         "weather" => "settings-weather",
         "plugins" => "settings-plugins",
         "services" => "settings-services",
@@ -104,6 +106,10 @@ impl SettingsWindow {
 
         split_view.set_sidebar(Some(&sidebar_page));
 
+        // Create NavigationView early so sub-page-aware pages can reference it.
+        // The root navigation page is added later after the stack is built.
+        let navigation_view = adw::NavigationView::new();
+
         // -- Content pages --
         // Register page-level search entries, then construct pages which
         // register their own section/input entries via search_index.
@@ -117,6 +123,7 @@ impl SettingsWindow {
             idx.add_page("appearance", &t("settings-appearance"), "settings-appearance");
             idx.add_page("display", &t("settings-display"), "settings-display");
             idx.add_page("wallpaper", &t("settings-wallpaper"), "settings-wallpaper");
+            idx.add_page("windows", &t("settings-windows"), "settings-windows");
             idx.add_page("keyboard", &t("settings-keyboard"), "settings-keyboard");
             idx.add_page("notifications", &t("settings-notifications"), "settings-notifications");
             idx.add_page("sounds", &t("settings-sounds"), "settings-sounds");
@@ -131,9 +138,10 @@ impl SettingsWindow {
         let wifi_page = WiFiPage::new(entity_store, action_callback, &search_index);
         let wired_page = WiredPage::new(entity_store, action_callback, &search_index);
         let weather_page = WeatherPage::new(entity_store, action_callback, &search_index);
-        let appearance_page = AppearancePage::new(entity_store, action_callback, &search_index);
+        let appearance_page = AppearancePage::new(entity_store, action_callback, &search_index, &navigation_view);
         let display_page = DisplayPage::new(entity_store, action_callback, &search_index);
         let wallpaper_page = WallpaperPage::new(entity_store, action_callback, &search_index);
+        let windows_page = NiriWindowsPage::new(entity_store, &search_index);
         let keyboard_page = KeyboardPage::new(entity_store, action_callback, &search_index);
         let keyboard_shortcuts_page = KeyboardShortcutsPage::new(&search_index);
         let notifications_page = NotificationsPage::new(entity_store, action_callback, &search_index);
@@ -174,6 +182,10 @@ impl SettingsWindow {
         let wallpaper_clamp = adw::Clamp::builder()
             .maximum_size(600)
             .child(&wallpaper_page.root)
+            .build();
+        let windows_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&windows_page.root)
             .build();
         let keyboard_clamp = adw::Clamp::builder()
             .maximum_size(600)
@@ -221,6 +233,7 @@ impl SettingsWindow {
         stack.add_named(&appearance_clamp, Some("appearance"));
         stack.add_named(&display_clamp, Some("display"));
         stack.add_named(&wallpaper_clamp, Some("wallpaper"));
+        stack.add_named(&windows_clamp, Some("windows"));
         stack.add_named(&keyboard_clamp, Some("keyboard"));
         stack.add_named(&kb_shortcuts_clamp, Some("keyboard-shortcuts"));
         stack.add_named(&notif_clamp, Some("notifications"));
@@ -252,10 +265,20 @@ impl SettingsWindow {
 
         let content_toolbar = adw::ToolbarView::new();
         content_toolbar.add_top_bar(&content_header);
-        content_toolbar.set_content(Some(&content_scrolled));
 
+        // Wrap the stack content in a NavigationView to support sub-page drill-down.
+        // The stack becomes the root navigation page; sub-pages are pushed on top.
         let initial_title =
             page_title(stack.visible_child_name().as_deref().unwrap_or("bluetooth"));
+        let root_nav_page = adw::NavigationPage::builder()
+            .title(&initial_title)
+            .child(&content_scrolled)
+            .build();
+
+        navigation_view.add(&root_nav_page);
+
+        content_toolbar.set_content(Some(&navigation_view));
+
         let content_page = adw::NavigationPage::builder()
             .title(initial_title)
             .child(&content_toolbar)
@@ -266,6 +289,8 @@ impl SettingsWindow {
         // -- Connect sidebar selection --
         let stack_ref = stack.clone();
         let content_scrolled_ref = content_scrolled.clone();
+        let nav_view_ref = navigation_view.clone();
+        let root_nav_page_ref = root_nav_page.clone();
         let current_page: Rc<RefCell<String>> = Rc::new(RefCell::new(
             stack.visible_child_name().map(|s| s.to_string()).unwrap_or_else(|| "bluetooth".to_string()),
         ));
@@ -296,6 +321,9 @@ impl SettingsWindow {
                 }
             };
 
+            // Pop any sub-pages back to root when switching sidebar pages
+            nav_view_ref.pop_to_page(&root_nav_page_ref);
+
             // Reset display page when leaving it
             let prev = current_page_ref.borrow().clone();
             if prev == "display" && new_page_id != "display" {
@@ -303,6 +331,7 @@ impl SettingsWindow {
             }
 
             content_page.set_title(&new_title);
+            root_nav_page_ref.set_title(&new_title);
             stack_ref.set_visible_child_name(&new_page_id);
             *current_page_ref.borrow_mut() = new_page_id;
         });

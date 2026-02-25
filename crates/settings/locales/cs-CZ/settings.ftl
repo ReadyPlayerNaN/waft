@@ -131,6 +131,22 @@ display-vrr = Proměnná obnovovací frekvence
 display-apply = Použít
 display-reset = Obnovit
 
+# Display -- Sub-page navigation
+display-dark-mode-settings = Nastavení tmavého režimu
+display-night-light-settings = Nastavení nočního světla
+
+# Display -- Accent Colour
+display-accent-colour = Barva zvýraznění
+display-accent-blue = Modrá
+display-accent-teal = Šedozelená
+display-accent-green = Zelená
+display-accent-yellow = Žlutá
+display-accent-orange = Oranžová
+display-accent-red = Červená
+display-accent-pink = Růžová
+display-accent-purple = Fialová
+display-accent-slate = Břidlicová
+
 # Display -- Dark Mode Automation
 display-dark-mode-automation = Automatika tmavého režimu
 display-latitude = Zeměpisná šířka
@@ -361,6 +377,46 @@ wallpaper-config = Nastavení
 wallpaper-dir = Adresář tapet
 wallpaper-sync = Synchronizovat výstupy
 wallpaper-sync-sub = Použít stejnou tapetu na všechny monitory
+wallpaper-background-color = Barva pozadí
+wallpaper-background-color-sub = Výchozí barva pozadí pracovní plochy, když není nastavena tapeta
+wallpaper-background-color-clear = Vymazat
+
+# Okna
+settings-windows = Okna
+windows-prefer-no-csd = Preferovat bez dekorací na straně klienta
+windows-prefer-no-csd-sub = Požádat aplikace, aby vynechaly své dekorace, aby niri mohlo kreslit orámování oken
+windows-derive-colors = Odvodit barvy z GTK motivu
+windows-derive-colors-sub = Použít akcentovou barvu GTK pro orámování oken
+windows-derive-colors-unavailable = Vyžadován plugin vzhledu GTK
+windows-focus-ring = Zaostřovací kroužek
+windows-border = Okraj
+windows-shadow = Stín
+windows-tab-indicator = Indikátor panelů
+windows-gaps = Mezery
+windows-struts = Okraje pracovní plochy
+windows-enabled = Zapnuto
+windows-width = Šířka
+windows-active-color = Aktivní barva
+windows-inactive-color = Neaktivní barva
+windows-urgent-color = Naléhavá barva
+windows-softness = Měkkost
+windows-spread = Rozprostření
+windows-offset-x = Vodorovný posun
+windows-offset-y = Svislý posun
+windows-color = Barva
+windows-position = Pozice
+windows-position-left = Vlevo
+windows-position-right = Vpravo
+windows-position-top = Nahoře
+windows-position-bottom = Dole
+windows-gap = Mezera
+windows-corner-radius = Zaoblení rohů
+windows-struts-left = Vlevo
+windows-struts-right = Vpravo
+windows-struts-top = Nahoře
+windows-struts-bottom = Dole
+windows-parse-error = Konfigurační soubor nelze zpracovat — úpravy zakázány
+windows-reload-hint = Pro použití změn znovu načtěte konfiguraci niri
 
 # Notifications -- Recording
 notif-recording = Nahrávání oznámení

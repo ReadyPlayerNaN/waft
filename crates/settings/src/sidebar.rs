@@ -99,6 +99,12 @@ fn categories() -> Vec<SidebarCategory> {
                     visible: true,
                 },
                 SidebarItem {
+                    page_id: "windows",
+                    title: t("settings-windows"),
+                    icon: "preferences-desktop-default-applications-symbolic",
+                    visible: true,
+                },
+                SidebarItem {
                     page_id: "wallpaper",
                     title: t("settings-wallpaper"),
                     icon: "preferences-desktop-wallpaper-symbolic",

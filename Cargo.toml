@@ -17,6 +17,7 @@ members = [
     "plugins/clock",
     "plugins/darkman",
     "plugins/eds",
+    "plugins/gsettings",
     "plugins/battery",
     "plugins/bluez",
     "plugins/brightness",

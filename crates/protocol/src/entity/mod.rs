@@ -27,6 +27,7 @@
 //! not "which plugin produces it?".
 
 pub mod app;
+pub mod appearance;
 pub mod audio;
 pub mod bluetooth;
 pub mod calendar;

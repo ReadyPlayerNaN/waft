@@ -13,6 +13,7 @@ use crate::i18n::t;
 use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{NIGHT_LIGHT_ENTITY_TYPE, NightLight};
+use waft_ui_gtk::icons::icon::IconWidget;
 
 /// Smart container for night light settings.
 pub struct NightLightSection {
@@ -24,6 +25,7 @@ impl NightLightSection {
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
+        on_navigate: Option<Box<dyn Fn()>>,
     ) -> Self {
         let group = adw::PreferencesGroup::builder()
             .title(t("display-night-light"))
@@ -46,6 +48,22 @@ impl NightLightSection {
             .visible(false)
             .build();
         group.add(&status_row);
+
+        // Navigation link row (only when on_navigate callback is provided)
+        if let Some(navigate_fn) = on_navigate {
+            let nav_row = adw::ActionRow::builder()
+                .title(t("display-night-light-settings"))
+                .activatable(true)
+                .build();
+            let chevron = IconWidget::from_name("go-next-symbolic", 16);
+            nav_row.add_suffix(chevron.widget());
+            group.add(&nav_row);
+
+            let navigate = Rc::new(navigate_fn);
+            nav_row.connect_activated(move |_| {
+                navigate();
+            });
+        }
 
         // Register search entries
         {
