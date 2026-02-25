@@ -14,9 +14,12 @@ use std::sync::OnceLock;
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_i18n::I18n;
+use std::collections::HashMap;
+
 use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal_async};
 use waft_plugin::*;
 use zbus::Connection;
+use zbus::zvariant::OwnedValue;
 
 static I18N: OnceLock<I18n> = OnceLock::new();
 
@@ -255,7 +258,7 @@ async fn monitor_battery_signals(
     notifier: EntityNotifier,
 ) -> Result<()> {
     let config = SignalMonitorConfig::builder()
-        .sender("org.freedesktop.DBus")
+        .sender(UPOWER_DEST)
         .path(DISPLAY_DEVICE_PATH)
         .interface("org.freedesktop.DBus.Properties")
         .member("PropertiesChanged")
@@ -265,12 +268,14 @@ async fn monitor_battery_signals(
     let conn_for_handler = conn.clone();
 
     monitor_signal_async(conn, config, info, notifier, move |msg, _state| {
-        // Deserialize the message body before entering the async block
-        let iface_check = msg.body().deserialize::<(String,)>();
+        // Deserialize the full PropertiesChanged body (sa{sv}as) before entering the async block
+        let body_check =
+            msg.body()
+                .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>();
 
         let conn = conn_for_handler.clone();
         Box::pin(async move {
-            let (iface_name,) = iface_check?;
+            let (iface_name, _changed_props, _invalidated) = body_check?;
             if iface_name != IFACE_DEVICE {
                 return Ok(None); // Skip this signal
             }
