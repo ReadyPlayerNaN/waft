@@ -56,6 +56,50 @@ pub struct ParamInfo {
 
 /// Returns all entity types known to the protocol, sorted by domain then entity type.
 pub fn all_entity_types() -> &'static [EntityTypeInfo] {
+    const fn prop(
+        name: &'static str,
+        type_description: &'static str,
+        description: &'static str,
+    ) -> PropertyInfo {
+        PropertyInfo { name, type_description, description, optional: false }
+    }
+
+    const fn opt_prop(
+        name: &'static str,
+        type_description: &'static str,
+        description: &'static str,
+    ) -> PropertyInfo {
+        PropertyInfo { name, type_description, description, optional: true }
+    }
+
+    const fn action(name: &'static str, description: &'static str) -> ActionInfo {
+        ActionInfo { name, description, params: &[] }
+    }
+
+    const fn action_p(
+        name: &'static str,
+        description: &'static str,
+        params: &'static [ParamInfo],
+    ) -> ActionInfo {
+        ActionInfo { name, description, params }
+    }
+
+    const fn param(
+        name: &'static str,
+        type_description: &'static str,
+        description: &'static str,
+    ) -> ParamInfo {
+        ParamInfo { name, type_description, description, required: false }
+    }
+
+    const fn req_param(
+        name: &'static str,
+        type_description: &'static str,
+        description: &'static str,
+    ) -> ParamInfo {
+        ParamInfo { name, type_description, description, required: true }
+    }
+
     static REGISTRY: &[EntityTypeInfo] = &[
         // ── app ──
         EntityTypeInfo {
@@ -64,21 +108,15 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A launchable application",
             urn_pattern: "{plugin}/app/{id}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Application display name", optional: false },
-                PropertyInfo { name: "icon", type_description: "string", description: "Themed icon name", optional: false },
-                PropertyInfo { name: "available", type_description: "bool", description: "Whether the application binary was found", optional: false },
+                prop("name", "string", "Application display name"),
+                prop("icon", "string", "Themed icon name"),
+                prop("available", "bool", "Whether the application binary was found"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "open",
-                    description: "Launch the application",
-                    params: &[],
-                },
-                ActionInfo {
-                    name: "open-page",
-                    description: "Launch the application at a specific page",
-                    params: &[ParamInfo { name: "page", type_description: "string", description: "Page identifier to navigate to", required: true }],
-                },
+                action("open", "Launch the application"),
+                action_p("open-page", "Launch the application at a specific page", &[
+                    req_param("page", "string", "Page identifier to navigate to"),
+                ]),
             ],
         },
 
@@ -89,61 +127,39 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A physical audio card grouping sinks and sources with profile switching",
             urn_pattern: "{plugin}/audio-card/{card-name}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Device display name", optional: false },
-                PropertyInfo { name: "device_type", type_description: "string", description: "Semantic device type (e.g. headset, card, display)", optional: true },
-                PropertyInfo { name: "connection_type", type_description: "string", description: "Semantic connection type (e.g. bluetooth, jack, hdmi)", optional: true },
-                PropertyInfo { name: "active_profile", type_description: "string", description: "Currently active profile name", optional: false },
-                PropertyInfo { name: "profiles", type_description: "array", description: "Available card profiles", optional: false },
-                PropertyInfo { name: "sinks", type_description: "array", description: "Output sinks belonging to this card", optional: false },
-                PropertyInfo { name: "sources", type_description: "array", description: "Input sources belonging to this card (excludes monitors)", optional: false },
+                prop("name", "string", "Device display name"),
+                opt_prop("device_type", "string", "Semantic device type (e.g. headset, card, display)"),
+                opt_prop("connection_type", "string", "Semantic connection type (e.g. bluetooth, jack, hdmi)"),
+                prop("active_profile", "string", "Currently active profile name"),
+                prop("profiles", "array", "Available card profiles"),
+                prop("sinks", "array", "Output sinks belonging to this card"),
+                prop("sources", "array", "Input sources belonging to this card (excludes monitors)"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "set-profile",
-                    description: "Set the card's active profile",
-                    params: &[ParamInfo { name: "profile", type_description: "string", description: "Profile name to activate", required: true }],
-                },
-                ActionInfo {
-                    name: "set-volume",
-                    description: "Set volume on a sink or source",
-                    params: &[
-                        ParamInfo { name: "sink", type_description: "string", description: "Sink name (for output volume)", required: false },
-                        ParamInfo { name: "source", type_description: "string", description: "Source name (for input volume)", required: false },
-                        ParamInfo { name: "value", type_description: "float", description: "Volume level (0.0 - 1.0)", required: true },
-                    ],
-                },
-                ActionInfo {
-                    name: "toggle-mute",
-                    description: "Toggle mute on a sink or source",
-                    params: &[
-                        ParamInfo { name: "sink", type_description: "string", description: "Sink name (for output)", required: false },
-                        ParamInfo { name: "source", type_description: "string", description: "Source name (for input)", required: false },
-                    ],
-                },
-                ActionInfo {
-                    name: "set-default",
-                    description: "Set a sink or source as the default device",
-                    params: &[
-                        ParamInfo { name: "sink", type_description: "string", description: "Sink name (for output)", required: false },
-                        ParamInfo { name: "source", type_description: "string", description: "Source name (for input)", required: false },
-                    ],
-                },
-                ActionInfo {
-                    name: "set-sink-port",
-                    description: "Change the active port on a sink",
-                    params: &[
-                        ParamInfo { name: "sink", type_description: "string", description: "Sink name", required: true },
-                        ParamInfo { name: "port", type_description: "string", description: "Port name to activate", required: true },
-                    ],
-                },
-                ActionInfo {
-                    name: "set-source-port",
-                    description: "Change the active port on a source",
-                    params: &[
-                        ParamInfo { name: "source", type_description: "string", description: "Source name", required: true },
-                        ParamInfo { name: "port", type_description: "string", description: "Port name to activate", required: true },
-                    ],
-                },
+                action_p("set-profile", "Set the card's active profile", &[
+                    req_param("profile", "string", "Profile name to activate"),
+                ]),
+                action_p("set-volume", "Set volume on a sink or source", &[
+                    param("sink", "string", "Sink name (for output volume)"),
+                    param("source", "string", "Source name (for input volume)"),
+                    req_param("value", "float", "Volume level (0.0 - 1.0)"),
+                ]),
+                action_p("toggle-mute", "Toggle mute on a sink or source", &[
+                    param("sink", "string", "Sink name (for output)"),
+                    param("source", "string", "Source name (for input)"),
+                ]),
+                action_p("set-default", "Set a sink or source as the default device", &[
+                    param("sink", "string", "Sink name (for output)"),
+                    param("source", "string", "Source name (for input)"),
+                ]),
+                action_p("set-sink-port", "Change the active port on a sink", &[
+                    req_param("sink", "string", "Sink name"),
+                    req_param("port", "string", "Port name to activate"),
+                ]),
+                action_p("set-source-port", "Change the active port on a source", &[
+                    req_param("source", "string", "Source name"),
+                    req_param("port", "string", "Port name to activate"),
+                ]),
             ],
         },
         EntityTypeInfo {
@@ -152,30 +168,22 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "An audio input or output device",
             urn_pattern: "{plugin}/audio-device/{id}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Device display name", optional: false },
-                PropertyInfo { name: "device_type", type_description: "string", description: "Semantic device type (e.g. headset, card, display)", optional: true },
-                PropertyInfo { name: "connection_type", type_description: "string", description: "Semantic connection type (e.g. bluetooth, jack, hdmi)", optional: true },
-                PropertyInfo { name: "volume", type_description: "float", description: "Volume level (0.0 - 1.0)", optional: false },
-                PropertyInfo { name: "muted", type_description: "bool", description: "Whether the device is muted", optional: false },
-                PropertyInfo { name: "default", type_description: "bool", description: "Whether this is the default device", optional: false },
-                PropertyInfo { name: "kind", type_description: "enum(Output, Input)", description: "Output or input device", optional: false },
+                prop("name", "string", "Device display name"),
+                opt_prop("device_type", "string", "Semantic device type (e.g. headset, card, display)"),
+                opt_prop("connection_type", "string", "Semantic connection type (e.g. bluetooth, jack, hdmi)"),
+                prop("volume", "float", "Volume level (0.0 - 1.0)"),
+                prop("muted", "bool", "Whether the device is muted"),
+                prop("default", "bool", "Whether this is the default device"),
+                prop("kind", "enum(Output, Input)", "Output or input device"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "set-volume",
-                    description: "Set the device volume",
-                    params: &[ParamInfo { name: "volume", type_description: "float", description: "New volume level (0.0 - 1.0)", required: true }],
-                },
-                ActionInfo {
-                    name: "set-muted",
-                    description: "Set the mute state",
-                    params: &[ParamInfo { name: "muted", type_description: "bool", description: "Whether to mute", required: true }],
-                },
-                ActionInfo {
-                    name: "set-default",
-                    description: "Make this the default device",
-                    params: &[],
-                },
+                action_p("set-volume", "Set the device volume", &[
+                    req_param("volume", "float", "New volume level (0.0 - 1.0)"),
+                ]),
+                action_p("set-muted", "Set the mute state", &[
+                    req_param("muted", "bool", "Whether to mute"),
+                ]),
+                action("set-default", "Make this the default device"),
             ],
         },
 
@@ -186,27 +194,15 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A Bluetooth adapter (e.g. hci0)",
             urn_pattern: "{plugin}/bluetooth-adapter/{adapter-id}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Adapter display name", optional: false },
-                PropertyInfo { name: "powered", type_description: "bool", description: "Whether the adapter is powered on", optional: false },
-                PropertyInfo { name: "discoverable", type_description: "bool", description: "Whether the adapter is discoverable", optional: false },
-                PropertyInfo { name: "discovering", type_description: "bool", description: "Whether the adapter is scanning", optional: false },
+                prop("name", "string", "Adapter display name"),
+                prop("powered", "bool", "Whether the adapter is powered on"),
+                prop("discoverable", "bool", "Whether the adapter is discoverable"),
+                prop("discovering", "bool", "Whether the adapter is scanning"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "toggle",
-                    description: "Toggle the adapter power state",
-                    params: &[],
-                },
-                ActionInfo {
-                    name: "start-discovery",
-                    description: "Start scanning for devices",
-                    params: &[],
-                },
-                ActionInfo {
-                    name: "stop-discovery",
-                    description: "Stop scanning for devices",
-                    params: &[],
-                },
+                action("toggle", "Toggle the adapter power state"),
+                action("start-discovery", "Start scanning for devices"),
+                action("stop-discovery", "Stop scanning for devices"),
             ],
         },
         EntityTypeInfo {
@@ -215,21 +211,21 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A Bluetooth device paired or visible to an adapter",
             urn_pattern: "{plugin}/bluetooth-adapter/{adapter-id}/bluetooth-device/{mac}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Device display name", optional: false },
-                PropertyInfo { name: "device_type", type_description: "string", description: "Device type (e.g. audio-headphones)", optional: false },
-                PropertyInfo { name: "connection_state", type_description: "enum(Disconnected, Connecting, Connected, Disconnecting)", description: "Connection lifecycle state", optional: false },
-                PropertyInfo { name: "battery_percentage", type_description: "u8", description: "Battery level (0-100)", optional: true },
-                PropertyInfo { name: "paired", type_description: "bool", description: "Whether the device is paired", optional: false },
-                PropertyInfo { name: "trusted", type_description: "bool", description: "Whether the device is trusted", optional: false },
-                PropertyInfo { name: "rssi", type_description: "i16", description: "Signal strength indicator", optional: true },
+                prop("name", "string", "Device display name"),
+                prop("device_type", "string", "Device type (e.g. audio-headphones)"),
+                prop("connection_state", "enum(Disconnected, Connecting, Connected, Disconnecting)", "Connection lifecycle state"),
+                opt_prop("battery_percentage", "u8", "Battery level (0-100)"),
+                prop("paired", "bool", "Whether the device is paired"),
+                prop("trusted", "bool", "Whether the device is trusted"),
+                opt_prop("rssi", "i16", "Signal strength indicator"),
             ],
             actions: &[
-                ActionInfo { name: "connect", description: "Connect to the device", params: &[] },
-                ActionInfo { name: "disconnect", description: "Disconnect from the device", params: &[] },
-                ActionInfo { name: "pair", description: "Pair with the device", params: &[] },
-                ActionInfo { name: "remove", description: "Remove (unpair) the device", params: &[] },
-                ActionInfo { name: "trust", description: "Trust the device", params: &[] },
-                ActionInfo { name: "untrust", description: "Remove trust from the device", params: &[] },
+                action("connect", "Connect to the device"),
+                action("disconnect", "Disconnect from the device"),
+                action("pair", "Pair with the device"),
+                action("remove", "Remove (unpair) the device"),
+                action("trust", "Trust the device"),
+                action("untrust", "Remove trust from the device"),
             ],
         },
 
@@ -240,14 +236,14 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A calendar event from EDS",
             urn_pattern: "{plugin}/calendar-event/{uid}",
             properties: &[
-                PropertyInfo { name: "uid", type_description: "string", description: "Unique event identifier", optional: false },
-                PropertyInfo { name: "summary", type_description: "string", description: "Event title", optional: false },
-                PropertyInfo { name: "start_time", type_description: "i64", description: "Start time as Unix timestamp", optional: false },
-                PropertyInfo { name: "end_time", type_description: "i64", description: "End time as Unix timestamp", optional: false },
-                PropertyInfo { name: "all_day", type_description: "bool", description: "Whether this is an all-day event", optional: false },
-                PropertyInfo { name: "description", type_description: "string", description: "Event description", optional: true },
-                PropertyInfo { name: "location", type_description: "string", description: "Event location", optional: true },
-                PropertyInfo { name: "attendees", type_description: "array", description: "List of attendees", optional: false },
+                prop("uid", "string", "Unique event identifier"),
+                prop("summary", "string", "Event title"),
+                prop("start_time", "i64", "Start time as Unix timestamp"),
+                prop("end_time", "i64", "End time as Unix timestamp"),
+                prop("all_day", "bool", "Whether this is an all-day event"),
+                opt_prop("description", "string", "Event description"),
+                opt_prop("location", "string", "Event location"),
+                prop("attendees", "array", "List of attendees"),
             ],
             actions: &[],
         },
@@ -257,11 +253,11 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Calendar sync control",
             urn_pattern: "{plugin}/calendar-sync/{id}",
             properties: &[
-                PropertyInfo { name: "last_refresh", type_description: "i64", description: "Unix timestamp of last refresh", optional: true },
-                PropertyInfo { name: "syncing", type_description: "bool", description: "Whether a sync is in progress", optional: false },
+                opt_prop("last_refresh", "i64", "Unix timestamp of last refresh"),
+                prop("syncing", "bool", "Whether a sync is in progress"),
             ],
             actions: &[
-                ActionInfo { name: "refresh", description: "Trigger an immediate calendar sync", params: &[] },
+                action("refresh", "Trigger an immediate calendar sync"),
             ],
         },
 
@@ -272,8 +268,8 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Current time and date",
             urn_pattern: "{plugin}/clock/{id}",
             properties: &[
-                PropertyInfo { name: "time", type_description: "string", description: "Formatted time string", optional: false },
-                PropertyInfo { name: "date", type_description: "string", description: "Formatted date string", optional: false },
+                prop("time", "string", "Formatted time string"),
+                prop("date", "string", "Formatted date string"),
             ],
             actions: &[],
         },
@@ -285,10 +281,10 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Dark mode toggle state",
             urn_pattern: "{plugin}/dark-mode/{id}",
             properties: &[
-                PropertyInfo { name: "active", type_description: "bool", description: "Whether dark mode is active", optional: false },
+                prop("active", "bool", "Whether dark mode is active"),
             ],
             actions: &[
-                ActionInfo { name: "toggle", description: "Toggle dark mode on/off", params: &[] },
+                action("toggle", "Toggle dark mode on/off"),
             ],
         },
         EntityTypeInfo {
@@ -297,19 +293,15 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Dark mode automation configuration",
             urn_pattern: "{plugin}/dark-mode-automation-config/{id}",
             properties: &[
-                PropertyInfo { name: "latitude", type_description: "f64", description: "Latitude for sun-based switching", optional: true },
-                PropertyInfo { name: "longitude", type_description: "f64", description: "Longitude for sun-based switching", optional: true },
-                PropertyInfo { name: "auto_location", type_description: "bool", description: "Whether to detect location automatically", optional: true },
-                PropertyInfo { name: "dbus_api", type_description: "bool", description: "Whether D-Bus API is enabled", optional: true },
-                PropertyInfo { name: "portal_api", type_description: "bool", description: "Whether portal API is enabled", optional: true },
-                PropertyInfo { name: "schema", type_description: "object", description: "Field availability and constraints schema", optional: false },
+                opt_prop("latitude", "f64", "Latitude for sun-based switching"),
+                opt_prop("longitude", "f64", "Longitude for sun-based switching"),
+                opt_prop("auto_location", "bool", "Whether to detect location automatically"),
+                opt_prop("dbus_api", "bool", "Whether D-Bus API is enabled"),
+                opt_prop("portal_api", "bool", "Whether portal API is enabled"),
+                prop("schema", "object", "Field availability and constraints schema"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "update",
-                    description: "Update automation configuration fields",
-                    params: &[],
-                },
+                action("update", "Update automation configuration fields"),
             ],
         },
         EntityTypeInfo {
@@ -318,16 +310,14 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A display with adjustable brightness",
             urn_pattern: "{plugin}/display/{id}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Display name", optional: false },
-                PropertyInfo { name: "brightness", type_description: "float", description: "Brightness level (0.0 - 1.0)", optional: false },
-                PropertyInfo { name: "kind", type_description: "enum(Backlight, External)", description: "Display backend type", optional: false },
+                prop("name", "string", "Display name"),
+                prop("brightness", "float", "Brightness level (0.0 - 1.0)"),
+                prop("kind", "enum(Backlight, External)", "Display backend type"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "set-brightness",
-                    description: "Set the display brightness",
-                    params: &[ParamInfo { name: "brightness", type_description: "float", description: "New brightness level (0.0 - 1.0)", required: true }],
-                },
+                action_p("set-brightness", "Set the display brightness", &[
+                    req_param("brightness", "float", "New brightness level (0.0 - 1.0)"),
+                ]),
             ],
         },
         EntityTypeInfo {
@@ -336,29 +326,23 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A display output with resolution and refresh rate",
             urn_pattern: "{plugin}/display-output/{name}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Output name (e.g. DP-3, HDMI-1)", optional: false },
-                PropertyInfo { name: "make", type_description: "string", description: "Manufacturer name", optional: false },
-                PropertyInfo { name: "model", type_description: "string", description: "Model name", optional: false },
-                PropertyInfo { name: "current_mode", type_description: "object", description: "Currently active display mode", optional: false },
-                PropertyInfo { name: "available_modes", type_description: "array", description: "All available display modes", optional: false },
-                PropertyInfo { name: "vrr_supported", type_description: "bool", description: "Whether VRR is supported", optional: false },
-                PropertyInfo { name: "vrr_enabled", type_description: "bool", description: "Whether VRR is enabled", optional: false },
+                prop("name", "string", "Output name (e.g. DP-3, HDMI-1)"),
+                prop("make", "string", "Manufacturer name"),
+                prop("model", "string", "Model name"),
+                prop("current_mode", "object", "Currently active display mode"),
+                prop("available_modes", "array", "All available display modes"),
+                prop("vrr_supported", "bool", "Whether VRR is supported"),
+                prop("vrr_enabled", "bool", "Whether VRR is enabled"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "set-mode",
-                    description: "Change the display mode",
-                    params: &[
-                        ParamInfo { name: "width", type_description: "u32", description: "Horizontal resolution", required: true },
-                        ParamInfo { name: "height", type_description: "u32", description: "Vertical resolution", required: true },
-                        ParamInfo { name: "refresh_rate", type_description: "float", description: "Refresh rate in Hz", required: true },
-                    ],
-                },
-                ActionInfo {
-                    name: "set-vrr",
-                    description: "Enable or disable variable refresh rate",
-                    params: &[ParamInfo { name: "enabled", type_description: "bool", description: "Whether to enable VRR", required: true }],
-                },
+                action_p("set-mode", "Change the display mode", &[
+                    req_param("width", "u32", "Horizontal resolution"),
+                    req_param("height", "u32", "Vertical resolution"),
+                    req_param("refresh_rate", "float", "Refresh rate in Hz"),
+                ]),
+                action_p("set-vrr", "Enable or disable variable refresh rate", &[
+                    req_param("enabled", "bool", "Whether to enable VRR"),
+                ]),
             ],
         },
         EntityTypeInfo {
@@ -367,26 +351,12 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "GTK appearance settings including accent colour",
             urn_pattern: "{plugin}/gtk-appearance/{id}",
             properties: &[
-                PropertyInfo {
-                    name: "accent_color",
-                    type_description: "string",
-                    description: "Current accent colour (blue, teal, green, yellow, orange, red, pink, purple, slate)",
-                    optional: false,
-                },
+                prop("accent_color", "string", "Current accent colour (blue, teal, green, yellow, orange, red, pink, purple, slate)"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "set-accent-color",
-                    description: "Set the system accent colour",
-                    params: &[
-                        ParamInfo {
-                            name: "color",
-                            type_description: "string",
-                            description: "Accent colour name (blue, teal, green, yellow, orange, red, pink, purple, slate)",
-                            required: true,
-                        },
-                    ],
-                },
+                action_p("set-accent-color", "Set the system accent colour", &[
+                    req_param("color", "string", "Accent colour name (blue, teal, green, yellow, orange, red, pink, purple, slate)"),
+                ]),
             ],
         },
         EntityTypeInfo {
@@ -395,14 +365,14 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Night light (blue light filter) state",
             urn_pattern: "{plugin}/night-light/{id}",
             properties: &[
-                PropertyInfo { name: "active", type_description: "bool", description: "Whether night light is active", optional: false },
-                PropertyInfo { name: "period", type_description: "string", description: "Current period (e.g. night, day)", optional: true },
-                PropertyInfo { name: "next_transition", type_description: "string", description: "Time of next transition", optional: true },
-                PropertyInfo { name: "presets", type_description: "array", description: "Available presets", optional: false },
-                PropertyInfo { name: "active_preset", type_description: "string", description: "Currently active preset", optional: true },
+                prop("active", "bool", "Whether night light is active"),
+                opt_prop("period", "string", "Current period (e.g. night, day)"),
+                opt_prop("next_transition", "string", "Time of next transition"),
+                prop("presets", "array", "Available presets"),
+                opt_prop("active_preset", "string", "Currently active preset"),
             ],
             actions: &[
-                ActionInfo { name: "toggle", description: "Toggle night light on/off", params: &[] },
+                action("toggle", "Toggle night light on/off"),
             ],
         },
         EntityTypeInfo {
@@ -411,18 +381,14 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Night light configuration",
             urn_pattern: "{plugin}/night-light-config/{id}",
             properties: &[
-                PropertyInfo { name: "target", type_description: "string", description: "Target display", optional: false },
-                PropertyInfo { name: "backend", type_description: "string", description: "Color backend", optional: false },
-                PropertyInfo { name: "transition_mode", type_description: "string", description: "Transition mode (e.g. geo)", optional: false },
-                PropertyInfo { name: "night_temp", type_description: "string", description: "Night color temperature", optional: false },
-                PropertyInfo { name: "day_temp", type_description: "string", description: "Day color temperature", optional: false },
+                prop("target", "string", "Target display"),
+                prop("backend", "string", "Color backend"),
+                prop("transition_mode", "string", "Transition mode (e.g. geo)"),
+                prop("night_temp", "string", "Night color temperature"),
+                prop("day_temp", "string", "Day color temperature"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "update",
-                    description: "Update night light configuration fields",
-                    params: &[],
-                },
+                action("update", "Update night light configuration fields"),
             ],
         },
         EntityTypeInfo {
@@ -431,42 +397,28 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Wallpaper manager for a display output",
             urn_pattern: "{plugin}/wallpaper-manager/{output}",
             properties: &[
-                PropertyInfo { name: "output", type_description: "string", description: "Output name or 'all' for sync mode", optional: false },
-                PropertyInfo { name: "current_wallpaper", type_description: "string", description: "Absolute path to current wallpaper image", optional: true },
-                PropertyInfo { name: "available", type_description: "bool", description: "Whether swww-daemon is running", optional: false },
-                PropertyInfo { name: "transition", type_description: "object", description: "Transition animation parameters", optional: false },
-                PropertyInfo { name: "wallpaper_dir", type_description: "string", description: "Configured wallpaper directory", optional: false },
-                PropertyInfo { name: "sync", type_description: "bool", description: "Whether all outputs are synchronized", optional: false },
+                prop("output", "string", "Output name or 'all' for sync mode"),
+                opt_prop("current_wallpaper", "string", "Absolute path to current wallpaper image"),
+                prop("available", "bool", "Whether swww-daemon is running"),
+                prop("transition", "object", "Transition animation parameters"),
+                prop("wallpaper_dir", "string", "Configured wallpaper directory"),
+                prop("sync", "bool", "Whether all outputs are synchronized"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "set-wallpaper",
-                    description: "Set wallpaper to a specific image file",
-                    params: &[ParamInfo { name: "path", type_description: "string", description: "Absolute path to image file", required: true }],
-                },
-                ActionInfo {
-                    name: "random",
-                    description: "Set a random wallpaper from the configured directory",
-                    params: &[],
-                },
-                ActionInfo {
-                    name: "update-transition",
-                    description: "Update transition animation parameters",
-                    params: &[
-                        ParamInfo { name: "transition_type", type_description: "string", description: "Transition type (fade, wipe, grow, etc.)", required: false },
-                        ParamInfo { name: "fps", type_description: "u32", description: "Animation frames per second", required: false },
-                        ParamInfo { name: "angle", type_description: "u32", description: "Transition angle in degrees", required: false },
-                        ParamInfo { name: "duration", type_description: "f64", description: "Transition duration in seconds", required: false },
-                    ],
-                },
-                ActionInfo {
-                    name: "update-config",
-                    description: "Update wallpaper configuration",
-                    params: &[
-                        ParamInfo { name: "wallpaper_dir", type_description: "string", description: "Wallpaper directory path", required: false },
-                        ParamInfo { name: "sync", type_description: "bool", description: "Synchronize all outputs", required: false },
-                    ],
-                },
+                action_p("set-wallpaper", "Set wallpaper to a specific image file", &[
+                    req_param("path", "string", "Absolute path to image file"),
+                ]),
+                action("random", "Set a random wallpaper from the configured directory"),
+                action_p("update-transition", "Update transition animation parameters", &[
+                    param("transition_type", "string", "Transition type (fade, wipe, grow, etc.)"),
+                    param("fps", "u32", "Animation frames per second"),
+                    param("angle", "u32", "Transition angle in degrees"),
+                    param("duration", "f64", "Transition duration in seconds"),
+                ]),
+                action_p("update-config", "Update wallpaper configuration", &[
+                    param("wallpaper_dir", "string", "Wallpaper directory path"),
+                    param("sync", "bool", "Synchronize all outputs"),
+                ]),
             ],
         },
 
@@ -477,15 +429,13 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Active keyboard layout and alternatives",
             urn_pattern: "{plugin}/keyboard-layout/{id}",
             properties: &[
-                PropertyInfo { name: "current", type_description: "string", description: "Currently active layout code", optional: false },
-                PropertyInfo { name: "available", type_description: "array", description: "Available layout codes", optional: false },
+                prop("current", "string", "Currently active layout code"),
+                prop("available", "array", "Available layout codes"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "switch",
-                    description: "Switch to a different keyboard layout",
-                    params: &[ParamInfo { name: "layout", type_description: "string", description: "Layout code to switch to", required: true }],
-                },
+                action_p("switch", "Switch to a different keyboard layout", &[
+                    req_param("layout", "string", "Layout code to switch to"),
+                ]),
             ],
         },
         EntityTypeInfo {
@@ -494,49 +444,33 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Keyboard layout configuration",
             urn_pattern: "{plugin}/keyboard-layout-config/{id}",
             properties: &[
-                PropertyInfo { name: "mode", type_description: "string", description: "Configuration mode (editable, external-file, system-default, error)", optional: false },
-                PropertyInfo { name: "layouts", type_description: "array", description: "Configured layout codes", optional: false },
-                PropertyInfo { name: "layout_names", type_description: "array", description: "Custom layout display names", optional: false },
-                PropertyInfo { name: "variant", type_description: "string", description: "XKB variant (comma-separated, parallel to layouts)", optional: true },
-                PropertyInfo { name: "options", type_description: "string", description: "XKB options", optional: true },
-                PropertyInfo { name: "file_path", type_description: "string", description: "External keymap file path", optional: true },
-                PropertyInfo { name: "error_message", type_description: "string", description: "Error description", optional: true },
+                prop("mode", "string", "Configuration mode (editable, external-file, system-default, error)"),
+                prop("layouts", "array", "Configured layout codes"),
+                prop("layout_names", "array", "Custom layout display names"),
+                opt_prop("variant", "string", "XKB variant (comma-separated, parallel to layouts)"),
+                opt_prop("options", "string", "XKB options"),
+                opt_prop("file_path", "string", "External keymap file path"),
+                opt_prop("error_message", "string", "Error description"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "add",
-                    description: "Add a keyboard layout",
-                    params: &[
-                        ParamInfo { name: "layout", type_description: "string", description: "XKB layout code", required: true },
-                        ParamInfo { name: "name", type_description: "string", description: "Display name", required: false },
-                    ],
-                },
-                ActionInfo {
-                    name: "remove",
-                    description: "Remove a keyboard layout",
-                    params: &[ParamInfo { name: "layout", type_description: "string", description: "XKB layout code", required: true }],
-                },
-                ActionInfo {
-                    name: "reorder",
-                    description: "Reorder keyboard layouts",
-                    params: &[ParamInfo { name: "layouts", type_description: "array", description: "Ordered layout codes", required: true }],
-                },
-                ActionInfo {
-                    name: "set-variant",
-                    description: "Set the XKB variant for a specific layout",
-                    params: &[
-                        ParamInfo { name: "layout", type_description: "string", description: "XKB layout code", required: true },
-                        ParamInfo { name: "variant", type_description: "string", description: "XKB variant name (empty string to clear)", required: true },
-                    ],
-                },
-                ActionInfo {
-                    name: "rename",
-                    description: "Rename a layout (external-file mode only)",
-                    params: &[
-                        ParamInfo { name: "layout", type_description: "string", description: "XKB layout code", required: true },
-                        ParamInfo { name: "name", type_description: "string", description: "New display name", required: true },
-                    ],
-                },
+                action_p("add", "Add a keyboard layout", &[
+                    req_param("layout", "string", "XKB layout code"),
+                    param("name", "string", "Display name"),
+                ]),
+                action_p("remove", "Remove a keyboard layout", &[
+                    req_param("layout", "string", "XKB layout code"),
+                ]),
+                action_p("reorder", "Reorder keyboard layouts", &[
+                    req_param("layouts", "array", "Ordered layout codes"),
+                ]),
+                action_p("set-variant", "Set the XKB variant for a specific layout", &[
+                    req_param("layout", "string", "XKB layout code"),
+                    req_param("variant", "string", "XKB variant name (empty string to clear)"),
+                ]),
+                action_p("rename", "Rename a layout (external-file mode only)", &[
+                    req_param("layout", "string", "XKB layout code"),
+                    req_param("name", "string", "New display name"),
+                ]),
             ],
         },
 
@@ -547,13 +481,13 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "An Ethernet connection profile",
             urn_pattern: "{plugin}/network-adapter/{adapter}/ethernet-connection/{uuid}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Connection profile name", optional: false },
-                PropertyInfo { name: "uuid", type_description: "string", description: "Connection UUID", optional: false },
-                PropertyInfo { name: "active", type_description: "bool", description: "Whether this connection is active", optional: false },
+                prop("name", "string", "Connection profile name"),
+                prop("uuid", "string", "Connection UUID"),
+                prop("active", "bool", "Whether this connection is active"),
             ],
             actions: &[
-                ActionInfo { name: "activate", description: "Activate this connection", params: &[] },
-                ActionInfo { name: "deactivate", description: "Deactivate this connection", params: &[] },
+                action("activate", "Activate this connection"),
+                action("deactivate", "Deactivate this connection"),
             ],
         },
         EntityTypeInfo {
@@ -562,16 +496,16 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A network adapter (wired or wireless)",
             urn_pattern: "{plugin}/network-adapter/{id}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Adapter name", optional: false },
-                PropertyInfo { name: "enabled", type_description: "bool", description: "Whether the adapter is enabled", optional: false },
-                PropertyInfo { name: "connected", type_description: "bool", description: "Whether the adapter is connected", optional: false },
-                PropertyInfo { name: "ip", type_description: "object", description: "IP address information", optional: true },
-                PropertyInfo { name: "public_ip", type_description: "string", description: "Public IP address", optional: true },
-                PropertyInfo { name: "kind", type_description: "enum(wired, wireless, tethering)", description: "Adapter type", optional: false },
+                prop("name", "string", "Adapter name"),
+                prop("enabled", "bool", "Whether the adapter is enabled"),
+                prop("connected", "bool", "Whether the adapter is connected"),
+                opt_prop("ip", "object", "IP address information"),
+                opt_prop("public_ip", "string", "Public IP address"),
+                prop("kind", "enum(wired, wireless, tethering)", "Adapter type"),
             ],
             actions: &[
-                ActionInfo { name: "toggle", description: "Toggle the adapter on/off", params: &[] },
-                ActionInfo { name: "scan", description: "Trigger a network scan (wireless only)", params: &[] },
+                action("toggle", "Toggle the adapter on/off"),
+                action("scan", "Trigger a network scan (wireless only)"),
             ],
         },
         EntityTypeInfo {
@@ -580,13 +514,13 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A tethering connection profile",
             urn_pattern: "{plugin}/network-adapter/tethering/tethering-connection/{uuid}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Connection profile name", optional: false },
-                PropertyInfo { name: "uuid", type_description: "string", description: "Connection UUID", optional: false },
-                PropertyInfo { name: "active", type_description: "bool", description: "Whether this connection is active", optional: false },
+                prop("name", "string", "Connection profile name"),
+                prop("uuid", "string", "Connection UUID"),
+                prop("active", "bool", "Whether this connection is active"),
             ],
             actions: &[
-                ActionInfo { name: "activate", description: "Activate this connection", params: &[] },
-                ActionInfo { name: "deactivate", description: "Deactivate this connection", params: &[] },
+                action("activate", "Activate this connection"),
+                action("deactivate", "Deactivate this connection"),
             ],
         },
         EntityTypeInfo {
@@ -595,13 +529,13 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A VPN connection",
             urn_pattern: "{plugin}/vpn/{id}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "VPN connection name", optional: false },
-                PropertyInfo { name: "state", type_description: "enum(Disconnected, Connecting, Connected, Disconnecting)", description: "Connection state", optional: false },
-                PropertyInfo { name: "vpn_type", type_description: "enum(vpn, wireguard)", description: "Connection technology type", optional: false },
+                prop("name", "string", "VPN connection name"),
+                prop("state", "enum(Disconnected, Connecting, Connected, Disconnecting)", "Connection state"),
+                prop("vpn_type", "enum(vpn, wireguard)", "Connection technology type"),
             ],
             actions: &[
-                ActionInfo { name: "connect", description: "Connect to the VPN", params: &[] },
-                ActionInfo { name: "disconnect", description: "Disconnect from the VPN", params: &[] },
+                action("connect", "Connect to the VPN"),
+                action("disconnect", "Disconnect from the VPN"),
             ],
         },
         EntityTypeInfo {
@@ -610,16 +544,16 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A WiFi network",
             urn_pattern: "{plugin}/network-adapter/{adapter}/wifi-network/{ssid}",
             properties: &[
-                PropertyInfo { name: "ssid", type_description: "string", description: "Network name", optional: false },
-                PropertyInfo { name: "strength", type_description: "u8", description: "Signal strength (0-100)", optional: false },
-                PropertyInfo { name: "secure", type_description: "bool", description: "Whether the network is encrypted", optional: false },
-                PropertyInfo { name: "known", type_description: "bool", description: "Whether credentials are saved", optional: false },
-                PropertyInfo { name: "connected", type_description: "bool", description: "Whether currently connected", optional: false },
+                prop("ssid", "string", "Network name"),
+                prop("strength", "u8", "Signal strength (0-100)"),
+                prop("secure", "bool", "Whether the network is encrypted"),
+                prop("known", "bool", "Whether credentials are saved"),
+                prop("connected", "bool", "Whether currently connected"),
             ],
             actions: &[
-                ActionInfo { name: "connect", description: "Connect to this network", params: &[] },
-                ActionInfo { name: "disconnect", description: "Disconnect from this network", params: &[] },
-                ActionInfo { name: "forget", description: "Remove saved credentials", params: &[] },
+                action("connect", "Connect to this network"),
+                action("disconnect", "Disconnect from this network"),
+                action("forget", "Remove saved credentials"),
             ],
         },
 
@@ -630,10 +564,10 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Do Not Disturb state",
             urn_pattern: "{plugin}/dnd/{id}",
             properties: &[
-                PropertyInfo { name: "active", type_description: "bool", description: "Whether DND is active", optional: false },
+                prop("active", "bool", "Whether DND is active"),
             ],
             actions: &[
-                ActionInfo { name: "toggle", description: "Toggle Do Not Disturb", params: &[] },
+                action("toggle", "Toggle Do Not Disturb"),
             ],
         },
         EntityTypeInfo {
@@ -642,25 +576,23 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A desktop notification",
             urn_pattern: "{plugin}/notification/{id}",
             properties: &[
-                PropertyInfo { name: "title", type_description: "string", description: "Notification title", optional: false },
-                PropertyInfo { name: "description", type_description: "string", description: "Notification body text", optional: false },
-                PropertyInfo { name: "app_name", type_description: "string", description: "Source application name", optional: true },
-                PropertyInfo { name: "app_id", type_description: "string", description: "Source application identifier", optional: true },
-                PropertyInfo { name: "urgency", type_description: "enum(Low, Normal, Critical)", description: "Urgency level", optional: false },
-                PropertyInfo { name: "actions", type_description: "array", description: "Available actions", optional: false },
-                PropertyInfo { name: "icon_hints", type_description: "array", description: "Icon hints in priority order", optional: false },
-                PropertyInfo { name: "created_at_ms", type_description: "i64", description: "Creation timestamp in milliseconds", optional: false },
-                PropertyInfo { name: "resident", type_description: "bool", description: "Whether the notification persists after action", optional: false },
-                PropertyInfo { name: "workspace", type_description: "string", description: "Source workspace name", optional: true },
-                PropertyInfo { name: "suppress_toast", type_description: "bool", description: "Whether to suppress toast popup", optional: false },
+                prop("title", "string", "Notification title"),
+                prop("description", "string", "Notification body text"),
+                opt_prop("app_name", "string", "Source application name"),
+                opt_prop("app_id", "string", "Source application identifier"),
+                prop("urgency", "enum(Low, Normal, Critical)", "Urgency level"),
+                prop("actions", "array", "Available actions"),
+                prop("icon_hints", "array", "Icon hints in priority order"),
+                prop("created_at_ms", "i64", "Creation timestamp in milliseconds"),
+                prop("resident", "bool", "Whether the notification persists after action"),
+                opt_prop("workspace", "string", "Source workspace name"),
+                prop("suppress_toast", "bool", "Whether to suppress toast popup"),
             ],
             actions: &[
-                ActionInfo { name: "dismiss", description: "Dismiss the notification", params: &[] },
-                ActionInfo {
-                    name: "invoke-action",
-                    description: "Invoke a notification action",
-                    params: &[ParamInfo { name: "key", type_description: "string", description: "Action key to invoke", required: true }],
-                },
+                action("dismiss", "Dismiss the notification"),
+                action_p("invoke-action", "Invoke a notification action", &[
+                    req_param("key", "string", "Action key to invoke"),
+                ]),
             ],
         },
 
@@ -670,10 +602,10 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Notification recording state for debugging",
             urn_pattern: "{plugin}/recording/{id}",
             properties: &[
-                PropertyInfo { name: "active", type_description: "bool", description: "Whether recording is active", optional: false },
+                prop("active", "bool", "Whether recording is active"),
             ],
             actions: &[
-                ActionInfo { name: "toggle", description: "Toggle notification recording on/off", params: &[] },
+                action("toggle", "Toggle notification recording on/off"),
             ],
         },
 
@@ -684,14 +616,12 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Active notification filtering profile",
             urn_pattern: "{plugin}/active-profile/{id}",
             properties: &[
-                PropertyInfo { name: "profile_id", type_description: "string", description: "ID of the active profile", optional: false },
+                prop("profile_id", "string", "ID of the active profile"),
             ],
             actions: &[
-                ActionInfo {
-                    name: "set",
-                    description: "Set the active profile",
-                    params: &[ParamInfo { name: "profile_id", type_description: "string", description: "Profile ID to activate", required: true }],
-                },
+                action_p("set", "Set the active profile", &[
+                    req_param("profile_id", "string", "Profile ID to activate"),
+                ]),
             ],
         },
         EntityTypeInfo {
@@ -700,15 +630,15 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A pattern-based notification group",
             urn_pattern: "{plugin}/notification-group/{id}",
             properties: &[
-                PropertyInfo { name: "id", type_description: "string", description: "Group identifier", optional: false },
-                PropertyInfo { name: "name", type_description: "string", description: "Group display name", optional: false },
-                PropertyInfo { name: "order", type_description: "u32", description: "Sort order", optional: false },
-                PropertyInfo { name: "matcher", type_description: "object", description: "Rule combinator with match patterns", optional: false },
+                prop("id", "string", "Group identifier"),
+                prop("name", "string", "Group display name"),
+                prop("order", "u32", "Sort order"),
+                prop("matcher", "object", "Rule combinator with match patterns"),
             ],
             actions: &[
-                ActionInfo { name: "create", description: "Create a new group", params: &[] },
-                ActionInfo { name: "update", description: "Update group configuration", params: &[] },
-                ActionInfo { name: "delete", description: "Delete the group", params: &[] },
+                action("create", "Create a new group"),
+                action("update", "Update group configuration"),
+                action("delete", "Delete the group"),
             ],
         },
         EntityTypeInfo {
@@ -717,14 +647,14 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A notification filtering profile",
             urn_pattern: "{plugin}/notification-profile/{id}",
             properties: &[
-                PropertyInfo { name: "id", type_description: "string", description: "Profile identifier", optional: false },
-                PropertyInfo { name: "name", type_description: "string", description: "Profile display name", optional: false },
-                PropertyInfo { name: "rules", type_description: "object", description: "Group rules (group_id -> rule)", optional: false },
+                prop("id", "string", "Profile identifier"),
+                prop("name", "string", "Profile display name"),
+                prop("rules", "object", "Group rules (group_id -> rule)"),
             ],
             actions: &[
-                ActionInfo { name: "create", description: "Create a new profile", params: &[] },
-                ActionInfo { name: "update", description: "Update profile configuration", params: &[] },
-                ActionInfo { name: "delete", description: "Delete the profile", params: &[] },
+                action("create", "Create a new profile"),
+                action("update", "Update profile configuration"),
+                action("delete", "Delete the profile"),
             ],
         },
         EntityTypeInfo {
@@ -733,13 +663,13 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Notification sound configuration",
             urn_pattern: "{plugin}/sound-config/{id}",
             properties: &[
-                PropertyInfo { name: "enabled", type_description: "bool", description: "Whether notification sounds are enabled", optional: false },
-                PropertyInfo { name: "default_low", type_description: "string", description: "Sound for low-urgency notifications", optional: false },
-                PropertyInfo { name: "default_normal", type_description: "string", description: "Sound for normal-urgency notifications", optional: false },
-                PropertyInfo { name: "default_critical", type_description: "string", description: "Sound for critical-urgency notifications", optional: false },
+                prop("enabled", "bool", "Whether notification sounds are enabled"),
+                prop("default_low", "string", "Sound for low-urgency notifications"),
+                prop("default_normal", "string", "Sound for normal-urgency notifications"),
+                prop("default_critical", "string", "Sound for critical-urgency notifications"),
             ],
             actions: &[
-                ActionInfo { name: "update", description: "Update sound configuration", params: &[] },
+                action("update", "Update sound configuration"),
             ],
         },
 
@@ -750,19 +680,19 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A notification sound file from the gallery",
             urn_pattern: "{plugin}/notification-sound/{id}",
             properties: &[
-                PropertyInfo { name: "filename", type_description: "string", description: "Sound filename", optional: false },
-                PropertyInfo { name: "reference", type_description: "string", description: "Sound reference for config", optional: false },
-                PropertyInfo { name: "size", type_description: "u64", description: "File size in bytes", optional: false },
+                prop("filename", "string", "Sound filename"),
+                prop("reference", "string", "Sound reference for config"),
+                prop("size", "u64", "File size in bytes"),
             ],
             actions: &[
-                ActionInfo { name: "add-sound", description: "Add a sound file to the gallery", params: &[
-                    ParamInfo { name: "filename", type_description: "string", description: "Sound filename", required: true },
-                    ParamInfo { name: "data", type_description: "string", description: "Base64-encoded file data", required: true },
-                ]},
-                ActionInfo { name: "remove-sound", description: "Remove a sound from the gallery", params: &[] },
-                ActionInfo { name: "preview-sound", description: "Play a sound for preview", params: &[
-                    ParamInfo { name: "reference", type_description: "string", description: "Sound reference (e.g. sounds/alert.ogg)", required: true },
-                ]},
+                action_p("add-sound", "Add a sound file to the gallery", &[
+                    req_param("filename", "string", "Sound filename"),
+                    req_param("data", "string", "Base64-encoded file data"),
+                ]),
+                action("remove-sound", "Remove a sound from the gallery"),
+                action_p("preview-sound", "Play a sound for preview", &[
+                    req_param("reference", "string", "Sound reference (e.g. sounds/alert.ogg)"),
+                ]),
             ],
         },
 
@@ -773,9 +703,9 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Lifecycle status of a waft plugin",
             urn_pattern: "waft/plugin-status/{plugin-name}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Plugin identifier", optional: false },
-                PropertyInfo { name: "state", type_description: "enum(available, running, stopped, failed)", description: "Current lifecycle state", optional: false },
-                PropertyInfo { name: "entity_types", type_description: "array", description: "Entity types this plugin provides", optional: false },
+                prop("name", "string", "Plugin identifier"),
+                prop("state", "enum(available, running, stopped, failed)", "Current lifecycle state"),
+                prop("entity_types", "array", "Entity types this plugin provides"),
             ],
             actions: &[],
         },
@@ -787,12 +717,12 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A battery device",
             urn_pattern: "{plugin}/battery/{id}",
             properties: &[
-                PropertyInfo { name: "present", type_description: "bool", description: "Whether a battery is present", optional: false },
-                PropertyInfo { name: "percentage", type_description: "float", description: "Charge percentage (0.0 - 100.0)", optional: false },
-                PropertyInfo { name: "state", type_description: "enum(Unknown, Charging, Discharging, Empty, FullyCharged, PendingCharge, PendingDischarge)", description: "Charge state", optional: false },
-                PropertyInfo { name: "icon_name", type_description: "string", description: "Battery icon name", optional: false },
-                PropertyInfo { name: "time_to_empty", type_description: "i64", description: "Seconds until empty", optional: false },
-                PropertyInfo { name: "time_to_full", type_description: "i64", description: "Seconds until full", optional: false },
+                prop("present", "bool", "Whether a battery is present"),
+                prop("percentage", "float", "Charge percentage (0.0 - 100.0)"),
+                prop("state", "enum(Unknown, Charging, Discharging, Empty, FullyCharged, PendingCharge, PendingDischarge)", "Charge state"),
+                prop("icon_name", "string", "Battery icon name"),
+                prop("time_to_empty", "i64", "Seconds until empty"),
+                prop("time_to_full", "i64", "Seconds until full"),
             ],
             actions: &[],
         },
@@ -804,15 +734,15 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "User session information",
             urn_pattern: "{plugin}/session/{id}",
             properties: &[
-                PropertyInfo { name: "user_name", type_description: "string", description: "Login user name", optional: true },
-                PropertyInfo { name: "screen_name", type_description: "string", description: "Display name", optional: true },
+                opt_prop("user_name", "string", "Login user name"),
+                opt_prop("screen_name", "string", "Display name"),
             ],
             actions: &[
-                ActionInfo { name: "lock", description: "Lock the session", params: &[] },
-                ActionInfo { name: "logout", description: "Log out of the session", params: &[] },
-                ActionInfo { name: "reboot", description: "Reboot the system", params: &[] },
-                ActionInfo { name: "shutdown", description: "Shut down the system", params: &[] },
-                ActionInfo { name: "suspend", description: "Suspend the system", params: &[] },
+                action("lock", "Lock the session"),
+                action("logout", "Log out of the session"),
+                action("reboot", "Reboot the system"),
+                action("shutdown", "Shut down the system"),
+                action("suspend", "Suspend the system"),
             ],
         },
         EntityTypeInfo {
@@ -821,10 +751,10 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A sleep/screensaver inhibitor",
             urn_pattern: "{plugin}/sleep-inhibitor/{id}",
             properties: &[
-                PropertyInfo { name: "active", type_description: "bool", description: "Whether sleep inhibition is active", optional: false },
+                prop("active", "bool", "Whether sleep inhibition is active"),
             ],
             actions: &[
-                ActionInfo { name: "toggle", description: "Toggle sleep inhibition", params: &[] },
+                action("toggle", "Toggle sleep inhibition"),
             ],
         },
 
@@ -834,17 +764,17 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A user-level systemd service",
             urn_pattern: "{plugin}/user-service/{unit-name}",
             properties: &[
-                PropertyInfo { name: "unit", type_description: "string", description: "Full unit name (e.g. pipewire.service)", optional: false },
-                PropertyInfo { name: "description", type_description: "string", description: "Human-readable description from unit file", optional: false },
-                PropertyInfo { name: "active_state", type_description: "string", description: "Current state (active/inactive/activating/deactivating/failed)", optional: false },
-                PropertyInfo { name: "enabled", type_description: "bool", description: "Whether the unit starts on login", optional: false },
-                PropertyInfo { name: "sub_state", type_description: "string", description: "Detailed sub-state (e.g. running/dead/exited)", optional: false },
+                prop("unit", "string", "Full unit name (e.g. pipewire.service)"),
+                prop("description", "string", "Human-readable description from unit file"),
+                prop("active_state", "string", "Current state (active/inactive/activating/deactivating/failed)"),
+                prop("enabled", "bool", "Whether the unit starts on login"),
+                prop("sub_state", "string", "Detailed sub-state (e.g. running/dead/exited)"),
             ],
             actions: &[
-                ActionInfo { name: "start", description: "Start the service", params: &[] },
-                ActionInfo { name: "stop", description: "Stop the service", params: &[] },
-                ActionInfo { name: "enable", description: "Enable the service on login", params: &[] },
-                ActionInfo { name: "disable", description: "Disable the service on login", params: &[] },
+                action("start", "Start the service"),
+                action("stop", "Stop the service"),
+                action("enable", "Enable the service on login"),
+                action("disable", "Disable the service on login"),
             ],
         },
 
@@ -855,12 +785,12 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "A backup method that can be enabled/disabled",
             urn_pattern: "{plugin}/backup-method/{id}",
             properties: &[
-                PropertyInfo { name: "name", type_description: "string", description: "Backup method name", optional: false },
-                PropertyInfo { name: "enabled", type_description: "bool", description: "Whether the backup method is enabled", optional: false },
-                PropertyInfo { name: "icon", type_description: "string", description: "Icon name", optional: false },
+                prop("name", "string", "Backup method name"),
+                prop("enabled", "bool", "Whether the backup method is enabled"),
+                prop("icon", "string", "Icon name"),
             ],
             actions: &[
-                ActionInfo { name: "toggle", description: "Toggle the backup method on/off", params: &[] },
+                action("toggle", "Toggle the backup method on/off"),
             ],
         },
 
@@ -871,9 +801,9 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             description: "Current weather conditions",
             urn_pattern: "{plugin}/weather/{id}",
             properties: &[
-                PropertyInfo { name: "temperature", type_description: "float", description: "Temperature value", optional: false },
-                PropertyInfo { name: "condition", type_description: "enum(Clear, PartlyCloudy, Cloudy, Fog, Drizzle, Rain, FreezingRain, Snow, Thunderstorm)", description: "Weather condition", optional: false },
-                PropertyInfo { name: "day", type_description: "bool", description: "Whether it is daytime", optional: false },
+                prop("temperature", "float", "Temperature value"),
+                prop("condition", "enum(Clear, PartlyCloudy, Cloudy, Fog, Drizzle, Rain, FreezingRain, Snow, Thunderstorm)", "Weather condition"),
+                prop("day", "bool", "Whether it is daytime"),
             ],
             actions: &[],
         },
@@ -1001,6 +931,21 @@ mod tests {
                 "empty description for entity type '{}'",
                 entry.entity_type,
             );
+        }
+    }
+
+    #[test]
+    fn registry_has_expected_entity_count() {
+        let count = all_entity_types().len();
+        assert!(count >= 35, "Expected >= 35 entity types, got {count}");
+    }
+
+    #[test]
+    fn all_entities_have_required_fields() {
+        for entry in all_entity_types() {
+            assert!(!entry.entity_type.is_empty(), "empty entity_type");
+            assert!(!entry.domain.is_empty(), "empty domain in {}", entry.entity_type);
+            assert!(!entry.description.is_empty(), "empty description in {}", entry.entity_type);
         }
     }
 
