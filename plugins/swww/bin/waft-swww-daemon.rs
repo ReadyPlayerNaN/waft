@@ -26,14 +26,13 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use chrono::{Local, Timelike};
 use serde::Deserialize;
-use waft_i18n::I18n;
 use waft_plugin::StateLocker;
 use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal};
 use waft_plugin::*;
@@ -44,16 +43,12 @@ use waft_protocol::entity::display::{
     WALLPAPER_MANAGER_ENTITY_TYPE,
 };
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/swww.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/swww.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/swww.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/swww.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 const DARKMAN_DESTINATION: &str = "nl.whynothugo.darkman";
 const DARKMAN_PATH: &str = "/nl/whynothugo/darkman";

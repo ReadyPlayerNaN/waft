@@ -6,12 +6,11 @@
 //!
 //! Monitors NetworkManager D-Bus signals for device/connection state changes.
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_i18n::I18n;
 use waft_plugin::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, ETHERNET_CONNECTION_ENTITY_TYPE, NetworkAdapter,
     TETHERING_CONNECTION_ENTITY_TYPE, TetheringConnection, VPN_ENTITY_TYPE,
@@ -20,22 +19,12 @@ use waft_plugin::entity::network::{
 use waft_plugin::*;
 use zbus::Connection;
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/networkmanager.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/networkmanager.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            (
-                "en-US",
-                include_str!("../locales/en-US/networkmanager.ftl"),
-            ),
-            (
-                "cs-CZ",
-                include_str!("../locales/cs-CZ/networkmanager.ftl"),
-            ),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 use waft_plugin_networkmanager::bluez_discovery::discover_bluez_paired_devices;
 use waft_plugin_networkmanager::bluez_signal_monitor::monitor_bluez_signals;

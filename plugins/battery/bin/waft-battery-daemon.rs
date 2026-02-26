@@ -9,11 +9,10 @@
 //! id = "battery"
 //! ```
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_i18n::I18n;
 use std::collections::HashMap;
 
 use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal_async};
@@ -21,16 +20,12 @@ use waft_plugin::*;
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/battery.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/battery.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/battery.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/battery.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 const UPOWER_DEST: &str = "org.freedesktop.UPower";
 const DISPLAY_DEVICE_PATH: &str = "/org/freedesktop/UPower/devices/DisplayDevice";

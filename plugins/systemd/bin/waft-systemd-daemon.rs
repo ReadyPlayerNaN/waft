@@ -25,11 +25,10 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
-use waft_i18n::I18n;
 use waft_plugin::*;
 use waft_protocol::entity::session::UserService;
 use zbus::Connection;
@@ -37,16 +36,12 @@ use zbus::zvariant::OwnedValue;
 
 use waft_plugin::StateLocker;
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/systemd.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/systemd.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/systemd.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/systemd.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 const LOGIN1_DESTINATION: &str = "org.freedesktop.login1";
 const LOGIN1_MANAGER_PATH: &str = "/org/freedesktop/login1";

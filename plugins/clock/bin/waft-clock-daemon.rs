@@ -10,25 +10,20 @@
 //! on_click = "gnome-calendar"  # Optional: command to run when clock is clicked
 //! ```
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{Local, Locale, Timelike};
 use serde::Deserialize;
-use waft_i18n::I18n;
 use waft_plugin::*;
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/clock.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/clock.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/clock.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/clock.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 /// Clock configuration from config file.
 #[derive(Debug, Clone, Deserialize, Default)]

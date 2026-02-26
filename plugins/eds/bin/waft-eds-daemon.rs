@@ -11,25 +11,21 @@
 //! ```
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
 use anyhow::{Context, Result};
 use futures_util::stream::StreamExt;
 use log::{debug, info, warn};
 use serde::Deserialize;
-use waft_i18n::I18n;
 use waft_plugin::*;
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/eds.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/eds.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/eds.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/eds.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
+
 use zbus::{Connection, MessageStream};
 use zvariant::OwnedValue;
 

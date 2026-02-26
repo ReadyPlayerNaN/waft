@@ -16,12 +16,11 @@
 //! id = "bluez"
 //! ```
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_i18n::I18n;
 use waft_plugin::*;
 use waft_plugin_bluetooth::dbus;
 use waft_plugin_bluetooth::signal_monitor::monitor_bluez_signals;
@@ -29,16 +28,12 @@ use waft_plugin_bluetooth::state::State;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice, ConnectionState};
 use zbus::Connection;
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/bluez.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/bluez.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/bluez.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/bluez.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 /// Extract a stable adapter ID from the D-Bus object path.
 ///

@@ -13,25 +13,21 @@
 //! id = "sunsetr"
 //! ```
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::process::Stdio;
-use waft_i18n::I18n;
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/sunsetr.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/sunsetr.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/sunsetr.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/sunsetr.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
+
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use sunsetr::config as sunsetr_config;

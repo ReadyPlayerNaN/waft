@@ -10,27 +10,22 @@
 //! id = "caffeine"
 //! ```
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::Result;
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
-use waft_i18n::I18n;
 use waft_plugin::*;
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, Value};
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/caffeine.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/caffeine.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/caffeine.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/caffeine.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 const PORTAL_DESTINATION: &str = "org.freedesktop.portal.Desktop";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";

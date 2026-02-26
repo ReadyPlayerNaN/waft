@@ -9,24 +9,19 @@
 //! id = "brightness"
 //! ```
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::{Result, anyhow};
 use log::{debug, info, warn};
 use std::process::Stdio;
-use waft_i18n::I18n;
 use waft_plugin::*;
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/brightness.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/brightness.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/brightness.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/brightness.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 // ---------------------------------------------------------------------------
 // Display types

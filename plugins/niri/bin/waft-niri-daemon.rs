@@ -12,12 +12,11 @@
 //! Requires: Niri compositor running, `NIRI_SOCKET` environment variable set,
 //! `niri` binary in PATH.
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_i18n::I18n;
 use waft_plugin::StateLocker;
 use waft_plugin::*;
 use waft_plugin_niri::commands;
@@ -31,16 +30,12 @@ use waft_protocol::entity::keyboard::{
     CONFIG_ENTITY_TYPE, ENTITY_TYPE as KEYBOARD_ENTITY_TYPE,
 };
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/niri.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/niri.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/niri.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/niri.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 struct NiriPlugin {
     state: Arc<StdMutex<NiriState>>,
