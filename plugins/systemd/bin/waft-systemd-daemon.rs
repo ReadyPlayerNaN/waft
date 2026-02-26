@@ -35,6 +35,8 @@ use waft_protocol::entity::session::UserService;
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
+use waft_plugin::StateLocker;
+
 static I18N: OnceLock<I18n> = OnceLock::new();
 
 fn i18n() -> &'static I18n {
@@ -55,6 +57,14 @@ const SYSTEMD1_DESTINATION: &str = "org.freedesktop.systemd1";
 const SYSTEMD1_MANAGER_PATH: &str = "/org/freedesktop/systemd1";
 const SYSTEMD1_MANAGER_INTERFACE: &str = "org.freedesktop.systemd1.Manager";
 const IFACE_PROPERTIES: &str = "org.freedesktop.DBus.Properties";
+
+// D-Bus tuple type for ListUnitsByPatterns response fields:
+// name, description, load_state, active_state, sub_state,
+// followed_by, object_path, queued_job_id, job_type, job_object_path
+type UnitTuple = (
+    String, String, String, String, String,
+    String, zbus::zvariant::OwnedObjectPath, u32, String, zbus::zvariant::OwnedObjectPath,
+);
 
 /// Resolve the current session's D-Bus object path.
 ///
@@ -147,13 +157,7 @@ impl SystemdPlugin {
     async fn load_services(&mut self) {
         match self.list_services().await {
             Ok(svc_list) => {
-                let mut services = match self.services.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        log::warn!("[systemd] mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
+                let mut services = self.services.lock_or_recover();
                 for svc in svc_list {
                     services.insert(unit_to_urn_id(&svc.unit), svc);
                 }
@@ -167,13 +171,7 @@ impl SystemdPlugin {
         // Discover additional enabled/disabled unit files not currently loaded
         match self.list_unit_files().await {
             Ok(unit_files) => {
-                let mut services = match self.services.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        log::warn!("[systemd] mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
+                let mut services = self.services.lock_or_recover();
                 let mut added = 0usize;
                 for (unit_name, file_state) in unit_files {
                     let urn_id = unit_to_urn_id(&unit_name);
@@ -211,12 +209,7 @@ impl SystemdPlugin {
         .context("Failed to create systemd1 manager proxy")?;
 
         // ListUnitsByPatterns(states: as, patterns: as) -> a(ssssssouso)
-        // Fields: name, description, load_state, active_state, sub_state,
-        //         followed_by, object_path, queued_job_id, job_type, job_object_path
-        let units: Vec<(
-            String, String, String, String, String,
-            String, zbus::zvariant::OwnedObjectPath, u32, String, zbus::zvariant::OwnedObjectPath,
-        )> = proxy
+        let units: Vec<UnitTuple> = proxy
             .call(
                 "ListUnitsByPatterns",
                 &(
@@ -342,13 +335,7 @@ impl SystemdPlugin {
                 log::debug!("[systemd] Failed to GetUnit {}: {e}", unit);
                 // Unit unloaded -- update in-place to inactive/dead, preserve identity
                 let enabled = self.get_unit_file_state(unit).await;
-                let mut services = match self.services.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        log::warn!("[systemd] mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
+                let mut services = self.services.lock_or_recover();
                 let urn_id = unit_to_urn_id(unit);
                 if let Some(svc) = services.get_mut(&urn_id) {
                     let was_different = svc.active_state != "inactive"
@@ -403,13 +390,7 @@ impl SystemdPlugin {
             sub_state,
         };
 
-        let mut services = match self.services.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("[systemd] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let mut services = self.services.lock_or_recover();
 
         let changed = services.get(&urn_id) != Some(&new_svc);
         services.insert(urn_id, new_svc);
@@ -475,13 +456,7 @@ impl Plugin for SystemdPlugin {
             &session,
         )];
 
-        let services = match self.services.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("[systemd] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let services = self.services.lock_or_recover();
 
         for (urn_id, svc) in services.iter() {
             entities.push(Entity::new(
@@ -576,13 +551,7 @@ async fn refresh_all_enabled_states(
     conn: &Connection,
 ) -> bool {
     let keys: Vec<(String, String)> = {
-        let svc = match services.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("[systemd] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let svc = services.lock_or_recover();
         svc.iter().map(|(k, v)| (k.clone(), v.unit.clone())).collect()
     };
 
@@ -614,18 +583,12 @@ async fn refresh_all_enabled_states(
         updates.push((urn_id.clone(), enabled));
     }
 
-    let mut svc = match services.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            log::warn!("[systemd] mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let mut svc = services.lock_or_recover();
 
     let mut any_changed = false;
     for (urn_id, enabled) in updates {
-        if let Some(service) = svc.get_mut(&urn_id) {
-            if service.enabled != enabled {
+        if let Some(service) = svc.get_mut(&urn_id)
+            && service.enabled != enabled {
                 log::info!(
                     "[systemd] {} enabled: {} -> {}",
                     service.unit, service.enabled, enabled,
@@ -633,7 +596,6 @@ async fn refresh_all_enabled_states(
                 service.enabled = enabled;
                 any_changed = true;
             }
-        }
     }
 
     any_changed
@@ -749,20 +711,13 @@ async fn monitor_service_signals(
 
             log::info!("[systemd] UnitRemoved: {}", unit_name);
             let urn_id = unit_to_urn_id(&unit_name);
-            let mut svc = match services.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    log::warn!("[systemd] mutex poisoned, recovering: {e}");
-                    e.into_inner()
-                }
-            };
-            if let Some(service) = svc.get_mut(&urn_id) {
-                if service.active_state != "inactive" || service.sub_state != "dead" {
+            let mut svc = services.lock_or_recover();
+            if let Some(service) = svc.get_mut(&urn_id)
+                && (service.active_state != "inactive" || service.sub_state != "dead") {
                     service.active_state = "inactive".to_string();
                     service.sub_state = "dead".to_string();
                     changed = true;
                 }
-            }
         } else if iface == SYSTEMD1_MANAGER_INTERFACE && member == "UnitFilesChanged" {
             log::info!("[systemd] UnitFilesChanged signal received");
             changed = refresh_all_enabled_states(&services, &conn).await;
@@ -815,13 +770,7 @@ async fn handle_unit_properties_changed(
 
     let urn_id = unit_to_urn_id(&unit_name);
 
-    let mut svc = match services.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            log::warn!("[systemd] mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let mut svc = services.lock_or_recover();
 
     let Some(service) = svc.get_mut(&urn_id) else {
         return false;
@@ -829,9 +778,9 @@ async fn handle_unit_properties_changed(
 
     let mut changed = false;
 
-    if let Some(active_val) = props.get("ActiveState") {
-        if let Ok(active_state) = String::try_from(active_val.clone()) {
-            if service.active_state != active_state {
+    if let Some(active_val) = props.get("ActiveState")
+        && let Ok(active_state) = String::try_from(active_val.clone())
+            && service.active_state != active_state {
                 log::info!(
                     "[systemd] {} active_state: {} -> {}",
                     unit_name, service.active_state, active_state,
@@ -839,12 +788,10 @@ async fn handle_unit_properties_changed(
                 service.active_state = active_state;
                 changed = true;
             }
-        }
-    }
 
-    if let Some(sub_val) = props.get("SubState") {
-        if let Ok(sub_state) = String::try_from(sub_val.clone()) {
-            if service.sub_state != sub_state {
+    if let Some(sub_val) = props.get("SubState")
+        && let Ok(sub_state) = String::try_from(sub_val.clone())
+            && service.sub_state != sub_state {
                 log::debug!(
                     "[systemd] {} sub_state: {} -> {}",
                     unit_name, service.sub_state, sub_state,
@@ -852,8 +799,6 @@ async fn handle_unit_properties_changed(
                 service.sub_state = sub_state;
                 changed = true;
             }
-        }
-    }
 
     changed
 }
@@ -868,13 +813,7 @@ async fn handle_unit_new(
 
     // Check if we already have it
     {
-        let svc = match services.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("[systemd] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let svc = services.lock_or_recover();
         if svc.contains_key(&urn_id) {
             return false;
         }
@@ -943,13 +882,7 @@ async fn handle_unit_new(
         sub_state,
     };
 
-    let mut services = match services.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            log::warn!("[systemd] mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let mut services = services.lock_or_recover();
     services.insert(urn_id, svc);
     true
 }
@@ -1384,42 +1317,26 @@ mod tests {
 }
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides_i18n(
+    PluginRunner::new(
+        "systemd",
         &[
             entity::session::SESSION_ENTITY_TYPE,
             entity::session::USER_SERVICE_ENTITY_TYPE,
         ],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
-
-    waft_plugin::init_plugin_logger("info");
-
-    log::info!("[systemd] Starting systemd plugin...");
-
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
         let plugin = SystemdPlugin::new().await?;
 
         let services = plugin.services.clone();
         let session_conn = plugin.session_conn.clone();
 
-        let (runtime, notifier) = PluginRuntime::new("systemd", plugin);
-
         // Spawn signal monitoring task
-        let monitor_notifier = notifier.clone();
-        tokio::spawn(async move {
-            if let Err(e) = monitor_service_signals(session_conn, services, monitor_notifier).await
-            {
-                log::warn!("[systemd] Signal monitoring task error: {e}");
-            }
-            log::debug!("[systemd] Signal monitoring task stopped");
-        });
+        spawn_monitored_anyhow(
+            "systemd",
+            monitor_service_signals(session_conn, services, notifier),
+        );
 
-        runtime.run().await?;
-        Ok(())
+        Ok(plugin)
     })
 }

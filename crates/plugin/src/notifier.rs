@@ -21,6 +21,14 @@ impl EntityNotifier {
         (Self { tx }, rx)
     }
 
+    /// Create notifier and receiver as separate values.
+    ///
+    /// Used by [`crate::runner::PluginRunner`] where the notifier is handed
+    /// to the build closure and the receiver to the runtime.
+    pub fn new_pair() -> (Self, watch::Receiver<u64>) {
+        Self::new()
+    }
+
     /// Signal that entity state has changed.
     ///
     /// Returns `true` if the runtime is still running, `false` if it has

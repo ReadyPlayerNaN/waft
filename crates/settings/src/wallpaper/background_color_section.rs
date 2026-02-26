@@ -3,7 +3,7 @@
 //! Displays a colour picker for the niri workspace background colour and a
 //! "Clear" button to remove it. Reads/writes directly to niri config KDL.
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use adw::prelude::*;
 
@@ -16,7 +16,7 @@ pub struct BackgroundColorSection {
 }
 
 impl BackgroundColorSection {
-    pub fn new(config_path: &PathBuf) -> Self {
+    pub fn new(config_path: &Path) -> Self {
         let group = adw::PreferencesGroup::builder()
             .title(t("wallpaper-background-color"))
             .description(t("wallpaper-background-color-sub"))
@@ -55,7 +55,7 @@ impl BackgroundColorSection {
 
         // Wire colour change
         {
-            let path = config_path.clone();
+            let path = config_path.to_path_buf();
             color_btn.connect_rgba_notify(move |btn| {
                 let rgba = btn.rgba();
                 let hex = format!(
@@ -72,7 +72,7 @@ impl BackgroundColorSection {
 
         // Wire clear button
         {
-            let path = config_path.clone();
+            let path = config_path.to_path_buf();
             clear_btn.connect_clicked(move |_| {
                 if let Err(e) = kdl_niri_windows::save_background_color(&path, None) {
                     log::warn!("[wallpaper-bg] Failed to clear background color: {e}");

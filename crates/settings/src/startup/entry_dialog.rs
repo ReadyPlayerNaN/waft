@@ -10,10 +10,12 @@ use adw::prelude::*;
 use crate::i18n::t;
 use crate::startup::StartupEntry;
 
+type ConfirmedCallback = Rc<RefCell<Option<Box<dyn Fn(StartupEntry)>>>>;
+
 /// Dialog for creating or editing a startup entry.
 pub struct EntryDialog {
     dialog: adw::AlertDialog,
-    on_confirmed: Rc<RefCell<Option<Box<dyn Fn(StartupEntry)>>>>,
+    on_confirmed: ConfirmedCallback,
 }
 
 impl EntryDialog {
@@ -59,8 +61,7 @@ impl EntryDialog {
 
         dialog.set_extra_child(Some(&content));
 
-        let on_confirmed: Rc<RefCell<Option<Box<dyn Fn(StartupEntry)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_confirmed: ConfirmedCallback = Rc::new(RefCell::new(None));
 
         // Disable save when command is empty
         let cmd_for_validate = command_row.clone();

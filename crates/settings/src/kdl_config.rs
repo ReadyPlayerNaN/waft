@@ -87,11 +87,10 @@ impl KdlConfigFile {
         }
 
         // Ensure parent directory exists
-        if let Some(parent) = self.path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
+        if let Some(parent) = self.path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent) {
                 return Err(format!("Failed to create config directory: {e}"));
             }
-        }
 
         std::fs::write(&self.path, output)
             .map_err(|e| format!("Failed to write config: {e}"))?;

@@ -142,6 +142,7 @@ impl ShadowSection {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_props(
         &self,
         enabled: bool,

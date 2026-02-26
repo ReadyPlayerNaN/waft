@@ -7,9 +7,9 @@
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant, SystemTime};
 
-use log::{debug, warn};
+use log::debug;
 use tokio::sync::Notify;
-use waft_plugin::EntityNotifier;
+use waft_plugin::{EntityNotifier, StateLocker};
 
 use crate::store::{NotificationOp, State, process_op};
 
@@ -48,13 +48,7 @@ pub async fn run_ttl_expiration(
                         expired_ids.len()
                     );
                     let changed = {
-                        let mut guard = match state.lock() {
-                            Ok(g) => g,
-                            Err(e) => {
-                                warn!("[notifications/ttl] mutex poisoned, recovering: {e}");
-                                e.into_inner()
-                            }
-                        };
+                        let mut guard = state.lock_or_recover();
                         process_op(&mut guard, NotificationOp::TtlExpiry(expired_ids))
                     };
                     if changed {
@@ -75,13 +69,7 @@ pub async fn run_ttl_expiration(
 /// Looks at all panel notifications that have a TTL and a visible-since
 /// timestamp, then returns the earliest deadline.
 fn compute_next_deadline(state: &Arc<StdMutex<State>>) -> Option<Instant> {
-    let guard = match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[notifications/ttl] mutex poisoned in compute_next_deadline, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let guard = state.lock_or_recover();
 
     let now_system = SystemTime::now();
     let now_instant = Instant::now();
@@ -117,13 +105,7 @@ fn compute_next_deadline(state: &Arc<StdMutex<State>>) -> Option<Instant> {
 
 /// Collect IDs of notifications whose TTL has expired.
 fn collect_expired(state: &Arc<StdMutex<State>>) -> Vec<u64> {
-    let guard = match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[notifications/ttl] mutex poisoned in collect_expired, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let guard = state.lock_or_recover();
 
     let now = SystemTime::now();
     let mut expired = Vec::new();

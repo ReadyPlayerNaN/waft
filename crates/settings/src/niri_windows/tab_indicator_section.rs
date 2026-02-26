@@ -182,6 +182,7 @@ impl TabIndicatorSection {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_props(
         &self,
         enabled: bool,

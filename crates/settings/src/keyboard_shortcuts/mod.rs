@@ -222,11 +222,7 @@ fn parse_bind_node(key_chord: &str, node: &kdl::KdlNode) -> Option<BindEntry> {
             .filter_map(|e| {
                 if let Some(s) = e.value().as_string() {
                     Some(s.to_string())
-                } else if let Some(i) = e.value().as_integer() {
-                    Some(i.to_string())
-                } else {
-                    None
-                }
+                } else { e.value().as_integer().map(|i| i.to_string()) }
             })
             .collect();
         BindAction::NiriAction {

@@ -18,7 +18,7 @@
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use waft_plugin::*;
 
 use waft_plugin_weather::{TemperatureUnit, WeatherConfig, WeatherData, fetch_weather};
@@ -65,13 +65,7 @@ impl WeatherPlugin {
     }
 
     fn current_data(&self) -> Option<Result<WeatherData, String>> {
-        match self.state.lock() {
-            Ok(g) => g.clone(),
-            Err(e) => {
-                log::warn!("[weather] mutex poisoned, recovering: {e}");
-                e.into_inner().clone()
-            }
-        }
+        self.state.lock_or_recover().clone()
     }
 }
 
@@ -128,13 +122,7 @@ impl Plugin for WeatherPlugin {
                 );
 
                 // Update in-memory config
-                match self.config.lock() {
-                    Ok(mut guard) => *guard = new_config,
-                    Err(e) => {
-                        log::warn!("[weather] config mutex poisoned, recovering: {e}");
-                        *e.into_inner() = new_config;
-                    }
-                }
+                *self.config.lock_or_recover() = new_config;
 
                 // Wake the fetch task to use new config immediately
                 self.wake.notify_one();
@@ -147,99 +135,66 @@ impl Plugin for WeatherPlugin {
 }
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[entity::weather::ENTITY_TYPE],
-        waft_plugin_weather::i18n::i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
+    PluginRunner::new("weather", &[entity::weather::ENTITY_TYPE])
+        .i18n(
+            waft_plugin_weather::i18n::i18n(),
+            "plugin-name",
+            "plugin-description",
+        )
+        .run(|notifier| async move {
+            let config: WeatherConfig =
+                waft_plugin::config::load_plugin_config("weather").unwrap_or_default();
 
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
+            log::debug!(
+                "Weather config: lat={}, lon={}, units={}, interval={}s",
+                config.latitude,
+                config.longitude,
+                config.units,
+                config.update_interval,
+            );
 
-    log::info!("Starting weather plugin...");
+            let plugin = WeatherPlugin::new(config);
+            let state = plugin.state.clone();
+            let config_ref = plugin.config.clone();
+            let wake = plugin.wake.clone();
 
-    let config: WeatherConfig =
-        waft_plugin::config::load_plugin_config("weather").unwrap_or_default();
+            // Spawn periodic weather fetch task
+            tokio::spawn(async move {
+                loop {
+                    let cfg = config_ref.lock_or_recover().clone();
 
-    log::debug!(
-        "Weather config: lat={}, lon={}, units={}, interval={}s",
-        config.latitude,
-        config.longitude,
-        config.units,
-        config.update_interval,
-    );
+                    let units = TemperatureUnit::parse(&cfg.units);
+                    log::debug!(
+                        "Fetching weather update for ({}, {})",
+                        cfg.latitude,
+                        cfg.longitude
+                    );
 
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = WeatherPlugin::new(config);
-        let state = plugin.state.clone();
-        let config_ref = plugin.config.clone();
-        let wake = plugin.wake.clone();
-
-        let (runtime, notifier) = PluginRuntime::new("weather", plugin);
-
-        // Spawn periodic weather fetch task
-        tokio::spawn(async move {
-            loop {
-                let cfg = match config_ref.lock() {
-                    Ok(g) => g.clone(),
-                    Err(e) => {
-                        log::warn!("[weather] config mutex poisoned, recovering: {e}");
-                        e.into_inner().clone()
-                    }
-                };
-
-                let units = TemperatureUnit::parse(&cfg.units);
-                log::debug!(
-                    "Fetching weather update for ({}, {})",
-                    cfg.latitude,
-                    cfg.longitude
-                );
-
-                match fetch_weather(cfg.latitude, cfg.longitude, units).await {
-                    Ok(data) => match state.lock() {
-                        Ok(mut guard) => *guard = Some(Ok(data)),
+                    match fetch_weather(cfg.latitude, cfg.longitude, units).await {
+                        Ok(data) => {
+                            *state.lock_or_recover() = Some(Ok(data));
+                        }
                         Err(e) => {
-                            log::warn!("[weather] mutex poisoned, recovering: {e}");
-                            *e.into_inner() = Some(Ok(data));
-                        }
-                    },
-                    Err(e) => {
-                        log::error!("Failed to fetch weather: {e:?}");
-                        match state.lock() {
-                            Ok(mut guard) => {
-                                // Only set error if we have no previous data
-                                if guard.is_none() {
-                                    *guard = Some(Err(format!("Failed to load weather: {e}")));
-                                }
-                            }
-                            Err(poison) => {
-                                log::warn!("[weather] mutex poisoned, recovering: {poison}");
-                                let inner = poison.into_inner();
-                                if inner.is_none() {
-                                    // Don't overwrite existing data
-                                }
+                            log::error!("Failed to fetch weather: {e:?}");
+                            let mut guard = state.lock_or_recover();
+                            // Only set error if we have no previous data
+                            if guard.is_none() {
+                                *guard = Some(Err(format!("Failed to load weather: {e}")));
                             }
                         }
                     }
-                }
-                notifier.notify();
+                    notifier.notify();
 
-                // Sleep for the configured interval, but wake early on config changes
-                tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(cfg.update_interval)) => {},
-                    _ = wake.notified() => {
-                        log::debug!("[weather] Config changed, fetching immediately");
+                    // Sleep for the configured interval, but wake early on config changes
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(cfg.update_interval)) => {},
+                        _ = wake.notified() => {
+                            log::debug!("[weather] Config changed, fetching immediately");
+                        }
                     }
                 }
-            }
-        });
+            });
 
-        runtime.run().await?;
-        Ok(())
-    })
+            Ok(plugin)
+        })
 }

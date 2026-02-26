@@ -56,13 +56,7 @@ pub struct FilterHandle {
 impl FilterHandle {
     /// Match a notification against configured groups. Returns the ID of the first matching group.
     pub fn match_notification(&self, notification: &IngressedNotification) -> Option<String> {
-        let compiled = match self.compiled_matchers.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in FilterHandle::match_notification: {e}");
-                e.into_inner()
-            }
-        };
+        let compiled = self.compiled_matchers.lock_or_recover();
 
         for group in compiled.iter() {
             if filter::matches_combinator(&group.matcher, notification, &group.regex_cache) {
@@ -79,21 +73,9 @@ impl FilterHandle {
             return FilterActions::default();
         };
 
-        let active_profile_id = match self.active_profile_id.lock() {
-            Ok(g) => g.clone(),
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in FilterHandle::get_filter_actions: {e}");
-                e.into_inner().clone()
-            }
-        };
+        let active_profile_id = self.active_profile_id.lock_or_recover().clone();
 
-        let profiles = match self.profiles.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in FilterHandle::get_filter_actions: {e}");
-                e.into_inner()
-            }
-        };
+        let profiles = self.profiles.lock_or_recover();
 
         let profile = profiles.iter().find(|p| p.id == active_profile_id);
         let Some(profile) = profile else {
@@ -190,25 +172,13 @@ impl NotificationsPlugin {
     ///
     /// Called from the ingress monitor task when a `Notify` D-Bus call arrives.
     pub fn process_ingress(&self, notification: IngressedNotification) {
-        let mut guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in process_ingress, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let mut guard = self.state.lock_or_recover();
         process_op(&mut guard, NotificationOp::Ingress(Box::new(notification)));
     }
 
     /// Process a CloseNotification D-Bus call.
     pub fn process_close(&self, id: u32) {
-        let mut guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in process_close, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let mut guard = self.state.lock_or_recover();
         process_op(&mut guard, NotificationOp::NotificationRetract(id as u64));
         // Emit the close signal on the D-Bus side
         if self
@@ -235,56 +205,24 @@ impl NotificationsPlugin {
 
     /// Rebuild compiled matchers from the current groups.
     fn rebuild_matchers(&self) {
-        let groups = match self.groups.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in rebuild_matchers: {e}");
-                e.into_inner()
-            }
-        };
-
+        let groups = self.groups.lock_or_recover();
         let compiled = compile_groups(&groups);
 
-        let mut matchers_guard = match self.compiled_matchers.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in rebuild_matchers: {e}");
-                e.into_inner()
-            }
-        };
+        let mut matchers_guard = self.compiled_matchers.lock_or_recover();
         *matchers_guard = compiled;
     }
 
     /// Write current sound config to TOML config file.
     fn sync_sound_config_to_toml(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let sound_cfg = match self.sound_config.lock() {
-            Ok(g) => g.clone(),
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in sync_sound_config_to_toml: {e}");
-                e.into_inner().clone()
-            }
-        };
+        let sound_cfg = self.sound_config.lock_or_recover().clone();
 
         filter::toml_sync::write_sound_config(&sound_cfg)
     }
 
     /// Write current filter config to TOML config file.
     fn sync_config_to_toml(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let groups = match self.groups.lock() {
-            Ok(g) => g.clone(),
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in sync_config_to_toml: {e}");
-                e.into_inner().clone()
-            }
-        };
-
-        let profiles = match self.profiles.lock() {
-            Ok(g) => g.clone(),
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in sync_config_to_toml: {e}");
-                e.into_inner().clone()
-            }
-        };
+        let groups = self.groups.lock_or_recover().clone();
+        let profiles = self.profiles.lock_or_recover().clone();
 
         filter::toml_sync::write_filter_config(&groups, &profiles)
     }
@@ -293,13 +231,7 @@ impl NotificationsPlugin {
 #[async_trait::async_trait]
 impl Plugin for NotificationsPlugin {
     fn get_entities(&self) -> Vec<Entity> {
-        let guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[notifications] mutex poisoned in get_entities, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let guard = self.state.lock_or_recover();
 
         let mut entities = Vec::new();
 
@@ -388,13 +320,7 @@ impl Plugin for NotificationsPlugin {
 
         // Sound config entity
         {
-            let sound_cfg = match self.sound_config.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    warn!("[notifications] mutex poisoned in get_entities: {e}");
-                    e.into_inner()
-                }
-            };
+            let sound_cfg = self.sound_config.lock_or_recover();
 
             entities.push(Entity::new(
                 Urn::new("notifications", SOUND_CONFIG_ENTITY_TYPE, "default"),
@@ -410,13 +336,7 @@ impl Plugin for NotificationsPlugin {
 
         // Notification groups
         {
-            let groups = match self.groups.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    warn!("[notifications] mutex poisoned in get_entities: {e}");
-                    e.into_inner()
-                }
-            };
+            let groups = self.groups.lock_or_recover();
 
             for group in groups.iter() {
                 entities.push(Entity::new(
@@ -433,13 +353,7 @@ impl Plugin for NotificationsPlugin {
 
         // Notification profiles
         {
-            let profiles = match self.profiles.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    warn!("[notifications] mutex poisoned in get_entities: {e}");
-                    e.into_inner()
-                }
-            };
+            let profiles = self.profiles.lock_or_recover();
 
             for profile in profiles.iter() {
                 entities.push(Entity::new(
@@ -456,13 +370,7 @@ impl Plugin for NotificationsPlugin {
 
         // Active profile
         {
-            let active_profile_id = match self.active_profile_id.lock() {
-                Ok(g) => g.clone(),
-                Err(e) => {
-                    warn!("[notifications] mutex poisoned in get_entities: {e}");
-                    e.into_inner().clone()
-                }
-            };
+            let active_profile_id = self.active_profile_id.lock_or_recover().clone();
 
             entities.push(Entity::new(
                 Urn::new(
@@ -479,13 +387,7 @@ impl Plugin for NotificationsPlugin {
 
         // Sound gallery
         {
-            let gallery = match self.sound_gallery.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    warn!("[notifications] mutex poisoned in get_entities: {e}");
-                    e.into_inner()
-                }
-            };
+            let gallery = self.sound_gallery.lock_or_recover();
 
             for sound in gallery.sounds() {
                 entities.push(Entity::new(
@@ -516,13 +418,7 @@ impl Plugin for NotificationsPlugin {
 
         match (entity_type, action.as_str()) {
             ("dnd", "toggle") => {
-                let mut guard = match self.state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[notifications] mutex poisoned in handle_action, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
+                let mut guard = self.state.lock_or_recover();
                 let new_dnd = !guard.dnd;
                 process_op(&mut guard, NotificationOp::SetDnd(new_dnd));
                 info!("[notifications] DND toggled to {new_dnd}");
@@ -543,15 +439,7 @@ impl Plugin for NotificationsPlugin {
                 })?;
 
                 {
-                    let mut guard = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!(
-                                "[notifications] mutex poisoned in handle_action, recovering: {e}"
-                            );
-                            e.into_inner()
-                        }
-                    };
+                    let mut guard = self.state.lock_or_recover();
                     process_op(&mut guard, NotificationOp::NotificationDismiss(id));
                 }
 
@@ -577,15 +465,7 @@ impl Plugin for NotificationsPlugin {
 
                 // Check if notification still exists before initiating claim
                 {
-                    let guard = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!(
-                                "[notifications] mutex poisoned in expire handler, recovering: {e}"
-                            );
-                            e.into_inner()
-                        }
-                    };
+                    let guard = self.state.lock_or_recover();
                     if guard.get_notification(&id).is_none() {
                         debug!(
                             "[notifications] expire: notification {id} already gone, skip claim"
@@ -595,12 +475,7 @@ impl Plugin for NotificationsPlugin {
                 }
 
                 // Request claim check -- daemon will ask other subscribers if they still want it
-                let claim_sender = {
-                    match self.claim_sender.lock() {
-                        Ok(g) => g.clone(),
-                        Err(e) => e.into_inner().clone(),
-                    }
-                };
+                let claim_sender = self.claim_sender.lock_or_recover().clone();
 
                 if let Some(ref sender) = claim_sender {
                     let _claim_id = sender.request(urn.clone()).await;
@@ -612,10 +487,7 @@ impl Plugin for NotificationsPlugin {
                     warn!(
                         "[notifications] expire: no claim sender, falling back to dismiss for {id}"
                     );
-                    let mut guard = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => e.into_inner(),
-                    };
+                    let mut guard = self.state.lock_or_recover();
                     process_op(&mut guard, NotificationOp::NotificationDismiss(id));
                     if self
                         .outbound_tx
@@ -646,15 +518,7 @@ impl Plugin for NotificationsPlugin {
 
                 // Remove notification from store
                 {
-                    let mut guard = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!(
-                                "[notifications] mutex poisoned in handle_action, recovering: {e}"
-                            );
-                            e.into_inner()
-                        }
-                    };
+                    let mut guard = self.state.lock_or_recover();
                     process_op(&mut guard, NotificationOp::NotificationDismiss(id));
                 }
 
@@ -687,13 +551,7 @@ impl Plugin for NotificationsPlugin {
                 let entity: SoundConfigEntity = serde_json::from_value(params)?;
 
                 let new_config = {
-                    let existing = match self.sound_config.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let existing = self.sound_config.lock_or_recover();
                     config::SoundConfig {
                         enabled: entity.enabled,
                         urgency: config::UrgencySounds {
@@ -707,25 +565,13 @@ impl Plugin for NotificationsPlugin {
 
                 // Update sound config
                 {
-                    let mut guard = match self.sound_config.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut guard = self.sound_config.lock_or_recover();
                     *guard = new_config.clone();
                 }
 
                 // Rebuild sound policy
                 {
-                    let mut guard = match self.sound_policy.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut guard = self.sound_policy.lock_or_recover();
                     *guard = sound::policy::SoundPolicy::new(new_config);
                 }
 
@@ -746,13 +592,7 @@ impl Plugin for NotificationsPlugin {
                     .to_string();
 
                 {
-                    let mut guard = match self.active_profile_id.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut guard = self.active_profile_id.lock_or_recover();
                     *guard = profile_id.clone();
                 }
 
@@ -768,13 +608,7 @@ impl Plugin for NotificationsPlugin {
                 let group_id = group.id.clone();
 
                 {
-                    let mut groups_guard = match self.groups.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut groups_guard = self.groups.lock_or_recover();
                     groups_guard.push(group);
                 }
 
@@ -791,13 +625,7 @@ impl Plugin for NotificationsPlugin {
                 let group: NotificationGroup = serde_json::from_value(params)?;
 
                 {
-                    let mut groups_guard = match self.groups.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut groups_guard = self.groups.lock_or_recover();
 
                     if let Some(existing) = groups_guard.iter_mut().find(|g| g.id == entity_id) {
                         *existing = group.clone();
@@ -817,24 +645,12 @@ impl Plugin for NotificationsPlugin {
 
             ("notification-group", "delete-group") => {
                 {
-                    let mut groups_guard = match self.groups.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut groups_guard = self.groups.lock_or_recover();
                     groups_guard.retain(|g| g.id != entity_id);
                 }
 
                 {
-                    let mut profiles_guard = match self.profiles.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut profiles_guard = self.profiles.lock_or_recover();
 
                     for profile in profiles_guard.iter_mut() {
                         profile.rules.remove(entity_id);
@@ -855,13 +671,7 @@ impl Plugin for NotificationsPlugin {
                 let profile_id = profile.id.clone();
 
                 {
-                    let mut profiles_guard = match self.profiles.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut profiles_guard = self.profiles.lock_or_recover();
                     profiles_guard.push(profile);
                 }
 
@@ -876,13 +686,7 @@ impl Plugin for NotificationsPlugin {
                 let profile: NotificationProfile = serde_json::from_value(params)?;
 
                 {
-                    let mut profiles_guard = match self.profiles.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut profiles_guard = self.profiles.lock_or_recover();
 
                     if let Some(existing) =
                         profiles_guard.iter_mut().find(|p| p.id == entity_id)
@@ -902,13 +706,7 @@ impl Plugin for NotificationsPlugin {
 
             ("notification-profile", "delete-profile") => {
                 {
-                    let mut profiles_guard = match self.profiles.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut profiles_guard = self.profiles.lock_or_recover();
                     profiles_guard.retain(|p| p.id != entity_id);
                 }
 
@@ -938,13 +736,7 @@ impl Plugin for NotificationsPlugin {
                     .map_err(|e| format!("invalid base64: {e}"))?;
 
                 {
-                    let mut gallery = match self.sound_gallery.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut gallery = self.sound_gallery.lock_or_recover();
                     gallery.add_sound(&filename, &data)?;
                 }
 
@@ -953,13 +745,7 @@ impl Plugin for NotificationsPlugin {
 
             ("notification-sound", "remove-sound") => {
                 {
-                    let mut gallery = match self.sound_gallery.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[notifications] mutex poisoned: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut gallery = self.sound_gallery.lock_or_recover();
                     gallery.remove_sound(entity_id)?;
                 }
 
@@ -998,10 +784,7 @@ impl Plugin for NotificationsPlugin {
     }
 
     fn set_claim_sender(&self, sender: waft_plugin::ClaimSender) {
-        match self.claim_sender.lock() {
-            Ok(mut g) => *g = Some(sender),
-            Err(e) => *e.into_inner() = Some(sender),
-        }
+        *self.claim_sender.lock_or_recover() = Some(sender);
     }
 
     async fn handle_claim_result(
@@ -1030,15 +813,7 @@ impl Plugin for NotificationsPlugin {
         info!("[notifications] ClaimResult: {urn} not claimed, removing");
 
         {
-            let mut guard = match self.state.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    warn!(
-                        "[notifications] mutex poisoned in handle_claim_result, recovering: {e}"
-                    );
-                    e.into_inner()
-                }
-            };
+            let mut guard = self.state.lock_or_recover();
             process_op(&mut guard, NotificationOp::NotificationDismiss(id));
         }
 

@@ -44,13 +44,17 @@ pub mod dbus_monitor;
 pub mod manifest;
 pub mod notifier;
 pub mod plugin;
+pub mod runner;
 pub mod runtime;
+pub mod state_locker;
 pub mod transport;
 
 pub use claim::ClaimSender;
 pub use notifier::EntityNotifier;
 pub use plugin::{Entity, Plugin};
+pub use runner::{PluginRunner, spawn_monitored, spawn_monitored_anyhow};
 pub use runtime::{PluginRuntime, daemon_socket_path};
+pub use state_locker::StateLocker;
 
 // Re-export serde_json for plugin action params
 pub use serde_json;

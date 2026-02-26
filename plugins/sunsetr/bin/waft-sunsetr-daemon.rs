@@ -330,33 +330,15 @@ impl SunsetrPlugin {
     }
 
     fn get_state(&self) -> SunsetrState {
-        match self.state.lock() {
-            Ok(g) => g.clone(),
-            Err(e) => {
-                warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                e.into_inner().clone()
-            }
-        }
+        self.state.lock_or_recover().clone()
     }
 
     fn get_target(&self) -> String {
-        match self.current_target.lock() {
-            Ok(g) => g.clone(),
-            Err(e) => {
-                warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                e.into_inner().clone()
-            }
-        }
+        self.current_target.lock_or_recover().clone()
     }
 
     fn config_entity(&self) -> Option<Entity> {
-        let values = match self.config_values.lock() {
-            Ok(g) => g.clone(),
-            Err(e) => {
-                warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                e.into_inner().clone()
-            }
-        };
+        let values = self.config_values.lock_or_recover().clone();
 
         let values = values?;
         let target = self.get_target();
@@ -428,13 +410,7 @@ impl Plugin for SunsetrPlugin {
 
                 // Update state from result
                 let became_active = {
-                    let mut state = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut state = self.state.lock_or_recover();
 
                     match result {
                         Ok((active, period, next_transition, active_preset)) => {
@@ -455,13 +431,7 @@ impl Plugin for SunsetrPlugin {
 
                 // Refresh presets when becoming active (lock dropped above)
                 if became_active && let Ok(presets) = query_presets().await {
-                    let mut state = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let mut state = self.state.lock_or_recover();
                     state.presets = presets;
                 }
             }
@@ -478,27 +448,13 @@ impl Plugin for SunsetrPlugin {
                         warn!("[sunsetr] preset switch to 'default' failed: {e}");
                         return Err(e.into());
                     } else {
-                        let mut state = match self.state.lock() {
-                            Ok(g) => g,
-                            Err(e) => {
-                                warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                                e.into_inner()
-                            }
-                        };
-                        state.active_preset = None;
+                        self.state.lock_or_recover().active_preset = None;
                     }
                 } else if let Err(e) = set_preset(&preset_name).await {
                     warn!("[sunsetr] preset switch to '{}' failed: {e}", preset_name);
                     return Err(e.into());
                 } else {
-                    let mut state = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                            e.into_inner()
-                        }
-                    };
-                    state.active_preset = Some(preset_name);
+                    self.state.lock_or_recover().active_preset = Some(preset_name);
                 }
             }
             "update_config" => {
@@ -533,13 +489,7 @@ impl Plugin for SunsetrPlugin {
                 // Re-query config to capture side effects
                 match query_config(&target).await {
                     Ok(values) => {
-                        match self.config_values.lock() {
-                            Ok(mut g) => *g = Some(values),
-                            Err(e) => {
-                                warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                                *e.into_inner() = Some(values);
-                            }
-                        }
+                        *self.config_values.lock_or_recover() = Some(values);
                     }
                     Err(e) => {
                         warn!("[sunsetr] Failed to re-query config after update: {e}");
@@ -558,20 +508,8 @@ impl Plugin for SunsetrPlugin {
                 // Query the preset's config
                 match query_config(&preset_name).await {
                     Ok(values) => {
-                        match self.current_target.lock() {
-                            Ok(mut g) => *g = preset_name.clone(),
-                            Err(e) => {
-                                warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                                *e.into_inner() = preset_name;
-                            }
-                        }
-                        match self.config_values.lock() {
-                            Ok(mut g) => *g = Some(values),
-                            Err(e) => {
-                                warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                                *e.into_inner() = Some(values);
-                            }
-                        }
+                        *self.current_target.lock_or_recover() = preset_name.clone();
+                        *self.config_values.lock_or_recover() = Some(values);
                     }
                     Err(e) => {
                         return Err(
@@ -604,32 +542,13 @@ impl Plugin for SunsetrPlugin {
 
                 // Refresh presets list
                 if let Ok(presets) = query_presets().await {
-                    let mut state = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                            e.into_inner()
-                        }
-                    };
-                    state.presets = presets;
+                    self.state.lock_or_recover().presets = presets;
                 }
 
                 // Query the new preset's config
                 if let Ok(values) = query_config(&name).await {
-                    match self.current_target.lock() {
-                        Ok(mut g) => *g = name,
-                        Err(e) => {
-                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                            *e.into_inner() = name;
-                        }
-                    }
-                    match self.config_values.lock() {
-                        Ok(mut g) => *g = Some(values),
-                        Err(e) => {
-                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                            *e.into_inner() = Some(values);
-                        }
-                    }
+                    *self.current_target.lock_or_recover() = name;
+                    *self.config_values.lock_or_recover() = Some(values);
                 }
             }
             "delete_preset" => {
@@ -656,35 +575,16 @@ impl Plugin for SunsetrPlugin {
                 }
 
                 // Switch to default
-                match self.current_target.lock() {
-                    Ok(mut g) => *g = "default".to_string(),
-                    Err(e) => {
-                        warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                        *e.into_inner() = "default".to_string();
-                    }
-                }
+                *self.current_target.lock_or_recover() = "default".to_string();
 
                 // Refresh presets list
                 if let Ok(presets) = query_presets().await {
-                    let mut state = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                            e.into_inner()
-                        }
-                    };
-                    state.presets = presets;
+                    self.state.lock_or_recover().presets = presets;
                 }
 
                 // Query default config
                 if let Ok(values) = query_config("default").await {
-                    match self.config_values.lock() {
-                        Ok(mut g) => *g = Some(values),
-                        Err(e) => {
-                            warn!("[sunsetr] mutex poisoned, recovering: {e}");
-                            *e.into_inner() = Some(values);
-                        }
-                    }
+                    *self.config_values.lock_or_recover() = Some(values);
                 }
             }
             _ => {}
@@ -743,13 +643,7 @@ fn spawn_follow_task(state: Arc<StdMutex<SunsetrState>>, notifier: EntityNotifie
 
             let (period, next_transition) = parse_status_event(&ev);
 
-            let mut state_guard = match state.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    warn!("[sunsetr] follow mutex poisoned, recovering: {e}");
-                    e.into_inner()
-                }
-            };
+            let mut state_guard = state.lock_or_recover();
 
             let changed = state_guard.period != period
                 || state_guard.next_transition != next_transition
@@ -791,7 +685,8 @@ fn binary_available() -> bool {
 }
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
+    // Check binary availability before PluginRunner starts the tokio runtime
+    // (handle_provides_i18n runs first inside PluginRunner, so this is fine)
     if waft_plugin::manifest::handle_provides_i18n(
         &[
             entity::display::NIGHT_LIGHT_ENTITY_TYPE,
@@ -804,7 +699,6 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Initialize logging
     waft_plugin::init_plugin_logger("info");
 
     info!("Starting sunsetr plugin...");

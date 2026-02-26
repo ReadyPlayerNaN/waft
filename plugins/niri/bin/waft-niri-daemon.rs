@@ -14,10 +14,11 @@
 
 use std::sync::OnceLock;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_i18n::I18n;
+use waft_plugin::StateLocker;
 use waft_plugin::*;
 use waft_plugin_niri::commands;
 use waft_plugin_niri::config::{self, KeyboardConfigMode};
@@ -47,13 +48,7 @@ struct NiriPlugin {
 
 impl NiriPlugin {
     fn lock_state(&self) -> std::sync::MutexGuard<'_, NiriState> {
-        match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[niri] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        }
+        self.state.lock_or_recover()
     }
 
     async fn handle_keyboard_config_action(
@@ -552,43 +547,28 @@ impl Plugin for NiriPlugin {
 }
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides_i18n(
+    PluginRunner::new(
+        "niri",
         &[
             KEYBOARD_ENTITY_TYPE,
             CONFIG_ENTITY_TYPE,
             DisplayOutput::ENTITY_TYPE,
         ],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
+        // Verify NIRI_SOCKET is set
+        if std::env::var("NIRI_SOCKET").is_err() {
+            error!("[niri] NIRI_SOCKET not set -- is Niri running?");
+            anyhow::bail!("NIRI_SOCKET not set");
+        }
 
-    waft_plugin::init_plugin_logger("info");
-
-    // Verify NIRI_SOCKET is set
-    if std::env::var("NIRI_SOCKET").is_err() {
-        error!("[niri] NIRI_SOCKET not set -- is Niri running?");
-        anyhow::bail!("NIRI_SOCKET not set");
-    }
-
-    info!("Starting niri plugin...");
-
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
         let state = Arc::new(StdMutex::new(NiriState::default()));
 
         // Load initial keyboard layouts
         match keyboard::query_layouts().await {
             Ok(response) => {
-                let mut s = match state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[niri] mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
+                let mut s = state.lock_or_recover();
                 keyboard::update_state_from_response(&mut s.keyboard, &response);
                 info!(
                     "[niri] Loaded {} keyboard layouts, active index {}",
@@ -604,13 +584,7 @@ fn main() -> Result<()> {
         // Load keyboard config from niri config file
         match config::parse_niri_keyboard_config() {
             Ok(kb_config) => {
-                let mut s = match state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[niri] mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
+                let mut s = state.lock_or_recover();
                 info!(
                     "[niri] Loaded keyboard config: mode={:?}, {} layouts",
                     kb_config.mode,
@@ -620,13 +594,7 @@ fn main() -> Result<()> {
             }
             Err(e) => {
                 warn!("[niri] Failed to parse keyboard config: {e}");
-                let mut s = match state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[niri] mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
+                let mut s = state.lock_or_recover();
                 s.keyboard_config = config::KeyboardConfig {
                     mode: KeyboardConfigMode::Malformed,
                     error_message: Some(e.to_string()),
@@ -639,13 +607,7 @@ fn main() -> Result<()> {
         match display::query_outputs().await {
             Ok(response) => {
                 let output_states = display::response_to_states(&response);
-                let mut s = match state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        warn!("[niri] mutex poisoned, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
+                let mut s = state.lock_or_recover();
                 info!("[niri] Loaded {} display outputs", output_states.len());
                 for (name, os) in &output_states {
                     info!(
@@ -679,8 +641,6 @@ fn main() -> Result<()> {
             state: state.clone(),
         };
 
-        let (runtime, notifier) = PluginRuntime::new("niri", plugin);
-
         // Spawn event stream monitoring
         let event_rx = event_stream::spawn_event_stream();
         let event_state = state.clone();
@@ -691,13 +651,7 @@ fn main() -> Result<()> {
                 match event {
                     NiriEvent::KeyboardLayoutsChanged { names, current_idx } => {
                         {
-                            let mut s = match event_state.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    warn!("[niri] mutex poisoned, recovering: {e}");
-                                    e.into_inner()
-                                }
-                            };
+                            let mut s = event_state.lock_or_recover();
                             s.keyboard.names = names;
                             s.keyboard.current_idx = current_idx;
                         }
@@ -705,13 +659,7 @@ fn main() -> Result<()> {
                     }
                     NiriEvent::KeyboardLayoutSwitched { idx } => {
                         {
-                            let mut s = match event_state.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    warn!("[niri] mutex poisoned, recovering: {e}");
-                                    e.into_inner()
-                                }
-                            };
+                            let mut s = event_state.lock_or_recover();
                             s.keyboard.current_idx = idx;
                         }
                         event_notifier.notify();
@@ -721,13 +669,7 @@ fn main() -> Result<()> {
                         match config::parse_niri_keyboard_config() {
                             Ok(new_config) => {
                                 let changed = {
-                                    let mut s = match event_state.lock() {
-                                        Ok(g) => g,
-                                        Err(e) => {
-                                            warn!("[niri] mutex poisoned, recovering: {e}");
-                                            e.into_inner()
-                                        }
-                                    };
+                                    let mut s = event_state.lock_or_recover();
 
                                     let changed = s.keyboard_config.mode != new_config.mode
                                         || s.keyboard_config.layouts != new_config.layouts
@@ -757,13 +699,7 @@ fn main() -> Result<()> {
                                     e
                                 );
                                 {
-                                    let mut s = match event_state.lock() {
-                                        Ok(g) => g,
-                                        Err(e) => {
-                                            warn!("[niri] mutex poisoned, recovering: {e}");
-                                            e.into_inner()
-                                        }
-                                    };
+                                    let mut s = event_state.lock_or_recover();
                                     s.keyboard_config = config::KeyboardConfig {
                                         mode: KeyboardConfigMode::Malformed,
                                         error_message: Some(e.to_string()),
@@ -779,13 +715,7 @@ fn main() -> Result<()> {
                             Ok(response) => {
                                 let output_states = display::response_to_states(&response);
                                 {
-                                    let mut s = match event_state.lock() {
-                                        Ok(g) => g,
-                                        Err(e) => {
-                                            warn!("[niri] mutex poisoned, recovering: {e}");
-                                            e.into_inner()
-                                        }
-                                    };
+                                    let mut s = event_state.lock_or_recover();
                                     s.outputs = output_states;
                                 }
                                 event_notifier.notify();
@@ -805,7 +735,6 @@ fn main() -> Result<()> {
             );
         });
 
-        runtime.run().await?;
-        Ok(())
+        Ok(plugin)
     })
 }

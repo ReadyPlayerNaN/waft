@@ -193,13 +193,7 @@ impl BatteryPlugin {
     }
 
     fn current_info(&self) -> BatteryInfo {
-        match self.info.lock() {
-            Ok(g) => g.clone(),
-            Err(e) => {
-                log::warn!("[battery] mutex poisoned, recovering: {e}");
-                e.into_inner().clone()
-            }
-        }
+        self.info.lock_or_recover().clone()
     }
 
     fn shared_info(&self) -> Arc<StdMutex<BatteryInfo>> {
@@ -300,39 +294,18 @@ async fn monitor_battery_signals(
 // ---------------------------------------------------------------------------
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[entity::power::ENTITY_TYPE],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
+    PluginRunner::new("battery", &[entity::power::ENTITY_TYPE])
+        .i18n(i18n(), "plugin-name", "plugin-description")
+        .run(|notifier| async move {
+            let plugin = BatteryPlugin::new().await?;
 
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
+            // Grab shared handles before plugin is moved into the runtime
+            let shared_info = plugin.shared_info();
+            let monitor_conn = plugin.conn.clone();
 
-    log::info!("Starting battery plugin...");
+            // Listen for D-Bus PropertiesChanged signals (instant, no polling)
+            spawn_monitored_anyhow("battery", monitor_battery_signals(monitor_conn, shared_info, notifier));
 
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = BatteryPlugin::new().await?;
-
-        // Grab shared handles before plugin is moved into the runtime
-        let shared_info = plugin.shared_info();
-        let monitor_conn = plugin.conn.clone();
-
-        let (runtime, notifier) = PluginRuntime::new("battery", plugin);
-
-        // Listen for D-Bus PropertiesChanged signals (instant, no polling)
-        tokio::spawn(async move {
-            if let Err(e) = monitor_battery_signals(monitor_conn, shared_info, notifier).await {
-                log::error!("D-Bus signal monitoring failed: {e}");
-            }
-        });
-
-        runtime.run().await?;
-        Ok(())
-    })
+            Ok(plugin)
+        })
 }

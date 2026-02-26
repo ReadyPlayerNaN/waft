@@ -13,7 +13,7 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{Local, Locale, Timelike};
 use serde::Deserialize;
 use waft_i18n::I18n;
@@ -118,38 +118,21 @@ impl Plugin for ClockPlugin {
 }
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[entity::clock::ENTITY_TYPE],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
+    PluginRunner::new("clock", &[entity::clock::ENTITY_TYPE])
+        .i18n(i18n(), "plugin-name", "plugin-description")
+        .run(|notifier| async move {
+            let plugin = ClockPlugin::new()?;
 
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
+            // Clock updates on minute boundaries (display is HH:MM)
+            tokio::spawn(async move {
+                loop {
+                    let now = Local::now();
+                    let secs_to_next = 60 - now.second() as u64;
+                    tokio::time::sleep(Duration::from_secs(secs_to_next)).await;
+                    notifier.notify();
+                }
+            });
 
-    log::info!("Starting clock plugin...");
-
-    // Build the tokio runtime manually so `handle_provides` runs without it
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = ClockPlugin::new()?;
-        let (runtime, notifier) = PluginRuntime::new("clock", plugin);
-
-        // Clock updates on minute boundaries (display is HH:MM)
-        tokio::spawn(async move {
-            loop {
-                let now = Local::now();
-                let secs_to_next = 60 - now.second() as u64;
-                tokio::time::sleep(Duration::from_secs(secs_to_next)).await;
-                notifier.notify();
-            }
-        });
-
-        runtime.run().await?;
-        Ok(())
-    })
+            Ok(plugin)
+        })
 }

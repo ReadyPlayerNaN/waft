@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::warn;
+use waft_plugin::StateLocker;
 use waft_protocol::entity::notification as proto;
 
 /// Notification recorder that appends JSON Lines to a log file.
@@ -46,13 +47,7 @@ impl NotificationRecorder {
     /// File I/O errors are logged but never propagated -- recording must not
     /// disrupt the notification pipeline.
     pub fn record(&self, notification: &proto::Notification, urn: &str) {
-        let active = match self.active.lock() {
-            Ok(g) => *g,
-            Err(e) => {
-                warn!("[notifications/recording] mutex poisoned in record: {e}");
-                *e.into_inner()
-            }
-        };
+        let active = *self.active.lock_or_recover();
 
         if !active {
             return;
@@ -103,34 +98,21 @@ impl NotificationRecorder {
     /// When transitioning from inactive to active, truncates the log file
     /// to start a clean recording session.
     pub fn set_active(&self, new_active: bool) {
-        let mut guard = match self.active.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[notifications/recording] mutex poisoned in set_active: {e}");
-                e.into_inner()
-            }
-        };
+        let mut guard = self.active.lock_or_recover();
 
         let was_active = *guard;
         *guard = new_active;
 
         // Truncate log file when transitioning from inactive to active
-        if !was_active && new_active {
-            if let Err(e) = fs::write(&self.log_path, b"") {
+        if !was_active && new_active
+            && let Err(e) = fs::write(&self.log_path, b"") {
                 warn!("[notifications/recording] failed to truncate log file: {e}");
             }
-        }
     }
 
     /// Returns whether recording is currently active.
     pub fn is_active(&self) -> bool {
-        match self.active.lock() {
-            Ok(g) => *g,
-            Err(e) => {
-                warn!("[notifications/recording] mutex poisoned in is_active: {e}");
-                *e.into_inner()
-            }
-        }
+        *self.active.lock_or_recover()
     }
 
     /// Append a single line to the log file.

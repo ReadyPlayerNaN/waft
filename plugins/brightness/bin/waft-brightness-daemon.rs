@@ -361,16 +361,6 @@ impl BrightnessPlugin {
 
         displays
     }
-
-    fn lock_displays(&self) -> std::sync::MutexGuard<'_, Vec<Display>> {
-        match self.displays.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[brightness] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        }
-    }
 }
 
 fn display_kind(dt: DisplayType) -> entity::display::DisplayKind {
@@ -383,7 +373,7 @@ fn display_kind(dt: DisplayType) -> entity::display::DisplayKind {
 #[async_trait::async_trait]
 impl Plugin for BrightnessPlugin {
     fn get_entities(&self) -> Vec<Entity> {
-        let displays = self.lock_displays();
+        let displays = self.displays.lock_or_recover();
         displays
             .iter()
             .map(|d| {
@@ -427,7 +417,7 @@ impl Plugin for BrightnessPlugin {
 
             // Update local state
             {
-                let mut displays = self.lock_displays();
+                let mut displays = self.displays.lock_or_recover();
                 if let Some(d) = displays.iter_mut().find(|d| d.id == device_id) {
                     d.brightness = new_brightness;
                 }
@@ -445,26 +435,11 @@ impl Plugin for BrightnessPlugin {
 // ---------------------------------------------------------------------------
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[entity::display::DISPLAY_ENTITY_TYPE],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
-
-    waft_plugin::init_plugin_logger("info");
-
-    info!("Starting brightness plugin...");
-
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        let plugin = BrightnessPlugin::new().await?;
-        let (runtime, _notifier) = PluginRuntime::new("brightness", plugin);
-        runtime.run().await?;
-        Ok(())
-    })
+    PluginRunner::new("brightness", &[entity::display::DISPLAY_ENTITY_TYPE])
+        .i18n(i18n(), "plugin-name", "plugin-description")
+        .run(|_notifier| async {
+            BrightnessPlugin::new().await
+        })
 }
 
 // ---------------------------------------------------------------------------

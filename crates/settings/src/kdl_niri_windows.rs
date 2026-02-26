@@ -133,6 +133,7 @@ impl Default for TabIndicatorConfig {
 
 /// Struts (reserved screen edges) configuration.
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub struct StrutsConfig {
     pub left: u32,
     pub right: u32,
@@ -140,16 +141,6 @@ pub struct StrutsConfig {
     pub bottom: u32,
 }
 
-impl Default for StrutsConfig {
-    fn default() -> Self {
-        Self {
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: 0,
-        }
-    }
-}
 
 // ── KDL reading helpers ──
 

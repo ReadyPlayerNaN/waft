@@ -10,6 +10,7 @@ use log::{debug, warn};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::broadcast;
+use waft_plugin::StateLocker;
 
 use zvariant::OwnedValue;
 
@@ -215,13 +216,7 @@ pub async fn listen_view_signals(
                     .map(|p| p.to_string())
                     .unwrap_or_default();
                 {
-                    let paths = match view_paths.lock() {
-                        Ok(paths) => paths,
-                        Err(e) => {
-                            warn!("[agenda/dbus] view_paths mutex poisoned, recovering: {e}");
-                            e.into_inner()
-                        }
-                    };
+                    let paths = view_paths.lock_or_recover();
                     if !paths.is_empty() && !paths.contains(&msg_path) {
                         continue;
                     }

@@ -34,6 +34,7 @@ use anyhow::{Context, Result};
 use chrono::{Local, Timelike};
 use serde::Deserialize;
 use waft_i18n::I18n;
+use waft_plugin::StateLocker;
 use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal};
 use waft_plugin::*;
 use zbus::Connection;
@@ -132,13 +133,7 @@ struct SwwwState {
 }
 
 fn lock_state(state: &StdMutex<SwwwState>) -> std::sync::MutexGuard<'_, SwwwState> {
-    match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            log::warn!("[swww] mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    }
+    state.lock_or_recover()
 }
 
 /// Parse a mode string into WallpaperMode.
@@ -904,61 +899,39 @@ async fn wallpaper_applicator(
 }
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[WALLPAPER_MANAGER_ENTITY_TYPE],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
+    PluginRunner::new("swww", &[WALLPAPER_MANAGER_ENTITY_TYPE])
+        .i18n(i18n(), "plugin-name", "plugin-description")
+        .run(|notifier| async move {
+            // Create the wallpaper command channel BEFORE creating the plugin
+            let (wp_tx, wp_rx) = tokio::sync::mpsc::channel::<WallpaperCommand>(16);
 
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
+            let plugin = SwwwPlugin::new(wp_tx).await?;
 
-    log::info!("Starting swww plugin...");
+            // Clone all shared handles BEFORE plugin is moved into PluginRuntime
+            let state_for_darkman = plugin.state.clone();
+            let state_for_timer = plugin.state.clone();
+            let state_for_applicator = plugin.state.clone();
+            let wp_tx_darkman = plugin.wp_tx.clone();
+            let wp_tx_timer = plugin.wp_tx.clone();
 
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        // Create the wallpaper command channel BEFORE creating the plugin
-        let (wp_tx, wp_rx) = tokio::sync::mpsc::channel::<WallpaperCommand>(16);
-
-        let plugin = SwwwPlugin::new(wp_tx).await?;
-
-        // Clone all shared handles BEFORE plugin is moved into PluginRuntime
-        let state_for_darkman = plugin.state.clone();
-        let state_for_timer = plugin.state.clone();
-        let state_for_applicator = plugin.state.clone();
-        let wp_tx_darkman = plugin.wp_tx.clone();
-        let wp_tx_timer = plugin.wp_tx.clone();
-
-        let (runtime, notifier) = PluginRuntime::new("swww", plugin);
-
-        // Dark-mode D-Bus monitoring (style-tracking)
-        let notifier_dark = notifier.clone();
-        tokio::spawn(async move {
-            if let Err(e) =
+            // Dark-mode D-Bus monitoring (style-tracking)
+            let notifier_dark = notifier.clone();
+            spawn_monitored_anyhow("swww-darkman", async move {
                 monitor_darkman_signals(state_for_darkman, wp_tx_darkman, notifier_dark).await
-            {
-                log::error!("[swww] darkman monitoring failed: {e}");
-            }
-            log::debug!("[swww] darkman monitoring task stopped");
-        });
+            });
 
-        // Day-segment timer (day-tracking)
-        let notifier_day = notifier.clone();
-        tokio::spawn(day_segment_timer(state_for_timer, wp_tx_timer, notifier_day));
+            // Day-segment timer (day-tracking)
+            let notifier_day = notifier.clone();
+            tokio::spawn(day_segment_timer(state_for_timer, wp_tx_timer, notifier_day));
 
-        // Wallpaper applicator
-        let notifier_applicator = notifier.clone();
-        tokio::spawn(wallpaper_applicator(
-            wp_rx,
-            state_for_applicator,
-            notifier_applicator,
-        ));
+            // Wallpaper applicator
+            let notifier_applicator = notifier.clone();
+            tokio::spawn(wallpaper_applicator(
+                wp_rx,
+                state_for_applicator,
+                notifier_applicator,
+            ));
 
-        runtime.run().await?;
-        Ok(())
-    })
+            Ok(plugin)
+        })
 }

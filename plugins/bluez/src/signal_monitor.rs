@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use log::{debug, info, warn};
-use waft_plugin::EntityNotifier;
+use waft_plugin::{EntityNotifier, StateLocker};
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
@@ -114,13 +114,7 @@ fn handle_adapter_properties_changed(
     props: &HashMap<String, OwnedValue>,
 ) -> bool {
     let mut changed = false;
-    let mut st = match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[bluetooth] mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let mut st = state.lock_or_recover();
 
     let Some(adapter) = st.adapters.iter_mut().find(|a| a.path == obj_path) else {
         return false;
@@ -183,13 +177,7 @@ fn handle_device_properties_changed(
     props: &HashMap<String, OwnedValue>,
 ) -> bool {
     let mut changed = false;
-    let mut st = match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[bluetooth] mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let mut st = state.lock_or_recover();
 
     for adapter in &mut st.adapters {
         let Some(device) = adapter.devices.iter_mut().find(|d| d.path == obj_path) else {
@@ -278,13 +266,7 @@ fn handle_interfaces_added(state: &Arc<StdMutex<State>>, msg: &zbus::Message) ->
 
     let path_str = path.to_string();
 
-    let mut st = match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[bluetooth] mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let mut st = state.lock_or_recover();
 
     // Find the adapter this device belongs to
     let adapter = st
@@ -335,13 +317,7 @@ fn handle_interfaces_removed(state: &Arc<StdMutex<State>>, msg: &zbus::Message) 
 
     let path_str = path.to_string();
 
-    let mut st = match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[bluetooth] mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let mut st = state.lock_or_recover();
 
     let mut removed = false;
     for adapter in &mut st.adapters {

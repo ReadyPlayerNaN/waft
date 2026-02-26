@@ -323,10 +323,10 @@ impl NiriWindowsPage {
             struts.connect_output(move |output| {
                 let mut cfg = state.borrow_mut();
                 match output {
-                    StrutsSectionOutput::LeftChanged(v) => cfg.struts.left = v,
-                    StrutsSectionOutput::RightChanged(v) => cfg.struts.right = v,
-                    StrutsSectionOutput::TopChanged(v) => cfg.struts.top = v,
-                    StrutsSectionOutput::BottomChanged(v) => cfg.struts.bottom = v,
+                    StrutsSectionOutput::Left(v) => cfg.struts.left = v,
+                    StrutsSectionOutput::Right(v) => cfg.struts.right = v,
+                    StrutsSectionOutput::Top(v) => cfg.struts.top = v,
+                    StrutsSectionOutput::Bottom(v) => cfg.struts.bottom = v,
                 }
                 drop(cfg);
                 save();
@@ -351,8 +351,8 @@ impl NiriWindowsPage {
 
                 if available {
                     let prefs = SettingsPrefs::load();
-                    if prefs.derive_window_colors_from_gtk {
-                        if let Some((_, appearance)) = entities.first() {
+                    if prefs.derive_window_colors_from_gtk
+                        && let Some((_, appearance)) = entities.first() {
                             apply_accent_palette(
                                 &mut state.borrow_mut(),
                                 &appearance.accent_color,
@@ -362,7 +362,6 @@ impl NiriWindowsPage {
                             );
                             save();
                         }
-                    }
                 }
             });
         }
@@ -385,8 +384,8 @@ impl NiriWindowsPage {
                     derive_ref.set_available(true);
 
                     let prefs = SettingsPrefs::load();
-                    if prefs.derive_window_colors_from_gtk {
-                        if let Some((_, appearance)) = entities.first() {
+                    if prefs.derive_window_colors_from_gtk
+                        && let Some((_, appearance)) = entities.first() {
                             apply_accent_palette(
                                 &mut state.borrow_mut(),
                                 &appearance.accent_color,
@@ -396,7 +395,6 @@ impl NiriWindowsPage {
                             );
                             save();
                         }
-                    }
                 }
             });
         }

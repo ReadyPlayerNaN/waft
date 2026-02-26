@@ -40,6 +40,22 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
         (runtime, notifier)
     }
 
+    /// Create a runtime from pre-built parts.
+    ///
+    /// Used by [`crate::runner::PluginRunner`] where the notifier is created
+    /// before the plugin so background tasks can capture it.
+    pub fn from_parts(
+        name: impl Into<String>,
+        plugin: P,
+        notifier_rx: tokio::sync::watch::Receiver<u64>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            plugin: Arc::new(plugin),
+            notifier_rx,
+        }
+    }
+
     /// Run the plugin: connect to the daemon and start the event loop.
     pub async fn run(self) -> anyhow::Result<()> {
         let socket_path = daemon_socket_path();

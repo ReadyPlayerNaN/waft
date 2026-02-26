@@ -156,13 +156,7 @@ impl DarkmanPlugin {
     }
 
     fn current_mode(&self) -> DarkmanMode {
-        match self.state.lock() {
-            Ok(g) => g.mode,
-            Err(e) => {
-                log::warn!("Mutex poisoned, recovering: {e}");
-                e.into_inner().mode
-            }
-        }
+        self.state.lock_or_recover().mode
     }
 
     fn shared_state(&self) -> Arc<StdMutex<DarkmanState>> {
@@ -171,13 +165,7 @@ impl DarkmanPlugin {
 
     /// Build config entity from current YAML config.
     fn config_entity(&self) -> Entity {
-        let yaml_config = match self.yaml_config.lock() {
-            Ok(guard) => guard.clone(),
-            Err(e) => {
-                log::warn!("Mutex poisoned, recovering: {e}");
-                e.into_inner().clone()
-            }
-        };
+        let yaml_config = self.yaml_config.lock_or_recover().clone();
 
         let schema = config::build_schema();
         let config_data = entity::display::DarkModeAutomationConfig {
@@ -210,13 +198,7 @@ impl DarkmanPlugin {
 
         // Scope the lock so it's dropped before the async restart call
         {
-            let mut yaml_config = match self.yaml_config.lock() {
-                Ok(guard) => guard,
-                Err(e) => {
-                    log::warn!("Mutex poisoned, recovering: {e}");
-                    e.into_inner()
-                }
-            };
+            let mut yaml_config = self.yaml_config.lock_or_recover();
 
             match field {
                 "latitude" => yaml_config.lat = Some(serde_json::from_value(value)?),
@@ -293,13 +275,7 @@ impl Plugin for DarkmanPlugin {
                 }
 
                 // Update shared state
-                match self.state.lock() {
-                    Ok(mut guard) => guard.mode = new_mode,
-                    Err(e) => {
-                        log::warn!("Mutex poisoned, recovering: {e}");
-                        e.into_inner().mode = new_mode;
-                    }
-                }
+                self.state.lock_or_recover().mode = new_mode;
                 log::debug!("Mode toggled to: {new_mode:?}");
             }
             "update_field" => {
@@ -350,42 +326,27 @@ async fn monitor_mode_signals(
 }
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
+    PluginRunner::new(
+        "darkman",
         &[
             entity::display::DARK_MODE_ENTITY_TYPE,
             entity::display::DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE,
         ],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
-
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
-
-    log::info!("Starting darkman plugin...");
-
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
         let plugin = DarkmanPlugin::new().await?;
 
         // Grab shared handles before plugin is moved into the runtime
         let shared_state = plugin.shared_state();
         let monitor_conn = plugin.conn.clone();
 
-        let (runtime, notifier) = PluginRuntime::new("darkman", plugin);
-
         // Listen for D-Bus ModeChanged signals (instant, no polling)
-        tokio::spawn(async move {
-            if let Err(e) = monitor_mode_signals(monitor_conn, shared_state, notifier).await {
-                log::error!("D-Bus signal monitoring failed: {e}");
-            }
-        });
+        spawn_monitored_anyhow(
+            "darkman",
+            monitor_mode_signals(monitor_conn, shared_state, notifier),
+        );
 
-        runtime.run().await?;
-        Ok(())
+        Ok(plugin)
     })
 }

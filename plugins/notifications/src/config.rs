@@ -69,15 +69,11 @@ impl Default for SoundConfig {
 /// Recording configuration.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct RecordingConfig {
     pub recording: bool,
 }
 
-impl Default for RecordingConfig {
-    fn default() -> Self {
-        Self { recording: false }
-    }
-}
 
 /// Load recording configuration from waft config.
 ///

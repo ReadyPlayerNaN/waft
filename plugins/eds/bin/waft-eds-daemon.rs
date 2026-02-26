@@ -158,13 +158,7 @@ impl EdsPlugin {
 #[async_trait::async_trait]
 impl Plugin for EdsPlugin {
     fn get_entities(&self) -> Vec<Entity> {
-        let state = match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("Mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let state = self.state.lock_or_recover();
 
         let mut entities: Vec<Entity> = state
             .events
@@ -205,13 +199,7 @@ impl Plugin for EdsPlugin {
 
         if action == "refresh" {
             let allowed = {
-                let mut st = match self.state.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        log::warn!("[eds] state mutex poisoned during refresh, recovering: {e}");
-                        e.into_inner()
-                    }
-                };
+                let mut st = self.state.lock_or_recover();
                 check_debounce(&mut st.debounce_recent, self.config.debounce_base_secs)
             };
 
@@ -222,15 +210,7 @@ impl Plugin for EdsPlugin {
 
             // Clone notifier out of the slot (must not hold the lock across an async boundary).
             let notifier = {
-                let guard = match self.notifier.lock() {
-                    Ok(g) => g,
-                    Err(e) => {
-                        log::warn!(
-                            "[eds] handle_action: notifier slot mutex poisoned, recovering: {e}"
-                        );
-                        e.into_inner()
-                    }
-                };
+                let guard = self.notifier.lock_or_recover();
                 guard.as_ref().cloned()
             };
 
@@ -249,15 +229,7 @@ impl Plugin for EdsPlugin {
                     );
                     do_refresh(&self.conn, &self.state).await;
                     // Update last_refresh manually since refresh_with_status didn't run.
-                    let mut st = match self.state.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            log::warn!(
-                                "[eds] handle_action: mutex poisoned updating last_refresh, recovering: {e}"
-                            );
-                            e.into_inner()
-                        }
-                    };
+                    let mut st = self.state.lock_or_recover();
                     st.last_refresh = Some(unix_now());
                 }
             }
@@ -279,19 +251,15 @@ impl Plugin for EdsPlugin {
         // Returning false here keeps the plugin alive long enough to receive
         // those signals so the next overview open sees up-to-date events.
         const REFRESH_GRACE_SECS: u64 = 120;
-        let st = match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => e.into_inner(),
-        };
-        if let Some(instant) = st.last_refresh_instant {
-            if instant.elapsed() < std::time::Duration::from_secs(REFRESH_GRACE_SECS) {
+        let st = self.state.lock_or_recover();
+        if let Some(instant) = st.last_refresh_instant
+            && instant.elapsed() < std::time::Duration::from_secs(REFRESH_GRACE_SECS) {
                 log::debug!(
                     "[eds] can_stop: false — refresh grace period active ({}s remaining)",
                     REFRESH_GRACE_SECS - instant.elapsed().as_secs()
                 );
                 return false;
             }
-        }
         true
     }
 }
@@ -349,13 +317,7 @@ fn check_debounce(
 /// are skipped on future calls (cleared at midnight rebuild).
 async fn do_refresh(conn: &Connection, state: &Arc<StdMutex<EdsState>>) {
     let (backends, unsupported) = {
-        let st = match state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("[eds] do_refresh: mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let st = state.lock_or_recover();
         (st.calendar_backends.clone(), st.refresh_unsupported.clone())
     };
 
@@ -391,15 +353,7 @@ async fn do_refresh(conn: &Connection, state: &Arc<StdMutex<EdsState>>) {
                                     log::debug!(
                                         "[eds] Backend {object_path} does not support Refresh, will skip in future"
                                     );
-                                    let mut st = match state.lock() {
-                                        Ok(g) => g,
-                                        Err(e) => {
-                                            log::warn!(
-                                                "[eds] do_refresh: mutex poisoned recording unsupported, recovering: {e}"
-                                            );
-                                            e.into_inner()
-                                        }
-                                    };
+                                    let mut st = state.lock_or_recover();
                                     st.refresh_unsupported.insert(object_path.clone());
                                 } else {
                                     log::warn!("[eds] Refresh failed for {object_path}: {e}");
@@ -427,13 +381,7 @@ async fn refresh_with_status(
     notifier: &EntityNotifier,
 ) {
     {
-        let mut st = match state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("[eds] refresh_with_status: mutex poisoned on start, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let mut st = state.lock_or_recover();
         st.syncing = true;
         st.last_refresh_instant = Some(std::time::Instant::now());
     }
@@ -445,13 +393,7 @@ async fn refresh_with_status(
     do_refresh(conn, state).await;
 
     {
-        let mut st = match state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("[eds] refresh_with_status: mutex poisoned on end, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let mut st = state.lock_or_recover();
         st.syncing = false;
         st.last_refresh = Some(unix_now());
     }
@@ -611,15 +553,7 @@ async fn spawn_refresh_scheduler(
 
                     // Record the unlock refresh in the debounce window so an immediate
                     // overlay open doesn't double-fire within the base window.
-                    match state.lock() {
-                        Ok(mut st) => {
-                            st.debounce_recent.push_back(std::time::Instant::now());
-                        }
-                        Err(e) => {
-                            log::warn!("[eds] scheduler: mutex poisoned recording debounce on unlock, recovering: {e}");
-                            e.into_inner().debounce_recent.push_back(std::time::Instant::now());
-                        }
-                    }
+                    state.lock_or_recover().debounce_recent.push_back(std::time::Instant::now());
                 }
             }
         }
@@ -924,15 +858,7 @@ async fn setup_calendar_views(
 
                     // Record this backend so do_refresh can Open()+Refresh() it later.
                     {
-                        let mut st = match state_clone.lock() {
-                            Ok(g) => g,
-                            Err(e) => {
-                                warn!(
-                                    "[eds] state mutex poisoned storing backend, recovering: {e}"
-                                );
-                                e.into_inner()
-                            }
-                        };
+                        let mut st = state_clone.lock_or_recover();
                         st.calendar_backends
                             .push((bus_name.clone(), calendar_path.clone()));
                     }
@@ -940,13 +866,7 @@ async fn setup_calendar_views(
                     match create_view(&conn_clone, &bus_name, &calendar_path, &query_clone).await {
                         Ok(view_path) => {
                             {
-                                let mut paths = match view_paths_clone.lock() {
-                                    Ok(p) => p,
-                                    Err(e) => {
-                                        warn!("[eds] view_paths mutex poisoned, recovering: {e}");
-                                        e.into_inner()
-                                    }
-                                };
+                                let mut paths = view_paths_clone.lock_or_recover();
                                 paths.insert(view_path.clone());
                             }
 
@@ -969,15 +889,7 @@ async fn setup_calendar_views(
                             .await
                             {
                                 Ok(monitor_handle) => {
-                                    let mut st = match state_for_handle.lock() {
-                                        Ok(g) => g,
-                                        Err(e) => {
-                                            warn!(
-                                                "[eds] state mutex poisoned storing monitor handle, recovering: {e}"
-                                            );
-                                            e.into_inner()
-                                        }
-                                    };
+                                    let mut st = state_for_handle.lock_or_recover();
                                     st.view_monitor_handles.push(monitor_handle);
                                 }
                                 Err(e) => warn!("[eds] View monitor error: {e}"),
@@ -1042,13 +954,7 @@ async fn monitor_eds_calendars(
 
         // Abort old monitors and purge events that ended before the new day.
         {
-            let mut st = match state.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    warn!("[eds] state mutex poisoned during midnight rebuild, recovering: {e}");
-                    e.into_inner()
-                }
-            };
+            let mut st = state.lock_or_recover();
 
             for handle in st.view_monitor_handles.drain(..) {
                 handle.abort();
@@ -1141,9 +1047,7 @@ async fn spawn_view_monitor(
     // EDS fires ObjectsAdded for all currently-matching events synchronously
     // inside Start(); if AddMatch isn't registered yet those signals are lost.
     debug!("[eds] AddMatch registered for view {view_path}, calling Start()");
-    if let Err(e) = start_view(&conn, &bus_name, &view_path).await {
-        return Err(e);
-    }
+    start_view(&conn, &bus_name, &view_path).await?;
     debug!("[eds] Start() returned for view {view_path}, monitoring loop starting");
 
     let handle = tokio::spawn(async move {
@@ -1286,13 +1190,7 @@ async fn spawn_view_monitor(
 
         // Clean up view path tracking
         {
-            let mut paths = match view_paths.lock() {
-                Ok(p) => p,
-                Err(e) => {
-                    warn!("[eds] view_paths mutex poisoned during cleanup, recovering: {e}");
-                    e.into_inner()
-                }
-            };
+            let mut paths = view_paths.lock_or_recover();
             paths.remove(&view_path);
         }
 
@@ -1970,13 +1868,7 @@ fn update_state_add_events(
     state: &Arc<StdMutex<EdsState>>,
     events: Vec<entity::calendar::CalendarEvent>,
 ) {
-    let mut st = match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[eds] Mutex poisoned during add_events, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let mut st = state.lock_or_recover();
 
     for event in events {
         let key = EdsPlugin::make_occurrence_key(&event.uid, event.start_time);
@@ -1986,13 +1878,7 @@ fn update_state_add_events(
 
 /// Update state by removing events matching base UIDs.
 fn update_state_remove_events(state: &Arc<StdMutex<EdsState>>, uids: &[String]) {
-    let mut st = match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[eds] Mutex poisoned during remove_events, recovering: {e}");
-            e.into_inner()
-        }
-    };
+    let mut st = state.lock_or_recover();
 
     // Remove all occurrence keys matching any of the base UIDs
     let before = st.events.len();
@@ -3460,13 +3346,7 @@ fn main() -> Result<()> {
 
         // Fill the notifier slot so handle_action and the scheduler can push syncing state.
         {
-            let mut slot = match notifier_slot.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    log::warn!("[eds] main: notifier slot mutex poisoned, recovering: {e}");
-                    e.into_inner()
-                }
-            };
+            let mut slot = notifier_slot.lock_or_recover();
             *slot = Some(notifier.clone());
         }
 
@@ -3476,11 +3356,8 @@ fn main() -> Result<()> {
         // Spawn D-Bus monitoring task
         let monitor_state = shared_state.clone();
         let monitor_notifier = notifier.clone();
-        tokio::spawn(async move {
-            if let Err(e) = monitor_eds_calendars(conn, monitor_state, monitor_notifier).await {
-                log::error!("[eds] Failed to start calendar monitoring: {}", e);
-            }
-            log::debug!("[eds] Calendar monitoring task stopped");
+        spawn_monitored_anyhow("eds/calendar-monitor", async move {
+            monitor_eds_calendars(conn, monitor_state, monitor_notifier).await
         });
 
         // Spawn session monitor

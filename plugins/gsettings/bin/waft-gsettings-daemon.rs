@@ -99,13 +99,7 @@ impl GsettingsPlugin {
     }
 
     fn current_color(&self) -> Option<String> {
-        match self.state.lock() {
-            Ok(g) => g.accent_color.clone(),
-            Err(e) => {
-                log::warn!("[gsettings] Mutex poisoned, recovering: {e}");
-                e.into_inner().accent_color.clone()
-            }
-        }
+        self.state.lock_or_recover().accent_color.clone()
     }
 }
 
@@ -159,13 +153,7 @@ impl Plugin for GsettingsPlugin {
                     .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
 
                 // Update local state
-                match self.state.lock() {
-                    Ok(mut g) => g.accent_color = Some(color.to_string()),
-                    Err(e) => {
-                        log::warn!("[gsettings] Mutex poisoned, recovering: {e}");
-                        e.into_inner().accent_color = Some(color.to_string());
-                    }
-                }
+                self.state.lock_or_recover().accent_color = Some(color.to_string());
 
                 log::info!("[gsettings] Accent colour set to: {color}");
             }
@@ -234,39 +222,22 @@ async fn monitor_portal_settings(
 }
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[entity::appearance::GTK_APPEARANCE_ENTITY_TYPE],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
+    PluginRunner::new("gsettings", &[entity::appearance::GTK_APPEARANCE_ENTITY_TYPE])
+        .i18n(i18n(), "plugin-name", "plugin-description")
+        .run(|notifier| async move {
+            let plugin = GsettingsPlugin::new().await;
+            let shared_state = plugin.state.clone();
 
-    waft_plugin::init_plugin_logger("info");
+            let conn = Connection::session()
+                .await
+                .context("failed to connect to session bus")?;
 
-    log::info!("[gsettings] Starting gsettings plugin...");
+            // Monitor portal for external accent colour changes
+            spawn_monitored_anyhow(
+                "gsettings",
+                monitor_portal_settings(conn, shared_state, notifier),
+            );
 
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = GsettingsPlugin::new().await;
-        let shared_state = plugin.state.clone();
-
-        let conn = Connection::session()
-            .await
-            .context("failed to connect to session bus")?;
-
-        let (runtime, notifier) = PluginRuntime::new("gsettings", plugin);
-
-        // Monitor portal for external accent colour changes
-        tokio::spawn(async move {
-            if let Err(e) = monitor_portal_settings(conn, shared_state, notifier).await {
-                log::error!("[gsettings] Portal signal monitoring failed: {e}");
-            }
-            log::debug!("[gsettings] Portal monitor task stopped");
-        });
-
-        runtime.run().await?;
-        Ok(())
-    })
+            Ok(plugin)
+        })
 }

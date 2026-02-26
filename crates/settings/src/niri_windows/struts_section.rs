@@ -11,10 +11,10 @@ use crate::i18n::t;
 
 /// Output events from the struts section.
 pub enum StrutsSectionOutput {
-    LeftChanged(u32),
-    RightChanged(u32),
-    TopChanged(u32),
-    BottomChanged(u32),
+    Left(u32),
+    Right(u32),
+    Top(u32),
+    Bottom(u32),
 }
 
 type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(StrutsSectionOutput)>>>>;
@@ -68,16 +68,16 @@ impl StrutsSection {
         group.add(&bottom_row);
 
         wire_spin(&left_row, &output_cb, &updating, |v| {
-            StrutsSectionOutput::LeftChanged(v)
+            StrutsSectionOutput::Left(v)
         });
         wire_spin(&right_row, &output_cb, &updating, |v| {
-            StrutsSectionOutput::RightChanged(v)
+            StrutsSectionOutput::Right(v)
         });
         wire_spin(&top_row, &output_cb, &updating, |v| {
-            StrutsSectionOutput::TopChanged(v)
+            StrutsSectionOutput::Top(v)
         });
         wire_spin(&bottom_row, &output_cb, &updating, |v| {
-            StrutsSectionOutput::BottomChanged(v)
+            StrutsSectionOutput::Bottom(v)
         });
 
         Self {

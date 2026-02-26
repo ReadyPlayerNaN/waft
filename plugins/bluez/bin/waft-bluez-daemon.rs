@@ -104,24 +104,12 @@ impl BluezPlugin {
     }
 
     fn lock_state(&self) -> std::sync::MutexGuard<'_, State> {
-        match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[bluetooth] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        }
+        self.state.lock_or_recover()
     }
 
     /// Push entity updates to the overview via the notifier (if set).
     fn notify(&self) {
-        let slot = match self.notifier.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[bluetooth] notifier mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let slot = self.notifier.lock_or_recover();
         if let Some(ref notifier) = *slot {
             notifier.notify();
         }
@@ -557,21 +545,13 @@ fn main() -> Result<()> {
 
         // Fill the notifier slot so handle_action can push intermediate states
         {
-            let mut slot = match notifier_slot.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    warn!("[bluetooth] notifier mutex poisoned, recovering: {e}");
-                    e.into_inner()
-                }
-            };
+            let mut slot = notifier_slot.lock_or_recover();
             *slot = Some(notifier.clone());
         }
 
         // Monitor BlueZ D-Bus signals
-        tokio::spawn(async move {
-            if let Err(e) = monitor_bluez_signals(monitor_conn, shared_state, notifier).await {
-                error!("[bluetooth] D-Bus signal monitoring failed: {}", e);
-            }
+        spawn_monitored_anyhow("bluetooth/signal-monitor", async move {
+            monitor_bluez_signals(monitor_conn, shared_state, notifier).await
         });
 
         runtime.run().await?;

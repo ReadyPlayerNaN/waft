@@ -73,7 +73,7 @@ impl GallerySection {
         };
 
         *self.wallpaper_dir.borrow_mut() = wallpaper_dir.to_string();
-        *self.current_mode.borrow_mut() = mode.clone();
+        *self.current_mode.borrow_mut() = *mode;
         *self.current_wallpaper.borrow_mut() = current_wallpaper.map(|s| s.to_string());
         *self.current_urn.borrow_mut() = Some(urn.clone());
 
@@ -95,7 +95,7 @@ impl GallerySection {
         }
         self.groups.borrow_mut().clear();
 
-        let mode = self.current_mode.borrow().clone();
+        let mode = *self.current_mode.borrow();
         let wallpaper_dir = self.wallpaper_dir.borrow().clone();
         let expanded_dir = expand_tilde(&wallpaper_dir);
 
@@ -215,15 +215,15 @@ fn load_thumbnails(folder: &Path) -> Vec<ThumbnailWidget> {
 
 /// Expand `~` prefix to home directory.
 fn expand_tilde(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME") {
             return PathBuf::from(home).join(rest);
         }
-    }
     PathBuf::from(path)
 }
 
 /// Unified gallery group constructor used by both initial build and add-button refresh.
+#[allow(clippy::too_many_arguments)]
 fn create_gallery_group_impl(
     label_key: &str,
     folder_name: &str,
@@ -340,7 +340,7 @@ fn create_gallery_group_impl(
                 let expanded = expand_tilde(&dir);
                 let folder_path = expanded.join(&folder_name_inner);
 
-                let mode = current_mode_inner.borrow().clone();
+                let mode = *current_mode_inner.borrow();
                 let folders = folders_for_mode(&mode);
 
                 let label_key = folders
@@ -421,15 +421,14 @@ fn create_gallery_group_impl(
 
         flow_box.connect_child_activated(move |_, child| {
             let idx = child.index() as usize;
-            if let Some(path) = thumbs.get(idx) {
-                if let Some(ref urn) = *urn_ref.borrow() {
+            if let Some(path) = thumbs.get(idx)
+                && let Some(ref urn) = *urn_ref.borrow() {
                     cb(
                         urn.clone(),
                         "set-wallpaper".to_string(),
                         serde_json::json!({ "path": path }),
                     );
                 }
-            }
         });
     }
 

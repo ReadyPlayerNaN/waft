@@ -13,7 +13,7 @@
 
 use std::sync::OnceLock;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_i18n::I18n;
 
@@ -94,7 +94,7 @@ impl SyncthingPlugin {
             .args(["--user", action, "syncthing"])
             .output()
             .await
-            .context("failed to run systemctl")?;
+            .map_err(|e| anyhow::anyhow!("failed to run systemctl: {e}"))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -105,16 +105,6 @@ impl SyncthingPlugin {
         Ok(())
     }
 
-    fn lock_state(&self) -> std::sync::MutexGuard<'_, SyncthingState> {
-        match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("[syncthing] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        }
-    }
-
     fn shared_state(&self) -> Arc<StdMutex<SyncthingState>> {
         self.state.clone()
     }
@@ -123,7 +113,7 @@ impl SyncthingPlugin {
 #[async_trait::async_trait]
 impl Plugin for SyncthingPlugin {
     fn get_entities(&self) -> Vec<Entity> {
-        let state = self.lock_state();
+        let state = self.state.lock_or_recover();
         if !state.available {
             return Vec::new();
         }
@@ -151,12 +141,12 @@ impl Plugin for SyncthingPlugin {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match action.as_str() {
             "toggle" => {
-                let was_enabled = self.lock_state().enabled;
+                let was_enabled = self.state.lock_or_recover().enabled;
                 let result = SyncthingPlugin::set_service_enabled(!was_enabled).await;
 
                 match result {
                     Ok(()) => {
-                        self.lock_state().enabled = !was_enabled;
+                        self.state.lock_or_recover().enabled = !was_enabled;
                         log::debug!("Syncthing toggled to: {}", !was_enabled);
                     }
                     Err(e) => {
@@ -166,10 +156,10 @@ impl Plugin for SyncthingPlugin {
                 }
             }
             "enable" => {
-                if !self.lock_state().enabled {
+                if !self.state.lock_or_recover().enabled {
                     match SyncthingPlugin::set_service_enabled(true).await {
                         Ok(()) => {
-                            self.lock_state().enabled = true;
+                            self.state.lock_or_recover().enabled = true;
                             log::debug!("Syncthing enabled");
                         }
                         Err(e) => {
@@ -180,10 +170,10 @@ impl Plugin for SyncthingPlugin {
                 }
             }
             "disable" => {
-                if self.lock_state().enabled {
+                if self.state.lock_or_recover().enabled {
                     match SyncthingPlugin::set_service_enabled(false).await {
                         Ok(()) => {
-                            self.lock_state().enabled = false;
+                            self.state.lock_or_recover().enabled = false;
                             log::debug!("Syncthing disabled");
                         }
                         Err(e) => {
@@ -215,13 +205,7 @@ async fn monitor_service_state(state: Arc<StdMutex<SyncthingState>>, notifier: E
 
         let active = SyncthingPlugin::check_service_active().await;
         let changed = {
-            let mut guard = match state.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    log::warn!("[syncthing] mutex poisoned in monitor, recovering: {e}");
-                    e.into_inner()
-                }
-            };
+            let mut guard = state.lock_or_recover();
             if guard.enabled != active {
                 guard.enabled = active;
                 true
@@ -238,35 +222,18 @@ async fn monitor_service_state(state: Arc<StdMutex<SyncthingState>>, notifier: E
 }
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[entity::storage::BACKUP_METHOD_ENTITY_TYPE],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
+    PluginRunner::new("syncthing", &[entity::storage::BACKUP_METHOD_ENTITY_TYPE])
+        .i18n(i18n(), "plugin-name", "plugin-description")
+        .run(|notifier| async move {
+            let plugin = SyncthingPlugin::new().await?;
+            let shared_state = plugin.shared_state();
 
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
+            // Monitor service state for external changes
+            tokio::spawn(async move {
+                monitor_service_state(shared_state, notifier).await;
+                log::debug!("[syncthing] monitor task stopped");
+            });
 
-    log::info!("Starting syncthing plugin...");
-
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = SyncthingPlugin::new().await?;
-        let shared_state = plugin.shared_state();
-
-        let (runtime, notifier) = PluginRuntime::new("syncthing", plugin);
-
-        // Monitor service state for external changes
-        tokio::spawn(async move {
-            monitor_service_state(shared_state, notifier).await;
-            log::debug!("[syncthing] monitor task stopped");
-        });
-
-        runtime.run().await?;
-        Ok(())
-    })
+            Ok(plugin)
+        })
 }

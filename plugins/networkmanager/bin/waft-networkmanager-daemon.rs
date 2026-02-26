@@ -314,13 +314,7 @@ impl NetworkManagerPlugin {
     }
 
     fn lock_state(&self) -> std::sync::MutexGuard<'_, NmState> {
-        match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[nm] Mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        }
+        self.state.lock_or_recover()
     }
 }
 
@@ -1274,12 +1268,8 @@ fn main() -> Result<()> {
         // Monitor NM D-Bus signals
         let monitor_state = shared_state.clone();
         let monitor_notifier = notifier.clone();
-        tokio::spawn(async move {
-            if let Err(e) = monitor_nm_signals(monitor_conn, monitor_state, monitor_notifier).await
-            {
-                error!("[nm] D-Bus signal monitoring failed: {e}");
-            }
-            warn!("[nm] D-Bus signal monitoring task stopped");
+        spawn_monitored_anyhow("nm/signal-monitor", async move {
+            monitor_nm_signals(monitor_conn, monitor_state, monitor_notifier).await
         });
 
         // Monitor BlueZ D-Bus signals (paired device connection state for tethering).
@@ -1287,18 +1277,9 @@ fn main() -> Result<()> {
         // missed signals due to match rule/stream contention in zbus.
         let bluez_state = shared_state.clone();
         let bluez_notifier = notifier.clone();
-        tokio::spawn(async move {
-            let bluez_conn = match Connection::system().await {
-                Ok(c) => c,
-                Err(e) => {
-                    error!("[nm] Failed to connect to system bus for BlueZ: {e}");
-                    return;
-                }
-            };
-            if let Err(e) = monitor_bluez_signals(bluez_conn, bluez_state, bluez_notifier).await {
-                error!("[nm] BlueZ signal monitoring failed: {e}");
-            }
-            warn!("[nm] BlueZ signal monitoring task stopped");
+        spawn_monitored_anyhow("nm/bluez-monitor", async move {
+            let bluez_conn = Connection::system().await?;
+            monitor_bluez_signals(bluez_conn, bluez_state, bluez_notifier).await
         });
 
         // WiFi scan background task — pure D-Bus, runs on main tokio runtime

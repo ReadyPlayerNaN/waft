@@ -11,10 +11,12 @@ use adw::prelude::*;
 use crate::i18n::t;
 use crate::keyboard_shortcuts::{all_action_names, validate_key, BindAction, BindEntry, Modifier};
 
+type ConfirmedCallback = Rc<RefCell<Option<Box<dyn Fn(BindEntry)>>>>;
+
 /// Dialog for creating or editing a keyboard shortcut.
 pub struct BindEditor {
     dialog: adw::AlertDialog,
-    on_confirmed: Rc<RefCell<Option<Box<dyn Fn(BindEntry)>>>>,
+    on_confirmed: ConfirmedCallback,
 }
 
 impl BindEditor {
@@ -92,7 +94,7 @@ impl BindEditor {
         // -- Action selector --
         let action_group = adw::PreferencesGroup::new();
         let action_names = all_action_names();
-        let action_list = gtk::StringList::new(&action_names.iter().copied().collect::<Vec<_>>());
+        let action_list = gtk::StringList::new(&action_names.to_vec());
         let action_row = adw::ComboRow::builder()
             .title(t("kb-action"))
             .model(&action_list)
@@ -185,8 +187,7 @@ impl BindEditor {
         key_entry.connect_changed(move |_| validate_fn());
         validate();
 
-        let on_confirmed: Rc<RefCell<Option<Box<dyn Fn(BindEntry)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_confirmed: ConfirmedCallback = Rc::new(RefCell::new(None));
 
         // Wire response
         let cb = on_confirmed.clone();

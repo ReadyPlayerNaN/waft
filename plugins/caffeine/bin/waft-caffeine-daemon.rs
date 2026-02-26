@@ -12,7 +12,7 @@
 
 use std::sync::OnceLock;
 
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
@@ -71,7 +71,7 @@ async fn probe_backend(conn: &Connection) -> Result<Backend> {
         }
     }
 
-    bail!("No screen inhibit backend available")
+    anyhow::bail!("No screen inhibit backend available")
 }
 
 /// Mutable caffeine state behind interior mutability.
@@ -90,7 +90,7 @@ impl CaffeinePlugin {
     async fn new() -> Result<Self> {
         let conn = Connection::session()
             .await
-            .context("Failed to connect to session bus")?;
+            .map_err(|e| anyhow::anyhow!("Failed to connect to session bus: {e}"))?;
 
         let backend = probe_backend(&conn).await?;
         info!("[caffeine] Using backend: {:?}", backend);
@@ -103,16 +103,6 @@ impl CaffeinePlugin {
                 screensaver_cookie: None,
             }),
         })
-    }
-
-    fn lock_state(&self) -> std::sync::MutexGuard<'_, CaffeineState> {
-        match self.state.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("[caffeine] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        }
     }
 
     async fn inhibit(&self) -> Result<()> {
@@ -150,11 +140,11 @@ impl CaffeinePlugin {
                     )
                     .await?;
 
-                self.lock_state().screensaver_cookie = Some(cookie);
+                self.state.lock_or_recover().screensaver_cookie = Some(cookie);
                 debug!("[caffeine] ScreenSaver inhibit cookie: {}", cookie);
             }
         }
-        self.lock_state().active = true;
+        self.state.lock_or_recover().active = true;
         Ok(())
     }
 
@@ -165,7 +155,7 @@ impl CaffeinePlugin {
                 warn!("[caffeine] Portal uninhibit: inhibition releases when daemon restarts");
             }
             Backend::ScreenSaver { path } => {
-                let cookie = self.lock_state().screensaver_cookie.take();
+                let cookie = self.state.lock_or_recover().screensaver_cookie.take();
                 if let Some(cookie) = cookie {
                     let proxy = zbus::Proxy::new(
                         &self.conn,
@@ -180,7 +170,7 @@ impl CaffeinePlugin {
                 }
             }
         }
-        self.lock_state().active = false;
+        self.state.lock_or_recover().active = false;
         Ok(())
     }
 }
@@ -188,7 +178,7 @@ impl CaffeinePlugin {
 #[async_trait::async_trait]
 impl Plugin for CaffeinePlugin {
     fn get_entities(&self) -> Vec<Entity> {
-        let state = self.lock_state();
+        let state = self.state.lock_or_recover();
         let inhibitor = entity::session::SleepInhibitor {
             active: state.active,
         };
@@ -210,7 +200,7 @@ impl Plugin for CaffeinePlugin {
         _params: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if action == "toggle" {
-            let was_active = self.lock_state().active;
+            let was_active = self.state.lock_or_recover().active;
             let result = if was_active {
                 self.uninhibit().await
             } else {
@@ -227,31 +217,14 @@ impl Plugin for CaffeinePlugin {
 
     fn can_stop(&self) -> bool {
         // Cannot stop gracefully while actively inhibiting
-        !self.lock_state().active
+        !self.state.lock_or_recover().active
     }
 }
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[entity::session::SLEEP_INHIBITOR_ENTITY_TYPE],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
-
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
-
-    info!("Starting caffeine plugin...");
-
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = CaffeinePlugin::new().await?;
-        let (runtime, _notifier) = PluginRuntime::new("caffeine", plugin);
-        runtime.run().await?;
-        Ok(())
-    })
+    PluginRunner::new("caffeine", &[entity::session::SLEEP_INHIBITOR_ENTITY_TYPE])
+        .i18n(i18n(), "plugin-name", "plugin-description")
+        .run(|_notifier| async {
+            CaffeinePlugin::new().await
+        })
 }

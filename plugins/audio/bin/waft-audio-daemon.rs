@@ -102,13 +102,7 @@ impl AudioPlugin {
 }
 
 fn lock_state(state: &Arc<StdMutex<AudioState>>) -> std::sync::MutexGuard<'_, AudioState> {
-    match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[audio] mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    }
+    state.lock_or_recover()
 }
 
 /// Reload all audio state from pactl into the shared state.

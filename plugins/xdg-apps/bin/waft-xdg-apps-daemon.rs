@@ -33,13 +33,7 @@ impl XdgAppsPlugin {
 #[async_trait::async_trait]
 impl Plugin for XdgAppsPlugin {
     fn get_entities(&self) -> Vec<Entity> {
-        let apps = match self.apps.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                log::warn!("[xdg-apps] mutex poisoned, recovering: {e}");
-                e.into_inner()
-            }
-        };
+        let apps = self.apps.lock_or_recover();
 
         apps.values()
             .map(|app| {
@@ -69,10 +63,7 @@ impl Plugin for XdgAppsPlugin {
         match action.as_str() {
             "open" => {
                 let exec = {
-                    let apps = match self.apps.lock() {
-                        Ok(g) => g,
-                        Err(e) => e.into_inner(),
-                    };
+                    let apps = self.apps.lock_or_recover();
                     apps.get(&stem)
                         .map(|a| strip_exec_field_codes(&a.entry.exec))
                 };
@@ -202,11 +193,8 @@ fn main() -> Result<()> {
         let (runtime, notifier) = PluginRuntime::new("xdg-apps", plugin);
 
         // Spawn inotify watcher task
-        tokio::spawn(async move {
-            if let Err(e) = watch_dirs(dirs, apps_ref, notifier).await {
-                log::warn!("[xdg-apps] file watcher exited: {e}");
-            }
-            log::debug!("[xdg-apps] file watcher stopped");
+        spawn_monitored_anyhow("xdg-apps/file-watcher", async move {
+            watch_dirs(dirs, apps_ref, notifier).await
         });
 
         runtime.run().await?;
@@ -255,13 +243,7 @@ async fn watch_dirs(
                     let new_map: HashMap<String, DiscoveredApp> =
                         new_apps.into_iter().map(|a| (a.stem.clone(), a)).collect();
 
-                    match apps.lock() {
-                        Ok(mut guard) => *guard = new_map,
-                        Err(e) => {
-                            log::warn!("[xdg-apps] mutex poisoned, recovering: {e}");
-                            *e.into_inner() = new_map;
-                        }
-                    }
+                    *apps.lock_or_recover() = new_map;
 
                     if !notifier.notify() {
                         // Runtime has stopped (CanStop from daemon). Exit the

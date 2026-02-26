@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_i18n::I18n;
 
-use waft_plugin::PluginRuntime;
+use waft_plugin::{PluginRuntime, StateLocker};
 
 static I18N: OnceLock<I18n> = OnceLock::new();
 
@@ -168,15 +168,7 @@ fn main() -> Result<()> {
                         } else if let Some(ref custom_sound) = filter_actions.sound {
                             SoundDecision::Play(custom_sound.clone())
                         } else {
-                            let guard = match ingress_state.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    log::warn!(
-                                        "[notifications/ingress] mutex poisoned, recovering: {e}"
-                                    );
-                                    e.into_inner()
-                                }
-                            };
+                            let guard = ingress_state.lock_or_recover();
                             let ctx = NotificationContext {
                                 app_name: notification
                                     .app_name
@@ -201,15 +193,7 @@ fn main() -> Result<()> {
                                     .map(|s| s.as_ref()),
                                 dnd_active: guard.dnd,
                             };
-                            let policy = match ingress_sound_policy.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    log::warn!(
-                                        "[notifications/ingress] sound policy mutex poisoned, recovering: {e}"
-                                    );
-                                    e.into_inner()
-                                }
-                            };
+                            let policy = ingress_sound_policy.lock_or_recover();
                             policy.evaluate(&ctx)
                         };
 
@@ -297,15 +281,7 @@ fn main() -> Result<()> {
                         // 6. Mutate state and apply suppress_toast
                         let notif_id = notification.id;
                         {
-                            let mut guard = match ingress_state.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    log::warn!(
-                                        "[notifications/ingress] mutex poisoned, recovering: {e}"
-                                    );
-                                    e.into_inner()
-                                }
-                            };
+                            let mut guard = ingress_state.lock_or_recover();
                             process_op(&mut guard, NotificationOp::Ingress(notification));
                             if filter_actions.no_toast
                                 && let Some(stored) = guard.notifications.get_mut(&notif_id)
@@ -329,15 +305,7 @@ fn main() -> Result<()> {
                     }
                     IngressEvent::CloseNotification { id } => {
                         {
-                            let mut guard = match ingress_state.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    log::warn!(
-                                        "[notifications/ingress] mutex poisoned, recovering: {e}"
-                                    );
-                                    e.into_inner()
-                                }
-                            };
+                            let mut guard = ingress_state.lock_or_recover();
                             process_op(&mut guard, NotificationOp::NotificationRetract(id as u64));
                         }
                         if ingress_outbound_tx
