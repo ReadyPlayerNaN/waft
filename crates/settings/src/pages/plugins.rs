@@ -78,37 +78,21 @@ impl PluginsPage {
             group,
         }));
 
-        // Subscribe to plugin-status changes
-        {
-            let store = entity_store.clone();
-            let state = state.clone();
-            entity_store.subscribe_type(plugin::ENTITY_TYPE, move || {
-                let plugins: Vec<(Urn, PluginStatus)> =
-                    store.get_entities_typed(plugin::ENTITY_TYPE);
-                log::debug!(
-                    "[plugins-page] Subscription triggered: {} plugins",
-                    plugins.len()
-                );
-                Self::reconcile(&state, &plugins);
-            });
-        }
-
-        // Trigger initial reconciliation with cached data
-        {
-            let store = entity_store.clone();
-            let state = state.clone();
-            gtk::glib::idle_add_local_once(move || {
-                let plugins: Vec<(Urn, PluginStatus)> =
-                    store.get_entities_typed(plugin::ENTITY_TYPE);
-                if !plugins.is_empty() {
+        // Subscribe to plugin-status changes (future updates + initial reconciliation)
+        crate::subscription::subscribe_entities::<PluginStatus, _>(
+            entity_store,
+            plugin::ENTITY_TYPE,
+            {
+                let state = state.clone();
+                move |plugins| {
                     log::debug!(
-                        "[plugins-page] Initial reconciliation: {} plugins",
+                        "[plugins-page] Reconciling: {} plugins",
                         plugins.len()
                     );
                     Self::reconcile(&state, &plugins);
                 }
-            });
-        }
+            },
+        );
 
         Self { root }
     }

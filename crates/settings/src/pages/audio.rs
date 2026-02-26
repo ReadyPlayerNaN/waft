@@ -83,39 +83,21 @@ impl AudioPage {
             action_callback: action_callback.clone(),
         }));
 
-        // Subscribe to audio card changes
-        {
-            let store = entity_store.clone();
-            let state = state.clone();
-            entity_store.subscribe_type(audio::CARD_ENTITY_TYPE, move || {
-                let cards: Vec<(Urn, AudioCard)> =
-                    store.get_entities_typed(audio::CARD_ENTITY_TYPE);
-                log::debug!(
-                    "[audio-page] Card subscription triggered: {} cards",
-                    cards.len()
-                );
-                Self::reconcile(&state, &cards);
-            });
-        }
-
-        // Trigger initial reconciliation with current cached data
-        {
-            let state_clone = state.clone();
-            let store_clone = entity_store.clone();
-
-            gtk::glib::idle_add_local_once(move || {
-                let cards: Vec<(Urn, AudioCard)> =
-                    store_clone.get_entities_typed(audio::CARD_ENTITY_TYPE);
-
-                if !cards.is_empty() {
+        // Subscribe to audio card changes (future updates + initial reconciliation)
+        crate::subscription::subscribe_entities::<AudioCard, _>(
+            entity_store,
+            audio::CARD_ENTITY_TYPE,
+            {
+                let state = state.clone();
+                move |cards| {
                     log::debug!(
-                        "[audio-page] Initial reconciliation: {} cards",
+                        "[audio-page] Reconciling: {} cards",
                         cards.len()
                     );
-                    Self::reconcile(&state_clone, &cards);
+                    Self::reconcile(&state, &cards);
                 }
-            });
-        }
+            },
+        );
 
         Self { root }
     }

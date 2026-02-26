@@ -18,6 +18,7 @@ mod search_index;
 mod services;
 mod search_results;
 mod sidebar;
+mod subscription;
 mod sounds;
 mod startup;
 mod wallpaper;

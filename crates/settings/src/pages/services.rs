@@ -87,39 +87,22 @@ impl ServicesPage {
             group,
         }));
 
-        // Subscribe to user-service changes
-        {
-            let store = entity_store.clone();
-            let state = state.clone();
-            let cb = action_callback.clone();
-            entity_store.subscribe_type(session::USER_SERVICE_ENTITY_TYPE, move || {
-                let services: Vec<(Urn, UserService)> =
-                    store.get_entities_typed(session::USER_SERVICE_ENTITY_TYPE);
-                log::debug!(
-                    "[services-page] Subscription triggered: {} services",
-                    services.len()
-                );
-                Self::reconcile(&state, &services, &cb);
-            });
-        }
-
-        // Trigger initial reconciliation with cached data
-        {
-            let store = entity_store.clone();
-            let state = state.clone();
-            let cb = action_callback.clone();
-            gtk::glib::idle_add_local_once(move || {
-                let services: Vec<(Urn, UserService)> =
-                    store.get_entities_typed(session::USER_SERVICE_ENTITY_TYPE);
-                if !services.is_empty() {
+        // Subscribe to user-service changes (future updates + initial reconciliation)
+        crate::subscription::subscribe_entities::<UserService, _>(
+            entity_store,
+            session::USER_SERVICE_ENTITY_TYPE,
+            {
+                let state = state.clone();
+                let cb = action_callback.clone();
+                move |services| {
                     log::debug!(
-                        "[services-page] Initial reconciliation: {} services",
+                        "[services-page] Reconciling: {} services",
                         services.len()
                     );
                     Self::reconcile(&state, &services, &cb);
                 }
-            });
-        }
+            },
+        );
 
         Self { root }
     }
