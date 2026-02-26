@@ -15,24 +15,19 @@
 //! id = "audio"
 //! ```
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_i18n::I18n;
 use waft_plugin::*;
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/audio.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/audio.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            ("en-US", include_str!("../locales/en-US/audio.ftl")),
-            ("cs-CZ", include_str!("../locales/cs-CZ/audio.ftl")),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 use waft_plugin_audio::pactl::{self, AudioEvent, CardInfo, CardPortMap, SinkInfo, SourceInfo};
 
@@ -651,51 +646,25 @@ async fn monitor_events(
 }
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[entity::audio::ENTITY_TYPE, entity::audio::CARD_ENTITY_TYPE],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
+    PluginRunner::new("audio", &[entity::audio::ENTITY_TYPE, entity::audio::CARD_ENTITY_TYPE])
+        .i18n(i18n(), "plugin-name", "plugin-description")
+        .run(|notifier| async move {
+            let (plugin, shared_state) = AudioPlugin::new().await?;
+            let is_available = lock_state(&shared_state).available;
 
-    waft_plugin::init_plugin_logger("info");
-
-    info!("Starting audio plugin...");
-
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        let (plugin, shared_state) = AudioPlugin::new().await?;
-        let is_available = lock_state(&shared_state).available;
-
-        // Subscribe to pactl events before moving the plugin into the runtime
-        let event_rx = if is_available {
-            match pactl::subscribe_events() {
-                Ok(rx) => {
-                    debug!("[audio] Started event subscription");
-                    Some(rx)
-                }
-                Err(e) => {
-                    warn!("[audio] Failed to start event subscription: {}", e);
-                    None
+            if is_available {
+                match pactl::subscribe_events() {
+                    Ok(rx) => {
+                        debug!("[audio] Started event subscription");
+                        spawn_monitored_anyhow("audio-monitor", async move {
+                            monitor_events(rx, shared_state, notifier).await;
+                            Ok(())
+                        });
+                    }
+                    Err(e) => warn!("[audio] Failed to start event subscription: {}", e),
                 }
             }
-        } else {
-            None
-        };
 
-        let (runtime, notifier) = PluginRuntime::new("audio", plugin);
-
-        // Start event monitoring if we have a subscription
-        if let Some(rx) = event_rx {
-            tokio::spawn(async move {
-                monitor_events(rx, shared_state, notifier).await;
-            });
-        }
-
-        runtime.run().await?;
-
-        Ok(())
-    })
+            Ok(plugin)
+        })
 }

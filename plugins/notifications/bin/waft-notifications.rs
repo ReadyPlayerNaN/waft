@@ -5,30 +5,20 @@
 //! - Translates D-Bus notifications into entities for the waft daemon
 //! - Provides `notification` and `dnd` entity types
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex as StdMutex};
-use waft_i18n::I18n;
 
-use waft_plugin::{PluginRuntime, StateLocker};
+use waft_plugin::{PluginRunner, StateLocker};
 
-static I18N: OnceLock<I18n> = OnceLock::new();
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
+    ("en-US", include_str!("../locales/en-US/notifications.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/notifications.ftl")),
+]));
 
-fn i18n() -> &'static I18n {
-    I18N.get_or_init(|| {
-        I18n::new(&[
-            (
-                "en-US",
-                include_str!("../locales/en-US/notifications.ftl"),
-            ),
-            (
-                "cs-CZ",
-                include_str!("../locales/cs-CZ/notifications.ftl"),
-            ),
-        ])
-    })
-}
+fn i18n() -> &'static waft_i18n::I18n { &I18N }
+
 use waft_plugin_notifications::NotificationsPlugin;
 use waft_plugin_notifications::config;
 use waft_plugin_notifications::dbus::client::{IngressEvent, OutboundEvent, close_reasons};
@@ -46,32 +36,18 @@ use waft_protocol::entity::notification_filter::{
 use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[
-            NOTIFICATION_ENTITY_TYPE,
-            DND_ENTITY_TYPE,
-            RECORDING_ENTITY_TYPE,
-            NOTIFICATION_GROUP_ENTITY_TYPE,
-            NOTIFICATION_PROFILE_ENTITY_TYPE,
-            ACTIVE_PROFILE_ENTITY_TYPE,
-            SOUND_CONFIG_ENTITY_TYPE,
-            NOTIFICATION_SOUND_ENTITY_TYPE,
-        ],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
-
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
-
-    log::info!("Starting notifications plugin...");
-
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
+    PluginRunner::new("notifications", &[
+        NOTIFICATION_ENTITY_TYPE,
+        DND_ENTITY_TYPE,
+        RECORDING_ENTITY_TYPE,
+        NOTIFICATION_GROUP_ENTITY_TYPE,
+        NOTIFICATION_PROFILE_ENTITY_TYPE,
+        ACTIVE_PROFILE_ENTITY_TYPE,
+        SOUND_CONFIG_ENTITY_TYPE,
+        NOTIFICATION_SOUND_ENTITY_TYPE,
+    ])
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
         // Shared state between plugin, D-Bus server, and TTL timer
         let state = Arc::new(StdMutex::new(State::new()));
 
@@ -116,9 +92,6 @@ fn main() -> Result<()> {
         let filter_handle = plugin.filter_handle();
         let sound_policy_handle = plugin.sound_policy_handle();
         let ingress_recorder = plugin.recorder();
-
-        // Create the plugin runtime (connects to waft daemon)
-        let (runtime, notifier) = PluginRuntime::new("notifications", plugin);
 
         // Start D-Bus server
         let mut dbus_server = NotificationsDbusServer::connect()
@@ -333,8 +306,6 @@ fn main() -> Result<()> {
             log::warn!("[notifications] TTL expiration loop exited");
         });
 
-        // Run the plugin runtime (blocks until shutdown)
-        runtime.run().await?;
-        Ok(())
+        Ok(plugin)
     })
 }
