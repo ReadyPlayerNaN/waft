@@ -3,6 +3,7 @@ mod claim_tracker;
 mod connection;
 mod crash_tracker;
 mod daemon;
+#[allow(dead_code)]
 mod plugin_discovery;
 mod plugin_spawner;
 mod registry;
