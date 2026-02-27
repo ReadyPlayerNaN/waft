@@ -20,6 +20,12 @@ pub struct AudioDevice {
     pub muted: bool,
     pub default: bool,
     pub kind: AudioDeviceKind,
+    /// Whether this is a waft-managed virtual device (null-sink or null-source).
+    #[serde(default)]
+    pub virtual_device: bool,
+    /// Internal pactl sink or source name (for virtual device actions).
+    #[serde(default)]
+    pub sink_name: Option<String>,
 }
 
 /// Whether the audio device is an output (speakers/headphones) or input (microphone).
@@ -138,6 +144,8 @@ mod tests {
             muted: false,
             default: true,
             kind: AudioDeviceKind::Output,
+            virtual_device: false,
+            sink_name: None,
         };
         let json = serde_json::to_value(&device).unwrap();
         let decoded: AudioDevice = serde_json::from_value(json).unwrap();
@@ -154,6 +162,8 @@ mod tests {
             muted: true,
             default: false,
             kind: AudioDeviceKind::Input,
+            virtual_device: false,
+            sink_name: None,
         };
         let json = serde_json::to_value(&device).unwrap();
         let decoded: AudioDevice = serde_json::from_value(json).unwrap();

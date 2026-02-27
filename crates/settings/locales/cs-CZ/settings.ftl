@@ -40,6 +40,15 @@ audio-card-unmute = Zrušit ztlumení { $name }
 audio-card-set-default-tooltip = Nastavit { $name } jako výchozí
 audio-port-connected = Připojeno
 audio-port-disconnected = Odpojeno
+audio-virtual-devices = Virtuální zařízení
+audio-create-virtual-sink = Vytvořit výstup
+audio-create-virtual-source = Vytvořit vstup
+audio-remove-virtual-device = Odebrat
+audio-virtual-devices-empty = Žádná virtuální zařízení
+audio-virtual-devices-empty-desc = Vytvořte virtuální zvukové výstupy a vstupy pro směrování nebo nahrávání
+audio-create-device-title = Vytvořit virtuální zařízení
+audio-create-device-label = Název zařízení
+audio-create-device-label-placeholder = např. Virtuální mikrofon
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Zapnuto

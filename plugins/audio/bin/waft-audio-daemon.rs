@@ -30,6 +30,14 @@ static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&
 fn i18n() -> &'static waft_i18n::I18n { &I18N }
 
 use waft_plugin_audio::pactl::{self, AudioEvent, CardInfo, CardPortMap, SinkInfo, SourceInfo};
+use waft_plugin_audio::virtual_device_config::{self, VirtualDeviceConfig};
+
+/// Runtime state for a waft-managed virtual audio device.
+#[derive(Clone)]
+struct VirtualDeviceState {
+    config: VirtualDeviceConfig,
+    module_index: Option<u32>,
+}
 
 /// Shared audio state, accessible from both the plugin and the event monitor.
 #[derive(Clone, Default)]
@@ -47,6 +55,8 @@ struct AudioState {
     cards: Vec<CardInfo>,
     /// Card port map for display labels.
     card_ports: CardPortMap,
+    /// Waft-managed virtual devices.
+    virtual_devices: Vec<VirtualDeviceState>,
 }
 
 /// Audio plugin.
@@ -82,6 +92,9 @@ impl AudioPlugin {
         if let Err(e) = reload_all(&state).await {
             warn!("[audio] Failed to load initial state: {}", e);
         }
+
+        // Reconcile virtual devices from config
+        reconcile_virtual_devices(&state).await;
 
         Ok((
             Self {
@@ -158,6 +171,77 @@ async fn reload_cards(state: &Arc<StdMutex<AudioState>>) {
     }
 }
 
+/// Reconcile virtual devices from config: load missing modules, track indices.
+async fn reconcile_virtual_devices(state: &Arc<StdMutex<AudioState>>) {
+    let configs = virtual_device_config::read_virtual_devices();
+    if configs.is_empty() {
+        return;
+    }
+
+    let loaded_modules = match pactl::list_modules_short().await {
+        Ok(modules) => modules,
+        Err(e) => {
+            warn!("[audio] Failed to list modules for virtual device reconciliation: {e}");
+            Vec::new()
+        }
+    };
+
+    let mut virtual_devices = Vec::new();
+
+    for config in configs {
+        // Check if the module is already loaded by scanning arguments for sink_name
+        let existing = loaded_modules.iter().find(|m| {
+            let expected_module = match config.module_type.as_str() {
+                "null-sink" => "module-null-sink",
+                "null-source" => "module-null-source",
+                _ => return false,
+            };
+            m.name == expected_module && m.arguments.contains(&config.sink_name)
+        });
+
+        let module_index = if let Some(m) = existing {
+            debug!(
+                "[audio] Virtual device '{}' already loaded as module {}",
+                config.sink_name, m.index
+            );
+            Some(m.index)
+        } else {
+            // Load the missing module
+            let result = match config.module_type.as_str() {
+                "null-sink" => pactl::load_null_sink(&config.sink_name, &config.label).await,
+                "null-source" => pactl::load_null_source(&config.sink_name, &config.label).await,
+                other => {
+                    warn!("[audio] Unknown module_type '{}' for virtual device '{}'", other, config.sink_name);
+                    continue;
+                }
+            };
+            match result {
+                Ok(idx) => {
+                    info!(
+                        "[audio] Loaded virtual device '{}' as module {}",
+                        config.sink_name, idx
+                    );
+                    Some(idx)
+                }
+                Err(e) => {
+                    error!(
+                        "[audio] Failed to load virtual device '{}': {e}",
+                        config.sink_name
+                    );
+                    None
+                }
+            }
+        };
+
+        virtual_devices.push(VirtualDeviceState {
+            config,
+            module_index,
+        });
+    }
+
+    lock_state(state).virtual_devices = virtual_devices;
+}
+
 #[async_trait::async_trait]
 impl Plugin for AudioPlugin {
     fn get_entities(&self) -> Vec<Entity> {
@@ -181,6 +265,8 @@ impl Plugin for AudioPlugin {
                 kind: entity::audio::AudioDeviceKind::Output,
                 device_type: device.device_type.clone(),
                 connection_type: device.connection_type.clone(),
+                virtual_device: false,
+                sink_name: None,
             };
             entities.push(Entity::new(
                 Urn::new("audio", entity::audio::ENTITY_TYPE, &device.id),
@@ -201,6 +287,8 @@ impl Plugin for AudioPlugin {
                 kind: entity::audio::AudioDeviceKind::Input,
                 device_type: device.device_type.clone(),
                 connection_type: device.connection_type.clone(),
+                virtual_device: false,
+                sink_name: None,
             };
             entities.push(Entity::new(
                 Urn::new("audio", entity::audio::ENTITY_TYPE, &device.id),
@@ -216,6 +304,30 @@ impl Plugin for AudioPlugin {
                 Urn::new("audio", entity::audio::CARD_ENTITY_TYPE, &card.name),
                 entity::audio::CARD_ENTITY_TYPE,
                 &card_entity,
+            ));
+        }
+
+        // Virtual device entities
+        for vd in &state.virtual_devices {
+            let kind = match vd.config.module_type.as_str() {
+                "null-source" => entity::audio::AudioDeviceKind::Input,
+                _ => entity::audio::AudioDeviceKind::Output,
+            };
+            let audio_device = entity::audio::AudioDevice {
+                name: vd.config.label.clone(),
+                device_type: "virtual".to_string(),
+                connection_type: Some("virtual".to_string()),
+                volume: 1.0,
+                muted: false,
+                default: false,
+                kind,
+                virtual_device: true,
+                sink_name: Some(vd.config.sink_name.clone()),
+            };
+            entities.push(Entity::new(
+                Urn::new("audio", entity::audio::ENTITY_TYPE, &vd.config.sink_name),
+                entity::audio::ENTITY_TYPE,
+                &audio_device,
             ));
         }
 
@@ -312,6 +424,26 @@ impl Plugin for AudioPlugin {
                     debug!("[audio] Unknown device for set-default: {}", device_id);
                 }
             }
+            "create-sink" => {
+                return self.handle_create_virtual_device("null-sink", &params).await;
+            }
+            "create-source" => {
+                return self.handle_create_virtual_device("null-source", &params).await;
+            }
+            "remove-sink" => {
+                let sink_name = params
+                    .get("sink_name")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing 'sink_name' parameter")?;
+                return self.handle_remove_virtual_device(sink_name).await;
+            }
+            "remove-source" => {
+                let source_name = params
+                    .get("source_name")
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing 'source_name' parameter")?;
+                return self.handle_remove_virtual_device(source_name).await;
+            }
             other => {
                 debug!("[audio] Unknown action: {}", other);
             }
@@ -322,6 +454,112 @@ impl Plugin for AudioPlugin {
 }
 
 impl AudioPlugin {
+    /// Create a virtual audio device (null-sink or null-source).
+    async fn handle_create_virtual_device(
+        &self,
+        module_type: &str,
+        params: &serde_json::Value,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let label = params
+            .get("label")
+            .and_then(|v| v.as_str())
+            .ok_or("missing 'label' parameter")?;
+
+        let base_name = virtual_device_config::sanitize_sink_name(label);
+
+        let existing_configs: Vec<VirtualDeviceConfig> = lock_state(&self.state)
+            .virtual_devices
+            .iter()
+            .map(|vd| vd.config.clone())
+            .collect();
+
+        let sink_name = virtual_device_config::ensure_unique_sink_name(&base_name, &existing_configs);
+
+        let module_index = match module_type {
+            "null-sink" => pactl::load_null_sink(&sink_name, label).await?,
+            "null-source" => pactl::load_null_source(&sink_name, label).await?,
+            other => return Err(format!("unsupported module_type: {other}").into()),
+        };
+
+        let config = VirtualDeviceConfig {
+            module_type: module_type.to_string(),
+            sink_name: sink_name.clone(),
+            label: label.to_string(),
+        };
+
+        {
+            let mut state = lock_state(&self.state);
+            state.virtual_devices.push(VirtualDeviceState {
+                config: config.clone(),
+                module_index: Some(module_index),
+            });
+        }
+
+        // Persist to config and default.pa
+        let all_configs = self.collect_virtual_configs();
+        if let Err(e) = virtual_device_config::save_virtual_devices(&all_configs) {
+            error!("[audio] Failed to save virtual device config: {e}");
+        }
+        if let Err(e) = virtual_device_config::sync_default_pa(&all_configs) {
+            error!("[audio] Failed to sync default.pa: {e}");
+        }
+
+        info!("[audio] Created virtual device '{}' (module {})", sink_name, module_index);
+        Ok(())
+    }
+
+    /// Remove a virtual audio device by sink/source name.
+    async fn handle_remove_virtual_device(
+        &self,
+        name: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let module_index = {
+            let state = lock_state(&self.state);
+            state
+                .virtual_devices
+                .iter()
+                .find(|vd| vd.config.sink_name == name)
+                .and_then(|vd| vd.module_index)
+        };
+
+        // Unload the module if we have an index
+        if let Some(idx) = module_index
+            && let Err(e) = pactl::unload_module(idx).await
+        {
+            error!("[audio] Failed to unload module {idx} for '{name}': {e}");
+            return Err(e.into());
+        }
+
+        // Remove from state
+        {
+            let mut state = lock_state(&self.state);
+            state
+                .virtual_devices
+                .retain(|vd| vd.config.sink_name != name);
+        }
+
+        // Persist
+        let all_configs = self.collect_virtual_configs();
+        if let Err(e) = virtual_device_config::save_virtual_devices(&all_configs) {
+            error!("[audio] Failed to save virtual device config: {e}");
+        }
+        if let Err(e) = virtual_device_config::sync_default_pa(&all_configs) {
+            error!("[audio] Failed to sync default.pa: {e}");
+        }
+
+        info!("[audio] Removed virtual device '{name}'");
+        Ok(())
+    }
+
+    /// Collect all virtual device configs from current state.
+    fn collect_virtual_configs(&self) -> Vec<VirtualDeviceConfig> {
+        lock_state(&self.state)
+            .virtual_devices
+            .iter()
+            .map(|vd| vd.config.clone())
+            .collect()
+    }
+
     /// Handle actions on audio-card entities.
     async fn handle_card_action(
         &self,

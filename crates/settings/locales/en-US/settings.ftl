@@ -40,6 +40,15 @@ audio-card-unmute = Unmute { $name }
 audio-card-set-default-tooltip = Set { $name } as default
 audio-port-connected = Connected
 audio-port-disconnected = Disconnected
+audio-virtual-devices = Virtual Devices
+audio-create-virtual-sink = Create Sink
+audio-create-virtual-source = Create Source
+audio-remove-virtual-device = Remove
+audio-virtual-devices-empty = No Virtual Devices
+audio-virtual-devices-empty-desc = Create virtual audio sinks and sources for routing or recording
+audio-create-device-title = Create Virtual Device
+audio-create-device-label = Device Label
+audio-create-device-label-placeholder = e.g. Virtual Microphone
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Enabled

@@ -141,7 +141,7 @@ impl GallerySection {
             for thumb in &group.thumbnails {
                 let selected = current
                     .as_deref()
-                    .map(|c| c == thumb.path)
+                    .map(|c| paths_match(c, &thumb.path))
                     .unwrap_or(false);
                 thumb.set_selected(selected);
             }
@@ -211,6 +211,23 @@ fn load_thumbnails(folder: &Path) -> Vec<ThumbnailWidget> {
             ThumbnailWidget::new(&path.to_string_lossy(), &filename)
         })
         .collect()
+}
+
+/// Canonicalize a path, returning `None` if the path doesn't exist.
+fn normalize_path(path: &str) -> Option<PathBuf> {
+    std::fs::canonicalize(path).ok()
+}
+
+/// Compare two paths for equality. Tries fast string comparison first,
+/// then falls back to canonicalization for symlink/tilde differences.
+fn paths_match(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    match (normalize_path(a), normalize_path(b)) {
+        (Some(na), Some(nb)) => na == nb,
+        _ => false,
+    }
 }
 
 /// Expand `~` prefix to home directory.
@@ -438,7 +455,7 @@ fn create_gallery_group_impl(
         for thumb in &thumbnails {
             let selected = current
                 .as_deref()
-                .map(|c| c == thumb.path)
+                .map(|c| paths_match(c, &thumb.path))
                 .unwrap_or(false);
             thumb.set_selected(selected);
         }
@@ -457,5 +474,59 @@ fn create_gallery_group_impl(
     GalleryGroup {
         group,
         thumbnails,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn same_path_matches() {
+        assert!(paths_match(
+            "/home/user/wallpaper.png",
+            "/home/user/wallpaper.png"
+        ));
+    }
+
+    #[test]
+    fn different_paths_do_not_match() {
+        assert!(!paths_match("/home/user/a.png", "/home/user/b.png"));
+    }
+
+    #[test]
+    fn nonexistent_same_string_matches() {
+        assert!(paths_match(
+            "/nonexistent/path.png",
+            "/nonexistent/path.png"
+        ));
+    }
+
+    #[test]
+    fn nonexistent_different_strings_do_not_match() {
+        assert!(!paths_match("/nonexistent/a.png", "/nonexistent/b.png"));
+    }
+
+    #[test]
+    fn symlinked_paths_match() {
+        let dir = std::env::temp_dir().join("waft-test-paths-match");
+        let _ = std::fs::create_dir_all(&dir);
+        let real_file = dir.join("real.png");
+        let symlink = dir.join("link.png");
+
+        std::fs::write(&real_file, b"test").expect("write real file");
+        // Remove stale symlink from previous test run
+        let _ = std::fs::remove_file(&symlink);
+        std::os::unix::fs::symlink(&real_file, &symlink).expect("create symlink");
+
+        let real_str = real_file.to_string_lossy().to_string();
+        let link_str = symlink.to_string_lossy().to_string();
+
+        assert!(paths_match(&real_str, &link_str));
+
+        // Cleanup
+        let _ = std::fs::remove_file(&symlink);
+        let _ = std::fs::remove_file(&real_file);
+        let _ = std::fs::remove_dir(&dir);
     }
 }

@@ -20,7 +20,7 @@ use log::{info, warn};
 /// Well-known D-Bus name for the waft daemon.
 const DBUS_NAME: &str = "org.waft.Daemon";
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
+fn run_daemon() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         // Register on the session bus so clients can discover us and
@@ -90,7 +90,7 @@ fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// Returns the connection handle (must be kept alive). Fails if another
 /// instance already owns the name.
-async fn register_dbus_name() -> Result<zbus::Connection, Box<dyn std::error::Error>> {
+async fn register_dbus_name() -> Result<zbus::Connection, Box<dyn std::error::Error + Send + Sync>> {
     let conn = zbus::Connection::session().await?;
 
     let well_known_name = zbus::names::WellKnownName::try_from(DBUS_NAME)?;
@@ -113,7 +113,7 @@ async fn register_dbus_name() -> Result<zbus::Connection, Box<dyn std::error::Er
     }
 }
 
-fn daemon_socket_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn daemon_socket_path() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR").map_err(|_| "XDG_RUNTIME_DIR not set")?;
 
     let mut path = PathBuf::from(runtime_dir);

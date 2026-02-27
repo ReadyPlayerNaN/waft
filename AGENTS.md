@@ -251,7 +251,7 @@ crates/
                 plugins.rs        # Smart container: plugin lifecycle status
                 services.rs       # Smart container: systemd user services
             bluetooth/            # Dumb widgets: adapter_group, device_row, paired/discovered groups
-            display/              # Widgets: accent_colour_section, dark_mode_settings_page, night_light_settings_page, and more
+            display/              # Widgets: accent_colour_section, dark_mode_section, night_light_section, settings_sub_page, and more
             wifi/                 # Dumb widgets: adapter_group, network_row, known/available groups
             wired/                # Dumb widgets: adapter_group, connection_row
             niri_windows/         # Dumb widgets: focus_ring, border, shadow, tab_indicator, gaps, struts, derive_colors sections

@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
+use waft_ui_gtk::icons::icon::IconWidget;
 
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
@@ -25,6 +26,7 @@ impl DarkModeSection {
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
+        on_navigate: Option<Box<dyn Fn()>>,
     ) -> Self {
         let group = adw::PreferencesGroup::builder()
             .title(t("display-appearance"))
@@ -33,6 +35,25 @@ impl DarkModeSection {
 
         let toggle_row = adw::SwitchRow::builder().title(t("display-dark-mode")).build();
         group.add(&toggle_row);
+
+        // Navigation link row (only when on_navigate callback is provided)
+        let nav_row = if let Some(navigate_fn) = on_navigate {
+            let row = adw::ActionRow::builder()
+                .title(t("display-dark-mode-settings"))
+                .activatable(true)
+                .build();
+            let chevron = IconWidget::from_name("go-next-symbolic", 16);
+            row.add_suffix(chevron.widget());
+            group.add(&row);
+
+            let navigate = Rc::new(navigate_fn);
+            row.connect_activated(move |_| {
+                navigate();
+            });
+            Some(row)
+        } else {
+            None
+        };
 
         let updating = Rc::new(Cell::new(false));
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
@@ -71,6 +92,16 @@ impl DarkModeSection {
                 "display-dark-mode",
                 &toggle_row,
             );
+            if let Some(ref row) = nav_row {
+                idx.add_input(
+                    "appearance",
+                    &page_title,
+                    &t("display-appearance"),
+                    &t("display-dark-mode-settings"),
+                    "display-dark-mode-settings",
+                    row,
+                );
+            }
         }
 
         // Subscribe to dark-mode entities

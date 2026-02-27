@@ -1,0 +1,13 @@
+[package]
+name = "waft-test-harness"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+waft-protocol = { path = "../protocol" }
+waft = { path = "../waft" }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
+log = "0.4"

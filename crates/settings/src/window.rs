@@ -258,7 +258,7 @@ impl SettingsWindow {
         let content_header = adw::HeaderBar::new();
         let content_scrolled = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
-            .vexpand(true)
+            .propagate_natural_height(true)
             .build();
 
         content_scrolled.set_child(Some(&stack));

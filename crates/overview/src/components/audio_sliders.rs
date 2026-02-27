@@ -341,6 +341,8 @@ mod tests {
             muted: false,
             default: false,
             kind: AudioDeviceKind::Output,
+            virtual_device: false,
+            sink_name: None,
         }
     }
 

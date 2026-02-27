@@ -1,22 +1,21 @@
 //! Appearance settings page -- thin composer.
 //!
-//! Composes dark mode and night light sections into a single scrollable page.
-//! Detailed configuration sections are accessible via sub-page navigation.
+//! Composes dark mode, night light, and accent colour sections into a
+//! single scrollable page. Sub-page navigation is handled internally
+//! by each section via callbacks.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
-use waft_protocol::entity::display::{DarkMode, DARK_MODE_ENTITY_TYPE};
-use waft_protocol::Urn;
-use waft_ui_gtk::icons::icon::IconWidget;
 
 use crate::display::accent_colour_section::AccentColourSection;
+use crate::display::dark_mode_automation_section::DarkModeAutomationSection;
 use crate::display::dark_mode_section::DarkModeSection;
-use crate::display::dark_mode_settings_page::DarkModeSettingsPage;
+use crate::display::night_light_config_section::NightLightConfigSection;
 use crate::display::night_light_section::NightLightSection;
-use crate::display::night_light_settings_page::NightLightSettingsPage;
+use crate::display::settings_sub_page::SettingsSubPage;
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
 
@@ -41,50 +40,32 @@ impl AppearancePage {
             .margin_end(12)
             .build();
 
-        // -- Dark Mode toggle section (unchanged) --
-        let dark_mode = DarkModeSection::new(entity_store, action_callback, search_index);
+        // -- Dark Mode sub-page (created before section so callback can capture it) --
+        let dark_mode_automation =
+            DarkModeAutomationSection::new(entity_store, action_callback, search_index);
+        let dark_mode_sub_page =
+            SettingsSubPage::new(&t("display-dark-mode-settings"), &dark_mode_automation.root);
+
+        let nav_for_dm = navigation_view.clone();
+        let dm_page = dark_mode_sub_page.root.clone();
+        let dark_mode = DarkModeSection::new(
+            entity_store,
+            action_callback,
+            search_index,
+            Some(Box::new(move || {
+                nav_for_dm.push(&dm_page);
+            })),
+        );
         root.append(&dark_mode.root);
 
-        // -- Dark Mode settings link row (standalone, after DarkModeSection) --
-        let dark_mode_link = adw::ActionRow::builder()
-            .title(t("display-dark-mode-settings"))
-            .activatable(true)
-            .visible(false)
-            .build();
-        let chevron = IconWidget::from_name("go-next-symbolic", 16);
-        dark_mode_link.add_suffix(chevron.widget());
-        root.append(&dark_mode_link);
-
-        // Create the dark mode settings sub-page
-        let dark_mode_settings =
-            DarkModeSettingsPage::new(entity_store, action_callback, search_index);
-
-        // Wire dark mode link row to push sub-page
-        {
-            let nav = navigation_view.clone();
-            let page = dark_mode_settings.page.clone();
-            dark_mode_link.connect_activated(move |_| {
-                nav.push(&page);
-            });
-        }
-
-        // Show/hide dark mode link row based on dark-mode entity presence
-        {
-            let store = entity_store.clone();
-            let link_ref = dark_mode_link.clone();
-            entity_store.subscribe_type(DARK_MODE_ENTITY_TYPE, move || {
-                let entities: Vec<(Urn, DarkMode)> =
-                    store.get_entities_typed(DARK_MODE_ENTITY_TYPE);
-                link_ref.set_visible(!entities.is_empty());
-            });
-        }
-
-        // -- Night Light toggle section (with navigation callback) --
-        let night_light_settings =
-            NightLightSettingsPage::new(entity_store, action_callback, search_index);
+        // -- Night Light sub-page --
+        let night_light_config =
+            NightLightConfigSection::new(entity_store, action_callback, search_index);
+        let night_light_sub_page =
+            SettingsSubPage::new(&t("display-night-light-settings"), &night_light_config.root);
 
         let nav_for_nl = navigation_view.clone();
-        let nl_page = night_light_settings.page.clone();
+        let nl_page = night_light_sub_page.root.clone();
         let night_light = NightLightSection::new(
             entity_store,
             action_callback,
@@ -99,20 +80,6 @@ impl AppearancePage {
         let accent_colour =
             AccentColourSection::new(entity_store, action_callback, search_index);
         root.append(&accent_colour.root);
-
-        // Register dark mode link row in search index
-        {
-            let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-appearance");
-            idx.add_input(
-                "appearance",
-                &page_title,
-                &t("display-appearance"),
-                &t("display-dark-mode-settings"),
-                "display-dark-mode-settings",
-                &dark_mode_link,
-            );
-        }
 
         Self { root }
     }

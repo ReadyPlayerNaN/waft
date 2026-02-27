@@ -1346,6 +1346,117 @@ pub fn muted_icon(base: &str) -> String {
     format!("{stem}-muted-symbolic")
 }
 
+/// Information about a loaded PulseAudio/PipeWire module.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleInfo {
+    pub index: u32,
+    pub name: String,
+    pub arguments: String,
+}
+
+/// Parse `pactl list modules short` output into ModuleInfo structs.
+///
+/// Each line is tab-separated: `index\tname\targuments`
+fn parse_modules_short(output: &str) -> Vec<ModuleInfo> {
+    let mut modules = Vec::new();
+
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() < 2 {
+            continue;
+        }
+
+        let index = match parts[0].parse::<u32>() {
+            Ok(i) => i,
+            Err(_) => continue,
+        };
+
+        modules.push(ModuleInfo {
+            index,
+            name: parts[1].to_string(),
+            arguments: parts.get(2).unwrap_or(&"").to_string(),
+        });
+    }
+
+    modules
+}
+
+/// List loaded modules in short format.
+pub async fn list_modules_short() -> Result<Vec<ModuleInfo>> {
+    let output = run_pactl(&["list", "modules", "short"]).await?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "pactl list modules short failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_modules_short(&stdout))
+}
+
+/// Load a null-sink module. Returns the module index.
+pub async fn load_null_sink(sink_name: &str, description: &str) -> Result<u32> {
+    let args = format!(
+        "sink_name={sink_name} sink_properties=device.description=\"{description}\""
+    );
+    let output = run_pactl(&["load-module", "module-null-sink", &args]).await?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "pactl load-module module-null-sink failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let index_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    index_str
+        .parse::<u32>()
+        .context("failed to parse module index from pactl load-module output")
+}
+
+/// Load a null-source module. Returns the module index.
+pub async fn load_null_source(source_name: &str, description: &str) -> Result<u32> {
+    let args = format!(
+        "source_name={source_name} source_properties=device.description=\"{description}\""
+    );
+    let output = run_pactl(&["load-module", "module-null-source", &args]).await?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "pactl load-module module-null-source failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let index_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    index_str
+        .parse::<u32>()
+        .context("failed to parse module index from pactl load-module output")
+}
+
+/// Unload a module by index.
+pub async fn unload_module(module_index: u32) -> Result<()> {
+    let index_str = module_index.to_string();
+    let output = run_pactl(&["unload-module", &index_str]).await?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "pactl unload-module {} failed: {}",
+            module_index,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "pactl_tests.rs"]
 mod tests;

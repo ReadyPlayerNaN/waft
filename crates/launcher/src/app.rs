@@ -13,7 +13,7 @@ use waft_protocol::urn::Urn;
 use waft_ui_gtk::widgets::search_pane::SearchPaneOutput;
 
 use crate::ranking::rank_apps;
-use crate::usage::{load_usage, record_launch_in, save_usage_to, usage_file_path};
+use crate::usage::{UsageMap, load_usage, record_launch_in, save_usage_to, usage_file_path};
 use crate::window::LauncherWindow;
 
 type ActionSender = Rc<RefCell<Option<std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>>>>;
@@ -96,6 +96,7 @@ pub fn run() -> anyhow::Result<()> {
 
         let win = Rc::new(launcher_win);
         let current_query: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
+        let usage_cache: Rc<RefCell<UsageMap>> = Rc::new(RefCell::new(load_usage()));
 
         // connect_activate fires on first launch (after startup) and on every
         // subsequent invocation of `waft-launcher` while this process is running.
@@ -104,14 +105,15 @@ pub fn run() -> anyhow::Result<()> {
             let win_for_activate = win.clone();
             let query_for_activate = current_query.clone();
             let store_for_activate = entity_store.clone();
+            let usage_for_activate = usage_cache.clone();
             app.connect_activate(move |_| {
                 // Reset query and search entry text
                 *query_for_activate.borrow_mut() = String::new();
                 win_for_activate.reset();
                 // Populate results immediately if entities are already in store;
                 // this also clears the loading spinner when data is present.
-                update_results(&win_for_activate, &store_for_activate, "", rank_by_usage, max_results);
-                win_for_activate.window.present();
+                update_results(&win_for_activate, &store_for_activate, "", &usage_for_activate.borrow(), rank_by_usage, max_results);
+                win_for_activate.show();
                 win_for_activate.grab_focus();
             });
         }
@@ -122,27 +124,28 @@ pub fn run() -> anyhow::Result<()> {
             let store_ref = Rc::clone(&entity_store);
             let query_ref = current_query.clone();
             let action_tx = action_tx.clone();
+            let usage_for_output = usage_cache.clone();
             win.search_pane().connect_output(move |event| match event {
                 SearchPaneOutput::QueryChanged(query) => {
                     *query_ref.borrow_mut() = query.clone();
-                    update_results(&win_ref, &store_ref, &query, rank_by_usage, max_results);
+                    update_results(&win_ref, &store_ref, &query, &usage_for_output.borrow(), rank_by_usage, max_results);
                 }
                 SearchPaneOutput::QueryActivated => {
                     let idx = win_ref.search_pane().selected_index().unwrap_or(0);
                     if let Some((urn, _)) = win_ref.result_at(idx) {
-                        launch_app(&action_tx, &urn);
-                        win_ref.window.set_visible(false);
+                        launch_app(&usage_for_output, &action_tx, &urn);
+                        win_ref.hide();
                     }
                 }
                 SearchPaneOutput::ResultActivated(index) => {
                     if let Some((urn, _)) = win_ref.result_at(index) {
-                        launch_app(&action_tx, &urn);
-                        win_ref.window.set_visible(false);
+                        launch_app(&usage_for_output, &action_tx, &urn);
+                        win_ref.hide();
                     }
                 }
                 SearchPaneOutput::ResultSelected(_) => {} // selection tracked internally
                 SearchPaneOutput::Stopped => {
-                    win_ref.window.set_visible(false);
+                    win_ref.hide();
                 }
             });
         }
@@ -152,9 +155,10 @@ pub fn run() -> anyhow::Result<()> {
             let win_ref = win.clone();
             let store_ref = Rc::clone(&entity_store);
             let query_ref = current_query.clone();
+            let usage_for_subscribe = usage_cache.clone();
             entity_store.subscribe_type(entity::app::ENTITY_TYPE, move || {
                 let query = query_ref.borrow().clone();
-                update_results(&win_ref, &store_ref, &query, rank_by_usage, max_results);
+                update_results(&win_ref, &store_ref, &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
             });
         }
 
@@ -162,8 +166,9 @@ pub fn run() -> anyhow::Result<()> {
         {
             let win_ref = win.clone();
             let store_ref = Rc::clone(&entity_store);
+            let usage_for_init = usage_cache.clone();
             gtk::glib::idle_add_local_once(move || {
-                update_results(&win_ref, &store_ref, "", rank_by_usage, max_results);
+                update_results(&win_ref, &store_ref, "", &usage_for_init.borrow(), rank_by_usage, max_results);
             });
         }
 
@@ -195,12 +200,12 @@ fn update_results(
     win: &LauncherWindow,
     store: &EntityStore,
     query: &str,
+    usage: &UsageMap,
     rank_by_usage: bool,
     max_results: usize,
 ) {
     let all_apps: Vec<(Urn, App)> = store.get_entities_typed(entity::app::ENTITY_TYPE);
-    let usage = load_usage();
-    let mut ranked = rank_apps(&all_apps, query, &usage, rank_by_usage);
+    let mut ranked = rank_apps(&all_apps, query, usage, rank_by_usage);
     ranked.truncate(max_results);
     // Clear the loading spinner only once real entity data has arrived from the
     // daemon. An empty store with an empty query is still "loading", not "ready".
@@ -210,12 +215,18 @@ fn update_results(
     win.set_results(ranked, query);
 }
 
-fn launch_app(tx: &std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>, urn: &Urn) {
-    // Record usage
-    let mut usage = load_usage();
-    record_launch_in(&mut usage, &urn.to_string());
-    if let Err(e) = save_usage_to(&usage_file_path(), &usage) {
-        log::warn!("[launcher] failed to save usage data: {e}");
+fn launch_app(
+    usage: &Rc<RefCell<UsageMap>>,
+    tx: &std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>,
+    urn: &Urn,
+) {
+    // Record usage in cache and persist to disk
+    {
+        let mut u = usage.borrow_mut();
+        record_launch_in(&mut u, &urn.to_string());
+        if let Err(e) = save_usage_to(&usage_file_path(), &u) {
+            log::warn!("[launcher] failed to save usage data: {e}");
+        }
     }
 
     // Dispatch open action through daemon

@@ -645,3 +645,47 @@ fn test_compute_connection_type_pci_no_port() {
 fn test_compute_connection_type_no_bus() {
     assert_eq!(super::compute_connection_type(None, None), None);
 }
+
+#[test]
+fn test_parse_modules_short() {
+    let output = "\
+0\tmodule-device-restore\t
+1\tmodule-stream-restore\t
+2\tmodule-card-restore\t
+23\tmodule-null-sink\tsink_name=waft_virtual_mic sink_properties=device.description=\"Virtual Mic\"
+24\tmodule-null-source\tsource_name=waft_virtual_src source_properties=device.description=\"Virtual Source\"
+";
+    let modules = super::parse_modules_short(output);
+    assert_eq!(modules.len(), 5);
+
+    assert_eq!(modules[0], super::ModuleInfo {
+        index: 0,
+        name: "module-device-restore".to_string(),
+        arguments: "".to_string(),
+    });
+    assert_eq!(modules[3], super::ModuleInfo {
+        index: 23,
+        name: "module-null-sink".to_string(),
+        arguments: "sink_name=waft_virtual_mic sink_properties=device.description=\"Virtual Mic\"".to_string(),
+    });
+    assert_eq!(modules[4], super::ModuleInfo {
+        index: 24,
+        name: "module-null-source".to_string(),
+        arguments: "source_name=waft_virtual_src source_properties=device.description=\"Virtual Source\"".to_string(),
+    });
+}
+
+#[test]
+fn test_parse_modules_short_empty_output() {
+    let modules = super::parse_modules_short("");
+    assert!(modules.is_empty());
+}
+
+#[test]
+fn test_parse_modules_short_skips_malformed_lines() {
+    let output = "not-a-number\tsome-module\t\n42\tvalid-module\targs\n";
+    let modules = super::parse_modules_short(output);
+    assert_eq!(modules.len(), 1);
+    assert_eq!(modules[0].index, 42);
+    assert_eq!(modules[0].name, "valid-module");
+}

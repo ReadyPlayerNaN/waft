@@ -61,7 +61,7 @@ pub struct WaftDaemon {
 }
 
 impl WaftDaemon {
-    pub fn new(socket_path: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(socket_path: PathBuf) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let listener = UnixListener::bind(&socket_path)?;
         let (event_tx, event_rx) = mpsc::channel(256);
 
@@ -108,7 +108,7 @@ impl WaftDaemon {
             .min()
     }
 
-    pub async fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
             // Sleep until the next deadline (action timeout or CanStop retry),
             // or wait indefinitely if nothing is pending.
@@ -194,7 +194,7 @@ impl WaftDaemon {
         &mut self,
         conn_id: Uuid,
         bytes: &[u8],
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let is_unknown = matches!(
             self.connections.get(&conn_id).map(|c| &c.kind),
             Some(ClientKind::Unknown)
@@ -223,7 +223,7 @@ impl WaftDaemon {
         &mut self,
         conn_id: Uuid,
         bytes: &[u8],
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Try plugin message first (EntityUpdated/EntityRemoved identify a plugin)
         if let Ok(msg) = serde_json::from_slice::<PluginMessage>(bytes) {
             let plugin_name = match &msg {
@@ -270,7 +270,7 @@ impl WaftDaemon {
         &mut self,
         conn_id: Uuid,
         msg: PluginMessage,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match msg {
             PluginMessage::EntityUpdated {
                 ref urn,
@@ -438,7 +438,7 @@ impl WaftDaemon {
         &mut self,
         conn_id: Uuid,
         msg: AppMessage,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match msg {
             AppMessage::Subscribe { entity_type } => {
                 self.app_registry.subscribe(entity_type.clone(), conn_id);

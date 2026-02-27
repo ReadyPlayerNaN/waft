@@ -12,9 +12,10 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
-use waft_protocol::entity::audio::{self, AudioCard};
+use waft_protocol::entity::audio::{self, AudioCard, AudioDevice};
 
 use crate::audio::device_card::{AudioDeviceCard, AudioDeviceCardOutput};
+use crate::audio::virtual_devices_section::VirtualDevicesSection;
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
 
@@ -54,6 +55,10 @@ impl AudioPage {
             .spacing(24)
             .build();
         root.append(&cards_box);
+
+        // Virtual devices section
+        let virtual_section = VirtualDevicesSection::new(action_callback);
+        root.append(&virtual_section.root);
 
         // Empty state
         let empty_state = adw::StatusPage::builder()
@@ -96,6 +101,15 @@ impl AudioPage {
                     );
                     Self::reconcile(&state, &cards);
                 }
+            },
+        );
+
+        // Subscribe to audio-device for virtual device updates
+        crate::subscription::subscribe_entities::<AudioDevice, _>(
+            entity_store,
+            audio::ENTITY_TYPE,
+            move |devices| {
+                virtual_section.reconcile(&devices);
             },
         );
 

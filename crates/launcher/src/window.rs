@@ -1,6 +1,6 @@
 //! Launcher layer-shell window.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -13,12 +13,19 @@ use waft_ui_gtk::widgets::search_pane::SearchPaneWidget;
 
 use crate::ranking::RankedApp;
 
+const LAUNCHER_ANIM_DURATION_MS: u32 = 150;
+
 /// The main launcher window.
 pub struct LauncherWindow {
     pub window: adw::ApplicationWindow,
     search_pane: SearchPaneWidget,
     /// Current ranked result list (parallel to displayed rows).
     results: Rc<RefCell<Vec<RankedApp>>>,
+    #[allow(dead_code)] // Held to keep the gtk::Box alive; opacity driven via animation closure
+    content: gtk::Box,
+    animation: adw::TimedAnimation,
+    animation_progress: Rc<Cell<f64>>,
+    animating_hide: Rc<Cell<bool>>,
 }
 
 impl LauncherWindow {
@@ -44,25 +51,78 @@ impl LauncherWindow {
         content.append(&search_pane.widget());
         window.set_content(Some(&content));
 
+        // Prevent flash before first show animation
+        content.set_opacity(0.0);
+
         let results: Rc<RefCell<Vec<RankedApp>>> = Rc::new(RefCell::new(Vec::new()));
+        let animation_progress = Rc::new(Cell::new(0.0_f64));
+        let animating_hide = Rc::new(Cell::new(false));
+
+        // Create animation target that drives content opacity
+        let content_for_anim = content.clone();
+        let progress_for_anim = animation_progress.clone();
+        let target = adw::CallbackAnimationTarget::new(move |value| {
+            progress_for_anim.set(value);
+            content_for_anim.set_opacity(value);
+        });
+
+        let animation = adw::TimedAnimation::builder()
+            .widget(&content)
+            .value_from(0.0)
+            .value_to(1.0)
+            .duration(LAUNCHER_ANIM_DURATION_MS)
+            .target(&target)
+            .build();
+
+        // When animation finishes: hide window if animating hide, always resize
+        let window_for_done = window.clone();
+        let animating_hide_for_done = animating_hide.clone();
+        animation.connect_done(move |_| {
+            if animating_hide_for_done.get() {
+                // Hide window BEFORE clearing animating_hide.
+                // set_visible(false) may synchronously trigger is_active_notify;
+                // the flag must still be true so that handler returns early.
+                window_for_done.set_visible(false);
+                animating_hide_for_done.set(false);
+            }
+            window_for_done.set_default_size(640, -1);
+        });
 
         let widget = Self {
             window,
             search_pane,
             results,
+            content,
+            animation,
+            animation_progress,
+            animating_hide,
         };
 
         // Auto-hide on focus loss (hide, not quit — launcher stays in background)
-        widget.window.connect_is_active_notify(|w| {
-            if !w.is_active() {
-                w.set_visible(false);
+        let anim_for_focus = widget.animation.clone();
+        let progress_for_focus = widget.animation_progress.clone();
+        let animating_hide_for_focus = widget.animating_hide.clone();
+        widget.window.connect_is_active_notify(move |w| {
+            if w.is_active() || animating_hide_for_focus.get() {
+                return;
             }
+            if !w.is_visible() {
+                return;
+            }
+            animating_hide_for_focus.set(true);
+            anim_for_focus.set_value_from(progress_for_focus.get());
+            anim_for_focus.set_value_to(0.0);
+            anim_for_focus.set_easing(adw::Easing::EaseInCubic);
+            anim_for_focus.play();
         });
 
         // Keyboard navigation: Up/Down/Escape via EventControllerKey
         let controller = gtk::EventControllerKey::new();
         let pane_ref = widget.search_pane.clone();
-        let win_ref = widget.window.clone();
+        let anim_for_escape = widget.animation.clone();
+        let progress_for_escape = widget.animation_progress.clone();
+        let animating_hide_for_escape = widget.animating_hide.clone();
+        let win_for_escape = widget.window.clone();
         controller.connect_key_pressed(move |_c, key, _code, _mods| match key {
             gtk::gdk::Key::Up => {
                 pane_ref.select_prev();
@@ -76,7 +136,14 @@ impl LauncherWindow {
                 // Fallback: Escape when focus is not inside the search entry.
                 // When focus is in the entry, stop-search fires first and reaches
                 // SearchPaneOutput::Stopped before this handler.
-                win_ref.set_visible(false);
+                if !win_for_escape.is_visible() || animating_hide_for_escape.get() {
+                    return gtk::glib::Propagation::Stop;
+                }
+                animating_hide_for_escape.set(true);
+                anim_for_escape.set_value_from(progress_for_escape.get());
+                anim_for_escape.set_value_to(0.0);
+                anim_for_escape.set_easing(adw::Easing::EaseInCubic);
+                anim_for_escape.play();
                 gtk::glib::Propagation::Stop
             }
             _ => gtk::glib::Propagation::Proceed,
@@ -84,6 +151,29 @@ impl LauncherWindow {
         widget.window.add_controller(controller);
 
         widget
+    }
+
+    /// Show the launcher window with a fade-in animation.
+    pub fn show(&self) {
+        self.animating_hide.set(false);
+        self.window.set_visible(true);
+        self.window.present();
+        self.animation.set_value_from(self.animation_progress.get());
+        self.animation.set_value_to(1.0);
+        self.animation.set_easing(adw::Easing::EaseOutCubic);
+        self.animation.play();
+    }
+
+    /// Hide the launcher window with a fade-out animation.
+    pub fn hide(&self) {
+        if !self.window.is_visible() || self.animating_hide.get() {
+            return;
+        }
+        self.animating_hide.set(true);
+        self.animation.set_value_from(self.animation_progress.get());
+        self.animation.set_value_to(0.0);
+        self.animation.set_easing(adw::Easing::EaseInCubic);
+        self.animation.play();
     }
 
     /// Reset search state for re-activation. Clears the entry and resets size.

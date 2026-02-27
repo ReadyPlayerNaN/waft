@@ -175,6 +175,8 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 prop("muted", "bool", "Whether the device is muted"),
                 prop("default", "bool", "Whether this is the default device"),
                 prop("kind", "enum(Output, Input)", "Output or input device"),
+                prop("virtual_device", "bool", "Whether this is a waft-managed virtual device"),
+                opt_prop("sink_name", "string", "Internal pactl sink or source name (for virtual device actions)"),
             ],
             actions: &[
                 action_p("set-volume", "Set the device volume", &[
@@ -184,6 +186,20 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                     req_param("muted", "bool", "Whether to mute"),
                 ]),
                 action("set-default", "Make this the default device"),
+                action_p("create-sink", "Create a virtual null-sink output device", &[
+                    req_param("sink_name", "string", "Internal sink name (waft_ prefixed)"),
+                    req_param("label", "string", "Human-readable display name"),
+                ]),
+                action_p("remove-sink", "Remove a virtual null-sink output device", &[
+                    req_param("sink_name", "string", "Internal sink name to remove"),
+                ]),
+                action_p("create-source", "Create a virtual null-source input device", &[
+                    req_param("source_name", "string", "Internal source name (waft_ prefixed)"),
+                    req_param("label", "string", "Human-readable display name"),
+                ]),
+                action_p("remove-source", "Remove a virtual null-source input device", &[
+                    req_param("source_name", "string", "Internal source name to remove"),
+                ]),
             ],
         },
 

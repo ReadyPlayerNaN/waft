@@ -13,6 +13,7 @@ members = [
     "crates/settings",
     "crates/launcher",
     "crates/waft",
+    "crates/test-harness",
     "crates/waft-ui-gtk",
     "plugins/clock",
     "plugins/darkman",

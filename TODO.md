@@ -17,41 +17,30 @@ Consider having the SNI tray in the waft overview.
 
 ---
 
-# `waft-settings` View / Appearance Collapsibles
+# Launcher entry animation
 
-The page is crowded and most of the options are dark mode or night light specific and they are not something the user would reach for quite often.
+Make the launcher fade in and fade out just like the overview does
 
-Please create another page "Dark Mode Settings" (do not list it in the left menu). Add a link to this under Dark Mode switch item.
+# Launcher too slow response
 
-Please create another page "Night light Settings" (do not list it in the left menu). Add a link to this under Night light next transition item.
+It takes to long when I enter a character into the launcher input to render the suggested app list. This needs to be absolutely instant.
 
-# `waft-settings` View / Appearance GTK accent colour
+# Plugin integration tests
 
-Read and configure GTK accent colour from the current theme. Add this to settings under the Night Light settings
+All plugins (especially niri) need to have integration tests.
 
-# `waft-settings` Niri appearance settings
+# `waft-settings` / Wallpaper highlight
 
-These settings will modify niri config. Please make sure we do the same serialization as in other sections. Keeping the niri config unbroken is CRITICAL.
+When I navigate to the View / Wallpaper, the active wallpaper must be selected in the gallery. Currently none is selected, despite the current file is on the desktop
 
-## Add to View/Wallpaper
+# `waft-settings` / Virtual audio devices
 
-- background color settings
+Have the ability to create and persist virtual audio devices using pipewire / pulse
 
-## Add to View/Windows
+# `waft-settings` / Scroll plane scrolls without content
 
-Include all these with all their options
+When I open any page, it scrolls down, like it would be at least 2000 px tall. However, the content is usually small, so scrolling down only hides the content. The page scroll area must be as tall as the page content
 
-- focus-ring
-- border
-- shadow
-- tab indicator
-- gaps
-- struts
+# `waft-settings` / View / Appearance
 
-### Deriving colours
-
-Add a special switch "Derive colours from GTK Theme". Switching this will disable all colour selection for windows and all the colours will be derived from the GTK accent colour
-
-# `waft-toasts` default action
-
-Left clicking a toast should trigger the default action (same as notifications widget in waft-overlay).
+The dark mode and the night light settings each use different way to display the settings. Please unify it, so there is only one way. By the way, the dark mode settings do not work at all, it does nothing on click. So visually, the night light looks better, however it is still cringy, because it renders two close buttons on the right top, that should not be
