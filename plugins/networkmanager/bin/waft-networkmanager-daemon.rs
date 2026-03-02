@@ -13,7 +13,7 @@ use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, ETHERNET_CONNECTION_ENTITY_TYPE, NetworkAdapter,
-    TETHERING_CONNECTION_ENTITY_TYPE, TetheringConnection, VPN_ENTITY_TYPE,
+    SecurityType, TETHERING_CONNECTION_ENTITY_TYPE, TetheringConnection, VPN_ENTITY_TYPE,
     VpnState as EntityVpnState, WIFI_NETWORK_ENTITY_TYPE, WiFiNetwork,
 };
 use waft_plugin::*;
@@ -47,8 +47,8 @@ use waft_plugin_networkmanager::vpn::{
     activate_vpn, deactivate_vpn, get_active_vpn_connections, get_vpn_profiles,
 };
 use waft_plugin_networkmanager::wifi::{
-    activate_connection, connect_wired_dbus, disconnect_device, get_active_access_point,
-    get_connections_for_ssid, set_wifi_enabled_dbus,
+    activate_connection, add_and_activate_connection, connect_wired_dbus, disconnect_device,
+    get_active_access_point, get_connections_for_ssid, set_wifi_enabled_dbus,
 };
 use waft_plugin_networkmanager::wifi_scan::wifi_scan_task;
 
@@ -320,7 +320,10 @@ fn to_entity_vpn_state(state: &VpnState) -> EntityVpnState {
     }
 }
 
-fn wifi_adapter_to_entities(adapter: &WiFiAdapterState) -> Vec<Entity> {
+fn wifi_adapter_to_entities(
+    adapter: &WiFiAdapterState,
+    connecting_ssid: &Option<String>,
+) -> Vec<Entity> {
     let mut entities = Vec::new();
 
     // Adapter entity
@@ -353,6 +356,8 @@ fn wifi_adapter_to_entities(adapter: &WiFiAdapterState) -> Vec<Entity> {
             secure: ap.secure,
             known: ap.known,
             connected: adapter.active_ssid.as_ref() == Some(&ap.ssid),
+            security_type: ap.security_type,
+            connecting: connecting_ssid.as_ref() == Some(&ap.ssid),
         };
         entities.push(Entity::new(
             network_urn,
@@ -495,7 +500,7 @@ impl Plugin for NetworkManagerPlugin {
         let mut entities = Vec::new();
 
         for adapter in &state.wifi_adapters {
-            entities.extend(wifi_adapter_to_entities(adapter));
+            entities.extend(wifi_adapter_to_entities(adapter, &state.connecting_ssid));
         }
 
         for adapter in &state.ethernet_adapters {
@@ -531,7 +536,8 @@ impl Plugin for NetworkManagerPlugin {
             }
             "wifi-network" => {
                 let ssid = urn.id();
-                self.handle_wifi_network_action(&urn, ssid, &action).await?
+                self.handle_wifi_network_action(&urn, ssid, &action, &params)
+                    .await?
             }
             "ethernet-connection" => {
                 let uuid = urn.id();
@@ -596,7 +602,7 @@ impl NetworkManagerPlugin {
                 }
                 "connect" => {
                     if let Some(ssid) = params.get("ssid").and_then(|v| v.as_str()) {
-                        self.handle_connect_wifi(ssid).await?;
+                        self.handle_connect_wifi(ssid, params).await?;
                     } else {
                         warn!("[nm] connect action missing ssid param");
                     }
@@ -644,11 +650,12 @@ impl NetworkManagerPlugin {
         _urn: &Urn,
         ssid: &str,
         action: &str,
+        params: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match action {
             "connect" => {
                 debug!("[nm] Connect to WiFi network: {}", ssid);
-                self.handle_connect_wifi(ssid).await?;
+                self.handle_connect_wifi(ssid, params).await?;
             }
             "disconnect" => {
                 debug!("[nm] Disconnect WiFi network: {}", ssid);
@@ -872,11 +879,13 @@ impl NetworkManagerPlugin {
     async fn handle_connect_wifi(
         &self,
         ssid: &str,
+        params: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("[nm] Connecting to WiFi: {}", ssid);
 
         let connections = get_connections_for_ssid(&self.conn, ssid).await?;
         if let Some(conn_path) = connections.first() {
+            // Saved network: use existing ActivateConnection flow
             let device_path = {
                 let state = self.lock_state();
                 state.wifi_adapters.first().map(|a| a.path.clone())
@@ -900,7 +909,69 @@ impl NetworkManagerPlugin {
                 }
             }
         } else {
-            warn!("[nm] No saved connection found for SSID: {}", ssid);
+            // Unsaved network: need AddAndActivateConnection
+            let password = params.get("password").and_then(|v| v.as_str());
+
+            let (device_path, ap_info) = {
+                let state = self.lock_state();
+                let device = state.wifi_adapters.first().map(|a| a.path.clone());
+                let ap = state
+                    .wifi_adapters
+                    .iter()
+                    .flat_map(|a| a.access_points.iter())
+                    .find(|ap| ap.ssid == ssid)
+                    .cloned();
+                (device, ap)
+            };
+
+            let Some(device_path) = device_path else {
+                return Err("No WiFi adapter available".into());
+            };
+            let Some(ap) = ap_info else {
+                return Err(format!("Access point not found for SSID: {ssid}").into());
+            };
+
+            // If secure and no password provided, ask for password
+            if ap.security_type != SecurityType::Open && password.is_none() {
+                if ap.security_type == SecurityType::Enterprise {
+                    return Err("enterprise-not-supported".into());
+                }
+                return Err("password-required".into());
+            }
+
+            // Set connecting state
+            {
+                let mut state = self.lock_state();
+                state.connecting_ssid = Some(ssid.to_string());
+            }
+
+            match add_and_activate_connection(
+                &self.conn,
+                &device_path,
+                &ap.ap_path,
+                ssid,
+                ap.security_type,
+                password,
+            )
+            .await
+            {
+                Ok(_) => {
+                    info!("[nm] New WiFi connection created for {ssid}");
+                    let mut state = self.lock_state();
+                    state.connecting_ssid = None;
+                    for adapter in &mut state.wifi_adapters {
+                        if adapter.path == device_path {
+                            adapter.active_ssid = Some(ssid.to_string());
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("[nm] AddAndActivateConnection failed: {e}");
+                    let mut state = self.lock_state();
+                    state.connecting_ssid = None;
+                    return Err(e.into());
+                }
+            }
         }
 
         Ok(())

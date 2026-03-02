@@ -117,3 +117,10 @@ tab-exit = Exit
 
 # Settings
 settings-button = Settings
+
+# Session & System Actions
+action-lock = Lock
+action-logout = Log out
+action-suspend = Suspend
+action-reboot = Reboot
+action-shutdown = Shut down

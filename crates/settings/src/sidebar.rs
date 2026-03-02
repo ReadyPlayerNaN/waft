@@ -81,6 +81,12 @@ fn categories() -> Vec<SidebarCategory> {
                     icon: "network-wired-symbolic",
                     visible: true,
                 },
+                SidebarItem {
+                    page_id: "online-accounts",
+                    title: t("settings-online-accounts"),
+                    icon: "contacts-symbolic",
+                    visible: true,
+                },
             ],
         },
         SidebarCategory {

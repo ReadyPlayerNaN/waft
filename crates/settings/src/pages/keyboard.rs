@@ -9,15 +9,19 @@ use std::rc::Rc;
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
-use waft_protocol::entity::keyboard::{CONFIG_ENTITY_TYPE, KeyboardLayoutConfig};
+use waft_protocol::entity::keyboard::{
+    CONFIG_ENTITY_TYPE, ENTITY_TYPE as KEYBOARD_ENTITY_TYPE, KeyboardLayout, KeyboardLayoutConfig,
+};
 use waft_ui_gtk::widgets::ordered_list::{OrderedList, OrderedListOutput, OrderedListProps};
 use waft_ui_gtk::widgets::ordered_list_row::{OrderedListRow, OrderedListRowProps};
 
 use crate::i18n::{t, t_args};
 use crate::keyboard::add_layout_dialog;
+use crate::keyboard::keymap_grid::KeymapGridWidget;
 use crate::keyboard::rename_dialog;
 use crate::keyboard::variant_dialog;
 use crate::keyboard::xkb_database;
+use crate::keyboard::xkb_keymap;
 use crate::search_index::SearchIndex;
 
 /// Smart container for the Keyboard settings page.
@@ -31,6 +35,7 @@ struct KeyboardPageState {
     empty_state: adw::StatusPage,
     add_button: gtk::Button,
     mode_banner: adw::Banner,
+    keymap_widget: KeymapGridWidget,
     /// Ordered list of layout codes.
     layout_codes: Vec<String>,
     /// Custom names parallel to layout_codes (empty string = no custom name).
@@ -39,6 +44,12 @@ struct KeyboardPageState {
     variant_slots: Vec<String>,
     /// Current entity URN (set on first reconcile).
     config_urn: Option<Urn>,
+    /// URN for the keyboard-layout entity (for set-active action).
+    layout_urn: Option<Urn>,
+    /// Currently active layout abbreviation (e.g., "US", "CZ").
+    active_layout: Option<String>,
+    /// Radio buttons parallel to layout_codes.
+    radio_buttons: Vec<gtk::CheckButton>,
     /// Whether rename is supported (external-file mode).
     can_rename: bool,
 }
@@ -100,15 +111,28 @@ impl KeyboardPage {
             .build();
         root.append(&add_button);
 
+        // Keyboard layout visualization
+        let keymap_group = adw::PreferencesGroup::builder()
+            .title(t("kb-active-layout"))
+            .build();
+        let keymap_widget = KeymapGridWidget::new();
+        keymap_widget.set_visible(false);
+        keymap_group.add(&keymap_widget.root);
+        root.append(&keymap_group);
+
         let state = Rc::new(RefCell::new(KeyboardPageState {
             ordered_list: ordered_list.clone(),
             empty_state,
             add_button: add_button.clone(),
             mode_banner,
+            keymap_widget,
             layout_codes: Vec::new(),
             layout_names: Vec::new(),
             variant_slots: Vec::new(),
             config_urn: None,
+            layout_urn: None,
+            active_layout: None,
+            radio_buttons: Vec::new(),
             can_rename: false,
         }));
 
@@ -196,6 +220,21 @@ impl KeyboardPage {
             });
         }
 
+        // Subscribe to keyboard-layout changes (active layout)
+        {
+            let store = entity_store.clone();
+            let state_clone = state.clone();
+
+            entity_store.subscribe_type(KEYBOARD_ENTITY_TYPE, move || {
+                let layouts: Vec<(Urn, KeyboardLayout)> =
+                    store.get_entities_typed(KEYBOARD_ENTITY_TYPE);
+
+                if let Some((urn, layout)) = layouts.first() {
+                    Self::reconcile_active_layout(&state_clone, urn, layout);
+                }
+            });
+        }
+
         // Initial reconciliation
         {
             let state_clone = state.clone();
@@ -212,6 +251,12 @@ impl KeyboardPage {
                         config.mode
                     );
                     Self::reconcile(&state_clone, urn, config, &cb_clone);
+                }
+
+                let layouts: Vec<(Urn, KeyboardLayout)> =
+                    store_clone.get_entities_typed(KEYBOARD_ENTITY_TYPE);
+                if let Some((urn, layout)) = layouts.first() {
+                    Self::reconcile_active_layout(&state_clone, urn, layout);
                 }
             });
         }
@@ -287,6 +332,10 @@ impl KeyboardPage {
         s.layout_codes.clear();
         s.layout_names.clear();
         s.variant_slots.clear();
+        s.radio_buttons.clear();
+
+        // First radio button is the group leader
+        let mut radio_group: Option<gtk::CheckButton> = None;
 
         // Add rows in order
         for (i, layout_code) in config.layouts.iter().enumerate() {
@@ -320,6 +369,49 @@ impl KeyboardPage {
                 title: full_name,
                 subtitle: Some(subtitle),
             });
+
+            // Radio button prefix for active layout selection
+            let radio = gtk::CheckButton::builder()
+                .valign(gtk::Align::Center)
+                .build();
+
+            // Group with first radio button
+            if let Some(ref group_leader) = radio_group {
+                radio.set_group(Some(group_leader));
+            }
+            if radio_group.is_none() {
+                radio_group = Some(radio.clone());
+            }
+
+            // Active state will be set by reconcile_active_layout when
+            // the keyboard-layout entity arrives
+            radio.set_active(false);
+
+            // Connect toggled signal to dispatch set-active action
+            {
+                let state_clone = state.clone();
+                let cb_clone = action_callback.clone();
+                let index = i;
+                radio.connect_toggled(move |btn| {
+                    if btn.is_active() {
+                        let layout_urn = {
+                            let s = state_clone.borrow();
+                            s.layout_urn.clone()
+                        };
+                        if let Some(urn) = layout_urn {
+                            log::debug!(
+                                "[keyboard-page] Switching to layout index {}",
+                                index
+                            );
+                            let params = serde_json::json!({ "index": index });
+                            cb_clone(urn, "set-active".to_string(), params);
+                        }
+                    }
+                });
+            }
+
+            row.add_suffix(&radio);
+            s.radio_buttons.push(radio);
 
             // Variant button (shown only if layout has available variants)
             let available_variants = xkb_database::get_variants_for_layout(layout_code);
@@ -462,6 +554,64 @@ impl KeyboardPage {
         let has_layouts = !s.layout_codes.is_empty();
         s.ordered_list.root.set_visible(has_layouts);
         s.empty_state.set_visible(!has_layouts);
+    }
+
+    /// Reconcile the active keyboard layout state.
+    ///
+    /// Updates radio button selection and keymap visualization based on
+    /// the current active layout from the keyboard-layout entity.
+    fn reconcile_active_layout(
+        state: &Rc<RefCell<KeyboardPageState>>,
+        urn: &Urn,
+        layout: &KeyboardLayout,
+    ) {
+        // Find which index is active before mutating state
+        let active_index = layout
+            .available
+            .iter()
+            .position(|abbr| abbr == &layout.current);
+
+        // Collect widget handles and keymap data while holding the borrow,
+        // then drop it before calling set_active() — which fires connect_toggled
+        // synchronously and would re-enter state.borrow(), causing a panic.
+        let (radio_buttons, keymap_widget, keymap_code, keymap_variant) = {
+            let mut s = state.borrow_mut();
+            s.layout_urn = Some(urn.clone());
+            s.active_layout = Some(layout.current.clone());
+
+            let radios = s.radio_buttons.clone();
+            let keymap_widget = s.keymap_widget.clone();
+            let keymap_code = active_index.and_then(|i| s.layout_codes.get(i).cloned());
+            let keymap_variant = active_index
+                .and_then(|i| s.variant_slots.get(i).cloned())
+                .unwrap_or_default();
+            (radios, keymap_widget, keymap_code, keymap_variant)
+        }; // borrow_mut dropped here — safe to fire GTK signals
+
+        // Update radio buttons (may fire connect_toggled, which borrows state immutably)
+        for (i, radio) in radio_buttons.iter().enumerate() {
+            let should_be_active = active_index == Some(i);
+            if radio.is_active() != should_be_active {
+                radio.set_active(should_be_active);
+            }
+        }
+
+        // Update keymap visualization
+        if let Some(code) = keymap_code {
+            if let Some(grid) = xkb_keymap::load_keymap_grid(&code, &keymap_variant) {
+                keymap_widget.set_keymap(&grid);
+                keymap_widget.set_visible(true);
+            } else {
+                log::debug!(
+                    "[keyboard-page] No keymap grid for layout '{}' variant '{}'",
+                    code,
+                    keymap_variant
+                );
+                keymap_widget.set_visible(false);
+            }
+        } else {
+            keymap_widget.set_visible(false);
+        }
     }
 }
 

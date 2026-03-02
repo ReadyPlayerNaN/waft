@@ -72,7 +72,7 @@ impl RenderFn for DeviceRowRender {
             .subtitle(&subtitle)
             .prefix(VNode::icon(VIcon::new(
                 vec![Icon::Themed(device_icon.to_string())],
-                32,
+                24,
             )));
 
         // Battery icon (only when connected with battery info)

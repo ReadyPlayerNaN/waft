@@ -10,6 +10,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use uuid::Uuid;
 
 use waft_protocol::Urn;
 use waft_protocol::message::AppNotification;
@@ -39,6 +40,8 @@ pub struct EntityStore {
     cache: RefCell<HashMap<String, CachedEntity>>,
     /// Per-entity-type subscribers: entity_type -> list of callbacks
     subscribers: SubscriberMap,
+    /// Callbacks invoked when an action error is received from the daemon.
+    action_error_callbacks: RefCell<Vec<Rc<dyn Fn(Uuid, String)>>>,
 }
 
 impl EntityStore {
@@ -46,6 +49,7 @@ impl EntityStore {
         Self {
             cache: RefCell::new(HashMap::new()),
             subscribers: RefCell::new(HashMap::new()),
+            action_error_callbacks: RefCell::new(Vec::new()),
         }
     }
 
@@ -67,6 +71,9 @@ impl EntityStore {
             }
             AppNotification::ActionError { action_id, error } => {
                 log::warn!("[entity-store] action {action_id} failed: {error}");
+                for cb in self.action_error_callbacks.borrow().iter() {
+                    cb(action_id, error.clone());
+                }
             }
             AppNotification::EntityStale { urn, entity_type } => {
                 log::debug!("[entity-store] entity {urn} ({entity_type}) is stale");
@@ -101,6 +108,15 @@ impl EntityStore {
             .borrow_mut()
             .entry(entity_type.to_string())
             .or_default()
+            .push(Rc::new(callback));
+    }
+
+    /// Register a callback invoked when an action error is received from the daemon.
+    ///
+    /// The callback receives the action UUID and error message string.
+    pub fn on_action_error<F: Fn(Uuid, String) + 'static>(&self, callback: F) {
+        self.action_error_callbacks
+            .borrow_mut()
             .push(Rc::new(callback));
     }
 

@@ -30,6 +30,11 @@ pub async fn switch_next() -> Result<()> {
     commands::niri_action(&["switch-layout", "next"]).await
 }
 
+/// Switch to a specific keyboard layout by index.
+pub async fn switch_to(index: usize) -> Result<()> {
+    commands::niri_action(&["switch-layout", &index.to_string()]).await
+}
+
 /// Convert keyboard layout state to a protocol entity.
 pub fn to_entity(state: &KeyboardLayoutState) -> KeyboardLayout {
     let available: Vec<String> = state

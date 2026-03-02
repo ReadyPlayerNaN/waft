@@ -19,7 +19,10 @@ use waft_protocol::entity::display::{
     DISPLAY_OUTPUT_ENTITY_TYPE, NIGHT_LIGHT_CONFIG_ENTITY_TYPE, NIGHT_LIGHT_ENTITY_TYPE,
     WALLPAPER_MANAGER_ENTITY_TYPE,
 };
-use waft_protocol::entity::keyboard::CONFIG_ENTITY_TYPE as KEYBOARD_CONFIG_ENTITY_TYPE;
+use waft_protocol::entity::keyboard::{
+    CONFIG_ENTITY_TYPE as KEYBOARD_CONFIG_ENTITY_TYPE,
+    ENTITY_TYPE as KEYBOARD_ENTITY_TYPE,
+};
 use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, EthernetConnection, WiFiNetwork};
 use waft_protocol::entity::notification::{DND_ENTITY_TYPE, RECORDING_ENTITY_TYPE};
 use waft_protocol::entity::notification_filter::{
@@ -27,6 +30,7 @@ use waft_protocol::entity::notification_filter::{
     SOUND_CONFIG_ENTITY_TYPE,
 };
 use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
+use waft_protocol::entity::accounts::ONLINE_ACCOUNT_ENTITY_TYPE;
 use waft_protocol::entity::plugin::ENTITY_TYPE as PLUGIN_STATUS_ENTITY_TYPE;
 use waft_protocol::entity::session;
 use waft_protocol::entity::weather;
@@ -51,6 +55,7 @@ const ENTITY_TYPES: &[&str] = &[
     WALLPAPER_MANAGER_ENTITY_TYPE,
     GTK_APPEARANCE_ENTITY_TYPE,
     KEYBOARD_CONFIG_ENTITY_TYPE,
+    KEYBOARD_ENTITY_TYPE,
     weather::ENTITY_TYPE,
     NOTIFICATION_GROUP_ENTITY_TYPE,
     NOTIFICATION_PROFILE_ENTITY_TYPE,
@@ -61,6 +66,7 @@ const ENTITY_TYPES: &[&str] = &[
     RECORDING_ENTITY_TYPE,
     session::USER_SERVICE_ENTITY_TYPE,
     PLUGIN_STATUS_ENTITY_TYPE,
+    ONLINE_ACCOUNT_ENTITY_TYPE,
 ];
 
 pub async fn setup(
@@ -287,6 +293,29 @@ fn load_css() {
         }
         .wallpaper-thumbnail.selected {
             border-color: @accent_bg_color;
+        }
+        .wallpaper-thumbnail.dragging {
+            opacity: 0.4;
+        }
+        .drop-target-hover {
+            border: 2px dashed @accent_bg_color;
+            border-radius: 8px;
+        }
+
+        /* Keyboard grid visualization */
+        .keymap-grid-container {
+            padding: 12px;
+        }
+        .keyboard-key {
+            min-width: 32px;
+            min-height: 32px;
+            border-radius: 6px;
+            background: @card_bg_color;
+            box-shadow: 0 1px 2px alpha(black, 0.15);
+        }
+        .keyboard-key label {
+            font-size: 13px;
+            font-weight: 500;
         }
     "#;
 

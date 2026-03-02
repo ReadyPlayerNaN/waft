@@ -25,6 +25,7 @@ settings-keyboard = Keyboard
 settings-audio = Audio
 settings-weather = Weather
 settings-plugins = Plugins
+settings-online-accounts = Online Accounts
 
 # Audio
 audio-output-devices = Output Devices
@@ -49,6 +50,10 @@ audio-virtual-devices-empty-desc = Create virtual audio sinks and sources for ro
 audio-create-device-title = Create Virtual Device
 audio-create-device-label = Device Label
 audio-create-device-label-placeholder = e.g. Virtual Microphone
+audio-add-virtual-device = Add
+audio-virtual-device-type = Device Type
+audio-virtual-type-sink = Output Sink
+audio-virtual-type-source = Input Source
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Enabled
@@ -92,6 +97,13 @@ wifi-no-known-networks = No known networks
 wifi-connected = Connected
 wifi-disconnect = Disconnect
 wifi-connect = Connect
+wifi-password-title = Connect to { $ssid }
+wifi-password-body = Enter the password for this network.
+wifi-password-connect = Connect
+wifi-password-cancel = Cancel
+wifi-connecting = Connecting…
+wifi-enterprise-not-supported = Enterprise (802.1X) networks are not supported.
+wifi-connection-failed = Connection failed: { $error }
 
 # Wired
 wired-connected = Connected
@@ -230,6 +242,7 @@ kb-variant-none = Default (no variant)
 kb-variant-search-placeholder = Search variants...
 kb-variant-cancel = Cancel
 kb-variant-confirm = Select
+kb-active-layout = Active Layout
 
 # Weather
 weather-current = Current Weather
@@ -480,3 +493,29 @@ kb-allow-when-locked = Allow when locked
 kb-hotkey-title = Hotkey overlay title
 kb-shortcuts-parse-error = Config file could not be parsed — editing disabled
 kb-shortcuts-read-only = Read-only
+kb-shortcuts-cat-custom = Application Shortcuts
+kb-shortcuts-cat-focus = Focus
+kb-shortcuts-cat-window = Window
+kb-shortcuts-cat-workspace = Workspace
+kb-shortcuts-cat-layout = Layout
+kb-shortcuts-cat-session = Session
+kb-shortcuts-cat-display = Display
+kb-shortcuts-cat-screenshot = Screenshot
+kb-shortcuts-cat-other = Other
+kb-shortcuts-type-spawn = spawn
+
+# Online Accounts
+online-accounts-title = Accounts
+online-accounts-no-accounts = No Online Accounts
+online-accounts-no-accounts-desc = No GNOME Online Accounts are configured.
+online-accounts-status-active = Active
+online-accounts-status-credentials-needed = Credentials Needed
+online-accounts-status-needs-attention = Needs Attention
+online-accounts-service-mail = Mail
+online-accounts-service-calendar = Calendar
+online-accounts-service-contacts = Contacts
+online-accounts-service-chat = Chat
+online-accounts-service-files = Files
+online-accounts-service-music = Music
+online-accounts-service-photos = Photos
+online-accounts-service-ticketing = Ticketing

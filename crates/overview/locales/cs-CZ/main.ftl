@@ -121,3 +121,10 @@ tab-exit = Ukončení
 
 # Settings
 settings-button = Nastavení
+
+# Session & System Actions
+action-lock = Zamknout
+action-logout = Odhlásit se
+action-suspend = Uspat
+action-reboot = Restartovat
+action-shutdown = Vypnout

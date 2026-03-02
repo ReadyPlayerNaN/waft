@@ -18,6 +18,22 @@ pub enum NiriEvent {
     KeyboardLayoutSwitched { idx: usize },
     /// Config reloaded -- re-query outputs since display config may have changed.
     ConfigReloaded,
+    /// Full window list snapshot (sent at startup and on any window change).
+    WindowsChanged { windows: Vec<WindowInfo> },
+}
+
+/// A single window from the niri event stream.
+#[derive(Debug, Deserialize)]
+pub struct WindowInfo {
+    pub id: u64,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub app_id: String,
+    #[serde(default)]
+    pub workspace_id: u64,
+    #[serde(default)]
+    pub is_focused: bool,
 }
 
 /// Raw event from `niri msg --json event-stream`.
@@ -29,6 +45,13 @@ struct RawNiriEvent {
     keyboard_layout_switched: Option<KeyboardLayoutSwitchedPayload>,
     #[serde(rename = "ConfigLoaded")]
     config_loaded: Option<serde_json::Value>,
+    #[serde(rename = "WindowsChanged")]
+    windows_changed: Option<WindowsChangedPayload>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WindowsChangedPayload {
+    windows: Vec<WindowInfo>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,6 +157,11 @@ pub fn spawn_event_stream() -> flume::Receiver<NiriEvent> {
                 if tx.send(NiriEvent::ConfigReloaded).is_err() {
                     break;
                 }
+            } else if let Some(payload) = raw.windows_changed {
+                log::debug!("[niri] WindowsChanged: {} windows", payload.windows.len());
+                if tx.send(NiriEvent::WindowsChanged { windows: payload.windows }).is_err() {
+                    break;
+                }
             }
         }
 
@@ -180,11 +208,27 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_windows_changed() {
+        let json = r#"{"WindowsChanged":{"windows":[{"id":1,"title":"Claude Code","app_id":"Alacritty","workspace_id":1,"is_focused":true},{"id":2,"title":"Mozilla Firefox","app_id":"firefox","workspace_id":2,"is_focused":false}]}}"#;
+        let event: RawNiriEvent = serde_json::from_str(json).unwrap();
+        let payload = event.windows_changed.expect("Expected WindowsChanged");
+        assert_eq!(payload.windows.len(), 2);
+        assert_eq!(payload.windows[0].id, 1);
+        assert_eq!(payload.windows[0].title, "Claude Code");
+        assert_eq!(payload.windows[0].app_id, "Alacritty");
+        assert_eq!(payload.windows[0].workspace_id, 1);
+        assert!(payload.windows[0].is_focused);
+        assert_eq!(payload.windows[1].id, 2);
+        assert!(!payload.windows[1].is_focused);
+    }
+
+    #[test]
     fn test_parse_unknown_event() {
         let json = r#"{"WindowOpenedOrChanged":{"window":{}}}"#;
         let event: RawNiriEvent = serde_json::from_str(json).unwrap();
         assert!(event.keyboard_layouts_changed.is_none());
         assert!(event.keyboard_layout_switched.is_none());
         assert!(event.config_loaded.is_none());
+        assert!(event.windows_changed.is_none());
     }
 }

@@ -34,14 +34,14 @@ impl SessionActionsComponent {
 
         let lock_button = Self::build_action_button(
             "system-lock-screen-symbolic",
-            "Lock",
+            &crate::i18n::t("action-lock"),
             &urn,
             "lock",
             action_callback,
         );
         let logout_button = Self::build_action_button(
             "system-log-out-symbolic",
-            "Log out",
+            &crate::i18n::t("action-logout"),
             &urn,
             "logout",
             action_callback,
@@ -55,17 +55,25 @@ impl SessionActionsComponent {
 
     fn build_action_button(
         icon_name: &str,
-        tooltip: &str,
+        label_text: &str,
         urn: &Urn,
         action_name: &str,
         action_callback: &EntityActionCallback,
     ) -> gtk::Button {
         let icon = IconWidget::from_name(icon_name, 16);
 
+        let label = gtk::Label::new(Some(label_text));
+
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(8)
+            .build();
+        content.append(icon.widget());
+        content.append(&label);
+
         let button = gtk::Button::builder()
-            .css_classes(["flat", "circular"])
-            .child(icon.widget())
-            .tooltip_text(tooltip)
+            .css_classes(["flat"])
+            .child(&content)
             .build();
 
         let cb = action_callback.clone();

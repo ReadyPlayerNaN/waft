@@ -28,6 +28,8 @@ pub struct AccessPointInfo {
     pub strength: u8,
     pub secure: bool,
     pub known: bool,
+    pub ap_path: String,
+    pub security_type: waft_plugin::entity::network::SecurityType,
 }
 
 /// Per-adapter WiFi state.
@@ -157,6 +159,8 @@ pub struct NmState {
     pub bluez_paired_devices: Vec<BluezPairedDevice>,
     /// Cached public IP address (shared across all adapters).
     pub public_ip: Option<String>,
+    /// SSID currently being connected to (for connecting state indication).
+    pub connecting_ssid: Option<String>,
 }
 
 impl NmState {

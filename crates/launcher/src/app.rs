@@ -12,13 +12,13 @@ use waft_protocol::entity::app::App;
 use waft_protocol::urn::Urn;
 use waft_ui_gtk::widgets::search_pane::SearchPaneOutput;
 
-use crate::ranking::rank_apps;
+use crate::ranking::{RankedResult, rank_results};
 use crate::usage::{UsageMap, load_usage, record_launch_in, save_usage_to, usage_file_path};
 use crate::window::LauncherWindow;
 
 type ActionSender = Rc<RefCell<Option<std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>>>>;
 
-const ENTITY_TYPES: &[&str] = &[entity::app::ENTITY_TYPE];
+const ENTITY_TYPES: &[&str] = &[entity::app::ENTITY_TYPE, entity::window::ENTITY_TYPE];
 
 pub fn run() -> anyhow::Result<()> {
     let config = Config::load();
@@ -132,16 +132,10 @@ pub fn run() -> anyhow::Result<()> {
                 }
                 SearchPaneOutput::QueryActivated => {
                     let idx = win_ref.search_pane().selected_index().unwrap_or(0);
-                    if let Some((urn, _)) = win_ref.result_at(idx) {
-                        launch_app(&usage_for_output, &action_tx, &urn);
-                        win_ref.hide();
-                    }
+                    activate_result(&win_ref, idx, &usage_for_output, &action_tx);
                 }
                 SearchPaneOutput::ResultActivated(index) => {
-                    if let Some((urn, _)) = win_ref.result_at(index) {
-                        launch_app(&usage_for_output, &action_tx, &urn);
-                        win_ref.hide();
-                    }
+                    activate_result(&win_ref, index, &usage_for_output, &action_tx);
                 }
                 SearchPaneOutput::ResultSelected(_) => {} // selection tracked internally
                 SearchPaneOutput::Stopped => {
@@ -150,13 +144,23 @@ pub fn run() -> anyhow::Result<()> {
             });
         }
 
-        // Entity store subscription -- rebuild results on any app entity change
+        // Entity store subscriptions -- rebuild results on any app or window entity change
         {
             let win_ref = win.clone();
             let store_ref = Rc::clone(&entity_store);
             let query_ref = current_query.clone();
             let usage_for_subscribe = usage_cache.clone();
             entity_store.subscribe_type(entity::app::ENTITY_TYPE, move || {
+                let query = query_ref.borrow().clone();
+                update_results(&win_ref, &store_ref, &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
+            });
+        }
+        {
+            let win_ref = win.clone();
+            let store_ref = Rc::clone(&entity_store);
+            let query_ref = current_query.clone();
+            let usage_for_subscribe = usage_cache.clone();
+            entity_store.subscribe_type(entity::window::ENTITY_TYPE, move || {
                 let query = query_ref.borrow().clone();
                 update_results(&win_ref, &store_ref, &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
             });
@@ -205,7 +209,8 @@ fn update_results(
     max_results: usize,
 ) {
     let all_apps: Vec<(Urn, App)> = store.get_entities_typed(entity::app::ENTITY_TYPE);
-    let mut ranked = rank_apps(&all_apps, query, usage, rank_by_usage);
+    let all_windows: Vec<(Urn, entity::window::Window)> = store.get_entities_typed(entity::window::ENTITY_TYPE);
+    let mut ranked = rank_results(&all_apps, &all_windows, query, usage, rank_by_usage);
     ranked.truncate(max_results);
     // Clear the loading spinner only once real entity data has arrived from the
     // daemon. An empty store with an empty query is still "loading", not "ready".
@@ -213,6 +218,27 @@ fn update_results(
         win.search_pane().set_loading(false);
     }
     win.set_results(ranked, query);
+}
+
+fn activate_result(
+    win: &LauncherWindow,
+    index: usize,
+    usage: &Rc<RefCell<UsageMap>>,
+    tx: &std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>,
+) {
+    let Some(result) = win.result_at(index) else {
+        return;
+    };
+
+    match &result {
+        RankedResult::App { urn, .. } => {
+            launch_app(usage, tx, urn);
+        }
+        RankedResult::Window { urn, .. } => {
+            focus_window(tx, urn);
+        }
+    }
+    win.hide();
 }
 
 fn launch_app(
@@ -232,5 +258,14 @@ fn launch_app(
     // Dispatch open action through daemon
     if let Err(e) = tx.send((urn.clone(), "open".to_string(), serde_json::Value::Null)) {
         log::warn!("[launcher] failed to send open action: {e}");
+    }
+}
+
+fn focus_window(
+    tx: &std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>,
+    urn: &Urn,
+) {
+    if let Err(e) = tx.send((urn.clone(), "focus".to_string(), serde_json::Value::Null)) {
+        log::warn!("[launcher] failed to send focus action: {e}");
     }
 }

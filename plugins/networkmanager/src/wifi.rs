@@ -7,11 +7,14 @@ use log::{debug, warn};
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
+use waft_plugin::entity::network::SecurityType;
+
 use crate::AccessPoint;
 use crate::dbus_property::{
     NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_SETTINGS_INTERFACE,
     NM_SETTINGS_PATH, NM_WIRELESS_INTERFACE,
 };
+use crate::detect_security_type;
 use crate::state::AccessPointInfo;
 
 /// Return the SSID of the currently active access point for a wireless device,
@@ -132,6 +135,7 @@ pub async fn scan_wifi_networks(
             );
 
             let secure = ap.is_secure();
+            let security_type = detect_security_type(ap.flags, ap.wpa_flags, ap.rsn_flags);
 
             match by_ssid.get(&ap.ssid) {
                 Some(existing) if existing.strength >= ap.strength => {}
@@ -143,6 +147,8 @@ pub async fn scan_wifi_networks(
                             strength: ap.strength,
                             secure,
                             known,
+                            ap_path: ap.path.clone(),
+                            security_type,
                         },
                     );
                 }
@@ -182,11 +188,14 @@ pub async fn get_active_access_point(
     }
 
     let secure = ap.is_secure();
+    let security_type = detect_security_type(ap.flags, ap.wpa_flags, ap.rsn_flags);
     Some(AccessPointInfo {
         ssid: ap.ssid,
         strength: ap.strength,
         secure,
         known: true, // connected → saved profile must exist
+        ap_path: ap.path.clone(),
+        security_type,
     })
 }
 
@@ -341,6 +350,87 @@ pub async fn set_wifi_enabled_dbus(conn: &Connection, enabled: bool) -> Result<(
         .context("Failed to set WirelessEnabled")?;
 
     Ok(())
+}
+
+/// Create a new connection profile and activate it on the specified device.
+///
+/// Builds a partial NM connection settings dict from SSID, security type, and
+/// optional password. NM fills in remaining defaults.
+pub async fn add_and_activate_connection(
+    conn: &Connection,
+    device_path: &str,
+    ap_path: &str,
+    ssid: &str,
+    security_type: SecurityType,
+    password: Option<&str>,
+) -> Result<String> {
+    use zbus::zvariant::{ObjectPath, Value};
+
+    // Build connection settings: a{sa{sv}}
+    let mut connection_settings: HashMap<String, HashMap<String, Value<'_>>> = HashMap::new();
+
+    // connection section
+    let mut conn_section: HashMap<String, Value<'_>> = HashMap::new();
+    conn_section.insert("type".to_string(), Value::from("802-11-wireless"));
+    connection_settings.insert("connection".to_string(), conn_section);
+
+    // 802-11-wireless section
+    let mut wireless_section: HashMap<String, Value<'_>> = HashMap::new();
+    wireless_section.insert("ssid".to_string(), Value::from(ssid.as_bytes().to_vec()));
+    connection_settings.insert("802-11-wireless".to_string(), wireless_section);
+
+    // 802-11-wireless-security section (if not open)
+    match security_type {
+        SecurityType::Open => {}
+        SecurityType::Wep => {
+            let mut sec: HashMap<String, Value<'_>> = HashMap::new();
+            sec.insert("key-mgmt".to_string(), Value::from("none"));
+            if let Some(pw) = password {
+                sec.insert("wep-key0".to_string(), Value::from(pw));
+            }
+            connection_settings.insert("802-11-wireless-security".to_string(), sec);
+        }
+        SecurityType::Wpa | SecurityType::Wpa2 => {
+            let mut sec: HashMap<String, Value<'_>> = HashMap::new();
+            sec.insert("key-mgmt".to_string(), Value::from("wpa-psk"));
+            if let Some(pw) = password {
+                sec.insert("psk".to_string(), Value::from(pw));
+            }
+            connection_settings.insert("802-11-wireless-security".to_string(), sec);
+        }
+        SecurityType::Wpa3 => {
+            let mut sec: HashMap<String, Value<'_>> = HashMap::new();
+            sec.insert("key-mgmt".to_string(), Value::from("sae"));
+            if let Some(pw) = password {
+                sec.insert("psk".to_string(), Value::from(pw));
+            }
+            connection_settings.insert("802-11-wireless-security".to_string(), sec);
+        }
+        SecurityType::Enterprise => {
+            // Enterprise networks require 802.1X configuration that varies widely.
+            // We don't support this — caller should check before reaching here.
+            return Err(anyhow::anyhow!("Enterprise (802.1X) networks are not supported"));
+        }
+    }
+
+    let device_obj = ObjectPath::try_from(device_path)
+        .with_context(|| format!("Invalid device path: {device_path}"))?;
+    let ap_obj = ObjectPath::try_from(ap_path)
+        .with_context(|| format!("Invalid AP path: {ap_path}"))?;
+
+    let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
+        .await
+        .context("Failed to create NM proxy")?;
+
+    let (_settings_path, active_path): (OwnedObjectPath, OwnedObjectPath) = proxy
+        .call(
+            "AddAndActivateConnection",
+            &(&connection_settings, &device_obj, &ap_obj),
+        )
+        .await
+        .context("Failed to AddAndActivateConnection")?;
+
+    Ok(active_path.to_string())
 }
 
 /// Connect wired via raw D-Bus.

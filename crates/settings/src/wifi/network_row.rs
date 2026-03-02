@@ -12,10 +12,11 @@ use crate::i18n::t;
 /// Props for creating or updating a network row.
 #[derive(Clone, PartialEq)]
 pub struct NetworkRowProps {
-    pub ssid:      String,
-    pub strength:  u8,
-    pub secure:    bool,
-    pub connected: bool,
+    pub ssid:       String,
+    pub strength:   u8,
+    pub secure:     bool,
+    pub connected:  bool,
+    pub connecting: bool,
 }
 
 /// Output events from a network row.
@@ -44,8 +45,18 @@ impl RenderFn for NetworkRowRender {
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
         let signal_icon = signal_icon_name(props.strength);
-        let subtitle    = if props.connected { t("wifi-connected") } else { String::new() };
-        let btn_label   = if props.connected { t("wifi-disconnect") } else { t("wifi-connect") };
+        let subtitle = if props.connecting {
+            t("wifi-connecting")
+        } else if props.connected {
+            t("wifi-connected")
+        } else {
+            String::new()
+        };
+        let btn_label = if props.connected {
+            t("wifi-disconnect")
+        } else {
+            t("wifi-connect")
+        };
 
         let mut row = VActionRow::new(&props.ssid)
             .subtitle(&subtitle)
@@ -62,9 +73,11 @@ impl RenderFn for NetworkRowRender {
         }
 
         let connected = props.connected;
+        let btn_sensitive = !props.connecting;
         row = row.suffix(VNode::custom_button(
             VCustomButton::new(VNode::label(VLabel::new(&btn_label)))
                 .css_class("flat")
+                .sensitive(btn_sensitive)
                 .on_click({
                     let emit = emit.clone();
                     move || {

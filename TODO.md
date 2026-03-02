@@ -1,7 +1,3 @@
-# WiFi: Support connecting to new (unsaved) networks
-
-Currently WiFi only shows networks with saved connection profiles. Connecting to new networks requires a password prompt flow using `AddAndActivateConnection()` on the NetworkManager D-Bus Settings interface.
-
 # Notification toast bubbles
 
 Think of having the toasts as unobtrusive bubbles
@@ -17,30 +13,38 @@ Consider having the SNI tray in the waft overview.
 
 ---
 
-# Launcher entry animation
+# `waft-launcher` rows
 
-Make the launcher fade in and fade out just like the overview does
+When the row item text is too long, break it. Row item stretching two rows is more acceptable than horizontaly stretching the launcher window. Enlarge the icon to 24px.
 
-# Launcher too slow response
+Prefix window rows labels with W and app row labels with A.
 
-It takes to long when I enter a character into the launcher input to render the suggested app list. This needs to be absolutely instant.
+The light theme is unreadable, because there are some fixed colours. The font of row item is white.
 
-# Plugin integration tests
+# `waft-launcher` close on unfocus
 
-All plugins (especially niri) need to have integration tests.
+The launcher window needs to disappear when it looses focus. The same way as the overview window
 
-# `waft-settings` / Wallpaper highlight
+# `waft-settings` wallpapers
 
-When I navigate to the View / Wallpaper, the active wallpaper must be selected in the gallery. Currently none is selected, despite the current file is on the desktop
+Each of the galleries must accept drag and drop files from other apps, such as nautilus drag and dropping. It must be possible to drag and drop wallpaper from one gallery, moving it to another gallery on this page. Double clicking wallpaper must open the image in default viewer (probably best way is to use xdg-open)
 
-# `waft-settings` / Virtual audio devices
+# `waft-settings` audio devices
 
-Have the ability to create and persist virtual audio devices using pipewire / pulse
+Please group each audio device stuff into some kind of a visual container.
 
-# `waft-settings` / Scroll plane scrolls without content
+Add the ability to create virtual audio devices. It looks like there is already a list (empty list), but no UI way to create a virtual audio device.
 
-When I open any page, it scrolls down, like it would be at least 2000 px tall. However, the content is usually small, so scrolling down only hides the content. The page scroll area must be as tall as the page content
+# `waft-settings` tweaks
 
-# `waft-settings` / View / Appearance
+The page, even when empty, can scroll thousands of pixels. This makes no sense. The scroll must match the content height of the active page.
 
-The dark mode and the night light settings each use different way to display the settings. Please unify it, so there is only one way. By the way, the dark mode settings do not work at all, it does nothing on click. So visually, the night light looks better, however it is still cringy, because it renders two close buttons on the right top, that should not be
+Allow changing layout from the `waft-settings` layouts view by adding radio button to each of the layouts. Display visualisation of keyboard layout under the selection of layouts.
+
+The shortcuts page should be more consistent - the label on a reserved space, the shortcut on a reserved space, the action type (for example spawn) on a reserverd place. The edit and delete button should be icon buttons only. Group shortcuts by action type, visually split the groups.
+
+Bluetooth devices list icon size - reduce to 24px.
+
+# `waft-settings` Online Accounts
+
+Please add page "Online accounts" into `waft-settings`. It will list the active online accounts provided by entity `OnlineAccount`, provided by the new `waft-plugin-gnome`. It will only list accounts, show account status, allow toggle services. No adding accounts and no changing of the account config even when the status is actionNeeded or credentialsneedattention.

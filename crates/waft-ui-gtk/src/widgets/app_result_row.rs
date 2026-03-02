@@ -3,15 +3,22 @@
 use crate::icons::Icon;
 use crate::vdom::{RenderCallback, RenderComponent, RenderFn, VBox, VIcon, VLabel, VNode};
 
+/// Whether the result is an application or a compositor window.
+#[derive(Clone, PartialEq)]
+pub enum ResultKind {
+    App,
+    Window,
+}
+
 /// Properties for an app result row.
 #[derive(Clone, PartialEq)]
 pub struct AppResultRowProps {
     pub name: String,
     pub icon: String,
-    pub description: Option<String>,
+    pub kind: ResultKind,
 }
 
-/// Renders a horizontal row: 48px icon + vertical label stack (name + optional description).
+/// Renders a horizontal row: badge + 24px icon + wrapping name label.
 ///
 /// No Output enum -- selection and activation are handled at the list level.
 pub struct AppResultRowRender;
@@ -21,32 +28,30 @@ impl RenderFn for AppResultRowRender {
     type Output = ();
 
     fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
-        let mut label_box = VBox::vertical(2)
-            .valign(gtk::Align::Center)
-            .child(VNode::label(
-                VLabel::new(&props.name)
-                    .css_class("app-result-name")
-                    .xalign(0.0),
-            ));
-
-        if let Some(ref desc) = props.description {
-            label_box = label_box.child(VNode::label(
-                VLabel::new(desc)
-                    .css_class("app-result-description")
-                    .css_class("dim-label")
-                    .ellipsize(gtk::pango::EllipsizeMode::End)
-                    .xalign(0.0),
-            ));
-        }
+        let (badge_text, badge_modifier) = match props.kind {
+            ResultKind::App => ("A", "badge-app"),
+            ResultKind::Window => ("W", "badge-window"),
+        };
 
         VNode::vbox(
-            VBox::horizontal(12)
+            VBox::horizontal(8)
                 .css_class("app-result-row")
+                .child(VNode::label(
+                    VLabel::new(badge_text)
+                        .css_class("app-result-badge")
+                        .css_class(badge_modifier),
+                ))
                 .child(VNode::icon(VIcon::new(
                     vec![Icon::Themed(props.icon.clone())],
-                    48,
+                    24,
                 )))
-                .child(VNode::vbox(label_box)),
+                .child(VNode::label(
+                    VLabel::new(&props.name)
+                        .css_class("app-result-name")
+                        .xalign(0.0)
+                        .wrap(true)
+                        .wrap_mode(gtk::pango::WrapMode::WordChar),
+                )),
         )
     }
 }

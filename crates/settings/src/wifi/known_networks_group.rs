@@ -54,6 +54,7 @@ impl KnownNetworksGroup {
                 strength: network.strength,
                 secure: network.secure,
                 connected: network.connected,
+                connecting: network.connecting,
             };
 
             if let Some(existing) = self.rows.get(&urn_str) {

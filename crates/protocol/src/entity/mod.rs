@@ -26,6 +26,7 @@
 //! When adding new entity types, ask "what domain does this belong to?"
 //! not "which plugin produces it?".
 
+pub mod accounts;
 pub mod app;
 pub mod appearance;
 pub mod audio;
@@ -44,3 +45,4 @@ pub mod registry;
 pub mod session;
 pub mod storage;
 pub mod weather;
+pub mod window;

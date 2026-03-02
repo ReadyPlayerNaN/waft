@@ -44,6 +44,19 @@ pub enum AdapterKind {
     Tethering,
 }
 
+/// WiFi network security type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SecurityType {
+    #[default]
+    Open,
+    Wep,
+    Wpa,
+    Wpa2,
+    Wpa3,
+    Enterprise,
+}
+
 /// A WiFi network (child entity of wireless adapter).
 ///
 /// URN: `networkmanager/network-adapter/{adapter}/wifi-network/{ssid}`
@@ -54,6 +67,10 @@ pub struct WiFiNetwork {
     pub secure: bool,
     pub known: bool,
     pub connected: bool,
+    #[serde(default)]
+    pub security_type: SecurityType,
+    #[serde(default)]
+    pub connecting: bool,
 }
 
 impl WiFiNetwork {
@@ -166,10 +183,60 @@ mod tests {
             secure: true,
             known: true,
             connected: false,
+            security_type: SecurityType::Wpa2,
+            connecting: false,
         };
         let json = serde_json::to_value(&network).unwrap();
         let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
         assert_eq!(network, decoded);
+    }
+
+    #[test]
+    fn serde_wifi_network_backward_compat() {
+        let json = serde_json::json!({
+            "ssid": "OldNetwork",
+            "strength": 60,
+            "secure": true,
+            "known": false,
+            "connected": false
+        });
+        let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.security_type, SecurityType::Open);
+        assert!(!decoded.connecting);
+    }
+
+    #[test]
+    fn serde_roundtrip_security_types() {
+        let types = [
+            SecurityType::Open,
+            SecurityType::Wep,
+            SecurityType::Wpa,
+            SecurityType::Wpa2,
+            SecurityType::Wpa3,
+            SecurityType::Enterprise,
+        ];
+        for st in types {
+            let json = serde_json::to_value(st).unwrap();
+            let decoded: SecurityType = serde_json::from_value(json).unwrap();
+            assert_eq!(st, decoded);
+        }
+    }
+
+    #[test]
+    fn serde_wifi_network_connecting() {
+        let network = WiFiNetwork {
+            ssid: "ConnectingNet".to_string(),
+            strength: 80,
+            secure: true,
+            known: false,
+            connected: false,
+            security_type: SecurityType::Wpa3,
+            connecting: true,
+        };
+        let json = serde_json::to_value(&network).unwrap();
+        let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
+        assert_eq!(network, decoded);
+        assert!(decoded.connecting);
     }
 
     #[test]

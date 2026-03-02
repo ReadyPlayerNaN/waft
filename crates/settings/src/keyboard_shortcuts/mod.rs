@@ -49,27 +49,6 @@ pub enum BindAction {
     NiriAction { name: String, args: Vec<String> },
 }
 
-impl BindAction {
-    /// Human-readable label for the action.
-    pub fn label(&self) -> String {
-        match self {
-            BindAction::Spawn { command, args } => {
-                if args.is_empty() {
-                    format!("spawn {command}")
-                } else {
-                    format!("spawn {command} {}", args.join(" "))
-                }
-            }
-            BindAction::NiriAction { name, args } => {
-                if args.is_empty() {
-                    name.clone()
-                } else {
-                    format!("{name} {}", args.join(" "))
-                }
-            }
-        }
-    }
-}
 
 /// A single keyboard shortcut entry.
 #[derive(Debug, Clone, PartialEq)]
@@ -424,6 +403,24 @@ pub const NIRI_ACTIONS: &[(&str, &[&str])] = &[
     ("Screenshot", &["screenshot", "screenshot-screen", "screenshot-window"]),
 ];
 
+/// Return the category name for a bind action.
+///
+/// Spawn actions return `"Custom"`. Niri actions are looked up in
+/// `NIRI_ACTIONS` by category; unknown actions return `"Other"`.
+pub fn action_category(action: &BindAction) -> &'static str {
+    match action {
+        BindAction::Spawn { .. } => "Custom",
+        BindAction::NiriAction { name, .. } => {
+            for (category, actions) in NIRI_ACTIONS {
+                if actions.contains(&name.as_str()) {
+                    return category;
+                }
+            }
+            "Other"
+        }
+    }
+}
+
 /// Get a flat list of all niri action names.
 pub fn all_action_names() -> Vec<&'static str> {
     let mut names = vec!["spawn"];
@@ -594,6 +591,45 @@ mod tests {
             repeat: None,
         };
         assert_eq!(entry.key_chord(), "Mod+Shift+T");
+    }
+
+    #[test]
+    fn action_category_spawn_returns_custom() {
+        let action = BindAction::Spawn {
+            command: "foot".to_string(),
+            args: vec![],
+        };
+        assert_eq!(action_category(&action), "Custom");
+    }
+
+    #[test]
+    fn action_category_known_niri_action_returns_category() {
+        let action = BindAction::NiriAction {
+            name: "focus-column-left".to_string(),
+            args: vec![],
+        };
+        assert_eq!(action_category(&action), "Focus");
+
+        let action = BindAction::NiriAction {
+            name: "close-window".to_string(),
+            args: vec![],
+        };
+        assert_eq!(action_category(&action), "Window");
+
+        let action = BindAction::NiriAction {
+            name: "screenshot".to_string(),
+            args: vec![],
+        };
+        assert_eq!(action_category(&action), "Screenshot");
+    }
+
+    #[test]
+    fn action_category_unknown_niri_action_returns_other() {
+        let action = BindAction::NiriAction {
+            name: "some-unknown-action".to_string(),
+            args: vec![],
+        };
+        assert_eq!(action_category(&action), "Other");
     }
 
     #[test]

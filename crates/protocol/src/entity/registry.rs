@@ -101,6 +101,30 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
     }
 
     static REGISTRY: &[EntityTypeInfo] = &[
+        // ── accounts ──
+        EntityTypeInfo {
+            entity_type: super::accounts::ONLINE_ACCOUNT_ENTITY_TYPE,
+            domain: "accounts",
+            description: "A GNOME Online Account with per-service toggles",
+            urn_pattern: "{plugin}/online-account/{id}",
+            properties: &[
+                prop("id", "string", "GOA account ID"),
+                prop("provider_name", "string", "Provider display name (e.g. Google, Nextcloud)"),
+                prop("presentation_identity", "string", "User-facing account identity (e.g. user@gmail.com)"),
+                prop("status", "enum(Active, CredentialsNeeded, NeedsAttention)", "Account health status"),
+                prop("services", "Vec<ServiceInfo>", "Per-service enabled/disabled state"),
+                prop("locked", "bool", "Whether the account is administrator-locked"),
+            ],
+            actions: &[
+                action_p("enable-service", "Enable a specific service on this account", &[
+                    req_param("service_name", "string", "Service to enable"),
+                ]),
+                action_p("disable-service", "Disable a specific service on this account", &[
+                    req_param("service_name", "string", "Service to disable"),
+                ]),
+            ],
+        },
+
         // ── app ──
         EntityTypeInfo {
             entity_type: super::app::ENTITY_TYPE,
@@ -565,9 +589,11 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 prop("secure", "bool", "Whether the network is encrypted"),
                 prop("known", "bool", "Whether credentials are saved"),
                 prop("connected", "bool", "Whether currently connected"),
+                prop("security_type", "enum(open, wep, wpa, wpa2, wpa3, enterprise)", "Encryption type"),
+                prop("connecting", "bool", "Whether a connection attempt is in progress"),
             ],
             actions: &[
-                action("connect", "Connect to this network"),
+                action("connect", "Connect to this network. Params: {password?: string}"),
                 action("disconnect", "Disconnect from this network"),
                 action("forget", "Remove saved credentials"),
             ],
@@ -823,6 +849,23 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             ],
             actions: &[],
         },
+
+        // ── window ──
+        EntityTypeInfo {
+            entity_type: super::window::ENTITY_TYPE,
+            domain: "window",
+            description: "An open window in the compositor",
+            urn_pattern: "{plugin}/window/{window-id}",
+            properties: &[
+                prop("title", "string", "Window title"),
+                prop("app_id", "string", "Wayland application ID"),
+                prop("workspace_id", "number", "Compositor workspace ID"),
+                prop("focused", "bool", "Whether the window has keyboard focus"),
+            ],
+            actions: &[
+                action("focus", "Focus the window and bring it to the center"),
+            ],
+        },
     ];
 
     REGISTRY
@@ -840,6 +883,7 @@ mod tests {
 
         // Verify all known ENTITY_TYPE constants are in the registry.
         let expected = [
+            super::super::accounts::ONLINE_ACCOUNT_ENTITY_TYPE,
             super::super::app::ENTITY_TYPE,
             super::super::audio::CARD_ENTITY_TYPE,
             super::super::audio::ENTITY_TYPE,
@@ -878,6 +922,7 @@ mod tests {
             super::super::session::USER_SERVICE_ENTITY_TYPE,
             super::super::storage::BACKUP_METHOD_ENTITY_TYPE,
             super::super::weather::ENTITY_TYPE,
+            super::super::window::ENTITY_TYPE,
         ];
 
         for et in &expected {
@@ -924,9 +969,10 @@ mod tests {
     #[test]
     fn all_domains_are_valid_module_names() {
         let valid_domains = [
-            "app", "audio", "bluetooth", "calendar", "clock", "display",
+            "accounts", "app", "audio", "bluetooth", "calendar", "clock", "display",
             "keyboard", "network", "notification", "notification_filter",
             "notification_sound", "plugin", "power", "session", "storage", "weather",
+            "window",
         ];
         let valid_set: HashSet<&str> = valid_domains.iter().copied().collect();
 

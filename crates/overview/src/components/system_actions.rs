@@ -34,21 +34,21 @@ impl SystemActionsComponent {
 
         let suspend_button = Self::build_action_button(
             "media-playback-pause-symbolic",
-            "Suspend",
+            &crate::i18n::t("action-suspend"),
             &urn,
             "suspend",
             action_callback,
         );
         let reboot_button = Self::build_action_button(
             "system-reboot-symbolic",
-            "Reboot",
+            &crate::i18n::t("action-reboot"),
             &urn,
             "reboot",
             action_callback,
         );
         let shutdown_button = Self::build_action_button(
             "system-shutdown-symbolic",
-            "Shut down",
+            &crate::i18n::t("action-shutdown"),
             &urn,
             "shutdown",
             action_callback,
@@ -63,17 +63,25 @@ impl SystemActionsComponent {
 
     fn build_action_button(
         icon_name: &str,
-        tooltip: &str,
+        label_text: &str,
         urn: &Urn,
         action_name: &str,
         action_callback: &EntityActionCallback,
     ) -> gtk::Button {
         let icon = IconWidget::from_name(icon_name, 16);
 
+        let label = gtk::Label::new(Some(label_text));
+
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(8)
+            .build();
+        content.append(icon.widget());
+        content.append(&label);
+
         let button = gtk::Button::builder()
-            .css_classes(["flat", "circular"])
-            .child(icon.widget())
-            .tooltip_text(tooltip)
+            .css_classes(["flat"])
+            .child(&content)
             .build();
 
         let cb = action_callback.clone();

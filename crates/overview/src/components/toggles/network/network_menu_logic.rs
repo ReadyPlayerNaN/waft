@@ -46,6 +46,8 @@ mod tests {
             secure: true,
             known,
             connected,
+            security_type: Default::default(),
+            connecting: false,
         }
     }
 

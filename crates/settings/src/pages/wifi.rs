@@ -19,6 +19,7 @@ use crate::search_index::SearchIndex;
 use crate::wifi::adapter_group::{WifiAdapterGroup, WifiAdapterGroupOutput, WifiAdapterGroupProps};
 use crate::wifi::available_networks_group::{AvailableNetworksGroup, AvailableNetworksGroupOutput};
 use crate::wifi::known_networks_group::KnownNetworksGroup;
+use crate::wifi::password_dialog::show_password_dialog;
 
 /// Smart container for the WiFi settings page.
 pub struct WiFiPage {
@@ -70,12 +71,13 @@ impl WiFiPage {
         {
             let store = entity_store.clone();
             let cb = action_callback.clone();
+            let connect_cb = action_callback.clone();
+            let root_for_dialog = root.clone();
             available_group.connect_output(move |output| {
-                let adapters: Vec<(Urn, NetworkAdapter)> =
-                    store.get_entities_typed(ADAPTER_ENTITY_TYPE);
-
                 match output {
                     AvailableNetworksGroupOutput::Scan => {
+                        let adapters: Vec<(Urn, NetworkAdapter)> =
+                            store.get_entities_typed(ADAPTER_ENTITY_TYPE);
                         for (urn, adapter) in &adapters {
                             if adapter.kind == AdapterKind::Wireless && adapter.enabled {
                                 cb(
@@ -85,6 +87,34 @@ impl WiFiPage {
                                 );
                             }
                         }
+                    }
+                    AvailableNetworksGroupOutput::ConnectWithPassword { urn, ssid } => {
+                        let connect_cb = connect_cb.clone();
+                        let urn = urn.clone();
+                        show_password_dialog(&root_for_dialog, &ssid, move |password| {
+                            connect_cb(
+                                urn.clone(),
+                                "connect".to_string(),
+                                serde_json::json!({ "password": password }),
+                            );
+                        });
+                    }
+                }
+            });
+        }
+
+        // Handle action errors (e.g., wrong password, enterprise not supported)
+        {
+            entity_store.on_action_error(move |_action_id, error| {
+                match error.as_str() {
+                    "password-required" => {
+                        log::warn!("[wifi-page] unexpected password-required from plugin");
+                    }
+                    "enterprise-not-supported" => {
+                        log::info!("[wifi-page] enterprise network not supported");
+                    }
+                    _ => {
+                        log::warn!("[wifi-page] action error: {error}");
                     }
                 }
             });

@@ -824,8 +824,9 @@ impl MainWindowWidget {
 
             .tab-pill {{
                 border-radius: 999px;
-                padding: 4px 12px;
-                min-height: 24px;
+                padding: 4px 8px;
+                min-height: 28px;
+                min-width: 28px;
             }}
 
             .tab-pill:checked {{

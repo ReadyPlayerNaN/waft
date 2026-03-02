@@ -6,6 +6,7 @@ pub mod keyboard;
 pub mod keyboard_shortcuts;
 pub mod niri_windows;
 pub mod notifications;
+pub mod online_accounts;
 pub mod plugins;
 pub mod services;
 pub mod sounds;

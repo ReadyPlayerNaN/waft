@@ -86,13 +86,14 @@ When implementing features:
 - **`waft-ui-gtk`** - GTK4 widget library: `WidgetBase` trait, `Child`/`Children` container types, `WidgetReconciler`, widget implementations (`FeatureToggleWidget`, `SliderWidget`, `IconWidget`, `MenuChevronWidget`).
 - **`waft-config`** - Configuration loading from `~/.config/waft/config.toml`
 - **`waft-i18n`** - Fluent localization: `system_locale()` returns BCP47 locale, `I18n` struct for translations with `t()` and `t_args()`.
-- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with categorized sidebar, `gtk::Stack` for page switching, and `adw::NavigationView` for sub-page drill-down. Pages: Bluetooth, WiFi, Wired (Connectivity); Appearance, Display, Windows, Wallpaper (Visual); Audio, Notifications, Sounds (Feedback); Keyboard, Keyboard Shortcuts (Inputs); Weather (Info); Plugins, Services, Startup (System). Uses same `WaftClient` + `EntityStore` pattern as overview. Startup, Keyboard Shortcuts, and Windows pages use direct KDL config file editing (niri config) rather than entity-based approach. Appearance page has sub-pages for dark mode automation and night light configuration. Settings-app-specific preferences stored in `~/.config/waft/settings-app.toml`.
+- **`waft-launcher`** - Standalone GTK4/libadwaita launcher application. Searches XDG applications and niri compositor windows. Supports fuzzy matching, keyboard navigation, and usage-based ranking. Subscribes to `app` and `window` entity types.
+- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with categorized sidebar, `gtk::Stack` for page switching, and `adw::NavigationView` for sub-page drill-down. Pages: Bluetooth, WiFi, Wired, Online Accounts (Connectivity); Appearance, Display, Windows, Wallpaper (Visual); Audio, Notifications, Sounds (Feedback); Keyboard, Keyboard Shortcuts (Inputs); Weather (Info); Plugins, Services, Startup (System). Uses same `WaftClient` + `EntityStore` pattern as overview. Startup, Keyboard Shortcuts, and Windows pages use direct KDL config file editing (niri config) rather than entity-based approach. Appearance page has sub-pages for dark mode automation and night light configuration. Settings-app-specific preferences stored in `~/.config/waft/settings-app.toml`.
 - **`waft-core`** - Common types: `Callback<T>`, `VoidCallback`, `DbusHandle` (zbus wrapper). Re-exports `waft-config`.
 - **`waft-ipc`** - Legacy widget protocol types (being phased out).
 
 ### Plugins
 
-All 16 plugins are standalone daemon binaries implementing the `Plugin` trait from `waft-plugin`. They provide domain entities to the central daemon, which routes updates to subscribed apps.
+All 18 plugins are standalone daemon binaries implementing the `Plugin` trait from `waft-plugin`. They provide domain entities to the central daemon, which routes updates to subscribed apps.
 
 | Plugin              | Entity Types                                                                                                                | Purpose                                                             |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -102,13 +103,15 @@ All 16 plugins are standalone daemon binaries implementing the `Plugin` trait fr
 | **battery**         | `battery`                                                                                                                   | Battery percentage, health, charging (UPower D-Bus)                 |
 | **brightness**      | `display`                                                                                                                   | Display brightness (brightnessctl/ddcutil)                          |
 | **keyboard-layout** | `keyboard-layout`                                                                                                           | Input method display/switch (Niri/Sway/Hyprland/localed)            |
+| **niri**            | `keyboard-layout`, `keyboard-layout-config`, `display-output`, `window`                                                     | Niri compositor integration (layouts, displays, windows)            |
 | **systemd**         | `session`, `user-service`                                                                                                   | Session actions and user service management via systemd             |
 | **bluez**           | `bluetooth-adapter`, `bluetooth-device`                                                                                     | Bluetooth device management (BlueZ D-Bus)                           |
 | **audio**           | `audio-device`                                                                                                              | Volume sliders, device selection (pactl)                            |
-| **networkmanager**  | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn`                                                             | WiFi/Ethernet/VPN management (nmrs + zbus)                          |
+| **networkmanager**  | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn`, `tethering-connection`                                     | WiFi/Ethernet/VPN/Tethering management (nmrs + zbus)                |
 | **weather**         | `weather`                                                                                                                   | Weather information via HTTP API                                    |
 | **notifications**   | `notification`, `dnd`, `notification-group`, `notification-profile`, `active-profile`, `sound-config`, `notification-sound`, `recording` | D-Bus notification server, toasts, DND, filtering, sound, recording |
 | **eds**             | `calendar-event`                                                                                                            | EDS calendar integration                                            |
+| **gnome-online-accounts** | `online-account`                                                                                                      | GNOME Online Accounts status and service toggles (GOA D-Bus)        |
 | **gsettings**       | `gtk-appearance`                                                                                                            | GTK accent colour configuration via gsettings CLI                   |
 | **sunsetr**         | `night-light`                                                                                                               | Night light control via sunsetr CLI                                 |
 | **syncthing**       | `backup-method`                                                                                                             | Syncthing service toggle                                            |
@@ -158,30 +161,7 @@ Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK overlay)
 - Write path: `std::sync::mpsc` + OS thread (GTK->daemon, bypasses tokio)
 - Read path: tokio task -> flume -> `glib::spawn_future_local`
 
-**Plugin Pattern:**
-
-```rust
-#[async_trait::async_trait]
-impl Plugin for MyPlugin {
-    fn get_entities(&self) -> Vec<Entity>;
-    async fn handle_action(&self, urn: Urn, action: String, params: serde_json::Value)
-        -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    fn can_stop(&self) -> bool { true }
-}
-let (runtime, notifier) = PluginRuntime::new("name", plugin);
-runtime.run().await?;
-```
-
-**Main function pattern:**
-
-```rust
-fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides(&[ENTITY_TYPE]) { return Ok(()); }
-    waft_plugin::init_plugin_logger("info");
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async { /* create plugin, runtime, spawn tasks */ })
-}
-```
+**Plugin Pattern:** See `create-daemon-plugin` skill for Plugin trait, main function pattern, and full step-by-step guide.
 
 ### Directory Structure
 
@@ -209,6 +189,13 @@ crates/
     config/                       # waft-config: TOML config loading
     core/                         # waft-core: Callback, DbusHandle (legacy, being reduced)
     i18n/                         # waft-i18n: Fluent localization
+    launcher/                     # waft-launcher: standalone launcher application
+        src/
+            app.rs                # Entity subscriptions, action dispatch, usage tracking
+            ranking.rs            # RankedResult enum (App/Window), fuzzy scoring, usage boost
+            fuzzy.rs              # Fuzzy string matching algorithm
+            usage.rs              # Launch frequency tracking (XDG data dir)
+            window.rs             # LauncherWindow, layer-shell setup, animations
     ipc/                          # waft-ipc: legacy widget protocol (being phased out)
 plugins/
     clock/          bin/          # Entity types: clock
@@ -217,6 +204,7 @@ plugins/
     battery/        bin/          # Entity types: battery
     brightness/     bin/          # Entity types: display
     keyboard-layout/ bin/         # Entity types: keyboard-layout
+    niri/           bin/          # Entity types: keyboard-layout, keyboard-layout-config, display-output, window
     systemd/        bin/          # Entity types: session, user-service
     bluez/          bin/          # Entity types: bluetooth-adapter, bluetooth-device
     audio/          bin/          # Entity types: audio-device
@@ -224,6 +212,7 @@ plugins/
     weather/        bin/          # Entity types: weather
     notifications/  bin/          # Entity types: notification, dnd, recording
     eds/            bin/          # Entity types: calendar-event
+    gnome-online-accounts/ bin/   # Entity types: online-account
     gsettings/      bin/          # Entity types: gtk-appearance
     sunsetr/        bin/          # Entity types: night-light
     syncthing/      bin/          # Entity types: backup-method
@@ -239,10 +228,12 @@ crates/
                 bluetooth.rs      # Smart container: adapter groups + device lists
                 wifi.rs           # Smart container: WiFi adapters + network lists
                 wired.rs          # Smart container: Ethernet adapters + connection profiles
+                online_accounts.rs # Smart container: GOA accounts + service toggles
                 display.rs        # Smart container: per-output display controls
                 keyboard.rs       # Smart container: keyboard layout selection
                 keyboard_shortcuts.rs  # Smart container: niri keyboard bind management (KDL)
                 niri_windows.rs   # Smart container: niri window appearance settings (KDL)
+                audio.rs          # Smart container: audio device grouping + virtual device controls
                 notifications.rs  # Smart container: groups, profiles, DND
                 sounds.rs         # Thin composer: defaults + gallery sections
                 startup.rs        # Smart container: niri spawn-at-startup entries (KDL)
@@ -252,11 +243,14 @@ crates/
                 services.rs       # Smart container: systemd user services
             bluetooth/            # Dumb widgets: adapter_group, device_row, paired/discovered groups
             display/              # Widgets: accent_colour_section, dark_mode_section, night_light_section, settings_sub_page, and more
-            wifi/                 # Dumb widgets: adapter_group, network_row, known/available groups
+            wifi/                 # Dumb widgets: adapter_group, network_row, known/available groups, password_dialog
             wired/                # Dumb widgets: adapter_group, connection_row
+            online_accounts/      # Dumb widgets: account_row
             niri_windows/         # Dumb widgets: focus_ring, border, shadow, tab_indicator, gaps, struts, derive_colors sections
             wallpaper/            # Widgets: gallery_section, thumbnail_widget, preview_section, mode_section, background_color_section
             startup/              # Widgets: startup_row, entry_dialog
+            audio/                # Dumb widgets: device_card, virtual_devices_section
+            keyboard/             # Widgets: layout_row, keymap_grid, xkb_database, xkb_keymap, dialogs
             keyboard_shortcuts/   # Widgets: bind_row, bind_editor
             plugins/              # Dumb widgets: plugin_row
             sounds/               # Smart sections: defaults_section, gallery_section
@@ -306,134 +300,21 @@ There are two distinct sources of entity type documentation:
 
 **`vrr_supported`/`vrr_enabled` in `DisplayOutput`**: These boolean fields in `entity::display::DisplayOutput` violate the project's boolean naming convention (state names, not questions). Should be renamed to `vrr_support`/`vrr` or similar. Deferred because it requires coordinated changes across protocol, niri plugin, and display settings page.
 
-### Naming Conventions (MUST follow)
+### Coding Conventions (MUST follow)
 
-**FORBIDDEN: Generic "utils" naming**
-
-Never use `utils`, `helpers`, `misc`, or similar vague module/file names. Every module must be named semantically based on what it contains or does.
-
-```rust
-// BAD - vague, meaningless
-mod wifi_utils;
-mod helpers;
-mod misc;
-
-// GOOD - semantic, descriptive
-mod wifi_icon;          // Contains WiFi icon selection logic
-mod signal_strength;    // Signal strength calculations
-mod network_scanner;    // Network scanning functionality
-```
-
-This rule applies to:
-
-- Module names (`mod foo`)
-- File names (`foo.rs`)
-- Directory names (`src/features/foo/`)
-
-**Boolean field naming: State, not question**
-
-Boolean fields should be named as states/properties, not as questions. Reserve the "is*/has*/can\_" prefix for functions/methods that return booleans.
-
-```rust
-// BAD - sounds like a function/question
-pub struct AudioDevice {
-    pub is_input: bool,    // Reads like "is input?"
-    pub is_default: bool,  // Reads like "is default?"
-}
-
-// GOOD - state/property naming
-pub struct AudioDevice {
-    pub input: bool,       // "input" answers "Is input?" -> true/false
-    pub default: bool,     // "default" answers "Is default?" -> true/false
-}
-
-// Functions/methods can use "is_" prefix
-impl AudioDevice {
-    pub fn is_input(&self) -> bool {  // OK - function asking question
-        self.input
-    }
-}
-```
-
-Rationale: Boolean fields are answers to questions, not questions themselves. The "is*/has*" prefix suggests a method that returns a boolean. Use simple, direct property names for boolean fields.
-
-### Icon Usage Rule
-
-**FORBIDDEN: Using `gtk::Image` directly for icons**
-
-Never use `gtk::Image::builder().icon_name(...)` to create icons. Use `waft_ui_gtk::widgets::IconWidget` instead -- it provides theme resolution, fallback handling, and consistent API.
-
-- `IconWidget::from_name("icon-name", pixel_size)` for simple named icons
-- `IconWidget::new(icon_hints, pixel_size)` for multi-source icons (themed/file/bytes)
+See `waft-coding-conventions` skill: no generic module names (`utils`/`helpers`/`misc`), boolean fields use state names not questions (`input` not `is_input`), icons use `IconWidget` not `gtk::Image`.
 
 ### UI Component Architecture
 
-**React-ish component pattern: dumb widgets + smart containers**
+See `widget-coding` skill: dumb widgets (`*Props`/`*Output`/`connect_output()`), smart containers with `Reconciler`, data flows down via props, events flow up via output callbacks.
 
-Structure UI as presentational (dumb) widgets orchestrated by smart containers:
+### EntityStore Subscription Pattern
 
-- **Dumb widgets** receive data via `Props` structs and constructor args. They emit events via `Output` enums and `connect_output()` callbacks. They never hold store references or subscribe to stores (exception: self-contained popover tracking via `MenuStore`).
-- **Smart containers** own store subscriptions, manage state, create child widgets, connect callbacks, and push state changes down via setter methods (e.g. `set_expanded(bool)`).
-- **Data flows down** (Props/setters), **events flow up** (Output callbacks) -- unidirectional.
+See `entity-store-subscription` skill: always subscribe first, then trigger initial reconciliation via `idle_add_local_once`.
 
-Naming conventions: `*Props` for input structs, `*Output` for event enums, `connect_output()` for callback registration, `pub root` for the GTK root widget, `widget()` accessor.
+### Threading and Runtime Mixing
 
-When a widget has no events (purely presentational), skip the `Output` enum and `connect_output`.
-
-### EntityStore Subscription Pattern with Initial Reconciliation
-
-**Problem:** `EntityStore::subscribe_type()` only calls callbacks when entities change, not on initial subscription. If `EntityUpdated` notifications arrive before subscriptions are registered, the UI never reconciles with cached data.
-
-**Solution:** Always trigger manual reconciliation after setting up subscriptions:
-
-```rust
-// 1. Set up subscriptions
-entity_store.subscribe_type(EntityType::ENTITY_TYPE, move || {
-    let entities = store.get_entities_typed(EntityType::ENTITY_TYPE);
-    Self::reconcile(&state, &entities, &callback);
-});
-
-// 2. Trigger initial reconciliation with cached data
-{
-    let state_clone = state.clone();
-    let store_clone = entity_store.clone();
-    let cb_clone = action_callback.clone();
-
-    gtk::glib::idle_add_local_once(move || {
-        let entities = store_clone.get_entities_typed(EntityType::ENTITY_TYPE);
-        if !entities.is_empty() {
-            log::debug!("[component] Initial reconciliation: {} entities", entities.len());
-            Self::reconcile(&state_clone, &entities, &cb_clone);
-        }
-    });
-}
-```
-
-**Why `idle_add_local_once`?** Defers execution until after current GTK event processing completes, ensures all subscription setup is complete, and prevents RefCell borrow conflicts.
-
-**Examples:** See `crates/settings/src/pages/bluetooth.rs`, `wifi.rs`, `wired.rs`
-
-### Threading Model
-
-**Overview (GTK host):**
-
-- GTK widgets are **not** `Send`/`Sync` -- live on main thread only
-- Never mutate GTK from Tokio tasks
-- Use channels or `glib::MainContext::invoke_local` for GTK updates from async code
-- Anything moved into `tokio::spawn(...)` must be `Send`
-
-**Daemon plugins:**
-
-- All `Send + Sync` (enforced by `Plugin` trait)
-- Pure tokio context -- no GTK, no glib
-- Shared state: `Arc<StdMutex<T>>` between plugin struct and monitoring tasks
-- D-Bus signal monitoring: `tokio::spawn` + `zbus::MessageStream` + `notifier.notify()`
-
-### Runtime Mixing: Never Run Tokio Futures in glib Context
-
-Never run tokio-dependent futures inside `glib::spawn_future_local()` -- causes 100% CPU busy-polling. Always spawn tokio work on the tokio runtime and communicate via executor-agnostic channels (flume).
-
-**zbus configuration:** Always use `zbus = { version = "5", default-features = false, features = ["tokio"] }`. The default `async-io` backend causes the same busy-poll issue.
+See `async-runtime-bridge` skill: GTK widgets on main thread only, tokio futures never in `glib::spawn_future_local()`, always use `zbus = { features = ["tokio"] }`.
 
 ### Incremental UI Updates (must follow)
 
@@ -446,13 +327,7 @@ For DBus-driven UIs:
 
 ### Layer-Shell Window Dynamic Resizing
 
-Layer-shell windows don't auto-resize when content changes. To trigger resize:
-
-1. Call `window.set_default_size(width, -1)` when content changes (height `-1` = recalculate from content)
-2. For animated content (revealers), trigger resize after animation completes via `revealer.connect_child_revealed_notify()`
-3. Use `idle_add_local_once` to defer resize until after GTK event processing
-
-To constrain max height, use `ScrolledWindow.set_max_content_height()` -- CSS `max-height` on inner widgets won't constrain window size.
+See `widget-coding` skill for the layer-shell resizing pattern (`set_default_size`, revealer notify, `idle_add_local_once`).
 
 ---
 
@@ -524,148 +399,7 @@ Non-goals: No `gio`/`GDesktopAppInfo` dependency for `.desktop` file resolution.
 
 ## Coding Rules: Prevent Silent Hangs
 
-This app is a long-running daemon. A silent failure in any async loop, channel consumer, or background task makes the overlay permanently unresponsive with no clue in the logs. Follow these rules to keep every failure path visible.
-
-### Never discard Results with `let _ =`
-
-Silent `let _ = expr` on fallible operations hides the exact moment something breaks. Always log or act on the error.
-
-```rust
-// BAD -- silent failure, invisible in logs
-let _ = tx.send_blocking(value);
-let _ = rt.block_on(server());
-
-// GOOD
-if let Err(e) = tx.send_blocking(value) {
-    eprintln!("[ipc] failed to forward command: {e}");
-}
-match rt.block_on(server()) {
-    Ok(()) => eprintln!("[ipc] server exited cleanly"),
-    Err(e) => eprintln!("[ipc] server error: {e}"),
-}
-```
-
-Exception: `let _ =` is acceptable for best-effort cleanup where the outcome genuinely doesn't matter (e.g. removing a stale socket file).
-
-### Log when async loops exit
-
-Every `while let Ok(...) = rx.recv().await` loop is a critical event pump. When the channel closes, the loop exits silently and the feature stops responding. Always add a log line after the loop.
-
-```rust
-glib::spawn_future_local(async move {
-    while let Ok(input) = rx.recv().await {
-        handle(input);
-    }
-    warn!("[feature] receiver loop exited -- feature is now unresponsive");
-});
-```
-
-### Log when background tasks exit
-
-Wrap `tokio::spawn` calls so unexpected exits are visible.
-
-```rust
-// BAD -- task exits silently
-tokio::spawn(my_task(rx));
-
-// GOOD
-tokio::spawn(async move {
-    if let Err(e) = my_task(rx).await {
-        warn!("[feature] task error: {e}");
-    }
-    debug!("[feature] task stopped");
-});
-```
-
-### Break send loops when nobody is listening
-
-When a broadcast/channel sender fails, it means all receivers are gone. Continuing to loop wastes resources. Break out and log.
-
-```rust
-// BAD -- loops forever sending into the void
-let _ = tx.send(msg);
-
-// GOOD
-if tx.send(msg).is_err() {
-    break;
-}
-// after loop:
-debug!("[feature] listener stopped");
-```
-
-### Recover from mutex poison, never panic
-
-A poisoned mutex means a thread panicked while holding the lock. In a long-running app, recovering with `e.into_inner()` is better than crashing the entire process.
-
-```rust
-// BAD -- panics the app
-let guard = mutex.lock().unwrap();
-
-// GOOD
-let guard = match mutex.lock() {
-    Ok(g) => g,
-    Err(e) => {
-        warn!("[feature] mutex poisoned, recovering: {e}");
-        e.into_inner()
-    }
-};
-```
-
-### Reap child processes
-
-Dropping a `std::process::Child` without calling `wait()` creates zombie processes. Spawn a thread to reap.
-
-```rust
-// BAD -- creates zombie
-Command::new("sh").arg("-c").arg(&cmd).spawn().ok();
-
-// GOOD
-match Command::new("sh").arg("-c").arg(&cmd).spawn() {
-    Ok(child) => {
-        std::thread::spawn(move || {
-            let mut child = child;
-            let _ = child.wait();
-        });
-    }
-    Err(e) => error!("spawn failed: {e}"),
-}
-```
-
-### Log before panic in bridge code
-
-When a bridge between runtimes (e.g. tokio-to-glib) uses `expect()`, the panic message may never reach logs. Log the error explicitly first.
-
-```rust
-// BAD -- panic message may be swallowed
-rx.recv_async().await.expect("task panicked")
-
-// GOOD
-match rx.recv_async().await {
-    Ok(val) => val,
-    Err(e) => {
-        error!("[runtime] task cancelled or panicked: {e}");
-        panic!("task cancelled or panicked: {e}");
-    }
-}
-```
-
-### Guard against None in late-init fields
-
-When a field is set to `Some(...)` during `create_elements()` and accessed later, use `match` instead of `.unwrap()` to avoid a panic if initialization order changes.
-
-```rust
-// BAD
-let handle = self.field.as_ref().unwrap().clone();
-
-// GOOD
-let handle = match self.field.as_ref() {
-    Some(h) => h.clone(),
-    None => {
-        error!("[feature] field not initialized");
-        return Ok(());
-    }
-};
-```
+See `prevent-silent-hangs` skill: covers `let _ =` on fallible ops, logging async loop exits, background task error logging, broken send loops, mutex poison recovery, child process reaping, and bridge code panics.
 
 ---
 
@@ -682,13 +416,13 @@ let handle = match self.field.as_ref() {
 
 ## Current Status
 
-**All 16 plugins use the entity-based architecture** with central daemon routing.
+**All 18 plugins use the entity-based architecture** with central daemon routing.
 
 - `waft-protocol` with entity types, messages, URN, transport, static entity registry, plugin descriptions
 - `waft-plugin` with `Plugin` trait, `PluginRuntime`, `EntityNotifier`, extended manifest (`provides --describe`)
 - `waft` central daemon with discovery, spawning, routing, crash recovery, CLI (clap), plugin-status meta-entities
 - `waft-overview` with `WaftClient`, `EntityRenderer`, socket reconnection, right column tabs (controls/exit), ISO week numbers in calendar, audio device name deduplication
-- `waft-settings` with Bluetooth, WiFi, Wired, Appearance (with sub-pages and accent colour), Display, Wallpaper (with gallery and background colour), Windows (niri layout settings), Audio, Notifications (with recording toggle), Sounds, Keyboard, Keyboard Shortcuts, Weather, Plugins, Services, Startup pages
+- `waft-settings` with Bluetooth, WiFi, Wired, Online Accounts, Appearance (with sub-pages and accent colour), Display, Wallpaper (with gallery and background colour), Windows (niri layout settings), Audio, Notifications (with recording toggle), Sounds, Keyboard, Keyboard Shortcuts, Weather, Plugins, Services, Startup pages
 
 **Legacy crates** (`waft-ipc`, parts of `waft-core`) are still in the workspace but being phased out.
 **Active Branch:** `larger-larger-picture`

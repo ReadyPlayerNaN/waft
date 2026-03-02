@@ -22,6 +22,8 @@ use super::network_row::{NetworkRow, NetworkRowOutput, NetworkRowProps};
 pub enum AvailableNetworksGroupOutput {
     /// Trigger a WiFi scan on the adapter.
     Scan,
+    /// Request password for an unsaved secure network.
+    ConnectWithPassword { urn: Urn, ssid: String },
 }
 
 /// Callback type for available networks group output events.
@@ -106,6 +108,7 @@ impl AvailableNetworksGroup {
                 strength: network.strength,
                 secure: network.secure,
                 connected: false,
+                connecting: network.connecting,
             };
 
             if let Some(existing) = self.rows.get(&urn_str) {
@@ -114,16 +117,29 @@ impl AvailableNetworksGroup {
                 let row = NetworkRow::build(&props);
                 let urn_clone = urn.clone();
                 let cb = action_callback.clone();
+                let output_cb = self.output_cb.clone();
+                let is_secure = network.secure;
+                let ssid_for_cb = network.ssid.clone();
                 row.connect_output(move |output| {
-                    let action = match output {
-                        NetworkRowOutput::Connect => "connect",
-                        NetworkRowOutput::Disconnect => return,
-                    };
-                    cb(
-                        urn_clone.clone(),
-                        action.to_string(),
-                        serde_json::Value::Null,
-                    );
+                    match output {
+                        NetworkRowOutput::Connect => {
+                            if is_secure {
+                                if let Some(ref callback) = *output_cb.borrow() {
+                                    callback(AvailableNetworksGroupOutput::ConnectWithPassword {
+                                        urn: urn_clone.clone(),
+                                        ssid: ssid_for_cb.clone(),
+                                    });
+                                }
+                            } else {
+                                cb(
+                                    urn_clone.clone(),
+                                    "connect".to_string(),
+                                    serde_json::Value::Null,
+                                );
+                            }
+                        }
+                        NetworkRowOutput::Disconnect => {}
+                    }
                 });
                 self.root.add(&row.widget());
                 self.rows.insert(urn_str, row);

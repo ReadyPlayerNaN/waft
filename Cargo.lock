@@ -3637,6 +3637,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-plugin-gnome-online-accounts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures-util",
+ "log",
+ "serde_json",
+ "tokio",
+ "waft-i18n",
+ "waft-plugin",
+ "waft-protocol",
+ "zbus",
+]
+
+[[package]]
 name = "waft-plugin-gsettings"
 version = "0.1.0"
 dependencies = [

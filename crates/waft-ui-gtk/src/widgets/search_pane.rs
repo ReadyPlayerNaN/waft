@@ -37,6 +37,7 @@ pub struct SearchPaneWidget {
     pub search_bar: SearchBarWidget,
     result_list: Rc<SearchResultListWidget>,
     empty_state: EmptySearchStateWidget,
+    scroll: gtk::ScrolledWindow,
     stack: gtk::Stack,
     on_output: Callback<SearchPaneOutput>,
     selected: Rc<Cell<usize>>,
@@ -130,6 +131,7 @@ impl SearchPaneWidget {
             search_bar,
             result_list,
             empty_state,
+            scroll,
             stack,
             on_output,
             selected,
@@ -160,43 +162,167 @@ impl SearchPaneWidget {
                 items,
                 selected: 0,
             });
+            self.scroll.vadjustment().set_value(0.0);
             self.stack.set_visible_child_name("results");
         }
     }
 
-    /// Move keyboard selection down.
+    /// Move keyboard selection down (wraps around).
     pub fn select_next(&self) {
         let items = self.items.borrow();
         let count = items.len();
         if count == 0 {
             return;
         }
-        let next = (self.selected.get() + 1).min(count - 1);
+        let current = self.selected.get();
+        let next = if current >= count - 1 { 0 } else { current + 1 };
         self.selected.set(next);
         self.result_list.update(&SearchResultListProps {
             items: items.clone(),
             selected: next,
         });
+        self.scroll_to_selected();
         if let Some(ref cb) = *self.on_output.borrow() {
             cb(SearchPaneOutput::ResultSelected(next));
         }
     }
 
-    /// Move keyboard selection up.
+    /// Move keyboard selection up (wraps around).
     pub fn select_prev(&self) {
         let items = self.items.borrow();
         let count = items.len();
         if count == 0 {
             return;
         }
-        let prev = self.selected.get().saturating_sub(1);
+        let current = self.selected.get();
+        let prev = if current == 0 { count - 1 } else { current - 1 };
         self.selected.set(prev);
         self.result_list.update(&SearchResultListProps {
             items: items.clone(),
             selected: prev,
         });
+        self.scroll_to_selected();
         if let Some(ref cb) = *self.on_output.borrow() {
             cb(SearchPaneOutput::ResultSelected(prev));
+        }
+    }
+
+    /// Jump selection to the first item.
+    pub fn select_first(&self) {
+        let items = self.items.borrow();
+        if items.is_empty() {
+            return;
+        }
+        self.selected.set(0);
+        self.result_list.update(&SearchResultListProps {
+            items: items.clone(),
+            selected: 0,
+        });
+        self.scroll_to_selected();
+        if let Some(ref cb) = *self.on_output.borrow() {
+            cb(SearchPaneOutput::ResultSelected(0));
+        }
+    }
+
+    /// Jump selection to the last item.
+    pub fn select_last(&self) {
+        let items = self.items.borrow();
+        if items.is_empty() {
+            return;
+        }
+        let last = items.len() - 1;
+        self.selected.set(last);
+        self.result_list.update(&SearchResultListProps {
+            items: items.clone(),
+            selected: last,
+        });
+        self.scroll_to_selected();
+        if let Some(ref cb) = *self.on_output.borrow() {
+            cb(SearchPaneOutput::ResultSelected(last));
+        }
+    }
+
+    /// Jump selection down by approximately one page.
+    pub fn select_next_page(&self) {
+        let items = self.items.borrow();
+        let count = items.len();
+        if count == 0 {
+            return;
+        }
+        let page_size = self.estimate_page_size();
+        let current = self.selected.get();
+        let next = (current + page_size).min(count - 1);
+        self.selected.set(next);
+        self.result_list.update(&SearchResultListProps {
+            items: items.clone(),
+            selected: next,
+        });
+        self.scroll_to_selected();
+        if let Some(ref cb) = *self.on_output.borrow() {
+            cb(SearchPaneOutput::ResultSelected(next));
+        }
+    }
+
+    /// Jump selection up by approximately one page.
+    pub fn select_prev_page(&self) {
+        let items = self.items.borrow();
+        let count = items.len();
+        if count == 0 {
+            return;
+        }
+        let page_size = self.estimate_page_size();
+        let current = self.selected.get();
+        let prev = current.saturating_sub(page_size);
+        self.selected.set(prev);
+        self.result_list.update(&SearchResultListProps {
+            items: items.clone(),
+            selected: prev,
+        });
+        self.scroll_to_selected();
+        if let Some(ref cb) = *self.on_output.borrow() {
+            cb(SearchPaneOutput::ResultSelected(prev));
+        }
+    }
+
+    /// Estimate how many rows fit in one scroll page.
+    fn estimate_page_size(&self) -> usize {
+        let viewport_height = self.scroll.vadjustment().page_size();
+        let root = self.result_list.widget();
+        let mut child = root.first_child();
+        if let Some(ref c) = child {
+            let h = c.allocation().height();
+            if h > 0 {
+                return (viewport_height / f64::from(h)).floor().max(1.0) as usize;
+            }
+        }
+        // Fallback: if no children or zero height
+        let _ = child.take();
+        5
+    }
+
+    /// Scroll the viewport so the selected row is visible.
+    fn scroll_to_selected(&self) {
+        let idx = self.selected.get();
+        let root = self.result_list.widget();
+        let mut current = root.first_child();
+        let mut i = 0;
+        while let Some(ref child) = current {
+            if i == idx {
+                let alloc = child.allocation();
+                let row_y = f64::from(alloc.y());
+                let row_h = f64::from(alloc.height());
+                let adj = self.scroll.vadjustment();
+                let top = adj.value();
+                let bottom = top + adj.page_size();
+                if row_y < top {
+                    adj.set_value(row_y);
+                } else if row_y + row_h > bottom {
+                    adj.set_value(row_y + row_h - adj.page_size());
+                }
+                return;
+            }
+            current = child.next_sibling();
+            i += 1;
         }
     }
 

@@ -11,6 +11,7 @@ mod keyboard;
 mod niri_windows;
 mod keyboard_shortcuts;
 mod notifications;
+mod online_accounts;
 mod pages;
 mod plugins;
 mod prefs;

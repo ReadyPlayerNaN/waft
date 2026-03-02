@@ -2,8 +2,10 @@
 //!
 //! Reads niri `binds { }` entries from `~/.config/niri/config.kdl`
 //! and allows adding, editing, and removing keyboard shortcuts.
+//! Entries are grouped by action category.
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -12,13 +14,59 @@ use waft_ui_gtk::vdom::Component;
 use crate::i18n::t;
 use crate::keyboard_shortcuts::bind_editor::BindEditor;
 use crate::keyboard_shortcuts::bind_row::{BindRow, BindRowOutput, BindRowProps};
-use crate::keyboard_shortcuts::{self, BindEntry};
+use crate::keyboard_shortcuts::{self, BindAction, BindEntry, action_category};
 use crate::search_index::SearchIndex;
 use crate::kdl_config;
+
+/// Ordered list of categories for display. Categories not in this list
+/// appear at the end sorted alphabetically.
+const CATEGORY_ORDER: &[&str] = &[
+    "Custom",
+    "Focus",
+    "Window",
+    "Workspace",
+    "Layout",
+    "Session",
+    "Display",
+    "Screenshot",
+    "Other",
+];
+
+/// Return the i18n key for a category name.
+fn category_i18n_key(category: &str) -> String {
+    match category {
+        "Custom" => "kb-shortcuts-cat-custom".to_string(),
+        "Focus" => "kb-shortcuts-cat-focus".to_string(),
+        "Window" => "kb-shortcuts-cat-window".to_string(),
+        "Workspace" => "kb-shortcuts-cat-workspace".to_string(),
+        "Layout" => "kb-shortcuts-cat-layout".to_string(),
+        "Session" => "kb-shortcuts-cat-session".to_string(),
+        "Display" => "kb-shortcuts-cat-display".to_string(),
+        "Screenshot" => "kb-shortcuts-cat-screenshot".to_string(),
+        "Other" => "kb-shortcuts-cat-other".to_string(),
+        _ => "kb-shortcuts-cat-other".to_string(),
+    }
+}
+
+/// Sort key for category ordering.
+fn category_sort_key(category: &str) -> usize {
+    CATEGORY_ORDER
+        .iter()
+        .position(|c| *c == category)
+        .unwrap_or(CATEGORY_ORDER.len())
+}
 
 /// Smart container for the Keyboard Shortcuts settings page.
 pub struct KeyboardShortcutsPage {
     pub root: gtk::Box,
+}
+
+/// A category group with its PreferencesGroup and ListBox.
+struct CategoryGroup {
+    group: adw::PreferencesGroup,
+    /// Kept alive; rows are appended during reconciliation.
+    #[allow(dead_code)]
+    list_box: gtk::ListBox,
 }
 
 /// Internal mutable state.
@@ -26,10 +74,10 @@ struct ShortcutsPageState {
     entries: Vec<BindEntry>,
     raw_nodes: Vec<String>,
     rows: Vec<BindRow>,
-    list_box: gtk::ListBox,
+    /// Category groups in display order: (category_name, group widgets).
+    category_groups: Vec<(String, CategoryGroup)>,
     raw_list_box: gtk::ListBox,
     empty_state: adw::StatusPage,
-    group: adw::PreferencesGroup,
     raw_group: adw::PreferencesGroup,
     error_state: adw::StatusPage,
 }
@@ -58,17 +106,6 @@ impl KeyboardShortcutsPage {
             .visible(false)
             .build();
         root.append(&empty_state);
-
-        let group = adw::PreferencesGroup::builder()
-            .title(t("kb-shortcuts-custom"))
-            .visible(false)
-            .build();
-        let list_box = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .css_classes(["boxed-list"])
-            .build();
-        group.add(&list_box);
-        root.append(&group);
 
         // Raw (unparseable) binds section
         let raw_group = adw::PreferencesGroup::builder()
@@ -99,7 +136,7 @@ impl KeyboardShortcutsPage {
                 &page_title,
                 &t("kb-shortcuts-custom"),
                 "kb-shortcuts-custom",
-                &group,
+                &root,
             );
         }
 
@@ -120,10 +157,9 @@ impl KeyboardShortcutsPage {
             entries: Vec::new(),
             raw_nodes: initial_raw.clone(),
             rows: Vec::new(),
-            list_box,
+            category_groups: Vec::new(),
             raw_list_box,
             empty_state,
-            group,
             raw_group,
             error_state,
         }));
@@ -180,82 +216,138 @@ impl KeyboardShortcutsPage {
     ) {
         let mut s = state.borrow_mut();
 
-        // Clear existing rows
+        // Clear existing rows from their list boxes
         for row in &s.rows {
-            s.list_box.remove(&row.widget());
+            if let Some(parent) = row.widget().parent() {
+                if let Some(list_box) = parent.downcast_ref::<gtk::ListBox>() {
+                    list_box.remove(&row.widget());
+                }
+            }
         }
         s.rows.clear();
+
+        // Remove old category groups from root
+        for (_, cat_group) in &s.category_groups {
+            root.remove(&cat_group.group);
+        }
+        s.category_groups.clear();
+
         s.entries = entries.to_vec();
 
-        // Build new rows
-        for (idx, entry) in entries.iter().enumerate() {
-            let props = BindRowProps {
-                key_chord: entry.key_chord(),
-                action_label: entry.action.label(),
-                title: entry.hotkey_overlay_title.clone(),
-                editable: true,
-            };
-            let row = BindRow::build(&props);
+        // Group entries by category, preserving flat index
+        let mut categories: BTreeMap<String, Vec<(usize, &BindEntry)>> = BTreeMap::new();
+        for (flat_idx, entry) in entries.iter().enumerate() {
+            let cat = action_category(&entry.action).to_string();
+            categories.entry(cat).or_default().push((flat_idx, entry));
+        }
 
-            let state_for_output = state.clone();
-            let config_path = config_path.to_path_buf();
-            let root_ref = root.clone();
-            row.connect_output(move |output| match output {
-                BindRowOutput::Edit => {
-                    let s = state_for_output.borrow();
-                    let current_entry = match s.entries.get(idx) {
-                        Some(e) => e.clone(),
-                        None => return,
-                    };
-                    let raw = s.raw_nodes.clone();
-                    drop(s);
+        // Sort categories by display order
+        let mut sorted_cats: Vec<(String, Vec<(usize, &BindEntry)>)> =
+            categories.into_iter().collect();
+        sorted_cats.sort_by_key(|(cat, _)| category_sort_key(cat));
 
-                    let dialog = BindEditor::new(Some(&current_entry));
-                    let state = state_for_output.clone();
-                    let config_path = config_path.clone();
-                    let root_for_confirm = root_ref.clone();
-                    dialog.connect_confirmed(move |updated_entry| {
-                        let mut s = state.borrow_mut();
-                        if idx < s.entries.len() {
-                            s.entries[idx] = updated_entry;
+        // Create groups and rows
+        // Insert groups before the raw_group (which stays at the end before add button)
+        for (cat_name, cat_entries) in &sorted_cats {
+            let i18n_key = category_i18n_key(cat_name);
+            let group = adw::PreferencesGroup::builder()
+                .title(t(&i18n_key))
+                .build();
+            let list_box = gtk::ListBox::builder()
+                .selection_mode(gtk::SelectionMode::None)
+                .css_classes(["boxed-list"])
+                .build();
+            group.add(&list_box);
+
+            // Insert before raw_group: after the last category group, or after empty_state
+            if let Some((_, last_cat)) = s.category_groups.last() {
+                root.insert_child_after(&group, Some(&last_cat.group));
+            } else {
+                root.insert_child_after(&group, Some(&s.empty_state));
+            }
+
+            for &(flat_idx, entry) in cat_entries {
+                let (action_label, action_type) = match &entry.action {
+                    BindAction::Spawn { command, .. } => {
+                        // Show only the command basename (no "spawn" prefix)
+                        let basename = std::path::Path::new(command)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| command.clone());
+                        (basename, Some(t("kb-shortcuts-type-spawn")))
+                    }
+                    BindAction::NiriAction { name, .. } => (name.clone(), None),
+                };
+                let props = BindRowProps {
+                    key_chord: entry.key_chord(),
+                    action_label,
+                    action_type,
+                    title: entry.hotkey_overlay_title.clone(),
+                    editable: true,
+                };
+                let row = BindRow::build(&props);
+
+                let state_for_output = state.clone();
+                let config_path = config_path.to_path_buf();
+                let root_ref = root.clone();
+                row.connect_output(move |output| match output {
+                    BindRowOutput::Edit => {
+                        let s = state_for_output.borrow();
+                        let current_entry = match s.entries.get(flat_idx) {
+                            Some(e) => e.clone(),
+                            None => return,
+                        };
+                        let raw = s.raw_nodes.clone();
+                        drop(s);
+
+                        let dialog = BindEditor::new(Some(&current_entry));
+                        let state = state_for_output.clone();
+                        let config_path = config_path.clone();
+                        let root_for_confirm = root_ref.clone();
+                        dialog.connect_confirmed(move |updated_entry| {
+                            let mut s = state.borrow_mut();
+                            if flat_idx < s.entries.len() {
+                                s.entries[flat_idx] = updated_entry;
+                            }
+                            let entries = s.entries.clone();
+                            drop(s);
+                            Self::save_and_reconcile(
+                                &state,
+                                &entries,
+                                &raw,
+                                &config_path,
+                                &root_for_confirm,
+                            );
+                        });
+                        dialog.present(&root_ref);
+                    }
+                    BindRowOutput::Delete => {
+                        let mut s = state_for_output.borrow_mut();
+                        if flat_idx < s.entries.len() {
+                            s.entries.remove(flat_idx);
                         }
                         let entries = s.entries.clone();
+                        let raw = s.raw_nodes.clone();
                         drop(s);
                         Self::save_and_reconcile(
-                            &state,
+                            &state_for_output,
                             &entries,
                             &raw,
                             &config_path,
-                            &root_for_confirm,
+                            &root_ref,
                         );
-                    });
-                    dialog.present(&root_ref);
-                }
-                BindRowOutput::Delete => {
-                    let mut s = state_for_output.borrow_mut();
-                    if idx < s.entries.len() {
-                        s.entries.remove(idx);
                     }
-                    let entries = s.entries.clone();
-                    let raw = s.raw_nodes.clone();
-                    drop(s);
-                    Self::save_and_reconcile(
-                        &state_for_output,
-                        &entries,
-                        &raw,
-                        &config_path,
-                        &root_ref,
-                    );
-                }
-            });
+                });
 
-            s.list_box.append(&row.widget());
-            s.rows.push(row);
+                list_box.append(&row.widget());
+                s.rows.push(row);
+            }
+
+            s.category_groups.push((cat_name.clone(), CategoryGroup { group, list_box }));
         }
 
         // Toggle empty state
         let has_entries = !entries.is_empty();
-        s.group.set_visible(has_entries);
         s.empty_state.set_visible(!has_entries && s.raw_nodes.is_empty());
         s.error_state.set_visible(false);
     }

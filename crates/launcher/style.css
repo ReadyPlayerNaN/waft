@@ -2,8 +2,8 @@
 .launcher-window {
     background-color: @window_bg_color;
     border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    border: 1px solid alpha(@window_fg_color, 0.08);
+    box-shadow: 0 8px 32px alpha(black, 0.3);
+    border: 1px solid alpha(@window_fg_color, 0.15);
 }
 
 /* Search bar */
@@ -36,7 +36,7 @@
 }
 
 .app-result-btn:hover {
-    background-color: alpha(@window_fg_color, 0.07);
+    background-color: alpha(@window_fg_color, 0.12);
 }
 
 .app-result-btn.selected {
@@ -44,19 +44,38 @@
     color: @accent_fg_color;
 }
 
-.app-result-btn.selected .app-result-name,
-.app-result-btn.selected .app-result-description {
+.app-result-btn.selected .app-result-name {
     color: @accent_fg_color;
 }
 
 /* Result row labels */
 .app-result-name {
     font-weight: bold;
+    color: @window_fg_color;
 }
 
-.app-result-description {
-    font-size: 0.85em;
-    opacity: 0.7;
+/* Result kind badge */
+.app-result-badge {
+    font-size: 0.75em;
+    font-weight: bold;
+    min-width: 20px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    color: @window_fg_color;
+    background-color: alpha(@window_fg_color, 0.08);
+    margin-right: 4px;
+}
+
+.badge-app {
+    background-color: alpha(@accent_bg_color, 0.15);
+}
+
+.badge-window {
+    background-color: alpha(@window_fg_color, 0.1);
+}
+
+.app-result-btn.selected .app-result-badge {
+    color: @accent_fg_color;
 }
 
 /* Empty search state */

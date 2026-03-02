@@ -21,6 +21,7 @@ use crate::pages::keyboard::KeyboardPage;
 use crate::pages::keyboard_shortcuts::KeyboardShortcutsPage;
 use crate::pages::niri_windows::NiriWindowsPage;
 use crate::pages::notifications::NotificationsPage;
+use crate::pages::online_accounts::OnlineAccountsPage;
 use crate::pages::plugins::PluginsPage;
 use crate::pages::services::ServicesPage;
 use crate::pages::sounds::SoundsPage;
@@ -39,6 +40,7 @@ fn page_title(page_id: &str) -> String {
         "bluetooth" => "settings-bluetooth",
         "wifi" => "settings-wifi",
         "wired" => "settings-wired",
+        "online-accounts" => "settings-online-accounts",
         "appearance" => "settings-appearance",
         "display" => "settings-display",
         "notifications" => "settings-notifications",
@@ -119,6 +121,7 @@ impl SettingsWindow {
             idx.add_page("bluetooth", &t("settings-bluetooth"), "settings-bluetooth");
             idx.add_page("wifi", &t("settings-wifi"), "settings-wifi");
             idx.add_page("wired", &t("settings-wired"), "settings-wired");
+            idx.add_page("online-accounts", &t("settings-online-accounts"), "settings-online-accounts");
             idx.add_page("weather", &t("settings-weather"), "settings-weather");
             idx.add_page("appearance", &t("settings-appearance"), "settings-appearance");
             idx.add_page("display", &t("settings-display"), "settings-display");
@@ -149,6 +152,7 @@ impl SettingsWindow {
         let plugins_page = PluginsPage::new(entity_store, &search_index);
         let startup_page = StartupPage::new(&search_index);
         let services_page = ServicesPage::new(entity_store, action_callback, &search_index);
+        let online_accounts_page = OnlineAccountsPage::new(entity_store, action_callback, &search_index);
 
         // Wrap each page in a clamp for consistent max width
         let audio_clamp = adw::Clamp::builder()
@@ -221,14 +225,21 @@ impl SettingsWindow {
             .child(&services_page.root)
             .build();
 
+        let online_accounts_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&online_accounts_page.root)
+            .build();
+
         // Stack for page switching (keyed by stable page_id)
         let stack = gtk::Stack::builder()
             .transition_type(gtk::StackTransitionType::Crossfade)
+            .vhomogeneous(false)
             .build();
         stack.add_named(&audio_clamp, Some("audio"));
         stack.add_named(&bt_clamp, Some("bluetooth"));
         stack.add_named(&wifi_clamp, Some("wifi"));
         stack.add_named(&wired_clamp, Some("wired"));
+        stack.add_named(&online_accounts_clamp, Some("online-accounts"));
         stack.add_named(&weather_clamp, Some("weather"));
         stack.add_named(&appearance_clamp, Some("appearance"));
         stack.add_named(&display_clamp, Some("display"));
@@ -258,7 +269,6 @@ impl SettingsWindow {
         let content_header = adw::HeaderBar::new();
         let content_scrolled = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
-            .propagate_natural_height(true)
             .build();
 
         content_scrolled.set_child(Some(&stack));

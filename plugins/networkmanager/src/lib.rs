@@ -73,6 +73,36 @@ impl AccessPoint {
     }
 }
 
+use waft_plugin::entity::network::SecurityType;
+
+/// Detect WiFi security type from NM access point flags.
+///
+/// Flag constants from NetworkManager D-Bus API:
+/// - NM_802_11_AP_FLAGS_PRIVACY = 0x1
+/// - NM_802_11_AP_SEC_KEY_MGMT_802_1X = 0x200
+/// - NM_802_11_AP_SEC_KEY_MGMT_SAE = 0x400
+pub fn detect_security_type(flags: u32, wpa_flags: u32, rsn_flags: u32) -> SecurityType {
+    let has_8021x = (wpa_flags & 0x200) != 0 || (rsn_flags & 0x200) != 0;
+    if has_8021x {
+        return SecurityType::Enterprise;
+    }
+    let has_sae = (rsn_flags & 0x400) != 0;
+    if has_sae {
+        return SecurityType::Wpa3;
+    }
+    if rsn_flags != 0 {
+        return SecurityType::Wpa2;
+    }
+    if wpa_flags != 0 {
+        return SecurityType::Wpa;
+    }
+    let has_privacy = (flags & 0x1) != 0;
+    if has_privacy {
+        return SecurityType::Wep;
+    }
+    SecurityType::Open
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,5 +328,52 @@ mod tests {
     #[test]
     fn test_wifi_icon_no_strength_data() {
         assert_eq!(get_wifi_icon(None, true, true), "network-wireless-symbolic");
+    }
+
+    // Security type detection tests
+
+    #[test]
+    fn test_detect_security_open() {
+        assert_eq!(detect_security_type(0, 0, 0), SecurityType::Open);
+    }
+
+    #[test]
+    fn test_detect_security_wep() {
+        // Privacy flag set, no WPA/RSN
+        assert_eq!(detect_security_type(0x1, 0, 0), SecurityType::Wep);
+    }
+
+    #[test]
+    fn test_detect_security_wpa() {
+        assert_eq!(detect_security_type(0, 0x100, 0), SecurityType::Wpa);
+    }
+
+    #[test]
+    fn test_detect_security_wpa2() {
+        assert_eq!(detect_security_type(0, 0, 0x100), SecurityType::Wpa2);
+    }
+
+    #[test]
+    fn test_detect_security_wpa3() {
+        // SAE flag in RSN
+        assert_eq!(detect_security_type(0, 0, 0x400), SecurityType::Wpa3);
+    }
+
+    #[test]
+    fn test_detect_security_enterprise_wpa() {
+        // 802.1X in WPA flags
+        assert_eq!(detect_security_type(0, 0x200, 0), SecurityType::Enterprise);
+    }
+
+    #[test]
+    fn test_detect_security_enterprise_rsn() {
+        // 802.1X in RSN flags
+        assert_eq!(detect_security_type(0, 0, 0x200), SecurityType::Enterprise);
+    }
+
+    #[test]
+    fn test_detect_security_enterprise_takes_priority() {
+        // Both SAE and 802.1X — Enterprise wins
+        assert_eq!(detect_security_type(0, 0x200, 0x400), SecurityType::Enterprise);
     }
 }

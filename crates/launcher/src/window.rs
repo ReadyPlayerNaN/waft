@@ -5,22 +5,21 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk4_layer_shell::{KeyboardMode, Layer, LayerShell};
-use waft_protocol::entity::app::App;
-use waft_protocol::urn::Urn;
 use waft_ui_gtk::widget_base::WidgetBase;
-use waft_ui_gtk::widgets::app_result_row::AppResultRowProps;
+use waft_ui_gtk::widgets::app_result_row::{AppResultRowProps, ResultKind};
 use waft_ui_gtk::widgets::search_pane::SearchPaneWidget;
 
-use crate::ranking::RankedApp;
+use crate::ranking::RankedResult;
 
-const LAUNCHER_ANIM_DURATION_MS: u32 = 150;
+const LAUNCHER_ANIM_DURATION_MS: u32 = 100;
+const LAUNCHER_SLIDE_OFFSET_PX: f64 = 8.0;
 
 /// The main launcher window.
 pub struct LauncherWindow {
     pub window: adw::ApplicationWindow,
     search_pane: SearchPaneWidget,
     /// Current ranked result list (parallel to displayed rows).
-    results: Rc<RefCell<Vec<RankedApp>>>,
+    results: Rc<RefCell<Vec<RankedResult>>>,
     #[allow(dead_code)] // Held to keep the gtk::Box alive; opacity driven via animation closure
     content: gtk::Box,
     animation: adw::TimedAnimation,
@@ -40,7 +39,7 @@ impl LauncherWindow {
         // Layer shell setup
         window.init_layer_shell();
         window.set_layer(Layer::Overlay);
-        window.set_keyboard_mode(KeyboardMode::Exclusive);
+        window.set_keyboard_mode(KeyboardMode::OnDemand);
         // No anchors = centered on screen
 
         let search_pane = SearchPaneWidget::new("Search applications\u{2026}");
@@ -54,7 +53,7 @@ impl LauncherWindow {
         // Prevent flash before first show animation
         content.set_opacity(0.0);
 
-        let results: Rc<RefCell<Vec<RankedApp>>> = Rc::new(RefCell::new(Vec::new()));
+        let results: Rc<RefCell<Vec<RankedResult>>> = Rc::new(RefCell::new(Vec::new()));
         let animation_progress = Rc::new(Cell::new(0.0_f64));
         let animating_hide = Rc::new(Cell::new(false));
 
@@ -64,6 +63,8 @@ impl LauncherWindow {
         let target = adw::CallbackAnimationTarget::new(move |value| {
             progress_for_anim.set(value);
             content_for_anim.set_opacity(value);
+            let margin = ((1.0 - value) * LAUNCHER_SLIDE_OFFSET_PX) as i32;
+            content_for_anim.set_margin_top(margin);
         });
 
         let animation = adw::TimedAnimation::builder()
@@ -112,7 +113,7 @@ impl LauncherWindow {
             animating_hide_for_focus.set(true);
             anim_for_focus.set_value_from(progress_for_focus.get());
             anim_for_focus.set_value_to(0.0);
-            anim_for_focus.set_easing(adw::Easing::EaseInCubic);
+            anim_for_focus.set_easing(adw::Easing::EaseInQuad);
             anim_for_focus.play();
         });
 
@@ -142,8 +143,24 @@ impl LauncherWindow {
                 animating_hide_for_escape.set(true);
                 anim_for_escape.set_value_from(progress_for_escape.get());
                 anim_for_escape.set_value_to(0.0);
-                anim_for_escape.set_easing(adw::Easing::EaseInCubic);
+                anim_for_escape.set_easing(adw::Easing::EaseInQuad);
                 anim_for_escape.play();
+                gtk::glib::Propagation::Stop
+            }
+            gtk::gdk::Key::Page_Down => {
+                pane_ref.select_next_page();
+                gtk::glib::Propagation::Stop
+            }
+            gtk::gdk::Key::Page_Up => {
+                pane_ref.select_prev_page();
+                gtk::glib::Propagation::Stop
+            }
+            gtk::gdk::Key::Home => {
+                pane_ref.select_first();
+                gtk::glib::Propagation::Stop
+            }
+            gtk::gdk::Key::End => {
+                pane_ref.select_last();
                 gtk::glib::Propagation::Stop
             }
             _ => gtk::glib::Propagation::Proceed,
@@ -160,7 +177,7 @@ impl LauncherWindow {
         self.window.present();
         self.animation.set_value_from(self.animation_progress.get());
         self.animation.set_value_to(1.0);
-        self.animation.set_easing(adw::Easing::EaseOutCubic);
+        self.animation.set_easing(adw::Easing::EaseOutQuad);
         self.animation.play();
     }
 
@@ -172,7 +189,7 @@ impl LauncherWindow {
         self.animating_hide.set(true);
         self.animation.set_value_from(self.animation_progress.get());
         self.animation.set_value_to(0.0);
-        self.animation.set_easing(adw::Easing::EaseInCubic);
+        self.animation.set_easing(adw::Easing::EaseInQuad);
         self.animation.play();
     }
 
@@ -184,13 +201,20 @@ impl LauncherWindow {
     }
 
     /// Update displayed results and resize window.
-    pub fn set_results(&self, results: Vec<RankedApp>, query: &str) {
+    pub fn set_results(&self, results: Vec<RankedResult>, query: &str) {
         let props: Vec<AppResultRowProps> = results
             .iter()
-            .map(|r| AppResultRowProps {
-                name: r.app.name.clone(),
-                icon: r.app.icon.clone(),
-                description: r.app.description.clone(),
+            .map(|r| match r {
+                RankedResult::App { app, .. } => AppResultRowProps {
+                    name: app.name.clone(),
+                    icon: app.icon.clone(),
+                    kind: ResultKind::App,
+                },
+                RankedResult::Window { window, .. } => AppResultRowProps {
+                    name: window.title.clone(),
+                    icon: window.app_id.to_lowercase(),
+                    kind: ResultKind::Window,
+                },
             })
             .collect();
         *self.results.borrow_mut() = results;
@@ -209,11 +233,8 @@ impl LauncherWindow {
         self.search_pane.grab_focus();
     }
 
-    /// Get the `RankedApp` at the given result index.
-    pub fn result_at(&self, index: usize) -> Option<(Urn, App)> {
-        self.results
-            .borrow()
-            .get(index)
-            .map(|r| (r.urn.clone(), r.app.clone()))
+    /// Get the `RankedResult` at the given result index.
+    pub fn result_at(&self, index: usize) -> Option<RankedResult> {
+        self.results.borrow().get(index).cloned()
     }
 }

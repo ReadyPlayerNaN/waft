@@ -25,6 +25,7 @@ settings-keyboard = Klávesnice
 settings-audio = Zvuk
 settings-weather = Počasí
 settings-plugins = Doplňky
+settings-online-accounts = Online účty
 
 # Audio
 audio-output-devices = Výstupní zařízení
@@ -49,6 +50,10 @@ audio-virtual-devices-empty-desc = Vytvořte virtuální zvukové výstupy a vst
 audio-create-device-title = Vytvořit virtuální zařízení
 audio-create-device-label = Název zařízení
 audio-create-device-label-placeholder = např. Virtuální mikrofon
+audio-add-virtual-device = Přidat
+audio-virtual-device-type = Typ zařízení
+audio-virtual-type-sink = Výstup
+audio-virtual-type-source = Vstup
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Zapnuto
@@ -92,6 +97,13 @@ wifi-no-known-networks = Žádné známé sítě
 wifi-connected = Připojeno
 wifi-disconnect = Odpojit
 wifi-connect = Připojit
+wifi-password-title = Připojit k { $ssid }
+wifi-password-body = Zadejte heslo pro tuto síť.
+wifi-password-connect = Připojit
+wifi-password-cancel = Zrušit
+wifi-connecting = Připojování…
+wifi-enterprise-not-supported = Podnikové sítě (802.1X) nejsou podporovány.
+wifi-connection-failed = Připojení selhalo: { $error }
 
 # Wired
 wired-connected = Připojeno
@@ -230,6 +242,7 @@ kb-variant-none = Výchozí (žádná varianta)
 kb-variant-search-placeholder = Hledat varianty...
 kb-variant-cancel = Zrušit
 kb-variant-confirm = Vybrat
+kb-active-layout = Aktivní rozložení
 
 # Weather
 weather-current = Aktuální počasí
@@ -475,3 +488,29 @@ kb-allow-when-locked = Povolit při zamčení
 kb-hotkey-title = Název v překryvném okně
 kb-shortcuts-parse-error = Konfigurační soubor nelze zpracovat — úpravy jsou zakázány
 kb-shortcuts-read-only = Pouze pro čtení
+kb-shortcuts-cat-custom = Zkratky aplikací
+kb-shortcuts-cat-focus = Zaměření
+kb-shortcuts-cat-window = Okno
+kb-shortcuts-cat-workspace = Pracovní plocha
+kb-shortcuts-cat-layout = Rozložení
+kb-shortcuts-cat-session = Relace
+kb-shortcuts-cat-display = Displej
+kb-shortcuts-cat-screenshot = Snímek obrazovky
+kb-shortcuts-cat-other = Ostatní
+kb-shortcuts-type-spawn = spustit
+
+# Online Accounts
+online-accounts-title = Účty
+online-accounts-no-accounts = Žádné online účty
+online-accounts-no-accounts-desc = Nejsou nakonfigurovány žádné online účty GNOME.
+online-accounts-status-active = Aktivní
+online-accounts-status-credentials-needed = Vyžadovány přihlašovací údaje
+online-accounts-status-needs-attention = Vyžaduje pozornost
+online-accounts-service-mail = Pošta
+online-accounts-service-calendar = Kalendář
+online-accounts-service-contacts = Kontakty
+online-accounts-service-chat = Chat
+online-accounts-service-files = Soubory
+online-accounts-service-music = Hudba
+online-accounts-service-photos = Fotky
+online-accounts-service-ticketing = Lístky

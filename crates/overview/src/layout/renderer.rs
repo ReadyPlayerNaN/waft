@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 use log::{debug, warn};
+use waft_ui_gtk::icons::IconWidget;
 
 /// Type alias for rebuild callback slot to reduce complexity.
 type RebuildSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
@@ -63,15 +64,19 @@ impl RenderContext {
         action_callback: EntityActionCallback,
         calendar_selection: Rc<CalendarSelectionStore>,
     ) -> Self {
+        let controls_icon = IconWidget::from_name("emblem-system-symbolic", 16);
         let controls_tab_btn = gtk::ToggleButton::builder()
-            .label(crate::i18n::t("tab-controls"))
+            .child(controls_icon.widget())
             .css_classes(["tab-pill", "flat"])
+            .tooltip_text(crate::i18n::t("tab-controls"))
             .active(true)
             .build();
 
+        let exit_icon = IconWidget::from_name("system-shutdown-symbolic", 16);
         let exit_tab_btn = gtk::ToggleButton::builder()
-            .label(crate::i18n::t("tab-exit"))
+            .child(exit_icon.widget())
             .css_classes(["tab-pill", "flat"])
+            .tooltip_text(crate::i18n::t("tab-exit"))
             .build();
 
         exit_tab_btn.set_group(Some(&controls_tab_btn));

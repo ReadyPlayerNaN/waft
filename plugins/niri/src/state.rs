@@ -4,12 +4,23 @@ use std::collections::HashMap;
 
 use crate::config::KeyboardConfig;
 
-/// Combined plugin state for keyboard layouts and display outputs.
+/// Combined plugin state for keyboard layouts, display outputs, and windows.
 #[derive(Debug, Default)]
 pub struct NiriState {
     pub keyboard: KeyboardLayoutState,
     pub keyboard_config: KeyboardConfig,
     pub outputs: HashMap<String, DisplayOutputState>,
+    pub windows: Vec<NiriWindowState>,
+}
+
+/// State for a single compositor window.
+#[derive(Debug, Clone)]
+pub struct NiriWindowState {
+    pub id: u64,
+    pub title: String,
+    pub app_id: String,
+    pub workspace_id: u64,
+    pub focused: bool,
 }
 
 /// Keyboard layout state tracked from Niri events.

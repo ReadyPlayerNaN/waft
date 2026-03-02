@@ -76,6 +76,7 @@ fn schedule_interaction_end(
 
 /// A per-sink row widget with interaction tracking state.
 struct SinkRow {
+    frame: gtk::Frame,
     root: gtk::Box,
     sink_name: String,
     slider: gtk::Scale,
@@ -100,6 +101,7 @@ struct SinkRow {
 
 /// A per-source row widget with interaction tracking state.
 struct SourceRow {
+    frame: gtk::Frame,
     root: gtk::Box,
     source_name: String,
     slider: gtk::Scale,
@@ -406,7 +408,7 @@ impl AudioDeviceCard {
             if current_names.contains(&row.sink_name.as_str()) {
                 true
             } else {
-                self.sinks_box.remove(&row.root);
+                self.sinks_box.remove(&row.frame);
                 false
             }
         });
@@ -469,7 +471,7 @@ impl AudioDeviceCard {
                 }
             } else {
                 let row = self.build_sink_row(sink);
-                self.sinks_box.append(&row.root);
+                self.sinks_box.append(&row.frame);
                 rows.push(row);
             }
         }
@@ -487,7 +489,7 @@ impl AudioDeviceCard {
             if current_names.contains(&row.source_name.as_str()) {
                 true
             } else {
-                self.sources_box.remove(&row.root);
+                self.sources_box.remove(&row.frame);
                 false
             }
         });
@@ -547,7 +549,7 @@ impl AudioDeviceCard {
                 }
             } else {
                 let row = self.build_source_row(source);
-                self.sources_box.append(&row.root);
+                self.sources_box.append(&row.frame);
                 rows.push(row);
             }
         }
@@ -556,10 +558,16 @@ impl AudioDeviceCard {
     }
 
     fn build_sink_row(&self, sink: &AudioCardSink) -> SinkRow {
+        let frame = gtk::Frame::builder()
+            .css_classes(["card"])
+            .build();
+
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
             .build();
+
+        frame.set_child(Some(&root));
 
         let icon = IconWidget::from_name(audio_device_icon(&sink.device_type, AudioDeviceKind::Output), 16);
 
@@ -808,6 +816,7 @@ impl AudioDeviceCard {
         }
 
         SinkRow {
+            frame,
             root,
             sink_name: sink.sink_name.clone(),
             slider,
@@ -824,10 +833,16 @@ impl AudioDeviceCard {
     }
 
     fn build_source_row(&self, source: &AudioCardSource) -> SourceRow {
+        let frame = gtk::Frame::builder()
+            .css_classes(["card"])
+            .build();
+
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
             .build();
+
+        frame.set_child(Some(&root));
 
         let icon = IconWidget::from_name(audio_device_icon(&source.device_type, AudioDeviceKind::Input), 16);
 
@@ -1062,6 +1077,7 @@ impl AudioDeviceCard {
         }
 
         SourceRow {
+            frame,
             root,
             source_name: source.source_name.clone(),
             slider,

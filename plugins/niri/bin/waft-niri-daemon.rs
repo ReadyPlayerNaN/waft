@@ -24,7 +24,8 @@ use waft_plugin_niri::config::{self, KeyboardConfigMode};
 use waft_plugin_niri::display;
 use waft_plugin_niri::event_stream::{self, NiriEvent};
 use waft_plugin_niri::keyboard;
-use waft_plugin_niri::state::NiriState;
+use waft_plugin_niri::state::{NiriState, NiriWindowState};
+use waft_protocol::entity;
 use waft_protocol::entity::display::DisplayOutput;
 use waft_protocol::entity::keyboard::{
     CONFIG_ENTITY_TYPE, ENTITY_TYPE as KEYBOARD_ENTITY_TYPE,
@@ -492,6 +493,18 @@ impl Plugin for NiriPlugin {
             entities.push(Entity::new(urn, DisplayOutput::ENTITY_TYPE, &output));
         }
 
+        // Window entities
+        for win in &state.windows {
+            let window_entity = entity::window::Window {
+                title: win.title.clone(),
+                app_id: win.app_id.clone(),
+                workspace_id: win.workspace_id,
+                focused: win.focused,
+            };
+            let urn = Urn::new("niri", entity::window::ENTITY_TYPE, &win.id.to_string());
+            entities.push(Entity::new(urn, entity::window::ENTITY_TYPE, &window_entity));
+        }
+
         entities
     }
 
@@ -508,6 +521,16 @@ impl Plugin for NiriPlugin {
                 "cycle" => {
                     debug!("[niri] Cycling keyboard layout");
                     keyboard::switch_next().await?;
+                }
+                "set-active" => {
+                    let index: usize = serde_json::from_value(
+                        params
+                            .get("index")
+                            .cloned()
+                            .ok_or("Missing 'index' parameter")?,
+                    )?;
+                    debug!("[niri] Switching to keyboard layout index {}", index);
+                    keyboard::switch_to(index).await?;
                 }
                 _ => {
                     debug!("[niri] Unknown keyboard action: {}", action);
@@ -530,6 +553,16 @@ impl Plugin for NiriPlugin {
                     warn!("[niri] Display output not found: {}", output_name);
                 }
             }
+        } else if entity_type == entity::window::ENTITY_TYPE {
+            match action.as_str() {
+                "focus" => {
+                    let window_id = urn.id().to_string();
+                    commands::niri_action(&["focus-window", "--id", &window_id]).await?;
+                }
+                _ => {
+                    debug!("[niri] Unknown window action: {}", action);
+                }
+            }
         } else {
             debug!(
                 "[niri] Unknown entity type: {} (action: {})",
@@ -548,6 +581,7 @@ fn main() -> Result<()> {
             KEYBOARD_ENTITY_TYPE,
             CONFIG_ENTITY_TYPE,
             DisplayOutput::ENTITY_TYPE,
+            entity::window::ENTITY_TYPE,
         ],
     )
     .i18n(i18n(), "plugin-name", "plugin-description")
@@ -632,6 +666,28 @@ fn main() -> Result<()> {
             }
         }
 
+        // Load initial window list
+        match commands::niri_msg_json::<Vec<event_stream::WindowInfo>>("windows").await {
+            Ok(windows) => {
+                let window_states: Vec<NiriWindowState> = windows
+                    .into_iter()
+                    .map(|w| NiriWindowState {
+                        id: w.id,
+                        title: w.title,
+                        app_id: w.app_id,
+                        workspace_id: w.workspace_id,
+                        focused: w.is_focused,
+                    })
+                    .collect();
+                let mut s = state.lock_or_recover();
+                info!("[niri] Loaded {} windows", window_states.len());
+                s.windows = window_states;
+            }
+            Err(e) => {
+                warn!("[niri] Failed to query windows: {e}");
+            }
+        }
+
         let plugin = NiriPlugin {
             state: state.clone(),
         };
@@ -656,6 +712,22 @@ fn main() -> Result<()> {
                         {
                             let mut s = event_state.lock_or_recover();
                             s.keyboard.current_idx = idx;
+                        }
+                        event_notifier.notify();
+                    }
+                    NiriEvent::WindowsChanged { windows } => {
+                        {
+                            let mut s = event_state.lock_or_recover();
+                            s.windows = windows
+                                .into_iter()
+                                .map(|w| NiriWindowState {
+                                    id: w.id,
+                                    title: w.title,
+                                    app_id: w.app_id,
+                                    workspace_id: w.workspace_id,
+                                    focused: w.is_focused,
+                                })
+                                .collect();
                         }
                         event_notifier.notify();
                     }
