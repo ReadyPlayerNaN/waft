@@ -14,17 +14,17 @@ use super::types::{Group, ItemLifecycle, Notification, NotificationOp, State};
 /// Process a notification operation on the given state.
 ///
 /// Returns whether state changed.
-pub fn process_op(state: &mut State, op: NotificationOp) -> bool {
+pub fn process_op(state: &mut State, op: NotificationOp, i18n: &waft_i18n::I18n) -> bool {
     match op {
         NotificationOp::Batch(ops) => {
             let mut changed = false;
             for op in ops {
-                changed |= process_op(state, op);
+                changed |= process_op(state, op, i18n);
             }
             changed
         }
         NotificationOp::Ingress(n) => {
-            process_ingress(state, *n);
+            process_ingress(state, *n, i18n);
             true
         }
         NotificationOp::NotificationDismiss(id) => process_dismiss(state, id),
@@ -37,7 +37,7 @@ pub fn process_op(state: &mut State, op: NotificationOp) -> bool {
     }
 }
 
-fn process_ingress(state: &mut State, n: IngressedNotification) {
+fn process_ingress(state: &mut State, n: IngressedNotification, i18n: &waft_i18n::I18n) {
     // Handle replaces_id: remove the old notification if it exists
     if let Some(old_id) = n.replaces_id
         && old_id != 0
@@ -47,7 +47,7 @@ fn process_ingress(state: &mut State, n: IngressedNotification) {
         remove_notification(state, old_id);
     }
 
-    let notification = create_notification(&n);
+    let notification = create_notification(&n, i18n);
     let notif_id = notification.id;
     let group_id = notification.app_ident();
     let app_title = notification.app_title();
@@ -148,10 +148,10 @@ fn reconcile_group_on_ingress(
     state.archive.insert(group_id, ItemLifecycle::Visible);
 }
 
-fn create_notification(n: &IngressedNotification) -> Notification {
+fn create_notification(n: &IngressedNotification, i18n: &waft_i18n::I18n) -> Notification {
     let mut notification = Notification {
         actions: derive_actions(n),
-        app: derive_app_ident(n),
+        app: derive_app_ident(n, i18n),
         created_at: n.created_at,
         description: n.description.clone(),
         icon_hints: derive_icon_hints(n),
@@ -188,21 +188,41 @@ fn normalize_app_ident(app_ident: &str) -> Arc<str> {
     Arc::from(app_ident.to_lowercase().replace(' ', "_"))
 }
 
-fn derive_app_ident(notification: &IngressedNotification) -> Option<AppIdent> {
+fn map_device_app_name(name: &str) -> Option<&'static str> {
+    match name {
+        "blueman" | "bluetooth" | "bluez" => Some("devices"),
+        "networkmanager" | "network-manager" => Some("network"),
+        "power_manager" | "upower" | "battery" => Some("power"),
+        "pulseaudio" | "pipewire" => Some("audio"),
+        _ => None,
+    }
+}
+
+fn derive_app_ident(
+    notification: &IngressedNotification,
+    i18n: &waft_i18n::I18n,
+) -> Option<AppIdent> {
     let app_ident = &notification.app_name;
     let desktop = &notification.hints.desktop_entry;
 
-    if let Some(app_ident) = app_ident {
-        Some(AppIdent {
-            ident: normalize_app_ident(app_ident),
-            title: Some(app_ident.clone()),
-        })
-    } else {
-        desktop.as_ref().map(|desktop| AppIdent {
-            ident: normalize_app_ident(desktop),
-            title: Some(desktop.clone()),
-        })
-    }
+    let raw_name = app_ident
+        .as_deref()
+        .or(desktop.as_ref().map(|d| d.as_ref()));
+
+    raw_name.map(|name| {
+        let lowercased = name.to_lowercase();
+        if let Some(key) = map_device_app_name(&lowercased) {
+            AppIdent {
+                ident: Arc::from(key),
+                title: Some(Arc::from(i18n.t(&format!("device-group-{key}")))),
+            }
+        } else {
+            AppIdent {
+                ident: normalize_app_ident(name),
+                title: Some(Arc::from(name)),
+            }
+        }
+    })
 }
 
 /// Derive the panel notification TTL.
@@ -316,6 +336,17 @@ mod tests {
     use crate::dbus::ingress::IngressedNotification;
     use crate::types::NotificationUrgency;
 
+    fn test_i18n() -> &'static waft_i18n::I18n {
+        use std::sync::LazyLock;
+        static TEST_I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+            waft_i18n::I18n::new(&[(
+                "en-US",
+                "device-group-devices = Devices\ndevice-group-network = Network Devices\ndevice-group-power = Power Devices\ndevice-group-audio = Audio Devices",
+            )])
+        });
+        &TEST_I18N
+    }
+
     fn make_hints(urgency: NotificationUrgency, resident: bool) -> Hints {
         Hints {
             action_icons: false,
@@ -359,7 +390,7 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)));
+        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
 
         assert!(state.notifications.contains_key(&1));
     }
@@ -369,7 +400,7 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)));
+        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
 
         assert!(state.panel_notifications.contains_key(&1));
     }
@@ -379,8 +410,8 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)));
-        process_op(&mut state, NotificationOp::NotificationDismiss(1));
+        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
+        process_op(&mut state, NotificationOp::NotificationDismiss(1), test_i18n());
 
         assert!(!state.notifications.contains_key(&1));
         assert!(!state.panel_notifications.contains_key(&1));
@@ -391,8 +422,8 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)));
-        process_op(&mut state, NotificationOp::NotificationRetract(1));
+        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
+        process_op(&mut state, NotificationOp::NotificationRetract(1), test_i18n());
 
         assert!(!state.notifications.contains_key(&1));
         assert!(!state.panel_notifications.contains_key(&1));
@@ -419,7 +450,7 @@ mod tests {
             ))),
         ];
 
-        process_op(&mut state, NotificationOp::Batch(ops));
+        process_op(&mut state, NotificationOp::Batch(ops), test_i18n());
 
         assert!(state.notifications.contains_key(&1));
         assert!(state.notifications.contains_key(&2));
@@ -433,10 +464,10 @@ mod tests {
 
         assert!(!state.dnd);
 
-        process_op(&mut state, NotificationOp::SetDnd(true));
+        process_op(&mut state, NotificationOp::SetDnd(true), test_i18n());
         assert!(state.dnd);
 
-        process_op(&mut state, NotificationOp::SetDnd(false));
+        process_op(&mut state, NotificationOp::SetDnd(false), test_i18n());
         assert!(!state.dnd);
     }
 
@@ -450,6 +481,7 @@ mod tests {
                 NotificationUrgency::Normal,
                 false,
             ))),
+            test_i18n(),
         );
         process_op(
             &mut state,
@@ -458,6 +490,7 @@ mod tests {
                 NotificationUrgency::Normal,
                 false,
             ))),
+            test_i18n(),
         );
         process_op(
             &mut state,
@@ -466,11 +499,12 @@ mod tests {
                 NotificationUrgency::Normal,
                 false,
             ))),
+            test_i18n(),
         );
 
         assert_eq!(state.notifications.len(), 3);
 
-        process_op(&mut state, NotificationOp::TtlExpiry(vec![1, 3]));
+        process_op(&mut state, NotificationOp::TtlExpiry(vec![1, 3]), test_i18n());
 
         assert!(!state.notifications.contains_key(&1));
         assert!(state.notifications.contains_key(&2));
@@ -481,14 +515,14 @@ mod tests {
     #[test]
     fn test_ttl_expiry_nonexistent_id_is_noop() {
         let mut state = State::new();
-        let changed = process_op(&mut state, NotificationOp::TtlExpiry(vec![999]));
+        let changed = process_op(&mut state, NotificationOp::TtlExpiry(vec![999]), test_i18n());
         assert!(!changed);
     }
 
     #[test]
     fn test_dismiss_nonexistent_id_is_noop() {
         let mut state = State::new();
-        let changed = process_op(&mut state, NotificationOp::NotificationDismiss(999));
+        let changed = process_op(&mut state, NotificationOp::NotificationDismiss(999), test_i18n());
         assert!(!changed);
     }
 
@@ -502,11 +536,12 @@ mod tests {
                 NotificationUrgency::Normal,
                 false,
             ))),
+            test_i18n(),
         );
 
         let mut replacement = make_notification(2, NotificationUrgency::Normal, false);
         replacement.replaces_id = Some(1);
-        process_op(&mut state, NotificationOp::Ingress(Box::new(replacement)));
+        process_op(&mut state, NotificationOp::Ingress(Box::new(replacement)), test_i18n());
 
         assert!(!state.notifications.contains_key(&1));
         assert!(state.notifications.contains_key(&2));
@@ -523,11 +558,12 @@ mod tests {
                 NotificationUrgency::Normal,
                 false,
             ))),
+            test_i18n(),
         );
 
         assert!(!state.groups.is_empty());
 
-        process_op(&mut state, NotificationOp::NotificationDismiss(1));
+        process_op(&mut state, NotificationOp::NotificationDismiss(1), test_i18n());
 
         assert!(state.groups.is_empty());
     }
@@ -542,6 +578,7 @@ mod tests {
                 NotificationUrgency::Normal,
                 false,
             ))),
+            test_i18n(),
         );
         process_op(
             &mut state,
@@ -550,9 +587,10 @@ mod tests {
                 NotificationUrgency::Normal,
                 false,
             ))),
+            test_i18n(),
         );
 
-        process_op(&mut state, NotificationOp::NotificationDismiss(1));
+        process_op(&mut state, NotificationOp::NotificationDismiss(1), test_i18n());
 
         assert!(!state.groups.is_empty());
         assert!(state.notifications.contains_key(&2));
@@ -564,7 +602,7 @@ mod tests {
         notif.ttl = Some(5000);
 
         let mut state = State::new();
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)));
+        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
 
         let stored = state.notifications.get(&1).unwrap();
         assert_eq!(stored.ttl, Some(5000));
@@ -574,7 +612,7 @@ mod tests {
     fn test_panel_ttl_none_for_default() {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)));
+        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
 
         let stored = state.notifications.get(&1).unwrap();
         assert_eq!(stored.ttl, None);
@@ -604,9 +642,40 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification_with_app(1, "firefox", NotificationUrgency::Normal);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)));
+        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
 
         assert!(state.notifications.contains_key(&1));
         assert!(state.panel_notifications.contains_key(&1));
+    }
+
+    #[test]
+    fn test_map_device_app_name_blueman() {
+        assert_eq!(map_device_app_name("blueman"), Some("devices"));
+    }
+
+    #[test]
+    fn test_map_device_app_name_networkmanager() {
+        assert_eq!(map_device_app_name("networkmanager"), Some("network"));
+    }
+
+    #[test]
+    fn test_map_device_app_name_unknown() {
+        assert_eq!(map_device_app_name("firefox"), None);
+    }
+
+    #[test]
+    fn test_derive_app_ident_device_mapping() {
+        let notif = make_notification_with_app(1, "Blueman", NotificationUrgency::Normal);
+        let app = derive_app_ident(&notif, test_i18n()).unwrap();
+        assert_eq!(app.ident.as_ref(), "devices");
+        assert_eq!(app.title.as_deref(), Some("Devices"));
+    }
+
+    #[test]
+    fn test_derive_app_ident_non_device_preserves_original() {
+        let notif = make_notification_with_app(1, "Firefox", NotificationUrgency::Normal);
+        let app = derive_app_ident(&notif, test_i18n()).unwrap();
+        assert_eq!(app.ident.as_ref(), "firefox");
+        assert_eq!(app.title.as_deref(), Some("Firefox"));
     }
 }

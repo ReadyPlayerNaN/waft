@@ -36,6 +36,14 @@
     min-width: 80px;
 }
 
+/* Expand/collapse button for long descriptions */
+.notification-expand-btn {
+    font-size: 0.8em;
+    padding: 2px 6px;
+    min-height: 0;
+    color: @accent_bg_color;
+}
+
 /* Countdown progress bar inside toast */
 .notification-progress {
     margin: 0 4px 4px 4px;

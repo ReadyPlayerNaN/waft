@@ -68,6 +68,7 @@ impl VCustomButton {
 /// Descriptor for a `gtk::Label` primitive VNode.
 pub struct VLabel {
     pub text:        String,
+    pub markup:      Option<String>,
     pub css_classes: Vec<String>,
     pub xalign:      Option<f32>,
     pub hexpand:     bool,
@@ -80,6 +81,7 @@ impl VLabel {
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text:        text.into(),
+            markup:      None,
             css_classes: Vec::new(),
             xalign:      None,
             hexpand:     false,
@@ -87,6 +89,11 @@ impl VLabel {
             wrap:        false,
             wrap_mode:   None,
         }
+    }
+
+    pub fn markup(mut self, m: impl Into<String>) -> Self {
+        self.markup = Some(m.into());
+        self
     }
 
     pub fn css_class(mut self, class: impl Into<String>) -> Self {

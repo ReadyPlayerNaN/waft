@@ -4,7 +4,7 @@ use waft_protocol::entity;
 use waft_protocol::entity::app::App;
 use waft_protocol::Urn;
 
-use crate::fuzzy::fuzzy_score;
+use crate::fuzzy::fuzzy_match_positions;
 use crate::usage::{AppUsage, UsageMap};
 
 /// A ranked search result (app or window).
@@ -14,11 +14,13 @@ pub enum RankedResult {
         urn: Urn,
         app: App,
         score: f64,
+        highlight_positions: Vec<usize>,
     },
     Window {
         urn: Urn,
         window: entity::window::Window,
         score: f64,
+        highlight_positions: Vec<usize>,
     },
 }
 
@@ -32,6 +34,12 @@ impl RankedResult {
     pub fn score(&self) -> f64 {
         match self {
             Self::App { score, .. } | Self::Window { score, .. } => *score,
+        }
+    }
+
+    pub fn highlight_positions(&self) -> &[usize] {
+        match self {
+            Self::App { highlight_positions, .. } | Self::Window { highlight_positions, .. } => highlight_positions,
         }
     }
 }
@@ -64,21 +72,28 @@ pub fn rank_results(
                 urn: urn.clone(),
                 app: app.clone(),
                 score: boost,
+                highlight_positions: vec![],
             })
         } else {
-            let name_score = fuzzy_score(query, &app.name);
+            let name_match = fuzzy_match_positions(query, &app.name);
             let keywords_str = app.keywords.join(" ");
             let kw_score = if keywords_str.is_empty() {
                 None
             } else {
-                fuzzy_score(query, &keywords_str).map(|s| s * 0.5)
+                fuzzy_match_positions(query, &keywords_str).map(|(s, _)| s * 0.5)
             };
 
-            let base = match (name_score, kw_score) {
-                (Some(n), Some(k)) => Some(n.max(k)),
-                (Some(n), None) => Some(n),
-                (None, Some(k)) => Some(k),
-                (None, None) => None,
+            let (base, positions) = match (&name_match, kw_score) {
+                (Some((n, pos)), Some(k)) => {
+                    if *n >= k {
+                        (Some(*n), pos.clone())
+                    } else {
+                        (Some(k), vec![])
+                    }
+                }
+                (Some((n, pos)), None) => (Some(*n), pos.clone()),
+                (None, Some(k)) => (Some(k), vec![]),
+                (None, None) => (None, vec![]),
             };
 
             base.map(|base| {
@@ -91,6 +106,7 @@ pub fn rank_results(
                     urn: urn.clone(),
                     app: app.clone(),
                     score: base + boost,
+                    highlight_positions: positions,
                 }
             })
         };
@@ -107,22 +123,30 @@ pub fn rank_results(
                 urn: urn.clone(),
                 window: window.clone(),
                 score: 0.0,
+                highlight_positions: vec![],
             })
         } else {
-            let title_score = fuzzy_score(query, &window.title);
-            let app_id_score = fuzzy_score(query, &window.app_id);
+            let title_match = fuzzy_match_positions(query, &window.title);
+            let app_id_match = fuzzy_match_positions(query, &window.app_id);
 
-            let base = match (title_score, app_id_score) {
-                (Some(t), Some(a)) => Some(t.max(a)),
-                (Some(t), None) => Some(t),
-                (None, Some(a)) => Some(a),
-                (None, None) => None,
+            let (base, positions) = match (&title_match, &app_id_match) {
+                (Some((t, t_pos)), Some((a, _))) => {
+                    if t >= a {
+                        (Some(*t), t_pos.clone())
+                    } else {
+                        (Some(*a), vec![])
+                    }
+                }
+                (Some((t, t_pos)), None) => (Some(*t), t_pos.clone()),
+                (None, Some((a, _))) => (Some(*a), vec![]),
+                (None, None) => (None, vec![]),
             };
 
             base.map(|score| RankedResult::Window {
                 urn: urn.clone(),
                 window: window.clone(),
                 score,
+                highlight_positions: positions,
             })
         };
 
@@ -298,5 +322,54 @@ mod tests {
         ];
         let results = rank_results(&apps, &windows, "fire", &UsageMap::new(), false);
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn app_name_match_populates_highlight_positions() {
+        let apps = vec![(app_urn("firefox"), make_app("Firefox", &[]))];
+        let results = rank_results(&apps, &[], "fox", &UsageMap::new(), false);
+        assert_eq!(results.len(), 1);
+        // "fox" matches "Firefox" — greedy: 'f' at 0, 'o' at 5, 'x' at 6
+        assert!(!results[0].highlight_positions().is_empty());
+        assert_eq!(results[0].highlight_positions(), &[0, 5, 6]);
+    }
+
+    #[test]
+    fn keyword_only_match_has_empty_positions() {
+        let apps = vec![(app_urn("firefox"), make_app("Firefox", &["browser"]))];
+        let results = rank_results(&apps, &[], "brow", &UsageMap::new(), false);
+        assert_eq!(results.len(), 1);
+        // Matched by keyword only, so highlight positions should be empty
+        assert!(results[0].highlight_positions().is_empty());
+    }
+
+    #[test]
+    fn window_title_match_populates_highlight_positions() {
+        let windows = vec![
+            (win_urn("1"), make_window("Claude Code", "Alacritty", false)),
+        ];
+        let results = rank_results(&[], &windows, "clau", &UsageMap::new(), false);
+        assert_eq!(results.len(), 1);
+        // "clau" matches "Claude Code" at positions 0,1,2,3
+        assert_eq!(results[0].highlight_positions(), &[0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn window_app_id_only_match_has_empty_positions() {
+        let windows = vec![
+            (win_urn("1"), make_window("Some Title", "Alacritty", false)),
+        ];
+        let results = rank_results(&[], &windows, "alac", &UsageMap::new(), false);
+        assert_eq!(results.len(), 1);
+        // Title "Some Title" doesn't match "alac", only app_id does
+        assert!(results[0].highlight_positions().is_empty());
+    }
+
+    #[test]
+    fn empty_query_has_empty_positions() {
+        let apps = vec![(app_urn("firefox"), make_app("Firefox", &[]))];
+        let results = rank_results(&apps, &[], "", &UsageMap::new(), false);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].highlight_positions().is_empty());
     }
 }

@@ -9,6 +9,7 @@ use waft_ui_gtk::widget_base::WidgetBase;
 use waft_ui_gtk::widgets::app_result_row::{AppResultRowProps, ResultKind};
 use waft_ui_gtk::widgets::search_pane::SearchPaneWidget;
 
+use crate::fuzzy::build_highlight_markup;
 use crate::ranking::RankedResult;
 
 const LAUNCHER_ANIM_DURATION_MS: u32 = 100;
@@ -204,17 +205,22 @@ impl LauncherWindow {
     pub fn set_results(&self, results: Vec<RankedResult>, query: &str) {
         let props: Vec<AppResultRowProps> = results
             .iter()
-            .map(|r| match r {
-                RankedResult::App { app, .. } => AppResultRowProps {
-                    name: app.name.clone(),
-                    icon: app.icon.clone(),
-                    kind: ResultKind::App,
-                },
-                RankedResult::Window { window, .. } => AppResultRowProps {
-                    name: window.title.clone(),
-                    icon: window.app_id.to_lowercase(),
-                    kind: ResultKind::Window,
-                },
+            .map(|r| {
+                let positions = r.highlight_positions();
+                let (name, icon, kind) = match r {
+                    RankedResult::App { app, .. } => {
+                        (app.name.clone(), app.icon.clone(), ResultKind::App)
+                    }
+                    RankedResult::Window { window, .. } => {
+                        (window.title.clone(), window.app_id.to_lowercase(), ResultKind::Window)
+                    }
+                };
+                let highlight_markup = if positions.is_empty() {
+                    None
+                } else {
+                    Some(build_highlight_markup(&name, positions))
+                };
+                AppResultRowProps { name, icon, kind, highlight_markup }
             })
             .collect();
         *self.results.borrow_mut() = results;

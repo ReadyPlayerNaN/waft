@@ -22,6 +22,7 @@ pub async fn run_ttl_expiration(
     state: Arc<StdMutex<State>>,
     notifier: EntityNotifier,
     wake: Arc<Notify>,
+    i18n: &'static waft_i18n::I18n,
 ) {
     loop {
         let next_deadline = compute_next_deadline(&state);
@@ -49,7 +50,7 @@ pub async fn run_ttl_expiration(
                     );
                     let changed = {
                         let mut guard = state.lock_or_recover();
-                        process_op(&mut guard, NotificationOp::TtlExpiry(expired_ids))
+                        process_op(&mut guard, NotificationOp::TtlExpiry(expired_ids), i18n)
                     };
                     if changed {
                         notifier.notify();
@@ -132,6 +133,13 @@ mod tests {
     use crate::store;
     use std::sync::Arc;
 
+    fn test_i18n() -> &'static waft_i18n::I18n {
+        use std::sync::LazyLock;
+        static TEST_I18N: LazyLock<waft_i18n::I18n> =
+            LazyLock::new(|| waft_i18n::I18n::new(&[("en-US", "")]));
+        &TEST_I18N
+    }
+
     fn make_notification(id: u64, ttl: Option<u64>) -> IngressedNotification {
         IngressedNotification {
             app_name: Some(Arc::from("test-app")),
@@ -161,6 +169,7 @@ mod tests {
             store::process_op(
                 &mut guard,
                 store::NotificationOp::Ingress(Box::new(make_notification(1, None))),
+                test_i18n(),
             );
         }
         assert!(compute_next_deadline(&state).is_none());
@@ -174,6 +183,7 @@ mod tests {
             store::process_op(
                 &mut guard,
                 store::NotificationOp::Ingress(Box::new(make_notification(1, Some(5000)))),
+                test_i18n(),
             );
         }
         let deadline = compute_next_deadline(&state);
@@ -191,6 +201,7 @@ mod tests {
             store::process_op(
                 &mut guard,
                 store::NotificationOp::Ingress(Box::new(make_notification(1, Some(60000)))),
+                test_i18n(),
             );
         }
         let expired = collect_expired(&state);
@@ -206,6 +217,7 @@ mod tests {
             store::process_op(
                 &mut guard,
                 store::NotificationOp::Ingress(Box::new(make_notification(1, Some(0)))),
+                test_i18n(),
             );
         }
         let expired = collect_expired(&state);
@@ -220,6 +232,7 @@ mod tests {
             store::process_op(
                 &mut guard,
                 store::NotificationOp::Ingress(Box::new(make_notification(1, Some(1)))),
+                test_i18n(),
             );
             // Backdate the visible-since timestamp to ensure expiry
             if let Some(ts) = guard.panel_visible_since_timestamps.get_mut(&1) {

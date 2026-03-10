@@ -61,9 +61,9 @@ impl ToastWindow {
 
     pub fn update_visibility(&self, has_toasts: bool) {
         if has_toasts {
-            self.window.set_visible(true);
-            // Let window grow with content
+            // Reset size before showing to avoid stale height from previous content
             self.trigger_resize();
+            self.window.set_visible(true);
         } else {
             // Reset to 0 height when hiding
             self.window.set_default_size(400, 0);

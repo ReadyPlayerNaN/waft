@@ -110,6 +110,7 @@ pub struct NotificationsPlugin {
     sound_player: Arc<sound::player::SoundPlayer>,
     claim_sender: Arc<StdMutex<Option<waft_plugin::ClaimSender>>>,
     recorder: Arc<recording::NotificationRecorder>,
+    i18n: &'static waft_i18n::I18n,
 }
 
 impl NotificationsPlugin {
@@ -122,6 +123,7 @@ impl NotificationsPlugin {
         active_profile_id: String,
         sound_cfg: config::SoundConfig,
         recording: bool,
+        i18n: &'static waft_i18n::I18n,
     ) -> Self {
         let compiled_matchers = compile_groups(&groups);
         let policy = sound::policy::SoundPolicy::new(sound_cfg.clone());
@@ -140,6 +142,7 @@ impl NotificationsPlugin {
             sound_player: Arc::new(sound::player::SoundPlayer::new()),
             claim_sender: Arc::new(StdMutex::new(None)),
             recorder: Arc::new(recording::NotificationRecorder::new(recording)),
+            i18n,
         }
     }
 
@@ -173,13 +176,13 @@ impl NotificationsPlugin {
     /// Called from the ingress monitor task when a `Notify` D-Bus call arrives.
     pub fn process_ingress(&self, notification: IngressedNotification) {
         let mut guard = self.state.lock_or_recover();
-        process_op(&mut guard, NotificationOp::Ingress(Box::new(notification)));
+        process_op(&mut guard, NotificationOp::Ingress(Box::new(notification)), self.i18n);
     }
 
     /// Process a CloseNotification D-Bus call.
     pub fn process_close(&self, id: u32) {
         let mut guard = self.state.lock_or_recover();
-        process_op(&mut guard, NotificationOp::NotificationRetract(id as u64));
+        process_op(&mut guard, NotificationOp::NotificationRetract(id as u64), self.i18n);
         // Emit the close signal on the D-Bus side
         if self
             .outbound_tx
@@ -420,7 +423,7 @@ impl Plugin for NotificationsPlugin {
             ("dnd", "toggle") => {
                 let mut guard = self.state.lock_or_recover();
                 let new_dnd = !guard.dnd;
-                process_op(&mut guard, NotificationOp::SetDnd(new_dnd));
+                process_op(&mut guard, NotificationOp::SetDnd(new_dnd), self.i18n);
                 info!("[notifications] DND toggled to {new_dnd}");
             }
 
@@ -440,7 +443,7 @@ impl Plugin for NotificationsPlugin {
 
                 {
                     let mut guard = self.state.lock_or_recover();
-                    process_op(&mut guard, NotificationOp::NotificationDismiss(id));
+                    process_op(&mut guard, NotificationOp::NotificationDismiss(id), self.i18n);
                 }
 
                 if self
@@ -488,7 +491,7 @@ impl Plugin for NotificationsPlugin {
                         "[notifications] expire: no claim sender, falling back to dismiss for {id}"
                     );
                     let mut guard = self.state.lock_or_recover();
-                    process_op(&mut guard, NotificationOp::NotificationDismiss(id));
+                    process_op(&mut guard, NotificationOp::NotificationDismiss(id), self.i18n);
                     if self
                         .outbound_tx
                         .send(OutboundEvent::NotificationClosed {
@@ -519,7 +522,7 @@ impl Plugin for NotificationsPlugin {
                 // Remove notification from store
                 {
                     let mut guard = self.state.lock_or_recover();
-                    process_op(&mut guard, NotificationOp::NotificationDismiss(id));
+                    process_op(&mut guard, NotificationOp::NotificationDismiss(id), self.i18n);
                 }
 
                 // Emit ActionInvoked + NotificationClosed signals
@@ -814,7 +817,7 @@ impl Plugin for NotificationsPlugin {
 
         {
             let mut guard = self.state.lock_or_recover();
-            process_op(&mut guard, NotificationOp::NotificationDismiss(id));
+            process_op(&mut guard, NotificationOp::NotificationDismiss(id), self.i18n);
         }
 
         // Emit D-Bus NotificationClosed(EXPIRED) -- reason code 1
@@ -853,8 +856,19 @@ mod tests {
         }
     }
 
+    fn test_i18n() -> &'static waft_i18n::I18n {
+        use std::sync::LazyLock;
+        static TEST_I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+            waft_i18n::I18n::new(&[(
+                "en-US",
+                "device-group-devices = Devices\ndevice-group-network = Network Devices\ndevice-group-power = Power Devices\ndevice-group-audio = Audio Devices",
+            )])
+        });
+        &TEST_I18N
+    }
+
     fn make_plugin(state: Arc<StdMutex<State>>, tx: flume::Sender<OutboundEvent>) -> NotificationsPlugin {
-        NotificationsPlugin::new(state, tx, Vec::new(), Vec::new(), String::new(), config::SoundConfig::default(), false)
+        NotificationsPlugin::new(state, tx, Vec::new(), Vec::new(), String::new(), config::SoundConfig::default(), false, test_i18n())
     }
 
     #[test]
@@ -1053,6 +1067,7 @@ mod tests {
             String::new(),
             config::SoundConfig::default(),
             false,
+            test_i18n(),
         );
 
         let notif = make_notification(1); // app_name = "test-app"
@@ -1107,6 +1122,7 @@ mod tests {
             "work".to_string(),
             config::SoundConfig::default(),
             false,
+            test_i18n(),
         );
 
         let actions = plugin.get_filter_actions(Some("test-group"));

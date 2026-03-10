@@ -85,6 +85,7 @@ fn main() -> Result<()> {
             active_profile_id,
             sound_config,
             recording_config.recording,
+            i18n(),
         );
 
         // Get handles BEFORE passing the plugin to the runtime
@@ -255,7 +256,7 @@ fn main() -> Result<()> {
                         let notif_id = notification.id;
                         {
                             let mut guard = ingress_state.lock_or_recover();
-                            process_op(&mut guard, NotificationOp::Ingress(notification));
+                            process_op(&mut guard, NotificationOp::Ingress(notification), i18n());
                             if filter_actions.no_toast
                                 && let Some(stored) = guard.notifications.get_mut(&notif_id)
                             {
@@ -279,7 +280,7 @@ fn main() -> Result<()> {
                     IngressEvent::CloseNotification { id } => {
                         {
                             let mut guard = ingress_state.lock_or_recover();
-                            process_op(&mut guard, NotificationOp::NotificationRetract(id as u64));
+                            process_op(&mut guard, NotificationOp::NotificationRetract(id as u64), i18n());
                         }
                         if ingress_outbound_tx
                             .send(OutboundEvent::NotificationClosed {
@@ -302,7 +303,7 @@ fn main() -> Result<()> {
         let ttl_state = state.clone();
         let ttl_notifier = notifier.clone();
         tokio::spawn(async move {
-            ttl::run_ttl_expiration(ttl_state, ttl_notifier, ttl_wake).await;
+            ttl::run_ttl_expiration(ttl_state, ttl_notifier, ttl_wake, i18n()).await;
             log::warn!("[notifications] TTL expiration loop exited");
         });
 

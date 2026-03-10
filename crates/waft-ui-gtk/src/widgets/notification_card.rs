@@ -40,6 +40,9 @@ pub struct NotificationCard {
     revealer: gtk::Revealer,
     title_label: gtk::Label,
     description_label: gtk::Label,
+    expanded_label: gtk::Label,
+    expand_revealer: gtk::Revealer,
+    expand_button: gtk::Button,
     on_output: OutputCallback<NotificationCardOutput>,
     hidden: Rc<RefCell<bool>>,
     countdown_bar: Option<CountdownBarWidget>,
@@ -107,7 +110,7 @@ impl NotificationCard {
             .build();
         title_label.set_markup(&prepared_title);
 
-        // Description
+        // Description (truncated to 3 lines)
         let prepared_desc = notification_markup::prepare_description(description);
         let description_label = gtk::Label::builder()
             .css_classes(["dim-label"])
@@ -115,11 +118,63 @@ impl NotificationCard {
             .wrap_mode(gtk::pango::WrapMode::WordChar)
             .xalign(0.0)
             .use_markup(true)
+            .lines(3)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
             .build();
         description_label.set_markup(&prepared_desc);
 
+        // Expanded description (full text, hidden by default)
+        let expanded_label = gtk::Label::builder()
+            .css_classes(["dim-label"])
+            .wrap(true)
+            .wrap_mode(gtk::pango::WrapMode::WordChar)
+            .xalign(0.0)
+            .use_markup(true)
+            .build();
+        expanded_label.set_markup(&prepared_desc);
+
+        let expand_revealer = gtk::Revealer::builder()
+            .transition_type(gtk::RevealerTransitionType::SlideDown)
+            .transition_duration(200)
+            .reveal_child(false)
+            .build();
+        expand_revealer.set_child(Some(&expanded_label));
+
+        let expand_button = gtk::Button::builder()
+            .label("Show More")
+            .css_classes(["flat", "notification-expand-btn"])
+            .halign(gtk::Align::Start)
+            .visible(false)
+            .build();
+
+        // Toggle expand/collapse on button click
+        {
+            let desc_label = description_label.clone();
+            let exp_revealer = expand_revealer.clone();
+            let btn = expand_button.clone();
+            expand_button.connect_clicked(move |_| {
+                let revealing = !exp_revealer.reveals_child();
+                exp_revealer.set_reveal_child(revealing);
+                desc_label.set_visible(!revealing);
+                btn.set_label(if revealing { "Show Less" } else { "Show More" });
+            });
+        }
+
         content_box.append(&title_label);
         content_box.append(&description_label);
+        content_box.append(&expand_revealer);
+        content_box.append(&expand_button);
+
+        // Check if description is ellipsized and show expand button
+        {
+            let btn = expand_button.clone();
+            let label = description_label.clone();
+            gtk::glib::idle_add_local_once(move || {
+                if label.layout().is_ellipsized() {
+                    btn.set_visible(true);
+                }
+            });
+        }
 
         // Spacer
         let spacer = gtk::Box::builder().hexpand(true).build();
@@ -232,7 +287,11 @@ impl NotificationCard {
         // remove the card from the DOM here — that is handled by the group's
         // update() when the entity store confirms the removal.
         if let Some(callback) = window_resize_callback {
+            let cb_for_card = callback.clone();
             revealer.connect_child_revealed_notify(move |_rev| {
+                cb_for_card();
+            });
+            expand_revealer.connect_child_revealed_notify(move |_rev| {
                 callback();
             });
         }
@@ -321,6 +380,9 @@ impl NotificationCard {
             revealer,
             title_label,
             description_label,
+            expanded_label,
+            expand_revealer,
+            expand_button,
             on_output,
             hidden,
             countdown_bar,
@@ -359,6 +421,21 @@ impl NotificationCard {
         let prepared_desc = notification_markup::prepare_description(description);
         self.title_label.set_markup(&prepared_title);
         self.description_label.set_markup(&prepared_desc);
+        self.expanded_label.set_markup(&prepared_desc);
+
+        // If expanded and new text no longer needs truncation, collapse
+        let expand_revealer = self.expand_revealer.clone();
+        let expand_button = self.expand_button.clone();
+        let description_label = self.description_label.clone();
+        gtk::glib::idle_add_local_once(move || {
+            let is_ellipsized = description_label.layout().is_ellipsized();
+            if !is_ellipsized && expand_revealer.reveals_child() {
+                expand_revealer.set_reveal_child(false);
+                description_label.set_visible(true);
+                expand_button.set_label("Show More");
+            }
+            expand_button.set_visible(is_ellipsized);
+        });
     }
 
     pub fn urn(&self) -> &Urn {

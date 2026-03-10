@@ -81,6 +81,7 @@ Requests the name with `REPLACE_EXISTING` and `ALLOW_REPLACEMENT` flags. If anot
 - **Notification filtering**: Pattern-based groups with AND/OR combinators (8 match operators: equals, contains, starts_with, ends_with, regex, not_equals, not_contains, not_regex). Configurable profiles with hide/no_toast/no_sound rules per group.
 - **Sound management**: Master toggle, per-urgency default sounds (XDG sound names or custom files), sound gallery with upload/preview/remove. Custom sounds stored in `~/.config/waft/sounds/`.
 - **Notification recording**: Opt-in debug mode that logs all received notifications to a JSONL file for inspection, filter rule debugging, and building test fixtures. Togglable from waft-settings or config.
+- **Device app name grouping**: Notifications from known device-related system services (BlueZ, NetworkManager, UPower, PipeWire) are automatically mapped to translated group labels at ingress time. For example, "blueman" becomes "Devices" and "networkmanager" becomes "Network Devices". The mapping uses canonical group keys (`devices`, `network`, `power`, `audio`) resolved through the i18n system, so labels are localized. Unrecognized app names pass through unchanged. See `map_device_app_name()` in `src/store/manager.rs`.
 
 ## Notification Recording
 

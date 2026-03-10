@@ -1,5 +1,7 @@
 //! Simple fuzzy matching with scoring.
 
+use gtk::glib;
+
 /// Score how well `query` matches `target`.
 ///
 /// Returns `None` if the query does not fuzzy-match the target at all.
@@ -11,8 +13,17 @@
 /// - Bonus for contiguous run: each additional contiguous character adds 0.1.
 /// - Bonus for prefix match (query is a prefix of target): +0.5.
 pub fn fuzzy_score(query: &str, target: &str) -> Option<f64> {
+    fuzzy_match_positions(query, target).map(|(score, _)| score)
+}
+
+/// Score how well `query` matches `target`, returning matched char positions.
+///
+/// Returns `None` if the query does not fuzzy-match the target at all.
+/// Returns `Some((score, positions))` where positions are char indices into `target`.
+/// Empty query returns `Some((0.0, vec![]))`.
+pub fn fuzzy_match_positions(query: &str, target: &str) -> Option<(f64, Vec<usize>)> {
     if query.is_empty() {
-        return Some(0.0);
+        return Some((0.0, vec![]));
     }
 
     let query_lower: Vec<char> = query.to_lowercase().chars().collect();
@@ -23,6 +34,7 @@ pub fn fuzzy_score(query: &str, target: &str) -> Option<f64> {
     let mut contiguous_bonus = 0.0;
     let mut matched = 0usize;
     let mut first_match: Option<usize> = None;
+    let mut positions: Vec<usize> = Vec::new();
 
     for (ti, &tc) in target_lower.iter().enumerate() {
         if qi < query_lower.len() && tc == query_lower[qi] {
@@ -35,6 +47,7 @@ pub fn fuzzy_score(query: &str, target: &str) -> Option<f64> {
             }
             last_match = Some(ti);
             matched += 1;
+            positions.push(ti);
             qi += 1;
         }
     }
@@ -46,7 +59,40 @@ pub fn fuzzy_score(query: &str, target: &str) -> Option<f64> {
     let base_score = matched as f64 / target_lower.len().max(1) as f64;
     let prefix_bonus = if first_match == Some(0) { 0.5 } else { 0.0 };
 
-    Some(base_score + contiguous_bonus + prefix_bonus)
+    Some((base_score + contiguous_bonus + prefix_bonus, positions))
+}
+
+/// Build Pango markup with matched positions wrapped in `<b>` tags.
+///
+/// Adjacent highlighted characters are coalesced into a single `<b>` span.
+/// All text is escaped for safe use in Pango markup.
+pub fn build_highlight_markup(text: &str, positions: &[usize]) -> String {
+    if positions.is_empty() {
+        return glib::markup_escape_text(text).into();
+    }
+
+    let pos_set: std::collections::HashSet<usize> = positions.iter().copied().collect();
+    let mut result = String::new();
+    let mut in_bold = false;
+
+    for (i, ch) in text.chars().enumerate() {
+        let highlighted = pos_set.contains(&i);
+        if highlighted && !in_bold {
+            result.push_str("<b>");
+            in_bold = true;
+        } else if !highlighted && in_bold {
+            result.push_str("</b>");
+            in_bold = false;
+        }
+        let escaped: String = glib::markup_escape_text(&ch.to_string()).into();
+        result.push_str(&escaped);
+    }
+
+    if in_bold {
+        result.push_str("</b>");
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -88,5 +134,94 @@ mod tests {
     fn case_insensitive() {
         assert!(fuzzy_score("FF", "firefox").is_some());
         assert!(fuzzy_score("FIRE", "Firefox").is_some());
+    }
+
+    // -- fuzzy_match_positions tests --
+
+    #[test]
+    fn positions_exact_match() {
+        let (score, positions) = fuzzy_match_positions("fire", "fire").unwrap();
+        assert!(score > 1.0);
+        assert_eq!(positions, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn positions_prefix() {
+        let (_, positions) = fuzzy_match_positions("fir", "firefox").unwrap();
+        assert_eq!(positions, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn positions_non_contiguous() {
+        let (_, positions) = fuzzy_match_positions("fx", "firefox").unwrap();
+        assert_eq!(positions, vec![0, 6]);
+    }
+
+    #[test]
+    fn positions_case_insensitive() {
+        let (_, positions) = fuzzy_match_positions("FF", "firefox").unwrap();
+        assert_eq!(positions, vec![0, 4]);
+    }
+
+    #[test]
+    fn positions_empty_query() {
+        let (score, positions) = fuzzy_match_positions("", "firefox").unwrap();
+        assert_eq!(score, 0.0);
+        assert!(positions.is_empty());
+    }
+
+    #[test]
+    fn positions_non_match() {
+        assert!(fuzzy_match_positions("xyz", "firefox").is_none());
+    }
+
+    // -- build_highlight_markup tests --
+
+    #[test]
+    fn markup_no_positions() {
+        assert_eq!(build_highlight_markup("hello", &[]), "hello");
+    }
+
+    #[test]
+    fn markup_single_char() {
+        assert_eq!(build_highlight_markup("hello", &[0]), "<b>h</b>ello");
+    }
+
+    #[test]
+    fn markup_contiguous_run() {
+        assert_eq!(
+            build_highlight_markup("hello", &[0, 1, 2]),
+            "<b>hel</b>lo"
+        );
+    }
+
+    #[test]
+    fn markup_non_contiguous() {
+        assert_eq!(
+            build_highlight_markup("hello", &[0, 4]),
+            "<b>h</b>ell<b>o</b>"
+        );
+    }
+
+    #[test]
+    fn markup_special_chars() {
+        assert_eq!(
+            build_highlight_markup("<b>&", &[0]),
+            "<b>&lt;</b>b&gt;&amp;"
+        );
+    }
+
+    #[test]
+    fn markup_empty_positions() {
+        assert_eq!(build_highlight_markup("a&b", &[]), "a&amp;b");
+    }
+
+    #[test]
+    fn markup_multibyte_chars() {
+        // "café" has char indices 0='c', 1='a', 2='f', 3='é'
+        assert_eq!(
+            build_highlight_markup("café", &[2, 3]),
+            "ca<b>fé</b>"
+        );
     }
 }

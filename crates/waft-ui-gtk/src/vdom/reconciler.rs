@@ -383,6 +383,7 @@ fn build_component_entry(desc: ComponentDesc) -> ReconcilerEntry {
 
 fn build_label_entry(vlabel: VLabel) -> ReconcilerEntry {
     let widget = gtk::Label::new(Some(&vlabel.text));
+    apply_label_markup(&widget, &vlabel);
     apply_label_props(&widget, &vlabel);
     ReconcilerEntry::Label { widget }
 }
@@ -728,7 +729,7 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             // else: props unchanged — no GTK call.
         }
         (ReconcilerEntry::Label { widget }, VNodeKind::Label(vlabel)) => {
-            widget.set_label(&vlabel.text);
+            apply_label_markup(widget, &vlabel);
             apply_label_props(widget, &vlabel);
         }
         (ReconcilerEntry::Box { widget, child_reconciler }, VNodeKind::Box(vbox)) => {
@@ -901,6 +902,19 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
 }
 
 // -- Property application helpers ---------------------------------------------
+
+fn apply_label_markup(widget: &gtk::Label, vlabel: &VLabel) {
+    match &vlabel.markup {
+        Some(m) => {
+            widget.set_use_markup(true);
+            widget.set_markup(m);
+        }
+        None => {
+            widget.set_use_markup(false);
+            widget.set_label(&vlabel.text);
+        }
+    }
+}
 
 fn apply_label_props(widget: &gtk::Label, vlabel: &VLabel) {
     let classes: Vec<&str> = vlabel.css_classes.iter().map(|s| s.as_str()).collect();
