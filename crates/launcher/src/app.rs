@@ -108,7 +108,13 @@ pub fn run() -> anyhow::Result<()> {
             let query_for_activate = current_query.clone();
             let store_for_activate = entity_store.clone();
             let usage_for_activate = usage_cache.clone();
+            let pending_search_for_activate = pending_search.clone();
             app.connect_activate(move |_| {
+                // Cancel any in-flight debounce timer so it cannot overwrite the
+                // fresh result list that we are about to render.
+                if let Some(source_id) = pending_search_for_activate.borrow_mut().take() {
+                    source_id.remove();
+                }
                 // Reset query and search entry text
                 *query_for_activate.borrow_mut() = String::new();
                 win_for_activate.reset();
@@ -128,6 +134,7 @@ pub fn run() -> anyhow::Result<()> {
             let action_tx = action_tx.clone();
             let usage_for_output = usage_cache.clone();
             let pending_search_ref = pending_search.clone();
+            let pending_search_for_stopped = pending_search.clone();
             win.search_pane().connect_output(move |event| match event {
                 SearchPaneOutput::QueryChanged(query) => {
                     *query_ref.borrow_mut() = query.clone();
@@ -162,6 +169,9 @@ pub fn run() -> anyhow::Result<()> {
                 }
                 SearchPaneOutput::ResultSelected(_) => {} // selection tracked internally
                 SearchPaneOutput::Stopped => {
+                    if let Some(source_id) = pending_search_for_stopped.borrow_mut().take() {
+                        source_id.remove();
+                    }
                     win_ref.hide();
                 }
             });
