@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
+use gtk::glib;
 use waft_protocol::entity::accounts::AccountStatus;
 
 use crate::i18n::t;
@@ -33,7 +34,7 @@ pub enum AccountDetailOutput {
 pub struct AccountDetailPage {
     pub root: gtk::Box,
     group: adw::PreferencesGroup,
-    switch_rows: Vec<(String, adw::SwitchRow)>,
+    switch_rows: Vec<(String, adw::SwitchRow, glib::SignalHandlerId)>,
     output_cb: Rc<RefCell<Option<Box<dyn Fn(AccountDetailOutput)>>>>,
 }
 
@@ -70,14 +71,12 @@ impl AccountDetailPage {
 
             let cb_ref = output_cb.clone();
             let svc_name = service.name.clone();
-            let initial_enabled = service.enabled;
-            switch_row.connect_active_notify(move |row| {
-                let new_state = row.is_active();
-                if new_state == initial_enabled {
-                    return;
-                }
+            // The handler_id is stored so update() can block/unblock the signal
+            // around set_active() calls, preventing spurious EnableService/DisableService
+            // actions when the widget is updated from entity data.
+            let handler_id = switch_row.connect_active_notify(move |row| {
                 if let Some(ref cb) = *cb_ref.borrow() {
-                    if new_state {
+                    if row.is_active() {
                         cb(AccountDetailOutput::EnableService {
                             service_name: svc_name.clone(),
                         });
@@ -89,7 +88,7 @@ impl AccountDetailPage {
                 }
             });
             group.add(&switch_row);
-            switch_rows.push((service.name.clone(), switch_row));
+            switch_rows.push((service.name.clone(), switch_row, handler_id));
         }
 
         Self { root, group, switch_rows, output_cb }
@@ -103,9 +102,13 @@ impl AccountDetailPage {
         let controllable = props.status == AccountStatus::Active && !props.locked;
         self.group.set_title(&props.provider_name);
         self.group.set_description(Some(&props.presentation_identity));
-        for (svc_name, row) in &self.switch_rows {
+        for (svc_name, row, handler_id) in &self.switch_rows {
             if let Some(svc) = props.services.iter().find(|s| &s.name == svc_name) {
+                // Block the signal to prevent spurious EnableService/DisableService
+                // actions when syncing the widget state from incoming entity data.
+                row.block_signal(handler_id);
                 row.set_active(svc.enabled);
+                row.unblock_signal(handler_id);
                 row.set_sensitive(controllable);
             }
         }
