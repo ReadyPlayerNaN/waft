@@ -27,6 +27,7 @@
 //! not "which plugin produces it?".
 
 pub mod accounts;
+pub mod ai;
 pub mod app;
 pub mod appearance;
 pub mod audio;
