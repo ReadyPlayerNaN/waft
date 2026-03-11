@@ -125,6 +125,21 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             ],
         },
 
+        // ── ai ──
+        EntityTypeInfo {
+            entity_type: super::ai::ENTITY_TYPE,
+            domain: "ai",
+            description: "Claude Code rate limit utilization across time windows",
+            urn_pattern: "{plugin}/claude-usage/{id}",
+            properties: &[
+                prop("five_hour_utilization", "f64", "5-hour window utilization (0.0 - 1.0)"),
+                prop("five_hour_reset_at", "i64", "Unix timestamp (ms) when the 5-hour window resets"),
+                prop("seven_day_utilization", "f64", "7-day window utilization (0.0 - 1.0)"),
+                prop("seven_day_reset_at", "i64", "Unix timestamp (ms) when the 7-day window resets"),
+            ],
+            actions: &[],
+        },
+
         // ── app ──
         EntityTypeInfo {
             entity_type: super::app::ENTITY_TYPE,
@@ -884,6 +899,7 @@ mod tests {
         // Verify all known ENTITY_TYPE constants are in the registry.
         let expected = [
             super::super::accounts::ONLINE_ACCOUNT_ENTITY_TYPE,
+            super::super::ai::ENTITY_TYPE,
             super::super::app::ENTITY_TYPE,
             super::super::audio::CARD_ENTITY_TYPE,
             super::super::audio::ENTITY_TYPE,
@@ -969,7 +985,7 @@ mod tests {
     #[test]
     fn all_domains_are_valid_module_names() {
         let valid_domains = [
-            "accounts", "app", "audio", "bluetooth", "calendar", "clock", "display",
+            "accounts", "ai", "app", "audio", "bluetooth", "calendar", "clock", "display",
             "keyboard", "network", "notification", "notification_filter",
             "notification_sound", "plugin", "power", "session", "storage", "weather",
             "window",

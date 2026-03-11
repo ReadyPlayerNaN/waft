@@ -39,6 +39,7 @@ const ENTITY_TYPES: &[&str] = &[
     entity::network::VPN_ENTITY_TYPE,
     entity::network::TETHERING_CONNECTION_ENTITY_TYPE,
     entity::weather::ENTITY_TYPE,
+    entity::ai::ENTITY_TYPE,
     entity::session::SESSION_ENTITY_TYPE,
     entity::notification::NOTIFICATION_ENTITY_TYPE,
     entity::notification::DND_ENTITY_TYPE,

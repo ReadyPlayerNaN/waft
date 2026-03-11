@@ -3585,6 +3585,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-plugin-claude"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "waft-plugin",
+ "waft-protocol",
+]
+
+[[package]]
 name = "waft-plugin-clock"
 version = "0.1.0"
 dependencies = [
