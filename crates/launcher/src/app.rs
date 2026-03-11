@@ -97,8 +97,6 @@ pub fn run() -> anyhow::Result<()> {
         let win = Rc::new(launcher_win);
         let current_query: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
         let usage_cache: Rc<RefCell<UsageMap>> = Rc::new(RefCell::new(load_usage()));
-        let pending_search: Rc<RefCell<Option<gtk::glib::SourceId>>> =
-            Rc::new(RefCell::new(None));
 
         // connect_activate fires on first launch (after startup) and on every
         // subsequent invocation of `waft-launcher` while this process is running.
@@ -108,13 +106,7 @@ pub fn run() -> anyhow::Result<()> {
             let query_for_activate = current_query.clone();
             let store_for_activate = entity_store.clone();
             let usage_for_activate = usage_cache.clone();
-            let pending_search_for_activate = pending_search.clone();
             app.connect_activate(move |_| {
-                // Cancel any in-flight debounce timer so it cannot overwrite the
-                // fresh result list that we are about to render.
-                if let Some(source_id) = pending_search_for_activate.borrow_mut().take() {
-                    source_id.remove();
-                }
                 // Reset query and search entry text
                 *query_for_activate.borrow_mut() = String::new();
                 win_for_activate.reset();
@@ -133,32 +125,17 @@ pub fn run() -> anyhow::Result<()> {
             let query_ref = current_query.clone();
             let action_tx = action_tx.clone();
             let usage_for_output = usage_cache.clone();
-            let pending_search_ref = pending_search.clone();
-            let pending_search_for_stopped = pending_search.clone();
             win.search_pane().connect_output(move |event| match event {
                 SearchPaneOutput::QueryChanged(query) => {
                     *query_ref.borrow_mut() = query.clone();
-                    // Cancel any in-flight debounce timeout before scheduling a new one.
-                    if let Some(source_id) = pending_search_ref.borrow_mut().take() {
-                        source_id.remove();
-                    }
-                    let win_debounce = win_ref.clone();
-                    let store_debounce = store_ref.clone();
-                    let usage_debounce = usage_for_output.clone();
-                    let source_id = gtk::glib::timeout_add_local_once(
-                        std::time::Duration::from_millis(50),
-                        move || {
-                            update_results(
-                                &win_debounce,
-                                &store_debounce,
-                                &query,
-                                &usage_debounce.borrow(),
-                                rank_by_usage,
-                                max_results,
-                            );
-                        },
+                    update_results(
+                        &win_ref,
+                        &store_ref,
+                        &query,
+                        &usage_for_output.borrow(),
+                        rank_by_usage,
+                        max_results,
                     );
-                    *pending_search_ref.borrow_mut() = Some(source_id);
                 }
                 SearchPaneOutput::QueryActivated => {
                     let idx = win_ref.search_pane().selected_index().unwrap_or(0);
@@ -169,9 +146,6 @@ pub fn run() -> anyhow::Result<()> {
                 }
                 SearchPaneOutput::ResultSelected(_) => {} // selection tracked internally
                 SearchPaneOutput::Stopped => {
-                    if let Some(source_id) = pending_search_for_stopped.borrow_mut().take() {
-                        source_id.remove();
-                    }
                     win_ref.hide();
                 }
             });

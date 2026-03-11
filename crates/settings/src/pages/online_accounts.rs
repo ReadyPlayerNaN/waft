@@ -29,7 +29,7 @@ pub struct OnlineAccountsPage {
 
 /// Internal mutable state for the Online Accounts page.
 struct OnlineAccountsPageState {
-    account_rows: HashMap<String, (AccountRow, Urn)>,
+    account_rows: HashMap<String, (AccountRow, Urn, Rc<dyn Fn()>)>,
     account_details: HashMap<String, AccountDetailPage>,
     sorted_ids: Vec<String>,
     list_box: gtk::ListBox,
@@ -155,8 +155,7 @@ impl OnlineAccountsPage {
                 detail.update(&detail_props);
             }
 
-            if let Some((existing, _)) = state.account_rows.get(&account.id) {
-                // Build row props without on_navigate (already wired at creation)
+            if let Some((existing, _, nav_fn)) = state.account_rows.get(&account.id) {
                 let props = AccountRowProps {
                     id: account.id.clone(),
                     provider_name: account.provider_name.clone(),
@@ -164,7 +163,7 @@ impl OnlineAccountsPage {
                     status: account.status.clone(),
                     services: detail_props.services.clone(),
                     locked: account.locked,
-                    on_navigate: None,
+                    on_navigate: Some(nav_fn.clone()),
                 };
                 existing.update(&props);
             } else {
@@ -211,7 +210,7 @@ impl OnlineAccountsPage {
                     status: account.status.clone(),
                     services: detail_props.services.clone(),
                     locked: account.locked,
-                    on_navigate: Some(nav_fn),
+                    on_navigate: Some(nav_fn.clone()),
                 };
 
                 let row = AccountRow::build(&props);
@@ -224,7 +223,7 @@ impl OnlineAccountsPage {
                 state.list_box.insert(&row.widget(), pos as i32);
                 state
                     .account_rows
-                    .insert(account.id.clone(), (row, urn.clone()));
+                    .insert(account.id.clone(), (row, urn.clone(), nav_fn));
                 state.account_details.insert(account.id.clone(), detail_page);
             }
         }
@@ -238,7 +237,7 @@ impl OnlineAccountsPage {
             .collect();
 
         for key in to_remove {
-            if let Some((row, _)) = state.account_rows.remove(&key) {
+            if let Some((row, _, _)) = state.account_rows.remove(&key) {
                 state.list_box.remove(&row.widget());
             }
             state.account_details.remove(&key);

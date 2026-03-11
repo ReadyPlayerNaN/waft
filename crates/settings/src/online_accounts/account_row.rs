@@ -92,7 +92,7 @@ impl RenderFn for AccountRowRender {
                 .on_activate(move || navigate());
         }
 
-        VNode::vbox(VBox::vertical(0).child(VNode::action_row(row)))
+        VNode::action_row(row)
     }
 }
 

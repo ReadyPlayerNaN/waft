@@ -46,6 +46,7 @@ pub fn trigger_window_resize() {
 const OVERLAY_TOP_OFFSET_PX: i32 = 16;
 const OVERLAY_BOTTOM_OFFSET_PX: i32 = 16;
 const OVERLAY_CORNER_RADIUS_PX: i32 = 8;
+const OVERLAY_CONTENT_PADDING_PX: i32 = 24; // padding: 24px in .relm4-overlay-surface CSS
 const OVERLAY_HEADER_HEIGHT_PX: i32 = 96;
 const OVERLAY_SLIDE_OFFSET_PX: f64 = 20.0;
 const OVERLAY_ANIM_DURATION_MS: u32 = 200;
@@ -992,6 +993,7 @@ impl MainWindowWidget {
                                 - OVERLAY_TOP_OFFSET_PX
                                 - OVERLAY_BOTTOM_OFFSET_PX
                                 - OVERLAY_HEADER_HEIGHT_PX
+                                - 2 * OVERLAY_CONTENT_PADDING_PX
                         } else {
                             800 // fallback
                         }

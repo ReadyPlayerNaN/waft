@@ -3859,6 +3859,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "waft-i18n",
  "waft-plugin",
  "waft-protocol",
 ]

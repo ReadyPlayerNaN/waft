@@ -16,9 +16,9 @@ use super::xkb_keymap::KeymapGrid;
 /// - Home row (ASDF): shifted right by ~1/4 key width (~20 px)
 /// - Bottom row (ZXCV): shifted right by ~1/2 key width (~36 px)
 const NUMBER_ROW_MARGIN: i32 = 0;
-const TOP_ROW_MARGIN: i32 = 0;
-const HOME_ROW_MARGIN: i32 = 20;
-const BOTTOM_ROW_MARGIN: i32 = 36;
+const TOP_ROW_MARGIN: i32 = 20;
+const HOME_ROW_MARGIN: i32 = 40;
+const BOTTOM_ROW_MARGIN: i32 = 56;
 
 /// Keyboard grid visualization widget.
 ///
