@@ -1,6 +1,7 @@
 //! XDG Applications plugin -- provides app entities from .desktop files.
 
 use std::collections::HashMap;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -86,6 +87,10 @@ impl Plugin for XdgAppsPlugin {
                 for arg in &parts[1..] {
                     cmd.arg(arg);
                 }
+                cmd.process_group(0)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
 
                 match cmd.spawn() {
                     Ok(child) => {
