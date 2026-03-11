@@ -15,12 +15,20 @@ pub struct DesktopEntry {
 
 impl DesktopEntry {
     pub fn resolve_name(&self, locale: &str) -> &str {
-        // 1. Exact match
-        if let Some(name) = self.localized_names.get(locale) {
+        // Normalise BCP47 separators to POSIX: "pt-BR" → "pt_BR"
+        // .desktop files always use POSIX underscore format per XDG spec.
+        let posix_locale: std::borrow::Cow<str> = if locale.contains('-') {
+            locale.replace('-', "_").into()
+        } else {
+            locale.into()
+        };
+
+        // 1. Exact match (now works for both "cs_CZ" and "cs-CZ" → "cs_CZ")
+        if let Some(name) = self.localized_names.get(posix_locale.as_ref()) {
             return name;
         }
         // 2. Language-only prefix (split on '-' or '_')
-        let lang = locale.split(['-', '_']).next().unwrap_or("");
+        let lang = posix_locale.split(['-', '_']).next().unwrap_or("");
         if !lang.is_empty() {
             if let Some(name) = self.localized_names.get(lang) {
                 return name;
@@ -247,5 +255,23 @@ Exec=firefox %u
     fn resolve_name_empty_locale_falls_back() {
         let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
         assert_eq!(entry.resolve_name(""), "Firefox Web Browser");
+    }
+
+    #[test]
+    fn resolve_name_posix_region_match() {
+        let content = r#"[Desktop Entry]
+Type=Application
+Name=Some App
+Name[pt_BR]=Aplicativo
+Icon=app
+Exec=app
+"#;
+        let entry = parse_desktop_entry(content).unwrap();
+        // BCP47 input "pt-BR" should match POSIX key "pt_BR"
+        assert_eq!(entry.resolve_name("pt-BR"), "Aplicativo");
+        // POSIX input "pt_BR" should also match
+        assert_eq!(entry.resolve_name("pt_BR"), "Aplicativo");
+        // Language-only fallback (no bare "pt" key) → falls back to base name
+        assert_eq!(entry.resolve_name("pt"), "Some App");
     }
 }
