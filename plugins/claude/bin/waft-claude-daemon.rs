@@ -70,7 +70,7 @@ fn main() -> Result<()> {
             let plugin = ClaudePlugin::new();
             let state = plugin.state.clone();
 
-            tokio::spawn(async move {
+            spawn_monitored_anyhow("claude-poll", async move {
                 loop {
                     match credentials::load_access_token() {
                         Err(e) => {
