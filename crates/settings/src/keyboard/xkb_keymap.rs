@@ -10,6 +10,8 @@ use std::path::PathBuf;
 /// A grid of key labels organized by physical keyboard rows.
 #[derive(Debug, Clone, Default)]
 pub struct KeymapGrid {
+    /// Number row keys (AE-row): AE00..AE12
+    pub number_row: Vec<String>,
     /// Top row keys (Q-row): AD01..AD12
     pub top_row: Vec<String>,
     /// Home row keys (A-row): AC01..AC11
@@ -18,7 +20,12 @@ pub struct KeymapGrid {
     pub bottom_row: Vec<String>,
 }
 
-/// Standard key codes for the three main letter rows on a QWERTY keyboard.
+/// Standard key codes for the four main rows on a QWERTY keyboard.
+const NUMBER_ROW_KEYS: &[&str] = &[
+    "AE00", "AE01", "AE02", "AE03", "AE04", "AE05", "AE06",
+    "AE07", "AE08", "AE09", "AE10", "AE11", "AE12",
+];
+
 const TOP_ROW_KEYS: &[&str] = &[
     "AD01", "AD02", "AD03", "AD04", "AD05", "AD06", "AD07", "AD08", "AD09", "AD10", "AD11",
     "AD12",
@@ -262,6 +269,7 @@ fn build_grid(key_map: &HashMap<String, String>) -> KeymapGrid {
     };
 
     KeymapGrid {
+        number_row: NUMBER_ROW_KEYS.iter().map(|k| resolve_key(k)).collect(),
         top_row: TOP_ROW_KEYS.iter().map(|k| resolve_key(k)).collect(),
         home_row: HOME_ROW_KEYS.iter().map(|k| resolve_key(k)).collect(),
         bottom_row: BOTTOM_ROW_KEYS.iter().map(|k| resolve_key(k)).collect(),
@@ -738,6 +746,63 @@ xkb_symbols "basic" {
             grid.bottom_row,
             vec!["z", "x", "c", "v", "b", "n", "m", ",", ".", "/"]
         );
+    }
+
+    #[test]
+    fn build_grid_number_row_length() {
+        let key_map = HashMap::new();
+        let grid = build_grid(&key_map);
+        assert_eq!(grid.number_row.len(), 13); // AE00..AE12
+        for key in &grid.number_row {
+            assert_eq!(key, "");
+        }
+    }
+
+    #[test]
+    fn build_grid_number_row_digits() {
+        let mut key_map = HashMap::new();
+        key_map.insert("AE01".to_string(), "1".to_string());
+        key_map.insert("AE02".to_string(), "2".to_string());
+        key_map.insert("AE10".to_string(), "0".to_string());
+        key_map.insert("AE11".to_string(), "minus".to_string());
+        key_map.insert("AE12".to_string(), "equal".to_string());
+        let grid = build_grid(&key_map);
+        assert_eq!(grid.number_row[1], "1");
+        assert_eq!(grid.number_row[2], "2");
+        assert_eq!(grid.number_row[10], "0");
+        assert_eq!(grid.number_row[11], "-");
+        assert_eq!(grid.number_row[12], "=");
+    }
+
+    #[test]
+    fn build_grid_number_row_grave() {
+        let mut key_map = HashMap::new();
+        key_map.insert("AE00".to_string(), "grave".to_string());
+        let grid = build_grid(&key_map);
+        assert_eq!(grid.number_row[0], "`");
+    }
+
+    #[test]
+    fn full_grid_includes_number_row() {
+        let content = r#"
+xkb_symbols "basic" {
+    key <AE00> { [ grave, asciitilde ] };
+    key <AE01> { [ 1, exclam ] };
+    key <AE10> { [ 0, parenright ] };
+    key <AE11> { [ minus, underscore ] };
+    key <AE12> { [ equal, plus ] };
+    key <AD01> { [ q, Q ] };
+};
+"#;
+        let map = parse_symbols_block(content, "basic");
+        let grid = build_grid(&map);
+        assert_eq!(grid.number_row.len(), 13);
+        assert_eq!(grid.number_row[0], "`");
+        assert_eq!(grid.number_row[1], "1");
+        assert_eq!(grid.number_row[10], "0");
+        assert_eq!(grid.number_row[11], "-");
+        assert_eq!(grid.number_row[12], "=");
+        assert_eq!(grid.top_row[0], "q");
     }
 
     #[test]

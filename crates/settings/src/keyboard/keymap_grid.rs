@@ -11,20 +11,23 @@ use super::xkb_keymap::KeymapGrid;
 /// Horizontal stagger offsets (in pixels) for each keyboard row.
 ///
 /// Approximates the physical stagger of a standard ANSI keyboard:
+/// - Number row (AE): no offset
 /// - Top row (QWERTY): no offset
 /// - Home row (ASDF): shifted right by ~1/4 key width (~20 px)
 /// - Bottom row (ZXCV): shifted right by ~1/2 key width (~36 px)
+const NUMBER_ROW_MARGIN: i32 = 0;
 const TOP_ROW_MARGIN: i32 = 0;
 const HOME_ROW_MARGIN: i32 = 20;
 const BOTTOM_ROW_MARGIN: i32 = 36;
 
 /// Keyboard grid visualization widget.
 ///
-/// Shows three staggered rows of key caps (top/home/bottom) that visually
+/// Shows four staggered rows of key caps (number/top/home/bottom) that visually
 /// approximate the physical layout of a standard keyboard's alpha block.
 #[derive(Clone)]
 pub struct KeymapGridWidget {
     pub root: gtk::Box,
+    number_row_box: gtk::Box,
     top_row_box: gtk::Box,
     home_row_box: gtk::Box,
     bottom_row_box: gtk::Box,
@@ -32,6 +35,12 @@ pub struct KeymapGridWidget {
 
 impl KeymapGridWidget {
     pub fn new() -> Self {
+        let number_row_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(4)
+            .margin_start(NUMBER_ROW_MARGIN)
+            .build();
+
         let top_row_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(4)
@@ -57,12 +66,14 @@ impl KeymapGridWidget {
             .halign(gtk::Align::Center)
             .build();
 
+        root.append(&number_row_box);
         root.append(&top_row_box);
         root.append(&home_row_box);
         root.append(&bottom_row_box);
 
         Self {
             root,
+            number_row_box,
             top_row_box,
             home_row_box,
             bottom_row_box,
@@ -74,6 +85,9 @@ impl KeymapGridWidget {
     /// Clears any existing content and creates new key cap frames for each key.
     pub fn set_keymap(&self, keymap: &KeymapGrid) {
         // Remove all existing children from each row
+        while let Some(child) = self.number_row_box.first_child() {
+            self.number_row_box.remove(&child);
+        }
         while let Some(child) = self.top_row_box.first_child() {
             self.top_row_box.remove(&child);
         }
@@ -82,6 +96,11 @@ impl KeymapGridWidget {
         }
         while let Some(child) = self.bottom_row_box.first_child() {
             self.bottom_row_box.remove(&child);
+        }
+
+        // Number row (AE keys)
+        for label_text in &keymap.number_row {
+            self.number_row_box.append(&create_key_cap(label_text));
         }
 
         // Top row (AD keys)
