@@ -17,6 +17,7 @@ use crate::components::agenda::AgendaComponent;
 use crate::components::right_column_stack::RightColumnStackComponent;
 use crate::components::audio_sliders::AudioSlidersComponent;
 use crate::components::battery::BatteryComponent;
+use crate::components::claude::ClaudeComponent;
 use crate::components::brightness_sliders::BrightnessSlidersComponent;
 use crate::components::calendar::CalendarComponent;
 use crate::components::clock::ClockComponent;
@@ -345,6 +346,12 @@ fn render_component(
         }
         "Weather" => {
             let c = WeatherComponent::new(&ctx.store);
+            let w = c.widget();
+            keep.push(Box::new(c));
+            w
+        }
+        "ClaudeUsage" => {
+            let c = ClaudeComponent::new(&ctx.store);
             let w = c.widget();
             keep.push(Box::new(c));
             w

@@ -4,6 +4,7 @@
       <Clock />
       <Battery />
       <Weather />
+      <ClaudeUsage />
     </Row>
     <Row halign="end">
       <KeyboardLayout />
