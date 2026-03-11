@@ -14,6 +14,7 @@ path = "bin/waft-xdg-apps-daemon.rs"
 [dependencies]
 waft-plugin = { path = "../../crates/plugin" }
 waft-protocol = { path = "../../crates/protocol" }
+waft-i18n = { path = "../../crates/i18n" }
 async-trait = "0.1"
 anyhow = "1"
 log = "0.4"

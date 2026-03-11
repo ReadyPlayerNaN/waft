@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use waft_i18n::system_locale;
 use waft_plugin::*;
 use waft_protocol::description::*;
 use waft_xdg_apps::desktop_file::strip_exec_field_codes;
@@ -15,6 +16,7 @@ use waft_xdg_apps::scanner::{scan_apps, xdg_app_dirs, DiscoveredApp};
 struct XdgAppsPlugin {
     apps: Arc<Mutex<HashMap<String, DiscoveredApp>>>,
     dirs: Vec<PathBuf>,
+    locale: String,
 }
 
 impl XdgAppsPlugin {
@@ -26,6 +28,7 @@ impl XdgAppsPlugin {
         Self {
             apps: Arc::new(Mutex::new(map)),
             dirs,
+            locale: system_locale(),
         }
     }
 }
@@ -38,7 +41,7 @@ impl Plugin for XdgAppsPlugin {
         apps.values()
             .map(|app| {
                 let entity_data = entity::app::App {
-                    name: app.entry.name.clone(),
+                    name: app.entry.resolve_name(&self.locale).to_string(),
                     icon: app.entry.icon.clone(),
                     available: true,
                     keywords: app.entry.keywords.clone(),
@@ -171,6 +174,7 @@ fn main() -> Result<()> {
     let manifest_plugin = XdgAppsPlugin {
         apps: Arc::new(Mutex::new(HashMap::new())),
         dirs: Vec::new(),
+        locale: String::new(),
     };
     if waft_plugin::manifest::handle_provides_described(
         &[entity::app::ENTITY_TYPE],

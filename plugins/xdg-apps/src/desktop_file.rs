@@ -1,5 +1,7 @@
 //! `.desktop` file parser.
 
+use std::collections::HashMap;
+
 /// A parsed `.desktop` file entry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesktopEntry {
@@ -8,6 +10,25 @@ pub struct DesktopEntry {
     pub exec: String,
     pub description: Option<String>,
     pub keywords: Vec<String>,
+    pub localized_names: HashMap<String, String>,
+}
+
+impl DesktopEntry {
+    pub fn resolve_name(&self, locale: &str) -> &str {
+        // 1. Exact match
+        if let Some(name) = self.localized_names.get(locale) {
+            return name;
+        }
+        // 2. Language-only prefix (split on '-' or '_')
+        let lang = locale.split(['-', '_']).next().unwrap_or("");
+        if !lang.is_empty() {
+            if let Some(name) = self.localized_names.get(lang) {
+                return name;
+            }
+        }
+        // 3. Fallback
+        &self.name
+    }
 }
 
 /// Parse a `.desktop` file text. Returns `None` if the file should be skipped
@@ -22,6 +43,7 @@ pub fn parse_desktop_entry(content: &str) -> Option<DesktopEntry> {
     let mut keywords = Vec::new();
     let mut no_display = false;
     let mut hidden = false;
+    let mut localized_names: HashMap<String, String> = HashMap::new();
 
     for line in content.lines() {
         let line = line.trim();
@@ -33,8 +55,12 @@ pub fn parse_desktop_entry(content: &str) -> Option<DesktopEntry> {
             continue;
         }
         if let Some((key, value)) = line.split_once('=') {
-            // Ignore locale-specific keys like Name[fr]=...
             let key = key.trim();
+            if let Some(locale_key) = key.strip_prefix("Name[").and_then(|s| s.strip_suffix(']')) {
+                localized_names.insert(locale_key.to_string(), value.trim().to_string());
+                continue;
+            }
+            // Ignore other locale-specific keys like Comment[fr]=...
             if key.contains('[') {
                 continue;
             }
@@ -74,6 +100,7 @@ pub fn parse_desktop_entry(content: &str) -> Option<DesktopEntry> {
         exec,
         description,
         keywords,
+        localized_names,
     })
 }
 
@@ -124,6 +151,15 @@ Icon=minapp
 Exec=minapp
 "#;
 
+    const LOCALIZED_DESKTOP: &str = r#"[Desktop Entry]
+Type=Application
+Name=Firefox Web Browser
+Name[cs]=Webový prohlížeč Firefox
+Name[de]=Firefox Webbrowser
+Icon=firefox
+Exec=firefox %u
+"#;
+
     #[test]
     fn parses_full_entry() {
         let entry = parse_desktop_entry(FIREFOX_DESKTOP).unwrap();
@@ -161,5 +197,55 @@ Exec=minapp
         assert_eq!(strip_exec_field_codes("app %f --flag"), "app --flag");
         assert_eq!(strip_exec_field_codes("app"), "app");
         assert_eq!(strip_exec_field_codes("app %U %F"), "app");
+    }
+
+    #[test]
+    fn collects_localized_names() {
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        assert_eq!(entry.name, "Firefox Web Browser");
+        assert_eq!(
+            entry.localized_names.get("cs").map(String::as_str),
+            Some("Webový prohlížeč Firefox")
+        );
+        assert_eq!(
+            entry.localized_names.get("de").map(String::as_str),
+            Some("Firefox Webbrowser")
+        );
+    }
+
+    #[test]
+    fn localized_names_empty_for_unlocalized_entry() {
+        let entry = parse_desktop_entry(FIREFOX_DESKTOP).unwrap();
+        assert!(entry.localized_names.is_empty());
+    }
+
+    #[test]
+    fn resolve_name_exact_locale_match() {
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        assert_eq!(entry.resolve_name("cs"), "Webový prohlížeč Firefox");
+    }
+
+    #[test]
+    fn resolve_name_language_only_match() {
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        assert_eq!(entry.resolve_name("cs_CZ"), "Webový prohlížeč Firefox");
+    }
+
+    #[test]
+    fn resolve_name_bcp47_language_only_match() {
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        assert_eq!(entry.resolve_name("cs-CZ"), "Webový prohlížeč Firefox");
+    }
+
+    #[test]
+    fn resolve_name_falls_back_to_base_name() {
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        assert_eq!(entry.resolve_name("ja"), "Firefox Web Browser");
+    }
+
+    #[test]
+    fn resolve_name_empty_locale_falls_back() {
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        assert_eq!(entry.resolve_name(""), "Firefox Web Browser");
     }
 }
