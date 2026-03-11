@@ -1,8 +1,8 @@
 //! Online Accounts settings page -- smart container.
 //!
 //! Subscribes to `EntityStore` for `online-account` entity type. On entity
-//! changes, reconciles the list of account rows showing GOA accounts with
-//! per-service toggles.
+//! changes, reconciles the list of account rows showing GOA accounts. Each
+//! account row navigates to a detail sub-page with per-service toggles.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -14,10 +14,12 @@ use waft_protocol::Urn;
 use waft_protocol::entity::accounts::{self, OnlineAccount};
 use waft_ui_gtk::vdom::Component;
 
+use crate::display::settings_sub_page::SettingsSubPage;
 use crate::i18n::t;
-use crate::online_accounts::account_row::{
-    AccountRow, AccountRowOutput, AccountRowProps, ServiceProps,
+use crate::online_accounts::account_detail::{
+    AccountDetailOutput, AccountDetailPage, AccountDetailProps,
 };
+use crate::online_accounts::account_row::{AccountRow, AccountRowProps, ServiceProps};
 use crate::search_index::SearchIndex;
 
 /// Smart container for the Online Accounts settings page.
@@ -28,6 +30,7 @@ pub struct OnlineAccountsPage {
 /// Internal mutable state for the Online Accounts page.
 struct OnlineAccountsPageState {
     account_rows: HashMap<String, (AccountRow, Urn)>,
+    account_details: HashMap<String, AccountDetailPage>,
     sorted_ids: Vec<String>,
     list_box: gtk::ListBox,
     empty_state: adw::StatusPage,
@@ -39,6 +42,7 @@ impl OnlineAccountsPage {
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
+        navigation_view: &adw::NavigationView,
     ) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -84,6 +88,7 @@ impl OnlineAccountsPage {
 
         let state = Rc::new(RefCell::new(OnlineAccountsPageState {
             account_rows: HashMap::new(),
+            account_details: HashMap::new(),
             sorted_ids: Vec::new(),
             list_box,
             empty_state,
@@ -97,12 +102,13 @@ impl OnlineAccountsPage {
             {
                 let state = state.clone();
                 let cb = action_callback.clone();
+                let nav = navigation_view.clone();
                 move |online_accounts| {
                     log::debug!(
                         "[online-accounts-page] Reconciling: {} accounts",
                         online_accounts.len()
                     );
-                    Self::reconcile(&state, &online_accounts, &cb);
+                    Self::reconcile(&state, &online_accounts, &cb, &nav);
                 }
             },
         );
@@ -115,6 +121,7 @@ impl OnlineAccountsPage {
         state: &Rc<RefCell<OnlineAccountsPageState>>,
         accounts: &[(Urn, OnlineAccount)],
         action_callback: &EntityActionCallback,
+        navigation_view: &adw::NavigationView,
     ) {
         let mut state = state.borrow_mut();
 
@@ -128,8 +135,7 @@ impl OnlineAccountsPage {
         for (urn, account) in accounts {
             seen.insert(account.id.clone());
 
-            let props = AccountRowProps {
-                id: account.id.clone(),
+            let detail_props = AccountDetailProps {
                 provider_name: account.provider_name.clone(),
                 presentation_identity: account.presentation_identity.clone(),
                 status: account.status.clone(),
@@ -144,29 +150,71 @@ impl OnlineAccountsPage {
                 locked: account.locked,
             };
 
+            if let Some(detail) = state.account_details.get(&account.id) {
+                // Update the existing detail page
+                detail.update(&detail_props);
+            }
+
             if let Some((existing, _)) = state.account_rows.get(&account.id) {
+                // Build row props without on_navigate (already wired at creation)
+                let props = AccountRowProps {
+                    id: account.id.clone(),
+                    provider_name: account.provider_name.clone(),
+                    presentation_identity: account.presentation_identity.clone(),
+                    status: account.status.clone(),
+                    services: detail_props.services.clone(),
+                    locked: account.locked,
+                    on_navigate: None,
+                };
                 existing.update(&props);
             } else {
-                let row = AccountRow::build(&props);
+                // Create the detail page and sub-page wrapper first
+                let detail_page = AccountDetailPage::new(&detail_props);
 
-                // Wire output events
-                let cb = action_callback.clone();
-                let row_urn = urn.clone();
-                row.connect_output(move |output| {
-                    let (action, service_name) = match output {
-                        AccountRowOutput::EnableService { service_name } => {
-                            ("enable-service", service_name)
-                        }
-                        AccountRowOutput::DisableService { service_name } => {
-                            ("disable-service", service_name)
-                        }
-                    };
-                    cb(
-                        row_urn.clone(),
-                        action.to_string(),
-                        serde_json::json!({ "service_name": service_name }),
-                    );
+                let sub_page = SettingsSubPage::new(
+                    &account.presentation_identity,
+                    &detail_page.root,
+                );
+                let nav_page = sub_page.root.clone();
+
+                // Wire detail output events to actions
+                {
+                    let cb = action_callback.clone();
+                    let row_urn = urn.clone();
+                    detail_page.connect_output(move |output| {
+                        let (action, service_name) = match output {
+                            AccountDetailOutput::EnableService { service_name } => {
+                                ("enable-service", service_name)
+                            }
+                            AccountDetailOutput::DisableService { service_name } => {
+                                ("disable-service", service_name)
+                            }
+                        };
+                        cb(
+                            row_urn.clone(),
+                            action.to_string(),
+                            serde_json::json!({ "service_name": service_name }),
+                        );
+                    });
+                }
+
+                // Build the navigate callback that pushes the sub-page
+                let nav_view = navigation_view.clone();
+                let nav_fn: Rc<dyn Fn()> = Rc::new(move || {
+                    nav_view.push(&nav_page);
                 });
+
+                let props = AccountRowProps {
+                    id: account.id.clone(),
+                    provider_name: account.provider_name.clone(),
+                    presentation_identity: account.presentation_identity.clone(),
+                    status: account.status.clone(),
+                    services: detail_props.services.clone(),
+                    locked: account.locked,
+                    on_navigate: Some(nav_fn),
+                };
+
+                let row = AccountRow::build(&props);
 
                 // Insert in sorted position
                 let pos = current_ids
@@ -177,6 +225,7 @@ impl OnlineAccountsPage {
                 state
                     .account_rows
                     .insert(account.id.clone(), (row, urn.clone()));
+                state.account_details.insert(account.id.clone(), detail_page);
             }
         }
 
@@ -192,6 +241,7 @@ impl OnlineAccountsPage {
             if let Some((row, _)) = state.account_rows.remove(&key) {
                 state.list_box.remove(&row.widget());
             }
+            state.account_details.remove(&key);
         }
 
         state.sorted_ids = current_ids;

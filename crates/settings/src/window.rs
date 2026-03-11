@@ -152,7 +152,7 @@ impl SettingsWindow {
         let plugins_page = PluginsPage::new(entity_store, &search_index);
         let startup_page = StartupPage::new(&search_index);
         let services_page = ServicesPage::new(entity_store, action_callback, &search_index);
-        let online_accounts_page = OnlineAccountsPage::new(entity_store, action_callback, &search_index);
+        let online_accounts_page = OnlineAccountsPage::new(entity_store, action_callback, &search_index, &navigation_view);
 
         // Wrap each page in a clamp for consistent max width
         let audio_clamp = adw::Clamp::builder()
