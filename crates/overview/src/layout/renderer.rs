@@ -92,26 +92,56 @@ impl RenderContext {
     }
 }
 
-/// The result of rendering a layout tree into GTK widgets.
-///
-/// Holds the root GTK widget and the render context that keeps entity components alive.
-pub struct RenderedLayout {
-    pub root: gtk::Widget,
-    _context: Rc<RenderContext>,
-}
-
-/// Render a LayoutNode tree into a GTK widget tree.
+/// Render a LayoutNode tree into a GTK widget tree (full tree, no splitting).
+#[allow(dead_code)]
 pub fn render_layout(
     tree: &LayoutNode,
     ctx: &Rc<RenderContext>,
     menu_store: &Rc<MenuStore>,
-) -> RenderedLayout {
-    let root = render_node(tree, ctx, menu_store);
+) -> gtk::Widget {
+    render_node(tree, ctx, menu_store)
+}
 
-    RenderedLayout {
-        root,
-        _context: ctx.clone(),
+/// Render only the Header and Divider children of an Overview node into a vertical box.
+pub fn render_header_area(
+    tree: &LayoutNode,
+    ctx: &Rc<RenderContext>,
+    menu_store: &Rc<MenuStore>,
+) -> gtk::Box {
+    let vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    if let LayoutNode::Overview { children } = tree {
+        for child in children {
+            match child {
+                LayoutNode::Header { .. } | LayoutNode::Divider => {
+                    let widget = render_node(child, ctx, menu_store);
+                    vbox.append(&widget);
+                }
+                _ => {}
+            }
+        }
     }
+    vbox
+}
+
+/// Render only the non-Header, non-Divider children of an Overview node into a vertical box.
+pub fn render_body_area(
+    tree: &LayoutNode,
+    ctx: &Rc<RenderContext>,
+    menu_store: &Rc<MenuStore>,
+) -> gtk::Box {
+    let vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    if let LayoutNode::Overview { children } = tree {
+        for child in children {
+            match child {
+                LayoutNode::Header { .. } | LayoutNode::Divider => {}
+                _ => {
+                    let widget = render_node(child, ctx, menu_store);
+                    vbox.append(&widget);
+                }
+            }
+        }
+    }
+    vbox
 }
 
 fn render_layout_box(

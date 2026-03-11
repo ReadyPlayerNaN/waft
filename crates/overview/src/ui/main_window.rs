@@ -12,7 +12,7 @@ use log::debug;
 use crate::calendar_selection::create_calendar_selection_store;
 use crate::common::VoidCallback;
 use crate::layout::load_layout;
-use crate::layout::renderer::{RenderContext, render_layout};
+use crate::layout::renderer::{RenderContext, render_header_area, render_body_area};
 use crate::menu_state::MenuStore;
 use waft_client::{EntityActionCallback, EntityStore};
 
@@ -46,6 +46,7 @@ pub fn trigger_window_resize() {
 const OVERLAY_TOP_OFFSET_PX: i32 = 16;
 const OVERLAY_BOTTOM_OFFSET_PX: i32 = 16;
 const OVERLAY_CORNER_RADIUS_PX: i32 = 8;
+const OVERLAY_HEADER_HEIGHT_PX: i32 = 96;
 const OVERLAY_SLIDE_OFFSET_PX: f64 = 20.0;
 const OVERLAY_ANIM_DURATION_MS: u32 = 200;
 
@@ -977,9 +978,10 @@ impl MainWindowWidget {
             calendar_selection,
         ));
 
-        let rendered = Rc::new(render_layout(&tree, &ctx, &menu_store));
+        let header_box = render_header_area(&tree, &ctx, &menu_store);
+        let body_box = render_body_area(&tree, &ctx, &menu_store);
 
-        // Calculate max height based on monitor size
+        // Calculate max height for the scrollable body area based on monitor size
         let max_height = match gtk::gdk::Display::default() {
             Some(display) => {
                 match display.monitors().item(0) {
@@ -989,7 +991,7 @@ impl MainWindowWidget {
                             geometry.height()
                                 - OVERLAY_TOP_OFFSET_PX
                                 - OVERLAY_BOTTOM_OFFSET_PX
-                                - 48
+                                - OVERLAY_HEADER_HEIGHT_PX
                         } else {
                             800 // fallback
                         }
@@ -1011,18 +1013,28 @@ impl MainWindowWidget {
         scroller.set_propagate_natural_width(true);
         scroller.set_max_content_height(max_height);
         scroller.set_hexpand(true);
-        scroller.set_child(Some(&rendered.root));
+        scroller.set_child(Some(&body_box));
+
+        // Outer vertical box: fixed header on top, scrollable body below
+        let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        outer.append(&header_box);
+        outer.append(&scroller);
 
         let clip = gtk::Frame::new(None);
         clip.add_css_class("relm4-overlay-surface");
         clip.set_hexpand(true);
         clip.set_overflow(gtk::Overflow::Visible);
-        clip.set_child(Some(&scroller));
+        clip.set_child(Some(&outer));
 
         window.set_content(Some(&clip));
 
-        // Keep rendered layout + context alive (components hold entity subscriptions)
-        std::mem::forget(rendered);
+        // Keep render context and menu store alive (components hold entity subscriptions).
+        // We attach them as object data on the clip frame so they are dropped when the
+        // frame is finalized rather than immediately here.
+        unsafe {
+            clip.set_data("waft-render-ctx", ctx);
+            clip.set_data("waft-menu-store", menu_store);
+        }
 
         clip
     }
