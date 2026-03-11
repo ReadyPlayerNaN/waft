@@ -8,10 +8,10 @@ const BETA_HEADER: &str = "oauth-2025-04-20";
 
 #[derive(Debug, Deserialize)]
 struct UsageWindow {
-    /// Utilization as a fraction, 0.0–1.0
+    /// Utilization as a percentage, 0.0–100.0
     utilization: f64,
-    /// ISO 8601 timestamp when the window resets
-    reset_at: String,
+    /// ISO 8601 timestamp when the window resets (e.g. "2026-03-11T19:00:00.224373+00:00")
+    resets_at: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,16 +52,18 @@ pub async fn fetch_usage(access_token: &str) -> Result<UsageData> {
         .context("Failed to parse usage response")?;
 
     Ok(UsageData {
-        five_hour_utilization: data.five_hour.utilization * 100.0,
-        five_hour_reset_at: parse_reset_at(&data.five_hour.reset_at)?,
-        seven_day_utilization: data.seven_day.utilization * 100.0,
-        seven_day_reset_at: parse_reset_at(&data.seven_day.reset_at)?,
+        five_hour_utilization: data.five_hour.utilization,
+        five_hour_reset_at: parse_reset_at(&data.five_hour.resets_at)?,
+        seven_day_utilization: data.seven_day.utilization,
+        seven_day_reset_at: parse_reset_at(&data.seven_day.resets_at)?,
     })
 }
 
 /// Parse an ISO 8601 UTC timestamp string to Unix milliseconds.
 ///
-/// Supports format: "2026-03-11T14:00:00Z" (trailing Z stripped, no timezone offset).
+/// Supports formats returned by the API:
+/// - "2026-03-11T19:00:00.224373+00:00" (offset with sub-second precision)
+/// - "2026-03-11T14:00:00Z" (trailing Z)
 fn parse_reset_at(s: &str) -> Result<i64> {
     let s = s.trim_end_matches('Z');
     let (date_part, time_part) = s.split_once('T').context("Invalid timestamp format")?;
@@ -114,5 +116,12 @@ mod tests {
     fn parse_reset_at_midnight() {
         let ts = parse_reset_at("1970-01-01T00:00:00Z").unwrap();
         assert_eq!(ts, 0);
+    }
+
+    #[test]
+    fn parse_reset_at_with_offset_and_subseconds() {
+        // Actual format returned by the API: sub-second precision + numeric offset
+        let ts = parse_reset_at("2025-03-11T14:00:00.224373+00:00").unwrap();
+        assert_eq!(ts, 1_741_701_600_000);
     }
 }
