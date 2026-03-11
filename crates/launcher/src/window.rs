@@ -12,6 +12,33 @@ use waft_ui_gtk::widgets::search_pane::SearchPaneWidget;
 use crate::fuzzy::build_highlight_markup;
 use crate::ranking::RankedResult;
 
+/// Resolve an icon name for a given `app_id` against the current GTK icon theme.
+///
+/// Tries the following in order:
+/// 1. `app_id` as-is
+/// 2. `app_id` lowercased
+/// 3. The last segment of a reverse-domain name (e.g. `"org.gnome.Nautilus"` → `"nautilus"`)
+/// 4. Generic fallback `"application-x-executable"`
+fn icon_for_app_id(app_id: &str) -> String {
+    let theme = gtk::IconTheme::for_display(
+        &gtk::gdk::Display::default().expect("no display"),
+    );
+    if theme.has_icon(app_id) {
+        return app_id.to_string();
+    }
+    let lower = app_id.to_lowercase();
+    if theme.has_icon(&lower) {
+        return lower;
+    }
+    if let Some(last) = app_id.split('.').last() {
+        let last_lower = last.to_lowercase();
+        if theme.has_icon(&last_lower) {
+            return last_lower;
+        }
+    }
+    "application-x-executable".to_string()
+}
+
 const LAUNCHER_ANIM_DURATION_MS: u32 = 100;
 const LAUNCHER_SLIDE_OFFSET_PX: f64 = 8.0;
 
@@ -213,12 +240,14 @@ impl LauncherWindow {
             .iter()
             .map(|r| {
                 let positions = r.highlight_positions();
-                let (name, icon, kind) = match r {
+                let (name, icon, kind, subtitle) = match r {
                     RankedResult::App { app, .. } => {
-                        (app.name.clone(), app.icon.clone(), ResultKind::App)
+                        (app.name.clone(), app.icon.clone(), ResultKind::App, None)
                     }
                     RankedResult::Window { window, .. } => {
-                        (window.title.clone(), window.app_id.to_lowercase(), ResultKind::Window)
+                        let icon = icon_for_app_id(&window.app_id);
+                        let subtitle = Some(format!("Workspace {}", window.workspace_id));
+                        (window.title.clone(), icon, ResultKind::Window, subtitle)
                     }
                 };
                 let highlight_markup = if positions.is_empty() {
@@ -226,7 +255,7 @@ impl LauncherWindow {
                 } else {
                     Some(build_highlight_markup(&name, positions))
                 };
-                AppResultRowProps { name, icon, kind, highlight_markup }
+                AppResultRowProps { name, icon, kind, highlight_markup, subtitle }
             })
             .collect();
         *self.results.borrow_mut() = results;

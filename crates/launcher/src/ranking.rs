@@ -122,7 +122,7 @@ pub fn rank_results(
             Some(RankedResult::Window {
                 urn: urn.clone(),
                 window: window.clone(),
-                score: 0.0,
+                score: -(window.workspace_id as f64),
                 highlight_positions: vec![],
             })
         } else {
@@ -189,11 +189,11 @@ mod tests {
         Urn::new("niri", "window", id)
     }
 
-    fn make_window(title: &str, app_id: &str, focused: bool) -> entity::window::Window {
+    fn make_window(title: &str, app_id: &str, focused: bool, workspace_id: u64) -> entity::window::Window {
         entity::window::Window {
             title: title.to_string(),
             app_id: app_id.to_string(),
-            workspace_id: 1,
+            workspace_id,
             focused,
         }
     }
@@ -282,8 +282,8 @@ mod tests {
     #[test]
     fn focused_window_excluded() {
         let windows = vec![
-            (win_urn("1"), make_window("Active Window", "term", true)),
-            (win_urn("2"), make_window("Background Window", "firefox", false)),
+            (win_urn("1"), make_window("Active Window", "term", true, 1)),
+            (win_urn("2"), make_window("Background Window", "firefox", false, 1)),
         ];
         let results = rank_results(&[], &windows, "", &UsageMap::new(), false);
         assert_eq!(results.len(), 1);
@@ -293,8 +293,8 @@ mod tests {
     #[test]
     fn windows_matched_by_title() {
         let windows = vec![
-            (win_urn("1"), make_window("Claude Code", "Alacritty", false)),
-            (win_urn("2"), make_window("Mozilla Firefox", "firefox", false)),
+            (win_urn("1"), make_window("Claude Code", "Alacritty", false, 1)),
+            (win_urn("2"), make_window("Mozilla Firefox", "firefox", false, 1)),
         ];
         let results = rank_results(&[], &windows, "claude", &UsageMap::new(), false);
         assert_eq!(results.len(), 1);
@@ -304,8 +304,8 @@ mod tests {
     #[test]
     fn windows_matched_by_app_id() {
         let windows = vec![
-            (win_urn("1"), make_window("Some Title", "Alacritty", false)),
-            (win_urn("2"), make_window("Web Page", "firefox", false)),
+            (win_urn("1"), make_window("Some Title", "Alacritty", false, 1)),
+            (win_urn("2"), make_window("Web Page", "firefox", false, 1)),
         ];
         let results = rank_results(&[], &windows, "alac", &UsageMap::new(), false);
         assert_eq!(results.len(), 1);
@@ -318,7 +318,7 @@ mod tests {
             (app_urn("firefox"), make_app("Firefox", &["browser"])),
         ];
         let windows = vec![
-            (win_urn("1"), make_window("GitHub - Mozilla Firefox", "firefox", false)),
+            (win_urn("1"), make_window("GitHub - Mozilla Firefox", "firefox", false, 1)),
         ];
         let results = rank_results(&apps, &windows, "fire", &UsageMap::new(), false);
         assert_eq!(results.len(), 2);
@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn window_title_match_populates_highlight_positions() {
         let windows = vec![
-            (win_urn("1"), make_window("Claude Code", "Alacritty", false)),
+            (win_urn("1"), make_window("Claude Code", "Alacritty", false, 1)),
         ];
         let results = rank_results(&[], &windows, "clau", &UsageMap::new(), false);
         assert_eq!(results.len(), 1);
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn window_app_id_only_match_has_empty_positions() {
         let windows = vec![
-            (win_urn("1"), make_window("Some Title", "Alacritty", false)),
+            (win_urn("1"), make_window("Some Title", "Alacritty", false, 1)),
         ];
         let results = rank_results(&[], &windows, "alac", &UsageMap::new(), false);
         assert_eq!(results.len(), 1);
@@ -371,5 +371,30 @@ mod tests {
         let results = rank_results(&apps, &[], "", &UsageMap::new(), false);
         assert_eq!(results.len(), 1);
         assert!(results[0].highlight_positions().is_empty());
+    }
+
+    #[test]
+    fn empty_query_windows_ordered_by_workspace_ascending() {
+        let windows = vec![
+            (win_urn("3"), make_window("Terminal", "Alacritty", false, 3)),
+            (win_urn("1"), make_window("Editor", "helix", false, 1)),
+            (win_urn("2"), make_window("Browser", "firefox", false, 2)),
+        ];
+        let results = rank_results(&[], &windows, "", &UsageMap::new(), false);
+        assert_eq!(results.len(), 3);
+        assert!(matches!(&results[0], RankedResult::Window { window, .. } if window.workspace_id == 1));
+        assert!(matches!(&results[1], RankedResult::Window { window, .. } if window.workspace_id == 2));
+        assert!(matches!(&results[2], RankedResult::Window { window, .. } if window.workspace_id == 3));
+    }
+
+    #[test]
+    fn empty_query_includes_non_focused_windows() {
+        let windows = vec![
+            (win_urn("1"), make_window("Terminal", "Alacritty", false, 1)),
+            (win_urn("2"), make_window("Active", "firefox", true, 1)),  // focused, excluded
+        ];
+        let results = rank_results(&[], &windows, "", &UsageMap::new(), false);
+        assert_eq!(results.len(), 1);
+        assert!(matches!(&results[0], RankedResult::Window { window, .. } if window.title == "Terminal"));
     }
 }

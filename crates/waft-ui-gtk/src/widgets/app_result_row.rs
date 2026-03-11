@@ -17,6 +17,7 @@ pub struct AppResultRowProps {
     pub icon: String,
     pub kind: ResultKind,
     pub highlight_markup: Option<String>,
+    pub subtitle: Option<String>,
 }
 
 /// Renders a horizontal row: badge + 24px icon + wrapping name label.
@@ -46,17 +47,29 @@ impl RenderFn for AppResultRowRender {
                     vec![Icon::Themed(props.icon.clone())],
                     24,
                 )))
-                .child(VNode::label({
-                    let label = VLabel::new(&props.name)
+                .child({
+                    let name_label = VLabel::new(&props.name)
                         .css_class("app-result-name")
                         .xalign(0.0)
                         .wrap(true)
                         .wrap_mode(gtk::pango::WrapMode::WordChar);
-                    match &props.highlight_markup {
-                        Some(m) => label.markup(m),
-                        None => label,
+                    let name_label = match &props.highlight_markup {
+                        Some(m) => name_label.markup(m),
+                        None => name_label,
+                    };
+                    match &props.subtitle {
+                        Some(sub) => VNode::vbox(
+                            VBox::vertical(0)
+                                .child(VNode::label(name_label))
+                                .child(VNode::label(
+                                    VLabel::new(sub)
+                                        .css_class("app-result-subtitle")
+                                        .xalign(0.0),
+                                )),
+                        ),
+                        None => VNode::label(name_label),
                     }
-                })),
+                }),
         )
     }
 }

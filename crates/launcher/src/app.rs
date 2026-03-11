@@ -247,7 +247,7 @@ fn update_results(
     ranked.truncate(max_results);
     // Clear the loading spinner only once real entity data has arrived from the
     // daemon. An empty store with an empty query is still "loading", not "ready".
-    if !all_apps.is_empty() {
+    if !all_apps.is_empty() || !all_windows.is_empty() {
         win.search_pane().set_loading(false);
     }
     win.set_results(ranked, query);
