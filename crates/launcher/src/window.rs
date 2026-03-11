@@ -26,6 +26,8 @@ pub struct LauncherWindow {
     animation: adw::TimedAnimation,
     animation_progress: Rc<Cell<f64>>,
     animating_hide: Rc<Cell<bool>>,
+    /// Last result count seen by set_results; used to skip redundant layer-shell resizes.
+    last_result_count: Rc<Cell<usize>>,
 }
 
 impl LauncherWindow {
@@ -57,6 +59,7 @@ impl LauncherWindow {
         let results: Rc<RefCell<Vec<RankedResult>>> = Rc::new(RefCell::new(Vec::new()));
         let animation_progress = Rc::new(Cell::new(0.0_f64));
         let animating_hide = Rc::new(Cell::new(false));
+        let last_result_count = Rc::new(Cell::new(usize::MAX));
 
         // Create animation target that drives content opacity
         let content_for_anim = content.clone();
@@ -98,6 +101,7 @@ impl LauncherWindow {
             animation,
             animation_progress,
             animating_hide,
+            last_result_count,
         };
 
         // Auto-hide on focus loss (hide, not quit — launcher stays in background)
@@ -198,11 +202,13 @@ impl LauncherWindow {
     /// Does NOT set a loading state — the caller decides what to show.
     pub fn reset(&self) {
         self.search_pane.search_bar.clear();
+        self.last_result_count.set(usize::MAX);
         self.window.set_default_size(640, -1);
     }
 
     /// Update displayed results and resize window.
     pub fn set_results(&self, results: Vec<RankedResult>, query: &str) {
+        let new_count = results.len();
         let props: Vec<AppResultRowProps> = results
             .iter()
             .map(|r| {
@@ -225,8 +231,12 @@ impl LauncherWindow {
             .collect();
         *self.results.borrow_mut() = results;
         self.search_pane.set_results(props, query);
-        // Trigger layer-shell resize
-        self.window.set_default_size(640, -1);
+        // Trigger layer-shell resize only when the number of results changes to
+        // avoid redundant compositor round-trips on every keystroke.
+        if new_count != self.last_result_count.get() {
+            self.last_result_count.set(new_count);
+            self.window.set_default_size(640, -1);
+        }
     }
 
     /// Get the search pane (to connect output callbacks).
