@@ -1,6 +1,7 @@
 pub mod agenda;
 pub mod audio_sliders;
 pub mod battery;
+pub mod claude;
 pub mod brightness_sliders;
 pub mod calendar;
 pub mod clock;
