@@ -10,6 +10,7 @@ use adw::prelude::*;
 use waft_protocol::entity::session::{RestartPolicy, ScheduleKind, UserTimer};
 
 use crate::i18n::t;
+use crate::scheduler::schedule_picker::SchedulePicker;
 
 type ConfirmedCallback = Rc<RefCell<Option<Box<dyn Fn(UserTimer)>>>>;
 
@@ -92,24 +93,22 @@ impl TimerDialog {
         toggle_box.append(&calendar_btn);
         toggle_box.append(&relative_btn);
 
-        // Calendar fields
-        let on_calendar_row = adw::EntryRow::builder()
-            .title(t("scheduler-on-calendar"))
-            .build();
-
-        let persistent_row = adw::SwitchRow::builder()
-            .title(t("scheduler-persistent"))
-            .build();
+        // Calendar fields – structured schedule picker
+        let (cal_spec_str, initial_persistent) = initial
+            .map(|tmr| match &tmr.schedule {
+                ScheduleKind::Calendar { spec, persistent } => {
+                    (Some(spec.clone()), *persistent)
+                }
+                _ => (None, false),
+            })
+            .unwrap_or((None, false));
+        let picker = Rc::new(SchedulePicker::new(cal_spec_str.as_deref(), initial_persistent));
 
         let calendar_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(0)
             .build();
-
-        let calendar_fields = adw::PreferencesGroup::new();
-        calendar_fields.add(&on_calendar_row);
-        calendar_fields.add(&persistent_row);
-        calendar_box.append(&calendar_fields);
+        calendar_box.append(&picker.group);
 
         // Relative fields
         let boot_sec_row = adw::EntryRow::builder()
@@ -233,10 +232,9 @@ impl TimerDialog {
             }
 
             match &timer.schedule {
-                ScheduleKind::Calendar { spec, persistent } => {
+                ScheduleKind::Calendar { .. } => {
+                    // picker was pre-populated in SchedulePicker::new
                     calendar_btn.set_active(true);
-                    on_calendar_row.set_text(spec);
-                    persistent_row.set_active(*persistent);
                 }
                 ScheduleKind::Relative {
                     on_boot_sec,
@@ -273,7 +271,7 @@ impl TimerDialog {
             let name_ref = name_row.clone();
             let cmd_ref = command_row.clone();
             let cal_btn_ref = calendar_btn.clone();
-            let cal_spec_ref = on_calendar_row.clone();
+            let picker_for_validity = Rc::clone(&picker);
             let boot_ref = boot_sec_row.clone();
             let repeat_ref = repeat_sec_row.clone();
             let workdir_ref = workdir_row.clone();
@@ -286,7 +284,7 @@ impl TimerDialog {
                 let cmd_ok = !cmd_ref.text().trim().is_empty();
 
                 let is_calendar = cal_btn_ref.is_active();
-                let cal_spec_ok = !is_calendar || !cal_spec_ref.text().trim().is_empty();
+                let cal_spec_ok = !is_calendar || picker_for_validity.is_valid();
 
                 let boot_text = boot_ref.text();
                 let boot_ok =
@@ -336,7 +334,7 @@ impl TimerDialog {
             let u = Rc::clone(&update_sensitivity);
             command_row.connect_changed(move |_| u());
             let u = Rc::clone(&update_sensitivity);
-            on_calendar_row.connect_changed(move |_| u());
+            picker.connect_changed(move || u());
             let u = Rc::clone(&update_sensitivity);
             boot_sec_row.connect_changed(move |_| u());
             let u = Rc::clone(&update_sensitivity);
@@ -364,6 +362,7 @@ impl TimerDialog {
 
         // Save collects fields, fires callback, closes dialog
         {
+            let picker_for_save = Rc::clone(&picker);
             let cb = on_confirmed.clone();
             let dialog_ref = dialog.clone();
             save_btn.connect_clicked(move |_| {
@@ -377,8 +376,8 @@ impl TimerDialog {
 
                 let schedule = if calendar_btn.is_active() {
                     ScheduleKind::Calendar {
-                        spec: on_calendar_row.text().trim().to_string(),
-                        persistent: persistent_row.is_active(),
+                        spec: picker_for_save.spec(),
+                        persistent: picker_for_save.persistent_row.is_active(),
                     }
                 } else {
                     ScheduleKind::Relative {
