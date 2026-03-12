@@ -190,6 +190,17 @@ fn categories() -> Vec<SidebarCategory> {
                 },
             ],
         },
+        SidebarCategory {
+            label: t("sidebar-automation"),
+            items: vec![
+                SidebarItem {
+                    page_id: "scheduled-tasks",
+                    title: t("settings-scheduled-tasks"),
+                    icon: "preferences-system-time-symbolic",
+                    visible: true,
+                },
+            ],
+        },
     ]
 }
 

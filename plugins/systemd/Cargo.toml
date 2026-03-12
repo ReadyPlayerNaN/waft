@@ -13,8 +13,10 @@ waft-i18n = { path = "../../crates/i18n" }
 waft-protocol = { path = "../../crates/protocol" }
 async-trait = "0.1"
 anyhow = "1"
+dirs = "5"
 futures-util = "0.3"
 log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
-serde_json = "1"

@@ -12,6 +12,7 @@ sidebar-feedback = Oznámení
 sidebar-inputs = Vstupy
 sidebar-info = Informace
 sidebar-system = Systém
+sidebar-automation = Automatizace
 
 # Sidebar pages
 settings-bluetooth = Bluetooth
@@ -26,6 +27,7 @@ settings-audio = Zvuk
 settings-weather = Počasí
 settings-plugins = Doplňky
 settings-online-accounts = Online účty
+settings-scheduled-tasks = Plánované úlohy
 
 # Audio
 audio-output-devices = Výstupní zařízení
@@ -514,3 +516,39 @@ online-accounts-service-files = Soubory
 online-accounts-service-music = Hudba
 online-accounts-service-photos = Fotky
 online-accounts-service-ticketing = Lístky
+
+# Plánovač
+scheduler-title = Plánované úlohy
+scheduler-no-timers = Žádné plánované úlohy
+scheduler-no-timers-desc = Přidejte úlohu pro spouštění příkazů podle plánu
+scheduler-add-timer = Přidat časovač
+scheduler-edit-timer = Upravit časovač
+scheduler-delete-timer = Smazat časovač
+scheduler-run-now = Spustit nyní
+scheduler-enable = Povolit
+scheduler-disable = Zakázat
+scheduler-last-run = Poslední spuštění
+scheduler-next-run = Další spuštění
+scheduler-never = Nikdy
+scheduler-tab-schedule = Plán
+scheduler-tab-service = Služba
+scheduler-calendar = Kalendářní
+scheduler-relative = Relativní
+scheduler-name = Název
+scheduler-description = Popis
+scheduler-command = Příkaz
+scheduler-working-directory = Pracovní adresář
+scheduler-on-calendar = Plánovací výraz
+scheduler-persistent = Dohnat zmeškané spuštění
+scheduler-on-boot-sec = Zpoždění po startu (sekundy)
+scheduler-on-unit-active-sec = Opakovat každých (sekundy)
+scheduler-environment = Proměnné prostředí
+scheduler-after = Po (závislosti)
+scheduler-restart = Politika restartu
+scheduler-cpu-quota = Kvóta CPU
+scheduler-memory-limit = Limit paměti
+scheduler-restart-no = Nikdy
+scheduler-restart-on-failure = Při selhání
+scheduler-restart-always = Vždy
+scheduler-action-failed = Akce selhala
+scheduler-ok = OK

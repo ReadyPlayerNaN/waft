@@ -3835,8 +3835,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "dirs 5.0.1",
  "futures-util",
  "log",
+ "serde",
  "serde_json",
  "tokio",
  "waft-i18n",

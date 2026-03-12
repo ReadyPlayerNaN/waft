@@ -8,6 +8,7 @@ pub mod niri_windows;
 pub mod notifications;
 pub mod online_accounts;
 pub mod plugins;
+pub mod scheduler;
 pub mod services;
 pub mod sounds;
 pub mod startup;

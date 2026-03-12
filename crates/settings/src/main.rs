@@ -15,6 +15,7 @@ mod online_accounts;
 mod pages;
 mod plugins;
 mod prefs;
+mod scheduler;
 mod search_index;
 mod services;
 mod search_results;

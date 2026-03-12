@@ -23,6 +23,7 @@ use crate::pages::niri_windows::NiriWindowsPage;
 use crate::pages::notifications::NotificationsPage;
 use crate::pages::online_accounts::OnlineAccountsPage;
 use crate::pages::plugins::PluginsPage;
+use crate::pages::scheduler::SchedulerPage;
 use crate::pages::services::ServicesPage;
 use crate::pages::sounds::SoundsPage;
 use crate::pages::startup::StartupPage;
@@ -53,6 +54,7 @@ fn page_title(page_id: &str) -> String {
         "services" => "settings-services",
         "startup" => "settings-startup",
         "keyboard-shortcuts" => "settings-keyboard-shortcuts",
+        "scheduled-tasks" => "settings-scheduled-tasks",
         _ => "settings-bluetooth",
     };
     t(key)
@@ -134,6 +136,7 @@ impl SettingsWindow {
             idx.add_page("services", &t("settings-services"), "settings-services");
             idx.add_page("startup", &t("settings-startup"), "settings-startup");
             idx.add_page("keyboard-shortcuts", &t("settings-keyboard-shortcuts"), "settings-keyboard-shortcuts");
+            idx.add_page("scheduled-tasks", &t("settings-scheduled-tasks"), "settings-scheduled-tasks");
         }
 
         let audio_page = AudioPage::new(entity_store, action_callback, &search_index);
@@ -152,6 +155,7 @@ impl SettingsWindow {
         let plugins_page = PluginsPage::new(entity_store, &search_index);
         let startup_page = StartupPage::new(&search_index);
         let services_page = ServicesPage::new(entity_store, action_callback, &search_index);
+        let scheduler_page = SchedulerPage::new(entity_store, action_callback, &search_index);
         let online_accounts_page = OnlineAccountsPage::new(entity_store, action_callback, &search_index, &navigation_view);
 
         // Wrap each page in a clamp for consistent max width
@@ -225,6 +229,11 @@ impl SettingsWindow {
             .child(&services_page.root)
             .build();
 
+        let scheduler_clamp = adw::Clamp::builder()
+            .maximum_size(600)
+            .child(&scheduler_page.root)
+            .build();
+
         let online_accounts_clamp = adw::Clamp::builder()
             .maximum_size(600)
             .child(&online_accounts_page.root)
@@ -252,6 +261,7 @@ impl SettingsWindow {
         stack.add_named(&plugins_clamp, Some("plugins"));
         stack.add_named(&services_clamp, Some("services"));
         stack.add_named(&startup_clamp, Some("startup"));
+        stack.add_named(&scheduler_clamp, Some("scheduled-tasks"));
         // Navigate to the requested page, or default to bluetooth
         let default_page = initial_page.unwrap_or("bluetooth");
         if stack.child_by_name(default_page).is_some() {

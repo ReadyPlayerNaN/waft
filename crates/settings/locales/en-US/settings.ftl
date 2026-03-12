@@ -12,6 +12,7 @@ sidebar-feedback = Feedback
 sidebar-inputs = Inputs
 sidebar-info = Info
 sidebar-system = System
+sidebar-automation = Automation
 
 # Sidebar pages
 settings-bluetooth = Bluetooth
@@ -26,6 +27,7 @@ settings-audio = Audio
 settings-weather = Weather
 settings-plugins = Plugins
 settings-online-accounts = Online Accounts
+settings-scheduled-tasks = Scheduled Tasks
 
 # Audio
 audio-output-devices = Output Devices
@@ -519,3 +521,39 @@ online-accounts-service-files = Files
 online-accounts-service-music = Music
 online-accounts-service-photos = Photos
 online-accounts-service-ticketing = Ticketing
+
+# Scheduler
+scheduler-title = Scheduled Tasks
+scheduler-no-timers = No scheduled tasks
+scheduler-no-timers-desc = Add a task to run commands on a schedule
+scheduler-add-timer = Add Timer
+scheduler-edit-timer = Edit Timer
+scheduler-delete-timer = Delete Timer
+scheduler-run-now = Run Now
+scheduler-enable = Enable
+scheduler-disable = Disable
+scheduler-last-run = Last run
+scheduler-next-run = Next run
+scheduler-never = Never
+scheduler-tab-schedule = Schedule
+scheduler-tab-service = Service
+scheduler-calendar = Calendar
+scheduler-relative = Relative
+scheduler-name = Name
+scheduler-description = Description
+scheduler-command = Command
+scheduler-working-directory = Working Directory
+scheduler-on-calendar = Schedule Expression
+scheduler-persistent = Catch up missed runs
+scheduler-on-boot-sec = Delay after boot (seconds)
+scheduler-on-unit-active-sec = Repeat every (seconds)
+scheduler-environment = Environment Variables
+scheduler-after = After (dependencies)
+scheduler-restart = Restart Policy
+scheduler-cpu-quota = CPU Quota
+scheduler-memory-limit = Memory Limit
+scheduler-restart-no = Never
+scheduler-restart-on-failure = On Failure
+scheduler-restart-always = Always
+scheduler-action-failed = Action Failed
+scheduler-ok = OK
