@@ -116,12 +116,20 @@ impl RenderFn for TimerRowRender {
             VActionRow::new(&props.name)
                 .subtitle(&subtitle)
                 .suffix(VNode::vbox(
-                    VBox::horizontal(4)
+                    VBox::vertical(4)
+                        .halign(gtk::Align::End)
                         .valign(gtk::Align::Center)
-                        .child(VNode::switch(enable_switch))
-                        .child(VNode::button(run_btn))
-                        .child(VNode::button(edit_btn))
-                        .child(VNode::button(delete_btn)),
+                        .child(VNode::vbox(
+                            VBox::horizontal(0)
+                                .halign(gtk::Align::End)
+                                .child(VNode::switch(enable_switch)),
+                        ))
+                        .child(VNode::vbox(
+                            VBox::horizontal(4)
+                                .child(VNode::button(run_btn))
+                                .child(VNode::button(edit_btn))
+                                .child(VNode::button(delete_btn)),
+                        )),
                 )),
         )
     }
