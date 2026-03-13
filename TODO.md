@@ -25,6 +25,6 @@ The result: The launcher renders results for "v" by the time "vol" has been type
 
 Expected result: Before the user manages to type in "o", the view should rerender and provide results. It must be faster than a keyboard poweruser typing
 
-# `waft-launcher` highlights invisible
+# `waft-launcher` search
 
-The waft launcher highlights the input text inside the search item rows. The highlighted part of the label text should have colour, that is distinct from the rest of the text. Possibly inverse colour of the theme highlight.
+The launcher needs to search by both the localized AND the original (EN) name. Prioritize the localized name.
