@@ -158,6 +158,31 @@ impl Plugin for GoaPlugin {
                 }
             }
 
+            "remove-account" => {
+                let (account_path, locked) = {
+                    let state = self.lock_state();
+                    let path = match state.object_path_for_id(&account_id) {
+                        Some(p) => p.to_string(),
+                        None => {
+                            warn!("[goa] Account not found: {}", account_id);
+                            return Err(format!("account not found: {account_id}").into());
+                        }
+                    };
+                    let locked = state
+                        .accounts
+                        .get(&account_id)
+                        .map(|a| a.locked)
+                        .unwrap_or(false);
+                    (path, locked)
+                };
+                if locked {
+                    return Err(format!("account {} is locked", account_id).into());
+                }
+                dbus::remove_account(&self.conn, &account_path)
+                    .await
+                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+            }
+
             _ => {
                 debug!("[goa] Unknown action: {}", action);
             }

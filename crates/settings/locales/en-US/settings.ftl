@@ -521,6 +521,10 @@ online-accounts-service-files = Files
 online-accounts-service-music = Music
 online-accounts-service-photos = Photos
 online-accounts-service-ticketing = Ticketing
+online-accounts-remove-account = Remove Account
+online-accounts-remove-confirm-title = Remove Account?
+online-accounts-remove-confirm-body = This account and its data will be removed from this device. This cannot be undone.
+online-accounts-add-account = Add Account…
 
 # Scheduler
 scheduler-title = Scheduled Tasks

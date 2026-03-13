@@ -73,6 +73,21 @@ impl OnlineAccountsPage {
         group.add(&list_box);
         root.append(&group);
 
+        let add_button = gtk::Button::builder()
+            .label(&t("online-accounts-add-account"))
+            .css_classes(["suggested-action", "pill"])
+            .halign(gtk::Align::Start)
+            .build();
+        add_button.connect_clicked(|_| {
+            if let Err(e) = std::process::Command::new("gnome-control-center")
+                .arg("online-accounts")
+                .spawn()
+            {
+                log::warn!("Failed to launch gnome-control-center: {e}");
+            }
+        });
+        root.append(&add_button);
+
         // Register search entries
         {
             let mut idx = search_index.borrow_mut();
@@ -180,20 +195,53 @@ impl OnlineAccountsPage {
                 {
                     let cb = action_callback.clone();
                     let row_urn = urn.clone();
-                    detail_page.connect_output(move |output| {
-                        let (action, service_name) = match output {
-                            AccountDetailOutput::EnableService { service_name } => {
-                                ("enable-service", service_name)
-                            }
-                            AccountDetailOutput::DisableService { service_name } => {
-                                ("disable-service", service_name)
-                            }
-                        };
-                        cb(
-                            row_urn.clone(),
-                            action.to_string(),
-                            serde_json::json!({ "service_name": service_name }),
-                        );
+                    let nav_for_output = navigation_view.clone();
+                    detail_page.connect_output(move |output| match output {
+                        AccountDetailOutput::EnableService { service_name } => {
+                            cb(
+                                row_urn.clone(),
+                                "enable-service".to_string(),
+                                serde_json::json!({ "service_name": service_name }),
+                            );
+                        }
+                        AccountDetailOutput::DisableService { service_name } => {
+                            cb(
+                                row_urn.clone(),
+                                "disable-service".to_string(),
+                                serde_json::json!({ "service_name": service_name }),
+                            );
+                        }
+                        AccountDetailOutput::RemoveAccount => {
+                            let cb_inner = cb.clone();
+                            let urn_inner = row_urn.clone();
+                            let nav_inner = nav_for_output.clone();
+                            let confirm = adw::AlertDialog::builder()
+                                .heading(t("online-accounts-remove-confirm-title"))
+                                .body(t("online-accounts-remove-confirm-body"))
+                                .close_response("cancel")
+                                .default_response("cancel")
+                                .build();
+                            confirm.add_response("cancel", &t("notif-cancel"));
+                            confirm.add_response(
+                                "remove",
+                                &t("online-accounts-remove-account"),
+                            );
+                            confirm.set_response_appearance(
+                                "remove",
+                                adw::ResponseAppearance::Destructive,
+                            );
+                            confirm.connect_response(None, move |_, response| {
+                                if response == "remove" {
+                                    cb_inner(
+                                        urn_inner.clone(),
+                                        "remove-account".to_string(),
+                                        serde_json::Value::Null,
+                                    );
+                                    nav_inner.pop();
+                                }
+                            });
+                            confirm.present(Some(&nav_for_output));
+                        }
                     });
                 }
 

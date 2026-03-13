@@ -28,6 +28,7 @@ pub struct AccountDetailProps {
 pub enum AccountDetailOutput {
     EnableService { service_name: String },
     DisableService { service_name: String },
+    RemoveAccount,
 }
 
 /// Stateful detail page for a single account.
@@ -35,6 +36,7 @@ pub struct AccountDetailPage {
     pub root: gtk::Box,
     group: adw::PreferencesGroup,
     switch_rows: Vec<(String, adw::SwitchRow, glib::SignalHandlerId)>,
+    remove_button: gtk::Button,
     output_cb: Rc<RefCell<Option<Box<dyn Fn(AccountDetailOutput)>>>>,
 }
 
@@ -91,7 +93,31 @@ impl AccountDetailPage {
             switch_rows.push((service.name.clone(), switch_row, handler_id));
         }
 
-        Self { root, group, switch_rows, output_cb }
+        let remove_group = adw::PreferencesGroup::builder().margin_top(24).build();
+        let remove_button = gtk::Button::builder()
+            .label(&t("online-accounts-remove-account"))
+            .css_classes(["destructive-action", "pill"])
+            .halign(gtk::Align::Start)
+            .sensitive(!props.locked)
+            .build();
+        {
+            let cb_ref = output_cb.clone();
+            remove_button.connect_clicked(move |_| {
+                if let Some(ref cb) = *cb_ref.borrow() {
+                    cb(AccountDetailOutput::RemoveAccount);
+                }
+            });
+        }
+        remove_group.add(&remove_button);
+        root.append(&remove_group);
+
+        Self {
+            root,
+            group,
+            switch_rows,
+            remove_button,
+            output_cb,
+        }
     }
 
     pub fn connect_output(&self, cb: impl Fn(AccountDetailOutput) + 'static) {
@@ -112,6 +138,7 @@ impl AccountDetailPage {
                 row.set_sensitive(controllable);
             }
         }
+        self.remove_button.set_sensitive(!props.locked);
     }
 }
 

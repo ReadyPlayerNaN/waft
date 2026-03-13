@@ -516,6 +516,10 @@ online-accounts-service-files = Soubory
 online-accounts-service-music = Hudba
 online-accounts-service-photos = Fotky
 online-accounts-service-ticketing = Lístky
+online-accounts-remove-account = Odebrat účet
+online-accounts-remove-confirm-title = Odebrat účet?
+online-accounts-remove-confirm-body = Tento účet a jeho data budou z tohoto zařízení odebrány. Tuto akci nelze vrátit zpět.
+online-accounts-add-account = Přidat účet…
 
 # Plánovač
 scheduler-title = Plánované úlohy

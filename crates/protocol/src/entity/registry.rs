@@ -122,6 +122,7 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 action_p("disable-service", "Disable a specific service on this account", &[
                     req_param("service_name", "string", "Service to disable"),
                 ]),
+                action("remove-account", "Remove this online account"),
             ],
         },
 

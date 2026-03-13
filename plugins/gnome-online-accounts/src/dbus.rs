@@ -209,6 +209,19 @@ pub async fn set_service_disabled(
     Ok(())
 }
 
+/// Remove a GOA account via the `Account.Remove()` D-Bus method.
+pub async fn remove_account(conn: &Connection, account_path: &str) -> Result<()> {
+    let proxy = zbus::Proxy::new(conn, GOA_BUS_NAME, account_path, GOA_ACCOUNT_IFACE)
+        .await
+        .context("Failed to create Account proxy for removal")?;
+    let _: () = proxy
+        .call("Remove", &())
+        .await
+        .context(format!("Failed to call Remove on {account_path}"))?;
+    debug!("[goa] Called Remove on {}", account_path);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
