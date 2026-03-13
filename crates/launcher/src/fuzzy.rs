@@ -62,9 +62,11 @@ pub fn fuzzy_match_positions(query: &str, target: &str) -> Option<(f64, Vec<usiz
     Some((base_score + contiguous_bonus + prefix_bonus, positions))
 }
 
-/// Build Pango markup with matched positions wrapped in `<b>` tags.
+/// Build Pango markup that dims non-matched characters.
 ///
-/// Adjacent highlighted characters are coalesced into a single `<b>` span.
+/// Matched characters pass through at full opacity; non-matched characters are
+/// wrapped in `<span alpha="60%">` so they appear dimmed. This is theme-agnostic
+/// (works with any CSS `color`, dark/light mode, and selection accent colors).
 /// All text is escaped for safe use in Pango markup.
 pub fn build_highlight_markup(text: &str, positions: &[usize]) -> String {
     if positions.is_empty() {
@@ -73,23 +75,23 @@ pub fn build_highlight_markup(text: &str, positions: &[usize]) -> String {
 
     let pos_set: std::collections::HashSet<usize> = positions.iter().copied().collect();
     let mut result = String::new();
-    let mut in_bold = false;
+    let mut in_dim = false;
 
     for (i, ch) in text.chars().enumerate() {
-        let highlighted = pos_set.contains(&i);
-        if highlighted && !in_bold {
-            result.push_str("<b>");
-            in_bold = true;
-        } else if !highlighted && in_bold {
-            result.push_str("</b>");
-            in_bold = false;
+        let matched = pos_set.contains(&i);
+        if !matched && !in_dim {
+            result.push_str("<span alpha=\"60%\">");
+            in_dim = true;
+        } else if matched && in_dim {
+            result.push_str("</span>");
+            in_dim = false;
         }
         let escaped: String = glib::markup_escape_text(&ch.to_string()).into();
         result.push_str(&escaped);
     }
 
-    if in_bold {
-        result.push_str("</b>");
+    if in_dim {
+        result.push_str("</span>");
     }
 
     result
@@ -184,30 +186,37 @@ mod tests {
 
     #[test]
     fn markup_single_char() {
-        assert_eq!(build_highlight_markup("hello", &[0]), "<b>h</b>ello");
+        // 'h' matched, 'ello' dimmed
+        assert_eq!(
+            build_highlight_markup("hello", &[0]),
+            "h<span alpha=\"60%\">ello</span>"
+        );
     }
 
     #[test]
     fn markup_contiguous_run() {
+        // 'hel' matched, 'lo' dimmed
         assert_eq!(
             build_highlight_markup("hello", &[0, 1, 2]),
-            "<b>hel</b>lo"
+            "hel<span alpha=\"60%\">lo</span>"
         );
     }
 
     #[test]
     fn markup_non_contiguous() {
+        // 'h' and 'o' matched, 'ell' dimmed
         assert_eq!(
             build_highlight_markup("hello", &[0, 4]),
-            "<b>h</b>ell<b>o</b>"
+            "h<span alpha=\"60%\">ell</span>o"
         );
     }
 
     #[test]
     fn markup_special_chars() {
+        // '<' matched, 'b>' and '&' dimmed
         assert_eq!(
             build_highlight_markup("<b>&", &[0]),
-            "<b>&lt;</b>b&gt;&amp;"
+            "&lt;<span alpha=\"60%\">b&gt;&amp;</span>"
         );
     }
 
@@ -219,9 +228,10 @@ mod tests {
     #[test]
     fn markup_multibyte_chars() {
         // "café" has char indices 0='c', 1='a', 2='f', 3='é'
+        // 'f' and 'é' matched, 'ca' dimmed
         assert_eq!(
             build_highlight_markup("café", &[2, 3]),
-            "ca<b>fé</b>"
+            "<span alpha=\"60%\">ca</span>fé"
         );
     }
 }
