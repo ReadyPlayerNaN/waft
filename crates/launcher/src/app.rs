@@ -129,6 +129,7 @@ pub fn run() -> anyhow::Result<()> {
                     if win_for_activate.is_animating_hide() {
                         // Mid hide-animation: reverse back to visible from current opacity.
                         win_for_activate.show();
+                        win_for_activate.grab_focus();
                     } else {
                         // Fully visible or mid show-animation: start/continue fade-out.
                         win_for_activate.hide();

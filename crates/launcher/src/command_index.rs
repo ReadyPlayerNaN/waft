@@ -49,6 +49,20 @@ impl CommandIndex {
             let entities = store.get_entities_raw(def.entity_type);
 
             if entities.is_empty() {
+                if let Some(raw_urn) = def.static_urn
+                    && let Ok(urn) = Urn::parse(raw_urn)
+                {
+                    let label = def.label.to_string();
+                    let label_norm = normalize_for_search(&label);
+                    commands.push(CommandSearchEntry {
+                        urn,
+                        action: def.action.to_string(),
+                        label,
+                        icon: def.icon.to_string(),
+                        subtitle: None,
+                        label_norm,
+                    });
+                }
                 continue;
             }
 
