@@ -225,6 +225,11 @@ impl LauncherWindow {
         self.animation.play();
     }
 
+    /// Returns `true` while a hide animation is in progress.
+    pub fn is_animating_hide(&self) -> bool {
+        self.animating_hide.get()
+    }
+
     /// Reset search state for re-activation. Clears the entry and resets size.
     /// Does NOT set a loading state — the caller decides what to show.
     pub fn reset(&self) {
