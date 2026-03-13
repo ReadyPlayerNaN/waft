@@ -125,7 +125,17 @@ pub fn run() -> anyhow::Result<()> {
             let cmd_index_for_activate = command_index.clone();
             let usage_for_activate = usage_cache.clone();
             app.connect_activate(move |_| {
-                // Reset query and search entry text
+                if win_for_activate.window.is_visible() {
+                    if win_for_activate.is_animating_hide() {
+                        // Mid hide-animation: reverse back to visible from current opacity.
+                        win_for_activate.show();
+                    } else {
+                        // Fully visible or mid show-animation: start/continue fade-out.
+                        win_for_activate.hide();
+                    }
+                    return;
+                }
+                // Fully hidden: reset search and open fresh.
                 *query_for_activate.borrow_mut() = String::new();
                 win_for_activate.reset();
                 // Populate results immediately if entities are already in store;
