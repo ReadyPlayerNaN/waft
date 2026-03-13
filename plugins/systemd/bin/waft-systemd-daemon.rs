@@ -113,9 +113,9 @@ fn urn_id_to_unit(id: &str) -> String {
 }
 
 /// Map `UnitFileState` string to a boolean `enabled` value.
-/// "enabled" and "enabled-runtime" are considered enabled, all others are disabled.
+/// "enabled", "enabled-runtime", and "transient" are considered enabled.
 fn unit_file_state_to_enabled(state: &str) -> bool {
-    matches!(state, "enabled" | "enabled-runtime")
+    matches!(state, "enabled" | "enabled-runtime" | "transient")
 }
 
 /// Systemd plugin.
