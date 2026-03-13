@@ -30,7 +30,7 @@ fn icon_for_app_id(app_id: &str) -> String {
     if theme.has_icon(&lower) {
         return lower;
     }
-    if let Some(last) = app_id.split('.').last() {
+    if let Some(last) = app_id.split('.').next_back() {
         let last_lower = last.to_lowercase();
         if theme.has_icon(&last_lower) {
             return last_lower;
@@ -72,7 +72,7 @@ impl LauncherWindow {
         window.set_keyboard_mode(KeyboardMode::OnDemand);
         // No anchors = centered on screen
 
-        let search_pane = SearchPaneWidget::new("Search applications\u{2026}");
+        let search_pane = SearchPaneWidget::new("Search apps or type > for commands\u{2026}");
 
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -249,6 +249,17 @@ impl LauncherWindow {
                         let subtitle = Some(format!("Workspace {}", window.workspace_id));
                         (window.title.clone(), icon, ResultKind::Window, subtitle)
                     }
+                    RankedResult::Command {
+                        label,
+                        icon,
+                        subtitle,
+                        ..
+                    } => (
+                        label.clone(),
+                        icon.clone(),
+                        ResultKind::Command,
+                        subtitle.clone(),
+                    ),
                 };
                 let highlight_markup = if positions.is_empty() {
                     None

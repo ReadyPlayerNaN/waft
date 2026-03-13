@@ -218,10 +218,10 @@ impl KeyboardShortcutsPage {
 
         // Clear existing rows from their list boxes
         for row in &s.rows {
-            if let Some(parent) = row.widget().parent() {
-                if let Some(list_box) = parent.downcast_ref::<gtk::ListBox>() {
-                    list_box.remove(&row.widget());
-                }
+            if let Some(parent) = row.widget().parent()
+                && let Some(list_box) = parent.downcast_ref::<gtk::ListBox>()
+            {
+                list_box.remove(&row.widget());
             }
         }
         s.rows.clear();

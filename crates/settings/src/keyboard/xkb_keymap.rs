@@ -53,10 +53,10 @@ pub fn keysym_to_char(keysym: &str) -> Option<char> {
     }
 
     // XKB uses Unicode code points prefixed with U or 0x for some keysyms
-    if let Some(hex) = keysym.strip_prefix("U+").or_else(|| keysym.strip_prefix("U")) {
-        if let Ok(code) = u32::from_str_radix(hex, 16) {
-            return char::from_u32(code);
-        }
+    if let Some(hex) = keysym.strip_prefix("U+").or_else(|| keysym.strip_prefix("U"))
+        && let Ok(code) = u32::from_str_radix(hex, 16)
+    {
+        return char::from_u32(code);
     }
 
     KEYSYM_TABLE.get(keysym).copied()
@@ -87,25 +87,25 @@ pub fn parse_symbols_block(content: &str, variant: &str) -> HashMap<String, Stri
         // Match: key <CODE> { [ keysym, ... ] };
         if let Some(rest) = trimmed.strip_prefix("key") {
             let rest = rest.trim();
-            if let Some(code_start) = rest.find('<') {
-                if let Some(code_end) = rest.find('>') {
-                    let code = &rest[code_start + 1..code_end];
+            if let Some(code_start) = rest.find('<')
+                && let Some(code_end) = rest.find('>')
+            {
+                let code = &rest[code_start + 1..code_end];
 
-                    // Find the bracket contents
-                    if let Some(bracket_start) = rest.find('[') {
-                        if let Some(bracket_end) = rest.find(']') {
-                            let symbols_str = &rest[bracket_start + 1..bracket_end];
-                            let first_keysym = symbols_str
-                                .split(',')
-                                .next()
-                                .map(|s| s.trim().to_string());
+                // Find the bracket contents
+                if let Some(bracket_start) = rest.find('[')
+                    && let Some(bracket_end) = rest.find(']')
+                {
+                    let symbols_str = &rest[bracket_start + 1..bracket_end];
+                    let first_keysym = symbols_str
+                        .split(',')
+                        .next()
+                        .map(|s| s.trim().to_string());
 
-                            if let Some(ks) = first_keysym {
-                                if !ks.is_empty() {
-                                    result.insert(code.to_string(), ks);
-                                }
-                            }
-                        }
+                    if let Some(ks) = first_keysym
+                        && !ks.is_empty()
+                    {
+                        result.insert(code.to_string(), ks);
                     }
                 }
             }
@@ -248,12 +248,12 @@ fn find_matching_brace(content: &str, start: usize) -> Option<usize> {
 
 /// Parse an include reference like `"layout(variant)"` or `"layout"`.
 fn parse_include_ref(reference: &str) -> (String, String) {
-    if let Some(paren_start) = reference.find('(') {
-        if let Some(paren_end) = reference.find(')') {
-            let layout = reference[..paren_start].to_string();
-            let variant = reference[paren_start + 1..paren_end].to_string();
-            return (layout, variant);
-        }
+    if let Some(paren_start) = reference.find('(')
+        && let Some(paren_end) = reference.find(')')
+    {
+        let layout = reference[..paren_start].to_string();
+        let variant = reference[paren_start + 1..paren_end].to_string();
+        return (layout, variant);
     }
     (reference.to_string(), String::new())
 }

@@ -29,10 +29,8 @@ impl DesktopEntry {
         }
         // 2. Language-only prefix (split on '-' or '_')
         let lang = posix_locale.split(['-', '_']).next().unwrap_or("");
-        if !lang.is_empty() {
-            if let Some(name) = self.localized_names.get(lang) {
-                return name;
-            }
+        if !lang.is_empty() && let Some(name) = self.localized_names.get(lang) {
+            return name;
         }
         // 3. Fallback
         &self.name

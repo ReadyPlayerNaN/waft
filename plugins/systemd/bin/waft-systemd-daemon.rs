@@ -740,7 +740,7 @@ async fn read_timer_unit_content(
         .map(|p| p.join(format!("{name}.service")));
 
     let (command, working_directory, environment, after, restart, cpu_quota, memory_limit) =
-        match service_path.and_then(|p| Some(p)) {
+        match service_path {
             Some(sp) => match tokio::fs::read_to_string(&sp).await {
                 Ok(content) => {
                     let s = parse_unit_file(&content);

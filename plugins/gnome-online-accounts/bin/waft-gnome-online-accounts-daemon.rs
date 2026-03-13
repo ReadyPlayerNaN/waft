@@ -99,12 +99,11 @@ impl Plugin for GoaPlugin {
                 // Optimistic update (signal monitoring will also catch this)
                 {
                     let mut state = self.lock_state();
-                    if let Some(account) = state.accounts.get_mut(&account_id) {
-                        if let Some(svc) =
+                    if let Some(account) = state.accounts.get_mut(&account_id)
+                        && let Some(svc) =
                             account.services.iter_mut().find(|s| s.name == service_name)
-                        {
-                            svc.enabled = true;
-                        }
+                    {
+                        svc.enabled = true;
                     }
                 }
             }
@@ -148,12 +147,11 @@ impl Plugin for GoaPlugin {
                 // Optimistic update
                 {
                     let mut state = self.lock_state();
-                    if let Some(account) = state.accounts.get_mut(&account_id) {
-                        if let Some(svc) =
+                    if let Some(account) = state.accounts.get_mut(&account_id)
+                        && let Some(svc) =
                             account.services.iter_mut().find(|s| s.name == service_name)
-                        {
-                            svc.enabled = false;
-                        }
+                    {
+                        svc.enabled = false;
                     }
                 }
             }

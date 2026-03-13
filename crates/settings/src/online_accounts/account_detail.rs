@@ -13,6 +13,8 @@ use waft_protocol::entity::accounts::AccountStatus;
 use crate::i18n::t;
 use crate::online_accounts::account_row::ServiceProps;
 
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(AccountDetailOutput)>>>>;
+
 /// Props for the account detail page.
 #[derive(Clone, PartialEq)]
 pub struct AccountDetailProps {
@@ -37,7 +39,7 @@ pub struct AccountDetailPage {
     group: adw::PreferencesGroup,
     switch_rows: Vec<(String, adw::SwitchRow, glib::SignalHandlerId)>,
     remove_button: gtk::Button,
-    output_cb: Rc<RefCell<Option<Box<dyn Fn(AccountDetailOutput)>>>>,
+    output_cb: OutputCallback,
 }
 
 impl AccountDetailPage {
@@ -57,8 +59,7 @@ impl AccountDetailPage {
             .build();
         root.append(&group);
 
-        let output_cb: Rc<RefCell<Option<Box<dyn Fn(AccountDetailOutput)>>>> =
-            Rc::new(RefCell::new(None));
+        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
 
         let mut switch_rows = Vec::new();
         let controllable = props.status == AccountStatus::Active && !props.locked;
@@ -95,7 +96,7 @@ impl AccountDetailPage {
 
         let remove_group = adw::PreferencesGroup::builder().margin_top(24).build();
         let remove_button = gtk::Button::builder()
-            .label(&t("online-accounts-remove-account"))
+            .label(t("online-accounts-remove-account"))
             .css_classes(["destructive-action", "pill"])
             .halign(gtk::Align::Start)
             .sensitive(!props.locked)

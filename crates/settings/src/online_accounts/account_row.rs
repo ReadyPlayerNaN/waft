@@ -103,9 +103,11 @@ fn provider_icon(provider_name: &str) -> &'static str {
         "web-browser-symbolic"
     } else if lower.contains("nextcloud") {
         "folder-remote-symbolic"
-    } else if lower.contains("microsoft") || lower.contains("exchange") {
-        "mail-symbolic"
-    } else if lower.contains("imap") || lower.contains("smtp") {
+    } else if lower.contains("microsoft")
+        || lower.contains("exchange")
+        || lower.contains("imap")
+        || lower.contains("smtp")
+    {
         "mail-symbolic"
     } else {
         "contact-new-symbolic"

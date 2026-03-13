@@ -115,6 +115,7 @@ pub struct NotificationsPlugin {
 
 impl NotificationsPlugin {
     /// Create a new plugin instance with filter and sound configuration.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         state: Arc<StdMutex<State>>,
         outbound_tx: flume::Sender<OutboundEvent>,

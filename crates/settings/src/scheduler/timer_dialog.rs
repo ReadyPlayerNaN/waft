@@ -39,10 +39,10 @@ impl TimerDialog {
 
         // Header bar with Cancel and Save buttons
         let cancel_btn = gtk::Button::builder()
-            .label(&t("notif-cancel"))
+            .label(t("notif-cancel"))
             .build();
         let save_btn = gtk::Button::builder()
-            .label(&t("startup-save"))
+            .label(t("startup-save"))
             .css_classes(["suggested-action"])
             .build();
 

@@ -32,7 +32,15 @@ impl SearchIndex {
             windows: Vec::new(),
         }
     }
+}
 
+impl Default for SearchIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SearchIndex {
     /// Rebuild app entries from the entity store. Called when app entities change.
     pub fn rebuild_apps(&mut self, store: &EntityStore) {
         let raw: Vec<(Urn, App)> = store.get_entities_typed(entity::app::ENTITY_TYPE);

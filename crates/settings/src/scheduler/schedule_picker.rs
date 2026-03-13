@@ -353,45 +353,40 @@ fn parse_spec(spec: &str) -> ParsedSpec {
     // Every N minutes: *:0/N:00
     if let Some(rest) = spec.strip_prefix("*:0/") {
         let n_str = rest.strip_suffix(":00").unwrap_or(rest);
-        if let Ok(n) = n_str.parse::<u32>() {
-            if n >= 1 && n <= 59 {
-                return ParsedSpec::EveryNMinutes(n);
-            }
+        if let Ok(n) = n_str.parse::<u32>() && (1..=59).contains(&n) {
+            return ParsedSpec::EveryNMinutes(n);
         }
     }
     // Weekly: leading DOW token(s) before "*-*-* HH:MM:SS"
     let dow_abbrevs = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    if let Some(first) = spec.split_whitespace().next() {
-        if !first.is_empty()
-            && first
-                .split(',')
-                .all(|d| dow_abbrevs.iter().any(|&p| d.eq_ignore_ascii_case(p)))
-        {
-            let rest = spec[first.len()..].trim();
-            if let Some((h, m)) = parse_daily_time(rest) {
-                let mut days = [false; 7];
-                for token in first.split(',') {
-                    for (i, &name) in dow_abbrevs.iter().enumerate() {
-                        if token.eq_ignore_ascii_case(name) {
-                            days[i] = true;
-                        }
+    if let Some(first) = spec.split_whitespace().next()
+        && !first.is_empty()
+        && first
+            .split(',')
+            .all(|d| dow_abbrevs.iter().any(|&p| d.eq_ignore_ascii_case(p)))
+    {
+        let rest = spec[first.len()..].trim();
+        if let Some((h, m)) = parse_daily_time(rest) {
+            let mut days = [false; 7];
+            for token in first.split(',') {
+                for (i, &name) in dow_abbrevs.iter().enumerate() {
+                    if token.eq_ignore_ascii_case(name) {
+                        days[i] = true;
                     }
                 }
-                return ParsedSpec::Weekly(days, h, m);
             }
+            return ParsedSpec::Weekly(days, h, m);
         }
     }
     // Daily or Monthly: *-*-* HH:MM or *-*-DD HH:MM
-    if let Some((day_field, time_str)) = split_date_time(spec) {
-        if let Some((h, m)) = parse_hhmm(time_str) {
-            if day_field == "*" {
-                return ParsedSpec::Daily(h, m);
-            }
-            if let Ok(d) = day_field.parse::<u32>() {
-                if (1..=31).contains(&d) {
-                    return ParsedSpec::Monthly(d, h, m);
-                }
-            }
+    if let Some((day_field, time_str)) = split_date_time(spec)
+        && let Some((h, m)) = parse_hhmm(time_str)
+    {
+        if day_field == "*" {
+            return ParsedSpec::Daily(h, m);
+        }
+        if let Ok(d) = day_field.parse::<u32>() && (1..=31).contains(&d) {
+            return ParsedSpec::Monthly(d, h, m);
         }
     }
     ParsedSpec::Custom(spec.to_string())

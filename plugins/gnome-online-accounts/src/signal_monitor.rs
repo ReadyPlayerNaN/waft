@@ -165,15 +165,15 @@ fn handle_account_properties_changed(
             && let Ok(disabled) = bool::try_from(val.clone())
         {
             let enabled = !disabled;
-            if let Some(svc) = account.services.iter_mut().find(|s| s.name == *service_id) {
-                if svc.enabled != enabled {
-                    info!(
-                        "[goa] Account {} service {} enabled: {}",
-                        account_id, service_id, enabled
-                    );
-                    svc.enabled = enabled;
-                    changed = true;
-                }
+            if let Some(svc) = account.services.iter_mut().find(|s| s.name == *service_id)
+                && svc.enabled != enabled
+            {
+                info!(
+                    "[goa] Account {} service {} enabled: {}",
+                    account_id, service_id, enabled
+                );
+                svc.enabled = enabled;
+                changed = true;
             }
         }
     }

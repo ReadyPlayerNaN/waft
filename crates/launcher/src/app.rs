@@ -11,14 +11,29 @@ use waft_protocol::entity;
 use waft_protocol::urn::Urn;
 use waft_ui_gtk::widgets::search_pane::SearchPaneOutput;
 
-use crate::ranking::{RankedResult, rank_results};
+use crate::command_index::CommandIndex;
+use waft_protocol::commands::command_entity_types;
+use crate::ranking::{RankedResult, rank_commands, rank_results};
 use crate::search_index::SearchIndex;
 use crate::usage::{UsageMap, load_usage, record_launch_in, save_usage_to, usage_file_path};
 use crate::window::LauncherWindow;
 
 type ActionSender = Rc<RefCell<Option<std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>>>>;
 
-const ENTITY_TYPES: &[&str] = &[entity::app::ENTITY_TYPE, entity::window::ENTITY_TYPE];
+const ENTITY_TYPES: &[&str] = &[
+    entity::app::ENTITY_TYPE,
+    entity::window::ENTITY_TYPE,
+    // Command palette entity types
+    entity::session::SESSION_ENTITY_TYPE,
+    entity::display::DARK_MODE_ENTITY_TYPE,
+    entity::display::NIGHT_LIGHT_ENTITY_TYPE,
+    entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
+    entity::notification::DND_ENTITY_TYPE,
+    entity::notification::RECORDING_ENTITY_TYPE,
+    entity::bluetooth::BluetoothDevice::ENTITY_TYPE,
+    entity::network::VPN_ENTITY_TYPE,
+    entity::storage::BACKUP_METHOD_ENTITY_TYPE,
+];
 
 pub fn run() -> anyhow::Result<()> {
     let config = Config::load();
@@ -98,6 +113,7 @@ pub fn run() -> anyhow::Result<()> {
         let current_query: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
         let usage_cache: Rc<RefCell<UsageMap>> = Rc::new(RefCell::new(load_usage()));
         let search_index: Rc<RefCell<SearchIndex>> = Rc::new(RefCell::new(SearchIndex::new()));
+        let command_index: Rc<RefCell<CommandIndex>> = Rc::new(RefCell::new(CommandIndex::new()));
 
         // connect_activate fires on first launch (after startup) and on every
         // subsequent invocation of `waft-launcher` while this process is running.
@@ -106,6 +122,7 @@ pub fn run() -> anyhow::Result<()> {
             let win_for_activate = win.clone();
             let query_for_activate = current_query.clone();
             let index_for_activate = search_index.clone();
+            let cmd_index_for_activate = command_index.clone();
             let usage_for_activate = usage_cache.clone();
             app.connect_activate(move |_| {
                 // Reset query and search entry text
@@ -113,7 +130,7 @@ pub fn run() -> anyhow::Result<()> {
                 win_for_activate.reset();
                 // Populate results immediately if entities are already in store;
                 // this also clears the loading spinner when data is present.
-                update_results(&win_for_activate, &index_for_activate.borrow(), "", &usage_for_activate.borrow(), rank_by_usage, max_results);
+                update_results(&win_for_activate, &index_for_activate.borrow(), &cmd_index_for_activate.borrow(), "", &usage_for_activate.borrow(), rank_by_usage, max_results);
                 win_for_activate.show();
                 win_for_activate.grab_focus();
             });
@@ -123,6 +140,7 @@ pub fn run() -> anyhow::Result<()> {
         {
             let win_ref = win.clone();
             let index_ref = search_index.clone();
+            let cmd_index_ref = command_index.clone();
             let query_ref = current_query.clone();
             let action_tx = action_tx.clone();
             let usage_for_output = usage_cache.clone();
@@ -132,6 +150,7 @@ pub fn run() -> anyhow::Result<()> {
                     update_results(
                         &win_ref,
                         &index_ref.borrow(),
+                        &cmd_index_ref.borrow(),
                         &query,
                         &usage_for_output.borrow(),
                         rank_by_usage,
@@ -157,24 +176,41 @@ pub fn run() -> anyhow::Result<()> {
             let win_ref = win.clone();
             let store_ref = Rc::clone(&entity_store);
             let index_ref = search_index.clone();
+            let cmd_index_ref = command_index.clone();
             let query_ref = current_query.clone();
             let usage_for_subscribe = usage_cache.clone();
             entity_store.subscribe_type(entity::app::ENTITY_TYPE, move || {
                 index_ref.borrow_mut().rebuild_apps(&store_ref);
                 let query = query_ref.borrow().clone();
-                update_results(&win_ref, &index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
+                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
             });
         }
         {
             let win_ref = win.clone();
             let store_ref = Rc::clone(&entity_store);
             let index_ref = search_index.clone();
+            let cmd_index_ref = command_index.clone();
             let query_ref = current_query.clone();
             let usage_for_subscribe = usage_cache.clone();
             entity_store.subscribe_type(entity::window::ENTITY_TYPE, move || {
                 index_ref.borrow_mut().rebuild_windows(&store_ref);
                 let query = query_ref.borrow().clone();
-                update_results(&win_ref, &index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
+                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
+            });
+        }
+
+        // Command entity type subscriptions -- rebuild command index, then re-rank
+        for &entity_type in command_entity_types() {
+            let win_ref = win.clone();
+            let store_ref = Rc::clone(&entity_store);
+            let index_ref = search_index.clone();
+            let cmd_index_ref = command_index.clone();
+            let query_ref = current_query.clone();
+            let usage_for_subscribe = usage_cache.clone();
+            entity_store.subscribe_type(entity_type, move || {
+                cmd_index_ref.borrow_mut().rebuild(&store_ref);
+                let query = query_ref.borrow().clone();
+                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
             });
         }
 
@@ -183,6 +219,7 @@ pub fn run() -> anyhow::Result<()> {
             let win_ref = win.clone();
             let store_ref = Rc::clone(&entity_store);
             let index_ref = search_index.clone();
+            let cmd_index_ref = command_index.clone();
             let usage_for_init = usage_cache.clone();
             gtk::glib::idle_add_local_once(move || {
                 {
@@ -190,7 +227,8 @@ pub fn run() -> anyhow::Result<()> {
                     idx.rebuild_apps(&store_ref);
                     idx.rebuild_windows(&store_ref);
                 }
-                update_results(&win_ref, &index_ref.borrow(), "", &usage_for_init.borrow(), rank_by_usage, max_results);
+                cmd_index_ref.borrow_mut().rebuild(&store_ref);
+                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), "", &usage_for_init.borrow(), rank_by_usage, max_results);
             });
         }
 
@@ -221,12 +259,18 @@ pub fn run() -> anyhow::Result<()> {
 fn update_results(
     win: &LauncherWindow,
     index: &SearchIndex,
+    command_idx: &CommandIndex,
     query: &str,
     usage: &UsageMap,
     rank_by_usage: bool,
     max_results: usize,
 ) {
-    let ranked = rank_results(index, query, usage, rank_by_usage, max_results);
+    let ranked = if let Some(cmd_query) = query.strip_prefix('>') {
+        let cmd_query = cmd_query.trim_start();
+        rank_commands(command_idx, cmd_query, max_results)
+    } else {
+        rank_results(index, query, usage, rank_by_usage, max_results)
+    };
     // Clear the loading spinner only once real entity data has arrived from the
     // daemon. An empty store with an empty query is still "loading", not "ready".
     if !index.is_empty() {
@@ -251,6 +295,11 @@ fn activate_result(
         }
         RankedResult::Window { urn, .. } => {
             focus_window(tx, urn);
+        }
+        RankedResult::Command { urn, action, .. } => {
+            if let Err(e) = tx.send((urn.clone(), action.clone(), serde_json::Value::Null)) {
+                log::warn!("[launcher] failed to send command action: {e}");
+            }
         }
     }
     win.hide();

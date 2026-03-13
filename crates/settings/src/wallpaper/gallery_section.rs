@@ -233,6 +233,7 @@ fn copy_file_to_gallery_folder(source: &Path, dest_dir: &Path) -> Option<PathBuf
 }
 
 /// Remove the old gallery group and recreate it from disk, inserting at the correct position.
+#[allow(clippy::too_many_arguments)]
 fn refresh_gallery_group(
     folder_name: &str,
     groups: &Rc<RefCell<HashMap<String, GalleryGroup>>>,

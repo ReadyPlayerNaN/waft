@@ -22,6 +22,9 @@ pub type EntityActionCallback = Rc<dyn Fn(Urn, String, serde_json::Value)>;
 /// Type alias for subscriber map to reduce complexity.
 type SubscriberMap = RefCell<HashMap<String, Vec<Rc<dyn Fn()>>>>;
 
+/// Type alias for action error callback list to reduce complexity.
+type ActionErrorCallbacks = RefCell<Vec<Rc<dyn Fn(Uuid, String)>>>;
+
 /// A cached entity: URN, entity type, and raw JSON data.
 #[derive(Clone)]
 struct CachedEntity {
@@ -41,7 +44,7 @@ pub struct EntityStore {
     /// Per-entity-type subscribers: entity_type -> list of callbacks
     subscribers: SubscriberMap,
     /// Callbacks invoked when an action error is received from the daemon.
-    action_error_callbacks: RefCell<Vec<Rc<dyn Fn(Uuid, String)>>>,
+    action_error_callbacks: ActionErrorCallbacks,
 }
 
 impl EntityStore {

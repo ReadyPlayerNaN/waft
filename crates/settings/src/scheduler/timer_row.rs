@@ -90,7 +90,7 @@ impl RenderFn for TimerRowRender {
 
         // Run now button
         let run_emit = emit.clone();
-        let run_btn = VButton::new(&t("scheduler-run-now")).on_click(move || {
+        let run_btn = VButton::new(t("scheduler-run-now")).on_click(move || {
             if let Some(ref cb) = *run_emit.borrow() {
                 cb(TimerRowOutput::RunNow);
             }
@@ -98,7 +98,7 @@ impl RenderFn for TimerRowRender {
 
         // Edit button
         let edit_emit = emit.clone();
-        let edit_btn = VButton::new(&t("scheduler-edit-timer")).on_click(move || {
+        let edit_btn = VButton::new(t("scheduler-edit-timer")).on_click(move || {
             if let Some(ref cb) = *edit_emit.borrow() {
                 cb(TimerRowOutput::Edit);
             }
@@ -106,7 +106,7 @@ impl RenderFn for TimerRowRender {
 
         // Delete button
         let delete_emit = emit.clone();
-        let delete_btn = VButton::new(&t("scheduler-delete-timer")).on_click(move || {
+        let delete_btn = VButton::new(t("scheduler-delete-timer")).on_click(move || {
             if let Some(ref cb) = *delete_emit.borrow() {
                 cb(TimerRowOutput::Delete);
             }

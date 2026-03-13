@@ -15,6 +15,8 @@ use waft_protocol::entity::accounts::{self, OnlineAccount};
 use waft_ui_gtk::vdom::Component;
 
 use crate::display::settings_sub_page::SettingsSubPage;
+
+type AccountRowEntry = (AccountRow, Urn, Rc<dyn Fn()>);
 use crate::i18n::t;
 use crate::online_accounts::account_detail::{
     AccountDetailOutput, AccountDetailPage, AccountDetailProps,
@@ -29,7 +31,7 @@ pub struct OnlineAccountsPage {
 
 /// Internal mutable state for the Online Accounts page.
 struct OnlineAccountsPageState {
-    account_rows: HashMap<String, (AccountRow, Urn, Rc<dyn Fn()>)>,
+    account_rows: HashMap<String, AccountRowEntry>,
     account_details: HashMap<String, AccountDetailPage>,
     sorted_ids: Vec<String>,
     list_box: gtk::ListBox,
@@ -74,7 +76,7 @@ impl OnlineAccountsPage {
         root.append(&group);
 
         let add_button = gtk::Button::builder()
-            .label(&t("online-accounts-add-account"))
+            .label(t("online-accounts-add-account"))
             .css_classes(["suggested-action", "pill"])
             .halign(gtk::Align::Start)
             .build();
