@@ -1,8 +1,8 @@
 //! Generic settings sub-page wrapper.
 //!
-//! Wraps arbitrary content in a scrollable `adw::NavigationPage` for
-//! push/pop navigation. No HeaderBar or ToolbarView -- the parent
-//! NavigationView manages the header bar automatically.
+//! Wraps arbitrary content in a scrollable `adw::NavigationPage` with its own
+//! `AdwHeaderBar`. When pushed onto a `NavigationView`, the header bar
+//! automatically shows a back button and the page title.
 
 use adw::prelude::*;
 
@@ -23,9 +23,14 @@ impl SettingsSubPage {
             .child(&clamp)
             .build();
 
+        let header = adw::HeaderBar::new();
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&header);
+        toolbar.set_content(Some(&scrolled));
+
         let root = adw::NavigationPage::builder()
             .title(title)
-            .child(&scrolled)
+            .child(&toolbar)
             .build();
 
         Self { root }

@@ -276,32 +276,34 @@ impl SettingsWindow {
             stack.set_visible_child_name("bluetooth");
         }
 
-        let content_header = adw::HeaderBar::new();
         let content_scrolled = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
 
         content_scrolled.set_child(Some(&stack));
 
-        let content_toolbar = adw::ToolbarView::new();
-        content_toolbar.add_top_bar(&content_header);
-
         // Wrap the stack content in a NavigationView to support sub-page drill-down.
         // The stack becomes the root navigation page; sub-pages are pushed on top.
+        // The HeaderBar is inside the root NavigationPage so it reacts to pushed
+        // sub-pages (back button, title changes) automatically.
         let initial_title =
             page_title(stack.visible_child_name().as_deref().unwrap_or("bluetooth"));
+
+        let root_header = adw::HeaderBar::new();
+        let root_toolbar = adw::ToolbarView::new();
+        root_toolbar.add_top_bar(&root_header);
+        root_toolbar.set_content(Some(&content_scrolled));
+
         let root_nav_page = adw::NavigationPage::builder()
             .title(&initial_title)
-            .child(&content_scrolled)
+            .child(&root_toolbar)
             .build();
 
         navigation_view.add(&root_nav_page);
 
-        content_toolbar.set_content(Some(&navigation_view));
-
         let content_page = adw::NavigationPage::builder()
             .title(initial_title)
-            .child(&content_toolbar)
+            .child(&navigation_view)
             .build();
 
         split_view.set_content(Some(&content_page));
