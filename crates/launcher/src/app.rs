@@ -8,11 +8,11 @@ use adw::prelude::*;
 use waft_client::{ClientEvent, EntityStore, WaftClient, daemon_connection_task};
 use waft_config::Config;
 use waft_protocol::entity;
-use waft_protocol::entity::app::App;
 use waft_protocol::urn::Urn;
 use waft_ui_gtk::widgets::search_pane::SearchPaneOutput;
 
 use crate::ranking::{RankedResult, rank_results};
+use crate::search_index::SearchIndex;
 use crate::usage::{UsageMap, load_usage, record_launch_in, save_usage_to, usage_file_path};
 use crate::window::LauncherWindow;
 
@@ -97,6 +97,7 @@ pub fn run() -> anyhow::Result<()> {
         let win = Rc::new(launcher_win);
         let current_query: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
         let usage_cache: Rc<RefCell<UsageMap>> = Rc::new(RefCell::new(load_usage()));
+        let search_index: Rc<RefCell<SearchIndex>> = Rc::new(RefCell::new(SearchIndex::new()));
 
         // connect_activate fires on first launch (after startup) and on every
         // subsequent invocation of `waft-launcher` while this process is running.
@@ -104,7 +105,7 @@ pub fn run() -> anyhow::Result<()> {
         {
             let win_for_activate = win.clone();
             let query_for_activate = current_query.clone();
-            let store_for_activate = entity_store.clone();
+            let index_for_activate = search_index.clone();
             let usage_for_activate = usage_cache.clone();
             app.connect_activate(move |_| {
                 // Reset query and search entry text
@@ -112,7 +113,7 @@ pub fn run() -> anyhow::Result<()> {
                 win_for_activate.reset();
                 // Populate results immediately if entities are already in store;
                 // this also clears the loading spinner when data is present.
-                update_results(&win_for_activate, &store_for_activate, "", &usage_for_activate.borrow(), rank_by_usage, max_results);
+                update_results(&win_for_activate, &index_for_activate.borrow(), "", &usage_for_activate.borrow(), rank_by_usage, max_results);
                 win_for_activate.show();
                 win_for_activate.grab_focus();
             });
@@ -121,7 +122,7 @@ pub fn run() -> anyhow::Result<()> {
         // Connect search pane output
         {
             let win_ref = win.clone();
-            let store_ref = Rc::clone(&entity_store);
+            let index_ref = search_index.clone();
             let query_ref = current_query.clone();
             let action_tx = action_tx.clone();
             let usage_for_output = usage_cache.clone();
@@ -130,7 +131,7 @@ pub fn run() -> anyhow::Result<()> {
                     *query_ref.borrow_mut() = query.clone();
                     update_results(
                         &win_ref,
-                        &store_ref,
+                        &index_ref.borrow(),
                         &query,
                         &usage_for_output.borrow(),
                         rank_by_usage,
@@ -151,25 +152,29 @@ pub fn run() -> anyhow::Result<()> {
             });
         }
 
-        // Entity store subscriptions -- rebuild results on any app or window entity change
+        // Entity store subscriptions -- rebuild search index, then re-rank
         {
             let win_ref = win.clone();
             let store_ref = Rc::clone(&entity_store);
+            let index_ref = search_index.clone();
             let query_ref = current_query.clone();
             let usage_for_subscribe = usage_cache.clone();
             entity_store.subscribe_type(entity::app::ENTITY_TYPE, move || {
+                index_ref.borrow_mut().rebuild_apps(&store_ref);
                 let query = query_ref.borrow().clone();
-                update_results(&win_ref, &store_ref, &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
+                update_results(&win_ref, &index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
             });
         }
         {
             let win_ref = win.clone();
             let store_ref = Rc::clone(&entity_store);
+            let index_ref = search_index.clone();
             let query_ref = current_query.clone();
             let usage_for_subscribe = usage_cache.clone();
             entity_store.subscribe_type(entity::window::ENTITY_TYPE, move || {
+                index_ref.borrow_mut().rebuild_windows(&store_ref);
                 let query = query_ref.borrow().clone();
-                update_results(&win_ref, &store_ref, &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
+                update_results(&win_ref, &index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
             });
         }
 
@@ -177,9 +182,15 @@ pub fn run() -> anyhow::Result<()> {
         {
             let win_ref = win.clone();
             let store_ref = Rc::clone(&entity_store);
+            let index_ref = search_index.clone();
             let usage_for_init = usage_cache.clone();
             gtk::glib::idle_add_local_once(move || {
-                update_results(&win_ref, &store_ref, "", &usage_for_init.borrow(), rank_by_usage, max_results);
+                {
+                    let mut idx = index_ref.borrow_mut();
+                    idx.rebuild_apps(&store_ref);
+                    idx.rebuild_windows(&store_ref);
+                }
+                update_results(&win_ref, &index_ref.borrow(), "", &usage_for_init.borrow(), rank_by_usage, max_results);
             });
         }
 
@@ -209,19 +220,16 @@ pub fn run() -> anyhow::Result<()> {
 
 fn update_results(
     win: &LauncherWindow,
-    store: &EntityStore,
+    index: &SearchIndex,
     query: &str,
     usage: &UsageMap,
     rank_by_usage: bool,
     max_results: usize,
 ) {
-    let all_apps: Vec<(Urn, App)> = store.get_entities_typed(entity::app::ENTITY_TYPE);
-    let all_windows: Vec<(Urn, entity::window::Window)> = store.get_entities_typed(entity::window::ENTITY_TYPE);
-    let mut ranked = rank_results(&all_apps, &all_windows, query, usage, rank_by_usage);
-    ranked.truncate(max_results);
+    let ranked = rank_results(index, query, usage, rank_by_usage, max_results);
     // Clear the loading spinner only once real entity data has arrived from the
     // daemon. An empty store with an empty query is still "loading", not "ready".
-    if !all_apps.is_empty() || !all_windows.is_empty() {
+    if !index.is_empty() {
         win.search_pane().set_loading(false);
     }
     win.set_results(ranked, query);
