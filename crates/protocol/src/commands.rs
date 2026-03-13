@@ -16,6 +16,9 @@ pub struct CommandDef {
     pub label: &'static str,
     pub icon: &'static str,
     pub subtitle_fn: fn(&serde_json::Value) -> Option<String>,
+    /// URN to use when no live entities exist for this entity type.
+    /// `None` means the command only appears when entities are present.
+    pub static_urn: Option<&'static str>,
 }
 
 fn no_subtitle(_v: &serde_json::Value) -> Option<String> {
@@ -46,6 +49,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Lock Screen",
         icon: "system-lock-screen-symbolic",
         subtitle_fn: no_subtitle,
+        static_urn: Some("systemd/session/default"),
     },
     CommandDef {
         entity_type: SESSION_ENTITY_TYPE,
@@ -53,6 +57,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Log Out",
         icon: "system-log-out-symbolic",
         subtitle_fn: no_subtitle,
+        static_urn: Some("systemd/session/default"),
     },
     CommandDef {
         entity_type: SESSION_ENTITY_TYPE,
@@ -60,6 +65,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Reboot",
         icon: "system-reboot-symbolic",
         subtitle_fn: no_subtitle,
+        static_urn: Some("systemd/session/default"),
     },
     CommandDef {
         entity_type: SESSION_ENTITY_TYPE,
@@ -67,6 +73,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Shut Down",
         icon: "system-shutdown-symbolic",
         subtitle_fn: no_subtitle,
+        static_urn: Some("systemd/session/default"),
     },
     CommandDef {
         entity_type: SESSION_ENTITY_TYPE,
@@ -74,6 +81,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Suspend",
         icon: "weather-clear-night-symbolic",
         subtitle_fn: no_subtitle,
+        static_urn: Some("systemd/session/default"),
     },
     // Dark mode
     CommandDef {
@@ -82,6 +90,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Toggle Dark Mode",
         icon: "weather-clear-night-symbolic",
         subtitle_fn: active_subtitle,
+        static_urn: Some("darkman/dark-mode/default"),
     },
     // Night light
     CommandDef {
@@ -90,6 +99,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Toggle Night Light",
         icon: "night-light-symbolic",
         subtitle_fn: active_subtitle,
+        static_urn: Some("sunsetr/night-light/default"),
     },
     // Caffeine (sleep inhibitor)
     CommandDef {
@@ -98,6 +108,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Toggle Caffeine",
         icon: "preferences-system-time-symbolic",
         subtitle_fn: active_subtitle,
+        static_urn: Some("caffeine/sleep-inhibitor/default"),
     },
     // Do Not Disturb
     CommandDef {
@@ -106,6 +117,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Toggle Do Not Disturb",
         icon: "notifications-disabled-symbolic",
         subtitle_fn: active_subtitle,
+        static_urn: Some("notifications/dnd/default"),
     },
     // Recording
     CommandDef {
@@ -114,6 +126,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Toggle Recording",
         icon: "media-record-symbolic",
         subtitle_fn: active_subtitle,
+        static_urn: Some("notifications/recording/default"),
     },
     // Bluetooth device
     CommandDef {
@@ -122,6 +135,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Connect",
         icon: "bluetooth-symbolic",
         subtitle_fn: name_subtitle,
+        static_urn: None,
     },
     CommandDef {
         entity_type: BluetoothDevice::ENTITY_TYPE,
@@ -129,6 +143,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Disconnect",
         icon: "bluetooth-disconnected-symbolic",
         subtitle_fn: name_subtitle,
+        static_urn: None,
     },
     // VPN
     CommandDef {
@@ -137,6 +152,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Connect VPN",
         icon: "network-vpn-symbolic",
         subtitle_fn: name_subtitle,
+        static_urn: None,
     },
     CommandDef {
         entity_type: VPN_ENTITY_TYPE,
@@ -144,6 +160,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Disconnect VPN",
         icon: "network-vpn-symbolic",
         subtitle_fn: name_subtitle,
+        static_urn: None,
     },
     // Syncthing (backup method)
     CommandDef {
@@ -152,6 +169,7 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
         label: "Toggle Syncthing",
         icon: "folder-sync-symbolic",
         subtitle_fn: active_subtitle,
+        static_urn: Some("syncthing/backup-method/default"),
     },
 ];
 
