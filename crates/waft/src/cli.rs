@@ -31,6 +31,14 @@ pub enum Command {
         #[arg(short, long)]
         verbose: bool,
     },
+    /// List and run command palette actions
+    Commands {
+        /// Filter commands by label
+        filter: Option<String>,
+        /// Run the best-matching command instead of listing
+        #[arg(short, long)]
+        run: bool,
+    },
     /// Query live entity state from the daemon
     #[command(alias = "state")]
     Query {
@@ -196,6 +204,77 @@ mod tests {
                 assert_eq!(entity_type.as_deref(), Some("audio-device"));
             }
             _ => panic!("expected Protocol command"),
+        }
+    }
+
+    #[test]
+    fn commands_no_args() {
+        let cli = Cli::try_parse_from(["waft", "commands"]).unwrap();
+        match cli.command {
+            Some(Command::Commands { filter, run }) => {
+                assert_eq!(filter, None);
+                assert!(!run);
+            }
+            _ => panic!("expected Commands command"),
+        }
+    }
+
+    #[test]
+    fn commands_with_filter() {
+        let cli = Cli::try_parse_from(["waft", "commands", "dark"]).unwrap();
+        match cli.command {
+            Some(Command::Commands { filter, run }) => {
+                assert_eq!(filter.as_deref(), Some("dark"));
+                assert!(!run);
+            }
+            _ => panic!("expected Commands command"),
+        }
+    }
+
+    #[test]
+    fn commands_with_run_flag() {
+        let cli = Cli::try_parse_from(["waft", "commands", "--run", "lock"]).unwrap();
+        match cli.command {
+            Some(Command::Commands { filter, run }) => {
+                assert_eq!(filter.as_deref(), Some("lock"));
+                assert!(run);
+            }
+            _ => panic!("expected Commands command"),
+        }
+    }
+
+    #[test]
+    fn commands_with_run_short_flag() {
+        let cli = Cli::try_parse_from(["waft", "commands", "-r", "dark"]).unwrap();
+        match cli.command {
+            Some(Command::Commands { filter, run }) => {
+                assert_eq!(filter.as_deref(), Some("dark"));
+                assert!(run);
+            }
+            _ => panic!("expected Commands command"),
+        }
+    }
+
+    #[test]
+    fn commands_with_json() {
+        let cli = Cli::try_parse_from(["waft", "-j", "commands"]).unwrap();
+        assert!(cli.json);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Commands { filter: None, run: false })
+        ));
+    }
+
+    #[test]
+    fn commands_with_json_and_filter() {
+        let cli = Cli::try_parse_from(["waft", "-j", "commands", "dark"]).unwrap();
+        assert!(cli.json);
+        match cli.command {
+            Some(Command::Commands { filter, run }) => {
+                assert_eq!(filter.as_deref(), Some("dark"));
+                assert!(!run);
+            }
+            _ => panic!("expected Commands command"),
         }
     }
 

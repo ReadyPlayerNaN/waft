@@ -1,6 +1,7 @@
 mod action_tracker;
 mod claim_tracker;
 mod cli;
+mod commands_command;
 mod connection;
 mod crash_tracker;
 mod daemon;
@@ -9,6 +10,7 @@ mod plugin_spawner;
 mod protocol_command;
 mod query_command;
 mod registry;
+mod socket_io;
 
 use std::path::PathBuf;
 
@@ -39,6 +41,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 plugin_discovery::print_plugin_description(&name, cli.json);
             }
         },
+        Some(Command::Commands { filter, run }) => {
+            commands_command::run(cli.json, filter.as_deref(), run);
+        }
         Some(Command::Protocol { entity_type, domain, verbose }) => {
             protocol_command::run(
                 cli.json,

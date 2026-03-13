@@ -3,11 +3,12 @@
 use crate::icons::Icon;
 use crate::vdom::{RenderCallback, RenderComponent, RenderFn, VBox, VIcon, VLabel, VNode};
 
-/// Whether the result is an application or a compositor window.
+/// Whether the result is an application, compositor window, or command.
 #[derive(Clone, PartialEq)]
 pub enum ResultKind {
     App,
     Window,
+    Command,
 }
 
 /// Properties for an app result row.
@@ -33,6 +34,7 @@ impl RenderFn for AppResultRowRender {
         let (badge_text, badge_modifier) = match props.kind {
             ResultKind::App => ("A", "badge-app"),
             ResultKind::Window => ("W", "badge-window"),
+            ResultKind::Command => (">", "badge-command"),
         };
 
         VNode::vbox(

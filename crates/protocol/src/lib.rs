@@ -14,6 +14,7 @@
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
+pub mod commands;
 pub mod description;
 pub mod entity;
 pub mod message;

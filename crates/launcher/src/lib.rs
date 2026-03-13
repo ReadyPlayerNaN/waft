@@ -1,4 +1,5 @@
 pub mod app;
+pub mod command_index;
 pub mod fuzzy;
 pub mod normalize;
 pub mod ranking;

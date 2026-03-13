@@ -1,15 +1,16 @@
-//! Search result ranking for apps and windows.
+//! Search result ranking for apps, windows, and commands.
 
 use waft_protocol::entity;
 use waft_protocol::entity::app::App;
 use waft_protocol::Urn;
 
+use crate::command_index::CommandIndex;
 use crate::fuzzy::{fuzzy_match_positions_chars, fuzzy_score_chars};
 use crate::normalize::normalize_for_search;
 use crate::search_index::SearchIndex;
 use crate::usage::{AppUsage, UsageMap};
 
-/// A ranked search result (app or window).
+/// A ranked search result (app, window, or command).
 #[derive(Debug, Clone)]
 pub enum RankedResult {
     App {
@@ -24,24 +25,46 @@ pub enum RankedResult {
         score: f64,
         highlight_positions: Vec<usize>,
     },
+    Command {
+        urn: Urn,
+        action: String,
+        label: String,
+        icon: String,
+        subtitle: Option<String>,
+        score: f64,
+        highlight_positions: Vec<usize>,
+    },
 }
 
 impl RankedResult {
     pub fn urn(&self) -> &Urn {
         match self {
-            Self::App { urn, .. } | Self::Window { urn, .. } => urn,
+            Self::App { urn, .. } | Self::Window { urn, .. } | Self::Command { urn, .. } => urn,
         }
     }
 
     pub fn score(&self) -> f64 {
         match self {
-            Self::App { score, .. } | Self::Window { score, .. } => *score,
+            Self::App { score, .. }
+            | Self::Window { score, .. }
+            | Self::Command { score, .. } => *score,
         }
     }
 
     pub fn highlight_positions(&self) -> &[usize] {
         match self {
-            Self::App { highlight_positions, .. } | Self::Window { highlight_positions, .. } => highlight_positions,
+            Self::App {
+                highlight_positions,
+                ..
+            }
+            | Self::Window {
+                highlight_positions,
+                ..
+            }
+            | Self::Command {
+                highlight_positions,
+                ..
+            } => highlight_positions,
         }
     }
 }
@@ -50,6 +73,7 @@ impl RankedResult {
 enum ScoredEntry {
     App { index: usize, score: f64 },
     Window { index: usize, score: f64 },
+    Command { index: usize, score: f64 },
 }
 
 /// Rank apps and windows by relevance to `query`.
@@ -143,10 +167,14 @@ pub fn rank_results(
     // Sort by score descending and truncate to max_results
     scored.sort_by(|a, b| {
         let sa = match a {
-            ScoredEntry::App { score, .. } | ScoredEntry::Window { score, .. } => *score,
+            ScoredEntry::App { score, .. }
+            | ScoredEntry::Window { score, .. }
+            | ScoredEntry::Command { score, .. } => *score,
         };
         let sb = match b {
-            ScoredEntry::App { score, .. } | ScoredEntry::Window { score, .. } => *score,
+            ScoredEntry::App { score, .. }
+            | ScoredEntry::Window { score, .. }
+            | ScoredEntry::Command { score, .. } => *score,
         };
         sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
     });
@@ -225,6 +253,93 @@ pub fn rank_results(
                     highlight_positions,
                 }
             }
+            // rank_results never produces Command scored entries.
+            ScoredEntry::Command { .. } => unreachable!(),
+        })
+        .collect()
+}
+
+/// Rank commands by relevance to `query`.
+///
+/// Two-pass approach matching `rank_results`:
+/// - Pass 1: score all commands using `fuzzy_score_chars`.
+/// - Pass 2: compute highlight positions for top N.
+///
+/// Empty query: all commands sorted alphabetically by label.
+pub fn rank_commands(
+    command_index: &CommandIndex,
+    query: &str,
+    max_results: usize,
+) -> Vec<RankedResult> {
+    let query_norm = normalize_for_search(query);
+
+    // Pass 1: score all commands
+    let mut scored: Vec<ScoredEntry> = Vec::new();
+
+    for (i, entry) in command_index.commands.iter().enumerate() {
+        let score = if query.is_empty() {
+            // Alphabetical: use negative ASCII value of first char for stable sort
+            let alpha = entry
+                .label_norm
+                .chars
+                .first()
+                .map(|c| -(*c as i32 as f64))
+                .unwrap_or(0.0);
+            Some(alpha)
+        } else {
+            fuzzy_score_chars(&query_norm.chars, &entry.label_norm.chars)
+        };
+
+        if let Some(score) = score {
+            scored.push(ScoredEntry::Command { index: i, score });
+        }
+    }
+
+    // Sort by score descending and truncate
+    scored.sort_by(|a, b| {
+        let sa = match a {
+            ScoredEntry::App { score, .. }
+            | ScoredEntry::Window { score, .. }
+            | ScoredEntry::Command { score, .. } => *score,
+        };
+        let sb = match b {
+            ScoredEntry::App { score, .. }
+            | ScoredEntry::Window { score, .. }
+            | ScoredEntry::Command { score, .. } => *score,
+        };
+        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    scored.truncate(max_results);
+
+    // Pass 2: compute highlight positions for top results
+    scored
+        .into_iter()
+        .map(|entry| match entry {
+            ScoredEntry::Command { index: i, score } => {
+                let e = &command_index.commands[i];
+                let highlight_positions = if query.is_empty() {
+                    vec![]
+                } else {
+                    fuzzy_match_positions_chars(
+                        &query_norm.chars,
+                        &e.label_norm.chars,
+                        &e.label_norm.char_map,
+                    )
+                    .map(|(_, pos)| pos)
+                    .unwrap_or_default()
+                };
+                RankedResult::Command {
+                    urn: e.urn.clone(),
+                    action: e.action.clone(),
+                    label: e.label.clone(),
+                    icon: e.icon.clone(),
+                    subtitle: e.subtitle.clone(),
+                    score,
+                    highlight_positions,
+                }
+            }
+            // These variants never appear in command ranking, but must be handled.
+            _ => unreachable!(),
         })
         .collect()
 }
@@ -553,5 +668,126 @@ mod tests {
         );
         let results = rank_results(&index, "", &UsageMap::new(), false, 2);
         assert_eq!(results.len(), 2);
+    }
+
+    // -- Command ranking tests --
+
+    use crate::command_index::{CommandIndex, CommandSearchEntry};
+
+    fn cmd_urn(plugin: &str, entity_type: &str, id: &str) -> Urn {
+        Urn::new(plugin, entity_type, id)
+    }
+
+    fn make_command_entry(
+        plugin: &str,
+        entity_type: &str,
+        id: &str,
+        action: &str,
+        label: &str,
+        icon: &str,
+        subtitle: Option<&str>,
+    ) -> CommandSearchEntry {
+        CommandSearchEntry {
+            urn: cmd_urn(plugin, entity_type, id),
+            action: action.to_string(),
+            label: label.to_string(),
+            icon: icon.to_string(),
+            subtitle: subtitle.map(|s| s.to_string()),
+            label_norm: normalize_for_search(label),
+        }
+    }
+
+    fn cmd_index_from(commands: Vec<CommandSearchEntry>) -> CommandIndex {
+        CommandIndex { commands }
+    }
+
+    #[test]
+    fn command_empty_query_returns_all() {
+        let idx = cmd_index_from(vec![
+            make_command_entry("darkman", "dark-mode", "default", "toggle", "Toggle Dark Mode", "icon", None),
+            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
+        ]);
+        let results = rank_commands(&idx, "", MAX);
+        assert_eq!(results.len(), 2);
+        // All should be Command variants
+        assert!(results.iter().all(|r| matches!(r, RankedResult::Command { .. })));
+    }
+
+    #[test]
+    fn command_query_filters_by_fuzzy_match() {
+        let idx = cmd_index_from(vec![
+            make_command_entry("darkman", "dark-mode", "default", "toggle", "Toggle Dark Mode", "icon", None),
+            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
+        ]);
+        let results = rank_commands(&idx, "dark", MAX);
+        assert_eq!(results.len(), 1);
+        assert!(matches!(&results[0], RankedResult::Command { label, .. } if label == "Toggle Dark Mode"));
+    }
+
+    #[test]
+    fn command_query_no_match_returns_empty() {
+        let idx = cmd_index_from(vec![
+            make_command_entry("darkman", "dark-mode", "default", "toggle", "Toggle Dark Mode", "icon", None),
+        ]);
+        let results = rank_commands(&idx, "zzz", MAX);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn command_highlight_positions_populated() {
+        let idx = cmd_index_from(vec![
+            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
+        ]);
+        let results = rank_commands(&idx, "lock", MAX);
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].highlight_positions().is_empty());
+        assert_eq!(results[0].highlight_positions(), &[0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn command_empty_query_has_empty_positions() {
+        let idx = cmd_index_from(vec![
+            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
+        ]);
+        let results = rank_commands(&idx, "", MAX);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].highlight_positions().is_empty());
+    }
+
+    #[test]
+    fn command_preserves_subtitle() {
+        let idx = cmd_index_from(vec![
+            make_command_entry("darkman", "dark-mode", "default", "toggle", "Toggle Dark Mode", "icon", Some("Active")),
+        ]);
+        let results = rank_commands(&idx, "", MAX);
+        assert_eq!(results.len(), 1);
+        assert!(matches!(&results[0], RankedResult::Command { subtitle, .. } if subtitle.as_deref() == Some("Active")));
+    }
+
+    #[test]
+    fn command_max_results_limits_output() {
+        let idx = cmd_index_from(vec![
+            make_command_entry("a", "session", "a", "lock", "Lock Screen", "icon", None),
+            make_command_entry("b", "session", "b", "reboot", "Reboot", "icon", None),
+            make_command_entry("c", "session", "c", "shutdown", "Shut Down", "icon", None),
+        ]);
+        let results = rank_commands(&idx, "", 2);
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn command_preserves_urn_and_action() {
+        let idx = cmd_index_from(vec![
+            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
+        ]);
+        let results = rank_commands(&idx, "lock", MAX);
+        assert_eq!(results.len(), 1);
+        match &results[0] {
+            RankedResult::Command { urn, action, .. } => {
+                assert_eq!(urn.to_string(), "systemd/session/default");
+                assert_eq!(action, "lock");
+            }
+            _ => panic!("expected Command variant"),
+        }
     }
 }
