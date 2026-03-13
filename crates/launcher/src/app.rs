@@ -1,6 +1,6 @@
 //! Launcher application setup.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -17,6 +17,21 @@ use crate::ranking::{RankedResult, rank_commands, rank_results};
 use crate::search_index::SearchIndex;
 use crate::usage::{UsageMap, load_usage, record_launch_in, save_usage_to, usage_file_path};
 use crate::window::LauncherWindow;
+
+#[derive(Clone, Copy, PartialEq)]
+enum LauncherMode {
+    Normal,
+    CommandPalette,
+}
+
+impl LauncherMode {
+    fn prefix(self) -> &'static str {
+        match self {
+            LauncherMode::Normal => "",
+            LauncherMode::CommandPalette => "> ",
+        }
+    }
+}
 
 type ActionSender = Rc<RefCell<Option<std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>>>>;
 
@@ -74,7 +89,33 @@ pub fn run() -> anyhow::Result<()> {
 
     let app = adw::Application::builder()
         .application_id("com.waft.launcher")
+        .flags(gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
+
+    app.add_main_option(
+        "command",
+        'c'.try_into().unwrap(),
+        gtk::glib::OptionFlags::NONE,
+        gtk::glib::OptionArg::None,
+        "Open in command palette mode",
+        None,
+    );
+
+    let requested_mode: Rc<Cell<LauncherMode>> = Rc::new(Cell::new(LauncherMode::Normal));
+
+    {
+        let mode_for_cmdline = requested_mode.clone();
+        app.connect_command_line(move |app, cmdline| {
+            let is_command = cmdline.options_dict().contains("command");
+            mode_for_cmdline.set(if is_command {
+                LauncherMode::CommandPalette
+            } else {
+                LauncherMode::Normal
+            });
+            app.activate();
+            0.into()
+        });
+    }
 
     // Wrap one-shot values in slots so they can be taken inside connect_startup.
     // connect_startup requires Fn (not FnOnce) but fires exactly once.
@@ -115,33 +156,50 @@ pub fn run() -> anyhow::Result<()> {
         let search_index: Rc<RefCell<SearchIndex>> = Rc::new(RefCell::new(SearchIndex::new()));
         let command_index: Rc<RefCell<CommandIndex>> = Rc::new(RefCell::new(CommandIndex::new()));
 
-        // connect_activate fires on first launch (after startup) and on every
-        // subsequent invocation of `waft-launcher` while this process is running.
-        // It shows the window and resets search state, acting as the "open" trigger.
+        // connect_activate fires on every invocation of `waft-launcher` (first and
+        // subsequent). It handles show/hide/mode-switch based on requested_mode.
         {
             let win_for_activate = win.clone();
             let query_for_activate = current_query.clone();
             let index_for_activate = search_index.clone();
             let cmd_index_for_activate = command_index.clone();
             let usage_for_activate = usage_cache.clone();
+            let mode_for_activate = requested_mode.clone();
             app.connect_activate(move |_| {
+                let mode = mode_for_activate.get();
+                let prefix = mode.prefix();
+
                 if win_for_activate.window.is_visible() {
                     if win_for_activate.is_animating_hide() {
-                        // Mid hide-animation: reverse back to visible from current opacity.
+                        // Mid hide-animation: reverse back to visible in requested mode.
                         win_for_activate.show();
+                        apply_launcher_mode(&win_for_activate, prefix, &query_for_activate, &index_for_activate, &cmd_index_for_activate, &usage_for_activate, rank_by_usage, max_results);
                         win_for_activate.grab_focus();
                     } else {
-                        // Fully visible or mid show-animation: start/continue fade-out.
-                        win_for_activate.hide();
+                        // Determine current mode from entry text prefix.
+                        let current_is_command = win_for_activate
+                            .search_pane()
+                            .search_bar
+                            .text()
+                            .starts_with('>');
+                        let same_mode =
+                            current_is_command == (mode == LauncherMode::CommandPalette);
+                        if same_mode {
+                            // Same mode: toggle off.
+                            win_for_activate.hide();
+                        } else {
+                            // Different mode: switch without hiding.
+                            apply_launcher_mode(&win_for_activate, prefix, &query_for_activate, &index_for_activate, &cmd_index_for_activate, &usage_for_activate, rank_by_usage, max_results);
+                            win_for_activate.grab_focus();
+                        }
                     }
                     return;
                 }
-                // Fully hidden: reset search and open fresh.
+
+                // Fully hidden: reset and open fresh in requested mode.
                 *query_for_activate.borrow_mut() = String::new();
                 win_for_activate.reset();
-                // Populate results immediately if entities are already in store;
-                // this also clears the loading spinner when data is present.
-                update_results(&win_for_activate, &index_for_activate.borrow(), &cmd_index_for_activate.borrow(), "", &usage_for_activate.borrow(), rank_by_usage, max_results);
+                apply_launcher_mode(&win_for_activate, prefix, &query_for_activate, &index_for_activate, &cmd_index_for_activate, &usage_for_activate, rank_by_usage, max_results);
                 win_for_activate.show();
                 win_for_activate.grab_focus();
             });
@@ -232,6 +290,7 @@ pub fn run() -> anyhow::Result<()> {
             let index_ref = search_index.clone();
             let cmd_index_ref = command_index.clone();
             let usage_for_init = usage_cache.clone();
+            let query_for_init = current_query.clone();
             gtk::glib::idle_add_local_once(move || {
                 {
                     let mut idx = index_ref.borrow_mut();
@@ -239,7 +298,8 @@ pub fn run() -> anyhow::Result<()> {
                     idx.rebuild_windows(&store_ref);
                 }
                 cmd_index_ref.borrow_mut().rebuild(&store_ref);
-                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), "", &usage_for_init.borrow(), rank_by_usage, max_results);
+                let query = query_for_init.borrow().clone();
+                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), &query, &usage_for_init.borrow(), rank_by_usage, max_results);
             });
         }
 
@@ -288,6 +348,21 @@ fn update_results(
         win.search_pane().set_loading(false);
     }
     win.set_results(ranked, query);
+}
+
+fn apply_launcher_mode(
+    win: &LauncherWindow,
+    prefix: &str,
+    query: &Rc<RefCell<String>>,
+    index: &Rc<RefCell<SearchIndex>>,
+    cmd_index: &Rc<RefCell<CommandIndex>>,
+    usage: &Rc<RefCell<UsageMap>>,
+    rank_by_usage: bool,
+    max_results: usize,
+) {
+    *query.borrow_mut() = prefix.to_string();
+    win.search_pane().search_bar.set_text(prefix);
+    update_results(win, &index.borrow(), &cmd_index.borrow(), prefix, &usage.borrow(), rank_by_usage, max_results);
 }
 
 fn activate_result(

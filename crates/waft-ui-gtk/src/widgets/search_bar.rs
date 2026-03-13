@@ -80,6 +80,19 @@ impl SearchBarWidget {
         self.entry.set_text("");
     }
 
+    /// Set the search entry text programmatically and place cursor at the end.
+    ///
+    /// The position reset is deferred via `idle_add_local_once` so it runs
+    /// after `grab_focus` fires the focus-in handler that would otherwise
+    /// select-all the text.
+    pub fn set_text(&self, text: &str) {
+        self.entry.set_text(text);
+        let entry = self.entry.clone();
+        gtk::glib::idle_add_local_once(move || {
+            entry.set_position(-1);
+        });
+    }
+
     /// Grab keyboard focus.
     pub fn grab_focus(&self) {
         self.entry.grab_focus();
