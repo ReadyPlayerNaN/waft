@@ -214,6 +214,47 @@ impl SearchIndex {
         }
     }
 
+    /// Backfill the target widget for a previously deferred entry.
+    /// Matches by (page_id, section_title, input_title).
+    pub fn backfill_widget(
+        &mut self,
+        page_id: &str,
+        section_title: &str,
+        input_title: Option<&str>,
+        widget: Option<&impl gtk::prelude::IsA<gtk::Widget>>,
+    ) {
+        for entry in &mut self.entries {
+            if entry.page_id == page_id
+                && entry.section_title.as_deref() == Some(section_title)
+                && entry.input_title.as_deref() == input_title
+            {
+                if let Some(w) = widget {
+                    let weak = glib::WeakRef::new();
+                    weak.set(Some(w.upcast_ref()));
+                    entry.target_widget = Some(weak);
+                }
+                return;
+            }
+        }
+    }
+
+    /// Find the target widget for a search entry by key.
+    pub fn find_widget(
+        &self,
+        page_id: &str,
+        section_title: &str,
+        input_title: Option<&str>,
+    ) -> Option<glib::WeakRef<gtk::Widget>> {
+        self.entries
+            .iter()
+            .find(|e| {
+                e.page_id == page_id
+                    && e.section_title.as_deref() == Some(section_title)
+                    && e.input_title.as_deref() == input_title
+            })
+            .and_then(|e| e.target_widget.clone())
+    }
+
     /// Search the index. Returns entries whose search_terms contain all query tokens.
     /// Results are scored, deduplicated, and limited.
     pub fn search(&self, query: &str) -> Vec<&SearchEntry> {
@@ -461,5 +502,30 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].input_title.as_deref(), Some("Auto"));
         assert!(results[0].target_widget.is_none());
+    }
+
+    #[test]
+    fn backfill_widget_finds_section_entry() {
+        let mut index = SearchIndex::new();
+        index.add_section_deferred("display", "Display", "Brightness", "display-brightness");
+        assert!(index.entries[0].target_widget.is_none());
+        // backfill_widget without a real widget (None) should not panic
+        index.backfill_widget("display", "Brightness", None, None::<&gtk::Widget>);
+    }
+
+    #[test]
+    fn backfill_widget_finds_input_entry() {
+        let mut index = SearchIndex::new();
+        index.add_input_deferred("display", "Display", "Brightness", "Auto", "display-auto");
+        index.add_section_deferred("display", "Display", "Brightness", "display-brightness");
+        // Should match the input entry, not the section entry
+        index.backfill_widget("display", "Brightness", Some("Auto"), None::<&gtk::Widget>);
+    }
+
+    #[test]
+    fn find_widget_returns_none_for_deferred() {
+        let mut index = SearchIndex::new();
+        index.add_section_deferred("display", "Display", "Brightness", "display-brightness");
+        assert!(index.find_widget("display", "Brightness", None).is_none());
     }
 }
