@@ -84,6 +84,25 @@ impl SearchResults {
         *self.output_cb.borrow_mut() = Some(Box::new(callback));
     }
 
+    /// Move focus to the first result row (or selected row if one exists).
+    pub fn focus_first(&self) {
+        if let Some(selected) = self.root.selected_row() {
+            selected.grab_focus();
+        } else if let Some(first) = self.root.row_at_index(0) {
+            self.root.select_row(Some(&first));
+            first.grab_focus();
+        }
+    }
+
+    /// Activate the currently selected result row.
+    pub fn activate_selected(&self) {
+        if let Some(selected) = self.root.selected_row() {
+            selected.activate();
+        } else if let Some(first) = self.root.row_at_index(0) {
+            first.activate();
+        }
+    }
+
     /// Clear all search results.
     pub fn clear(&self) {
         while let Some(child) = self.root.first_child() {

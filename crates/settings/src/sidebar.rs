@@ -332,6 +332,51 @@ impl Sidebar {
             let categories_ref = categories_box.clone();
             let results_ref = Rc::new(search_results);
 
+            // Keyboard navigation: Arrow Down moves focus from search entry to results list,
+            // Enter activates the selected result.
+            {
+                let results_for_keys = results_ref.clone();
+                let key_controller = gtk::EventControllerKey::new();
+                let search_bar_for_keys = search_bar.clone();
+                key_controller.connect_key_pressed(move |_, key, _, _| {
+                    match key {
+                        gtk::gdk::Key::Down => {
+                            results_for_keys.focus_first();
+                            glib::Propagation::Stop
+                        }
+                        gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter => {
+                            if search_bar_for_keys.is_search_mode() {
+                                results_for_keys.activate_selected();
+                                glib::Propagation::Stop
+                            } else {
+                                glib::Propagation::Proceed
+                            }
+                        }
+                        _ => glib::Propagation::Proceed,
+                    }
+                });
+                search_entry.add_controller(key_controller);
+            }
+
+            // Arrow Up on first result row returns focus to search entry.
+            {
+                let search_entry_for_up = search_entry.clone();
+                let results_for_up = results_ref.clone();
+                let up_controller = gtk::EventControllerKey::new();
+                up_controller.connect_key_pressed(move |_, key, _, _| {
+                    if key == gtk::gdk::Key::Up {
+                        if let Some(selected) = results_for_up.root.selected_row()
+                            && selected.index() == 0
+                        {
+                            search_entry_for_up.grab_focus();
+                            return glib::Propagation::Stop;
+                        }
+                    }
+                    glib::Propagation::Proceed
+                });
+                results_ref.root.add_controller(up_controller);
+            }
+
             // Wire search entry text changes
             let results_for_search = results_ref.clone();
             search_entry.connect_search_changed(move |entry| {
