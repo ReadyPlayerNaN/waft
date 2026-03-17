@@ -33,6 +33,7 @@ struct BluetoothPageState {
     adapters_reconciler: Reconciler,
     paired_group: PairedDevicesGroup,
     discovered_group: DiscoveredDevicesGroup,
+    search_index: Rc<RefCell<SearchIndex>>,
 }
 
 impl BluetoothPage {
@@ -112,6 +113,7 @@ impl BluetoothPage {
             adapters_reconciler,
             paired_group,
             discovered_group,
+            search_index: search_index.clone(),
         }));
 
         // Subscribe to both adapter and device changes
@@ -201,5 +203,27 @@ impl BluetoothPage {
         state
             .discovered_group
             .reconcile(&discovered, any_discovering, any_powered, action_callback);
+
+        // Update dynamic search entries for devices
+        {
+            let mut idx = state.search_index.borrow_mut();
+            let page_title = t("settings-bluetooth");
+
+            // Paired devices
+            let paired_section = t("bt-paired-devices");
+            idx.remove_entries("bluetooth", &paired_section);
+            idx.add_section("bluetooth", &page_title, &paired_section, "bt-paired-devices", &state.paired_group.root);
+            for (_, device) in paired.iter() {
+                idx.add_input("bluetooth", &page_title, &paired_section, &device.name, &device.name, &state.paired_group.root);
+            }
+
+            // Discovered devices
+            let discovered_section = t("bt-available-devices");
+            idx.remove_entries("bluetooth", &discovered_section);
+            idx.add_section("bluetooth", &page_title, &discovered_section, "bt-available-devices", &state.discovered_group.root);
+            for (_, device) in discovered.iter() {
+                idx.add_input("bluetooth", &page_title, &discovered_section, &device.name, &device.name, &state.discovered_group.root);
+            }
+        }
     }
 }

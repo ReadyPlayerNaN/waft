@@ -33,6 +33,7 @@ struct AudioPageState {
     cards_box: gtk::Box,
     empty_state: adw::StatusPage,
     action_callback: EntityActionCallback,
+    search_index: Rc<RefCell<SearchIndex>>,
 }
 
 impl AudioPage {
@@ -78,6 +79,7 @@ impl AudioPage {
             cards_box,
             empty_state,
             action_callback: action_callback.clone(),
+            search_index: search_index.clone(),
         }));
 
         // Subscribe to audio card changes (future updates + initial reconciliation)
@@ -180,5 +182,20 @@ impl AudioPage {
 
         // Show empty state only when no cards
         state.empty_state.set_visible(cards.is_empty());
+
+        // Update dynamic search entries
+        {
+            let mut idx = state.search_index.borrow_mut();
+            let page_title = t("settings-audio");
+            let section_title = t("audio-output-devices");
+            idx.remove_entries("audio", &section_title);
+            idx.add_section("audio", &page_title, &section_title, "audio-output-devices", &state.cards_box);
+            for (urn, card) in cards {
+                let urn_str = urn.as_str().to_string();
+                if let Some(widget) = state.cards.get(&urn_str) {
+                    idx.add_input("audio", &page_title, &section_title, &card.name, &card.name, &widget.root);
+                }
+            }
+        }
     }
 }

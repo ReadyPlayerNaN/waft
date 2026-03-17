@@ -27,6 +27,7 @@ struct ServicesPageState {
     service_rows: HashMap<String, (ServiceRow, Urn)>,
     sorted_names: Vec<String>,
     list_group: EntityListGroup,
+    search_index: Rc<RefCell<SearchIndex>>,
 }
 
 impl ServicesPage {
@@ -61,6 +62,7 @@ impl ServicesPage {
             service_rows: HashMap::new(),
             sorted_names: Vec::new(),
             list_group,
+            search_index: search_index.clone(),
         }));
 
         // Subscribe to user-service changes (future updates + initial reconciliation)
@@ -155,5 +157,19 @@ impl ServicesPage {
 
         state.sorted_names = current_names;
         state.list_group.toggle_visibility(!state.service_rows.is_empty());
+
+        // Update dynamic search entries
+        {
+            let mut idx = state.search_index.borrow_mut();
+            let page_title = t("settings-services");
+            let section_title = t("services-title");
+            idx.remove_entries("services", &section_title);
+            idx.add_section("services", &page_title, &section_title, "services-title", &state.list_group.group);
+            for (_, service) in services {
+                if let Some((row, _)) = state.service_rows.get(&service.unit) {
+                    idx.add_input("services", &page_title, &section_title, &service.unit, &service.unit, &row.widget());
+                }
+            }
+        }
     }
 }

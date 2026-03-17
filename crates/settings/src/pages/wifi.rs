@@ -30,6 +30,7 @@ struct WiFiPageState {
     adapters_reconciler: Reconciler,
     known_group: KnownNetworksGroup,
     available_group: AvailableNetworksGroup,
+    search_index: Rc<RefCell<SearchIndex>>,
 }
 
 impl WiFiPage {
@@ -125,6 +126,7 @@ impl WiFiPage {
             adapters_reconciler,
             known_group,
             available_group,
+            search_index: search_index.clone(),
         }));
 
         // Subscribe to both adapter and network changes
@@ -210,5 +212,27 @@ impl WiFiPage {
         state
             .available_group
             .reconcile(&available, any_scanning, action_callback);
+
+        // Update dynamic search entries for networks
+        {
+            let mut idx = state.search_index.borrow_mut();
+            let page_title = t("settings-wifi");
+
+            // Known networks
+            let known_section = t("wifi-known-networks");
+            idx.remove_entries("wifi", &known_section);
+            idx.add_section("wifi", &page_title, &known_section, "wifi-known-networks", &state.known_group.root);
+            for (_, network) in known.iter() {
+                idx.add_input("wifi", &page_title, &known_section, &network.ssid, &network.ssid, &state.known_group.root);
+            }
+
+            // Available networks
+            let available_section = t("wifi-available-networks");
+            idx.remove_entries("wifi", &available_section);
+            idx.add_section("wifi", &page_title, &available_section, "wifi-available-networks", &state.available_group.root);
+            for (_, network) in available.iter() {
+                idx.add_input("wifi", &page_title, &available_section, &network.ssid, &network.ssid, &state.available_group.root);
+            }
+        }
     }
 }

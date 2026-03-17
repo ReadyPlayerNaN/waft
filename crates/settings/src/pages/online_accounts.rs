@@ -36,6 +36,7 @@ struct OnlineAccountsPageState {
     account_details: HashMap<String, AccountDetailPage>,
     sorted_ids: Vec<String>,
     list_group: EntityListGroup,
+    search_index: Rc<RefCell<SearchIndex>>,
 }
 
 impl OnlineAccountsPage {
@@ -87,6 +88,7 @@ impl OnlineAccountsPage {
             account_details: HashMap::new(),
             sorted_ids: Vec::new(),
             list_group,
+            search_index: search_index.clone(),
         }));
 
         // Subscribe to online-account changes (future updates + initial reconciliation)
@@ -268,5 +270,19 @@ impl OnlineAccountsPage {
 
         state.sorted_ids = current_ids;
         state.list_group.toggle_visibility(!state.account_rows.is_empty());
+
+        // Update dynamic search entries
+        {
+            let mut idx = state.search_index.borrow_mut();
+            let page_title = t("settings-online-accounts");
+            let section_title = t("online-accounts-title");
+            idx.remove_entries("online-accounts", &section_title);
+            idx.add_section("online-accounts", &page_title, &section_title, "online-accounts-title", &state.list_group.group);
+            for (_, account) in accounts {
+                if let Some((row, _, _)) = state.account_rows.get(&account.id) {
+                    idx.add_input("online-accounts", &page_title, &section_title, &account.presentation_identity, &account.presentation_identity, &row.widget());
+                }
+            }
+        }
     }
 }

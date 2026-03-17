@@ -28,6 +28,7 @@ struct PluginsPageState {
     /// Sorted keys for stable row ordering.
     sorted_names: Vec<String>,
     list_group: EntityListGroup,
+    search_index: Rc<RefCell<SearchIndex>>,
 }
 
 impl PluginsPage {
@@ -58,6 +59,7 @@ impl PluginsPage {
             plugin_rows: HashMap::new(),
             sorted_names: Vec::new(),
             list_group,
+            search_index: search_index.clone(),
         }));
 
         // Subscribe to plugin-status changes (future updates + initial reconciliation)
@@ -124,5 +126,19 @@ impl PluginsPage {
 
         state.sorted_names = current_names;
         state.list_group.toggle_visibility(!state.plugin_rows.is_empty());
+
+        // Update dynamic search entries
+        {
+            let mut idx = state.search_index.borrow_mut();
+            let page_title = t("settings-plugins");
+            let section_title = t("plugins-title");
+            idx.remove_entries("plugins", &section_title);
+            idx.add_section("plugins", &page_title, &section_title, "plugins-title", &state.list_group.group);
+            for (_, plugin) in plugins {
+                if let Some(row) = state.plugin_rows.get(&plugin.name) {
+                    idx.add_input("plugins", &page_title, &section_title, &plugin.name, &plugin.name, &row.widget());
+                }
+            }
+        }
     }
 }
