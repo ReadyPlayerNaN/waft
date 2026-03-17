@@ -290,11 +290,19 @@ impl SettingsWindow {
                     "[settings] Requested page '{}' not found, falling back to bluetooth",
                     default_page
                 );
+                // Construct bluetooth as fallback
+                if let Some(factory) = factories.borrow_mut().remove("bluetooth") {
+                    let widget = factory();
+                    stack.add_named(&widget, Some("bluetooth"));
+                }
             }
         }
-        stack.set_visible_child_name(
-            if stack.child_by_name(default_page).is_some() { default_page } else { "bluetooth" }
-        );
+        let default_page = if stack.child_by_name(default_page).is_some() {
+            default_page
+        } else {
+            "bluetooth"
+        };
+        stack.set_visible_child_name(default_page);
 
         let content_scrolled = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
