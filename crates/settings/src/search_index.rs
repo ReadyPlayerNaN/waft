@@ -86,6 +86,56 @@ impl SearchIndex {
         });
     }
 
+    /// Register a section within a page without a target widget.
+    /// Used at startup for search-only registration; widget backfilled later.
+    pub fn add_section_deferred(
+        &mut self,
+        page_id: &'static str,
+        page_title: &str,
+        section_title: &str,
+        section_ftl_key: &str,
+    ) {
+        let search_terms = vec![
+            section_title.to_lowercase(),
+            section_ftl_key.to_lowercase(),
+            page_title.to_lowercase(),
+        ];
+        self.entries.push(SearchEntry {
+            page_id,
+            page_title: page_title.to_string(),
+            section_title: Some(section_title.to_string()),
+            input_title: None,
+            search_terms,
+            target_widget: None,
+        });
+    }
+
+    /// Register an input/control within a section without a target widget.
+    /// Used at startup for search-only registration; widget backfilled later.
+    pub fn add_input_deferred(
+        &mut self,
+        page_id: &'static str,
+        page_title: &str,
+        section_title: &str,
+        input_title: &str,
+        input_ftl_key: &str,
+    ) {
+        let search_terms = vec![
+            input_title.to_lowercase(),
+            input_ftl_key.to_lowercase(),
+            section_title.to_lowercase(),
+            page_title.to_lowercase(),
+        ];
+        self.entries.push(SearchEntry {
+            page_id,
+            page_title: page_title.to_string(),
+            section_title: Some(section_title.to_string()),
+            input_title: Some(input_title.to_string()),
+            search_terms,
+            target_widget: None,
+        });
+    }
+
     /// Register a section within a page.
     pub fn add_section(
         &mut self,
@@ -389,5 +439,27 @@ mod tests {
         }
         let results = index.search("test");
         assert_eq!(results.len(), 15);
+    }
+
+    #[test]
+    fn deferred_section_is_searchable() {
+        let mut index = SearchIndex::new();
+        index.add_page("display", "Display", "settings-display");
+        index.add_section_deferred("display", "Display", "Brightness", "display-brightness");
+        let results = index.search("brightness");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].section_title.as_deref(), Some("Brightness"));
+        assert!(results[0].target_widget.is_none());
+    }
+
+    #[test]
+    fn deferred_input_is_searchable() {
+        let mut index = SearchIndex::new();
+        index.add_page("display", "Display", "settings-display");
+        index.add_input_deferred("display", "Display", "Brightness", "Auto", "display-auto-brightness");
+        let results = index.search("auto");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].input_title.as_deref(), Some("Auto"));
+        assert!(results[0].target_widget.is_none());
     }
 }
