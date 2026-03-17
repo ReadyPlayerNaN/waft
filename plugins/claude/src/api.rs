@@ -46,10 +46,14 @@ pub async fn fetch_usage(access_token: &str) -> Result<UsageData> {
         anyhow::bail!("Usage API returned {status}: {body}");
     }
 
-    let data: UsageResponse = response
-        .json()
+    let body = response
+        .text()
         .await
-        .context("Failed to parse usage response")?;
+        .context("Failed to read usage response body")?;
+
+    let data: UsageResponse = serde_json::from_str(&body).with_context(|| {
+        format!("Failed to parse usage response: {body}")
+    })?;
 
     Ok(UsageData {
         five_hour_utilization: data.five_hour.utilization,
