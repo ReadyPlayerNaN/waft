@@ -66,15 +66,14 @@ impl WallpaperPage {
         let gallery = Rc::new(GallerySection::new(action_callback));
         root.append(&gallery.root);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-wallpaper");
-            idx.add_section("wallpaper", &page_title, &t("wallpaper-mode"), "wallpaper-mode", &mode.root);
-            idx.add_section("wallpaper", &page_title, &t("wallpaper-current"), "wallpaper-current", &preview.root);
-            idx.add_section("wallpaper", &page_title, &t("wallpaper-transition"), "wallpaper-transition", &transition.root);
-            idx.add_section("wallpaper", &page_title, &t("wallpaper-config"), "wallpaper-config", &config.root);
-            idx.add_section("wallpaper", &page_title, &t("wallpaper-background-color"), "wallpaper-background-color", &bg_color.root);
+            idx.backfill_widget("wallpaper", &t("wallpaper-mode"), None, Some(&mode.root));
+            idx.backfill_widget("wallpaper", &t("wallpaper-current"), None, Some(&preview.root));
+            idx.backfill_widget("wallpaper", &t("wallpaper-transition"), None, Some(&transition.root));
+            idx.backfill_widget("wallpaper", &t("wallpaper-config"), None, Some(&config.root));
+            idx.backfill_widget("wallpaper", &t("wallpaper-background-color"), None, Some(&bg_color.root));
         }
 
         // Current URN for the "all" entity (or first output)

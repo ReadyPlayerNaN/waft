@@ -74,14 +74,13 @@ impl NightLightSection {
             });
         }
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-appearance");
-            let section_title = t("display-night-light");
-            idx.add_section("appearance", &page_title, &section_title, "display-night-light", &group);
-            idx.add_input("appearance", &page_title, &section_title, &t("display-night-light-toggle"), "display-night-light-toggle", &toggle_row);
-            idx.add_input("appearance", &page_title, &section_title, &t("display-color-preset"), "display-color-preset", &preset_row);
+            let section = t("display-night-light");
+            idx.backfill_widget("appearance", &section, None, Some(&group));
+            idx.backfill_widget("appearance", &section, Some(&t("display-night-light-toggle")), Some(&toggle_row));
+            idx.backfill_widget("appearance", &section, Some(&t("display-color-preset")), Some(&preset_row));
         }
 
         let updating = Rc::new(Cell::new(false));

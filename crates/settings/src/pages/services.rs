@@ -51,17 +51,10 @@ impl ServicesPage {
             &t("services-title"),
         );
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-services");
-            idx.add_section(
-                "services",
-                &page_title,
-                &t("services-title"),
-                "services-title",
-                &list_group.group,
-            );
+            idx.backfill_widget("services", &t("services-title"), None, Some(&list_group.group));
         }
 
         let state = Rc::new(RefCell::new(ServicesPageState {

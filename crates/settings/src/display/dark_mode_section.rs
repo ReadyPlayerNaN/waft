@@ -82,34 +82,14 @@ impl DarkModeSection {
             });
         }
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-appearance");
-            idx.add_section(
-                "appearance",
-                &page_title,
-                &t("display-appearance"),
-                "display-appearance",
-                &group,
-            );
-            idx.add_input(
-                "appearance",
-                &page_title,
-                &t("display-appearance"),
-                &t("display-dark-mode"),
-                "display-dark-mode",
-                &toggle_row,
-            );
+            let section = t("display-appearance");
+            idx.backfill_widget("appearance", &section, None, Some(&group));
+            idx.backfill_widget("appearance", &section, Some(&t("display-dark-mode")), Some(&toggle_row));
             if let Some(ref row) = nav_row {
-                idx.add_input(
-                    "appearance",
-                    &page_title,
-                    &t("display-appearance"),
-                    &t("display-dark-mode-settings"),
-                    "display-dark-mode-settings",
-                    row,
-                );
+                idx.backfill_widget("appearance", &section, Some(&t("display-dark-mode-settings")), Some(row));
             }
         }
 

@@ -66,12 +66,11 @@ impl BluetoothPage {
         let discovered_group = DiscoveredDevicesGroup::new();
         root.append(&discovered_group.root);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-bluetooth");
-            idx.add_section("bluetooth", &page_title, &t("bt-paired-devices"), "bt-paired-devices", &paired_group.root);
-            idx.add_section("bluetooth", &page_title, &t("bt-available-devices"), "bt-available-devices", &discovered_group.root);
+            idx.backfill_widget("bluetooth", &t("bt-paired-devices"), None, Some(&paired_group.root));
+            idx.backfill_widget("bluetooth", &t("bt-available-devices"), None, Some(&discovered_group.root));
         }
 
         // Wire discovered group search button output

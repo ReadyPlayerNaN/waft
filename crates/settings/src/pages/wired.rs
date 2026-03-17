@@ -49,11 +49,10 @@ impl WiredPage {
             .build();
         root.append(&adapters_box);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-wired");
-            idx.add_section("wired", &page_title, &t("wired-ip-address"), "wired-ip-address", &adapters_box);
+            idx.backfill_widget("wired", &t("wired-ip-address"), None, Some(&adapters_box));
         }
 
         let adapters_reconciler = Reconciler::new(adapters_box);

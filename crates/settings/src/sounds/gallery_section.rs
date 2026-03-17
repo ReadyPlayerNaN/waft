@@ -53,13 +53,12 @@ impl GallerySection {
             .build();
         group.set_header_suffix(Some(&add_button));
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-sounds");
-            let section_title = t("sounds-gallery");
-            idx.add_section("sounds", &page_title, &section_title, "sounds-gallery", &group);
-            idx.add_input("sounds", &page_title, &section_title, &t("sounds-add-file"), "sounds-add-file", &add_button);
+            let section = t("sounds-gallery");
+            idx.backfill_widget("sounds", &section, None, Some(&group));
+            idx.backfill_widget("sounds", &section, Some(&t("sounds-add-file")), Some(&add_button));
         }
 
         // Wire add button to open file dialog

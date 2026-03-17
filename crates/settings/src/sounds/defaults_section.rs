@@ -75,13 +75,12 @@ impl DefaultsSection {
         let critical_row = Self::create_urgency_row(&t("sounds-critical-urgency"));
         group.add(&critical_row.combo);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-notifications");
-            let section_title = t("sounds-defaults");
-            idx.add_section("notifications", &page_title, &section_title, "sounds-defaults", &group);
-            idx.add_input("notifications", &page_title, &section_title, &t("sounds-enable"), "sounds-enable", &enabled_row);
+            let section = t("sounds-defaults");
+            idx.backfill_widget("notifications", &section, None, Some(&group));
+            idx.backfill_widget("notifications", &section, Some(&t("sounds-enable")), Some(&enabled_row));
         }
 
         let updating = Rc::new(Cell::new(false));

@@ -47,13 +47,12 @@ impl ActiveProfileSection {
             .build();
         group.add(&combo_row);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-notifications");
-            let section_title = t("notif-active-profile");
-            idx.add_section("notifications", &page_title, &section_title, "notif-active-profile", &group);
-            idx.add_input("notifications", &page_title, &section_title, &t("notif-profile"), "notif-profile", &combo_row);
+            let section = t("notif-active-profile");
+            idx.backfill_widget("notifications", &section, None, Some(&group));
+            idx.backfill_widget("notifications", &section, Some(&t("notif-profile")), Some(&combo_row));
         }
 
         let updating = Rc::new(Cell::new(false));

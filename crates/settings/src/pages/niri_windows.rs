@@ -405,66 +405,17 @@ impl NiriWindowsPage {
             });
         }
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-windows");
-            idx.add_section(
-                "windows",
-                &page_title,
-                &t("windows-prefer-no-csd"),
-                "windows-prefer-no-csd",
-                &no_csd_group,
-            );
-            idx.add_section(
-                "windows",
-                &page_title,
-                &t("windows-derive-colors"),
-                "windows-derive-colors",
-                &derive.root,
-            );
-            idx.add_section(
-                "windows",
-                &page_title,
-                &t("windows-focus-ring"),
-                "windows-focus-ring",
-                &focus_ring.root,
-            );
-            idx.add_section(
-                "windows",
-                &page_title,
-                &t("windows-border"),
-                "windows-border",
-                &border.root,
-            );
-            idx.add_section(
-                "windows",
-                &page_title,
-                &t("windows-shadow"),
-                "windows-shadow",
-                &shadow.root,
-            );
-            idx.add_section(
-                "windows",
-                &page_title,
-                &t("windows-tab-indicator"),
-                "windows-tab-indicator",
-                &tab_indicator.root,
-            );
-            idx.add_section(
-                "windows",
-                &page_title,
-                &t("windows-gaps"),
-                "windows-gaps",
-                &gaps.root,
-            );
-            idx.add_section(
-                "windows",
-                &page_title,
-                &t("windows-struts"),
-                "windows-struts",
-                &struts.root,
-            );
+            idx.backfill_widget("windows", &t("windows-prefer-no-csd"), None, Some(&no_csd_group));
+            idx.backfill_widget("windows", &t("windows-derive-colors"), None, Some(&derive.root));
+            idx.backfill_widget("windows", &t("windows-focus-ring"), None, Some(&focus_ring.root));
+            idx.backfill_widget("windows", &t("windows-border"), None, Some(&border.root));
+            idx.backfill_widget("windows", &t("windows-shadow"), None, Some(&shadow.root));
+            idx.backfill_widget("windows", &t("windows-tab-indicator"), None, Some(&tab_indicator.root));
+            idx.backfill_widget("windows", &t("windows-gaps"), None, Some(&gaps.root));
+            idx.backfill_widget("windows", &t("windows-struts"), None, Some(&struts.root));
         }
 
         // Prevent sections from being dropped

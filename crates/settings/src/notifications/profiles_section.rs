@@ -112,11 +112,10 @@ impl ProfilesSection {
 
         let create_form: Rc<RefCell<Option<CreateFormWidgets>>> = Rc::new(RefCell::new(None));
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-notifications");
-            idx.add_section("notifications", &page_title, &t("notif-profiles"), "notif-profiles", &pref_group);
+            idx.backfill_widget("notifications", &t("notif-profiles"), None, Some(&pref_group));
         }
 
         // Wire "Add" button

@@ -67,17 +67,10 @@ impl AudioPage {
             .build();
         root.append(&empty_state);
 
-        // Register search entry
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-audio");
-            idx.add_section(
-                "audio",
-                &page_title,
-                &t("audio-output-devices"),
-                "audio-output-devices",
-                &cards_box,
-            );
+            idx.backfill_widget("audio", &t("audio-output-devices"), None, Some(&cards_box));
         }
 
         let state = Rc::new(RefCell::new(AudioPageState {

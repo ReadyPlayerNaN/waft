@@ -63,17 +63,10 @@ impl SchedulerPage {
             &t("scheduler-title"),
         );
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-scheduled-tasks");
-            idx.add_section(
-                "scheduled-tasks",
-                &page_title,
-                &t("scheduler-title"),
-                "scheduler-title",
-                &list_group.group,
-            );
+            idx.backfill_widget("scheduled-tasks", &t("scheduler-title"), None, Some(&list_group.group));
         }
 
         let state = Rc::new(RefCell::new(SchedulerPageState {

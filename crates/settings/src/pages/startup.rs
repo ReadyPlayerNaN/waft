@@ -75,17 +75,10 @@ impl StartupPage {
             .build();
         root.append(&add_button);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-startup");
-            idx.add_section(
-                "startup",
-                &page_title,
-                &t("startup-entries"),
-                "startup-entries",
-                &group,
-            );
+            idx.backfill_widget("startup", &t("startup-entries"), None, Some(&group));
         }
 
         let config_path = kdl_config::niri_config_path();

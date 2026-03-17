@@ -59,12 +59,11 @@ impl WiFiPage {
         let available_group = AvailableNetworksGroup::new();
         root.append(&available_group.root);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-wifi");
-            idx.add_section("wifi", &page_title, &t("wifi-known-networks"), "wifi-known-networks", &known_group.root);
-            idx.add_section("wifi", &page_title, &t("wifi-available-networks"), "wifi-available-networks", &available_group.root);
+            idx.backfill_widget("wifi", &t("wifi-known-networks"), None, Some(&known_group.root));
+            idx.backfill_widget("wifi", &t("wifi-available-networks"), None, Some(&available_group.root));
         }
 
         // Wire available networks group scan button output

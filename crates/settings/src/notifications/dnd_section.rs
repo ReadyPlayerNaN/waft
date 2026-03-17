@@ -42,13 +42,12 @@ impl DndSection {
         let toggle_row = adw::SwitchRow::builder().title("Do Not Disturb").build();
         group.add(&toggle_row);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-notifications");
-            let section_title = t("notif-dnd");
-            idx.add_section("notifications", &page_title, &section_title, "notif-dnd", &group);
-            idx.add_input("notifications", &page_title, &section_title, "Do Not Disturb", "notif-dnd", &toggle_row);
+            let section = t("notif-dnd");
+            idx.backfill_widget("notifications", &section, None, Some(&group));
+            idx.backfill_widget("notifications", &section, Some("Do Not Disturb"), Some(&toggle_row));
         }
 
         let updating = Rc::new(Cell::new(false));

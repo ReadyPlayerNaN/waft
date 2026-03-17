@@ -76,17 +76,10 @@ impl OnlineAccountsPage {
         });
         root.append(&add_button);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-online-accounts");
-            idx.add_section(
-                "online-accounts",
-                &page_title,
-                &t("online-accounts-title"),
-                "online-accounts-title",
-                &list_group.group,
-            );
+            idx.backfill_widget("online-accounts", &t("online-accounts-title"), None, Some(&list_group.group));
         }
 
         let state = Rc::new(RefCell::new(OnlineAccountsPageState {

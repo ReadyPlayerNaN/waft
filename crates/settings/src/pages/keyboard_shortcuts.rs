@@ -126,17 +126,10 @@ impl KeyboardShortcutsPage {
             .build();
         root.append(&add_button);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-keyboard-shortcuts");
-            idx.add_section(
-                "keyboard-shortcuts",
-                &page_title,
-                &t("kb-shortcuts-custom"),
-                "kb-shortcuts-custom",
-                &root,
-            );
+            idx.backfill_widget("keyboard-shortcuts", &t("kb-shortcuts-custom"), None, Some(&root));
         }
 
         let config_path = kdl_config::niri_config_path();

@@ -153,23 +153,16 @@ impl DarkModeAutomationSection {
             .build();
         group.add(&portal_api_row);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-appearance");
-            let section_title = t("display-dark-mode-automation");
-            idx.add_section(
-                "appearance",
-                &page_title,
-                &section_title,
-                "display-dark-mode-automation",
-                &group,
-            );
-            idx.add_input("appearance", &page_title, &section_title, &t("display-latitude"), "display-latitude", &latitude_row);
-            idx.add_input("appearance", &page_title, &section_title, &t("display-longitude"), "display-longitude", &longitude_row);
-            idx.add_input("appearance", &page_title, &section_title, &t("display-auto-location"), "display-auto-location", &auto_location_row);
-            idx.add_input("appearance", &page_title, &section_title, &t("display-dbus-api"), "display-dbus-api", &dbus_api_row);
-            idx.add_input("appearance", &page_title, &section_title, &t("display-xdg-portal"), "display-xdg-portal", &portal_api_row);
+            let section = t("display-dark-mode-automation");
+            idx.backfill_widget("appearance", &section, None, Some(&group));
+            idx.backfill_widget("appearance", &section, Some(&t("display-latitude")), Some(&latitude_row));
+            idx.backfill_widget("appearance", &section, Some(&t("display-longitude")), Some(&longitude_row));
+            idx.backfill_widget("appearance", &section, Some(&t("display-auto-location")), Some(&auto_location_row));
+            idx.backfill_widget("appearance", &section, Some(&t("display-dbus-api")), Some(&dbus_api_row));
+            idx.backfill_widget("appearance", &section, Some(&t("display-xdg-portal")), Some(&portal_api_row));
         }
 
         let updating = Rc::new(Cell::new(false));

@@ -96,12 +96,11 @@ impl KeyboardPage {
 
         root.append(&list_group);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-keyboard");
-            idx.add_section("keyboard", &page_title, &t("kb-layouts-title"), "kb-layouts-title", &list_group);
-            idx.add_input("keyboard", &page_title, &t("kb-layouts-title"), &t("kb-add-layout"), "kb-add-layout", &list_group);
+            idx.backfill_widget("keyboard", &t("kb-layouts-title"), None, Some(&list_group));
+            idx.backfill_widget("keyboard", &t("kb-layouts-title"), Some(&t("kb-add-layout")), Some(&list_group));
         }
 
         // Add layout button

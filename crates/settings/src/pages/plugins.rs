@@ -48,11 +48,10 @@ impl PluginsPage {
             &t("plugins-title"),
         );
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-plugins");
-            idx.add_section("plugins", &page_title, &t("plugins-title"), "plugins-title", &list_group.group);
+            idx.backfill_widget("plugins", &t("plugins-title"), None, Some(&list_group.group));
         }
 
         let state = Rc::new(RefCell::new(PluginsPageState {

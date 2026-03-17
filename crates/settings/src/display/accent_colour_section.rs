@@ -123,27 +123,13 @@ impl AccentColourSection {
                 .collect(),
         );
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-appearance");
-            let section_title = t("display-accent-colour");
-            idx.add_section(
-                "appearance",
-                &page_title,
-                &section_title,
-                "display-accent-colour",
-                &group,
-            );
+            let section = t("display-accent-colour");
+            idx.backfill_widget("appearance", &section, None, Some(&group));
             for (_value, i18n_key, _hex) in ACCENT_COLOURS {
-                idx.add_input(
-                    "appearance",
-                    &page_title,
-                    &section_title,
-                    &t(i18n_key),
-                    i18n_key,
-                    &flow_box,
-                );
+                idx.backfill_widget("appearance", &section, Some(&t(i18n_key)), Some(&flow_box));
             }
         }
 

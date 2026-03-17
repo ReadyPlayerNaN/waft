@@ -241,40 +241,39 @@ impl NightLightConfigSection {
             .build();
         advanced_group.add(&update_interval_row);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-appearance");
             // Colors group
             let colors_title = t("nlc-colors");
-            idx.add_section("appearance", &page_title, &colors_title, "nlc-colors", &colors_group);
-            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-night-temp"), "nlc-night-temp", &night_temp_row);
-            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-night-gamma"), "nlc-night-gamma", &night_gamma_row);
-            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-day-temp"), "nlc-day-temp", &day_temp_row);
-            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-day-gamma"), "nlc-day-gamma", &day_gamma_row);
-            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-static-temp"), "nlc-static-temp", &static_temp_row);
-            idx.add_input("appearance", &page_title, &colors_title, &t("nlc-static-gamma"), "nlc-static-gamma", &static_gamma_row);
+            idx.backfill_widget("appearance", &colors_title, None, Some(&colors_group));
+            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-night-temp")), Some(&night_temp_row));
+            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-night-gamma")), Some(&night_gamma_row));
+            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-day-temp")), Some(&day_temp_row));
+            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-day-gamma")), Some(&day_gamma_row));
+            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-static-temp")), Some(&static_temp_row));
+            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-static-gamma")), Some(&static_gamma_row));
             // Timing group
             let timing_title = t("nlc-timing");
-            idx.add_section("appearance", &page_title, &timing_title, "nlc-timing", &timing_group);
-            idx.add_input("appearance", &page_title, &timing_title, &t("nlc-transition-mode"), "nlc-transition-mode", &mode_row);
-            idx.add_input("appearance", &page_title, &timing_title, &t("nlc-sunrise"), "nlc-sunrise", &sunrise_row);
-            idx.add_input("appearance", &page_title, &timing_title, &t("nlc-sunset"), "nlc-sunset", &sunset_row);
-            idx.add_input("appearance", &page_title, &timing_title, &t("nlc-transition-duration"), "nlc-transition-duration", &transition_duration_row);
+            idx.backfill_widget("appearance", &timing_title, None, Some(&timing_group));
+            idx.backfill_widget("appearance", &timing_title, Some(&t("nlc-transition-mode")), Some(&mode_row));
+            idx.backfill_widget("appearance", &timing_title, Some(&t("nlc-sunrise")), Some(&sunrise_row));
+            idx.backfill_widget("appearance", &timing_title, Some(&t("nlc-sunset")), Some(&sunset_row));
+            idx.backfill_widget("appearance", &timing_title, Some(&t("nlc-transition-duration")), Some(&transition_duration_row));
             // Location group
             let location_title = t("nlc-location");
-            idx.add_section("appearance", &page_title, &location_title, "nlc-location", &location_group);
-            idx.add_input("appearance", &page_title, &location_title, &t("nlc-latitude"), "nlc-latitude", &latitude_row);
-            idx.add_input("appearance", &page_title, &location_title, &t("nlc-longitude"), "nlc-longitude", &longitude_row);
+            idx.backfill_widget("appearance", &location_title, None, Some(&location_group));
+            idx.backfill_widget("appearance", &location_title, Some(&t("nlc-latitude")), Some(&latitude_row));
+            idx.backfill_widget("appearance", &location_title, Some(&t("nlc-longitude")), Some(&longitude_row));
             // Advanced group
             let advanced_title = t("nlc-advanced");
-            idx.add_section("appearance", &page_title, &advanced_title, "nlc-advanced", &advanced_group);
-            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-backend"), "nlc-backend", &backend_row);
-            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-smoothing"), "nlc-smoothing", &smoothing_row);
-            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-startup-duration"), "nlc-startup-duration", &startup_duration_row);
-            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-shutdown-duration"), "nlc-shutdown-duration", &shutdown_duration_row);
-            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-adaptive-interval"), "nlc-adaptive-interval", &adaptive_interval_row);
-            idx.add_input("appearance", &page_title, &advanced_title, &t("nlc-update-interval"), "nlc-update-interval", &update_interval_row);
+            idx.backfill_widget("appearance", &advanced_title, None, Some(&advanced_group));
+            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-backend")), Some(&backend_row));
+            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-smoothing")), Some(&smoothing_row));
+            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-startup-duration")), Some(&startup_duration_row));
+            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-shutdown-duration")), Some(&shutdown_duration_row));
+            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-adaptive-interval")), Some(&adaptive_interval_row));
+            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-update-interval")), Some(&update_interval_row));
         }
 
         let updating = Rc::new(Cell::new(false));

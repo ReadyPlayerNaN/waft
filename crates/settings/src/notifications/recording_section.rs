@@ -45,26 +45,12 @@ impl RecordingSection {
             .build();
         group.add(&toggle_row);
 
-        // Register search entries
+        // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            let page_title = t("settings-notifications");
-            let section_title = t("notif-recording");
-            idx.add_section(
-                "notifications",
-                &page_title,
-                &section_title,
-                "notif-recording",
-                &group,
-            );
-            idx.add_input(
-                "notifications",
-                &page_title,
-                &section_title,
-                &t("notif-recording"),
-                "notif-recording",
-                &toggle_row,
-            );
+            let section = t("notif-recording");
+            idx.backfill_widget("notifications", &section, None, Some(&group));
+            idx.backfill_widget("notifications", &section, Some(&t("notif-recording")), Some(&toggle_row));
         }
 
         let updating = Rc::new(Cell::new(false));
