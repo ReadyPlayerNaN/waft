@@ -26,6 +26,14 @@ struct SoundRow {
 }
 
 impl GallerySection {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-sounds");
+        let section_title = t("sounds-gallery");
+        idx.add_section_deferred("sounds", &page_title, &section_title, "sounds-gallery");
+        idx.add_input_deferred("sounds", &page_title, &section_title, &t("sounds-add-file"), "sounds-add-file");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

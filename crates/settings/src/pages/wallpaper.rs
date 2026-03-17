@@ -30,6 +30,16 @@ pub struct WallpaperPage {
 }
 
 impl WallpaperPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-wallpaper");
+        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-mode"), "wallpaper-mode");
+        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-current"), "wallpaper-current");
+        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-transition"), "wallpaper-transition");
+        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-config"), "wallpaper-config");
+        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-background-color"), "wallpaper-background-color");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

@@ -83,6 +83,12 @@ struct ShortcutsPageState {
 }
 
 impl KeyboardShortcutsPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-keyboard-shortcuts");
+        idx.add_section_deferred("keyboard-shortcuts", &page_title, &t("kb-shortcuts-custom"), "kb-shortcuts-custom");
+    }
+
     pub fn new(search_index: &Rc<RefCell<SearchIndex>>) -> Self {
         let root = crate::page_layout::page_root();
 

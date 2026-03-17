@@ -24,6 +24,16 @@ pub struct NotificationsPage {
 }
 
 impl NotificationsPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        DndSection::register_search(idx);
+        DefaultsSection::register_search(idx);
+        ActiveProfileSection::register_search(idx);
+        GroupsSection::register_search(idx);
+        ProfilesSection::register_search(idx);
+        RecordingSection::register_search(idx);
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

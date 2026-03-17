@@ -36,6 +36,13 @@ struct BluetoothPageState {
 }
 
 impl BluetoothPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-bluetooth");
+        idx.add_section_deferred("bluetooth", &page_title, &t("bt-paired-devices"), "bt-paired-devices");
+        idx.add_section_deferred("bluetooth", &page_title, &t("bt-available-devices"), "bt-available-devices");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

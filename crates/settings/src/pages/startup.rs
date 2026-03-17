@@ -32,6 +32,12 @@ struct StartupPageState {
 }
 
 impl StartupPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-startup");
+        idx.add_section_deferred("startup", &page_title, &t("startup-entries"), "startup-entries");
+    }
+
     pub fn new(search_index: &Rc<RefCell<SearchIndex>>) -> Self {
         let root = crate::page_layout::page_root();
 

@@ -26,6 +26,15 @@ pub struct WeatherPage {
 }
 
 impl WeatherPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-weather");
+        idx.add_section_deferred("weather", &page_title, &t("weather-current"), "weather-current");
+        idx.add_section_deferred("weather", &page_title, &t("weather-settings"), "weather-settings");
+        idx.add_input_deferred("weather", &page_title, &t("weather-settings"), &t("weather-temp-unit"), "weather-temp-unit");
+        idx.add_input_deferred("weather", &page_title, &t("weather-settings"), &t("weather-update-interval"), "weather-update-interval");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

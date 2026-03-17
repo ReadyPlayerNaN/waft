@@ -22,6 +22,15 @@ pub struct DarkModeSection {
 }
 
 impl DarkModeSection {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-appearance");
+        let section_title = t("display-appearance");
+        idx.add_section_deferred("appearance", &page_title, &section_title, "display-appearance");
+        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-dark-mode"), "display-dark-mode");
+        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-dark-mode-settings"), "display-dark-mode-settings");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

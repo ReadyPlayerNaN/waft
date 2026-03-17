@@ -76,6 +76,12 @@ fn send_profile_update(
 }
 
 impl ProfilesSection {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-notifications");
+        idx.add_section_deferred("notifications", &page_title, &t("notif-profiles"), "notif-profiles");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

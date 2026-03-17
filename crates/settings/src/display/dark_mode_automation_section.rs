@@ -97,6 +97,18 @@ fn reconcile(config: &DarkModeAutomationConfig, widgets: &Widgets) {
 }
 
 impl DarkModeAutomationSection {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-appearance");
+        let section_title = t("display-dark-mode-automation");
+        idx.add_section_deferred("appearance", &page_title, &section_title, "display-dark-mode-automation");
+        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-latitude"), "display-latitude");
+        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-longitude"), "display-longitude");
+        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-auto-location"), "display-auto-location");
+        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-dbus-api"), "display-dbus-api");
+        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-xdg-portal"), "display-xdg-portal");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

@@ -39,6 +39,12 @@ struct OnlineAccountsPageState {
 }
 
 impl OnlineAccountsPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-online-accounts");
+        idx.add_section_deferred("online-accounts", &page_title, &t("online-accounts-title"), "online-accounts-title");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

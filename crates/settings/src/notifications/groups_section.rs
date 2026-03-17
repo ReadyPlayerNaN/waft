@@ -23,6 +23,8 @@ use crate::notifications::group_form::{GroupForm, GroupFormOutput};
 const NEW_MARKER: &str = "__new__";
 
 /// Smart container for notification groups display and editing.
+///
+/// Provides `register_search` for Phase 1 deferred registration.
 pub struct GroupsSection {
     /// Outer container: holds the pref_group and the form side by side.
     pub root: gtk::Box,
@@ -41,6 +43,12 @@ struct GroupsSectionState {
 }
 
 impl GroupsSection {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-notifications");
+        idx.add_section_deferred("notifications", &page_title, &t("notif-groups"), "notif-groups");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

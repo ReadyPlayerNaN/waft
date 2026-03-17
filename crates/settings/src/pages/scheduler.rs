@@ -32,6 +32,12 @@ struct SchedulerPageState {
 }
 
 impl SchedulerPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-scheduled-tasks");
+        idx.add_section_deferred("scheduled-tasks", &page_title, &t("scheduler-title"), "scheduler-title");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

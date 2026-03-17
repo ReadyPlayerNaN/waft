@@ -31,6 +31,19 @@ pub struct NiriWindowsPage {
 }
 
 impl NiriWindowsPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-windows");
+        idx.add_section_deferred("windows", &page_title, &t("windows-prefer-no-csd"), "windows-prefer-no-csd");
+        idx.add_section_deferred("windows", &page_title, &t("windows-derive-colors"), "windows-derive-colors");
+        idx.add_section_deferred("windows", &page_title, &t("windows-focus-ring"), "windows-focus-ring");
+        idx.add_section_deferred("windows", &page_title, &t("windows-border"), "windows-border");
+        idx.add_section_deferred("windows", &page_title, &t("windows-shadow"), "windows-shadow");
+        idx.add_section_deferred("windows", &page_title, &t("windows-tab-indicator"), "windows-tab-indicator");
+        idx.add_section_deferred("windows", &page_title, &t("windows-gaps"), "windows-gaps");
+        idx.add_section_deferred("windows", &page_title, &t("windows-struts"), "windows-struts");
+    }
+
     pub fn new(entity_store: &Rc<EntityStore>, search_index: &Rc<RefCell<SearchIndex>>) -> Self {
         let root = crate::page_layout::page_root();
 

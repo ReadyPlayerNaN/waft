@@ -19,6 +19,15 @@ pub struct DisplayPage {
 }
 
 impl DisplayPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    ///
+    /// Display page itself has no static entries -- brightness and output
+    /// sections are dynamic (entity-driven) and register entries themselves.
+    pub fn register_search(_idx: &mut SearchIndex) {
+        // No static entries; brightness_section and output_section
+        // register dynamic entries during reconciliation.
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

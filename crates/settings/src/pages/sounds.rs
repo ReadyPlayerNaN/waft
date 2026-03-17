@@ -19,6 +19,11 @@ pub struct SoundsPage {
 }
 
 impl SoundsPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        GallerySection::register_search(idx);
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

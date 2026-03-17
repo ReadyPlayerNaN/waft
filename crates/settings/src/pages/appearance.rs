@@ -25,6 +25,15 @@ pub struct AppearancePage {
 }
 
 impl AppearancePage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        DarkModeSection::register_search(idx);
+        DarkModeAutomationSection::register_search(idx);
+        NightLightSection::register_search(idx);
+        NightLightConfigSection::register_search(idx);
+        AccentColourSection::register_search(idx);
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

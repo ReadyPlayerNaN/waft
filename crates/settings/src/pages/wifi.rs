@@ -33,6 +33,13 @@ struct WiFiPageState {
 }
 
 impl WiFiPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-wifi");
+        idx.add_section_deferred("wifi", &page_title, &t("wifi-known-networks"), "wifi-known-networks");
+        idx.add_section_deferred("wifi", &page_title, &t("wifi-available-networks"), "wifi-available-networks");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

@@ -38,6 +38,41 @@ fn subtitle_for_state(state: Option<&FieldState>) -> String {
 }
 
 impl NightLightConfigSection {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-appearance");
+        // Colors group
+        let colors_title = t("nlc-colors");
+        idx.add_section_deferred("appearance", &page_title, &colors_title, "nlc-colors");
+        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-night-temp"), "nlc-night-temp");
+        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-night-gamma"), "nlc-night-gamma");
+        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-day-temp"), "nlc-day-temp");
+        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-day-gamma"), "nlc-day-gamma");
+        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-static-temp"), "nlc-static-temp");
+        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-static-gamma"), "nlc-static-gamma");
+        // Timing group
+        let timing_title = t("nlc-timing");
+        idx.add_section_deferred("appearance", &page_title, &timing_title, "nlc-timing");
+        idx.add_input_deferred("appearance", &page_title, &timing_title, &t("nlc-transition-mode"), "nlc-transition-mode");
+        idx.add_input_deferred("appearance", &page_title, &timing_title, &t("nlc-sunrise"), "nlc-sunrise");
+        idx.add_input_deferred("appearance", &page_title, &timing_title, &t("nlc-sunset"), "nlc-sunset");
+        idx.add_input_deferred("appearance", &page_title, &timing_title, &t("nlc-transition-duration"), "nlc-transition-duration");
+        // Location group
+        let location_title = t("nlc-location");
+        idx.add_section_deferred("appearance", &page_title, &location_title, "nlc-location");
+        idx.add_input_deferred("appearance", &page_title, &location_title, &t("nlc-latitude"), "nlc-latitude");
+        idx.add_input_deferred("appearance", &page_title, &location_title, &t("nlc-longitude"), "nlc-longitude");
+        // Advanced group
+        let advanced_title = t("nlc-advanced");
+        idx.add_section_deferred("appearance", &page_title, &advanced_title, "nlc-advanced");
+        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-backend"), "nlc-backend");
+        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-smoothing"), "nlc-smoothing");
+        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-startup-duration"), "nlc-startup-duration");
+        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-shutdown-duration"), "nlc-shutdown-duration");
+        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-adaptive-interval"), "nlc-adaptive-interval");
+        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-update-interval"), "nlc-update-interval");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,

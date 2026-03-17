@@ -30,6 +30,12 @@ struct WiredPageState {
 }
 
 impl WiredPage {
+    /// Phase 1: Register static search entries without constructing widgets.
+    pub fn register_search(idx: &mut SearchIndex) {
+        let page_title = t("settings-wired");
+        idx.add_section_deferred("wired", &page_title, &t("wired-ip-address"), "wired-ip-address");
+    }
+
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
