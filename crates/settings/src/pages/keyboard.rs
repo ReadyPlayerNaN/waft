@@ -60,14 +60,7 @@ impl KeyboardPage {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(24)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
+        let root = crate::page_layout::page_root();
 
         // Mode banner (hidden by default)
         let mode_banner = adw::Banner::builder().revealed(false).build();
@@ -199,67 +192,28 @@ impl KeyboardPage {
             });
         }
 
-        // Subscribe to keyboard-layout-config changes
-        {
-            let store = entity_store.clone();
-            let cb = action_callback.clone();
-            let state_clone = state.clone();
-
-            entity_store.subscribe_type(CONFIG_ENTITY_TYPE, move || {
-                let configs: Vec<(Urn, KeyboardLayoutConfig)> =
-                    store.get_entities_typed(CONFIG_ENTITY_TYPE);
-
-                log::debug!(
-                    "[keyboard-page] Config subscription triggered: {} configs",
-                    configs.len()
-                );
-
-                if let Some((urn, config)) = configs.first() {
-                    Self::reconcile(&state_clone, urn, config, &cb);
+        // Subscribe to both config and active layout changes
+        crate::subscription::subscribe_dual_entities::<KeyboardLayoutConfig, KeyboardLayout, _>(
+            entity_store,
+            CONFIG_ENTITY_TYPE,
+            KEYBOARD_ENTITY_TYPE,
+            {
+                let state_clone = state.clone();
+                let cb = action_callback.clone();
+                move |configs, layouts| {
+                    if let Some((urn, config)) = configs.first() {
+                        log::debug!(
+                            "[keyboard-page] Reconciling config with mode: {}",
+                            config.mode
+                        );
+                        Self::reconcile(&state_clone, urn, config, &cb);
+                    }
+                    if let Some((urn, layout)) = layouts.first() {
+                        Self::reconcile_active_layout(&state_clone, urn, layout);
+                    }
                 }
-            });
-        }
-
-        // Subscribe to keyboard-layout changes (active layout)
-        {
-            let store = entity_store.clone();
-            let state_clone = state.clone();
-
-            entity_store.subscribe_type(KEYBOARD_ENTITY_TYPE, move || {
-                let layouts: Vec<(Urn, KeyboardLayout)> =
-                    store.get_entities_typed(KEYBOARD_ENTITY_TYPE);
-
-                if let Some((urn, layout)) = layouts.first() {
-                    Self::reconcile_active_layout(&state_clone, urn, layout);
-                }
-            });
-        }
-
-        // Initial reconciliation
-        {
-            let state_clone = state.clone();
-            let store_clone = entity_store.clone();
-            let cb_clone = action_callback.clone();
-
-            gtk::glib::idle_add_local_once(move || {
-                let configs: Vec<(Urn, KeyboardLayoutConfig)> =
-                    store_clone.get_entities_typed(CONFIG_ENTITY_TYPE);
-
-                if let Some((urn, config)) = configs.first() {
-                    log::debug!(
-                        "[keyboard-page] Initial reconciliation with mode: {}",
-                        config.mode
-                    );
-                    Self::reconcile(&state_clone, urn, config, &cb_clone);
-                }
-
-                let layouts: Vec<(Urn, KeyboardLayout)> =
-                    store_clone.get_entities_typed(KEYBOARD_ENTITY_TYPE);
-                if let Some((urn, layout)) = layouts.first() {
-                    Self::reconcile_active_layout(&state_clone, urn, layout);
-                }
-            });
-        }
+            },
+        );
 
         Self { root }
     }

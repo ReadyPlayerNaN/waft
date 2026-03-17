@@ -7,12 +7,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use adw::prelude::*;
 use waft_client::EntityStore;
 use waft_ui_gtk::vdom::Component;
 use waft_protocol::Urn;
 use waft_protocol::entity::plugin::{self, PluginStatus};
 
+use crate::entity_list_group::EntityListGroup;
 use crate::i18n::t;
 use crate::plugins::plugin_row::{PluginRow, PluginRowProps};
 use crate::search_index::SearchIndex;
@@ -27,55 +27,32 @@ struct PluginsPageState {
     plugin_rows: HashMap<String, PluginRow>,
     /// Sorted keys for stable row ordering.
     sorted_names: Vec<String>,
-    list_box: gtk::ListBox,
-    empty_state: adw::StatusPage,
-    group: adw::PreferencesGroup,
+    list_group: EntityListGroup,
 }
 
 impl PluginsPage {
     pub fn new(entity_store: &Rc<EntityStore>, search_index: &Rc<RefCell<SearchIndex>>) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(24)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
+        let root = crate::page_layout::page_root();
 
-        let empty_state = adw::StatusPage::builder()
-            .icon_name("application-x-addon-symbolic")
-            .title(t("plugins-no-plugins"))
-            .description(t("plugins-no-plugins-desc"))
-            .visible(false)
-            .build();
-        root.append(&empty_state);
-
-        let group = adw::PreferencesGroup::builder()
-            .title(t("plugins-title"))
-            .visible(false)
-            .build();
-
-        let list_box = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .css_classes(["boxed-list"])
-            .build();
-        group.add(&list_box);
-        root.append(&group);
+        let list_group = EntityListGroup::new(
+            &root,
+            "application-x-addon-symbolic",
+            &t("plugins-no-plugins"),
+            &t("plugins-no-plugins-desc"),
+            &t("plugins-title"),
+        );
 
         // Register search entries
         {
             let mut idx = search_index.borrow_mut();
             let page_title = t("settings-plugins");
-            idx.add_section("plugins", &page_title, &t("plugins-title"), "plugins-title", &group);
+            idx.add_section("plugins", &page_title, &t("plugins-title"), "plugins-title", &list_group.group);
         }
 
         let state = Rc::new(RefCell::new(PluginsPageState {
             plugin_rows: HashMap::new(),
             sorted_names: Vec::new(),
-            list_box,
-            empty_state,
-            group,
+            list_group,
         }));
 
         // Subscribe to plugin-status changes (future updates + initial reconciliation)
@@ -121,12 +98,7 @@ impl PluginsPage {
                 existing.update(&props);
             } else {
                 let row = PluginRow::build(&props);
-                // Insert in sorted position
-                let pos = current_names
-                    .iter()
-                    .position(|n| n == &plugin.name)
-                    .unwrap_or(0);
-                state.list_box.insert(&row.widget(), pos as i32);
+                state.list_group.insert_sorted(&row.widget(), &plugin.name, &current_names);
                 state.plugin_rows.insert(plugin.name.clone(), row);
             }
         }
@@ -141,15 +113,11 @@ impl PluginsPage {
 
         for key in to_remove {
             if let Some(row) = state.plugin_rows.remove(&key) {
-                state.list_box.remove(&row.widget());
+                state.list_group.list_box.remove(&row.widget());
             }
         }
 
         state.sorted_names = current_names;
-
-        // Toggle empty state vs list visibility
-        let has_plugins = !state.plugin_rows.is_empty();
-        state.group.set_visible(has_plugins);
-        state.empty_state.set_visible(!has_plugins);
+        state.list_group.toggle_visibility(!state.plugin_rows.is_empty());
     }
 }

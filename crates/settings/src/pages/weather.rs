@@ -31,14 +31,7 @@ impl WeatherPage {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(24)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
+        let root = crate::page_layout::page_root();
 
         // Weather preview (hidden until entity arrives)
         let preview = Rc::new(WeatherPreviewGroup::new());
@@ -144,47 +137,24 @@ impl WeatherPage {
             });
         }
 
-        // Subscribe to weather entities
-        {
-            let store = entity_store.clone();
-            let preview_ref = preview.clone();
-            let urn_ref = current_urn;
+        // Subscribe to weather entities (future updates + initial reconciliation)
+        crate::subscription::subscribe_entities::<Weather, _>(
+            entity_store,
+            weather::ENTITY_TYPE,
+            {
+                let urn_ref = current_urn;
+                let preview_ref = preview;
+                move |entities| {
+                    if let Some((urn, w)) = entities.first() {
+                        *urn_ref.borrow_mut() = Some(urn.clone());
 
-            entity_store.subscribe_type(weather::ENTITY_TYPE, move || {
-                let entities: Vec<(Urn, Weather)> = store.get_entities_typed(weather::ENTITY_TYPE);
-
-                if let Some((urn, w)) = entities.first() {
-                    *urn_ref.borrow_mut() = Some(urn.clone());
-
-                    let icon_name = condition_icon_name(&w.condition, w.day);
-                    let condition_text = condition_description(&w.condition);
-
-                    preview_ref.apply_props(w.temperature, &condition_text, icon_name);
+                        let icon_name = condition_icon_name(&w.condition, w.day);
+                        let condition_text = condition_description(&w.condition);
+                        preview_ref.apply_props(w.temperature, &condition_text, icon_name);
+                    }
                 }
-            });
-        }
-
-        // Initial reconciliation with cached data
-        {
-            let store = entity_store.clone();
-            let preview_ref = preview;
-            let urn_ref: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
-            gtk::glib::idle_add_local_once(move || {
-                let entities: Vec<(Urn, Weather)> = store.get_entities_typed(weather::ENTITY_TYPE);
-
-                if let Some((urn, w)) = entities.first() {
-                    log::debug!(
-                        "[weather-page] Initial reconciliation: {} weather entities",
-                        entities.len()
-                    );
-                    *urn_ref.borrow_mut() = Some(urn.clone());
-
-                    let icon_name = condition_icon_name(&w.condition, w.day);
-                    let condition_text = condition_description(&w.condition);
-                    preview_ref.apply_props(w.temperature, &condition_text, icon_name);
-                }
-            });
-        }
+            },
+        );
 
         // Prevent location_group from being dropped
         std::mem::forget(location_group);

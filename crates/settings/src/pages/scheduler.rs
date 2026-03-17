@@ -13,6 +13,7 @@ use waft_protocol::Urn;
 use waft_protocol::entity::session::{self, UserTimer};
 use waft_ui_gtk::vdom::Component;
 
+use crate::entity_list_group::EntityListGroup;
 use crate::i18n::t;
 use crate::scheduler::timer_dialog::TimerDialog;
 use crate::scheduler::timer_row::{TimerRow, TimerRowOutput, TimerRowProps};
@@ -27,9 +28,7 @@ pub struct SchedulerPage {
 struct SchedulerPageState {
     timer_rows: HashMap<String, (TimerRow, Urn, UserTimer)>,
     sorted_names: Vec<String>,
-    list_box: gtk::ListBox,
-    empty_state: adw::StatusPage,
-    group: adw::PreferencesGroup,
+    list_group: EntityListGroup,
 }
 
 impl SchedulerPage {
@@ -38,14 +37,7 @@ impl SchedulerPage {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(24)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
+        let root = crate::page_layout::page_root();
 
         // -- Add timer button section --
         let add_group = adw::PreferencesGroup::new();
@@ -56,27 +48,14 @@ impl SchedulerPage {
         add_group.add(&add_button);
         root.append(&add_group);
 
-        // -- Empty state --
-        let empty_state = adw::StatusPage::builder()
-            .icon_name("preferences-system-time-symbolic")
-            .title(t("scheduler-no-timers"))
-            .description(t("scheduler-no-timers-desc"))
-            .visible(false)
-            .build();
-        root.append(&empty_state);
-
-        // -- Timer list --
-        let group = adw::PreferencesGroup::builder()
-            .title(t("scheduler-title"))
-            .visible(false)
-            .build();
-
-        let list_box = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .css_classes(["boxed-list"])
-            .build();
-        group.add(&list_box);
-        root.append(&group);
+        // -- Empty state + timer list --
+        let list_group = EntityListGroup::new(
+            &root,
+            "preferences-system-time-symbolic",
+            &t("scheduler-no-timers"),
+            &t("scheduler-no-timers-desc"),
+            &t("scheduler-title"),
+        );
 
         // Register search entries
         {
@@ -87,16 +66,14 @@ impl SchedulerPage {
                 &page_title,
                 &t("scheduler-title"),
                 "scheduler-title",
-                &group,
+                &list_group.group,
             );
         }
 
         let state = Rc::new(RefCell::new(SchedulerPageState {
             timer_rows: HashMap::new(),
             sorted_names: Vec::new(),
-            list_box,
-            empty_state,
-            group,
+            list_group,
         }));
 
         // Wire "Add Timer" button
@@ -256,11 +233,7 @@ impl SchedulerPage {
                 });
 
                 // Insert in sorted position
-                let pos = current_names
-                    .iter()
-                    .position(|n| n == &timer.name)
-                    .unwrap_or(0);
-                state.list_box.insert(&row.widget(), pos as i32);
+                state.list_group.insert_sorted(&row.widget(), &timer.name, &current_names);
                 state
                     .timer_rows
                     .insert(timer.name.clone(), (row, urn.clone(), timer.clone()));
@@ -277,15 +250,11 @@ impl SchedulerPage {
 
         for key in to_remove {
             if let Some((row, _, _)) = state.timer_rows.remove(&key) {
-                state.list_box.remove(&row.widget());
+                state.list_group.list_box.remove(&row.widget());
             }
         }
 
         state.sorted_names = current_names;
-
-        // Toggle empty state vs list visibility
-        let has_timers = !state.timer_rows.is_empty();
-        state.group.set_visible(has_timers);
-        state.empty_state.set_visible(!has_timers);
+        state.list_group.toggle_visibility(!state.timer_rows.is_empty());
     }
 }

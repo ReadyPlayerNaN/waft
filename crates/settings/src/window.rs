@@ -4,6 +4,7 @@
 //! that displays the selected settings page via a gtk::Stack.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -33,6 +34,8 @@ use crate::pages::wifi::WiFiPage;
 use crate::pages::wired::WiredPage;
 use crate::search_index::SearchIndex;
 use crate::sidebar::{Sidebar, SidebarOutput};
+
+type PageFactory = Box<dyn FnOnce() -> gtk::Widget>;
 
 /// Map a page_id to its translated display title.
 fn page_title(page_id: &str) -> String {
@@ -139,6 +142,19 @@ impl SettingsWindow {
             idx.add_page("scheduled-tasks", &t("settings-scheduled-tasks"), "settings-scheduled-tasks");
         }
 
+        // Helper: wrap a page root in adw::Clamp and upcast to gtk::Widget.
+        fn clamped(child: &gtk::Box) -> gtk::Widget {
+            adw::Clamp::builder()
+                .maximum_size(600)
+                .child(child)
+                .build()
+                .upcast()
+        }
+
+        // Entity-based pages are constructed eagerly so their subscribe_type
+        // callbacks are registered before the main loop delivers entity data.
+        // Pages that only do synchronous file I/O (no entity subscriptions)
+        // are deferred to an idle callback to avoid blocking startup.
         let audio_page = AudioPage::new(entity_store, action_callback, &search_index);
         let bluetooth_page = BluetoothPage::new(entity_store, action_callback, &search_index);
         let wifi_page = WiFiPage::new(entity_store, action_callback, &search_index);
@@ -149,132 +165,70 @@ impl SettingsWindow {
         let wallpaper_page = WallpaperPage::new(entity_store, action_callback, &search_index);
         let windows_page = NiriWindowsPage::new(entity_store, &search_index);
         let keyboard_page = KeyboardPage::new(entity_store, action_callback, &search_index);
-        let keyboard_shortcuts_page = KeyboardShortcutsPage::new(&search_index);
         let notifications_page = NotificationsPage::new(entity_store, action_callback, &search_index);
         let sounds_page = SoundsPage::new(entity_store, action_callback, &search_index);
         let plugins_page = PluginsPage::new(entity_store, &search_index);
-        let startup_page = StartupPage::new(&search_index);
         let services_page = ServicesPage::new(entity_store, action_callback, &search_index);
         let scheduler_page = SchedulerPage::new(entity_store, action_callback, &search_index);
         let online_accounts_page = OnlineAccountsPage::new(entity_store, action_callback, &search_index, &navigation_view);
 
-        // Wrap each page in a clamp for consistent max width
-        let audio_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&audio_page.root)
-            .build();
-        let bt_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&bluetooth_page.root)
-            .build();
-        let wifi_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&wifi_page.root)
-            .build();
-        let wired_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&wired_page.root)
-            .build();
-        let weather_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&weather_page.root)
-            .build();
-        let appearance_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&appearance_page.root)
-            .build();
-        let display_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&display_page.root)
-            .build();
-        let wallpaper_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&wallpaper_page.root)
-            .build();
-        let windows_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&windows_page.root)
-            .build();
-        let keyboard_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&keyboard_page.root)
-            .build();
-        let notif_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&notifications_page.root)
-            .build();
+        // Deferred page factories — these pages only read files (KDL config),
+        // have no entity subscriptions, and are safe to construct after startup.
+        let factories: Rc<RefCell<HashMap<String, PageFactory>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+        {
+            let mut f = factories.borrow_mut();
 
-        let sounds_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&sounds_page.root)
-            .build();
+            let si = search_index.clone();
+            f.insert("keyboard-shortcuts".into(), Box::new(move || {
+                clamped(&KeyboardShortcutsPage::new(&si).root)
+            }));
 
-        let plugins_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&plugins_page.root)
-            .build();
-
-        let kb_shortcuts_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&keyboard_shortcuts_page.root)
-            .build();
-
-        let startup_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&startup_page.root)
-            .build();
-
-        let services_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&services_page.root)
-            .build();
-
-        let scheduler_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&scheduler_page.root)
-            .build();
-
-        let online_accounts_clamp = adw::Clamp::builder()
-            .maximum_size(600)
-            .child(&online_accounts_page.root)
-            .build();
+            let si = search_index.clone();
+            f.insert("startup".into(), Box::new(move || {
+                clamped(&StartupPage::new(&si).root)
+            }));
+        }
 
         // Stack for page switching (keyed by stable page_id)
         let stack = gtk::Stack::builder()
             .transition_type(gtk::StackTransitionType::Crossfade)
             .vhomogeneous(false)
             .build();
-        stack.add_named(&audio_clamp, Some("audio"));
-        stack.add_named(&bt_clamp, Some("bluetooth"));
-        stack.add_named(&wifi_clamp, Some("wifi"));
-        stack.add_named(&wired_clamp, Some("wired"));
-        stack.add_named(&online_accounts_clamp, Some("online-accounts"));
-        stack.add_named(&weather_clamp, Some("weather"));
-        stack.add_named(&appearance_clamp, Some("appearance"));
-        stack.add_named(&display_clamp, Some("display"));
-        stack.add_named(&wallpaper_clamp, Some("wallpaper"));
-        stack.add_named(&windows_clamp, Some("windows"));
-        stack.add_named(&keyboard_clamp, Some("keyboard"));
-        stack.add_named(&kb_shortcuts_clamp, Some("keyboard-shortcuts"));
-        stack.add_named(&notif_clamp, Some("notifications"));
-        stack.add_named(&sounds_clamp, Some("sounds"));
-        stack.add_named(&plugins_clamp, Some("plugins"));
-        stack.add_named(&services_clamp, Some("services"));
-        stack.add_named(&startup_clamp, Some("startup"));
-        stack.add_named(&scheduler_clamp, Some("scheduled-tasks"));
-        // Navigate to the requested page, or default to bluetooth
+        stack.add_named(&clamped(&audio_page.root), Some("audio"));
+        stack.add_named(&clamped(&bluetooth_page.root), Some("bluetooth"));
+        stack.add_named(&clamped(&wifi_page.root), Some("wifi"));
+        stack.add_named(&clamped(&wired_page.root), Some("wired"));
+        stack.add_named(&clamped(&online_accounts_page.root), Some("online-accounts"));
+        stack.add_named(&clamped(&weather_page.root), Some("weather"));
+        stack.add_named(&clamped(&appearance_page.root), Some("appearance"));
+        stack.add_named(&clamped(&display_page.root), Some("display"));
+        stack.add_named(&clamped(&wallpaper_page.root), Some("wallpaper"));
+        stack.add_named(&clamped(&windows_page.root), Some("windows"));
+        stack.add_named(&clamped(&keyboard_page.root), Some("keyboard"));
+        stack.add_named(&clamped(&notifications_page.root), Some("notifications"));
+        stack.add_named(&clamped(&sounds_page.root), Some("sounds"));
+        stack.add_named(&clamped(&plugins_page.root), Some("plugins"));
+        stack.add_named(&clamped(&services_page.root), Some("services"));
+        stack.add_named(&clamped(&scheduler_page.root), Some("scheduled-tasks"));
+
+        // Deferred pages: construct eagerly if they are the initial page,
+        // otherwise build on first navigation (sidebar callback or idle).
         let default_page = initial_page.unwrap_or("bluetooth");
-        if stack.child_by_name(default_page).is_some() {
-            stack.set_visible_child_name(default_page);
-        } else {
-            if let Some(page_id) = initial_page {
+        if stack.child_by_name(default_page).is_none() {
+            if let Some(factory) = factories.borrow_mut().remove(default_page) {
+                let widget = factory();
+                stack.add_named(&widget, Some(default_page));
+            } else if initial_page.is_some() {
                 log::warn!(
                     "[settings] Requested page '{}' not found, falling back to bluetooth",
-                    page_id
+                    default_page
                 );
             }
-            stack.set_visible_child_name("bluetooth");
         }
+        stack.set_visible_child_name(
+            if stack.child_by_name(default_page).is_some() { default_page } else { "bluetooth" }
+        );
 
         let content_scrolled = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -317,6 +271,7 @@ impl SettingsWindow {
             stack.visible_child_name().map(|s| s.to_string()).unwrap_or_else(|| "bluetooth".to_string()),
         ));
         let current_page_ref = current_page.clone();
+        let factories_ref = factories.clone();
         sidebar.connect_output(move |output| {
             let (new_page_id, new_title) = match output {
                 SidebarOutput::Selected { page_id, title } => {
@@ -350,6 +305,14 @@ impl SettingsWindow {
             let prev = current_page_ref.borrow().clone();
             if prev == "display" && new_page_id != "display" {
                 display_page.reset();
+            }
+
+            // Construct the page from its factory on first navigation
+            if stack_ref.child_by_name(&new_page_id).is_none()
+                && let Some(factory) = factories_ref.borrow_mut().remove(&new_page_id)
+            {
+                let widget = factory();
+                stack_ref.add_named(&widget, Some(&new_page_id));
             }
 
             content_page.set_title(&new_title);
@@ -386,6 +349,7 @@ impl SettingsWindow {
         }
 
         // -- WiFi sidebar visibility based on adapter presence --
+        let stack_for_idle = stack.clone();
         {
             let store = entity_store.clone();
             let sidebar_for_sub = sidebar_ref.clone();
@@ -439,6 +403,20 @@ impl SettingsWindow {
 
         // Prevent sidebar from being dropped
         std::mem::forget(sidebar_ref);
+
+        // Construct deferred pages (file-I/O-only, no entity subscriptions) in
+        // the next idle cycle so their search entries get registered without
+        // blocking startup.
+        {
+            let factories_idle = factories;
+            let stack_idle = stack_for_idle;
+            gtk::glib::idle_add_local_once(move || {
+                for (page_id, factory) in factories_idle.borrow_mut().drain() {
+                    let widget = factory();
+                    stack_idle.add_named(&widget, Some(&page_id));
+                }
+            });
+        }
 
         Self { window }
     }

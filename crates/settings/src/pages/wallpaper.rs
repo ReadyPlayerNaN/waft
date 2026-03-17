@@ -35,14 +35,7 @@ impl WallpaperPage {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(24)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
+        let root = crate::page_layout::page_root();
 
         let mode = Rc::new(ModeSection::new());
         root.append(&mode.root);

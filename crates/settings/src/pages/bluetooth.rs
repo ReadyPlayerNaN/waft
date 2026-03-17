@@ -41,14 +41,7 @@ impl BluetoothPage {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(24)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
+        let root = crate::page_layout::page_root();
 
         // Container for adapter groups (one per adapter)
         let adapters_box = gtk::Box::builder()
@@ -115,125 +108,60 @@ impl BluetoothPage {
             discovered_group,
         }));
 
-        // Subscribe to adapter changes
-        {
-            let store = entity_store.clone();
-            let device_store = entity_store.clone();
-            let cb = action_callback.clone();
-            let state = state.clone();
-            entity_store.subscribe_type(BluetoothAdapter::ENTITY_TYPE, move || {
-                let adapters: Vec<(Urn, BluetoothAdapter)> =
-                    store.get_entities_typed(BluetoothAdapter::ENTITY_TYPE);
-                log::debug!(
-                    "[bluetooth-page] Adapter subscription triggered: {} adapters",
-                    adapters.len()
-                );
-                {
-                    let mut st = state.borrow_mut();
-                    st.adapters_reconciler.reconcile(adapters.iter().map(|(urn, adapter)| {
-                        let key = urn.as_str().to_string();
-                        let urn = urn.clone();
-                        let cb = cb.clone();
-                        VNode::with_output::<AdapterGroup>(
-                            AdapterGroupProps {
-                                name:         adapter.name.clone(),
-                                powered:      adapter.powered,
-                                discoverable: adapter.discoverable,
-                            },
-                            move |output| {
-                                let (action, params) = match output {
-                                    AdapterGroupOutput::TogglePower =>
-                                        ("toggle-power", serde_json::Value::Null),
-                                    AdapterGroupOutput::ToggleDiscoverable =>
-                                        ("toggle-discoverable", serde_json::Value::Null),
-                                    AdapterGroupOutput::SetAlias(alias) =>
-                                        ("set-alias", serde_json::json!({ "alias": alias })),
-                                };
-                                cb(urn.clone(), action.to_string(), params);
-                            },
-                        )
-                        .key(key)
-                    }));
-                }
-                let devices: Vec<(Urn, BluetoothDevice)> =
-                    device_store.get_entities_typed(BluetoothDevice::ENTITY_TYPE);
-                Self::reconcile_devices(&state, &devices, &adapters, &cb);
-            });
-        }
-
-        // Subscribe to device changes
-        {
-            let store = entity_store.clone();
-            let cb = action_callback.clone();
-            let adapter_store = entity_store.clone();
-            let state = state.clone();
-            entity_store.subscribe_type(BluetoothDevice::ENTITY_TYPE, move || {
-                let devices: Vec<(Urn, BluetoothDevice)> =
-                    store.get_entities_typed(BluetoothDevice::ENTITY_TYPE);
-                log::debug!(
-                    "[bluetooth-page] Device subscription triggered: {} devices",
-                    devices.len()
-                );
-                let adapters: Vec<(Urn, BluetoothAdapter)> =
-                    adapter_store.get_entities_typed(BluetoothAdapter::ENTITY_TYPE);
-                Self::reconcile_devices(&state, &devices, &adapters, &cb);
-            });
-        }
-
-        // Trigger initial reconciliation with current cached data.
-        // EntityStore::subscribe_type() only fires on changes, not on initial
-        // subscription. If EntityUpdated notifications arrived before subscriptions
-        // were registered, the UI never reconciles with cached data.
-        {
-            let state_clone = state.clone();
-            let cb_clone = action_callback.clone();
-            let store_clone = entity_store.clone();
-
-            gtk::glib::idle_add_local_once(move || {
-                let adapters: Vec<(Urn, BluetoothAdapter)> =
-                    store_clone.get_entities_typed(BluetoothAdapter::ENTITY_TYPE);
-                let devices: Vec<(Urn, BluetoothDevice)> =
-                    store_clone.get_entities_typed(BluetoothDevice::ENTITY_TYPE);
-
-                if !adapters.is_empty() || !devices.is_empty() {
+        // Subscribe to both adapter and device changes
+        crate::subscription::subscribe_dual_entities::<BluetoothAdapter, BluetoothDevice, _>(
+            entity_store,
+            BluetoothAdapter::ENTITY_TYPE,
+            BluetoothDevice::ENTITY_TYPE,
+            {
+                let state = state.clone();
+                let cb = action_callback.clone();
+                move |adapters, devices| {
                     log::debug!(
-                        "[bluetooth-page] Initial reconciliation: {} adapters, {} devices",
+                        "[bluetooth-page] Reconciling: {} adapters, {} devices",
                         adapters.len(),
                         devices.len()
                     );
-                    {
-                        let mut st = state_clone.borrow_mut();
-                        st.adapters_reconciler.reconcile(adapters.iter().map(|(urn, adapter)| {
-                            let key = urn.as_str().to_string();
-                            let urn = urn.clone();
-                            let cb = cb_clone.clone();
-                            VNode::with_output::<AdapterGroup>(
-                                AdapterGroupProps {
-                                    name:         adapter.name.clone(),
-                                    powered:      adapter.powered,
-                                    discoverable: adapter.discoverable,
-                                },
-                                move |output| {
-                                    let (action, params) = match output {
-                                        AdapterGroupOutput::TogglePower =>
-                                            ("toggle-power", serde_json::Value::Null),
-                                        AdapterGroupOutput::ToggleDiscoverable =>
-                                            ("toggle-discoverable", serde_json::Value::Null),
-                                        AdapterGroupOutput::SetAlias(alias) =>
-                                            ("set-alias", serde_json::json!({ "alias": alias })),
-                                    };
-                                    cb(urn.clone(), action.to_string(), params);
-                                },
-                            )
-                            .key(key)
-                        }));
-                    }
-                    Self::reconcile_devices(&state_clone, &devices, &adapters, &cb_clone);
+                    Self::reconcile_adapters(&state, &adapters, &cb);
+                    Self::reconcile_devices(&state, &devices, &adapters, &cb);
                 }
-            });
-        }
+            },
+        );
 
         Self { root }
+    }
+
+    /// Reconcile adapter groups with current adapter data.
+    fn reconcile_adapters(
+        state: &Rc<RefCell<BluetoothPageState>>,
+        adapters: &[(Urn, BluetoothAdapter)],
+        action_callback: &EntityActionCallback,
+    ) {
+        let mut st = state.borrow_mut();
+        st.adapters_reconciler.reconcile(adapters.iter().map(|(urn, adapter)| {
+            let key = urn.as_str().to_string();
+            let urn = urn.clone();
+            let cb = action_callback.clone();
+            VNode::with_output::<AdapterGroup>(
+                AdapterGroupProps {
+                    name:         adapter.name.clone(),
+                    powered:      adapter.powered,
+                    discoverable: adapter.discoverable,
+                },
+                move |output| {
+                    let (action, params) = match output {
+                        AdapterGroupOutput::TogglePower =>
+                            ("toggle-power", serde_json::Value::Null),
+                        AdapterGroupOutput::ToggleDiscoverable =>
+                            ("toggle-discoverable", serde_json::Value::Null),
+                        AdapterGroupOutput::SetAlias(alias) =>
+                            ("set-alias", serde_json::json!({ "alias": alias })),
+                    };
+                    cb(urn.clone(), action.to_string(), params);
+                },
+            )
+            .key(key)
+        }));
     }
 
     /// Reconcile device lists with current device data.

@@ -35,14 +35,7 @@ impl WiredPage {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(24)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
+        let root = crate::page_layout::page_root();
 
         let adapters_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -63,58 +56,24 @@ impl WiredPage {
             adapters_reconciler,
         }));
 
-        // Subscribe to adapter changes
-        {
-            let store = entity_store.clone();
-            let conn_store = entity_store.clone();
-            let cb = action_callback.clone();
-            let state = state.clone();
-            entity_store.subscribe_type(ADAPTER_ENTITY_TYPE, move || {
-                let adapters: Vec<(Urn, NetworkAdapter)> =
-                    store.get_entities_typed(ADAPTER_ENTITY_TYPE);
-                let connections: Vec<(Urn, EthernetConnection)> =
-                    conn_store.get_entities_typed(EthernetConnection::ENTITY_TYPE);
-                Self::reconcile(&state, &adapters, &connections, &cb);
-            });
-        }
-
-        // Subscribe to connection changes
-        {
-            let store = entity_store.clone();
-            let adapter_store = entity_store.clone();
-            let cb = action_callback.clone();
-            let state = state.clone();
-            entity_store.subscribe_type(EthernetConnection::ENTITY_TYPE, move || {
-                let connections: Vec<(Urn, EthernetConnection)> =
-                    store.get_entities_typed(EthernetConnection::ENTITY_TYPE);
-                let adapters: Vec<(Urn, NetworkAdapter)> =
-                    adapter_store.get_entities_typed(ADAPTER_ENTITY_TYPE);
-                Self::reconcile(&state, &adapters, &connections, &cb);
-            });
-        }
-
-        // Trigger initial reconciliation with current cached data
-        {
-            let state_clone = state.clone();
-            let cb_clone = action_callback.clone();
-            let store_clone = entity_store.clone();
-
-            gtk::glib::idle_add_local_once(move || {
-                let adapters: Vec<(Urn, NetworkAdapter)> =
-                    store_clone.get_entities_typed(ADAPTER_ENTITY_TYPE);
-                let connections: Vec<(Urn, EthernetConnection)> =
-                    store_clone.get_entities_typed(EthernetConnection::ENTITY_TYPE);
-
-                if !adapters.is_empty() || !connections.is_empty() {
+        // Subscribe to both adapter and connection changes
+        crate::subscription::subscribe_dual_entities::<NetworkAdapter, EthernetConnection, _>(
+            entity_store,
+            ADAPTER_ENTITY_TYPE,
+            EthernetConnection::ENTITY_TYPE,
+            {
+                let state = state.clone();
+                let cb = action_callback.clone();
+                move |adapters, connections| {
                     log::debug!(
-                        "[wired-page] Initial reconciliation: {} adapters, {} connections",
+                        "[wired-page] Reconciling: {} adapters, {} connections",
                         adapters.len(),
                         connections.len()
                     );
-                    Self::reconcile(&state_clone, &adapters, &connections, &cb_clone);
+                    Self::reconcile(&state, &adapters, &connections, &cb);
                 }
-            });
-        }
+            },
+        );
 
         Self { root }
     }

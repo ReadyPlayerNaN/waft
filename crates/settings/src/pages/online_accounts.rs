@@ -15,6 +15,7 @@ use waft_protocol::entity::accounts::{self, OnlineAccount};
 use waft_ui_gtk::vdom::Component;
 
 use crate::display::settings_sub_page::SettingsSubPage;
+use crate::entity_list_group::EntityListGroup;
 
 type AccountRowEntry = (AccountRow, Urn, Rc<dyn Fn()>);
 use crate::i18n::t;
@@ -34,9 +35,7 @@ struct OnlineAccountsPageState {
     account_rows: HashMap<String, AccountRowEntry>,
     account_details: HashMap<String, AccountDetailPage>,
     sorted_ids: Vec<String>,
-    list_box: gtk::ListBox,
-    empty_state: adw::StatusPage,
-    group: adw::PreferencesGroup,
+    list_group: EntityListGroup,
 }
 
 impl OnlineAccountsPage {
@@ -46,34 +45,15 @@ impl OnlineAccountsPage {
         search_index: &Rc<RefCell<SearchIndex>>,
         navigation_view: &adw::NavigationView,
     ) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(24)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
+        let root = crate::page_layout::page_root();
 
-        let empty_state = adw::StatusPage::builder()
-            .icon_name("contacts-symbolic")
-            .title(t("online-accounts-no-accounts"))
-            .description(t("online-accounts-no-accounts-desc"))
-            .visible(false)
-            .build();
-        root.append(&empty_state);
-
-        let group = adw::PreferencesGroup::builder()
-            .title(t("online-accounts-title"))
-            .visible(false)
-            .build();
-
-        let list_box = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .css_classes(["boxed-list"])
-            .build();
-        group.add(&list_box);
-        root.append(&group);
+        let list_group = EntityListGroup::new(
+            &root,
+            "contacts-symbolic",
+            &t("online-accounts-no-accounts"),
+            &t("online-accounts-no-accounts-desc"),
+            &t("online-accounts-title"),
+        );
 
         let add_button = gtk::Button::builder()
             .label(t("online-accounts-add-account"))
@@ -99,7 +79,7 @@ impl OnlineAccountsPage {
                 &page_title,
                 &t("online-accounts-title"),
                 "online-accounts-title",
-                &group,
+                &list_group.group,
             );
         }
 
@@ -107,9 +87,7 @@ impl OnlineAccountsPage {
             account_rows: HashMap::new(),
             account_details: HashMap::new(),
             sorted_ids: Vec::new(),
-            list_box,
-            empty_state,
-            group,
+            list_group,
         }));
 
         // Subscribe to online-account changes (future updates + initial reconciliation)
@@ -266,11 +244,7 @@ impl OnlineAccountsPage {
                 let row = AccountRow::build(&props);
 
                 // Insert in sorted position
-                let pos = current_ids
-                    .iter()
-                    .position(|id| id == &account.id)
-                    .unwrap_or(0);
-                state.list_box.insert(&row.widget(), pos as i32);
+                state.list_group.insert_sorted(&row.widget(), &account.id, &current_ids);
                 state
                     .account_rows
                     .insert(account.id.clone(), (row, urn.clone(), nav_fn));
@@ -288,16 +262,12 @@ impl OnlineAccountsPage {
 
         for key in to_remove {
             if let Some((row, _, _)) = state.account_rows.remove(&key) {
-                state.list_box.remove(&row.widget());
+                state.list_group.list_box.remove(&row.widget());
             }
             state.account_details.remove(&key);
         }
 
         state.sorted_ids = current_ids;
-
-        // Toggle empty state vs list visibility
-        let has_accounts = !state.account_rows.is_empty();
-        state.group.set_visible(has_accounts);
-        state.empty_state.set_visible(!has_accounts);
+        state.list_group.toggle_visibility(!state.account_rows.is_empty());
     }
 }

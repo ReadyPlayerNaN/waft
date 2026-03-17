@@ -44,3 +44,51 @@ where
         });
     }
 }
+
+/// Subscribe to two entity types. Fires `callback` with both entity lists
+/// whenever either type changes, plus an initial reconciliation.
+pub fn subscribe_dual_entities<E1, E2, F>(
+    entity_store: &Rc<EntityStore>,
+    entity_type_1: &'static str,
+    entity_type_2: &'static str,
+    callback: F,
+)
+where
+    E1: for<'de> serde::Deserialize<'de> + 'static,
+    E2: for<'de> serde::Deserialize<'de> + 'static,
+    F: Fn(Vec<(Urn, E1)>, Vec<(Urn, E2)>) + 'static + Clone,
+{
+    // Subscribe to first entity type
+    {
+        let store = entity_store.clone();
+        let cb = callback.clone();
+        entity_store.subscribe_type(entity_type_1, move || {
+            let e1 = store.get_entities_typed(entity_type_1);
+            let e2 = store.get_entities_typed(entity_type_2);
+            cb(e1, e2);
+        });
+    }
+
+    // Subscribe to second entity type
+    {
+        let store = entity_store.clone();
+        let cb = callback.clone();
+        entity_store.subscribe_type(entity_type_2, move || {
+            let e1 = store.get_entities_typed(entity_type_1);
+            let e2 = store.get_entities_typed(entity_type_2);
+            cb(e1, e2);
+        });
+    }
+
+    // Initial reconciliation
+    {
+        let store = entity_store.clone();
+        gtk::glib::idle_add_local_once(move || {
+            let e1: Vec<(Urn, E1)> = store.get_entities_typed(entity_type_1);
+            let e2: Vec<(Urn, E2)> = store.get_entities_typed(entity_type_2);
+            if !e1.is_empty() || !e2.is_empty() {
+                callback(e1, e2);
+            }
+        });
+    }
+}
