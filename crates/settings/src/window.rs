@@ -142,6 +142,29 @@ impl SettingsWindow {
             idx.add_page("scheduled-tasks", &t("settings-scheduled-tasks"), "settings-scheduled-tasks");
         }
 
+        // Phase 1: Register section/input-level search entries (strings only, no widgets).
+        {
+            let mut idx = search_index.borrow_mut();
+            AudioPage::register_search(&mut idx);
+            BluetoothPage::register_search(&mut idx);
+            WiFiPage::register_search(&mut idx);
+            WiredPage::register_search(&mut idx);
+            WeatherPage::register_search(&mut idx);
+            AppearancePage::register_search(&mut idx);
+            DisplayPage::register_search(&mut idx);
+            WallpaperPage::register_search(&mut idx);
+            NiriWindowsPage::register_search(&mut idx);
+            KeyboardPage::register_search(&mut idx);
+            NotificationsPage::register_search(&mut idx);
+            SoundsPage::register_search(&mut idx);
+            PluginsPage::register_search(&mut idx);
+            ServicesPage::register_search(&mut idx);
+            SchedulerPage::register_search(&mut idx);
+            OnlineAccountsPage::register_search(&mut idx);
+            KeyboardShortcutsPage::register_search(&mut idx);
+            StartupPage::register_search(&mut idx);
+        }
+
         // Helper: wrap a page root in adw::Clamp and upcast to gtk::Widget.
         fn clamped(child: &gtk::Box) -> gtk::Widget {
             adw::Clamp::builder()
@@ -151,66 +174,109 @@ impl SettingsWindow {
                 .upcast()
         }
 
-        // Entity-based pages are constructed eagerly so their subscribe_type
-        // callbacks are registered before the main loop delivers entity data.
-        // Pages that only do synchronous file I/O (no entity subscriptions)
-        // are deferred to an idle callback to avoid blocking startup.
-        let audio_page = AudioPage::new(entity_store, action_callback, &search_index);
-        let bluetooth_page = BluetoothPage::new(entity_store, action_callback, &search_index);
-        let wifi_page = WiFiPage::new(entity_store, action_callback, &search_index);
-        let wired_page = WiredPage::new(entity_store, action_callback, &search_index);
-        let weather_page = WeatherPage::new(entity_store, action_callback, &search_index);
-        let appearance_page = AppearancePage::new(entity_store, action_callback, &search_index, &navigation_view);
-        let display_page = DisplayPage::new(entity_store, action_callback, &search_index);
-        let wallpaper_page = WallpaperPage::new(entity_store, action_callback, &search_index);
-        let windows_page = NiriWindowsPage::new(entity_store, &search_index);
-        let keyboard_page = KeyboardPage::new(entity_store, action_callback, &search_index);
-        let notifications_page = NotificationsPage::new(entity_store, action_callback, &search_index);
-        let sounds_page = SoundsPage::new(entity_store, action_callback, &search_index);
-        let plugins_page = PluginsPage::new(entity_store, &search_index);
-        let services_page = ServicesPage::new(entity_store, action_callback, &search_index);
-        let scheduler_page = SchedulerPage::new(entity_store, action_callback, &search_index);
-        let online_accounts_page = OnlineAccountsPage::new(entity_store, action_callback, &search_index, &navigation_view);
-
-        // Deferred page factories — these pages only read files (KDL config),
-        // have no entity subscriptions, and are safe to construct after startup.
+        // Phase 2: Create page factories — widgets constructed on first navigation.
+        let display_page_ref: Rc<RefCell<Option<DisplayPage>>> = Rc::new(RefCell::new(None));
         let factories: Rc<RefCell<HashMap<String, PageFactory>>> =
             Rc::new(RefCell::new(HashMap::new()));
         {
             let mut f = factories.borrow_mut();
 
-            let si = search_index.clone();
-            f.insert("keyboard-shortcuts".into(), Box::new(move || {
-                clamped(&KeyboardShortcutsPage::new(&si).root)
-            }));
+            // For each page, clone the needed captures and create a factory closure.
+            // Pages that take (entity_store, action_callback, search_index):
+            macro_rules! entity_page_factory {
+                ($f:expr, $id:expr, $Page:ident) => {{
+                    let es = entity_store.clone();
+                    let ac = action_callback.clone();
+                    let si = search_index.clone();
+                    $f.insert($id.into(), Box::new(move || {
+                        clamped(&$Page::new(&es, &ac, &si).root)
+                    }));
+                }};
+            }
 
-            let si = search_index.clone();
-            f.insert("startup".into(), Box::new(move || {
-                clamped(&StartupPage::new(&si).root)
-            }));
+            entity_page_factory!(f, "audio", AudioPage);
+            entity_page_factory!(f, "bluetooth", BluetoothPage);
+            entity_page_factory!(f, "wifi", WiFiPage);
+            entity_page_factory!(f, "wired", WiredPage);
+            entity_page_factory!(f, "weather", WeatherPage);
+            entity_page_factory!(f, "wallpaper", WallpaperPage);
+            entity_page_factory!(f, "keyboard", KeyboardPage);
+            entity_page_factory!(f, "notifications", NotificationsPage);
+            entity_page_factory!(f, "sounds", SoundsPage);
+            entity_page_factory!(f, "services", ServicesPage);
+            entity_page_factory!(f, "scheduled-tasks", SchedulerPage);
+
+            // Pages with only (entity_store, search_index):
+            {
+                let es = entity_store.clone();
+                let si = search_index.clone();
+                f.insert("windows".into(), Box::new(move || {
+                    clamped(&NiriWindowsPage::new(&es, &si).root)
+                }));
+            }
+            {
+                let es = entity_store.clone();
+                let si = search_index.clone();
+                f.insert("plugins".into(), Box::new(move || {
+                    clamped(&PluginsPage::new(&es, &si).root)
+                }));
+            }
+
+            // Pages that also need navigation_view:
+            {
+                let es = entity_store.clone();
+                let ac = action_callback.clone();
+                let si = search_index.clone();
+                let nv = navigation_view.clone();
+                f.insert("appearance".into(), Box::new(move || {
+                    clamped(&AppearancePage::new(&es, &ac, &si, &nv).root)
+                }));
+            }
+            {
+                let es = entity_store.clone();
+                let ac = action_callback.clone();
+                let si = search_index.clone();
+                let nv = navigation_view.clone();
+                f.insert("online-accounts".into(), Box::new(move || {
+                    clamped(&OnlineAccountsPage::new(&es, &ac, &si, &nv).root)
+                }));
+            }
+
+            // Display page — stored in Rc<RefCell> for reset() access:
+            {
+                let es = entity_store.clone();
+                let ac = action_callback.clone();
+                let si = search_index.clone();
+                let dp_ref = display_page_ref.clone();
+                f.insert("display".into(), Box::new(move || {
+                    let page = DisplayPage::new(&es, &ac, &si);
+                    let widget = clamped(&page.root);
+                    *dp_ref.borrow_mut() = Some(page);
+                    widget
+                }));
+            }
+
+            // File-I/O-only pages:
+            {
+                let si = search_index.clone();
+                f.insert("keyboard-shortcuts".into(), Box::new(move || {
+                    clamped(&KeyboardShortcutsPage::new(&si).root)
+                }));
+            }
+            {
+                let si = search_index.clone();
+                f.insert("startup".into(), Box::new(move || {
+                    clamped(&StartupPage::new(&si).root)
+                }));
+            }
         }
 
-        // Stack for page switching (keyed by stable page_id)
+        // Stack for page switching (keyed by stable page_id).
+        // Starts empty — pages are constructed on first navigation via factories.
         let stack = gtk::Stack::builder()
             .transition_type(gtk::StackTransitionType::Crossfade)
             .vhomogeneous(false)
             .build();
-        stack.add_named(&clamped(&audio_page.root), Some("audio"));
-        stack.add_named(&clamped(&bluetooth_page.root), Some("bluetooth"));
-        stack.add_named(&clamped(&wifi_page.root), Some("wifi"));
-        stack.add_named(&clamped(&wired_page.root), Some("wired"));
-        stack.add_named(&clamped(&online_accounts_page.root), Some("online-accounts"));
-        stack.add_named(&clamped(&weather_page.root), Some("weather"));
-        stack.add_named(&clamped(&appearance_page.root), Some("appearance"));
-        stack.add_named(&clamped(&display_page.root), Some("display"));
-        stack.add_named(&clamped(&wallpaper_page.root), Some("wallpaper"));
-        stack.add_named(&clamped(&windows_page.root), Some("windows"));
-        stack.add_named(&clamped(&keyboard_page.root), Some("keyboard"));
-        stack.add_named(&clamped(&notifications_page.root), Some("notifications"));
-        stack.add_named(&clamped(&sounds_page.root), Some("sounds"));
-        stack.add_named(&clamped(&plugins_page.root), Some("plugins"));
-        stack.add_named(&clamped(&services_page.root), Some("services"));
-        stack.add_named(&clamped(&scheduler_page.root), Some("scheduled-tasks"));
 
         // Deferred pages: construct eagerly if they are the initial page,
         // otherwise build on first navigation (sidebar callback or idle).
@@ -272,6 +338,7 @@ impl SettingsWindow {
         ));
         let current_page_ref = current_page.clone();
         let factories_ref = factories.clone();
+        let display_page_for_cb = display_page_ref.clone();
         sidebar.connect_output(move |output| {
             let (new_page_id, new_title) = match output {
                 SidebarOutput::Selected { page_id, title } => {
@@ -304,7 +371,9 @@ impl SettingsWindow {
             // Reset display page when leaving it
             let prev = current_page_ref.borrow().clone();
             if prev == "display" && new_page_id != "display" {
-                display_page.reset();
+                if let Some(ref dp) = *display_page_for_cb.borrow() {
+                    dp.reset();
+                }
             }
 
             // Construct the page from its factory on first navigation
@@ -349,7 +418,6 @@ impl SettingsWindow {
         }
 
         // -- WiFi sidebar visibility based on adapter presence --
-        let stack_for_idle = stack.clone();
         {
             let store = entity_store.clone();
             let sidebar_for_sub = sidebar_ref.clone();
@@ -403,20 +471,6 @@ impl SettingsWindow {
 
         // Prevent sidebar from being dropped
         std::mem::forget(sidebar_ref);
-
-        // Construct deferred pages (file-I/O-only, no entity subscriptions) in
-        // the next idle cycle so their search entries get registered without
-        // blocking startup.
-        {
-            let factories_idle = factories;
-            let stack_idle = stack_for_idle;
-            gtk::glib::idle_add_local_once(move || {
-                for (page_id, factory) in factories_idle.borrow_mut().drain() {
-                    let widget = factory();
-                    stack_idle.add_named(&widget, Some(&page_id));
-                }
-            });
-        }
 
         Self { window }
     }
