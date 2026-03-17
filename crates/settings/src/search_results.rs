@@ -4,6 +4,7 @@
 //! Emits `SearchResultsOutput::Selected` when a result is activated.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -16,15 +17,24 @@ pub enum SearchResultsOutput {
         page_id: String,
         /// Human-readable page title for the header.
         page_title: String,
+        /// Section title for widget lookup after page construction.
+        section_title: Option<String>,
+        /// Input title for widget lookup after page construction.
+        input_title: Option<String>,
     },
 }
 
 type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(SearchResultsOutput)>>>>;
 
+/// Per-row metadata for section/input identification.
+type RowMeta = Rc<RefCell<HashMap<i32, (Option<String>, Option<String>)>>>;
+
 /// Search results list widget.
 pub struct SearchResults {
     pub root: gtk::ListBox,
     output_cb: OutputCallback,
+    /// Per-row metadata (section_title, input_title) keyed by row index.
+    row_meta: RowMeta,
 }
 
 impl SearchResults {
@@ -35,25 +45,31 @@ impl SearchResults {
             .build();
 
         let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+        let row_meta: RowMeta = Rc::new(RefCell::new(HashMap::new()));
 
         let cb = output_cb.clone();
+        let meta_ref = row_meta.clone();
         root.connect_row_activated(move |_, row| {
             let page_id = row.widget_name().to_string();
-            // Retrieve stored data from the row
             if let Some(action_row) = row.downcast_ref::<adw::ActionRow>() {
                 let page_title = action_row.subtitle().map(|s| s.to_string()).unwrap_or_default();
-                // target_widget is stored as unsafe data on the row via the row index
-                // We use widget_name for page_id, subtitle for page_title
+                let (section_title, input_title) = meta_ref
+                    .borrow()
+                    .get(&row.index())
+                    .cloned()
+                    .unwrap_or((None, None));
                 if let Some(ref callback) = *cb.borrow() {
                     callback(SearchResultsOutput::Selected {
                         page_id,
                         page_title,
+                        section_title,
+                        input_title,
                     });
                 }
             }
         });
 
-        Self { root, output_cb }
+        Self { root, output_cb, row_meta }
     }
 
     /// Update the results list with new search entries.
@@ -62,8 +78,10 @@ impl SearchResults {
         while let Some(child) = self.root.first_child() {
             self.root.remove(&child);
         }
+        let mut meta = self.row_meta.borrow_mut();
+        meta.clear();
 
-        for entry in entries {
+        for (i, entry) in entries.iter().enumerate() {
             let row = adw::ActionRow::builder()
                 .title(&entry.breadcrumb)
                 .subtitle(&entry.page_title)
@@ -71,6 +89,7 @@ impl SearchResults {
                 .build();
             row.set_widget_name(entry.page_id);
             self.root.append(&row);
+            meta.insert(i as i32, (entry.section_title.clone(), entry.input_title.clone()));
         }
 
         // Select first row if present
@@ -108,6 +127,7 @@ impl SearchResults {
         while let Some(child) = self.root.first_child() {
             self.root.remove(&child);
         }
+        self.row_meta.borrow_mut().clear();
     }
 }
 
@@ -116,4 +136,6 @@ pub struct SearchResultRef {
     pub page_id: &'static str,
     pub page_title: String,
     pub breadcrumb: String,
+    pub section_title: Option<String>,
+    pub input_title: Option<String>,
 }

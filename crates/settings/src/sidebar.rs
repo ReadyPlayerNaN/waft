@@ -25,14 +25,16 @@ pub enum SidebarOutput {
         /// Human-readable title for the content header.
         title: String,
     },
-    /// A search result was selected with a target widget to scroll to.
+    /// A search result was selected with section/input info for post-construction lookup.
     SearchSelected {
         /// Stable identifier for stack page routing.
         page_id: String,
         /// Human-readable title for the content header.
         page_title: String,
-        /// Target widget to scroll to.
-        target_widget: Option<glib::WeakRef<gtk::Widget>>,
+        /// Section title for widget lookup after page construction.
+        section_title: Option<String>,
+        /// Input title for widget lookup after page construction.
+        input_title: Option<String>,
     },
 }
 
@@ -397,6 +399,8 @@ impl Sidebar {
                             page_id: e.page_id,
                             page_title: e.page_title.clone(),
                             breadcrumb: e.breadcrumb(),
+                            section_title: e.section_title.clone(),
+                            input_title: e.input_title.clone(),
                         })
                         .collect();
                     results_for_search.update(&refs);
@@ -407,21 +411,10 @@ impl Sidebar {
             let cb_for_results = output_cb.clone();
             let search_bar_ref = search_bar.clone();
             let search_entry_ref = search_entry.clone();
-            let index_for_select = search_index.clone();
             results_ref.connect_output(move |output| {
                 let SearchResultsOutput::Selected {
-                    page_id, page_title, ..
+                    page_id, page_title, section_title, input_title,
                 } = output;
-
-                // Look up the target_widget from the index for this result
-                let target_widget = {
-                    let idx = index_for_select.borrow();
-                    let results = idx.search(&search_entry_ref.text());
-                    results
-                        .iter()
-                        .find(|e| e.page_id == page_id)
-                        .and_then(|e| e.target_widget.clone())
-                };
 
                 // Clear search and dismiss
                 search_entry_ref.set_text("");
@@ -431,7 +424,8 @@ impl Sidebar {
                     callback(SidebarOutput::SearchSelected {
                         page_id,
                         page_title,
-                        target_widget,
+                        section_title,
+                        input_title,
                     });
                 }
             });

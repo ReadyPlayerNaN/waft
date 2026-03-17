@@ -347,6 +347,7 @@ impl SettingsWindow {
         let current_page_ref = current_page.clone();
         let factories_ref = factories.clone();
         let display_page_for_cb = display_page_ref.clone();
+        let search_index_ref = search_index.clone();
         sidebar.connect_output(move |output| {
             let (new_page_id, new_title) = match output {
                 SidebarOutput::Selected { page_id, title } => {
@@ -356,19 +357,36 @@ impl SettingsWindow {
                 SidebarOutput::SearchSelected {
                     page_id,
                     page_title,
-                    target_widget,
+                    section_title,
+                    input_title,
                 } => {
                     log::debug!("[settings] search selected: {page_id}");
 
-                    // Scroll to target widget after page switch completes
-                    if let Some(weak) = target_widget {
-                        let scrolled = content_scrolled_ref.clone();
-                        gtk::glib::idle_add_local_once(move || {
-                            if let Some(widget) = weak.upgrade() {
-                                scroll_to_and_highlight(&scrolled, &widget);
-                            }
-                        });
+                    // Construct the page if needed (before widget lookup)
+                    if stack_ref.child_by_name(&page_id).is_none()
+                        && let Some(factory) = factories_ref.borrow_mut().remove(&page_id)
+                    {
+                        let widget = factory();
+                        stack_ref.add_named(&widget, Some(&page_id));
                     }
+
+                    // Look up target widget AFTER page construction (backfill has run)
+                    if let Some(ref section) = section_title {
+                        let target = search_index_ref.borrow().find_widget(
+                            &page_id,
+                            section,
+                            input_title.as_deref(),
+                        );
+                        if let Some(weak) = target {
+                            let scrolled = content_scrolled_ref.clone();
+                            gtk::glib::idle_add_local_once(move || {
+                                if let Some(widget) = weak.upgrade() {
+                                    scroll_to_and_highlight(&scrolled, &widget);
+                                }
+                            });
+                        }
+                    }
+
                     (page_id, page_title)
                 }
             };
@@ -384,7 +402,7 @@ impl SettingsWindow {
                 }
             }
 
-            // Construct the page from its factory on first navigation
+            // Construct the page from its factory on first navigation (no-op if already built by SearchSelected)
             if stack_ref.child_by_name(&new_page_id).is_none()
                 && let Some(factory) = factories_ref.borrow_mut().remove(&new_page_id)
             {
