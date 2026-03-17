@@ -101,20 +101,33 @@ impl DarkModeSection {
             let urn_ref = current_urn;
             let guard = updating;
 
-            entity_store.subscribe_type(DARK_MODE_ENTITY_TYPE, move || {
-                let entities: Vec<(Urn, DarkMode)> =
-                    store.get_entities_typed(DARK_MODE_ENTITY_TYPE);
+            let reconcile: Rc<dyn Fn()> = Rc::new({
+                let store = store.clone();
+                let group_ref = group_ref.clone();
+                let toggle_ref = toggle_ref.clone();
+                let urn_ref = urn_ref.clone();
+                let guard = guard.clone();
+                move || {
+                    let entities: Vec<(Urn, DarkMode)> =
+                        store.get_entities_typed(DARK_MODE_ENTITY_TYPE);
 
-                if let Some((urn, dm)) = entities.first() {
-                    guard.set(true);
-                    *urn_ref.borrow_mut() = Some(urn.clone());
-                    group_ref.set_visible(true);
-                    toggle_ref.set_active(dm.active);
-                    guard.set(false);
-                } else {
-                    group_ref.set_visible(false);
+                    if let Some((urn, dm)) = entities.first() {
+                        guard.set(true);
+                        *urn_ref.borrow_mut() = Some(urn.clone());
+                        group_ref.set_visible(true);
+                        toggle_ref.set_active(dm.active);
+                        guard.set(false);
+                    } else {
+                        group_ref.set_visible(false);
+                    }
                 }
             });
+
+            entity_store.subscribe_type(DARK_MODE_ENTITY_TYPE, {
+                let r = reconcile.clone();
+                move || r()
+            });
+            gtk::glib::idle_add_local_once(move || reconcile());
         }
 
         Self { root: group }

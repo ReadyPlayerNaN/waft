@@ -143,74 +143,91 @@ impl NightLightSection {
             let presets_ref = current_presets;
             let guard = updating;
 
-            entity_store.subscribe_type(NIGHT_LIGHT_ENTITY_TYPE, move || {
-                let entities: Vec<(Urn, NightLight)> =
-                    store.get_entities_typed(NIGHT_LIGHT_ENTITY_TYPE);
+            let reconcile: Rc<dyn Fn()> = Rc::new({
+                let store = store.clone();
+                let group_ref = group_ref.clone();
+                let toggle_ref = toggle_ref.clone();
+                let preset_row_ref = preset_row_ref.clone();
+                let preset_model_ref = preset_model_ref.clone();
+                let status_row_ref = status_row_ref.clone();
+                let urn_ref = urn_ref.clone();
+                let presets_ref = presets_ref.clone();
+                let guard = guard.clone();
+                move || {
+                    let entities: Vec<(Urn, NightLight)> =
+                        store.get_entities_typed(NIGHT_LIGHT_ENTITY_TYPE);
 
-                if let Some((urn, nl)) = entities.first() {
-                    guard.set(true);
-                    *urn_ref.borrow_mut() = Some(urn.clone());
-                    group_ref.set_visible(true);
-                    toggle_ref.set_active(nl.active);
+                    if let Some((urn, nl)) = entities.first() {
+                        guard.set(true);
+                        *urn_ref.borrow_mut() = Some(urn.clone());
+                        group_ref.set_visible(true);
+                        toggle_ref.set_active(nl.active);
 
-                    if let Some(ref period) = nl.period {
-                        let label = match period.as_str() {
-                            "day" => t("display-day"),
-                            "night" => t("display-night"),
-                            other => other.to_string(),
+                        if let Some(ref period) = nl.period {
+                            let label = match period.as_str() {
+                                "day" => t("display-day"),
+                                "night" => t("display-night"),
+                                other => other.to_string(),
+                            };
+                            toggle_ref.set_subtitle(&label);
+                        } else {
+                            toggle_ref.set_subtitle("");
+                        }
+
+                        let has_presets = !nl.presets.is_empty();
+                        preset_row_ref.set_visible(nl.active && has_presets);
+
+                        let prev_presets = presets_ref.borrow();
+                        if *prev_presets != nl.presets {
+                            drop(prev_presets);
+                            let count = preset_model_ref.n_items();
+                            if count > 0 {
+                                preset_model_ref.splice(0, count, &[] as &[&str]);
+                            }
+                            preset_model_ref.append(&t("display-default"));
+                            for preset in &nl.presets {
+                                preset_model_ref.append(preset);
+                            }
+                            *presets_ref.borrow_mut() = nl.presets.clone();
+                        }
+
+                        let selected_idx = match &nl.active_preset {
+                            Some(name) => {
+                                let presets = presets_ref.borrow();
+                                presets
+                                    .iter()
+                                    .position(|p| p == name)
+                                    .map(|i| (i + 1) as u32)
+                                    .unwrap_or(0)
+                            }
+                            None => 0,
                         };
-                        toggle_ref.set_subtitle(&label);
-                    } else {
-                        toggle_ref.set_subtitle("");
-                    }
+                        preset_row_ref.set_selected(selected_idx);
 
-                    let has_presets = !nl.presets.is_empty();
-                    preset_row_ref.set_visible(nl.active && has_presets);
-
-                    let prev_presets = presets_ref.borrow();
-                    if *prev_presets != nl.presets {
-                        drop(prev_presets);
-                        let count = preset_model_ref.n_items();
-                        if count > 0 {
-                            preset_model_ref.splice(0, count, &[] as &[&str]);
-                        }
-                        preset_model_ref.append(&t("display-default"));
-                        for preset in &nl.presets {
-                            preset_model_ref.append(preset);
-                        }
-                        *presets_ref.borrow_mut() = nl.presets.clone();
-                    }
-
-                    let selected_idx = match &nl.active_preset {
-                        Some(name) => {
-                            let presets = presets_ref.borrow();
-                            presets
-                                .iter()
-                                .position(|p| p == name)
-                                .map(|i| (i + 1) as u32)
-                                .unwrap_or(0)
-                        }
-                        None => 0,
-                    };
-                    preset_row_ref.set_selected(selected_idx);
-
-                    if nl.active {
-                        if let Some(ref next) = nl.next_transition {
-                            status_row_ref.set_subtitle(next);
-                            status_row_ref.set_title(&t("display-next-transition"));
-                            status_row_ref.set_visible(true);
+                        if nl.active {
+                            if let Some(ref next) = nl.next_transition {
+                                status_row_ref.set_subtitle(next);
+                                status_row_ref.set_title(&t("display-next-transition"));
+                                status_row_ref.set_visible(true);
+                            } else {
+                                status_row_ref.set_visible(false);
+                            }
                         } else {
                             status_row_ref.set_visible(false);
                         }
-                    } else {
-                        status_row_ref.set_visible(false);
-                    }
 
-                    guard.set(false);
-                } else {
-                    group_ref.set_visible(false);
+                        guard.set(false);
+                    } else {
+                        group_ref.set_visible(false);
+                    }
                 }
             });
+
+            entity_store.subscribe_type(NIGHT_LIGHT_ENTITY_TYPE, {
+                let r = reconcile.clone();
+                move || r()
+            });
+            gtk::glib::idle_add_local_once(move || reconcile());
         }
 
         Self { root: group }

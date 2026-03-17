@@ -179,23 +179,40 @@ impl DefaultsSection {
             let guard = updating.clone();
             let gallery_ref = gallery_sounds.clone();
 
-            entity_store.subscribe_type(SOUND_CONFIG_ENTITY_TYPE, move || {
-                let entities: Vec<(Urn, SoundConfigEntity)> =
-                    store.get_entities_typed(SOUND_CONFIG_ENTITY_TYPE);
+            let reconcile_config: Rc<dyn Fn()> = Rc::new({
+                let store = store.clone();
+                let group_ref = group_ref.clone();
+                let enabled_ref = enabled_ref.clone();
+                let low_ref = low_ref.clone();
+                let normal_ref = normal_ref.clone();
+                let critical_ref = critical_ref.clone();
+                let urn_ref = urn_ref.clone();
+                let guard = guard.clone();
+                let gallery_ref = gallery_ref.clone();
+                move || {
+                    let entities: Vec<(Urn, SoundConfigEntity)> =
+                        store.get_entities_typed(SOUND_CONFIG_ENTITY_TYPE);
 
-                if let Some((urn, cfg)) = entities.first() {
-                    guard.set(true);
-                    *urn_ref.borrow_mut() = Some(urn.clone());
-                    group_ref.set_visible(true);
-                    enabled_ref.set_active(cfg.enabled);
-                    set_urgency_value(&low_ref, &cfg.default_low, &gallery_ref.borrow());
-                    set_urgency_value(&normal_ref, &cfg.default_normal, &gallery_ref.borrow());
-                    set_urgency_value(&critical_ref, &cfg.default_critical, &gallery_ref.borrow());
-                    guard.set(false);
-                } else {
-                    group_ref.set_visible(false);
+                    if let Some((urn, cfg)) = entities.first() {
+                        guard.set(true);
+                        *urn_ref.borrow_mut() = Some(urn.clone());
+                        group_ref.set_visible(true);
+                        enabled_ref.set_active(cfg.enabled);
+                        set_urgency_value(&low_ref, &cfg.default_low, &gallery_ref.borrow());
+                        set_urgency_value(&normal_ref, &cfg.default_normal, &gallery_ref.borrow());
+                        set_urgency_value(&critical_ref, &cfg.default_critical, &gallery_ref.borrow());
+                        guard.set(false);
+                    } else {
+                        group_ref.set_visible(false);
+                    }
                 }
             });
+
+            entity_store.subscribe_type(SOUND_CONFIG_ENTITY_TYPE, {
+                let r = reconcile_config.clone();
+                move || r()
+            });
+            gtk::glib::idle_add_local_once(move || reconcile_config());
         }
 
         // Subscribe to gallery sounds (to populate dropdowns)
@@ -207,33 +224,47 @@ impl DefaultsSection {
             let critical_ref = critical_row;
             let guard = updating;
 
-            entity_store.subscribe_type(NOTIFICATION_SOUND_ENTITY_TYPE, move || {
-                let entities: Vec<(Urn, NotificationSound)> =
-                    store.get_entities_typed(NOTIFICATION_SOUND_ENTITY_TYPE);
-                let sounds: Vec<NotificationSound> =
-                    entities.into_iter().map(|(_, s)| s).collect();
+            let reconcile_gallery: Rc<dyn Fn()> = Rc::new({
+                let store = store.clone();
+                let gallery_ref = gallery_ref.clone();
+                let low_ref = low_ref.clone();
+                let normal_ref = normal_ref.clone();
+                let critical_ref = critical_ref.clone();
+                let guard = guard.clone();
+                move || {
+                    let entities: Vec<(Urn, NotificationSound)> =
+                        store.get_entities_typed(NOTIFICATION_SOUND_ENTITY_TYPE);
+                    let sounds: Vec<NotificationSound> =
+                        entities.into_iter().map(|(_, s)| s).collect();
 
-                guard.set(true);
+                    guard.set(true);
 
-                // Save current selections
-                let low_val = resolve_urgency_value(&low_ref, &gallery_ref.borrow());
-                let normal_val = resolve_urgency_value(&normal_ref, &gallery_ref.borrow());
-                let critical_val = resolve_urgency_value(&critical_ref, &gallery_ref.borrow());
+                    // Save current selections
+                    let low_val = resolve_urgency_value(&low_ref, &gallery_ref.borrow());
+                    let normal_val = resolve_urgency_value(&normal_ref, &gallery_ref.borrow());
+                    let critical_val = resolve_urgency_value(&critical_ref, &gallery_ref.borrow());
 
-                *gallery_ref.borrow_mut() = sounds.clone();
+                    *gallery_ref.borrow_mut() = sounds.clone();
 
-                // Rebuild dropdown models
-                rebuild_urgency_model(&low_ref, &sounds);
-                rebuild_urgency_model(&normal_ref, &sounds);
-                rebuild_urgency_model(&critical_ref, &sounds);
+                    // Rebuild dropdown models
+                    rebuild_urgency_model(&low_ref, &sounds);
+                    rebuild_urgency_model(&normal_ref, &sounds);
+                    rebuild_urgency_model(&critical_ref, &sounds);
 
-                // Restore selections
-                set_urgency_value(&low_ref, &low_val, &sounds);
-                set_urgency_value(&normal_ref, &normal_val, &sounds);
-                set_urgency_value(&critical_ref, &critical_val, &sounds);
+                    // Restore selections
+                    set_urgency_value(&low_ref, &low_val, &sounds);
+                    set_urgency_value(&normal_ref, &normal_val, &sounds);
+                    set_urgency_value(&critical_ref, &critical_val, &sounds);
 
-                guard.set(false);
+                    guard.set(false);
+                }
             });
+
+            entity_store.subscribe_type(NOTIFICATION_SOUND_ENTITY_TYPE, {
+                let r = reconcile_gallery.clone();
+                move || r()
+            });
+            gtk::glib::idle_add_local_once(move || reconcile_gallery());
         }
 
         Self { root: group }

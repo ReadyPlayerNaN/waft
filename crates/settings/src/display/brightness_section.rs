@@ -49,7 +49,13 @@ impl BrightnessSection {
             let displays_ref = displays;
             let idx_ref = search_index.clone();
 
-            entity_store.subscribe_type(DISPLAY_ENTITY_TYPE, move || {
+            let reconcile: Rc<dyn Fn()> = Rc::new({
+                let store = store.clone();
+                let cb = cb.clone();
+                let root_ref = root_ref.clone();
+                let displays_ref = displays_ref.clone();
+                let idx_ref = idx_ref.clone();
+                move || {
                 let entities: Vec<(Urn, Display)> = store.get_entities_typed(DISPLAY_ENTITY_TYPE);
 
                 // Clear and re-register dynamic brightness search entries
@@ -148,7 +154,14 @@ impl BrightnessSection {
                 }
 
                 root_ref.set_visible(!map.is_empty());
+                }
             });
+
+            entity_store.subscribe_type(DISPLAY_ENTITY_TYPE, {
+                let r = reconcile.clone();
+                move || r()
+            });
+            gtk::glib::idle_add_local_once(move || reconcile());
         }
 
         Self { root }

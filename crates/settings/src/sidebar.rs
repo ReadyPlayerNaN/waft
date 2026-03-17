@@ -366,13 +366,12 @@ impl Sidebar {
                 let results_for_up = results_ref.clone();
                 let up_controller = gtk::EventControllerKey::new();
                 up_controller.connect_key_pressed(move |_, key, _, _| {
-                    if key == gtk::gdk::Key::Up {
-                        if let Some(selected) = results_for_up.root.selected_row()
-                            && selected.index() == 0
-                        {
-                            search_entry_for_up.grab_focus();
-                            return glib::Propagation::Stop;
-                        }
+                    if key == gtk::gdk::Key::Up
+                        && let Some(selected) = results_for_up.root.selected_row()
+                        && selected.index() == 0
+                    {
+                        search_entry_for_up.grab_focus();
+                        return glib::Propagation::Stop;
                     }
                     glib::Propagation::Proceed
                 });

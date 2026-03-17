@@ -396,10 +396,10 @@ impl SettingsWindow {
 
             // Reset display page when leaving it
             let prev = current_page_ref.borrow().clone();
-            if prev == "display" && new_page_id != "display" {
-                if let Some(ref dp) = *display_page_for_cb.borrow() {
-                    dp.reset();
-                }
+            if prev == "display" && new_page_id != "display"
+                && let Some(ref dp) = *display_page_for_cb.borrow()
+            {
+                dp.reset();
             }
 
             // Construct the page from its factory on first navigation (no-op if already built by SearchSelected)
