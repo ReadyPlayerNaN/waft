@@ -10,8 +10,9 @@ const BETA_HEADER: &str = "oauth-2025-04-20";
 struct UsageWindow {
     /// Utilization as a percentage, 0.0–100.0
     utilization: f64,
-    /// ISO 8601 timestamp when the window resets (e.g. "2026-03-11T19:00:00.224373+00:00")
-    resets_at: String,
+    /// ISO 8601 timestamp when the window resets (e.g. "2026-03-11T19:00:00.224373+00:00").
+    /// Null when the window has no active usage (utilization is 0).
+    resets_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,9 +58,15 @@ pub async fn fetch_usage(access_token: &str) -> Result<UsageData> {
 
     Ok(UsageData {
         five_hour_utilization: data.five_hour.utilization,
-        five_hour_reset_at: parse_reset_at(&data.five_hour.resets_at)?,
+        five_hour_reset_at: match &data.five_hour.resets_at {
+            Some(s) => parse_reset_at(s)?,
+            None => 0,
+        },
         seven_day_utilization: data.seven_day.utilization,
-        seven_day_reset_at: parse_reset_at(&data.seven_day.resets_at)?,
+        seven_day_reset_at: match &data.seven_day.resets_at {
+            Some(s) => parse_reset_at(s)?,
+            None => 0,
+        },
     })
 }
 
@@ -127,5 +134,24 @@ mod tests {
         // Actual format returned by the API: sub-second precision + numeric offset
         let ts = parse_reset_at("2025-03-11T14:00:00.224373+00:00").unwrap();
         assert_eq!(ts, 1_741_701_600_000);
+    }
+
+    #[test]
+    fn deserialize_response_with_null_resets_at() {
+        let json = r#"{
+            "five_hour":{"utilization":0.0,"resets_at":null},
+            "seven_day":{"utilization":42.0,"resets_at":"2026-03-20T07:00:01.274249+00:00"},
+            "seven_day_oauth_apps":null,
+            "seven_day_opus":null,
+            "seven_day_sonnet":{"utilization":4.0,"resets_at":"2026-03-20T07:00:01.274269+00:00"},
+            "seven_day_cowork":null,
+            "iguana_necktie":null,
+            "extra_usage":{"is_enabled":true,"monthly_limit":4250,"used_credits":2850.0,"utilization":67.05882352941175}
+        }"#;
+        let data: UsageResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(data.five_hour.utilization, 0.0);
+        assert!(data.five_hour.resets_at.is_none());
+        assert_eq!(data.seven_day.utilization, 42.0);
+        assert!(data.seven_day.resets_at.is_some());
     }
 }
