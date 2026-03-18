@@ -457,16 +457,22 @@ impl SettingsWindow {
                     .any(|(_, a)| a.kind == AdapterKind::Wireless);
                 sidebar_for_sub.set_wifi_visible(has_wireless);
 
-                // If WiFi page is active and WiFi row was hidden, switch to Bluetooth
-                if !has_wireless
-                    && let Some(name) = stack_for_wifi.visible_child_name()
-                    && name == "wifi"
-                {
-                    stack_for_wifi.set_visible_child_name("bluetooth");
+                let has_wired = adapters
+                    .iter()
+                    .any(|(_, a)| a.kind == AdapterKind::Wired);
+                sidebar_for_sub.set_wired_visible(has_wired);
+
+                // If active page was hidden, switch to Bluetooth
+                if let Some(name) = stack_for_wifi.visible_child_name() {
+                    if (!has_wireless && name == "wifi")
+                        || (!has_wired && name == "wired")
+                    {
+                        stack_for_wifi.set_visible_child_name("bluetooth");
+                    }
                 }
             });
 
-            // Initial WiFi visibility check
+            // Initial WiFi/Wired visibility check
             {
                 let store = entity_store.clone();
                 let sidebar_for_init = sidebar_ref.clone();
@@ -477,6 +483,10 @@ impl SettingsWindow {
                         .iter()
                         .any(|(_, a)| a.kind == AdapterKind::Wireless);
                     sidebar_for_init.set_wifi_visible(has_wireless);
+                    let has_wired = adapters
+                        .iter()
+                        .any(|(_, a)| a.kind == AdapterKind::Wired);
+                    sidebar_for_init.set_wired_visible(has_wired);
                 });
             }
         }

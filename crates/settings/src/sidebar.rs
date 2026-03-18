@@ -81,7 +81,7 @@ fn categories() -> Vec<SidebarCategory> {
                     page_id: "wired",
                     title: t("settings-wired"),
                     icon: "network-wired-symbolic",
-                    visible: true,
+                    visible: false,
                 },
                 SidebarItem {
                     page_id: "online-accounts",
@@ -212,6 +212,7 @@ pub struct Sidebar {
     pub search_bar: gtk::SearchBar,
     output_cb: OutputCallback,
     wifi_row: adw::ActionRow,
+    wired_row: adw::ActionRow,
     list_boxes: Vec<gtk::ListBox>,
     search_index: Rc<RefCell<SearchIndex>>,
 }
@@ -246,6 +247,7 @@ impl Sidebar {
 
         let mut list_boxes: Vec<gtk::ListBox> = Vec::new();
         let mut wifi_row_slot: Option<adw::ActionRow> = None;
+        let mut wired_row_slot: Option<adw::ActionRow> = None;
 
         for (cat_idx, category) in categories().into_iter().enumerate() {
             // Category header label
@@ -281,6 +283,9 @@ impl Sidebar {
 
                 if item.page_id == "wifi" {
                     wifi_row_slot = Some(row.clone());
+                }
+                if item.page_id == "wired" {
+                    wired_row_slot = Some(row.clone());
                 }
 
                 list_box.append(&row);
@@ -434,12 +439,14 @@ impl Sidebar {
         }
 
         let wifi_row = wifi_row_slot.expect("WiFi row must exist in category definitions");
+        let wired_row = wired_row_slot.expect("Wired row must exist in category definitions");
 
         Self {
             root: container,
             search_bar,
             output_cb,
             wifi_row,
+            wired_row,
             list_boxes,
             search_index,
         }
@@ -457,6 +464,24 @@ impl Sidebar {
             && let Some(selected) = connectivity_box.selected_row()
             && let Some(action_row) = selected.downcast_ref::<adw::ActionRow>()
             && action_row.widget_name() == "wifi"
+            && let Some(bt_row) = connectivity_box.row_at_index(0)
+        {
+            connectivity_box.select_row(Some(&bt_row));
+        }
+    }
+
+    /// Show or hide the Wired category row.
+    ///
+    /// If hiding and Wired is currently selected, auto-selects Bluetooth.
+    pub fn set_wired_visible(&self, visible: bool) {
+        self.wired_row.set_visible(visible);
+        self.search_index.borrow_mut().set_page_visible("wired", visible);
+
+        if !visible
+            && let Some(connectivity_box) = self.list_boxes.first()
+            && let Some(selected) = connectivity_box.selected_row()
+            && let Some(action_row) = selected.downcast_ref::<adw::ActionRow>()
+            && action_row.widget_name() == "wired"
             && let Some(bt_row) = connectivity_box.row_at_index(0)
         {
             connectivity_box.select_row(Some(&bt_row));
