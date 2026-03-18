@@ -13,18 +13,24 @@ Consider having the SNI tray in the waft overview.
 
 ---
 
-# `waft-launcher` response too slow
+# `waft-settings` Wireless
 
-Investigate why is the response time so slow and fix it. It should be at least as fast as wofi/rofi.
+* Provide ability to configure per-network wifi settings from waft-settings
+* Provide ability to share network via qr code
+* Provide ability to forget a known network
 
-## Scenario
+# `waft-settings` online accounts
 
-Type short string into search input, for example "vol".
+* Provide ability to add a new online account from within waft-settings
 
-The result: The launcher renders results for "v" by the time "vol" has been typed, then renders resutls for "vo" and then renders results for "vol", which looks awkward and unstable.
+# `waft-settings` audio
 
-Expected result: Before the user manages to type in "o", the view should rerender and provide results. It must be faster than a keyboard poweruser typing
+* Provide ability to create virtual audio devices
 
-# `waft-launcher` search
+# `waft-settings` brightness updates
 
-The launcher needs to search by both the localized AND the original (EN) name. Prioritize the localized name.
+Changing the brightness externally must update the value in waft, currently I am changing brightness via `swayosd-client` and waft does not see the value change
+
+# `waft-settings` brightness updates
+
+I have brightness controls for "Built-in Display" and diplay controls for "California Institute of Technology 0x1413". These are the same displays and should manifest as same UI in the waft-settings - the brightness controls should be in the same "device box" as the other settings like resolution
