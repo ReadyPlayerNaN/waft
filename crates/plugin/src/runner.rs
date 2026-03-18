@@ -103,6 +103,14 @@ impl<'a> PluginRunner<'a> {
         let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
         rt.block_on(async {
             let (notifier, notifier_rx) = EntityNotifier::new_pair();
+            // Keep a clone of the notifier alive for the duration of the
+            // runtime. Plugins that don't need background notifications
+            // (e.g. caffeine, brightness) ignore the notifier in their build
+            // closure, which drops the only Sender and causes the runtime's
+            // notifier_rx.changed() to error out immediately. This keepalive
+            // prevents that — same pattern as the claim_tx keepalive in
+            // PluginRuntime::run().
+            let _notifier_keepalive = notifier.clone();
             let plugin = build(notifier).await?;
             let runtime = PluginRuntime::from_parts(self.name, plugin, notifier_rx);
             runtime.run().await
