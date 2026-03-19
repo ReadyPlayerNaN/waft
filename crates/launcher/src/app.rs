@@ -350,6 +350,7 @@ fn update_results(
     win.set_results(ranked, query);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_launcher_mode(
     win: &LauncherWindow,
     prefix: &str,

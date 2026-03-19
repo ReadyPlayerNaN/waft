@@ -256,6 +256,10 @@ impl Plugin for AudioPlugin {
         // Output devices (audio-device entities for overview)
         for device in &state.output_devices {
             let is_default = state.default_output.as_deref() == Some(&device.id);
+            let is_virtual = state
+                .virtual_devices
+                .iter()
+                .any(|vd| vd.config.sink_name == device.id);
 
             let audio_device = entity::audio::AudioDevice {
                 name: device.name.clone(),
@@ -265,8 +269,12 @@ impl Plugin for AudioPlugin {
                 kind: entity::audio::AudioDeviceKind::Output,
                 device_type: device.device_type.clone(),
                 connection_type: device.connection_type.clone(),
-                virtual_device: false,
-                sink_name: None,
+                virtual_device: is_virtual,
+                sink_name: if is_virtual {
+                    Some(device.id.clone())
+                } else {
+                    None
+                },
             };
             entities.push(Entity::new(
                 Urn::new("audio", entity::audio::ENTITY_TYPE, &device.id),
@@ -278,6 +286,10 @@ impl Plugin for AudioPlugin {
         // Input devices (audio-device entities for overview)
         for device in &state.input_devices {
             let is_default = state.default_input.as_deref() == Some(&device.id);
+            let is_virtual = state
+                .virtual_devices
+                .iter()
+                .any(|vd| vd.config.sink_name == device.id);
 
             let audio_device = entity::audio::AudioDevice {
                 name: device.name.clone(),
@@ -287,8 +299,12 @@ impl Plugin for AudioPlugin {
                 kind: entity::audio::AudioDeviceKind::Input,
                 device_type: device.device_type.clone(),
                 connection_type: device.connection_type.clone(),
-                virtual_device: false,
-                sink_name: None,
+                virtual_device: is_virtual,
+                sink_name: if is_virtual {
+                    Some(device.id.clone())
+                } else {
+                    None
+                },
             };
             entities.push(Entity::new(
                 Urn::new("audio", entity::audio::ENTITY_TYPE, &device.id),
@@ -307,30 +323,6 @@ impl Plugin for AudioPlugin {
             ));
         }
 
-        // Virtual device entities
-        for vd in &state.virtual_devices {
-            let kind = match vd.config.module_type.as_str() {
-                "null-source" => entity::audio::AudioDeviceKind::Input,
-                _ => entity::audio::AudioDeviceKind::Output,
-            };
-            let audio_device = entity::audio::AudioDevice {
-                name: vd.config.label.clone(),
-                device_type: "virtual".to_string(),
-                connection_type: Some("virtual".to_string()),
-                volume: 1.0,
-                muted: false,
-                default: false,
-                kind,
-                virtual_device: true,
-                sink_name: Some(vd.config.sink_name.clone()),
-            };
-            entities.push(Entity::new(
-                Urn::new("audio", entity::audio::ENTITY_TYPE, &vd.config.sink_name),
-                entity::audio::ENTITY_TYPE,
-                &audio_device,
-            ));
-        }
-
         entities
     }
 
@@ -339,11 +331,12 @@ impl Plugin for AudioPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let entity_type = urn.entity_type();
 
         if entity_type == entity::audio::CARD_ENTITY_TYPE {
-            return self.handle_card_action(urn, action, params).await;
+            self.handle_card_action(urn, action, params).await?;
+            return Ok(serde_json::Value::Null);
         }
 
         let device_id = urn.id().to_string();
@@ -425,31 +418,35 @@ impl Plugin for AudioPlugin {
                 }
             }
             "create-sink" => {
-                return self.handle_create_virtual_device("null-sink", &params).await;
+                self.handle_create_virtual_device("null-sink", &params).await?;
+                return Ok(serde_json::Value::Null);
             }
             "create-source" => {
-                return self.handle_create_virtual_device("null-source", &params).await;
+                self.handle_create_virtual_device("null-source", &params).await?;
+                return Ok(serde_json::Value::Null);
             }
             "remove-sink" => {
                 let sink_name = params
                     .get("sink_name")
                     .and_then(|v| v.as_str())
                     .ok_or("missing 'sink_name' parameter")?;
-                return self.handle_remove_virtual_device(sink_name).await;
+                self.handle_remove_virtual_device(sink_name).await?;
+                return Ok(serde_json::Value::Null);
             }
             "remove-source" => {
                 let source_name = params
                     .get("source_name")
                     .and_then(|v| v.as_str())
                     .ok_or("missing 'source_name' parameter")?;
-                return self.handle_remove_virtual_device(source_name).await;
+                self.handle_remove_virtual_device(source_name).await?;
+                return Ok(serde_json::Value::Null);
             }
             other => {
                 debug!("[audio] Unknown action: {}", other);
             }
         }
 
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 }
 
@@ -905,4 +902,190 @@ fn main() -> Result<()> {
 
             Ok(plugin)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_device(id: &str, volume: f64, muted: bool) -> pactl::AudioDevice {
+        pactl::AudioDevice {
+            id: id.to_string(),
+            name: format!("Device {id}"),
+            device_type: "card".to_string(),
+            connection_type: None,
+            volume,
+            muted,
+        }
+    }
+
+    fn make_virtual_state(sink_name: &str, module_type: &str) -> VirtualDeviceState {
+        VirtualDeviceState {
+            config: VirtualDeviceConfig {
+                module_type: module_type.to_string(),
+                sink_name: sink_name.to_string(),
+                label: format!("Virtual {sink_name}"),
+            },
+            module_index: Some(42),
+        }
+    }
+
+    fn make_plugin(state: AudioState) -> AudioPlugin {
+        AudioPlugin {
+            state: Arc::new(StdMutex::new(state)),
+        }
+    }
+
+    fn decode_audio_device(entity: &Entity) -> entity::audio::AudioDevice {
+        serde_json::from_value(entity.data.clone()).unwrap()
+    }
+
+    #[test]
+    fn virtual_output_device_gets_real_volume_and_flags() {
+        let plugin = make_plugin(AudioState {
+            available: true,
+            output_devices: vec![make_device("waft_my_sink", 0.42, true)],
+            virtual_devices: vec![make_virtual_state("waft_my_sink", "null-sink")],
+            ..Default::default()
+        });
+
+        let entities = plugin.get_entities();
+        let audio_entities: Vec<_> = entities
+            .iter()
+            .filter(|e| e.entity_type == entity::audio::ENTITY_TYPE)
+            .collect();
+
+        assert_eq!(audio_entities.len(), 1, "should emit exactly one entity for the virtual device");
+
+        let data = decode_audio_device(audio_entities[0]);
+        assert!(data.virtual_device, "virtual_device flag should be true");
+        assert_eq!(data.sink_name, Some("waft_my_sink".to_string()));
+        assert!((data.volume - 0.42).abs() < 0.001, "volume should be real value from pactl, not hardcoded 1.0");
+        assert!(data.muted, "muted should be real value from pactl, not hardcoded false");
+    }
+
+    #[test]
+    fn virtual_input_device_gets_real_volume_and_flags() {
+        let plugin = make_plugin(AudioState {
+            available: true,
+            input_devices: vec![make_device("waft_my_source", 0.65, false)],
+            virtual_devices: vec![make_virtual_state("waft_my_source", "null-source")],
+            ..Default::default()
+        });
+
+        let entities = plugin.get_entities();
+        let audio_entities: Vec<_> = entities
+            .iter()
+            .filter(|e| e.entity_type == entity::audio::ENTITY_TYPE)
+            .collect();
+
+        assert_eq!(audio_entities.len(), 1);
+
+        let data = decode_audio_device(audio_entities[0]);
+        assert!(data.virtual_device);
+        assert_eq!(data.sink_name, Some("waft_my_source".to_string()));
+        assert!((data.volume - 0.65).abs() < 0.001);
+        assert!(!data.muted);
+        assert_eq!(data.kind, entity::audio::AudioDeviceKind::Input);
+    }
+
+    #[test]
+    fn regular_device_not_marked_virtual() {
+        let plugin = make_plugin(AudioState {
+            available: true,
+            output_devices: vec![make_device("alsa_output.pci-0000", 0.8, false)],
+            virtual_devices: vec![make_virtual_state("waft_unrelated", "null-sink")],
+            ..Default::default()
+        });
+
+        let entities = plugin.get_entities();
+        let audio_entities: Vec<_> = entities
+            .iter()
+            .filter(|e| e.entity_type == entity::audio::ENTITY_TYPE)
+            .collect();
+
+        assert_eq!(audio_entities.len(), 1);
+
+        let data = decode_audio_device(audio_entities[0]);
+        assert!(!data.virtual_device, "regular device should not be marked virtual");
+        assert_eq!(data.sink_name, None, "regular device should have no sink_name");
+    }
+
+    #[test]
+    fn no_duplicate_entities_for_virtual_device() {
+        let plugin = make_plugin(AudioState {
+            available: true,
+            output_devices: vec![
+                make_device("alsa_output.pci-0000", 0.5, false),
+                make_device("waft_my_sink", 0.7, true),
+            ],
+            virtual_devices: vec![make_virtual_state("waft_my_sink", "null-sink")],
+            ..Default::default()
+        });
+
+        let entities = plugin.get_entities();
+        let audio_entities: Vec<_> = entities
+            .iter()
+            .filter(|e| e.entity_type == entity::audio::ENTITY_TYPE)
+            .collect();
+
+        // Should be exactly 2: one regular + one virtual (not 3 with duplicate)
+        assert_eq!(audio_entities.len(), 2);
+
+        let urns: Vec<_> = audio_entities.iter().map(|e| e.urn.to_string()).collect();
+        let unique_urns: std::collections::HashSet<_> = urns.iter().collect();
+        assert_eq!(urns.len(), unique_urns.len(), "all URNs should be unique (no duplicates)");
+    }
+
+    #[test]
+    fn mixed_real_and_virtual_devices() {
+        let plugin = make_plugin(AudioState {
+            available: true,
+            output_devices: vec![
+                make_device("alsa_output.pci-0000", 0.5, false),
+                make_device("waft_virtual_out", 0.3, true),
+            ],
+            input_devices: vec![
+                make_device("alsa_input.pci-0000", 0.9, false),
+                make_device("waft_virtual_in", 0.1, true),
+            ],
+            virtual_devices: vec![
+                make_virtual_state("waft_virtual_out", "null-sink"),
+                make_virtual_state("waft_virtual_in", "null-source"),
+            ],
+            ..Default::default()
+        });
+
+        let entities = plugin.get_entities();
+        let audio_entities: Vec<_> = entities
+            .iter()
+            .filter(|e| e.entity_type == entity::audio::ENTITY_TYPE)
+            .collect();
+
+        assert_eq!(audio_entities.len(), 4, "2 outputs + 2 inputs");
+
+        let virtual_count = audio_entities
+            .iter()
+            .filter(|e| decode_audio_device(e).virtual_device)
+            .count();
+        assert_eq!(virtual_count, 2, "exactly 2 virtual devices");
+
+        let non_virtual_count = audio_entities
+            .iter()
+            .filter(|e| !decode_audio_device(e).virtual_device)
+            .count();
+        assert_eq!(non_virtual_count, 2, "exactly 2 non-virtual devices");
+    }
+
+    #[test]
+    fn unavailable_audio_returns_empty() {
+        let plugin = make_plugin(AudioState {
+            available: false,
+            output_devices: vec![make_device("waft_sink", 0.5, false)],
+            virtual_devices: vec![make_virtual_state("waft_sink", "null-sink")],
+            ..Default::default()
+        });
+
+        assert!(plugin.get_entities().is_empty());
+    }
 }

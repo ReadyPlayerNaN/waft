@@ -6,8 +6,8 @@ use log::{debug, error, info, warn};
 use waft_plugin::EntityNotifier;
 use zbus::Connection;
 
-use crate::state::NmState;
-use crate::wifi::scan_wifi_networks;
+use crate::state::{CachedConnectionSettings, NmState};
+use crate::wifi::{get_connection_settings, get_connections_for_ssid, scan_wifi_networks};
 
 fn lock_state(state: &StdMutex<NmState>) -> std::sync::MutexGuard<'_, NmState> {
     match state.lock() {
@@ -41,8 +41,43 @@ pub async fn wifi_scan_task(
         notifier.notify();
 
         match scan_wifi_networks(&conn, &adapter_paths).await {
-            Ok(networks) => {
-                info!("[nm] WiFi scan found {} known networks", networks.len());
+            Ok(mut networks) => {
+                info!("[nm] WiFi scan found {} networks", networks.len());
+
+                // Read connection settings for known networks
+                for network in &mut networks {
+                    if !network.known {
+                        continue;
+                    }
+                    match get_connections_for_ssid(&conn, &network.ssid).await {
+                        Ok(paths) if !paths.is_empty() => {
+                            match get_connection_settings(&conn, &paths[0]).await {
+                                Ok(settings) => {
+                                    network.cached_settings = Some(CachedConnectionSettings {
+                                        autoconnect: settings.autoconnect,
+                                        metered: settings.metered,
+                                        ip_method: settings.ip_method,
+                                        dns_servers: settings.dns_servers,
+                                    });
+                                }
+                                Err(e) => {
+                                    debug!(
+                                        "[nm] Failed to read settings for {}: {e}",
+                                        network.ssid
+                                    );
+                                }
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            debug!(
+                                "[nm] Failed to find connections for {}: {e}",
+                                network.ssid
+                            );
+                        }
+                    }
+                }
+
                 let mut st = lock_state(&state);
                 for adapter in &mut st.wifi_adapters {
                     adapter.access_points = networks.clone();

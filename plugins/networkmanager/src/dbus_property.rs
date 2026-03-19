@@ -12,6 +12,8 @@ pub const NM_SETTINGS_PATH: &str = "/org/freedesktop/NetworkManager/Settings";
 pub const NM_SETTINGS_INTERFACE: &str = "org.freedesktop.NetworkManager.Settings";
 pub const NM_CONNECTION_ACTIVE_INTERFACE: &str = "org.freedesktop.NetworkManager.Connection.Active";
 pub const NM_VPN_CONNECTION_INTERFACE: &str = "org.freedesktop.NetworkManager.VPN.Connection";
+pub const NM_SETTINGS_CONNECTION_INTERFACE: &str =
+    "org.freedesktop.NetworkManager.Settings.Connection";
 
 pub const DEVICE_TYPE_ETHERNET: u32 = 1;
 pub const DEVICE_TYPE_WIFI: u32 = 2;

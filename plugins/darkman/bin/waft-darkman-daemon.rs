@@ -254,7 +254,7 @@ impl Plugin for DarkmanPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         match action.as_str() {
             "toggle" => {
                 log::debug!("Toggle action received");
@@ -294,7 +294,7 @@ impl Plugin for DarkmanPlugin {
                 log::warn!("Unknown action: {}", action);
             }
         }
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 }
 

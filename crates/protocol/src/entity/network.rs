@@ -57,6 +57,25 @@ pub enum SecurityType {
     Enterprise,
 }
 
+/// Whether a connection is metered (data-capped).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MeteredState {
+    Unknown,
+    Yes,
+    No,
+    GuessYes,
+    GuessNo,
+}
+
+/// IP address configuration method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IpMethod {
+    Auto,
+    Manual,
+    LinkLocal,
+    Disabled,
+}
+
 /// A WiFi network (child entity of wireless adapter).
 ///
 /// URN: `networkmanager/network-adapter/{adapter}/wifi-network/{ssid}`
@@ -71,6 +90,14 @@ pub struct WiFiNetwork {
     pub security_type: SecurityType,
     #[serde(default)]
     pub connecting: bool,
+    #[serde(default)]
+    pub autoconnect: Option<bool>,
+    #[serde(default)]
+    pub metered: Option<MeteredState>,
+    #[serde(default)]
+    pub dns_servers: Option<Vec<String>>,
+    #[serde(default)]
+    pub ip_method: Option<IpMethod>,
 }
 
 impl WiFiNetwork {
@@ -185,6 +212,30 @@ mod tests {
             connected: false,
             security_type: SecurityType::Wpa2,
             connecting: false,
+            autoconnect: None,
+            metered: None,
+            dns_servers: None,
+            ip_method: None,
+        };
+        let json = serde_json::to_value(&network).unwrap();
+        let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
+        assert_eq!(network, decoded);
+    }
+
+    #[test]
+    fn serde_roundtrip_wifi_network_with_settings() {
+        let network = WiFiNetwork {
+            ssid: "SettingsNet".to_string(),
+            strength: 90,
+            secure: true,
+            known: true,
+            connected: true,
+            security_type: SecurityType::Wpa3,
+            connecting: false,
+            autoconnect: Some(true),
+            metered: Some(MeteredState::No),
+            dns_servers: Some(vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()]),
+            ip_method: Some(IpMethod::Auto),
         };
         let json = serde_json::to_value(&network).unwrap();
         let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
@@ -203,6 +254,10 @@ mod tests {
         let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
         assert_eq!(decoded.security_type, SecurityType::Open);
         assert!(!decoded.connecting);
+        assert_eq!(decoded.autoconnect, None);
+        assert_eq!(decoded.metered, None);
+        assert_eq!(decoded.dns_servers, None);
+        assert_eq!(decoded.ip_method, None);
     }
 
     #[test]
@@ -232,6 +287,10 @@ mod tests {
             connected: false,
             security_type: SecurityType::Wpa3,
             connecting: true,
+            autoconnect: None,
+            metered: None,
+            dns_servers: None,
+            ip_method: None,
         };
         let json = serde_json::to_value(&network).unwrap();
         let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
@@ -325,6 +384,37 @@ mod tests {
             let json = serde_json::to_value(state).unwrap();
             let decoded: VpnState = serde_json::from_value(json).unwrap();
             assert_eq!(state, decoded);
+        }
+    }
+
+    #[test]
+    fn serde_roundtrip_metered_state() {
+        let states = [
+            MeteredState::Unknown,
+            MeteredState::Yes,
+            MeteredState::No,
+            MeteredState::GuessYes,
+            MeteredState::GuessNo,
+        ];
+        for state in states {
+            let json = serde_json::to_value(state).unwrap();
+            let decoded: MeteredState = serde_json::from_value(json).unwrap();
+            assert_eq!(state, decoded);
+        }
+    }
+
+    #[test]
+    fn serde_roundtrip_ip_method() {
+        let methods = [
+            IpMethod::Auto,
+            IpMethod::Manual,
+            IpMethod::LinkLocal,
+            IpMethod::Disabled,
+        ];
+        for method in methods {
+            let json = serde_json::to_value(method).unwrap();
+            let decoded: IpMethod = serde_json::from_value(json).unwrap();
+            assert_eq!(method, decoded);
         }
     }
 }

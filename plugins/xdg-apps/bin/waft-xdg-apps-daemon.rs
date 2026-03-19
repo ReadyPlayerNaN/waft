@@ -62,7 +62,7 @@ impl Plugin for XdgAppsPlugin {
         urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let stem = urn.id().to_string();
         match action.as_str() {
             "open" => {
@@ -74,13 +74,13 @@ impl Plugin for XdgAppsPlugin {
 
                 let Some(exec) = exec else {
                     log::warn!("[xdg-apps] open: app '{stem}' not found");
-                    return Ok(());
+                    return Ok(serde_json::Value::Null);
                 };
 
                 let parts: Vec<&str> = exec.split_whitespace().collect();
                 if parts.is_empty() {
                     log::warn!("[xdg-apps] open: empty exec for '{stem}'");
-                    return Ok(());
+                    return Ok(serde_json::Value::Null);
                 }
 
                 let mut cmd = std::process::Command::new(parts[0]);
@@ -116,7 +116,7 @@ impl Plugin for XdgAppsPlugin {
                 log::debug!("[xdg-apps] unknown action: {other}");
             }
         }
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 
     fn can_stop(&self) -> bool {

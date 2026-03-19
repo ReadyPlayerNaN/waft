@@ -100,7 +100,7 @@ impl Plugin for WeatherPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         match action.as_str() {
             "update-config" => {
                 let new_config: WeatherConfig = serde_json::from_value(params)?;
@@ -127,7 +127,7 @@ impl Plugin for WeatherPlugin {
                 // Wake the fetch task to use new config immediately
                 self.wake.notify_one();
 
-                Ok(())
+                Ok(serde_json::Value::Null)
             }
             _ => Err(format!("Unknown action: {action}").into()),
         }

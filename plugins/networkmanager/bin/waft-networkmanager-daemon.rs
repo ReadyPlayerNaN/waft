@@ -12,9 +12,9 @@ use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::entity::network::{
-    ADAPTER_ENTITY_TYPE, AdapterKind, ETHERNET_CONNECTION_ENTITY_TYPE, NetworkAdapter,
-    SecurityType, TETHERING_CONNECTION_ENTITY_TYPE, TetheringConnection, VPN_ENTITY_TYPE,
-    VpnState as EntityVpnState, WIFI_NETWORK_ENTITY_TYPE, WiFiNetwork,
+    ADAPTER_ENTITY_TYPE, AdapterKind, ETHERNET_CONNECTION_ENTITY_TYPE, IpMethod, MeteredState,
+    NetworkAdapter, SecurityType, TETHERING_CONNECTION_ENTITY_TYPE, TetheringConnection,
+    VPN_ENTITY_TYPE, VpnState as EntityVpnState, WIFI_NETWORK_ENTITY_TYPE, WiFiNetwork,
 };
 use waft_plugin::*;
 use zbus::Connection;
@@ -47,8 +47,9 @@ use waft_plugin_networkmanager::vpn::{
     activate_vpn, deactivate_vpn, get_active_vpn_connections, get_vpn_profiles,
 };
 use waft_plugin_networkmanager::wifi::{
-    activate_connection, add_and_activate_connection, connect_wired_dbus, disconnect_device,
-    get_active_access_point, get_connections_for_ssid, set_wifi_enabled_dbus,
+    activate_connection, add_and_activate_connection, build_wifi_qr_string, connect_wired_dbus,
+    delete_connection, disconnect_device, get_active_access_point, get_connections_for_ssid,
+    get_wifi_psk, set_wifi_enabled_dbus, update_connection_settings,
 };
 use waft_plugin_networkmanager::wifi_scan::wifi_scan_task;
 
@@ -320,6 +321,29 @@ fn to_entity_vpn_state(state: &VpnState) -> EntityVpnState {
     }
 }
 
+/// Convert NM metered integer to protocol enum.
+/// NM values: 0=unknown, 1=yes, 2=no, 3=guess-yes, 4=guess-no.
+fn nm_metered_to_entity(nm_metered: i32) -> MeteredState {
+    match nm_metered {
+        1 => MeteredState::Yes,
+        2 => MeteredState::No,
+        3 => MeteredState::GuessYes,
+        4 => MeteredState::GuessNo,
+        _ => MeteredState::Unknown,
+    }
+}
+
+/// Convert NM ipv4.method string to protocol enum.
+fn nm_ip_method_to_entity(method: &str) -> IpMethod {
+    match method {
+        "auto" => IpMethod::Auto,
+        "manual" => IpMethod::Manual,
+        "link-local" => IpMethod::LinkLocal,
+        "disabled" => IpMethod::Disabled,
+        _ => IpMethod::Auto,
+    }
+}
+
 fn wifi_adapter_to_entities(
     adapter: &WiFiAdapterState,
     connecting_ssid: &Option<String>,
@@ -350,6 +374,19 @@ fn wifi_adapter_to_entities(
     // WiFi network child entities
     for ap in &adapter.access_points {
         let network_urn = adapter_urn.child(WIFI_NETWORK_ENTITY_TYPE, &ap.ssid);
+
+        let (autoconnect, metered, dns_servers, ip_method) =
+            if let Some(ref settings) = ap.cached_settings {
+                (
+                    settings.autoconnect,
+                    settings.metered.map(nm_metered_to_entity),
+                    settings.dns_servers.clone(),
+                    settings.ip_method.as_deref().map(nm_ip_method_to_entity),
+                )
+            } else {
+                (None, None, None, None)
+            };
+
         let network_entity = WiFiNetwork {
             ssid: ap.ssid.clone(),
             strength: ap.strength,
@@ -358,6 +395,10 @@ fn wifi_adapter_to_entities(
             connected: adapter.active_ssid.as_ref() == Some(&ap.ssid),
             security_type: ap.security_type,
             connecting: connecting_ssid.as_ref() == Some(&ap.ssid),
+            autoconnect,
+            metered,
+            dns_servers,
+            ip_method,
         };
         entities.push(Entity::new(
             network_urn,
@@ -525,7 +566,7 @@ impl Plugin for NetworkManagerPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let entity_type = urn.entity_type();
 
         match entity_type {
@@ -536,8 +577,9 @@ impl Plugin for NetworkManagerPlugin {
             }
             "wifi-network" => {
                 let ssid = urn.id();
-                self.handle_wifi_network_action(&urn, ssid, &action, &params)
-                    .await?
+                return self
+                    .handle_wifi_network_action(&urn, ssid, &action, &params)
+                    .await;
             }
             "ethernet-connection" => {
                 let uuid = urn.id();
@@ -558,7 +600,7 @@ impl Plugin for NetworkManagerPlugin {
             }
         }
 
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 }
 
@@ -651,7 +693,7 @@ impl NetworkManagerPlugin {
         ssid: &str,
         action: &str,
         params: &serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         match action {
             "connect" => {
                 debug!("[nm] Connect to WiFi network: {}", ssid);
@@ -677,11 +719,97 @@ impl NetworkManagerPlugin {
                     );
                 }
             }
+            "forget" => {
+                info!("[nm] Forget WiFi network: {}", ssid);
+
+                // If currently connected, disconnect first
+                let device_path = {
+                    let state = self.lock_state();
+                    state
+                        .wifi_adapters
+                        .iter()
+                        .find(|a| a.active_ssid.as_ref() == Some(&ssid.to_string()))
+                        .map(|a| a.path.clone())
+                };
+                if let Some(ref path) = device_path
+                    && let Err(e) = disconnect_device(&self.conn, path).await
+                {
+                    warn!("[nm] Failed to disconnect before forget: {e}");
+                }
+
+                // Delete all saved connection profiles for this SSID
+                let connections = get_connections_for_ssid(&self.conn, ssid).await?;
+                if connections.is_empty() {
+                    warn!("[nm] No saved connections found for SSID: {ssid}");
+                } else {
+                    for conn_path in &connections {
+                        if let Err(e) = delete_connection(&self.conn, conn_path).await {
+                            error!("[nm] Failed to delete connection {conn_path}: {e}");
+                            return Err(e.into());
+                        }
+                    }
+                    info!(
+                        "[nm] Deleted {} connection(s) for SSID: {ssid}",
+                        connections.len()
+                    );
+                }
+
+                // Update state: mark network as not known, clear active SSID if needed
+                {
+                    let mut state = self.lock_state();
+                    for adapter in &mut state.wifi_adapters {
+                        if adapter.active_ssid.as_deref() == Some(ssid) {
+                            adapter.active_ssid = None;
+                        }
+                        for ap in &mut adapter.access_points {
+                            if ap.ssid == ssid {
+                                ap.known = false;
+                            }
+                        }
+                    }
+                }
+            }
+            "update-settings" => {
+                debug!("[nm] Update settings for WiFi network: {ssid}");
+
+                let connections = get_connections_for_ssid(&self.conn, ssid).await?;
+                let conn_path = connections
+                    .first()
+                    .ok_or_else(|| format!("No saved connection for SSID: {ssid}"))?;
+
+                update_connection_settings(&self.conn, conn_path, params).await?;
+                info!("[nm] Updated settings for WiFi network: {ssid}");
+            }
+            "share" => {
+                debug!("[nm] Share WiFi network: {ssid}");
+
+                let security_type = {
+                    let state = self.lock_state();
+                    state
+                        .wifi_adapters
+                        .iter()
+                        .flat_map(|a| &a.access_points)
+                        .find(|ap| ap.ssid == ssid)
+                        .map(|ap| ap.security_type)
+                        .unwrap_or_default()
+                };
+
+                let connections = get_connections_for_ssid(&self.conn, ssid).await?;
+                let psk = if let Some(conn_path) = connections.first() {
+                    get_wifi_psk(&self.conn, conn_path).await?
+                } else {
+                    None
+                };
+
+                let qr_string = build_wifi_qr_string(ssid, psk.as_deref(), security_type);
+                info!("[nm] Generated WiFi QR string for SSID: {ssid}");
+                return Ok(serde_json::json!({ "qr_string": qr_string }));
+            }
             _ => {
                 debug!("[nm] Unknown wifi-network action: {}", action);
             }
         }
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 
     async fn handle_ethernet_connection_action(
@@ -1351,4 +1479,76 @@ fn main() -> Result<()> {
         runtime.run().await?;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // nm_metered_to_entity tests
+
+    #[test]
+    fn metered_unknown_from_zero() {
+        assert_eq!(nm_metered_to_entity(0), MeteredState::Unknown);
+    }
+
+    #[test]
+    fn metered_yes() {
+        assert_eq!(nm_metered_to_entity(1), MeteredState::Yes);
+    }
+
+    #[test]
+    fn metered_no() {
+        assert_eq!(nm_metered_to_entity(2), MeteredState::No);
+    }
+
+    #[test]
+    fn metered_guess_yes() {
+        assert_eq!(nm_metered_to_entity(3), MeteredState::GuessYes);
+    }
+
+    #[test]
+    fn metered_guess_no() {
+        assert_eq!(nm_metered_to_entity(4), MeteredState::GuessNo);
+    }
+
+    #[test]
+    fn metered_unknown_from_negative() {
+        assert_eq!(nm_metered_to_entity(-1), MeteredState::Unknown);
+    }
+
+    #[test]
+    fn metered_unknown_from_out_of_range() {
+        assert_eq!(nm_metered_to_entity(5), MeteredState::Unknown);
+        assert_eq!(nm_metered_to_entity(99), MeteredState::Unknown);
+    }
+
+    // nm_ip_method_to_entity tests
+
+    #[test]
+    fn ip_method_auto() {
+        assert_eq!(nm_ip_method_to_entity("auto"), IpMethod::Auto);
+    }
+
+    #[test]
+    fn ip_method_manual() {
+        assert_eq!(nm_ip_method_to_entity("manual"), IpMethod::Manual);
+    }
+
+    #[test]
+    fn ip_method_link_local() {
+        assert_eq!(nm_ip_method_to_entity("link-local"), IpMethod::LinkLocal);
+    }
+
+    #[test]
+    fn ip_method_disabled() {
+        assert_eq!(nm_ip_method_to_entity("disabled"), IpMethod::Disabled);
+    }
+
+    #[test]
+    fn ip_method_unknown_defaults_to_auto() {
+        assert_eq!(nm_ip_method_to_entity("shared"), IpMethod::Auto);
+        assert_eq!(nm_ip_method_to_entity(""), IpMethod::Auto);
+        assert_eq!(nm_ip_method_to_entity("something-else"), IpMethod::Auto);
+    }
 }

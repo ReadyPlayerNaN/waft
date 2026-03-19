@@ -68,7 +68,6 @@ pub struct VirtualDevicesSection {
 struct VirtualDevicesSectionState {
     rows: HashMap<String, VirtualDeviceRow>,
     group: adw::PreferencesGroup,
-    empty_state: adw::StatusPage,
     action_callback: EntityActionCallback,
 }
 
@@ -120,20 +119,14 @@ impl VirtualDevicesSection {
 
         group.set_header_suffix(Some(&create_button));
 
-        // Empty state
-        let empty_state = adw::StatusPage::builder()
-            .icon_name("audio-card-symbolic")
-            .title(t("audio-virtual-devices-empty"))
-            .description(t("audio-virtual-devices-empty-desc"))
-            .build();
+        // Set description as empty state hint (shown when no virtual devices exist)
+        group.set_description(Some(&t("audio-virtual-devices-empty-desc")));
 
         root.append(&group);
-        root.append(&empty_state);
 
         let state = Rc::new(RefCell::new(VirtualDevicesSectionState {
             rows: HashMap::new(),
             group: group.clone(),
-            empty_state,
             action_callback: action_callback.clone(),
         }));
 
@@ -213,10 +206,14 @@ impl VirtualDevicesSection {
             }
         }
 
-        // Show/hide empty state
-        let has_devices = !virtual_devices.is_empty();
-        state.group.set_visible(has_devices);
-        state.empty_state.set_visible(!has_devices);
+        // Show/hide empty state description
+        if virtual_devices.is_empty() {
+            state
+                .group
+                .set_description(Some(&t("audio-virtual-devices-empty-desc")));
+        } else {
+            state.group.set_description(None);
+        }
     }
 
     fn build_virtual_row(
@@ -495,6 +492,19 @@ fn show_create_dialog(
         .title(t("audio-virtual-device-type"))
         .model(&type_model)
         .build();
+
+    // Update create button label when type selection changes
+    {
+        let dialog_ref = dialog.clone();
+        type_combo.connect_selected_notify(move |combo| {
+            let label = if combo.selected() == 0 {
+                t("audio-create-virtual-sink")
+            } else {
+                t("audio-create-virtual-source")
+            };
+            dialog_ref.set_response_label("create", &label);
+        });
+    }
 
     let entry = adw::EntryRow::builder()
         .title(t("audio-create-device-label"))

@@ -58,7 +58,7 @@ impl Plugin for ClaudePlugin {
         _urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Err(format!("Unknown action: {action}").into())
     }
 }

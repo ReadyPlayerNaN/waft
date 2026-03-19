@@ -107,6 +107,30 @@ wifi-connecting = Připojování…
 wifi-enterprise-not-supported = Podnikové sítě (802.1X) nejsou podporovány.
 wifi-connection-failed = Připojení selhalo: { $error }
 
+# WiFi -- Network Detail
+wifi-detail-settings = Nastavení připojení
+wifi-detail-autoconnect = Připojovat automaticky
+wifi-detail-metered = Měřené připojení
+wifi-detail-ip-config = Konfigurace IP
+wifi-detail-ip-method = Metoda IP
+wifi-detail-dns = DNS servery
+wifi-detail-dns-placeholder = 8.8.8.8, 1.1.1.1
+wifi-detail-forget = Zapomenout síť
+wifi-detail-forget-confirm-title = Zapomenout síť?
+wifi-detail-forget-confirm-body = Tato síť bude odebrána z uložených sítí. Pro opětovné připojení bude nutné znovu zadat heslo.
+wifi-share = Sdílet
+wifi-share-title = Sdílet { $ssid }
+wifi-share-qr-description = Naskenujte tento QR kód jiným zařízením pro připojení k této síti.
+wifi-metered-unknown = Neznámé
+wifi-metered-yes = Ano
+wifi-metered-no = Ne
+wifi-metered-guess-yes = Pravděpodobně měřené
+wifi-metered-guess-no = Pravděpodobně neměřené
+wifi-ip-auto = Automaticky (DHCP)
+wifi-ip-manual = Ručně
+wifi-ip-link-local = Pouze Link-Local
+wifi-ip-disabled = Zakázáno
+
 # Wired
 wired-connected = Připojeno
 wired-ip-address = IP adresa
@@ -520,6 +544,9 @@ online-accounts-remove-account = Odebrat účet
 online-accounts-remove-confirm-title = Odebrat účet?
 online-accounts-remove-confirm-body = Tento účet a jeho data budou z tohoto zařízení odebrány. Tuto akci nelze vrátit zpět.
 online-accounts-add-account = Přidat účet…
+online-accounts-add-account-title = Přidat účet
+online-accounts-add-account-cancel = Zrušit
+online-accounts-goa-not-running = Služba GNOME Online Accounts není dostupná.
 
 # Plánovač
 scheduler-title = Plánované úlohy

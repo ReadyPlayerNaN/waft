@@ -2,6 +2,10 @@
 //!
 //! Dumb widget displaying a single WiFi network as an `AdwActionRow`
 //! with signal strength icon, security indicator, and connect button.
+//! Known networks additionally show a settings chevron for drill-down
+//! navigation.
+
+use std::rc::Rc;
 
 use waft_ui_gtk::icons::Icon;
 use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
@@ -10,13 +14,24 @@ use waft_ui_gtk::vdom::primitives::{VActionRow, VCustomButton, VIcon, VLabel};
 use crate::i18n::t;
 
 /// Props for creating or updating a network row.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct NetworkRowProps {
-    pub ssid:       String,
-    pub strength:   u8,
-    pub secure:     bool,
-    pub connected:  bool,
-    pub connecting: bool,
+    pub ssid:        String,
+    pub strength:    u8,
+    pub secure:      bool,
+    pub connected:   bool,
+    pub connecting:  bool,
+    pub on_navigate: Option<Rc<dyn Fn()>>,
+}
+
+impl PartialEq for NetworkRowProps {
+    fn eq(&self, other: &Self) -> bool {
+        self.ssid == other.ssid
+            && self.strength == other.strength
+            && self.secure == other.secure
+            && self.connected == other.connected
+            && self.connecting == other.connecting
+    }
 }
 
 /// Output events from a network row.
@@ -92,6 +107,16 @@ impl RenderFn for NetworkRowRender {
                     }
                 }),
         ));
+
+        // Known networks get a settings chevron for drill-down navigation
+        if let Some(navigate) = props.on_navigate.clone() {
+            row = row
+                .suffix(VNode::icon(VIcon::new(
+                    vec![Icon::Themed("go-next-symbolic".to_string())],
+                    16,
+                )))
+                .on_activate(move || navigate());
+        }
 
         VNode::action_row(row)
     }

@@ -190,7 +190,7 @@ impl Plugin for EdsPlugin {
         urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         log::debug!("Received action '{}' for URN: {}", action, urn);
 
         if action == "refresh" {
@@ -201,7 +201,7 @@ impl Plugin for EdsPlugin {
 
             if !allowed {
                 log::debug!("[eds] Refresh debounced (overlay-triggered)");
-                return Ok(());
+                return Ok(serde_json::Value::Null);
             }
 
             // Clone notifier out of the slot (must not hold the lock across an async boundary).
@@ -229,7 +229,7 @@ impl Plugin for EdsPlugin {
                     st.last_refresh = Some(unix_now());
                 }
             }
-            return Ok(());
+            return Ok(serde_json::Value::Null);
         }
 
         log::warn!(
@@ -237,7 +237,7 @@ impl Plugin for EdsPlugin {
             action,
             urn
         );
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 
     fn can_stop(&self) -> bool {

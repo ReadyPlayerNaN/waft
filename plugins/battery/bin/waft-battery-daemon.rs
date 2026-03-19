@@ -229,9 +229,9 @@ impl Plugin for BatteryPlugin {
         _urn: Urn,
         _action: String,
         _params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         // Battery is display-only, no actions to handle
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 }
 

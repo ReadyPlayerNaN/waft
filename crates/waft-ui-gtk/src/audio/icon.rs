@@ -36,7 +36,8 @@ pub fn audio_connection_icon(connection_type: &str) -> Option<&'static str> {
         "usb" => Some("media-removable-symbolic"),
         "jack" => Some("audio-jack-symbolic"),
         "hdmi" => Some("video-joined-displays-symbolic"),
-        _ => None, // pci, virtual — no badge
+        "virtual" => Some("applications-science-symbolic"),
+        _ => None, // pci — no badge
     }
 }
 
@@ -118,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn virtual_has_no_connection_badge() {
-        assert_eq!(audio_connection_icon("virtual"), None);
+    fn virtual_shows_science_badge() {
+        assert_eq!(audio_connection_icon("virtual"), Some("applications-science-symbolic"));
     }
 }

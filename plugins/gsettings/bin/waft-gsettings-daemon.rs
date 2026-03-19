@@ -126,7 +126,7 @@ impl Plugin for GsettingsPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         match action.as_str() {
             "set-accent-color" => {
                 let color = params
@@ -157,7 +157,7 @@ impl Plugin for GsettingsPlugin {
             }
         }
 
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 
     fn can_stop(&self) -> bool {

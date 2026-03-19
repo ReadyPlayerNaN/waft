@@ -26,6 +26,8 @@ pub struct Display {
     pub name: String,
     pub brightness: f64,
     pub kind: DisplayKind,
+    #[serde(default)]
+    pub connector: Option<String>,
 }
 
 /// The type of display backend.
@@ -368,6 +370,7 @@ mod tests {
             name: "intel_backlight".to_string(),
             brightness: 0.8,
             kind: DisplayKind::Backlight,
+            connector: None,
         };
         let json = serde_json::to_value(&display).unwrap();
         let decoded: Display = serde_json::from_value(json).unwrap();
@@ -380,10 +383,22 @@ mod tests {
             name: "DELL U2722D".to_string(),
             brightness: 0.5,
             kind: DisplayKind::External,
+            connector: Some("DP-3".to_string()),
         };
         let json = serde_json::to_value(&display).unwrap();
         let decoded: Display = serde_json::from_value(json).unwrap();
         assert_eq!(display, decoded);
+    }
+
+    #[test]
+    fn display_serde_backward_compat_without_connector() {
+        let json = serde_json::json!({
+            "name": "intel_backlight",
+            "brightness": 0.8,
+            "kind": "Backlight"
+        });
+        let decoded: Display = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.connector, None);
     }
 
     #[test]

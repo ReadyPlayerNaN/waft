@@ -48,6 +48,10 @@ mod tests {
             connected,
             security_type: Default::default(),
             connecting: false,
+            autoconnect: None,
+            metered: None,
+            dns_servers: None,
+            ip_method: None,
         }
     }
 

@@ -125,6 +125,20 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 action("remove-account", "Remove this online account"),
             ],
         },
+        EntityTypeInfo {
+            entity_type: super::accounts::ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
+            domain: "accounts",
+            description: "An available online account provider",
+            urn_pattern: "{plugin}/online-account-provider/{provider-type}",
+            properties: &[
+                prop("provider_type", "string", "Provider type identifier (e.g. google, ms365)"),
+                prop("provider_name", "string", "Human-readable display name"),
+                opt_prop("icon_name", "string", "Themed icon name for the provider"),
+            ],
+            actions: &[
+                action("add-account", "Launch the add-account flow for this provider"),
+            ],
+        },
 
         // ── ai ──
         EntityTypeInfo {
@@ -369,6 +383,7 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 prop("name", "string", "Display name"),
                 prop("brightness", "float", "Brightness level (0.0 - 1.0)"),
                 prop("kind", "enum(Backlight, External)", "Display backend type"),
+                opt_prop("connector", "string", "Compositor output connector (e.g. DP-3, eDP-1)"),
             ],
             actions: &[
                 action_p("set-brightness", "Set the display brightness", &[
@@ -607,11 +622,21 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 prop("connected", "bool", "Whether currently connected"),
                 prop("security_type", "enum(open, wep, wpa, wpa2, wpa3, enterprise)", "Encryption type"),
                 prop("connecting", "bool", "Whether a connection attempt is in progress"),
+                opt_prop("autoconnect", "bool", "Whether to connect automatically when in range"),
+                opt_prop("metered", "enum(Unknown, Yes, No, GuessYes, GuessNo)", "Metered connection state"),
+                opt_prop("dns_servers", "Vec<string>", "Configured DNS servers"),
+                opt_prop("ip_method", "enum(Auto, Manual, LinkLocal, Disabled)", "IP address configuration method"),
             ],
             actions: &[
                 action("connect", "Connect to this network. Params: {password?: string}"),
                 action("disconnect", "Disconnect from this network"),
                 action("forget", "Remove saved credentials"),
+                action_p("update-settings", "Update connection settings", &[
+                    param("autoconnect", "bool", "Whether to connect automatically"),
+                    param("metered", "enum(Unknown, Yes, No, GuessYes, GuessNo)", "Metered connection state"),
+                    param("dns_servers", "Vec<string>", "DNS servers to use"),
+                    param("ip_method", "enum(Auto, Manual, LinkLocal, Disabled)", "IP configuration method"),
+                ]),
             ],
         },
 
@@ -954,6 +979,7 @@ mod tests {
         // Verify all known ENTITY_TYPE constants are in the registry.
         let expected = [
             super::super::accounts::ONLINE_ACCOUNT_ENTITY_TYPE,
+            super::super::accounts::ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
             super::super::ai::ENTITY_TYPE,
             super::super::app::ENTITY_TYPE,
             super::super::audio::CARD_ENTITY_TYPE,

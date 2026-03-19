@@ -20,6 +20,7 @@ use crate::wifi::adapter_group::{WifiAdapterGroup, WifiAdapterGroupOutput, WifiA
 use crate::wifi::available_networks_group::{AvailableNetworksGroup, AvailableNetworksGroupOutput};
 use crate::wifi::known_networks_group::KnownNetworksGroup;
 use crate::wifi::password_dialog::show_password_dialog;
+use crate::wifi::share_dialog::show_share_dialog;
 
 /// Smart container for the WiFi settings page.
 pub struct WiFiPage {
@@ -31,6 +32,8 @@ struct WiFiPageState {
     known_group: KnownNetworksGroup,
     available_group: AvailableNetworksGroup,
     search_index: Rc<RefCell<SearchIndex>>,
+    navigation_view: adw::NavigationView,
+    pending_share_ssid: Rc<RefCell<Option<String>>>,
 }
 
 impl WiFiPage {
@@ -45,6 +48,7 @@ impl WiFiPage {
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
+        navigation_view: &adw::NavigationView,
     ) -> Self {
         let root = crate::page_layout::page_root();
 
@@ -120,6 +124,29 @@ impl WiFiPage {
             });
         }
 
+        let pending_share_ssid: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+
+        // Handle action success: show QR dialog when share response arrives
+        {
+            let pending = pending_share_ssid.clone();
+            let root_for_dialog = root.clone();
+            entity_store.on_action_success(move |_action_id, data| {
+                let ssid = match pending.borrow_mut().take() {
+                    Some(ssid) => ssid,
+                    None => return,
+                };
+                if let Some(data) = data {
+                    if let Some(qr_string) = data.get("qr_string").and_then(|v| v.as_str()) {
+                        show_share_dialog(&root_for_dialog, &ssid, qr_string);
+                    } else {
+                        log::warn!("[wifi-page] share action succeeded but no qr_string in data");
+                    }
+                } else {
+                    log::warn!("[wifi-page] share action succeeded but no data returned");
+                }
+            });
+        }
+
         let adapters_reconciler = Reconciler::new(adapters_box);
 
         let state = Rc::new(RefCell::new(WiFiPageState {
@@ -127,6 +154,8 @@ impl WiFiPage {
             known_group,
             available_group,
             search_index: search_index.clone(),
+            navigation_view: navigation_view.clone(),
+            pending_share_ssid: pending_share_ssid.clone(),
         }));
 
         // Subscribe to both adapter and network changes
@@ -190,6 +219,7 @@ impl WiFiPage {
         adapters: &[(Urn, NetworkAdapter)],
         action_callback: &EntityActionCallback,
     ) {
+        let nav_view = state.borrow().navigation_view.clone();
         let mut state = state.borrow_mut();
 
         let known: Vec<(Urn, WiFiNetwork)> =
@@ -208,7 +238,8 @@ impl WiFiPage {
             .iter()
             .any(|(_, a)| a.kind == AdapterKind::Wireless && a.scanning);
 
-        state.known_group.reconcile(&known, action_callback);
+        let pending_share = state.pending_share_ssid.clone();
+        state.known_group.reconcile(&known, action_callback, &nav_view, &pending_share);
         state
             .available_group
             .reconcile(&available, any_scanning, action_callback);

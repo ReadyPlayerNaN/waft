@@ -135,10 +135,10 @@ impl Plugin for InternalAppsPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let Some(ref path) = self.settings_path else {
             log::warn!("[internal-apps] action '{action}' ignored: waft-settings not available");
-            return Ok(());
+            return Ok(serde_json::Value::Null);
         };
         match action.as_str() {
             "open" => {
@@ -155,7 +155,7 @@ impl Plugin for InternalAppsPlugin {
                 log::debug!("[internal-apps] Unknown action: {other}");
             }
         }
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 
     fn can_stop(&self) -> bool {

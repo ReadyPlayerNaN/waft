@@ -11,8 +11,8 @@ use waft_plugin::entity::network::SecurityType;
 
 use crate::AccessPoint;
 use crate::dbus_property::{
-    NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_SETTINGS_INTERFACE,
-    NM_SETTINGS_PATH, NM_WIRELESS_INTERFACE,
+    NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_SETTINGS_CONNECTION_INTERFACE,
+    NM_SETTINGS_INTERFACE, NM_SETTINGS_PATH, NM_WIRELESS_INTERFACE,
 };
 use crate::detect_security_type;
 use crate::state::AccessPointInfo;
@@ -149,6 +149,7 @@ pub async fn scan_wifi_networks(
                             known,
                             ap_path: ap.path.clone(),
                             security_type,
+                            cached_settings: None,
                         },
                     );
                 }
@@ -196,6 +197,7 @@ pub async fn get_active_access_point(
         known: true, // connected → saved profile must exist
         ap_path: ap.path.clone(),
         security_type,
+        cached_settings: None,
     })
 }
 
@@ -280,7 +282,7 @@ pub async fn get_connections_for_ssid(conn: &Connection, ssid: &str) -> Result<V
             conn,
             NM_SERVICE,
             path_str,
-            "org.freedesktop.NetworkManager.Settings.Connection",
+            NM_SETTINGS_CONNECTION_INTERFACE,
         )
         .await?;
 
@@ -495,4 +497,372 @@ pub async fn connect_wired_dbus(conn: &Connection, device_path: &str) -> Result<
         })?;
 
     Ok(())
+}
+
+/// Delete a saved connection profile via D-Bus.
+pub async fn delete_connection(conn: &Connection, connection_path: &str) -> Result<()> {
+    let proxy = zbus::Proxy::new(
+        conn,
+        NM_SERVICE,
+        connection_path,
+        NM_SETTINGS_CONNECTION_INTERFACE,
+    )
+    .await
+    .context("Failed to create Settings.Connection proxy")?;
+
+    let _: () = proxy
+        .call("Delete", &())
+        .await
+        .with_context(|| format!("Failed to delete connection {connection_path}"))?;
+
+    Ok(())
+}
+
+/// Settings read from a NM connection profile for WiFi entities.
+#[derive(Debug, Clone, Default)]
+pub struct ConnectionSettings {
+    pub autoconnect: Option<bool>,
+    pub metered: Option<i32>,
+    pub ip_method: Option<String>,
+    pub dns_servers: Option<Vec<String>>,
+}
+
+/// Read connection profile settings via `GetSettings` D-Bus call.
+pub async fn get_connection_settings(
+    conn: &Connection,
+    connection_path: &str,
+) -> Result<ConnectionSettings> {
+    let proxy = zbus::Proxy::new(
+        conn,
+        NM_SERVICE,
+        connection_path,
+        NM_SETTINGS_CONNECTION_INTERFACE,
+    )
+    .await
+    .context("Failed to create Settings.Connection proxy")?;
+
+    let (settings,): (HashMap<String, HashMap<String, OwnedValue>>,) =
+        proxy.call("GetSettings", &()).await?;
+
+    let mut result = ConnectionSettings::default();
+
+    // connection.autoconnect (defaults to true in NM when absent)
+    if let Some(connection) = settings.get("connection") {
+        if let Some(ac) = connection.get("autoconnect") {
+            result.autoconnect = bool::try_from(ac.clone()).ok();
+        }
+        if let Some(metered) = connection.get("metered") {
+            result.metered = i32::try_from(metered.clone()).ok();
+        }
+    }
+
+    // ipv4.method
+    if let Some(ipv4) = settings.get("ipv4") {
+        if let Some(method) = ipv4.get("method") {
+            result.ip_method = String::try_from(method.clone()).ok();
+        }
+        // ipv4.dns is an array of u32 (network-byte-order IPv4 addresses)
+        if let Some(dns) = ipv4.get("dns")
+            && let Ok(addrs) = <Vec<u32>>::try_from(dns.clone())
+        {
+            result.dns_servers = Some(
+                addrs
+                    .iter()
+                    .map(|&addr| {
+                        let bytes = addr.to_le_bytes();
+                        format!("{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3])
+                    })
+                    .collect(),
+            );
+        }
+    }
+
+    Ok(result)
+}
+
+/// Update connection profile settings via D-Bus.
+///
+/// Reads the current settings, applies the requested changes, and calls `Update`.
+pub async fn update_connection_settings(
+    conn: &Connection,
+    connection_path: &str,
+    updates: &serde_json::Value,
+) -> Result<()> {
+    use zbus::zvariant::Value;
+
+    let proxy = zbus::Proxy::new(
+        conn,
+        NM_SERVICE,
+        connection_path,
+        NM_SETTINGS_CONNECTION_INTERFACE,
+    )
+    .await
+    .context("Failed to create Settings.Connection proxy")?;
+
+    let (mut settings,): (HashMap<String, HashMap<String, OwnedValue>>,) =
+        proxy.call("GetSettings", &()).await?;
+
+    // Apply autoconnect
+    if let Some(ac) = updates.get("autoconnect").and_then(|v| v.as_bool()) {
+        let section = settings
+            .entry("connection".to_string())
+            .or_insert_with(HashMap::new);
+        section.insert(
+            "autoconnect".to_string(),
+            Value::from(ac).try_into().unwrap(),
+        );
+    }
+
+    // Apply metered (NM metered values: 0=unknown, 1=yes, 2=no, 3=guess-yes, 4=guess-no)
+    if let Some(metered) = updates.get("metered").and_then(|v| v.as_i64()) {
+        let section = settings
+            .entry("connection".to_string())
+            .or_insert_with(HashMap::new);
+        section.insert(
+            "metered".to_string(),
+            Value::from(metered as i32).try_into().unwrap(),
+        );
+    }
+
+    // Apply ip_method
+    if let Some(method) = updates.get("ip_method").and_then(|v| v.as_str()) {
+        let section = settings
+            .entry("ipv4".to_string())
+            .or_insert_with(HashMap::new);
+        section.insert(
+            "method".to_string(),
+            Value::from(method).try_into().unwrap(),
+        );
+    }
+
+    // Apply dns_servers
+    if let Some(dns_arr) = updates.get("dns_servers").and_then(|v| v.as_array()) {
+        let addrs: Vec<u32> = dns_arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter_map(parse_ipv4_to_u32)
+            .collect();
+        let section = settings
+            .entry("ipv4".to_string())
+            .or_insert_with(HashMap::new);
+        section.insert(
+            "dns".to_string(),
+            Value::from(addrs).try_into().unwrap(),
+        );
+    }
+
+    let _: () = proxy
+        .call("Update", &(&settings,))
+        .await
+        .context("Failed to update connection settings")?;
+
+    Ok(())
+}
+
+/// Retrieve the WiFi PSK (pre-shared key) for a saved connection via `GetSecrets`.
+///
+/// NM's `GetSettings` redacts sensitive data; `GetSecrets` returns it.
+/// Returns `None` for open networks or if no secret is stored.
+pub async fn get_wifi_psk(conn: &Connection, connection_path: &str) -> Result<Option<String>> {
+    let proxy = zbus::Proxy::new(
+        conn,
+        NM_SERVICE,
+        connection_path,
+        NM_SETTINGS_CONNECTION_INTERFACE,
+    )
+    .await
+    .context("Failed to create Settings.Connection proxy for secrets")?;
+
+    let (secrets,): (HashMap<String, HashMap<String, OwnedValue>>,) = proxy
+        .call("GetSecrets", &("802-11-wireless-security",))
+        .await
+        .context("GetSecrets call failed")?;
+
+    let psk = secrets
+        .get("802-11-wireless-security")
+        .and_then(|sec| sec.get("psk"))
+        .and_then(|v| String::try_from(v.clone()).ok());
+
+    Ok(psk)
+}
+
+/// Build a WiFi QR code string in the `WIFI:` URI format.
+///
+/// Format: `WIFI:T:<security>;S:<ssid>;P:<password>;;`
+///
+/// Special characters in SSID and password are escaped with backslash per the spec.
+pub fn build_wifi_qr_string(
+    ssid: &str,
+    password: Option<&str>,
+    security: SecurityType,
+) -> String {
+    let auth_type = match security {
+        SecurityType::Open => "nopass",
+        SecurityType::Wep => "WEP",
+        SecurityType::Enterprise => "WPA", // EAP uses WPA in QR format
+        _ => "WPA",
+    };
+
+    let escaped_ssid = escape_wifi_qr_field(ssid);
+
+    if let Some(pw) = password {
+        let escaped_pw = escape_wifi_qr_field(pw);
+        format!("WIFI:T:{auth_type};S:{escaped_ssid};P:{escaped_pw};;")
+    } else {
+        format!("WIFI:T:{auth_type};S:{escaped_ssid};;")
+    }
+}
+
+/// Escape special characters in WiFi QR code fields.
+///
+/// Per the Wi-Fi QR code spec, these characters must be backslash-escaped:
+/// `\`, `;`, `,`, `"`, `:`
+fn escape_wifi_qr_field(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' | ';' | ',' | '"' | ':' => {
+                out.push('\\');
+                out.push(c);
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Parse an IPv4 address string to a u32 in network byte order (little-endian for NM).
+fn parse_ipv4_to_u32(s: &str) -> Option<u32> {
+    let parts: Vec<u8> = s.split('.').filter_map(|p| p.parse().ok()).collect();
+    if parts.len() == 4 {
+        Some(u32::from_le_bytes([parts[0], parts[1], parts[2], parts[3]]))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_ipv4_standard_address() {
+        let result = parse_ipv4_to_u32("192.168.1.1").unwrap();
+        // 192.168.1.1 in little-endian bytes: [192, 168, 1, 1]
+        assert_eq!(result, u32::from_le_bytes([192, 168, 1, 1]));
+    }
+
+    #[test]
+    fn parse_ipv4_loopback() {
+        let result = parse_ipv4_to_u32("127.0.0.1").unwrap();
+        assert_eq!(result, u32::from_le_bytes([127, 0, 0, 1]));
+    }
+
+    #[test]
+    fn parse_ipv4_google_dns() {
+        let result = parse_ipv4_to_u32("8.8.8.8").unwrap();
+        assert_eq!(result, u32::from_le_bytes([8, 8, 8, 8]));
+    }
+
+    #[test]
+    fn parse_ipv4_all_zeros() {
+        let result = parse_ipv4_to_u32("0.0.0.0").unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn parse_ipv4_all_max() {
+        let result = parse_ipv4_to_u32("255.255.255.255").unwrap();
+        assert_eq!(result, u32::from_le_bytes([255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn parse_ipv4_too_few_octets() {
+        assert_eq!(parse_ipv4_to_u32("192.168.1"), None);
+    }
+
+    #[test]
+    fn parse_ipv4_too_many_octets() {
+        assert_eq!(parse_ipv4_to_u32("192.168.1.1.1"), None);
+    }
+
+    #[test]
+    fn parse_ipv4_empty_string() {
+        assert_eq!(parse_ipv4_to_u32(""), None);
+    }
+
+    #[test]
+    fn parse_ipv4_non_numeric() {
+        assert_eq!(parse_ipv4_to_u32("abc.def.ghi.jkl"), None);
+    }
+
+    #[test]
+    fn parse_ipv4_octet_out_of_range() {
+        // 256 doesn't fit in u8, so parse::<u8> fails, producing fewer than 4 parts
+        assert_eq!(parse_ipv4_to_u32("256.1.1.1"), None);
+    }
+
+    #[test]
+    fn wifi_qr_wpa2_with_password() {
+        let qr = build_wifi_qr_string("MyNetwork", Some("secret123"), SecurityType::Wpa2);
+        assert_eq!(qr, "WIFI:T:WPA;S:MyNetwork;P:secret123;;");
+    }
+
+    #[test]
+    fn wifi_qr_open_no_password() {
+        let qr = build_wifi_qr_string("OpenNet", None, SecurityType::Open);
+        assert_eq!(qr, "WIFI:T:nopass;S:OpenNet;;");
+    }
+
+    #[test]
+    fn wifi_qr_wep_with_password() {
+        let qr = build_wifi_qr_string("WepNet", Some("wepkey"), SecurityType::Wep);
+        assert_eq!(qr, "WIFI:T:WEP;S:WepNet;P:wepkey;;");
+    }
+
+    #[test]
+    fn wifi_qr_escapes_special_chars() {
+        let qr = build_wifi_qr_string("My;Net:work", Some("pass;word"), SecurityType::Wpa3);
+        assert_eq!(qr, r"WIFI:T:WPA;S:My\;Net\:work;P:pass\;word;;");
+    }
+
+    #[test]
+    fn wifi_qr_escapes_backslash_and_quotes() {
+        let qr = build_wifi_qr_string(r#"Net"Work"#, Some(r"p\ass"), SecurityType::Wpa2);
+        assert_eq!(qr, r#"WIFI:T:WPA;S:Net\"Work;P:p\\ass;;"#);
+    }
+
+    #[test]
+    fn wifi_qr_escape_field_no_special() {
+        assert_eq!(escape_wifi_qr_field("simple"), "simple");
+    }
+
+    #[test]
+    fn wifi_qr_escape_field_all_special() {
+        assert_eq!(escape_wifi_qr_field(r#"\;,":"#), r#"\\\;\,\"\:"#);
+    }
+
+    #[test]
+    fn wifi_qr_wpa_maps_to_wpa_type() {
+        let qr = build_wifi_qr_string("Net", Some("pass"), SecurityType::Wpa);
+        assert_eq!(qr, "WIFI:T:WPA;S:Net;P:pass;;");
+    }
+
+    #[test]
+    fn wifi_qr_enterprise_maps_to_wpa_type() {
+        let qr = build_wifi_qr_string("CorpNet", Some("eap-pass"), SecurityType::Enterprise);
+        assert_eq!(qr, "WIFI:T:WPA;S:CorpNet;P:eap-pass;;");
+    }
+
+    #[test]
+    fn wifi_qr_empty_ssid() {
+        let qr = build_wifi_qr_string("", Some("pass"), SecurityType::Wpa2);
+        assert_eq!(qr, "WIFI:T:WPA;S:;P:pass;;");
+    }
+
+    #[test]
+    fn wifi_qr_escape_comma_in_password() {
+        let qr = build_wifi_qr_string("Net", Some("a,b"), SecurityType::Wpa2);
+        assert_eq!(qr, r"WIFI:T:WPA;S:Net;P:a\,b;;");
+    }
 }

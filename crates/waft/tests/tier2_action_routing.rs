@@ -121,7 +121,7 @@ async fn action_success_routed_to_app() {
 
     // Plugin responds with ActionSuccess
     plugin
-        .send(&PluginMessage::ActionSuccess { action_id })
+        .send(&PluginMessage::ActionSuccess { action_id, data: None })
         .await;
 
     // App should receive ActionSuccess
@@ -132,7 +132,7 @@ async fn action_success_routed_to_app() {
 
     match notification {
         AppNotification::ActionSuccess {
-            action_id: recv_id,
+            action_id: recv_id, ..
         } => {
             assert_eq!(recv_id, action_id);
         }

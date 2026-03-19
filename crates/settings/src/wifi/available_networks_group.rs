@@ -109,6 +109,7 @@ impl AvailableNetworksGroup {
                 secure: network.secure,
                 connected: false,
                 connecting: network.connecting,
+                on_navigate: None,
             };
 
             if let Some(existing) = self.rows.get(&urn_str) {

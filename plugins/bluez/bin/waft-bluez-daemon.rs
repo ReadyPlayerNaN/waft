@@ -187,7 +187,7 @@ impl Plugin for BluezPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let entity_type = urn.entity_type();
 
         if entity_type == BluetoothAdapter::ENTITY_TYPE {
@@ -201,7 +201,7 @@ impl Plugin for BluezPlugin {
                         Some(p) => p,
                         None => {
                             warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(());
+                            return Ok(serde_json::Value::Null);
                         }
                     };
 
@@ -240,7 +240,7 @@ impl Plugin for BluezPlugin {
                         Some(p) => p,
                         None => {
                             warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(());
+                            return Ok(serde_json::Value::Null);
                         }
                     };
 
@@ -278,7 +278,7 @@ impl Plugin for BluezPlugin {
                         Some(a) => a.to_string(),
                         None => {
                             warn!("[bluetooth] set-alias action missing 'alias' param");
-                            return Ok(());
+                            return Ok(serde_json::Value::Null);
                         }
                     };
                     debug!("[bluetooth] Set adapter alias: {} -> {}", aid, alias);
@@ -287,7 +287,7 @@ impl Plugin for BluezPlugin {
                         Some(p) => p,
                         None => {
                             warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(());
+                            return Ok(serde_json::Value::Null);
                         }
                     };
 
@@ -315,7 +315,7 @@ impl Plugin for BluezPlugin {
                         Some(p) => p,
                         None => {
                             warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(());
+                            return Ok(serde_json::Value::Null);
                         }
                     };
 
@@ -342,7 +342,7 @@ impl Plugin for BluezPlugin {
                         Some(p) => p,
                         None => {
                             warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(());
+                            return Ok(serde_json::Value::Null);
                         }
                     };
 
@@ -392,7 +392,7 @@ impl Plugin for BluezPlugin {
                             Some(f) => f,
                             None => {
                                 warn!("[bluetooth] Device not found: {}", did);
-                                return Ok(());
+                                return Ok(serde_json::Value::Null);
                             }
                         }
                     };
@@ -457,7 +457,7 @@ impl Plugin for BluezPlugin {
                         Some((dp, _)) => dp,
                         None => {
                             warn!("[bluetooth] Device not found: {}", did);
-                            return Ok(());
+                            return Ok(serde_json::Value::Null);
                         }
                     };
 
@@ -475,7 +475,7 @@ impl Plugin for BluezPlugin {
                         Some(paths) => paths,
                         None => {
                             warn!("[bluetooth] Device not found: {}", did);
-                            return Ok(());
+                            return Ok(serde_json::Value::Null);
                         }
                     };
 
@@ -507,7 +507,7 @@ impl Plugin for BluezPlugin {
             );
         }
 
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 }
 

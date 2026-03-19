@@ -196,7 +196,6 @@ impl SettingsWindow {
 
             entity_page_factory!(f, "audio", AudioPage);
             entity_page_factory!(f, "bluetooth", BluetoothPage);
-            entity_page_factory!(f, "wifi", WiFiPage);
             entity_page_factory!(f, "wired", WiredPage);
             entity_page_factory!(f, "weather", WeatherPage);
             entity_page_factory!(f, "wallpaper", WallpaperPage);
@@ -239,6 +238,15 @@ impl SettingsWindow {
                 let nv = navigation_view.clone();
                 f.insert("online-accounts".into(), Box::new(move || {
                     clamped(&OnlineAccountsPage::new(&es, &ac, &si, &nv).root)
+                }));
+            }
+            {
+                let es = entity_store.clone();
+                let ac = action_callback.clone();
+                let si = search_index.clone();
+                let nv = navigation_view.clone();
+                f.insert("wifi".into(), Box::new(move || {
+                    clamped(&WiFiPage::new(&es, &ac, &si, &nv).root)
                 }));
             }
 
@@ -463,12 +471,11 @@ impl SettingsWindow {
                 sidebar_for_sub.set_wired_visible(has_wired);
 
                 // If active page was hidden, switch to Bluetooth
-                if let Some(name) = stack_for_wifi.visible_child_name() {
-                    if (!has_wireless && name == "wifi")
-                        || (!has_wired && name == "wired")
-                    {
-                        stack_for_wifi.set_visible_child_name("bluetooth");
-                    }
+                if let Some(name) = stack_for_wifi.visible_child_name()
+                    && ((!has_wireless && name == "wifi")
+                        || (!has_wired && name == "wired"))
+                {
+                    stack_for_wifi.set_visible_child_name("bluetooth");
                 }
             });
 

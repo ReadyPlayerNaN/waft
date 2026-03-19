@@ -385,7 +385,7 @@ impl Plugin for SunsetrPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         match action.as_str() {
             "toggle" => {
                 let currently_active = self.get_state().active;
@@ -586,7 +586,7 @@ impl Plugin for SunsetrPlugin {
             _ => {}
         }
 
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 }
 

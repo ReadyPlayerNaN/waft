@@ -32,8 +32,8 @@
 //!         _urn: Urn,
 //!         _action: String,
 //!         _params: serde_json::Value,
-//!     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-//!         Ok(())
+//!     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+//!         Ok(serde_json::Value::Null)
 //!     }
 //! }
 //! ```

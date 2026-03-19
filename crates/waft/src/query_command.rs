@@ -399,6 +399,7 @@ mod tests {
         let mut entities = Vec::new();
         let notification = AppNotification::ActionSuccess {
             action_id: uuid::Uuid::new_v4(),
+            data: None,
         };
         collect_notification(&mut entities, notification);
         assert!(entities.is_empty());

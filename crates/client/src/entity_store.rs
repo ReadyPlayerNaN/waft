@@ -25,6 +25,9 @@ type SubscriberMap = RefCell<HashMap<String, Vec<Rc<dyn Fn()>>>>;
 /// Type alias for action error callback list to reduce complexity.
 type ActionErrorCallbacks = RefCell<Vec<Rc<dyn Fn(Uuid, String)>>>;
 
+/// Type alias for action success callback list to reduce complexity.
+type ActionSuccessCallbacks = RefCell<Vec<Rc<dyn Fn(Uuid, Option<serde_json::Value>)>>>;
+
 /// A cached entity: URN, entity type, and raw JSON data.
 #[derive(Clone)]
 struct CachedEntity {
@@ -45,6 +48,8 @@ pub struct EntityStore {
     subscribers: SubscriberMap,
     /// Callbacks invoked when an action error is received from the daemon.
     action_error_callbacks: ActionErrorCallbacks,
+    /// Callbacks invoked when an action succeeds, optionally carrying response data.
+    action_success_callbacks: ActionSuccessCallbacks,
 }
 
 impl EntityStore {
@@ -53,6 +58,7 @@ impl EntityStore {
             cache: RefCell::new(HashMap::new()),
             subscribers: RefCell::new(HashMap::new()),
             action_error_callbacks: RefCell::new(Vec::new()),
+            action_success_callbacks: RefCell::new(Vec::new()),
         }
     }
 
@@ -69,8 +75,11 @@ impl EntityStore {
             AppNotification::EntityRemoved { urn, entity_type } => {
                 self.handle_entity_removed(&urn, &entity_type);
             }
-            AppNotification::ActionSuccess { action_id } => {
+            AppNotification::ActionSuccess { action_id, data } => {
                 log::debug!("[entity-store] action {action_id} succeeded");
+                for cb in self.action_success_callbacks.borrow().iter() {
+                    cb(action_id, data.clone());
+                }
             }
             AppNotification::ActionError { action_id, error } => {
                 log::warn!("[entity-store] action {action_id} failed: {error}");
@@ -119,6 +128,18 @@ impl EntityStore {
     /// The callback receives the action UUID and error message string.
     pub fn on_action_error<F: Fn(Uuid, String) + 'static>(&self, callback: F) {
         self.action_error_callbacks
+            .borrow_mut()
+            .push(Rc::new(callback));
+    }
+
+    /// Register a callback invoked when an action succeeds.
+    ///
+    /// The callback receives the action UUID and optional response data.
+    pub fn on_action_success<F: Fn(Uuid, Option<serde_json::Value>) + 'static>(
+        &self,
+        callback: F,
+    ) {
+        self.action_success_callbacks
             .borrow_mut()
             .push(Rc::new(callback));
     }
@@ -440,6 +461,73 @@ mod tests {
                 .len(),
             0
         );
+    }
+
+    #[test]
+    fn action_success_callback_fires_with_data() {
+        let store = EntityStore::new();
+        let received = Rc::new(RefCell::new(None));
+        let received_clone = received.clone();
+
+        store.on_action_success(move |id, data| {
+            *received_clone.borrow_mut() = Some((id, data));
+        });
+
+        let action_id = Uuid::new_v4();
+        let response_data = serde_json::json!({"qr_string": "WIFI:T:WPA;S:Net;P:pass;;"});
+        store.handle_notification(AppNotification::ActionSuccess {
+            action_id,
+            data: Some(response_data.clone()),
+        });
+
+        let result = received.borrow();
+        let (id, data) = result.as_ref().expect("callback should have fired");
+        assert_eq!(*id, action_id);
+        assert_eq!(*data, Some(response_data));
+    }
+
+    #[test]
+    fn action_success_callback_fires_without_data() {
+        let store = EntityStore::new();
+        let received = Rc::new(RefCell::new(None));
+        let received_clone = received.clone();
+
+        store.on_action_success(move |id, data| {
+            *received_clone.borrow_mut() = Some((id, data));
+        });
+
+        let action_id = Uuid::new_v4();
+        store.handle_notification(AppNotification::ActionSuccess {
+            action_id,
+            data: None,
+        });
+
+        let result = received.borrow();
+        let (id, data) = result.as_ref().expect("callback should have fired");
+        assert_eq!(*id, action_id);
+        assert_eq!(*data, None);
+    }
+
+    #[test]
+    fn action_error_callback_fires() {
+        let store = EntityStore::new();
+        let received = Rc::new(RefCell::new(None));
+        let received_clone = received.clone();
+
+        store.on_action_error(move |id, error| {
+            *received_clone.borrow_mut() = Some((id, error));
+        });
+
+        let action_id = Uuid::new_v4();
+        store.handle_notification(AppNotification::ActionError {
+            action_id,
+            error: "device not found".to_string(),
+        });
+
+        let result = received.borrow();
+        let (id, error) = result.as_ref().expect("callback should have fired");
+        assert_eq!(*id, action_id);
+        assert_eq!(*error, "device not found");
     }
 
     #[test]

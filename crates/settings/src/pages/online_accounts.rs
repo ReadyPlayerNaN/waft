@@ -1,8 +1,9 @@
 //! Online Accounts settings page -- smart container.
 //!
-//! Subscribes to `EntityStore` for `online-account` entity type. On entity
-//! changes, reconciles the list of account rows showing GOA accounts. Each
-//! account row navigates to a detail sub-page with per-service toggles.
+//! Subscribes to `EntityStore` for `online-account` and `online-account-provider`
+//! entity types. On entity changes, reconciles the list of account rows showing
+//! GOA accounts. Each account row navigates to a detail sub-page with per-service
+//! toggles. The "Add Account" button opens a provider picker dialog.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -11,7 +12,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
-use waft_protocol::entity::accounts::{self, OnlineAccount};
+use waft_protocol::entity::accounts::{self, OnlineAccount, OnlineAccountProvider};
 use waft_ui_gtk::vdom::Component;
 
 use crate::display::settings_sub_page::SettingsSubPage;
@@ -23,6 +24,7 @@ use crate::online_accounts::account_detail::{
     AccountDetailOutput, AccountDetailPage, AccountDetailProps,
 };
 use crate::online_accounts::account_row::{AccountRow, AccountRowProps, ServiceProps};
+use crate::online_accounts::add_account_dialog::show_add_account_dialog;
 use crate::search_index::SearchIndex;
 
 /// Smart container for the Online Accounts settings page.
@@ -37,6 +39,9 @@ struct OnlineAccountsPageState {
     sorted_ids: Vec<String>,
     list_group: EntityListGroup,
     search_index: Rc<RefCell<SearchIndex>>,
+    add_button: gtk::Button,
+    goa_info_banner: adw::Banner,
+    providers: Vec<(Urn, OnlineAccountProvider)>,
 }
 
 impl OnlineAccountsPage {
@@ -54,6 +59,13 @@ impl OnlineAccountsPage {
     ) -> Self {
         let root = crate::page_layout::page_root();
 
+        // Info banner shown when GOA service is not running (no providers available)
+        let goa_info_banner = adw::Banner::builder()
+            .title(t("online-accounts-goa-not-running"))
+            .revealed(false)
+            .build();
+        root.append(&goa_info_banner);
+
         let list_group = EntityListGroup::new(
             &root,
             "contacts-symbolic",
@@ -66,15 +78,8 @@ impl OnlineAccountsPage {
             .label(t("online-accounts-add-account"))
             .css_classes(["suggested-action", "pill"])
             .halign(gtk::Align::Start)
+            .visible(false)
             .build();
-        add_button.connect_clicked(|_| {
-            if let Err(e) = std::process::Command::new("gnome-control-center")
-                .arg("online-accounts")
-                .spawn()
-            {
-                log::warn!("Failed to launch gnome-control-center: {e}");
-            }
-        });
         root.append(&add_button);
 
         // Backfill search entry widgets
@@ -89,27 +94,56 @@ impl OnlineAccountsPage {
             sorted_ids: Vec::new(),
             list_group,
             search_index: search_index.clone(),
+            add_button: add_button.clone(),
+            goa_info_banner,
+            providers: Vec::new(),
         }));
 
-        // Subscribe to online-account changes (future updates + initial reconciliation)
-        crate::subscription::subscribe_entities::<OnlineAccount, _>(
+        // Wire add button to open provider picker dialog
+        {
+            let state_ref = state.clone();
+            let cb = action_callback.clone();
+            let root_ref = root.clone();
+            add_button.connect_clicked(move |_| {
+                let st = state_ref.borrow();
+                show_add_account_dialog(&root_ref, &st.providers, &cb);
+            });
+        }
+
+        // Subscribe to both account and provider entity types
+        crate::subscription::subscribe_dual_entities::<OnlineAccount, OnlineAccountProvider, _>(
             entity_store,
             accounts::ONLINE_ACCOUNT_ENTITY_TYPE,
+            accounts::ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
             {
                 let state = state.clone();
                 let cb = action_callback.clone();
                 let nav = navigation_view.clone();
-                move |online_accounts| {
+                move |online_accounts, providers| {
                     log::debug!(
-                        "[online-accounts-page] Reconciling: {} accounts",
-                        online_accounts.len()
+                        "[online-accounts-page] Reconciling: {} accounts, {} providers",
+                        online_accounts.len(),
+                        providers.len()
                     );
+                    Self::reconcile_providers(&state, &providers);
                     Self::reconcile(&state, &online_accounts, &cb, &nav);
                 }
             },
         );
 
         Self { root }
+    }
+
+    /// Reconcile provider state: update add button visibility and GOA info banner.
+    fn reconcile_providers(
+        state: &Rc<RefCell<OnlineAccountsPageState>>,
+        providers: &[(Urn, OnlineAccountProvider)],
+    ) {
+        let mut st = state.borrow_mut();
+        st.providers = providers.to_vec();
+        let has_providers = !providers.is_empty();
+        st.add_button.set_visible(has_providers);
+        st.goa_info_banner.set_revealed(!has_providers);
     }
 
     /// Reconcile the account row list with current entity data.

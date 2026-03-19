@@ -7,12 +7,30 @@ Manages WiFi, Ethernet, VPN, and Bluetooth tethering connections via NetworkMana
 | Entity Type | URN | Description |
 |---|---|---|
 | `network-adapter` | `networkmanager/network-adapter/{interface}` | WiFi, Ethernet, or tethering adapter with enabled/connected state |
-| `wifi-network` | `networkmanager/network-adapter/{interface}/wifi-network/{ssid}` | Visible WiFi network with signal strength and security info |
+| `wifi-network` | `networkmanager/network-adapter/{interface}/wifi-network/{ssid}` | Visible WiFi network with signal strength, security, and connection settings |
 | `ethernet-connection` | `networkmanager/network-adapter/{interface}/ethernet-connection/{uuid}` | Saved Ethernet connection profile |
 | `vpn` | `networkmanager/vpn/{name}` | VPN connection with state (disconnected/connecting/connected/disconnecting) |
 | `tethering-connection` | `networkmanager/network-adapter/tethering/tethering-connection/{uuid}` | Bluetooth tethering profile |
 
 Tethering entities are only exposed when a BlueZ paired device matching a tethering profile is connected (or a tethering connection is already active).
+
+### `wifi-network` Entity Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `ssid` | `String` | Network name |
+| `strength` | `u8` | Signal strength (0-100) |
+| `secure` | `bool` | Whether the network requires authentication |
+| `known` | `bool` | Whether a saved connection profile exists |
+| `connected` | `bool` | Whether currently connected to this network |
+| `security_type` | `SecurityType` | `Open`, `Wep`, `Wpa`, `Wpa2`, `Wpa3`, or `Enterprise` |
+| `connecting` | `bool` | Whether a connection attempt is in progress |
+| `autoconnect` | `Option<bool>` | Auto-connect setting from NM profile (known networks only) |
+| `metered` | `Option<MeteredState>` | Metered connection state: `Unknown`, `Yes`, `No`, `GuessYes`, `GuessNo` |
+| `dns_servers` | `Option<Vec<String>>` | Configured DNS servers from NM profile |
+| `ip_method` | `Option<IpMethod>` | IP configuration method: `Auto`, `Manual`, `LinkLocal`, `Disabled` |
+
+The optional settings fields (`autoconnect`, `metered`, `dns_servers`, `ip_method`) are populated only for known networks by reading the NM connection profile via `GetSettings` D-Bus call.
 
 ## Actions
 
@@ -28,10 +46,13 @@ Tethering entities are only exposed when a BlueZ paired device matching a tether
 
 ### wifi-network
 
-| Action | Description |
-|---|---|
-| `connect` | Connect to this WiFi network (requires saved connection profile) |
-| `disconnect` | Disconnect from this WiFi network |
+| Action | Params | Description |
+|---|---|---|
+| `connect` | | Connect to this WiFi network (requires saved connection profile) |
+| `disconnect` | | Disconnect from this WiFi network |
+| `forget` | | Delete saved connection profile(s) for this network. Disconnects first if currently connected. |
+| `update-settings` | `{ "autoconnect": bool, "metered": i64, "ip_method": "auto", "dns_servers": ["8.8.8.8"] }` | Update connection profile settings. All fields optional. |
+| `share` | | Returns WiFi QR code string in `ActionSuccess.data` as `{ "qr_string": "WIFI:T:WPA;S:...;P:...;;" }`. Retrieves PSK via NM `GetSecrets`. |
 
 ### ethernet-connection
 
@@ -69,6 +90,20 @@ Tethering entities are only exposed when a BlueZ paired device matching a tether
 3. **BlueZ signal monitor**: Uses a dedicated system bus connection to track paired device connection state (determines tethering visibility)
 4. **WiFi scan task**: Background task that performs WiFi scans on demand via D-Bus
 5. **IP config**: Reads IPv4 configuration from connected devices, fetches public IP via HTTP
+
+## WiFi Features
+
+### Forget Network
+
+The `forget` action deletes all saved NM connection profiles matching the network's SSID. If the network is currently connected, it is disconnected first. After deletion, the network's `known` flag becomes `false` and settings fields are cleared.
+
+### Per-Network Settings
+
+Known WiFi networks expose connection profile settings (autoconnect, metered, DNS, IP method) via the entity. These are read from NM at scan time and can be modified via the `update-settings` action, which reads the current profile, applies changes, and calls NM's `Update` D-Bus method.
+
+### QR Code Sharing
+
+The `share` action retrieves the WiFi password via NM's `GetSecrets` D-Bus method and returns a WiFi QR code string in the standard `WIFI:T:<security>;S:<ssid>;P:<password>;;` format. Special characters in SSID and password are backslash-escaped per the Wi-Fi QR spec. The QR string is returned in `ActionSuccess.data` rather than stored on the entity, avoiding sensitive data flowing through routine entity updates.
 
 ## Configuration
 

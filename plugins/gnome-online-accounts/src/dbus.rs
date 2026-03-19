@@ -7,7 +7,9 @@ use log::{debug, warn};
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
-use waft_protocol::entity::accounts::{AccountStatus, OnlineAccount, ServiceInfo};
+use waft_protocol::entity::accounts::{
+    AccountStatus, OnlineAccount, OnlineAccountProvider, ServiceInfo,
+};
 
 // ---------------------------------------------------------------------------
 // D-Bus constants
@@ -15,6 +17,8 @@ use waft_protocol::entity::accounts::{AccountStatus, OnlineAccount, ServiceInfo}
 
 pub const GOA_BUS_NAME: &str = "org.gnome.OnlineAccounts";
 pub const GOA_OBJECT_PATH: &str = "/org/gnome/OnlineAccounts";
+pub const GOA_MANAGER_PATH: &str = "/org/gnome/OnlineAccounts/Manager";
+pub const GOA_MANAGER_IFACE: &str = "org.gnome.OnlineAccounts.Manager";
 pub const GOA_ACCOUNT_IFACE: &str = "org.gnome.OnlineAccounts.Account";
 pub const IFACE_OBJECT_MANAGER: &str = "org.freedesktop.DBus.ObjectManager";
 pub const IFACE_PROPERTIES: &str = "org.freedesktop.DBus.Properties";
@@ -222,6 +226,70 @@ pub async fn remove_account(conn: &Connection, account_path: &str) -> Result<()>
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Provider enumeration
+// ---------------------------------------------------------------------------
+
+/// Known GOA provider types with display names and icon names.
+///
+/// These are the standard providers shipped with gnome-online-accounts.
+/// We check each via `Manager.IsSupportedProvider` to determine availability.
+const KNOWN_PROVIDERS: &[(&str, &str, &str)] = &[
+    ("google", "Google", "goa-account-google"),
+    ("ms365", "Microsoft 365", "goa-account-msn"),
+    ("owncloud", "Nextcloud", "goa-account-owncloud"),
+    ("imap_smtp", "IMAP and SMTP", "goa-account-imap-smtp"),
+    ("exchange", "Microsoft Exchange", "goa-account-exchange"),
+    ("kerberos", "Enterprise Login (Kerberos)", "goa-account-kerberos"),
+    ("fedora", "Fedora", "goa-account-fedora"),
+    ("webdav", "WebDAV", "goa-account-webdav"),
+];
+
+/// Check if a GOA provider type is supported via `Manager.IsSupportedProvider`.
+async fn is_supported_provider(conn: &Connection, provider_type: &str) -> bool {
+    let proxy = match zbus::Proxy::new(conn, GOA_BUS_NAME, GOA_MANAGER_PATH, GOA_MANAGER_IFACE)
+        .await
+    {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    match proxy
+        .call::<_, _, (bool,)>("IsSupportedProvider", &(provider_type.to_string(),))
+        .await
+    {
+        Ok((supported,)) => supported,
+        Err(e) => {
+            debug!(
+                "[goa] IsSupportedProvider({}) failed: {}",
+                provider_type, e
+            );
+            false
+        }
+    }
+}
+
+/// Discover available GOA providers via D-Bus.
+///
+/// Checks each known provider type with `Manager.IsSupportedProvider` and
+/// returns the supported ones as `OnlineAccountProvider` structs.
+/// Returns an empty vec if goa-daemon is not running.
+pub async fn discover_providers(conn: &Connection) -> Vec<OnlineAccountProvider> {
+    let mut providers = Vec::new();
+
+    for &(provider_type, name, icon) in KNOWN_PROVIDERS {
+        if is_supported_provider(conn, provider_type).await {
+            providers.push(OnlineAccountProvider {
+                provider_type: provider_type.to_string(),
+                provider_name: name.to_string(),
+                icon_name: Some(icon.to_string()),
+            });
+        }
+    }
+
+    providers
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +323,131 @@ mod tests {
     #[test]
     fn service_name_to_property_unknown() {
         assert_eq!(service_name_to_property("nonexistent"), None);
+    }
+
+    #[test]
+    fn service_name_to_property_all_known_services() {
+        // Verify all 8 known services map correctly
+        let expected = [
+            ("mail", "MailDisabled"),
+            ("calendar", "CalendarDisabled"),
+            ("contacts", "ContactsDisabled"),
+            ("chat", "ChatDisabled"),
+            ("files", "FilesDisabled"),
+            ("music", "MusicDisabled"),
+            ("photos", "PhotosDisabled"),
+            ("ticketing", "TicketingDisabled"),
+        ];
+        for (service, prop) in expected {
+            assert_eq!(
+                service_name_to_property(service),
+                Some(prop.to_string()),
+                "Failed for service: {}",
+                service
+            );
+        }
+    }
+
+    fn make_props(entries: &[(&str, OwnedValue)]) -> HashMap<String, OwnedValue> {
+        entries
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
+    }
+
+    fn string_val(s: &str) -> OwnedValue {
+        OwnedValue::try_from(zbus::zvariant::Value::from(s.to_string())).unwrap()
+    }
+
+    fn bool_val(b: bool) -> OwnedValue {
+        OwnedValue::try_from(zbus::zvariant::Value::from(b)).unwrap()
+    }
+
+    #[test]
+    fn parse_services_extracts_known_disabled_props() {
+        let props = make_props(&[
+            ("MailDisabled", bool_val(false)),
+            ("CalendarDisabled", bool_val(true)),
+        ]);
+        let services = parse_services(&props);
+        assert_eq!(services.len(), 2);
+        assert_eq!(services[0].name, "mail");
+        assert!(services[0].enabled); // MailDisabled=false -> enabled=true
+        assert_eq!(services[1].name, "calendar");
+        assert!(!services[1].enabled); // CalendarDisabled=true -> enabled=false
+    }
+
+    #[test]
+    fn parse_services_empty_props() {
+        let props = HashMap::new();
+        let services = parse_services(&props);
+        assert!(services.is_empty());
+    }
+
+    #[test]
+    fn parse_services_ignores_unknown_props() {
+        let props = make_props(&[
+            ("SomethingDisabled", bool_val(false)),
+            ("MailDisabled", bool_val(false)),
+        ]);
+        let services = parse_services(&props);
+        assert_eq!(services.len(), 1);
+        assert_eq!(services[0].name, "mail");
+    }
+
+    #[test]
+    fn parse_account_complete() {
+        let props = make_props(&[
+            ("Id", string_val("account_123")),
+            ("ProviderName", string_val("Google")),
+            ("PresentationIdentity", string_val("user@gmail.com")),
+            ("AttentionNeeded", bool_val(false)),
+            ("IsLocked", bool_val(false)),
+            ("MailDisabled", bool_val(false)),
+            ("CalendarDisabled", bool_val(true)),
+        ]);
+        let (id, account) = parse_account(&props).unwrap();
+        assert_eq!(id, "account_123");
+        assert_eq!(account.provider_name, "Google");
+        assert_eq!(account.presentation_identity, "user@gmail.com");
+        assert_eq!(account.status, AccountStatus::Active);
+        assert!(!account.locked);
+        assert_eq!(account.services.len(), 2);
+    }
+
+    #[test]
+    fn parse_account_attention_needed_and_locked() {
+        let props = make_props(&[
+            ("Id", string_val("account_456")),
+            ("ProviderName", string_val("Nextcloud")),
+            ("PresentationIdentity", string_val("admin@company.example")),
+            ("AttentionNeeded", bool_val(true)),
+            ("IsLocked", bool_val(true)),
+        ]);
+        let (id, account) = parse_account(&props).unwrap();
+        assert_eq!(id, "account_456");
+        assert_eq!(account.status, AccountStatus::NeedsAttention);
+        assert!(account.locked);
+    }
+
+    #[test]
+    fn parse_account_missing_id_returns_none() {
+        let props = make_props(&[
+            ("ProviderName", string_val("Google")),
+            ("PresentationIdentity", string_val("user@gmail.com")),
+        ]);
+        assert!(parse_account(&props).is_none());
+    }
+
+    #[test]
+    fn parse_account_defaults_for_missing_fields() {
+        let props = make_props(&[("Id", string_val("acc_minimal"))]);
+        let (id, account) = parse_account(&props).unwrap();
+        assert_eq!(id, "acc_minimal");
+        assert_eq!(account.provider_name, "Unknown");
+        assert_eq!(account.presentation_identity, "");
+        assert_eq!(account.status, AccountStatus::Active); // default: AttentionNeeded=false
+        assert!(!account.locked); // default: IsLocked=false
+        assert!(account.services.is_empty());
     }
 }

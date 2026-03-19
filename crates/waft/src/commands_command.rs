@@ -254,7 +254,7 @@ async fn wait_for_action(
 ) -> Result<(), String> {
     loop {
         match read_message(stream).await {
-            Ok(Some(AppNotification::ActionSuccess { action_id: id })) if id == action_id => {
+            Ok(Some(AppNotification::ActionSuccess { action_id: id, .. })) if id == action_id => {
                 return Ok(());
             }
             Ok(Some(AppNotification::ActionError {

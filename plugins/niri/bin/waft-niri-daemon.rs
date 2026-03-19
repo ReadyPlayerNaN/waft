@@ -513,7 +513,7 @@ impl Plugin for NiriPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let entity_type = urn.entity_type();
 
         if entity_type == KEYBOARD_ENTITY_TYPE {
@@ -570,7 +570,7 @@ impl Plugin for NiriPlugin {
             );
         }
 
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 }
 

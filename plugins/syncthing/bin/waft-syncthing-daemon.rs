@@ -134,7 +134,7 @@ impl Plugin for SyncthingPlugin {
         _urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         match action.as_str() {
             "toggle" => {
                 let was_enabled = self.state.lock_or_recover().enabled;
@@ -183,7 +183,7 @@ impl Plugin for SyncthingPlugin {
                 log::debug!("[syncthing] Unknown action: {other}");
             }
         }
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 
     fn can_stop(&self) -> bool {

@@ -351,7 +351,7 @@ impl Plugin for SwwwPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let output_id = urn.id().to_string();
 
         match action.as_str() {
@@ -492,7 +492,7 @@ impl Plugin for SwwwPlugin {
             }
         }
 
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 
     fn can_stop(&self) -> bool {

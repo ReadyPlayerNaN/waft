@@ -325,11 +325,11 @@ impl WaftDaemon {
                 }
             }
 
-            PluginMessage::ActionSuccess { action_id } => {
+            PluginMessage::ActionSuccess { action_id, data } => {
                 if let Some(action) = self.action_tracker.resolve(action_id) {
                     if let Some(conn) = self.connections.get(&action.app_conn_id)
                         && let Err(e) = conn
-                            .send(&AppNotification::ActionSuccess { action_id })
+                            .send(&AppNotification::ActionSuccess { action_id, data })
                             .await
                     {
                         warn!(

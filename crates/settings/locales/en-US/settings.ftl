@@ -107,6 +107,30 @@ wifi-connecting = Connecting…
 wifi-enterprise-not-supported = Enterprise (802.1X) networks are not supported.
 wifi-connection-failed = Connection failed: { $error }
 
+# WiFi -- Network Detail
+wifi-detail-settings = Connection Settings
+wifi-detail-autoconnect = Connect automatically
+wifi-detail-metered = Metered connection
+wifi-detail-ip-config = IP Configuration
+wifi-detail-ip-method = IP method
+wifi-detail-dns = DNS servers
+wifi-detail-dns-placeholder = 8.8.8.8, 1.1.1.1
+wifi-detail-forget = Forget Network
+wifi-detail-forget-confirm-title = Forget Network?
+wifi-detail-forget-confirm-body = This network will be removed from your saved networks. You will need to re-enter the password to connect again.
+wifi-share = Share
+wifi-share-title = Share { $ssid }
+wifi-share-qr-description = Scan this QR code with another device to connect to this network.
+wifi-metered-unknown = Unknown
+wifi-metered-yes = Yes
+wifi-metered-no = No
+wifi-metered-guess-yes = Assumed metered
+wifi-metered-guess-no = Assumed not metered
+wifi-ip-auto = Automatic (DHCP)
+wifi-ip-manual = Manual
+wifi-ip-link-local = Link-Local Only
+wifi-ip-disabled = Disabled
+
 # Wired
 wired-connected = Connected
 wired-ip-address = IP Address
@@ -525,6 +549,9 @@ online-accounts-remove-account = Remove Account
 online-accounts-remove-confirm-title = Remove Account?
 online-accounts-remove-confirm-body = This account and its data will be removed from this device. This cannot be undone.
 online-accounts-add-account = Add Account…
+online-accounts-add-account-title = Add Account
+online-accounts-add-account-cancel = Cancel
+online-accounts-goa-not-running = GNOME Online Accounts service is not available.
 
 # Scheduler
 scheduler-title = Scheduled Tasks

@@ -59,6 +59,9 @@ pub trait Plugin: Send + Sync {
 
     /// Handle an action triggered by an app via the daemon.
     ///
+    /// Returns `Ok(Value::Null)` for actions with no response data, or
+    /// `Ok(value)` to send response data back to the requesting app.
+    ///
     /// # Arguments
     ///
     /// * `urn` - The entity the action targets
@@ -69,7 +72,7 @@ pub trait Plugin: Send + Sync {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Whether the plugin can stop gracefully.
     ///

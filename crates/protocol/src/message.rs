@@ -58,8 +58,12 @@ pub enum PluginMessage {
     /// An entity was removed.
     EntityRemoved { urn: Urn, entity_type: String },
 
-    /// An action completed successfully.
-    ActionSuccess { action_id: Uuid },
+    /// An action completed successfully, optionally carrying response data.
+    ActionSuccess {
+        action_id: Uuid,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<serde_json::Value>,
+    },
 
     /// An action failed.
     ActionError { action_id: Uuid, error: String },
@@ -85,8 +89,12 @@ pub enum AppNotification {
     /// An entity was removed.
     EntityRemoved { urn: Urn, entity_type: String },
 
-    /// An action completed successfully.
-    ActionSuccess { action_id: Uuid },
+    /// An action completed successfully, optionally carrying response data.
+    ActionSuccess {
+        action_id: Uuid,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<serde_json::Value>,
+    },
 
     /// An action failed.
     ActionError { action_id: Uuid, error: String },
@@ -201,6 +209,15 @@ mod tests {
     fn plugin_message_action_success() {
         roundtrip_json(&PluginMessage::ActionSuccess {
             action_id: Uuid::new_v4(),
+            data: None,
+        });
+    }
+
+    #[test]
+    fn plugin_message_action_success_with_data() {
+        roundtrip_json(&PluginMessage::ActionSuccess {
+            action_id: Uuid::new_v4(),
+            data: Some(serde_json::json!({"qr_string": "WIFI:T:WPA;S:MyNet;P:pass123;;"})),
         });
     }
 
@@ -239,6 +256,15 @@ mod tests {
     fn app_notification_action_success() {
         roundtrip_json(&AppNotification::ActionSuccess {
             action_id: Uuid::new_v4(),
+            data: None,
+        });
+    }
+
+    #[test]
+    fn app_notification_action_success_with_data() {
+        roundtrip_json(&AppNotification::ActionSuccess {
+            action_id: Uuid::new_v4(),
+            data: Some(serde_json::json!({"key": "value"})),
         });
     }
 
@@ -366,5 +392,48 @@ mod tests {
             claim_id: Uuid::nil(),
             claimed: false,
         });
+    }
+
+    #[test]
+    fn plugin_action_success_backward_compat_no_data_field() {
+        // Older plugins may send ActionSuccess without the `data` field.
+        // #[serde(default)] ensures this deserializes correctly.
+        let id = Uuid::new_v4();
+        let json = format!(r#"{{"type":"ActionSuccess","action_id":"{}"}}"#, id);
+        let msg: PluginMessage = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(
+            msg,
+            PluginMessage::ActionSuccess {
+                action_id: id,
+                data: None,
+            }
+        );
+    }
+
+    #[test]
+    fn app_action_success_backward_compat_no_data_field() {
+        let id = Uuid::new_v4();
+        let json = format!(r#"{{"type":"ActionSuccess","action_id":"{}"}}"#, id);
+        let msg: AppNotification = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(
+            msg,
+            AppNotification::ActionSuccess {
+                action_id: id,
+                data: None,
+            }
+        );
+    }
+
+    #[test]
+    fn action_success_data_none_skips_serialization() {
+        let msg = PluginMessage::ActionSuccess {
+            action_id: Uuid::nil(),
+            data: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(
+            !json.contains("data"),
+            "data: None should be omitted from JSON"
+        );
     }
 }

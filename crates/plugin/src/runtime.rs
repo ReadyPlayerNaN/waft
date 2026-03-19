@@ -204,10 +204,15 @@ async fn handle_action<P: Plugin>(
     params: serde_json::Value,
 ) {
     match ctx.plugin.handle_action(urn, action, params).await {
-        Ok(()) => {
+        Ok(response_data) => {
+            let data = if response_data.is_null() {
+                None
+            } else {
+                Some(response_data)
+            };
             if let Err(e) = ctx
                 .tx
-                .send(PluginMessage::ActionSuccess { action_id })
+                .send(PluginMessage::ActionSuccess { action_id, data })
                 .await
             {
                 log::warn!("[{}] failed to send ActionSuccess: {e}", ctx.name);
@@ -335,8 +340,8 @@ mod tests {
             _urn: Urn,
             _action: String,
             _params: serde_json::Value,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            Ok(())
+        ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+            Ok(serde_json::Value::Null)
         }
     }
 

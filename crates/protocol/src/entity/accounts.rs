@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 /// Entity type identifier for GNOME Online Accounts.
 pub const ONLINE_ACCOUNT_ENTITY_TYPE: &str = "online-account";
 
+/// Entity type identifier for online account providers.
+pub const ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE: &str = "online-account-provider";
+
 /// Account health status derived from GOA D-Bus properties.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccountStatus {
@@ -22,6 +25,24 @@ pub struct ServiceInfo {
     pub name: String,
     /// Whether this service is currently enabled.
     pub enabled: bool,
+}
+
+/// An available online account provider (e.g. Google, Microsoft 365).
+///
+/// URN: `gnome-online-accounts/online-account-provider/{provider-type}`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnlineAccountProvider {
+    /// Provider type identifier (e.g. "google", "ms365", "owncloud").
+    pub provider_type: String,
+    /// Human-readable display name (e.g. "Google", "Microsoft 365").
+    pub provider_name: String,
+    /// Themed icon name for the provider.
+    pub icon_name: Option<String>,
+}
+
+impl OnlineAccountProvider {
+    /// Entity type identifier for online account providers.
+    pub const ENTITY_TYPE: &str = ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE;
 }
 
 /// A GNOME Online Account.
@@ -119,5 +140,29 @@ mod tests {
             let decoded: AccountStatus = serde_json::from_value(json).unwrap();
             assert_eq!(status, decoded);
         }
+    }
+
+    #[test]
+    fn online_account_provider_serde_roundtrip() {
+        let provider = OnlineAccountProvider {
+            provider_type: "google".to_string(),
+            provider_name: "Google".to_string(),
+            icon_name: Some("goa-account-google".to_string()),
+        };
+        let json = serde_json::to_value(&provider).unwrap();
+        let decoded: OnlineAccountProvider = serde_json::from_value(json).unwrap();
+        assert_eq!(provider, decoded);
+    }
+
+    #[test]
+    fn online_account_provider_serde_roundtrip_no_icon() {
+        let provider = OnlineAccountProvider {
+            provider_type: "owncloud".to_string(),
+            provider_name: "ownCloud".to_string(),
+            icon_name: None,
+        };
+        let json = serde_json::to_value(&provider).unwrap();
+        let decoded: OnlineAccountProvider = serde_json::from_value(json).unwrap();
+        assert_eq!(provider, decoded);
     }
 }

@@ -193,7 +193,7 @@ impl Plugin for CaffeinePlugin {
         _urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         if action == "toggle" {
             let was_active = self.state.lock_or_recover().active;
             let result = if was_active {
@@ -207,7 +207,7 @@ impl Plugin for CaffeinePlugin {
                 return Err(e.into());
             }
         }
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 
     fn can_stop(&self) -> bool {

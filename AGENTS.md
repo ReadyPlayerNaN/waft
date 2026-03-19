@@ -101,7 +101,7 @@ All 18 plugins are standalone daemon binaries implementing the `Plugin` trait fr
 | **darkman**         | `dark-mode`                                                                                                                 | Dark mode toggle via darkman D-Bus                                  |
 | **caffeine**        | `sleep-inhibitor`                                                                                                           | Prevent sleep/screensaver (Portal/ScreenSaver)                      |
 | **battery**         | `battery`                                                                                                                   | Battery percentage, health, charging (UPower D-Bus)                 |
-| **brightness**      | `display`                                                                                                                   | Display brightness (brightnessctl/ddcutil)                          |
+| **brightness**      | `display`                                                                                                                   | Display brightness with connector resolution, inotify monitoring (brightnessctl/ddcutil) |
 | **keyboard-layout** | `keyboard-layout`                                                                                                           | Input method display/switch (Niri/Sway/Hyprland/localed)            |
 | **niri**            | `keyboard-layout`, `keyboard-layout-config`, `display-output`, `window`                                                     | Niri compositor integration (layouts, displays, windows)            |
 | **systemd**         | `session`, `user-service`                                                                                                   | Session actions and user service management via systemd             |
@@ -111,7 +111,7 @@ All 18 plugins are standalone daemon binaries implementing the `Plugin` trait fr
 | **weather**         | `weather`                                                                                                                   | Weather information via HTTP API                                    |
 | **notifications**   | `notification`, `dnd`, `notification-group`, `notification-profile`, `active-profile`, `sound-config`, `notification-sound`, `recording` | D-Bus notification server, toasts, DND, filtering, sound, recording |
 | **eds**             | `calendar-event`                                                                                                            | EDS calendar integration                                            |
-| **gnome-online-accounts** | `online-account`                                                                                                      | GNOME Online Accounts status and service toggles (GOA D-Bus)        |
+| **gnome-online-accounts** | `online-account`, `online-account-provider`                                                                           | GNOME Online Accounts status, service toggles, provider discovery, add-account (GOA D-Bus) |
 | **gsettings**       | `gtk-appearance`                                                                                                            | GTK accent colour configuration via gsettings CLI                   |
 | **sunsetr**         | `night-light`                                                                                                               | Night light control via sunsetr CLI                                 |
 | **syncthing**       | `backup-method`                                                                                                             | Syncthing service toggle                                            |
@@ -140,7 +140,7 @@ Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK overlay)
 
 **Plugin SDK (`waft-plugin`):**
 
-- `Plugin` trait (Send+Sync): `get_entities()`, `handle_action()`, `can_stop()`, `describe()` (optional)
+- `Plugin` trait (Send+Sync): `get_entities()`, `handle_action() -> Result<serde_json::Value>` (returns response data or `Value::Null`), `can_stop()`, `describe()` (optional)
 - `PluginRuntime` manages socket connection and message handling
 - `EntityNotifier` pushes updates via `notify()`
 - `PluginManifest`: `entity_types`, optional `name`, `description`; extended `provides --describe` returns `PluginDescription`
@@ -149,7 +149,7 @@ Plugin (daemon)  <-->  waft (central daemon)  <-->  waft-overview (GTK overlay)
 
 - Entity types organized by domain (e.g. `entity::display::DarkMode`, `entity::audio::AudioDevice`)
 - URN format: `{plugin}/{entity-type}/{id}[/{entity-type}/{id}]*`
-- Messages: `AppMessage` (Subscribe, TriggerAction, Describe), `PluginMessage` (EntityUpdated, EntityRemoved, ActionSuccess/Error), `AppNotification` (DescribeResponse)
+- Messages: `AppMessage` (Subscribe, TriggerAction, Describe), `PluginMessage` (EntityUpdated, EntityRemoved, ActionSuccess/Error with optional response data), `AppNotification` (DescribeResponse, ActionSuccess with optional data)
 - Static protocol registry: `entity::registry::all_entity_types()` returns compile-time entity type metadata (descriptions, URN patterns, properties, actions)
 - Plugin descriptions: `description::PluginDescription` with entity type details, obtained via `provides --describe` at discovery time
 - Transport: 4-byte big-endian length prefix + JSON payload over Unix sockets
@@ -226,10 +226,10 @@ crates/
             pages/
                 appearance.rs     # Thin composer: dark mode, night light, accent colour sections + sub-page navigation
                 bluetooth.rs      # Smart container: adapter groups + device lists
-                wifi.rs           # Smart container: WiFi adapters + network lists
+                wifi.rs           # Smart container: WiFi adapters + network lists + detail sub-page (forget, settings, QR share)
                 wired.rs          # Smart container: Ethernet adapters + connection profiles
-                online_accounts.rs # Smart container: GOA accounts + service toggles
-                display.rs        # Smart container: per-output display controls
+                online_accounts.rs # Smart container: GOA accounts + service toggles + provider picker for add-account
+                display.rs        # Smart container: unified display sections (brightness + output controls correlated by connector)
                 keyboard.rs       # Smart container: keyboard layout selection
                 keyboard_shortcuts.rs  # Smart container: niri keyboard bind management (KDL)
                 niri_windows.rs   # Smart container: niri window appearance settings (KDL)
@@ -243,9 +243,9 @@ crates/
                 services.rs       # Smart container: systemd user services
             bluetooth/            # Dumb widgets: adapter_group, device_row, paired/discovered groups
             display/              # Widgets: accent_colour_section, dark_mode_section, night_light_section, settings_sub_page, and more
-            wifi/                 # Dumb widgets: adapter_group, network_row, known/available groups, password_dialog
+            wifi/                 # Dumb widgets: adapter_group, network_row, known/available groups, password_dialog, network_detail, share_dialog
             wired/                # Dumb widgets: adapter_group, connection_row
-            online_accounts/      # Dumb widgets: account_row
+            online_accounts/      # Dumb widgets: account_row, provider_picker_dialog
             niri_windows/         # Dumb widgets: focus_ring, border, shadow, tab_indicator, gaps, struts, derive_colors sections
             wallpaper/            # Widgets: gallery_section, thumbnail_widget, preview_section, mode_section, background_color_section
             startup/              # Widgets: startup_row, entry_dialog
@@ -422,7 +422,7 @@ See `prevent-silent-hangs` skill: covers `let _ =` on fallible ops, logging asyn
 - `waft-plugin` with `Plugin` trait, `PluginRuntime`, `EntityNotifier`, extended manifest (`provides --describe`)
 - `waft` central daemon with discovery, spawning, routing, crash recovery, CLI (clap), plugin-status meta-entities
 - `waft-overview` with `WaftClient`, `EntityRenderer`, socket reconnection, right column tabs (controls/exit), ISO week numbers in calendar, audio device name deduplication
-- `waft-settings` with Bluetooth, WiFi, Wired, Online Accounts, Appearance (with sub-pages and accent colour), Display, Wallpaper (with gallery and background colour), Windows (niri layout settings), Audio, Notifications (with recording toggle), Sounds, Keyboard, Keyboard Shortcuts, Weather, Plugins, Services, Startup pages
+- `waft-settings` with Bluetooth, WiFi (with network detail sub-page, forget, settings, QR sharing), Wired, Online Accounts (with provider picker for add-account), Appearance (with sub-pages and accent colour), Display (unified brightness + output controls per connector), Wallpaper (with gallery and background colour), Windows (niri layout settings), Audio (with virtual device volume/mute tracking), Notifications (with recording toggle), Sounds, Keyboard, Keyboard Shortcuts, Weather, Plugins, Services, Startup pages
 
 **Legacy crates** (`waft-ipc`, parts of `waft-core`) are still in the workspace but being phased out.
 **Active Branch:** `larger-larger-picture`

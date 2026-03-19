@@ -30,6 +30,17 @@ pub struct AccessPointInfo {
     pub known: bool,
     pub ap_path: String,
     pub security_type: waft_plugin::entity::network::SecurityType,
+    /// Cached connection settings (populated for known networks).
+    pub cached_settings: Option<CachedConnectionSettings>,
+}
+
+/// Cached connection profile settings for known WiFi networks.
+#[derive(Debug, Clone)]
+pub struct CachedConnectionSettings {
+    pub autoconnect: Option<bool>,
+    pub metered: Option<i32>,
+    pub ip_method: Option<String>,
+    pub dns_servers: Option<Vec<String>>,
 }
 
 /// Per-adapter WiFi state.

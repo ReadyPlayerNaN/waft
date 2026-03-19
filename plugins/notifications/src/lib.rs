@@ -414,7 +414,7 @@ impl Plugin for NotificationsPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let parts: Vec<&str> = urn.as_str().split('/').collect();
         // URN format: notifications/{entity-type}/{id}
         let entity_type = parts.get(1).copied().unwrap_or("");
@@ -474,7 +474,7 @@ impl Plugin for NotificationsPlugin {
                         debug!(
                             "[notifications] expire: notification {id} already gone, skip claim"
                         );
-                        return Ok(());
+                        return Ok(serde_json::Value::Null);
                     }
                 }
 
@@ -779,7 +779,7 @@ impl Plugin for NotificationsPlugin {
             }
         }
 
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 
     fn can_stop(&self) -> bool {
