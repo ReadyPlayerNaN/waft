@@ -216,6 +216,10 @@ impl<C: VdomContainer> Reconciler<C> {
         let new_keys: std::collections::HashSet<&str> =
             keyed.iter().map(|(k, _)| k.as_str()).collect();
 
+        // Collect desired key order for the reordering step.
+        let desired_key_order: Vec<String> =
+            keyed.iter().map(|(k, _)| k.clone()).collect();
+
         // 1. Remove entries absent from the new list.
         let to_remove: Vec<String> = self
             .children
@@ -238,7 +242,6 @@ impl<C: VdomContainer> Reconciler<C> {
         }
 
         // 2. Update existing entries and insert new ones.
-        // TODO: reorder pre-existing widgets to match new order when required.
         for (key, vnode) in keyed {
             match self.key_index.get(&key).copied() {
                 Some(pos) => {
@@ -266,6 +269,30 @@ impl<C: VdomContainer> Reconciler<C> {
                     self.children.push((key, entry));
                 }
             }
+        }
+
+        // 3. Reorder children to match the desired order.
+        let current_order_matches = self
+            .children
+            .iter()
+            .map(|(k, _)| k.as_str())
+            .eq(desired_key_order.iter().map(|k| k.as_str()));
+
+        if !current_order_matches {
+            let mut old_entries: std::collections::HashMap<String, ReconcilerEntry> =
+                self.children.drain(..).collect();
+
+            for (new_pos, key) in desired_key_order.iter().enumerate() {
+                let entry = old_entries
+                    .remove(key)
+                    .expect("all desired keys must exist after reconcile");
+                self.children.push((key.clone(), entry));
+                self.key_index.insert(key.clone(), new_pos);
+            }
+
+            let widgets: Vec<gtk::Widget> =
+                self.children.iter().map(|(_, e)| e.widget()).collect();
+            self.container.vdom_reorder_children(&widgets);
         }
     }
 }

@@ -699,6 +699,96 @@ fn test_scale_updates_value() {
     assert_eq!(container.observe_children().n_items(), 1);
 }
 
+// ── Widget reordering tests ──────────────────────────────────────────────
+
+/// Collect the labels of child widgets in sibling order.
+fn child_labels(container: &gtk::Box) -> Vec<String> {
+    let mut labels = Vec::new();
+    let mut child = container.first_child();
+    while let Some(w) = child {
+        if let Ok(label) = w.clone().downcast::<gtk::Label>() {
+            labels.push(label.label().to_string());
+        }
+        child = w.next_sibling();
+    }
+    labels
+}
+
+fn test_reorders_keyed_children() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([
+        VNode::label(VLabel::new("a")).key("a"),
+        VNode::label(VLabel::new("b")).key("b"),
+        VNode::label(VLabel::new("c")).key("c"),
+    ]);
+    assert_eq!(child_labels(&container), vec!["a", "b", "c"]);
+
+    // Reverse the order.
+    r.reconcile([
+        VNode::label(VLabel::new("c")).key("c"),
+        VNode::label(VLabel::new("b")).key("b"),
+        VNode::label(VLabel::new("a")).key("a"),
+    ]);
+    assert_eq!(child_labels(&container), vec!["c", "b", "a"]);
+    assert_eq!(container.observe_children().n_items(), 3);
+}
+
+fn test_reorder_preserves_widget_identity() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([
+        VNode::label(VLabel::new("a")).key("a"),
+        VNode::label(VLabel::new("b")).key("b"),
+    ]);
+    let ptr_a = container.first_child().unwrap().as_ptr();
+    let ptr_b = container.first_child().unwrap().next_sibling().unwrap().as_ptr();
+
+    // Swap order.
+    r.reconcile([
+        VNode::label(VLabel::new("b")).key("b"),
+        VNode::label(VLabel::new("a")).key("a"),
+    ]);
+    // Same widget instances, just reordered.
+    let new_first = container.first_child().unwrap();
+    let new_second = new_first.next_sibling().unwrap();
+    assert_eq!(new_first.as_ptr(), ptr_b, "first child should now be widget b");
+    assert_eq!(new_second.as_ptr(), ptr_a, "second child should now be widget a");
+}
+
+fn test_reorder_with_insert_and_remove() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([
+        VNode::label(VLabel::new("a")).key("a"),
+        VNode::label(VLabel::new("b")).key("b"),
+        VNode::label(VLabel::new("c")).key("c"),
+    ]);
+
+    // Remove "b", add "d", reorder: c, d, a
+    r.reconcile([
+        VNode::label(VLabel::new("c")).key("c"),
+        VNode::label(VLabel::new("d")).key("d"),
+        VNode::label(VLabel::new("a")).key("a"),
+    ]);
+    assert_eq!(child_labels(&container), vec!["c", "d", "a"]);
+    assert_eq!(container.observe_children().n_items(), 3);
+}
+
+fn test_no_reorder_when_order_unchanged() {
+    let (container, mut r) = make_reconciler();
+    r.reconcile([
+        VNode::label(VLabel::new("a")).key("a"),
+        VNode::label(VLabel::new("b")).key("b"),
+    ]);
+    let ptr_a = container.first_child().unwrap().as_ptr();
+
+    // Same order, different props — should update in place, no reorder.
+    r.reconcile([
+        VNode::label(VLabel::new("A")).key("a"),
+        VNode::label(VLabel::new("B")).key("b"),
+    ]);
+    assert_eq!(child_labels(&container), vec!["A", "B"]);
+    assert_eq!(container.first_child().unwrap().as_ptr(), ptr_a);
+}
+
 // ── CountdownBarRender test ──────────────────────────────────────────────
 
 fn test_countdown_bar_render() {
@@ -784,4 +874,9 @@ fn all_reconciler_tests() {
     test_scale_builds_widget();
     test_scale_updates_value();
     test_countdown_bar_render();
+
+    test_reorders_keyed_children();
+    test_reorder_preserves_widget_identity();
+    test_reorder_with_insert_and_remove();
+    test_no_reorder_when_order_unchanged();
 }
