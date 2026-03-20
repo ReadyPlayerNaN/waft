@@ -49,3 +49,6 @@ waft-core = { path = "../core" }
 waft-ipc = { path = "../ipc" }
 waft-protocol = { path = "../protocol" }
 waft-ui-gtk = { path = "../waft-ui-gtk" }
+
+[lints]
+workspace = true

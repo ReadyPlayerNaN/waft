@@ -1,0 +1,8 @@
+# Waft workspace clippy configuration
+# See: https://doc.rust-lang.org/clippy/lint_configuration.html
+
+# Cognitive complexity threshold before clippy warns
+cognitive-complexity-threshold = 30
+
+# Max lines in a function body before triggering too_many_lines
+too-many-lines-threshold = 200
