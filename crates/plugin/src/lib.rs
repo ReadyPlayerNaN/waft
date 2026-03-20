@@ -41,6 +41,7 @@
 pub mod claim;
 pub mod config;
 pub mod dbus_monitor;
+pub mod dbus_proxy;
 pub mod manifest;
 pub mod notifier;
 pub mod plugin;
