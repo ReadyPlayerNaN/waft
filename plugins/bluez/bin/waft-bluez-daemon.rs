@@ -56,11 +56,11 @@ fn device_id(path: &str) -> String {
 struct BluezPlugin {
     conn: Connection,
     state: Arc<StdMutex<State>>,
-    notifier: Arc<StdMutex<Option<EntityNotifier>>>,
+    notifier: EntityNotifier,
 }
 
 impl BluezPlugin {
-    async fn new() -> Result<Self> {
+    async fn new(notifier: EntityNotifier) -> Result<Self> {
         let conn = Connection::system()
             .await
             .context("Failed to connect to system bus")?;
@@ -90,7 +90,7 @@ impl BluezPlugin {
         Ok(Self {
             conn,
             state: Arc::new(StdMutex::new(state)),
-            notifier: Arc::new(StdMutex::new(None)),
+            notifier,
         })
     }
 
@@ -102,12 +102,9 @@ impl BluezPlugin {
         self.state.lock_or_recover()
     }
 
-    /// Push entity updates to the overview via the notifier (if set).
+    /// Push entity updates to the overview via the notifier.
     fn notify(&self) {
-        let slot = self.notifier.lock_or_recover();
-        if let Some(ref notifier) = *slot {
-            notifier.notify();
-        }
+        self.notifier.notify();
     }
 
     /// Find the adapter D-Bus path for a given adapter ID.
@@ -512,44 +509,22 @@ impl Plugin for BluezPlugin {
 }
 
 fn main() -> Result<()> {
-    if waft_plugin::manifest::handle_provides_i18n(
-        &[
-            BluetoothAdapter::ENTITY_TYPE,
-            BluetoothDevice::ENTITY_TYPE,
-        ],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
-
-    waft_plugin::init_plugin_logger("info");
-
-    info!("Starting bluez plugin...");
-
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = BluezPlugin::new().await?;
+    PluginRunner::new(
+        "bluez",
+        &[BluetoothAdapter::ENTITY_TYPE, BluetoothDevice::ENTITY_TYPE],
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
+        let plugin = BluezPlugin::new(notifier.clone()).await?;
 
         let shared_state = plugin.shared_state();
         let monitor_conn = plugin.conn.clone();
-        let notifier_slot = plugin.notifier.clone();
-
-        let (runtime, notifier) = PluginRuntime::new("bluez", plugin);
-
-        // Fill the notifier slot so handle_action can push intermediate states
-        {
-            let mut slot = notifier_slot.lock_or_recover();
-            *slot = Some(notifier.clone());
-        }
 
         // Monitor BlueZ D-Bus signals
         spawn_monitored_anyhow("bluetooth/signal-monitor", async move {
             monitor_bluez_signals(monitor_conn, shared_state, notifier).await
         });
 
-        runtime.run().await?;
-        Ok(())
+        Ok(plugin)
     })
 }

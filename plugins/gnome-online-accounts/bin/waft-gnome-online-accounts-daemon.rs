@@ -298,7 +298,7 @@ fn run_add_account(provider_type: &str) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    // Check for --add-account flag before manifest handling.
+    // Check for --add-account flag before manifest/runtime handling.
     let args: Vec<String> = std::env::args().collect();
     if let Some(pos) = args.iter().position(|a| a == "--add-account") {
         waft_plugin::init_plugin_logger("info");
@@ -308,29 +308,15 @@ fn main() -> Result<()> {
         return run_add_account(provider_type);
     }
 
-    if waft_plugin::manifest::handle_provides_i18n(
+    PluginRunner::new(
+        "gnome-online-accounts",
         &[ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
-
-    waft_plugin::init_plugin_logger("info");
-
-    info!("Starting GNOME Online Accounts plugin...");
-
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let conn = match Connection::session().await {
-            Ok(c) => c,
-            Err(e) => {
-                warn!("[goa] Failed to connect to session bus: {}", e);
-                warn!("[goa] GOA plugin cannot function without session bus access, exiting");
-                return Ok(());
-            }
-        };
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
+        let conn = Connection::session()
+            .await
+            .context("session bus not available")?;
 
         let state = Arc::new(StdMutex::new(GoaState::default()));
 
@@ -372,14 +358,11 @@ fn main() -> Result<()> {
             state: state.clone(),
         };
 
-        let (runtime, notifier) = PluginRuntime::new("gnome-online-accounts", plugin);
-
         // Monitor GOA D-Bus signals
         spawn_monitored_anyhow("goa/signal-monitor", async move {
             monitor_goa_signals(conn, state, notifier).await
         });
 
-        runtime.run().await?;
-        Ok(())
+        Ok(plugin)
     })
 }

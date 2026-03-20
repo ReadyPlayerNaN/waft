@@ -105,13 +105,11 @@ struct EdsPlugin {
     session_locked: Arc<std::sync::atomic::AtomicBool>,
     /// Notified when session unlocks; wakes the refresh scheduler immediately.
     unlock_notify: Arc<tokio::sync::Notify>,
-    /// Notifier slot — filled by main() after PluginRuntime::new().
-    /// Allows handle_action to push syncing-state updates mid-action.
-    notifier: Arc<StdMutex<Option<EntityNotifier>>>,
+    notifier: EntityNotifier,
 }
 
 impl EdsPlugin {
-    async fn new() -> Result<Self> {
+    async fn new(notifier: EntityNotifier) -> Result<Self> {
         let config: EdsConfig = waft_plugin::config::load_plugin_config("eds").unwrap_or_default();
         log::debug!("EDS config: {config:?}");
 
@@ -125,7 +123,7 @@ impl EdsPlugin {
             conn,
             session_locked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             unlock_notify: Arc::new(tokio::sync::Notify::new()),
-            notifier: Arc::new(StdMutex::new(None)),
+            notifier,
         })
     }
 
@@ -139,10 +137,6 @@ impl EdsPlugin {
 
     fn unlock_notify(&self) -> Arc<tokio::sync::Notify> {
         self.unlock_notify.clone()
-    }
-
-    fn notifier_slot(&self) -> Arc<StdMutex<Option<EntityNotifier>>> {
-        self.notifier.clone()
     }
 
     /// Create occurrence key from UID and start time.
@@ -204,31 +198,7 @@ impl Plugin for EdsPlugin {
                 return Ok(serde_json::Value::Null);
             }
 
-            // Clone notifier out of the slot (must not hold the lock across an async boundary).
-            let notifier = {
-                let guard = self.notifier.lock_or_recover();
-                guard.as_ref().cloned()
-            };
-
-            match notifier {
-                Some(n) => {
-                    refresh_with_status(&self.conn, &self.state, &n).await;
-                }
-                None => {
-                    // Notifier not yet wired — should not happen in production.
-                    // NOTE: Without a notifier we cannot propagate the updated last_refresh to
-                    // subscribers. This path is unreachable in normal operation (notifier is filled
-                    // before the first action can arrive), but if it is ever reached, last_refresh
-                    // will be stale in the overview until the next successful refresh.
-                    log::warn!(
-                        "[eds] handle_action: notifier slot empty, syncing indicator unavailable"
-                    );
-                    do_refresh(&self.conn, &self.state).await;
-                    // Update last_refresh manually since refresh_with_status didn't run.
-                    let mut st = self.state.lock_or_recover();
-                    st.last_refresh = Some(unix_now());
-                }
-            }
+            refresh_with_status(&self.conn, &self.state, &self.notifier).await;
             return Ok(serde_json::Value::Null);
         }
 
@@ -3307,44 +3277,22 @@ mod tests {
 }
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
+    PluginRunner::new(
+        "eds",
         &[
             entity::calendar::ENTITY_TYPE,
             entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
         ],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
+        let plugin = EdsPlugin::new(notifier.clone()).await?;
 
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
-
-    log::info!("Starting EDS plugin...");
-
-    // Build the tokio runtime manually so `handle_provides` runs without it
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = EdsPlugin::new().await?;
-
-        // Grab shared state handle and connection before plugin is moved into the runtime
         let shared_state = plugin.shared_state();
         let conn = plugin.conn.clone();
         let config = plugin.config.clone();
         let session_locked = plugin.session_locked();
         let unlock_notify = plugin.unlock_notify();
-        let notifier_slot = plugin.notifier_slot();
-
-        let (runtime, notifier) = PluginRuntime::new("eds", plugin);
-
-        // Fill the notifier slot so handle_action and the scheduler can push syncing state.
-        {
-            let mut slot = notifier_slot.lock_or_recover();
-            *slot = Some(notifier.clone());
-        }
 
         // Clone conn for the scheduler before the monitor spawn moves it
         let scheduler_conn = conn.clone();
@@ -3372,7 +3320,6 @@ fn main() -> Result<()> {
             notifier.clone(),
         ));
 
-        runtime.run().await?;
-        Ok(())
+        Ok(plugin)
     })
 }
