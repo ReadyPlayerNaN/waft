@@ -164,7 +164,7 @@ fn print_basic_manifest(entity_types: &[&str], name: &str, description: &str) {
 /// # impl Plugin for MyPlugin {
 /// #     fn get_entities(&self) -> Vec<waft_plugin::Entity> { vec![] }
 /// #     async fn handle_action(&self, _: waft_plugin::Urn, _: String, _: serde_json::Value)
-/// #         -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> { Ok(serde_json::Value::Null) }
+/// #         -> anyhow::Result<serde_json::Value> { Ok(serde_json::Value::Null) }
 /// # }
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let plugin = MyPlugin;

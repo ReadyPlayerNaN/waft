@@ -32,7 +32,7 @@
 //!         _urn: Urn,
 //!         _action: String,
 //!         _params: serde_json::Value,
-//!     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+//!     ) -> anyhow::Result<serde_json::Value> {
 //!         Ok(serde_json::Value::Null)
 //!     }
 //! }
@@ -54,7 +54,7 @@ pub use claim::ClaimSender;
 pub use notifier::EntityNotifier;
 pub use plugin::{Entity, Plugin};
 pub use poison_recovery::lock_or_recover;
-pub use runner::{PluginRunner, spawn_monitored, spawn_monitored_anyhow};
+pub use runner::{PluginRunner, spawn_monitored};
 pub use runtime::{PluginRuntime, daemon_socket_path};
 pub use state_locker::StateLocker;
 

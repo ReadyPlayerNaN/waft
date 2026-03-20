@@ -340,7 +340,7 @@ mod tests {
             _urn: Urn,
             _action: String,
             _params: serde_json::Value,
-        ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        ) -> anyhow::Result<serde_json::Value> {
             Ok(serde_json::Value::Null)
         }
     }
