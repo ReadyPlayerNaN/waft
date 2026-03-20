@@ -42,6 +42,7 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use waft_plugin::*;
+use waft_plugin::dbus_proxy::DbusService;
 use waft_protocol::entity::session::{RestartPolicy, ScheduleKind, UserService, UserTimer};
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
@@ -167,6 +168,26 @@ impl SystemdPlugin {
         Ok(plugin)
     }
 
+    /// D-Bus handle for the systemd1 Manager interface on the session bus.
+    fn systemd1_manager(&self) -> DbusService<'_> {
+        DbusService::new(
+            &self.session_conn,
+            SYSTEMD1_DESTINATION,
+            SYSTEMD1_MANAGER_PATH,
+            SYSTEMD1_MANAGER_INTERFACE,
+        )
+    }
+
+    /// D-Bus handle for the login1 Manager interface on the system bus.
+    fn login1_manager(&self) -> DbusService<'_> {
+        DbusService::new(
+            &self.system_conn,
+            LOGIN1_DESTINATION,
+            LOGIN1_MANAGER_PATH,
+            LOGIN1_MANAGER_INTERFACE,
+        )
+    }
+
     /// Load user services from systemd1 on the session bus.
     async fn load_services(&mut self) {
         match self.list_services().await {
@@ -213,17 +234,10 @@ impl SystemdPlugin {
 
     /// List loaded .service units from the user systemd instance.
     async fn list_services(&self) -> Result<Vec<UserService>> {
-        let proxy = zbus::Proxy::new(
-            &self.session_conn,
-            SYSTEMD1_DESTINATION,
-            SYSTEMD1_MANAGER_PATH,
-            SYSTEMD1_MANAGER_INTERFACE,
-        )
-        .await
-        .context("Failed to create systemd1 manager proxy")?;
+        let manager = self.systemd1_manager();
 
         // ListUnitsByPatterns(states: as, patterns: as) -> a(ssssssouso)
-        let units: Vec<UnitTuple> = proxy
+        let units: Vec<UnitTuple> = manager
             .call(
                 "ListUnitsByPatterns",
                 &(
@@ -231,8 +245,7 @@ impl SystemdPlugin {
                     vec!["*.service"] as Vec<&str>,
                 ),
             )
-            .await
-            .context("Failed to call ListUnitsByPatterns")?;
+            .await?;
 
         let mut services = Vec::with_capacity(units.len());
         for (name, description, _load_state, active_state, sub_state, _, _, _, _, _) in &units {
@@ -251,33 +264,11 @@ impl SystemdPlugin {
 
     /// Get the UnitFileState for a unit and convert to bool.
     async fn get_unit_file_state(&self, unit: &str) -> bool {
-        let proxy = zbus::Proxy::new(
-            &self.session_conn,
-            SYSTEMD1_DESTINATION,
-            SYSTEMD1_MANAGER_PATH,
-            SYSTEMD1_MANAGER_INTERFACE,
-        )
-        .await;
-
-        let proxy = match proxy {
-            Ok(p) => p,
-            Err(e) => {
-                log::warn!("[systemd] Failed to create proxy for unit file state: {e}");
-                return false;
-            }
-        };
-
-        let state: Result<String, _> = proxy
-            .call("GetUnitFileState", &(unit,))
-            .await;
-
-        match state {
-            Ok(s) => unit_file_state_to_enabled(&s),
-            Err(e) => {
-                log::debug!("[systemd] Failed to get unit file state for {}: {e}", unit);
-                false
-            }
-        }
+        self.systemd1_manager()
+            .try_call::<_, String>("GetUnitFileState", &(unit,))
+            .await
+            .map(|s| unit_file_state_to_enabled(&s))
+            .unwrap_or(false)
     }
 
     /// List unit files matching `*.service` from the user systemd instance.
@@ -285,16 +276,8 @@ impl SystemdPlugin {
     /// of (unit_file_path, state). Extracts unit name from file path basename.
     /// Filters out template units (names containing `@`).
     async fn list_unit_files(&self) -> Result<Vec<(String, String)>> {
-        let proxy = zbus::Proxy::new(
-            &self.session_conn,
-            SYSTEMD1_DESTINATION,
-            SYSTEMD1_MANAGER_PATH,
-            SYSTEMD1_MANAGER_INTERFACE,
-        )
-        .await
-        .context("Failed to create systemd1 manager proxy")?;
-
-        let files: Vec<(String, String)> = proxy
+        let files: Vec<(String, String)> = self
+            .systemd1_manager()
             .call(
                 "ListUnitFilesByPatterns",
                 &(
@@ -302,8 +285,7 @@ impl SystemdPlugin {
                     vec!["*.service"] as Vec<&str>,
                 ),
             )
-            .await
-            .context("Failed to call ListUnitFilesByPatterns")?;
+            .await?;
 
         let mut result = Vec::with_capacity(files.len());
         for (file_path, state) in files {
@@ -324,29 +306,15 @@ impl SystemdPlugin {
     /// Refresh a single service's state and update the services map.
     /// Returns true if the service state changed.
     async fn refresh_service(&self, unit: &str) -> bool {
-        let proxy = match zbus::Proxy::new(
-            &self.session_conn,
-            SYSTEMD1_DESTINATION,
-            SYSTEMD1_MANAGER_PATH,
-            SYSTEMD1_MANAGER_INTERFACE,
-        )
-        .await
-        {
-            Ok(p) => p,
-            Err(e) => {
-                log::warn!("[systemd] Failed to create proxy for refresh: {e}");
-                return false;
-            }
-        };
+        let manager = self.systemd1_manager();
 
         // GetUnit returns the object path for the unit
-        let unit_path: Result<zbus::zvariant::OwnedObjectPath, _> =
-            proxy.call("GetUnit", &(unit,)).await;
+        let unit_path: Option<zbus::zvariant::OwnedObjectPath> =
+            manager.try_call("GetUnit", &(unit,)).await;
 
         let unit_path = match unit_path {
-            Ok(p) => p,
-            Err(e) => {
-                log::debug!("[systemd] Failed to GetUnit {}: {e}", unit);
+            Some(p) => p,
+            None => {
                 // Unit unloaded -- update in-place to inactive/dead, preserve identity
                 let enabled = self.get_unit_file_state(unit).await;
                 let mut services = self.services.lock_or_recover();
@@ -364,8 +332,8 @@ impl SystemdPlugin {
             }
         };
 
-        // Read properties from the unit object
-        let props_proxy = match zbus::Proxy::new(
+        // Read properties from the unit object (uses get_property which needs zbus::Proxy)
+        let (active_state, sub_state, description) = match zbus::Proxy::new(
             &self.session_conn,
             SYSTEMD1_DESTINATION,
             unit_path.as_str(),
@@ -373,26 +341,14 @@ impl SystemdPlugin {
         )
         .await
         {
-            Ok(p) => p,
-            Err(e) => {
-                log::warn!("[systemd] Failed to create unit proxy for {}: {e}", unit);
-                return false;
+            Ok(p) => {
+                let active_state = p.get_property::<String>("ActiveState").await.unwrap_or_else(|_| "unknown".to_string());
+                let sub_state = p.get_property::<String>("SubState").await.unwrap_or_else(|_| "unknown".to_string());
+                let description = p.get_property::<String>("Description").await.unwrap_or_default();
+                (active_state, sub_state, description)
             }
+            Err(_) => ("unknown".to_string(), "unknown".to_string(), String::new()),
         };
-
-        let active_state: Result<String, _> = props_proxy
-            .get_property("ActiveState")
-            .await;
-        let sub_state: Result<String, _> = props_proxy
-            .get_property("SubState")
-            .await;
-        let description: Result<String, _> = props_proxy
-            .get_property("Description")
-            .await;
-
-        let active_state = active_state.unwrap_or_else(|_| "unknown".to_string());
-        let sub_state = sub_state.unwrap_or_else(|_| "unknown".to_string());
-        let description = description.unwrap_or_default();
         let enabled = self.get_unit_file_state(unit).await;
 
         let urn_id = unit_to_urn_id(unit);
@@ -413,40 +369,20 @@ impl SystemdPlugin {
 
     /// Call a method on the login1 session interface (no arguments).
     async fn call_session_method(&self, method: &str) -> Result<()> {
-        let proxy = zbus::Proxy::new(
+        let session = DbusService::new(
             &self.system_conn,
             LOGIN1_DESTINATION,
             self.session_path.as_str(),
             LOGIN1_SESSION_INTERFACE,
-        )
-        .await
-        .context("Failed to create session proxy")?;
-
-        let _: () = proxy
-            .call(method, &())
-            .await
-            .with_context(|| format!("Failed to call Session.{}", method))?;
-
+        );
+        let _: () = session.call(method, &()).await?;
         log::info!("[systemd] Session.{}() executed", method);
         Ok(())
     }
 
     /// Call a method on the login1 manager interface with an `interactive: bool` argument.
     async fn call_login1_manager_method(&self, method: &str, interactive: bool) -> Result<()> {
-        let proxy = zbus::Proxy::new(
-            &self.system_conn,
-            LOGIN1_DESTINATION,
-            LOGIN1_MANAGER_PATH,
-            LOGIN1_MANAGER_INTERFACE,
-        )
-        .await
-        .context("Failed to create manager proxy")?;
-
-        let _: () = proxy
-            .call(method, &(interactive,))
-            .await
-            .with_context(|| format!("Failed to call Manager.{}", method))?;
-
+        let _: () = self.login1_manager().call(method, &(interactive,)).await?;
         log::info!("[systemd] Manager.{}(interactive={}) executed", method, interactive);
         Ok(())
     }
@@ -595,14 +531,12 @@ fn parse_restart_policy(s: &str) -> RestartPolicy {
 /// Uses systemd's D-Bus API instead of reading `~/.config/systemd/user/` directly,
 /// so transient timers (in /run/user/) and system-user timers are all included.
 async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>> {
-    let manager_proxy = zbus::Proxy::new(
+    let manager = DbusService::new(
         conn,
         SYSTEMD1_DESTINATION,
         SYSTEMD1_MANAGER_PATH,
         SYSTEMD1_MANAGER_INTERFACE,
-    )
-    .await
-    .context("Failed to create systemd manager proxy for timer scan")?;
+    );
 
     // ListUnits returns an array of (name, description, load_state, active_state,
     // sub_state, following, object_path, job_id, job_type, job_object_path).
@@ -611,10 +545,7 @@ async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>>
         zbus::zvariant::OwnedObjectPath, u32, String,
         zbus::zvariant::OwnedObjectPath,
     );
-    let units: Vec<UnitRow> = manager_proxy
-        .call("ListUnits", &())
-        .await
-        .context("Failed to call ListUnits")?;
+    let units: Vec<UnitRow> = manager.call("ListUnits", &()).await?;
 
     let mut timers = Vec::new();
 
@@ -628,18 +559,19 @@ async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>>
 
         // Enabled state
         let enabled = {
-            let state: Result<String, _> = manager_proxy
-                .call("GetUnitFileState", &(unit_name.as_str(),))
-                .await;
-            state.map(|s| unit_file_state_to_enabled(&s)).unwrap_or(false)
+            manager
+                .try_call::<_, String>("GetUnitFileState", &(unit_name.as_str(),))
+                .await
+                .map(|s| unit_file_state_to_enabled(&s))
+                .unwrap_or(false)
         };
 
         // Get unit object path to read FragmentPath and timer properties
-        let timer_path: Result<zbus::zvariant::OwnedObjectPath, _> =
-            manager_proxy.call("GetUnit", &(unit_name.as_str(),)).await;
+        let timer_path: Option<zbus::zvariant::OwnedObjectPath> =
+            manager.try_call("GetUnit", &(unit_name.as_str(),)).await;
 
         let (last_trigger, next_elapse, fragment_path) = match timer_path {
-            Ok(path) => {
+            Some(path) => {
                 let fragment_path = if let Ok(unit_proxy) = zbus::Proxy::new(
                     conn, SYSTEMD1_DESTINATION, path.as_str(), "org.freedesktop.systemd1.Unit",
                 ).await {
@@ -663,7 +595,7 @@ async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>>
 
                 (last_trigger, next_elapse, fragment_path)
             }
-            Err(_) => (None, None, None),
+            None => (None, None, None),
         };
 
         // Read unit file content for schedule/service config
@@ -680,14 +612,14 @@ async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>>
         // Get last exit code from paired service
         let last_exit_code = {
             let svc_unit = format!("{name}.service");
-            let svc_path: Result<zbus::zvariant::OwnedObjectPath, _> =
-                manager_proxy.call("GetUnit", &(svc_unit.as_str(),)).await;
+            let svc_path: Option<zbus::zvariant::OwnedObjectPath> =
+                manager.try_call("GetUnit", &(svc_unit.as_str(),)).await;
             match svc_path {
-                Ok(p) => match zbus::Proxy::new(conn, SYSTEMD1_DESTINATION, p.as_str(), "org.freedesktop.systemd1.Service").await {
+                Some(p) => match zbus::Proxy::new(conn, SYSTEMD1_DESTINATION, p.as_str(), "org.freedesktop.systemd1.Service").await {
                     Ok(proxy) => proxy.get_property::<i32>("ExecMainStatus").await.ok(),
                     Err(_) => None,
                 },
-                Err(_) => None,
+                None => None,
             }
         };
 
@@ -769,38 +701,26 @@ async fn query_timer_dbus_state(
     name: &str,
     timer_unit: &str,
 ) -> (bool, bool, Option<i64>, Option<i64>, Option<i32>) {
-    let manager_proxy = match zbus::Proxy::new(
+    let manager = DbusService::new(
         conn,
         SYSTEMD1_DESTINATION,
         SYSTEMD1_MANAGER_PATH,
         SYSTEMD1_MANAGER_INTERFACE,
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            log::debug!("[systemd] Failed to create proxy for timer {name}: {e}");
-            return (false, false, None, None, None);
-        }
-    };
+    );
 
     // Check enabled state
-    let enabled = {
-        let state: Result<String, _> = manager_proxy
-            .call("GetUnitFileState", &(timer_unit,))
-            .await;
-        match state {
-            Ok(s) => unit_file_state_to_enabled(&s),
-            Err(_) => false,
-        }
-    };
+    let enabled = manager
+        .try_call::<_, String>("GetUnitFileState", &(timer_unit,))
+        .await
+        .map(|s| unit_file_state_to_enabled(&s))
+        .unwrap_or(false);
 
     // Get timer unit object path
-    let timer_path: Result<zbus::zvariant::OwnedObjectPath, _> =
-        manager_proxy.call("GetUnit", &(timer_unit,)).await;
+    let timer_path: Option<zbus::zvariant::OwnedObjectPath> =
+        manager.try_call("GetUnit", &(timer_unit,)).await;
 
     let (active, last_trigger, next_elapse) = match timer_path {
-        Ok(path) => {
+        Some(path) => {
             let timer_proxy = match zbus::Proxy::new(
                 conn,
                 SYSTEMD1_DESTINATION,
@@ -858,15 +778,15 @@ async fn query_timer_dbus_state(
 
             (active, last_trigger, next_elapse)
         }
-        Err(_) => (false, None, None),
+        None => (false, None, None),
     };
 
     // Get the service's last exit code
     let service_unit = format!("{name}.service");
-    let svc_path_result: Result<zbus::zvariant::OwnedObjectPath, _> =
-        manager_proxy.call("GetUnit", &(&service_unit,)).await;
-    let last_exit_code = match svc_path_result {
-        Ok(svc_path) => {
+    let svc_path: Option<zbus::zvariant::OwnedObjectPath> =
+        manager.try_call("GetUnit", &(&service_unit,)).await;
+    let last_exit_code = match svc_path {
+        Some(svc_path) => {
             match zbus::Proxy::new(
                 conn,
                 SYSTEMD1_DESTINATION,
@@ -879,7 +799,7 @@ async fn query_timer_dbus_state(
                 Err(_) => None,
             }
         }
-        Err(_) => None,
+        None => None,
     };
 
     (active, enabled, last_trigger, next_elapse, last_exit_code)
@@ -1106,42 +1026,29 @@ impl Plugin for SystemdPlugin {
             }
         } else if entity_type == entity::session::USER_SERVICE_ENTITY_TYPE {
             let unit = urn_id_to_unit(urn.id());
-            let proxy = zbus::Proxy::new(
-                &self.session_conn,
-                SYSTEMD1_DESTINATION,
-                SYSTEMD1_MANAGER_PATH,
-                SYSTEMD1_MANAGER_INTERFACE,
-            )
-            .await
-            .context("Failed to create systemd1 manager proxy")?;
+            let manager = self.systemd1_manager();
 
             match action.as_str() {
                 "start" => {
-                    let _: zbus::zvariant::OwnedObjectPath = proxy
-                        .call("StartUnit", &(&unit, "replace"))
-                        .await
-                        .with_context(|| format!("Failed to start {}", unit))?;
+                    let _: zbus::zvariant::OwnedObjectPath =
+                        manager.call("StartUnit", &(&unit, "replace")).await?;
                     log::info!("[systemd] Started {}", unit);
                 }
                 "stop" => {
-                    let _: zbus::zvariant::OwnedObjectPath = proxy
-                        .call("StopUnit", &(&unit, "replace"))
-                        .await
-                        .with_context(|| format!("Failed to stop {}", unit))?;
+                    let _: zbus::zvariant::OwnedObjectPath =
+                        manager.call("StopUnit", &(&unit, "replace")).await?;
                     log::info!("[systemd] Stopped {}", unit);
                 }
                 "enable" => {
-                    let _: (bool, Vec<(String, String, String)>) = proxy
+                    let _: (bool, Vec<(String, String, String)>) = manager
                         .call("EnableUnitFiles", &(vec![&unit as &str], false, true))
-                        .await
-                        .with_context(|| format!("Failed to enable {}", unit))?;
+                        .await?;
                     log::info!("[systemd] Enabled {}", unit);
                 }
                 "disable" => {
-                    let _: Vec<(String, String, String)> = proxy
+                    let _: Vec<(String, String, String)> = manager
                         .call("DisableUnitFiles", &(vec![&unit as &str], false))
-                        .await
-                        .with_context(|| format!("Failed to disable {}", unit))?;
+                        .await?;
                     log::info!("[systemd] Disabled {}", unit);
                 }
                 other => log::warn!("[systemd] Unknown user-service action: {}", other),
@@ -1269,31 +1176,20 @@ async fn refresh_all_enabled_states(
         svc.iter().map(|(k, v)| (k.clone(), v.unit.clone())).collect()
     };
 
-    let proxy = match zbus::Proxy::new(
+    let manager = DbusService::new(
         conn,
         SYSTEMD1_DESTINATION,
         SYSTEMD1_MANAGER_PATH,
         SYSTEMD1_MANAGER_INTERFACE,
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            log::warn!("[systemd] Failed to create proxy for enabled state refresh: {e}");
-            return false;
-        }
-    };
+    );
 
     let mut updates: Vec<(String, bool)> = Vec::new();
     for (urn_id, unit_name) in &keys {
-        let state: Result<String, _> = proxy.call("GetUnitFileState", &(unit_name.as_str(),)).await;
-        let enabled = match state {
-            Ok(s) => unit_file_state_to_enabled(&s),
-            Err(e) => {
-                log::debug!("[systemd] Failed to get unit file state for {}: {e}", unit_name);
-                false
-            }
-        };
+        let enabled = manager
+            .try_call::<_, String>("GetUnitFileState", &(unit_name.as_str(),))
+            .await
+            .map(|s| unit_file_state_to_enabled(&s))
+            .unwrap_or(false);
         updates.push((urn_id.clone(), enabled));
     }
 
@@ -1586,30 +1482,19 @@ async fn handle_unit_new(
     }
 
     // Read properties for the new unit
-    let proxy = match zbus::Proxy::new(
+    let manager = DbusService::new(
         conn,
         SYSTEMD1_DESTINATION,
         SYSTEMD1_MANAGER_PATH,
         SYSTEMD1_MANAGER_INTERFACE,
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            log::warn!("[systemd] Failed to create proxy for UnitNew: {e}");
-            return false;
-        }
-    };
+    );
 
-    let unit_path: zbus::zvariant::OwnedObjectPath = match proxy
-        .call("GetUnit", &(unit_name,))
+    let unit_path: zbus::zvariant::OwnedObjectPath = match manager
+        .try_call("GetUnit", &(unit_name,))
         .await
     {
-        Ok(p) => p,
-        Err(e) => {
-            log::debug!("[systemd] Failed to GetUnit {} on UnitNew: {e}", unit_name);
-            return false;
-        }
+        Some(p) => p,
+        None => return false,
     };
 
     let unit_proxy = match zbus::Proxy::new(
@@ -1632,13 +1517,11 @@ async fn handle_unit_new(
     let sub_state = unit_proxy.get_property::<String>("SubState").await.unwrap_or_else(|_| "unknown".to_string());
 
     // Get unit file state for enabled
-    let enabled = {
-        let state: Result<String, _> = proxy.call("GetUnitFileState", &(unit_name,)).await;
-        match state {
-            Ok(s) => unit_file_state_to_enabled(&s),
-            Err(_) => false,
-        }
-    };
+    let enabled = manager
+        .try_call::<_, String>("GetUnitFileState", &(unit_name,))
+        .await
+        .map(|s| unit_file_state_to_enabled(&s))
+        .unwrap_or(false);
 
     let svc = UserService {
         unit: unit_name.to_string(),
