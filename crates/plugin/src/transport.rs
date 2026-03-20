@@ -2,60 +2,14 @@
 //!
 //! Same 4-byte BE length + JSON framing as `waft_protocol::transport`,
 //! but using `AsyncReadExt`/`AsyncWriteExt` for tokio integration.
+//!
+//! The error type and framing constants are re-exported from
+//! `waft_protocol::transport` to avoid duplication.
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// Maximum allowed message size (10 MB), matching waft_protocol::transport.
-const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
-
-/// Errors that can occur during async framed message transport.
-#[derive(Debug)]
-pub enum TransportError {
-    /// I/O error during read or write.
-    Io(std::io::Error),
-    /// JSON serialization or deserialization error.
-    Serialization(serde_json::Error),
-    /// Message exceeded maximum allowed size.
-    FrameTooLarge(usize),
-    /// Peer disconnected (EOF on read).
-    Disconnected,
-}
-
-impl std::fmt::Display for TransportError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TransportError::Io(e) => write!(f, "I/O error: {e}"),
-            TransportError::Serialization(e) => write!(f, "serialization error: {e}"),
-            TransportError::FrameTooLarge(size) => {
-                write!(f, "frame too large: {size} bytes (max: {MAX_FRAME_SIZE})")
-            }
-            TransportError::Disconnected => write!(f, "peer disconnected"),
-        }
-    }
-}
-
-impl std::error::Error for TransportError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            TransportError::Io(e) => Some(e),
-            TransportError::Serialization(e) => Some(e),
-            TransportError::FrameTooLarge(_) | TransportError::Disconnected => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for TransportError {
-    fn from(e: std::io::Error) -> Self {
-        TransportError::Io(e)
-    }
-}
-
-impl From<serde_json::Error> for TransportError {
-    fn from(e: serde_json::Error) -> Self {
-        TransportError::Serialization(e)
-    }
-}
+pub use waft_protocol::transport::{MAX_FRAME_SIZE, TransportError};
 
 /// Write a length-prefixed JSON message to an async writer.
 pub async fn write_framed<W: AsyncWriteExt + Unpin, T: Serialize>(
