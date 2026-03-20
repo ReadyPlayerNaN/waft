@@ -83,7 +83,7 @@ impl AudioPlugin {
         }
 
         {
-            let mut s = lock_state(&state);
+            let mut s = lock_or_recover(&state);
             s.available = true;
         }
         info!("[audio] Audio system is available");
@@ -105,18 +105,15 @@ impl AudioPlugin {
     }
 
     fn get_state(&self) -> AudioState {
-        lock_state(&self.state).clone()
+        lock_or_recover(&self.state).clone()
     }
 }
 
-fn lock_state(state: &Arc<StdMutex<AudioState>>) -> std::sync::MutexGuard<'_, AudioState> {
-    state.lock_or_recover()
-}
 
 /// Reload all audio state from pactl into the shared state.
 async fn reload_all(state: &Arc<StdMutex<AudioState>>) -> Result<()> {
     let card_ports = pactl::get_card_port_info().await.unwrap_or_default();
-    lock_state(state).card_ports = card_ports.clone();
+    lock_or_recover(state).card_ports = card_ports.clone();
 
     reload_sinks(state, &card_ports).await;
     reload_sources(state, &card_ports).await;
@@ -128,7 +125,7 @@ async fn reload_all(state: &Arc<StdMutex<AudioState>>) -> Result<()> {
 /// Reload sink (output) state.
 async fn reload_sinks(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPortMap) {
     if let Ok(default) = pactl::get_default_sink().await {
-        lock_state(state).default_output = Some(default);
+        lock_or_recover(state).default_output = Some(default);
     }
 
     if let Ok(sinks) = pactl::get_sinks().await {
@@ -136,7 +133,7 @@ async fn reload_sinks(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPortMa
             .iter()
             .map(|s| pactl::AudioDevice::from_sink(s, card_ports))
             .collect();
-        let mut s = lock_state(state);
+        let mut s = lock_or_recover(state);
         s.output_devices = devices;
         s.sinks = sinks;
     }
@@ -145,7 +142,7 @@ async fn reload_sinks(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPortMa
 /// Reload source (input) state.
 async fn reload_sources(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPortMap) {
     if let Ok(default) = pactl::get_default_source().await {
-        lock_state(state).default_input = Some(default);
+        lock_or_recover(state).default_input = Some(default);
     }
 
     if let Ok(sources) = pactl::get_sources().await {
@@ -153,7 +150,7 @@ async fn reload_sources(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPort
             .iter()
             .map(|s| pactl::AudioDevice::from_source(s, card_ports))
             .collect();
-        let mut s = lock_state(state);
+        let mut s = lock_or_recover(state);
         s.input_devices = devices;
         s.sources = sources;
     }
@@ -163,7 +160,7 @@ async fn reload_sources(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPort
 async fn reload_cards(state: &Arc<StdMutex<AudioState>>) {
     match pactl::get_cards().await {
         Ok(cards) => {
-            lock_state(state).cards = cards;
+            lock_or_recover(state).cards = cards;
         }
         Err(e) => {
             warn!("[audio] Failed to reload cards: {}", e);
@@ -239,7 +236,7 @@ async fn reconcile_virtual_devices(state: &Arc<StdMutex<AudioState>>) {
         });
     }
 
-    lock_state(state).virtual_devices = virtual_devices;
+    lock_or_recover(state).virtual_devices = virtual_devices;
 }
 
 #[async_trait::async_trait]
@@ -343,7 +340,7 @@ impl Plugin for AudioPlugin {
 
         // Determine if the target is an output or input device
         let (is_output, is_input) = {
-            let state = lock_state(&self.state);
+            let state = lock_or_recover(&self.state);
             let is_output = state.output_devices.iter().any(|d| d.id == device_id);
             let is_input = state.input_devices.iter().any(|d| d.id == device_id);
             (is_output, is_input)
@@ -373,7 +370,7 @@ impl Plugin for AudioPlugin {
             }
             "toggle-mute" => {
                 if is_output {
-                    let current_muted = lock_state(&self.state)
+                    let current_muted = lock_or_recover(&self.state)
                         .output_devices
                         .iter()
                         .find(|d| d.id == device_id)
@@ -385,7 +382,7 @@ impl Plugin for AudioPlugin {
                         return Err(e.into());
                     }
                 } else if is_input {
-                    let current_muted = lock_state(&self.state)
+                    let current_muted = lock_or_recover(&self.state)
                         .input_devices
                         .iter()
                         .find(|d| d.id == device_id)
@@ -406,13 +403,13 @@ impl Plugin for AudioPlugin {
                         error!("[audio] Failed to set default sink: {}", e);
                         return Err(e.into());
                     }
-                    lock_state(&self.state).default_output = Some(device_id.clone());
+                    lock_or_recover(&self.state).default_output = Some(device_id.clone());
                 } else if is_input {
                     if let Err(e) = pactl::set_default_source(&device_id).await {
                         error!("[audio] Failed to set default source: {}", e);
                         return Err(e.into());
                     }
-                    lock_state(&self.state).default_input = Some(device_id.clone());
+                    lock_or_recover(&self.state).default_input = Some(device_id.clone());
                 } else {
                     debug!("[audio] Unknown device for set-default: {}", device_id);
                 }
@@ -464,7 +461,7 @@ impl AudioPlugin {
 
         let base_name = virtual_device_config::sanitize_sink_name(label);
 
-        let existing_configs: Vec<VirtualDeviceConfig> = lock_state(&self.state)
+        let existing_configs: Vec<VirtualDeviceConfig> = lock_or_recover(&self.state)
             .virtual_devices
             .iter()
             .map(|vd| vd.config.clone())
@@ -485,7 +482,7 @@ impl AudioPlugin {
         };
 
         {
-            let mut state = lock_state(&self.state);
+            let mut state = lock_or_recover(&self.state);
             state.virtual_devices.push(VirtualDeviceState {
                 config: config.clone(),
                 module_index: Some(module_index),
@@ -511,7 +508,7 @@ impl AudioPlugin {
         name: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let module_index = {
-            let state = lock_state(&self.state);
+            let state = lock_or_recover(&self.state);
             state
                 .virtual_devices
                 .iter()
@@ -529,7 +526,7 @@ impl AudioPlugin {
 
         // Remove from state
         {
-            let mut state = lock_state(&self.state);
+            let mut state = lock_or_recover(&self.state);
             state
                 .virtual_devices
                 .retain(|vd| vd.config.sink_name != name);
@@ -550,7 +547,7 @@ impl AudioPlugin {
 
     /// Collect all virtual device configs from current state.
     fn collect_virtual_configs(&self) -> Vec<VirtualDeviceConfig> {
-        lock_state(&self.state)
+        lock_or_recover(&self.state)
             .virtual_devices
             .iter()
             .map(|vd| vd.config.clone())
@@ -599,7 +596,7 @@ impl AudioPlugin {
             }
             "toggle-mute" => {
                 if let Some(sink_name) = params.get("sink").and_then(|v| v.as_str()) {
-                    let current_muted = lock_state(&self.state)
+                    let current_muted = lock_or_recover(&self.state)
                         .sinks
                         .iter()
                         .find(|s| s.name == sink_name)
@@ -610,7 +607,7 @@ impl AudioPlugin {
                         return Err(e.into());
                     }
                 } else if let Some(source_name) = params.get("source").and_then(|v| v.as_str()) {
-                    let current_muted = lock_state(&self.state)
+                    let current_muted = lock_or_recover(&self.state)
                         .sources
                         .iter()
                         .find(|s| s.name == source_name)
@@ -630,13 +627,13 @@ impl AudioPlugin {
                         error!("[audio] Failed to set default sink: {}", e);
                         return Err(e.into());
                     }
-                    lock_state(&self.state).default_output = Some(sink_name.to_string());
+                    lock_or_recover(&self.state).default_output = Some(sink_name.to_string());
                 } else if let Some(source_name) = params.get("source").and_then(|v| v.as_str()) {
                     if let Err(e) = pactl::set_default_source(source_name).await {
                         error!("[audio] Failed to set default source: {}", e);
                         return Err(e.into());
                     }
-                    lock_state(&self.state).default_input = Some(source_name.to_string());
+                    lock_or_recover(&self.state).default_input = Some(source_name.to_string());
                 } else {
                     debug!("[audio] set-default on card: missing 'sink' or 'source' param");
                 }
@@ -858,7 +855,7 @@ async fn monitor_events(
         debug!("[audio] Received event: {:?}", event);
 
         let card_ports = pactl::get_card_port_info().await.unwrap_or_default();
-        lock_state(&state).card_ports = card_ports.clone();
+        lock_or_recover(&state).card_ports = card_ports.clone();
 
         match event {
             AudioEvent::Sink | AudioEvent::Server => {
@@ -885,7 +882,7 @@ fn main() -> Result<()> {
         .i18n(i18n(), "plugin-name", "plugin-description")
         .run(|notifier| async move {
             let (plugin, shared_state) = AudioPlugin::new().await?;
-            let is_available = lock_state(&shared_state).available;
+            let is_available = lock_or_recover(&shared_state).available;
 
             if is_available {
                 match pactl::subscribe_events() {

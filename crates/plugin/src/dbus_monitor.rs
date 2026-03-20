@@ -129,13 +129,7 @@ where
         if header.member().map(|m| m.as_str()) == Some(&config.member)
             && header.interface().map(|i| i.as_str()) == Some(&config.interface)
         {
-            let mut state_guard = match state.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    log::warn!("Mutex poisoned, recovering: {e}");
-                    e.into_inner()
-                }
-            };
+            let mut state_guard = crate::lock_or_recover(&state);
 
             match handler(&msg, &mut *state_guard) {
                 Ok(should_notify) => {
@@ -213,17 +207,10 @@ where
             && header.interface().map(|i| i.as_str()) == Some(&config.interface)
         {
             match handler(&msg, state.clone()).await {
-                Ok(Some(new_state)) => match state.lock() {
-                    Ok(mut guard) => {
-                        *guard = new_state;
-                        notifier.notify();
-                    }
-                    Err(e) => {
-                        log::warn!("Mutex poisoned, recovering: {e}");
-                        *e.into_inner() = new_state;
-                        notifier.notify();
-                    }
-                },
+                Ok(Some(new_state)) => {
+                    *crate::lock_or_recover(&state) = new_state;
+                    notifier.notify();
+                }
                 Ok(None) => {}
                 Err(e) => {
                     log::warn!(

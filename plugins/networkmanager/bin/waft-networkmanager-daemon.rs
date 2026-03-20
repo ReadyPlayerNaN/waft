@@ -304,7 +304,7 @@ impl NetworkManagerPlugin {
     }
 
     fn lock_state(&self) -> std::sync::MutexGuard<'_, NmState> {
-        self.state.lock_or_recover()
+        lock_or_recover(&self.state)
     }
 }
 
