@@ -66,13 +66,7 @@ pub async fn daemon_connection_task(
                 );
 
                 // Store client for write path (actions from GTK thread)
-                match client_handle.lock() {
-                    Ok(mut guard) => *guard = Some(client),
-                    Err(e) => {
-                        log::warn!("[waft-client] client handle poisoned: {e}");
-                        *e.into_inner() = Some(client);
-                    }
-                }
+                *lock_or_recover(&client_handle) = Some(client);
 
                 // Signal connected
                 if event_tx.send(ClientEvent::Connected).is_err() {
@@ -98,13 +92,7 @@ pub async fn daemon_connection_task(
                 log::info!("[waft-client] daemon disconnected, will retry");
 
                 // Clear write path so actions are dropped during disconnect
-                match client_handle.lock() {
-                    Ok(mut guard) => *guard = None,
-                    Err(e) => {
-                        log::warn!("[waft-client] client handle poisoned: {e}");
-                        *e.into_inner() = None;
-                    }
-                }
+                *lock_or_recover(&client_handle) = None;
 
                 // Signal disconnected
                 if event_tx.send(ClientEvent::Disconnected).is_err() {
@@ -118,5 +106,16 @@ pub async fn daemon_connection_task(
         }
 
         tokio::time::sleep(RECONNECT_INTERVAL).await;
+    }
+}
+
+/// Lock a mutex, recovering from poison with a warning log.
+fn lock_or_recover<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            log::warn!("[waft-client] mutex poisoned, recovering: {e}");
+            e.into_inner()
+        }
     }
 }

@@ -3,21 +3,11 @@
 use std::sync::{Arc, Mutex as StdMutex};
 
 use log::{debug, error, info, warn};
-use waft_plugin::EntityNotifier;
+use waft_plugin::{EntityNotifier, lock_or_recover};
 use zbus::Connection;
 
 use crate::state::{CachedConnectionSettings, NmState};
 use crate::wifi::{get_connection_settings, get_connections_for_ssid, scan_wifi_networks};
-
-fn lock_state(state: &StdMutex<NmState>) -> std::sync::MutexGuard<'_, NmState> {
-    match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            warn!("[nm] Mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    }
-}
 
 /// Background task: handles WiFi scanning via D-Bus.
 /// Receives scan requests via channel and updates shared state.
@@ -32,7 +22,7 @@ pub async fn wifi_scan_task(
 
         // Read adapter paths and set scanning state
         let adapter_paths: Vec<String> = {
-            let mut st = lock_state(&state);
+            let mut st = lock_or_recover(&state);
             for adapter in &mut st.wifi_adapters {
                 adapter.scanning = true;
             }
@@ -78,7 +68,7 @@ pub async fn wifi_scan_task(
                     }
                 }
 
-                let mut st = lock_state(&state);
+                let mut st = lock_or_recover(&state);
                 for adapter in &mut st.wifi_adapters {
                     adapter.access_points = networks.clone();
                     adapter.scanning = false;
@@ -86,7 +76,7 @@ pub async fn wifi_scan_task(
             }
             Err(e) => {
                 error!("[nm] WiFi scan failed: {}", e);
-                let mut st = lock_state(&state);
+                let mut st = lock_or_recover(&state);
                 for adapter in &mut st.wifi_adapters {
                     adapter.scanning = false;
                 }
