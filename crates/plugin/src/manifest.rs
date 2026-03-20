@@ -98,6 +98,58 @@ pub fn handle_provides_full(
     false
 }
 
+/// Combined manifest handler that supports both basic and described manifests.
+///
+/// When `describe_fn` is `Some` and `provides --describe` is requested, emits a
+/// [`PluginManifestDescribed`] with the full plugin description. Otherwise emits
+/// a basic [`PluginManifest`].
+///
+/// Used by [`crate::runner::PluginRunner`] to unify manifest handling.
+pub fn handle_manifest(
+    entity_types: &[&str],
+    name: &str,
+    description: &str,
+    describe_fn: Option<fn() -> Option<PluginDescription>>,
+) -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() >= 2 && args[1] == "provides" {
+        let want_describe = args.get(2).is_some_and(|a| a == "--describe");
+
+        if want_describe {
+            if let Some(f) = describe_fn {
+                let manifest = PluginManifestDescribed {
+                    entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
+                    name: name.to_string(),
+                    description: description.to_string(),
+                    plugin: f(),
+                };
+                match serde_json::to_string_pretty(&manifest) {
+                    Ok(json) => println!("{json}"),
+                    Err(e) => eprintln!("failed to serialize described manifest: {e}"),
+                }
+            } else {
+                print_basic_manifest(entity_types, name, description);
+            }
+        } else {
+            print_basic_manifest(entity_types, name, description);
+        }
+        return true;
+    }
+    false
+}
+
+fn print_basic_manifest(entity_types: &[&str], name: &str, description: &str) {
+    let manifest = PluginManifest {
+        entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
+        name: name.to_string(),
+        description: description.to_string(),
+    };
+    match serde_json::to_string_pretty(&manifest) {
+        Ok(json) => println!("{json}"),
+        Err(e) => eprintln!("failed to serialize manifest: {e}"),
+    }
+}
+
 /// Like [`handle_provides_full`], but when `provides --describe` is requested,
 /// also includes the full plugin description from [`Plugin::describe()`].
 ///

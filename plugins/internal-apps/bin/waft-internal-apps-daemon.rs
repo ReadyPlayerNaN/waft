@@ -4,7 +4,7 @@
 //! them as `app` entities. Supports "open" and "open-page" actions to
 //! launch the application, optionally targeting a specific page.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
@@ -217,29 +217,18 @@ impl Plugin for InternalAppsPlugin {
     }
 }
 
+fn describe_internal_apps() -> Option<PluginDescription> {
+    InternalAppsPlugin { settings_path: None }.describe()
+}
+
 fn main() -> Result<()> {
-    // InternalAppsPlugin::new() is async, but describe() doesn't need runtime state,
-    // so we create a dummy plugin with no settings path for manifest generation.
-    let manifest_plugin = InternalAppsPlugin {
-        settings_path: None,
-    };
-    if waft_plugin::manifest::handle_provides_described(
-        &[entity::app::ENTITY_TYPE],
-        "Internal Apps",
-        "Provides launchable application entities for internal waft apps",
-        &manifest_plugin,
-    ) {
-        return Ok(());
-    }
-
-    waft_plugin::init_plugin_logger("info");
-    log::info!("Starting internal-apps plugin...");
-
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = InternalAppsPlugin::new().await;
-        let (runtime, _notifier) = PluginRuntime::new("internal-apps", plugin);
-        runtime.run().await?;
-        Ok(())
-    })
+    PluginRunner::new("internal-apps", &[entity::app::ENTITY_TYPE])
+        .meta(
+            "Internal Apps",
+            "Provides launchable application entities for internal waft apps",
+        )
+        .describe(describe_internal_apps)
+        .run(|_notifier| async move {
+            Ok(InternalAppsPlugin::new().await)
+        })
 }

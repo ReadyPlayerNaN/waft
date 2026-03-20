@@ -9,6 +9,8 @@ use std::future::Future;
 
 use anyhow::{Context, Result};
 
+use waft_protocol::PluginDescription;
+
 use crate::manifest;
 use crate::notifier::EntityNotifier;
 use crate::plugin::Plugin;
@@ -43,6 +45,7 @@ pub struct PluginRunner<'a> {
     entity_types: &'a [&'a str],
     i18n: Option<(&'a waft_i18n::I18n, &'a str, &'a str)>,
     plain_meta: Option<(&'a str, &'a str)>,
+    describe_fn: Option<fn() -> Option<PluginDescription>>,
 }
 
 impl<'a> PluginRunner<'a> {
@@ -53,6 +56,7 @@ impl<'a> PluginRunner<'a> {
             entity_types,
             i18n: None,
             plain_meta: None,
+            describe_fn: None,
         }
     }
 
@@ -73,6 +77,16 @@ impl<'a> PluginRunner<'a> {
         self
     }
 
+    /// Enable `provides --describe` support.
+    ///
+    /// The function is called during manifest generation (before the tokio
+    /// runtime starts). Only needed for plugins that implement
+    /// [`Plugin::describe()`] for self-documentation.
+    pub fn describe(mut self, f: fn() -> Option<PluginDescription>) -> Self {
+        self.describe_fn = Some(f);
+        self
+    }
+
     /// Handle manifest, init logger, build tokio runtime, and run the plugin.
     ///
     /// The `build` closure receives an [`EntityNotifier`] and must return the
@@ -84,16 +98,22 @@ impl<'a> PluginRunner<'a> {
         F: FnOnce(EntityNotifier) -> Fut,
         Fut: Future<Output = Result<P>>,
     {
-        // Handle manifest CLI
-        if let Some((i18n, name_key, desc_key)) = self.i18n {
-            if manifest::handle_provides_i18n(self.entity_types, i18n, name_key, desc_key) {
-                return Ok(());
-            }
+        // Resolve display name and description
+        let (resolved_name, resolved_desc) = if let Some((i18n, name_key, desc_key)) = self.i18n {
+            (i18n.t(name_key), i18n.t(desc_key))
         } else if let Some((name, description)) = self.plain_meta {
-            if manifest::handle_provides_full(self.entity_types, name, description) {
-                return Ok(());
-            }
-        } else if manifest::handle_provides_full(self.entity_types, "", "") {
+            (name.to_string(), description.to_string())
+        } else {
+            (String::new(), String::new())
+        };
+
+        // Handle manifest CLI (provides / provides --describe)
+        if manifest::handle_manifest(
+            self.entity_types,
+            &resolved_name,
+            &resolved_desc,
+            self.describe_fn,
+        ) {
             return Ok(());
         }
 

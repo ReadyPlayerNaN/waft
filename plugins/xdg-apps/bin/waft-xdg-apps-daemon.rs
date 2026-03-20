@@ -13,6 +13,15 @@ use waft_protocol::description::*;
 use waft_xdg_apps::desktop_file::strip_exec_field_codes;
 use waft_xdg_apps::scanner::{scan_apps, xdg_app_dirs, DiscoveredApp};
 
+fn describe_xdg_apps() -> Option<PluginDescription> {
+    XdgAppsPlugin {
+        apps: Arc::new(Mutex::new(HashMap::new())),
+        dirs: Vec::new(),
+        locale: String::new(),
+    }
+    .describe()
+}
+
 /// Shared plugin state: current discovered apps indexed by stem.
 struct XdgAppsPlugin {
     apps: Arc<Mutex<HashMap<String, DiscoveredApp>>>,
@@ -176,39 +185,23 @@ impl Plugin for XdgAppsPlugin {
 }
 
 fn main() -> Result<()> {
-    let manifest_plugin = XdgAppsPlugin {
-        apps: Arc::new(Mutex::new(HashMap::new())),
-        dirs: Vec::new(),
-        locale: String::new(),
-    };
-    if waft_plugin::manifest::handle_provides_described(
-        &[entity::app::ENTITY_TYPE],
-        "XDG Applications",
-        "Enumerates installed applications from XDG .desktop files",
-        &manifest_plugin,
-    ) {
-        return Ok(());
-    }
+    PluginRunner::new("xdg-apps", &[entity::app::ENTITY_TYPE])
+        .meta(
+            "XDG Applications",
+            "Enumerates installed applications from XDG .desktop files",
+        )
+        .describe(describe_xdg_apps)
+        .run(|notifier| async move {
+            let plugin = XdgAppsPlugin::new();
+            let apps_ref = plugin.apps.clone();
+            let dirs = plugin.dirs.clone();
 
-    waft_plugin::init_plugin_logger("info");
-    log::info!("[xdg-apps] starting...");
+            spawn_monitored_anyhow("xdg-apps/file-watcher", async move {
+                watch_dirs(dirs, apps_ref, notifier).await
+            });
 
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
-        let plugin = XdgAppsPlugin::new();
-        let apps_ref = plugin.apps.clone();
-        let dirs = plugin.dirs.clone();
-
-        let (runtime, notifier) = PluginRuntime::new("xdg-apps", plugin);
-
-        // Spawn inotify watcher task
-        spawn_monitored_anyhow("xdg-apps/file-watcher", async move {
-            watch_dirs(dirs, apps_ref, notifier).await
-        });
-
-        runtime.run().await?;
-        Ok(())
-    })
+            Ok(plugin)
+        })
 }
 
 async fn watch_dirs(

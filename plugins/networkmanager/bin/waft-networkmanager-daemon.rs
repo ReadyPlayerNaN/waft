@@ -1417,8 +1417,8 @@ impl NetworkManagerPlugin {
 // ---------------------------------------------------------------------------
 
 fn main() -> Result<()> {
-    // Handle `provides` CLI command before starting runtime
-    if waft_plugin::manifest::handle_provides_i18n(
+    PluginRunner::new(
+        "networkmanager",
         &[
             ADAPTER_ENTITY_TYPE,
             WIFI_NETWORK_ENTITY_TYPE,
@@ -1426,21 +1426,9 @@ fn main() -> Result<()> {
             VPN_ENTITY_TYPE,
             TETHERING_CONNECTION_ENTITY_TYPE,
         ],
-        i18n(),
-        "plugin-name",
-        "plugin-description",
-    ) {
-        return Ok(());
-    }
-
-    // Initialize logging
-    waft_plugin::init_plugin_logger("info");
-
-    info!("Starting networkmanager plugin...");
-
-    // Build the tokio runtime manually so `handle_provides` runs without it
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async {
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
         let (scan_tx, scan_rx) = tokio::sync::mpsc::channel::<()>(4);
 
         let plugin = NetworkManagerPlugin::new(scan_tx).await?;
@@ -1448,10 +1436,6 @@ fn main() -> Result<()> {
         let shared_state = plugin.shared_state();
         let monitor_conn = plugin.conn.clone();
         let scan_conn = plugin.conn.clone();
-
-        let (runtime, notifier) = PluginRuntime::new("networkmanager", plugin);
-
-        let scan_notifier = notifier.clone();
 
         // Monitor NM D-Bus signals
         let monitor_state = shared_state.clone();
@@ -1472,12 +1456,12 @@ fn main() -> Result<()> {
 
         // WiFi scan background task — pure D-Bus, runs on main tokio runtime
         let scan_state = shared_state.clone();
+        let scan_notifier = notifier.clone();
         tokio::spawn(async move {
             wifi_scan_task(scan_rx, scan_conn, scan_state, scan_notifier).await;
         });
 
-        runtime.run().await?;
-        Ok(())
+        Ok(plugin)
     })
 }
 
