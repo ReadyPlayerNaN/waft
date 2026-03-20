@@ -7,23 +7,51 @@ use adw::prelude::*;
 /// to detach an old one. The default `vdom_remove` uses `Widget::unparent()`,
 /// which works for any parent — including `adw::ActionRow` suffix/prefix slots
 /// that have no `remove_suffix` / `remove_prefix` counterpart.
+///
+/// `vdom_reorder_children` repositions existing children to match a desired
+/// order. The default is a no-op, which is correct for single-child slots.
 pub trait VdomContainer {
     fn vdom_append(&self, widget: &gtk::Widget);
 
     fn vdom_remove(&self, widget: &gtk::Widget) {
         widget.unparent();
     }
+
+    /// Reposition children to match the given order. Each widget in the slice
+    /// must already be a child of this container. The default is a no-op,
+    /// suitable for single-child containers.
+    fn vdom_reorder_children(&self, _ordered: &[gtk::Widget]) {}
 }
 
 impl VdomContainer for gtk::Box {
     fn vdom_append(&self, widget: &gtk::Widget) {
         self.append(widget);
     }
+
+    fn vdom_reorder_children(&self, ordered: &[gtk::Widget]) {
+        let parent: gtk::Widget = self.clone().upcast();
+        let mut prev: Option<&gtk::Widget> = None;
+        for w in ordered {
+            w.insert_after(&parent, prev);
+            prev = Some(w);
+        }
+    }
 }
 
 impl VdomContainer for adw::PreferencesGroup {
     fn vdom_append(&self, widget: &gtk::Widget) {
         self.add(widget);
+    }
+
+    fn vdom_reorder_children(&self, ordered: &[gtk::Widget]) {
+        // PreferencesGroup has no insert-at API, so remove all managed
+        // children and re-add them in the desired order.
+        for w in ordered {
+            self.remove(w);
+        }
+        for w in ordered {
+            self.add(w);
+        }
     }
 }
 
