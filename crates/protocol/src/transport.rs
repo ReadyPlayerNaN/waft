@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 
 /// Maximum allowed message size (10 MB).
-const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
+pub const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
 
 /// Errors that can occur during framed message transport.
 #[derive(Debug)]
@@ -31,20 +31,20 @@ pub enum TransportError {
 
     /// Message exceeded maximum allowed size.
     FrameTooLarge(usize),
+
+    /// Peer disconnected (EOF on read).
+    Disconnected,
 }
 
 impl std::fmt::Display for TransportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TransportError::Io(e) => write!(f, "I/O error: {}", e),
-            TransportError::Serialization(e) => write!(f, "serialization error: {}", e),
+            TransportError::Io(e) => write!(f, "I/O error: {e}"),
+            TransportError::Serialization(e) => write!(f, "serialization error: {e}"),
             TransportError::FrameTooLarge(size) => {
-                write!(
-                    f,
-                    "frame too large: {} bytes (max: {} bytes)",
-                    size, MAX_FRAME_SIZE
-                )
+                write!(f, "frame too large: {size} bytes (max: {MAX_FRAME_SIZE})")
             }
+            TransportError::Disconnected => write!(f, "peer disconnected"),
         }
     }
 }
@@ -54,7 +54,7 @@ impl std::error::Error for TransportError {
         match self {
             TransportError::Io(e) => Some(e),
             TransportError::Serialization(e) => Some(e),
-            TransportError::FrameTooLarge(_) => None,
+            TransportError::FrameTooLarge(_) | TransportError::Disconnected => None,
         }
     }
 }
@@ -291,5 +291,8 @@ mod tests {
         assert!(display.contains("frame too large"));
         assert!(display.contains("20000000"));
         assert!(display.contains("10485760")); // MAX_FRAME_SIZE
+
+        let disconnected_err = TransportError::Disconnected;
+        assert!(disconnected_err.to_string().contains("peer disconnected"));
     }
 }
