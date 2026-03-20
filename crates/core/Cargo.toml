@@ -11,3 +11,6 @@ tokio = { version = "1", features = ["sync"] }
 waft-config = { path = "../config" }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 zvariant = "5"
+
+[lints]
+workspace = true

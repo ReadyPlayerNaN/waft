@@ -7,3 +7,6 @@ edition = "2024"
 fluent-bundle = "0.15"
 sys-locale = "0.3"
 unic-langid = "0.9"
+
+[lints]
+workspace = true

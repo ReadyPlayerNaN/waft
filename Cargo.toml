@@ -38,3 +38,22 @@ members = [
     "plugins/xdg-apps",
     "plugins/niri",
 ]
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+[workspace.lints.clippy]
+# Correctness & safety
+enum_glob_use = "warn"
+manual_let_else = "warn"
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+
+# Development markers — flag but don't block
+todo = "warn"
+unimplemented = "warn"
+
+# Encourage proper error handling over panicking
+unwrap_used = "warn"
