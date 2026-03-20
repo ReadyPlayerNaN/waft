@@ -351,7 +351,7 @@ impl Plugin for SwwwPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let output_id = urn.id().to_string();
 
         match action.as_str() {
@@ -359,7 +359,7 @@ impl Plugin for SwwwPlugin {
                 let path = params
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing 'path' parameter")?;
+                    .ok_or_else(|| anyhow::anyhow!("missing 'path' parameter"))?;
 
                 let (transition, sync, targets): (TransitionConfig, bool, Option<String>) = {
                     let state = self.lock_state();
@@ -407,18 +407,18 @@ impl Plugin for SwwwPlugin {
                 let mode_str = params
                     .get("mode")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing 'mode' parameter")?;
+                    .ok_or_else(|| anyhow::anyhow!("missing 'mode' parameter"))?;
                 let new_mode = match mode_str {
                     "static" => WallpaperMode::Static,
                     "style-tracking" => WallpaperMode::StyleTracking,
                     "day-tracking" => WallpaperMode::DayTracking,
-                    _ => return Err(format!("unknown mode: {mode_str}").into()),
+                    _ => anyhow::bail!("unknown mode: {mode_str}"),
                 };
 
                 {
                     let mut s = self.lock_state();
                     if new_mode == WallpaperMode::StyleTracking && !s.style_tracking_available {
-                        return Err("style-tracking unavailable: darkman not running".into());
+                        anyhow::bail!("style-tracking unavailable: darkman not running");
                     }
                     s.mode = new_mode;
                 }
@@ -567,7 +567,7 @@ async fn run_swww_img(
     path: &str,
     output: Option<&str>,
     transition: &TransitionConfig,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<()> {
     let mut cmd = tokio::process::Command::new("swww");
     cmd.arg("img").arg(path);
 
@@ -586,31 +586,29 @@ async fn run_swww_img(
         &transition.duration.to_string(),
     ]);
 
-    let result = cmd.output().await.map_err(|e| {
-        Box::new(std::io::Error::other(format!("failed to run swww img: {e}")))
-            as Box<dyn std::error::Error + Send + Sync>
-    })?;
+    let result = cmd.output().await
+        .map_err(|e| anyhow::anyhow!("failed to run swww img: {e}"))?;
 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
-        return Err(format!("swww img failed: {stderr}").into());
+        anyhow::bail!("swww img failed: {stderr}");
     }
 
     Ok(())
 }
 
 /// Pick a random wallpaper from the given directory.
-fn pick_random_wallpaper(dir: &str) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+fn pick_random_wallpaper(dir: &str) -> anyhow::Result<PathBuf> {
     let dir_path = Path::new(dir);
     if !dir_path.exists() {
-        return Err(format!("Wallpaper directory does not exist: {dir}").into());
+        anyhow::bail!("Wallpaper directory does not exist: {dir}");
     }
 
     let extensions = ["png", "jpg", "jpeg", "webp", "gif", "bmp"];
     let mut candidates = Vec::new();
 
     let entries = std::fs::read_dir(dir_path)
-        .map_err(|e| format!("Failed to read wallpaper directory: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to read wallpaper directory: {e}"))?;
 
     for entry in entries {
         let entry = match entry {
@@ -630,7 +628,7 @@ fn pick_random_wallpaper(dir: &str) -> Result<PathBuf, Box<dyn std::error::Error
     }
 
     if candidates.is_empty() {
-        return Err(format!("No wallpaper files found in {dir}").into());
+        anyhow::bail!("No wallpaper files found in {dir}");
     }
 
     let idx = fastrand::usize(..candidates.len());
@@ -911,7 +909,7 @@ fn main() -> Result<()> {
 
             // Dark-mode D-Bus monitoring (style-tracking)
             let notifier_dark = notifier.clone();
-            spawn_monitored_anyhow("swww-darkman", async move {
+            spawn_monitored("swww-darkman", async move {
                 monitor_darkman_signals(state_for_darkman, wp_tx_darkman, notifier_dark).await
             });
 

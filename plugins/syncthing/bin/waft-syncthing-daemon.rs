@@ -134,7 +134,7 @@ impl Plugin for SyncthingPlugin {
         _urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         match action.as_str() {
             "toggle" => {
                 let was_enabled = self.state.lock_or_recover().enabled;

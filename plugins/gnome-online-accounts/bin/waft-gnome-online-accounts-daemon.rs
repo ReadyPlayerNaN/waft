@@ -52,7 +52,7 @@ impl GoaPlugin {
         &self,
         urn: Urn,
         action: String,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         let provider_type = urn.id().to_string();
 
         match action.as_str() {
@@ -62,9 +62,7 @@ impl GoaPlugin {
                 // Spawn the add-account helper as a subprocess.
                 // Use our own binary with --add-account flag.
                 let self_binary = std::env::current_exe()
-                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
-                        format!("failed to get current exe: {e}").into()
-                    })?;
+                    .map_err(|e| anyhow::anyhow!("failed to get current exe: {e}"))?;
 
                 let child = tokio::process::Command::new(&self_binary)
                     .arg("--add-account")
@@ -91,7 +89,7 @@ impl GoaPlugin {
                     }
                     Err(e) => {
                         error!("[goa] Failed to spawn add-account helper: {}", e);
-                        return Err(format!("failed to spawn add-account helper: {e}").into());
+                        anyhow::bail!("failed to spawn add-account helper: {e}");
                     }
                 }
             }
@@ -116,7 +114,7 @@ impl Plugin for GoaPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         // Handle provider-level actions
         if urn.entity_type() == ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE {
             self.handle_provider_action(urn, action).await?;
@@ -131,7 +129,7 @@ impl Plugin for GoaPlugin {
                     Some(s) => s.to_string(),
                     None => {
                         warn!("[goa] enable-service action missing 'service_name' param");
-                        return Err("missing service_name parameter".into());
+                        anyhow::bail!("missing service_name parameter");
                     }
                 };
 
@@ -146,7 +144,7 @@ impl Plugin for GoaPlugin {
                         Some(p) => p.to_string(),
                         None => {
                             warn!("[goa] Account not found: {}", account_id);
-                            return Err(format!("account not found: {account_id}").into());
+                            anyhow::bail!("account not found: {account_id}");
                         }
                     }
                 };
@@ -179,7 +177,7 @@ impl Plugin for GoaPlugin {
                     Some(s) => s.to_string(),
                     None => {
                         warn!("[goa] disable-service action missing 'service_name' param");
-                        return Err("missing service_name parameter".into());
+                        anyhow::bail!("missing service_name parameter");
                     }
                 };
 
@@ -194,7 +192,7 @@ impl Plugin for GoaPlugin {
                         Some(p) => p.to_string(),
                         None => {
                             warn!("[goa] Account not found: {}", account_id);
-                            return Err(format!("account not found: {account_id}").into());
+                            anyhow::bail!("account not found: {account_id}");
                         }
                     }
                 };
@@ -229,7 +227,7 @@ impl Plugin for GoaPlugin {
                         Some(p) => p.to_string(),
                         None => {
                             warn!("[goa] Account not found: {}", account_id);
-                            return Err(format!("account not found: {account_id}").into());
+                            anyhow::bail!("account not found: {account_id}");
                         }
                     };
                     let locked = state
@@ -240,11 +238,10 @@ impl Plugin for GoaPlugin {
                     (path, locked)
                 };
                 if locked {
-                    return Err(format!("account {} is locked", account_id).into());
+                    anyhow::bail!("account {} is locked", account_id);
                 }
                 dbus::remove_account(&self.conn, &account_path)
-                    .await
-                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+                    .await?;
             }
 
             _ => {
@@ -359,7 +356,7 @@ fn main() -> Result<()> {
         };
 
         // Monitor GOA D-Bus signals
-        spawn_monitored_anyhow("goa/signal-monitor", async move {
+        spawn_monitored("goa/signal-monitor", async move {
             monitor_goa_signals(conn, state, notifier).await
         });
 

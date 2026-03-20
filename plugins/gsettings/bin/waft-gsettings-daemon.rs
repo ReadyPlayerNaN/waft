@@ -126,26 +126,25 @@ impl Plugin for GsettingsPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         match action.as_str() {
             "set-accent-color" => {
                 let color = params
                     .get("color")
                     .and_then(|v| v.as_str())
-                    .ok_or("Missing 'color' parameter")?;
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'color' parameter"))?;
 
                 if !VALID_ACCENT_COLORS.contains(&color) {
-                    return Err(format!(
+                    anyhow::bail!(
                         "Invalid accent colour '{}'. Valid values: {}",
                         color,
                         VALID_ACCENT_COLORS.join(", ")
-                    )
-                    .into());
+                    );
                 }
 
                 write_accent_color(color)
                     .await
-                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
 
                 // Update local state
                 self.state.lock_or_recover().accent_color = Some(color.to_string());
@@ -228,7 +227,7 @@ fn main() -> Result<()> {
                 .context("failed to connect to session bus")?;
 
             // Monitor portal for external accent colour changes
-            spawn_monitored_anyhow(
+            spawn_monitored(
                 "gsettings",
                 monitor_portal_settings(conn, shared_state, notifier),
             );

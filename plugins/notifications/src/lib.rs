@@ -217,14 +217,14 @@ impl NotificationsPlugin {
     }
 
     /// Write current sound config to TOML config file.
-    fn sync_sound_config_to_toml(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn sync_sound_config_to_toml(&self) -> anyhow::Result<()> {
         let sound_cfg = self.sound_config.lock_or_recover().clone();
 
         filter::toml_sync::write_sound_config(&sound_cfg)
     }
 
     /// Write current filter config to TOML config file.
-    fn sync_config_to_toml(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn sync_config_to_toml(&self) -> anyhow::Result<()> {
         let groups = self.groups.lock_or_recover().clone();
         let profiles = self.profiles.lock_or_recover().clone();
 
@@ -414,7 +414,7 @@ impl Plugin for NotificationsPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let parts: Vec<&str> = urn.as_str().split('/').collect();
         // URN format: notifications/{entity-type}/{id}
         let entity_type = parts.get(1).copied().unwrap_or("");
@@ -436,10 +436,7 @@ impl Plugin for NotificationsPlugin {
 
             ("notification", "dismiss") => {
                 let id: u64 = entity_id.parse().map_err(|e| {
-                    Box::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("invalid notification id: {e}"),
-                    )) as Box<dyn std::error::Error + Send + Sync>
+                    anyhow::anyhow!("invalid notification id: {e}")
                 })?;
 
                 {
@@ -461,10 +458,7 @@ impl Plugin for NotificationsPlugin {
 
             ("notification", "expire") => {
                 let id: u64 = entity_id.parse().map_err(|e| {
-                    Box::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("invalid notification id: {e}"),
-                    )) as Box<dyn std::error::Error + Send + Sync>
+                    anyhow::anyhow!("invalid notification id: {e}")
                 })?;
 
                 // Check if notification still exists before initiating claim
@@ -508,10 +502,7 @@ impl Plugin for NotificationsPlugin {
 
             ("notification", "invoke-action") => {
                 let id: u64 = entity_id.parse().map_err(|e| {
-                    Box::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("invalid notification id: {e}"),
-                    )) as Box<dyn std::error::Error + Send + Sync>
+                    anyhow::anyhow!("invalid notification id: {e}")
                 })?;
 
                 let action_key = params
@@ -592,7 +583,7 @@ impl Plugin for NotificationsPlugin {
                 let profile_id = params
                     .get("profile_id")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing profile_id")?
+                    .ok_or_else(|| anyhow::anyhow!("missing profile_id"))?
                     .to_string();
 
                 {
@@ -634,7 +625,7 @@ impl Plugin for NotificationsPlugin {
                     if let Some(existing) = groups_guard.iter_mut().find(|g| g.id == entity_id) {
                         *existing = group.clone();
                     } else {
-                        return Err("group not found".into());
+                        anyhow::bail!("group not found");
                     }
                 }
 
@@ -697,7 +688,7 @@ impl Plugin for NotificationsPlugin {
                     {
                         *existing = profile.clone();
                     } else {
-                        return Err("profile not found".into());
+                        anyhow::bail!("profile not found");
                     }
                 }
 
@@ -727,17 +718,17 @@ impl Plugin for NotificationsPlugin {
                 let filename = params
                     .get("filename")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing filename")?
+                    .ok_or_else(|| anyhow::anyhow!("missing filename"))?
                     .to_string();
                 let data_b64 = params
                     .get("data")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing data")?;
+                    .ok_or_else(|| anyhow::anyhow!("missing data"))?;
 
                 use base64::Engine;
                 let data = base64::engine::general_purpose::STANDARD
                     .decode(data_b64)
-                    .map_err(|e| format!("invalid base64: {e}"))?;
+                    .map_err(|e| anyhow::anyhow!("invalid base64: {e}"))?;
 
                 {
                     let mut gallery = self.sound_gallery.lock_or_recover();
@@ -760,7 +751,7 @@ impl Plugin for NotificationsPlugin {
                 let reference = params
                     .get("reference")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing reference")?;
+                    .ok_or_else(|| anyhow::anyhow!("missing reference"))?;
 
                 let resolved = sound::gallery::resolve_sound_reference(reference);
                 let player = self.sound_player.clone();

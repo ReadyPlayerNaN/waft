@@ -94,14 +94,14 @@ pub fn read_virtual_devices() -> Vec<VirtualDeviceConfig> {
 }
 
 /// Read the config file and return (root table, config path).
-fn read_config() -> Result<(toml::Table, PathBuf), Box<dyn std::error::Error + Send + Sync>> {
+fn read_config() -> anyhow::Result<(toml::Table, PathBuf)> {
     let path = waft_config::Config::config_path().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::NotFound, "config path not found")
     })?;
 
     let root: toml::Table = if path.exists() {
         let content = std::fs::read_to_string(&path)?;
-        toml::from_str(&content).map_err(|e| format!("failed to parse existing config: {e}"))?
+        toml::from_str(&content).map_err(|e| anyhow::anyhow!("failed to parse existing config: {e}"))?
     } else {
         toml::Table::new()
     };
@@ -113,14 +113,14 @@ fn read_config() -> Result<(toml::Table, PathBuf), Box<dyn std::error::Error + S
 /// creating it if it doesn't exist.
 fn get_audio_table(
     root: &mut toml::Table,
-) -> Result<&mut toml::Table, Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<&mut toml::Table> {
     let plugins = root
         .entry("plugins")
         .or_insert_with(|| toml::Value::Array(Vec::new()));
 
     let plugins_array = match plugins {
         toml::Value::Array(arr) => arr,
-        _ => return Err("plugins is not an array".into()),
+        _ => anyhow::bail!("plugins is not an array"),
     };
 
     let idx = plugins_array.iter().position(|p| {
@@ -142,7 +142,7 @@ fn get_audio_table(
 
     match &mut plugins_array[idx] {
         toml::Value::Table(t) => Ok(t),
-        _ => Err("plugin entry is not a table".into()),
+        _ => anyhow::bail!("plugin entry is not a table"),
     }
 }
 
@@ -150,9 +150,9 @@ fn get_audio_table(
 fn write_config(
     root: &toml::Table,
     path: &std::path::Path,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<()> {
     let toml_str =
-        toml::to_string_pretty(root).map_err(|e| format!("failed to serialize config: {e}"))?;
+        toml::to_string_pretty(root).map_err(|e| anyhow::anyhow!("failed to serialize config: {e}"))?;
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -171,7 +171,7 @@ fn write_config(
 /// section with the new virtual_devices array, and writes back atomically.
 pub fn save_virtual_devices(
     devices: &[VirtualDeviceConfig],
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<()> {
     let (mut root, path) = read_config()?;
     let audio_table = get_audio_table(&mut root)?;
 
@@ -179,7 +179,7 @@ pub fn save_virtual_devices(
         audio_table.remove("virtual_devices");
     } else {
         let devices_value = toml::Value::try_from(devices)
-            .map_err(|e| format!("failed to serialize virtual_devices: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("failed to serialize virtual_devices: {e}"))?;
         audio_table.insert("virtual_devices".to_string(), devices_value);
     }
 
@@ -201,7 +201,7 @@ fn default_pa_path() -> Option<PathBuf> {
 /// with `.include /etc/pulse/default.pa` as the first line.
 pub fn sync_default_pa(
     devices: &[VirtualDeviceConfig],
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<()> {
     let pa_path = default_pa_path()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "config dir not found"))?;
 

@@ -86,7 +86,7 @@ impl Plugin for ClockPlugin {
         _urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         if action == "click" && !self.config.on_click.is_empty() {
             log::debug!("Clock clicked, running command: {}", self.config.on_click);
 

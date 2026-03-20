@@ -75,7 +75,7 @@ impl InternalAppsPlugin {
     fn spawn_settings(
         path: &PathBuf,
         args: &[&str],
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         let mut cmd = Command::new(path);
         for arg in args {
             cmd.arg(arg);
@@ -102,7 +102,7 @@ impl InternalAppsPlugin {
             }
             Err(e) => {
                 log::error!("[internal-apps] Failed to spawn waft-settings: {e}");
-                Err(Box::new(e))
+                Err(e.into())
             }
         }
     }
@@ -135,7 +135,7 @@ impl Plugin for InternalAppsPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let Some(ref path) = self.settings_path else {
             log::warn!("[internal-apps] action '{action}' ignored: waft-settings not available");
             return Ok(serde_json::Value::Null);

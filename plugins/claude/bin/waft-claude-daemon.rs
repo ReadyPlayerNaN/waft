@@ -58,8 +58,8 @@ impl Plugin for ClaudePlugin {
         _urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        Err(format!("Unknown action: {action}").into())
+    ) -> anyhow::Result<serde_json::Value> {
+        anyhow::bail!("Unknown action: {action}")
     }
 }
 
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
             let plugin = ClaudePlugin::new();
             let state = plugin.state.clone();
 
-            spawn_monitored_anyhow("claude-poll", async move {
+            spawn_monitored("claude-poll", async move {
                 loop {
                     match credentials::load_access_token() {
                         Err(e) => {

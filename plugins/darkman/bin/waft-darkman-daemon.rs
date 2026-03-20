@@ -189,7 +189,7 @@ impl DarkmanPlugin {
         &self,
         field: &str,
         value: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         config::validate_field(field, &value)?;
 
         // Scope the lock so it's dropped before the async restart call
@@ -202,12 +202,12 @@ impl DarkmanPlugin {
                 "auto_location" => yaml_config.usegeoclue = Some(serde_json::from_value(value)?),
                 "dbus_api" => yaml_config.dbusserver = Some(serde_json::from_value(value)?),
                 "portal_api" => yaml_config.portal = Some(serde_json::from_value(value)?),
-                _ => return Err(format!("Unknown field: {}", field).into()),
+                _ => anyhow::bail!("Unknown field: {}", field),
             }
 
             // Backup and write config
             let config_path = dirs::config_dir()
-                .ok_or("No config directory")?
+                .ok_or_else(|| anyhow::anyhow!("No config directory"))?
                 .join("darkman/config.yaml");
 
             if config_path.exists() {
@@ -254,7 +254,7 @@ impl Plugin for DarkmanPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         match action.as_str() {
             "toggle" => {
                 log::debug!("Toggle action received");
@@ -280,12 +280,12 @@ impl Plugin for DarkmanPlugin {
                 let field: String = serde_json::from_value(
                     params
                         .get("field")
-                        .ok_or("Missing 'field' parameter")?
+                        .ok_or_else(|| anyhow::anyhow!("Missing 'field' parameter"))?
                         .clone(),
                 )?;
                 let value = params
                     .get("value")
-                    .ok_or("Missing 'value' parameter")?
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'value' parameter"))?
                     .clone();
 
                 self.update_config_field(&field, value).await?;
@@ -338,7 +338,7 @@ fn main() -> Result<()> {
         let monitor_conn = plugin.conn.clone();
 
         // Listen for D-Bus ModeChanged signals (instant, no polling)
-        spawn_monitored_anyhow(
+        spawn_monitored(
             "darkman",
             monitor_mode_signals(monitor_conn, shared_state, notifier),
         );

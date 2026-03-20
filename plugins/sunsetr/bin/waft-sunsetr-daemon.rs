@@ -385,7 +385,7 @@ impl Plugin for SunsetrPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         match action.as_str() {
             "toggle" => {
                 let currently_active = self.get_state().active;
@@ -420,7 +420,7 @@ impl Plugin for SunsetrPlugin {
                         }
                         Err(e) => {
                             log::error!("[sunsetr] toggle action failed: {e}");
-                            return Err(e.into());
+                            return Err(e);
                         }
                     }
                 };
@@ -434,7 +434,7 @@ impl Plugin for SunsetrPlugin {
             "select_preset" => {
                 let preset_name = params
                     .as_str()
-                    .ok_or("select_preset requires string parameter")?
+                    .context("select_preset requires string parameter")?
                     .to_string();
 
                 debug!("[sunsetr] Selecting preset: {}", preset_name);
@@ -442,13 +442,13 @@ impl Plugin for SunsetrPlugin {
                 if preset_name == "default" {
                     if let Err(e) = set_preset("default").await {
                         warn!("[sunsetr] preset switch to 'default' failed: {e}");
-                        return Err(e.into());
+                        return Err(e);
                     } else {
                         self.state.lock_or_recover().active_preset = None;
                     }
                 } else if let Err(e) = set_preset(&preset_name).await {
                     warn!("[sunsetr] preset switch to '{}' failed: {e}", preset_name);
-                    return Err(e.into());
+                    return Err(e);
                 } else {
                     self.state.lock_or_recover().active_preset = Some(preset_name);
                 }
@@ -457,16 +457,16 @@ impl Plugin for SunsetrPlugin {
                 let field = params
                     .get("field")
                     .and_then(|v| v.as_str())
-                    .ok_or("update_config requires 'field' parameter")?
+                    .context("update_config requires 'field' parameter")?
                     .to_string();
                 let value = params
                     .get("value")
                     .and_then(|v| v.as_str())
-                    .ok_or("update_config requires 'value' string parameter")?
+                    .context("update_config requires 'value' string parameter")?
                     .to_string();
 
                 if !sunsetr_config::validate_field_name(&field) {
-                    return Err(format!("Unknown config field: {field}").into());
+                    anyhow::bail!("Unknown config field: {field}");
                 }
 
                 let target = self.get_target();
@@ -477,9 +477,7 @@ impl Plugin for SunsetrPlugin {
                     run_sunsetr(&["set", "--target", &target, &arg]).await?;
 
                 if code != 0 {
-                    return Err(
-                        format!("sunsetr set failed (code {code}): {stderr}").into()
-                    );
+                    anyhow::bail!("sunsetr set failed (code {code}): {stderr}");
                 }
 
                 // Re-query config to capture side effects
@@ -496,7 +494,7 @@ impl Plugin for SunsetrPlugin {
                 let preset_name = params
                     .get("name")
                     .and_then(|v| v.as_str())
-                    .ok_or("load_preset requires 'name' parameter")?
+                    .context("load_preset requires 'name' parameter")?
                     .to_string();
 
                 debug!("[sunsetr] Loading preset config: {preset_name}");
@@ -508,9 +506,7 @@ impl Plugin for SunsetrPlugin {
                         *self.config_values.lock_or_recover() = Some(values);
                     }
                     Err(e) => {
-                        return Err(
-                            format!("Failed to load preset config: {e}").into()
-                        );
+                        anyhow::bail!("Failed to load preset config: {e}");
                     }
                 }
             }
@@ -518,11 +514,11 @@ impl Plugin for SunsetrPlugin {
                 let name = params
                     .get("name")
                     .and_then(|v| v.as_str())
-                    .ok_or("create_preset requires 'name' parameter")?
+                    .context("create_preset requires 'name' parameter")?
                     .to_string();
 
                 if name.is_empty() || name == "default" || name.contains(' ') {
-                    return Err("Invalid preset name".into());
+                    anyhow::bail!("Invalid preset name");
                 }
 
                 debug!("[sunsetr] Creating preset: {name}");
@@ -531,9 +527,7 @@ impl Plugin for SunsetrPlugin {
                     run_sunsetr(&["preset", &name]).await?;
 
                 if code != 0 {
-                    return Err(
-                        format!("Failed to create preset (code {code}): {stderr}").into()
-                    );
+                    anyhow::bail!("Failed to create preset (code {code}): {stderr}");
                 }
 
                 // Refresh presets list
@@ -551,22 +545,22 @@ impl Plugin for SunsetrPlugin {
                 let name = params
                     .get("name")
                     .and_then(|v| v.as_str())
-                    .ok_or("delete_preset requires 'name' parameter")?
+                    .context("delete_preset requires 'name' parameter")?
                     .to_string();
 
                 if name == "default" {
-                    return Err("Cannot delete default preset".into());
+                    anyhow::bail!("Cannot delete default preset");
                 }
 
                 debug!("[sunsetr] Deleting preset: {name}");
 
                 let preset_path = dirs::config_dir()
-                    .ok_or("No config directory")?
+                    .context("No config directory")?
                     .join(format!("sunsetr/presets/{name}.toml"));
 
                 if preset_path.exists() {
-                    std::fs::remove_file(&preset_path).map_err(|e| {
-                        format!("Failed to delete preset file: {e}")
+                    std::fs::remove_file(&preset_path).with_context(|| {
+                        format!("Failed to delete preset file: {}", preset_path.display())
                     })?;
                 }
 
