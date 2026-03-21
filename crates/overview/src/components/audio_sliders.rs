@@ -328,7 +328,7 @@ fn deduplicate_device_names(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use entity::audio::{AudioDevice, AudioDeviceKind};
 
@@ -381,6 +381,241 @@ mod tests {
         let result = deduplicate_device_names(&devices);
         assert_eq!(result[0].1, "Monitor (DEVICE 1)");
         assert_eq!(result[1].1, "Monitor (DEVICE 2)");
+    }
+
+    fn make_device_with_volume(kind: AudioDeviceKind, volume: f64, muted: bool) -> AudioDevice {
+        AudioDevice {
+            name: "Test".to_string(),
+            device_type: "card".to_string(),
+            connection_type: None,
+            volume,
+            muted,
+            default: false,
+            kind,
+            virtual_device: false,
+            sink_name: None,
+        }
+    }
+
+    #[test]
+    fn slider_icon_output_muted() {
+        let dev = make_device_with_volume(AudioDeviceKind::Output, 0.8, true);
+        assert_eq!(slider_icon(&dev), "audio-volume-muted-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_output_zero_volume() {
+        let dev = make_device_with_volume(AudioDeviceKind::Output, 0.0, false);
+        assert_eq!(slider_icon(&dev), "audio-volume-muted-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_output_low_volume() {
+        let dev = make_device_with_volume(AudioDeviceKind::Output, 0.2, false);
+        assert_eq!(slider_icon(&dev), "audio-volume-low-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_output_medium_volume() {
+        let dev = make_device_with_volume(AudioDeviceKind::Output, 0.5, false);
+        assert_eq!(slider_icon(&dev), "audio-volume-medium-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_output_high_volume() {
+        let dev = make_device_with_volume(AudioDeviceKind::Output, 0.9, false);
+        assert_eq!(slider_icon(&dev), "audio-volume-high-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_input_muted() {
+        let dev = make_device_with_volume(AudioDeviceKind::Input, 0.8, true);
+        assert_eq!(slider_icon(&dev), "microphone-disabled-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_input_zero_volume() {
+        let dev = make_device_with_volume(AudioDeviceKind::Input, 0.0, false);
+        assert_eq!(slider_icon(&dev), "audio-input-microphone-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_input_low_volume() {
+        let dev = make_device_with_volume(AudioDeviceKind::Input, 0.2, false);
+        assert_eq!(slider_icon(&dev), "microphone-sensitivity-low-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_input_medium_volume() {
+        let dev = make_device_with_volume(AudioDeviceKind::Input, 0.5, false);
+        assert_eq!(slider_icon(&dev), "microphone-sensitivity-medium-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_input_high_volume() {
+        let dev = make_device_with_volume(AudioDeviceKind::Input, 0.9, false);
+        assert_eq!(slider_icon(&dev), "microphone-sensitivity-high-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_output_boundary_low_medium() {
+        // At the boundary 0.34, should be medium
+        let dev = make_device_with_volume(AudioDeviceKind::Output, 0.34, false);
+        assert_eq!(slider_icon(&dev), "audio-volume-medium-symbolic");
+    }
+
+    #[test]
+    fn slider_icon_output_boundary_medium_high() {
+        // At the boundary 0.67, should be high
+        let dev = make_device_with_volume(AudioDeviceKind::Output, 0.67, false);
+        assert_eq!(slider_icon(&dev), "audio-volume-high-symbolic");
+    }
+
+    // --- GTK component lifecycle tests ---
+
+    use waft_protocol::message::AppNotification;
+
+    fn make_audio_entity(
+        kind: AudioDeviceKind,
+        volume: f64,
+        default: bool,
+    ) -> entity::audio::AudioDevice {
+        AudioDevice {
+            name: "Test Device".to_string(),
+            device_type: "card".to_string(),
+            connection_type: Some("analog".to_string()),
+            volume,
+            muted: false,
+            default,
+            kind,
+            virtual_device: false,
+            sink_name: None,
+        }
+    }
+
+    fn make_audio_updated(urn: Urn, data: serde_json::Value) -> AppNotification {
+        AppNotification::EntityUpdated {
+            urn,
+            entity_type: entity::audio::ENTITY_TYPE.to_string(),
+            data,
+        }
+    }
+
+    fn make_audio_removed(urn: Urn) -> AppNotification {
+        AppNotification::EntityRemoved {
+            urn,
+            entity_type: entity::audio::ENTITY_TYPE.to_string(),
+        }
+    }
+
+    fn noop_action_callback() -> EntityActionCallback {
+        Rc::new(|_urn, _action, _params| {})
+    }
+
+    fn child_count(container: &gtk::Widget) -> u32 {
+        let bx: &gtk::Box = container.downcast_ref().unwrap();
+        let mut count = 0u32;
+        let mut child = bx.first_child();
+        while let Some(c) = child {
+            count += 1;
+            child = c.next_sibling();
+        }
+        count
+    }
+
+    /// Run all audio slider GTK tests. Called from the single GTK test entry point.
+    pub(crate) fn run_all_gtk() {
+        test_container_starts_invisible();
+        test_add_default_output_makes_visible();
+        test_add_output_and_input();
+        test_update_default_device_preserves_child_count();
+        test_remove_all_makes_invisible();
+        test_non_default_devices_alone_do_not_create_slider();
+    }
+
+    fn test_container_starts_invisible() {
+        let store = Rc::new(EntityStore::new());
+        let menu_store = Rc::new(waft_core::menu_state::create_menu_store());
+        let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
+        assert!(!comp.widget().is_visible(), "container should start invisible");
+        assert_eq!(child_count(comp.widget()), 0);
+    }
+
+    fn test_add_default_output_makes_visible() {
+        let store = Rc::new(EntityStore::new());
+        let menu_store = Rc::new(waft_core::menu_state::create_menu_store());
+        let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
+
+        let urn = Urn::new("audio", "audio-device", "speakers");
+        let data = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        store.handle_notification(make_audio_updated(urn, data));
+
+        assert!(comp.widget().is_visible(), "container should be visible with default output");
+        assert_eq!(child_count(comp.widget()), 1);
+    }
+
+    fn test_add_output_and_input() {
+        let store = Rc::new(EntityStore::new());
+        let menu_store = Rc::new(waft_core::menu_state::create_menu_store());
+        let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
+
+        // Add default output
+        let urn_out = Urn::new("audio", "audio-device", "speakers");
+        let data_out = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        store.handle_notification(make_audio_updated(urn_out, data_out));
+
+        // Add default input
+        let urn_in = Urn::new("audio", "audio-device", "mic");
+        let data_in = serde_json::to_value(make_audio_entity(AudioDeviceKind::Input, 0.50, true)).unwrap();
+        store.handle_notification(make_audio_updated(urn_in, data_in));
+
+        assert_eq!(child_count(comp.widget()), 2, "should have output + input sliders");
+    }
+
+    fn test_update_default_device_preserves_child_count() {
+        let store = Rc::new(EntityStore::new());
+        let menu_store = Rc::new(waft_core::menu_state::create_menu_store());
+        let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
+
+        let urn = Urn::new("audio", "audio-device", "speakers");
+        let data1 = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        store.handle_notification(make_audio_updated(urn.clone(), data1));
+        assert_eq!(child_count(comp.widget()), 1);
+
+        // Update volume
+        let data2 = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.30, true)).unwrap();
+        store.handle_notification(make_audio_updated(urn, data2));
+        assert_eq!(child_count(comp.widget()), 1, "update should not create new widget");
+    }
+
+    fn test_remove_all_makes_invisible() {
+        let store = Rc::new(EntityStore::new());
+        let menu_store = Rc::new(waft_core::menu_state::create_menu_store());
+        let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
+
+        let urn = Urn::new("audio", "audio-device", "speakers");
+        let data = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        store.handle_notification(make_audio_updated(urn.clone(), data));
+        assert!(comp.widget().is_visible());
+
+        store.handle_notification(make_audio_removed(urn));
+        assert!(!comp.widget().is_visible(), "container should be invisible when empty");
+        assert_eq!(child_count(comp.widget()), 0);
+    }
+
+    fn test_non_default_devices_alone_do_not_create_slider() {
+        let store = Rc::new(EntityStore::new());
+        let menu_store = Rc::new(waft_core::menu_state::create_menu_store());
+        let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
+
+        // Add a non-default output device
+        let urn = Urn::new("audio", "audio-device", "headphones");
+        let data = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.60, false)).unwrap();
+        store.handle_notification(make_audio_updated(urn, data));
+
+        // Audio sliders only render for default devices
+        assert_eq!(child_count(comp.widget()), 0, "non-default device should not create slider");
+        assert!(!comp.widget().is_visible());
     }
 }
 
