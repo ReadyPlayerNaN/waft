@@ -58,3 +58,97 @@ impl ThrottledSender {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn first_call_always_fires() {
+        let sender = ThrottledSender::new(Duration::from_secs(10));
+        let called = Rc::new(Cell::new(false));
+        let called_ref = called.clone();
+        sender.set_callback(move |_| called_ref.set(true));
+
+        let throttle = sender.throttle_fn();
+        throttle(0.5);
+        assert!(called.get(), "first call should always fire");
+    }
+
+    #[test]
+    fn call_within_interval_is_dropped() {
+        let sender = ThrottledSender::new(Duration::from_secs(10));
+        let count = Rc::new(Cell::new(0u32));
+        let count_ref = count.clone();
+        sender.set_callback(move |_| count_ref.set(count_ref.get() + 1));
+
+        let throttle = sender.throttle_fn();
+        throttle(0.1);
+        throttle(0.2);
+        throttle(0.3);
+        assert_eq!(count.get(), 1, "only the first call should fire within interval");
+    }
+
+    #[test]
+    fn call_after_interval_fires() {
+        let sender = ThrottledSender::new(Duration::from_millis(10));
+        let values = Rc::new(RefCell::new(Vec::new()));
+        let values_ref = values.clone();
+        sender.set_callback(move |v| values_ref.borrow_mut().push(v));
+
+        let throttle = sender.throttle_fn();
+        throttle(0.1);
+        std::thread::sleep(Duration::from_millis(20));
+        throttle(0.9);
+
+        let vals = values.borrow();
+        assert_eq!(vals.len(), 2);
+        assert!((vals[0] - 0.1).abs() < f64::EPSILON);
+        assert!((vals[1] - 0.9).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn no_callback_does_not_panic() {
+        let sender = ThrottledSender::new(Duration::from_millis(10));
+        let throttle = sender.throttle_fn();
+        throttle(0.5); // should not panic
+    }
+
+    #[test]
+    fn set_callback_replaces_previous() {
+        let sender = ThrottledSender::new(Duration::from_millis(10));
+        let first_called = Rc::new(Cell::new(false));
+        let second_called = Rc::new(Cell::new(false));
+
+        let first_ref = first_called.clone();
+        sender.set_callback(move |_| first_ref.set(true));
+
+        let throttle = sender.throttle_fn();
+        throttle(0.1);
+        assert!(first_called.get());
+
+        // Replace callback
+        let second_ref = second_called.clone();
+        sender.set_callback(move |_| second_ref.set(true));
+
+        std::thread::sleep(Duration::from_millis(20));
+        throttle(0.2);
+        assert!(second_called.get(), "new callback should fire after replacement");
+    }
+
+    #[test]
+    fn throttle_fn_captures_shared_state() {
+        let sender = ThrottledSender::new(Duration::from_secs(10));
+        let count = Rc::new(Cell::new(0u32));
+        let count_ref = count.clone();
+        sender.set_callback(move |_| count_ref.set(count_ref.get() + 1));
+
+        let fn1 = sender.throttle_fn();
+        let fn2 = sender.throttle_fn();
+
+        fn1(0.1); // fires (first call)
+        fn2(0.2); // dropped (shares same last_sent state)
+        assert_eq!(count.get(), 1, "two throttle_fn closures share state");
+    }
+}

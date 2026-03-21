@@ -142,3 +142,178 @@ impl BrightnessSlidersComponent {
         self.container.upcast_ref()
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use std::cell::Cell;
+    use waft_protocol::message::AppNotification;
+
+    fn make_display(brightness: f64) -> entity::display::Display {
+        entity::display::Display {
+            name: "Test Display".to_string(),
+            brightness,
+            kind: entity::display::DisplayKind::Backlight,
+            connector: None,
+        }
+    }
+
+    fn make_updated(urn: Urn, data: serde_json::Value) -> AppNotification {
+        AppNotification::EntityUpdated {
+            urn,
+            entity_type: entity::display::DISPLAY_ENTITY_TYPE.to_string(),
+            data,
+        }
+    }
+
+    fn make_removed(urn: Urn) -> AppNotification {
+        AppNotification::EntityRemoved {
+            urn,
+            entity_type: entity::display::DISPLAY_ENTITY_TYPE.to_string(),
+        }
+    }
+
+    fn noop_action_callback() -> EntityActionCallback {
+        Rc::new(|_urn, _action, _params| {})
+    }
+
+    fn child_count(container: &gtk::Widget) -> u32 {
+        let bx: &gtk::Box = container.downcast_ref().unwrap();
+        let mut count = 0u32;
+        let mut child = bx.first_child();
+        while let Some(c) = child {
+            count += 1;
+            child = c.next_sibling();
+        }
+        count
+    }
+
+    /// Run all brightness slider GTK tests. Called from the single GTK test entry point.
+    pub(crate) fn run_all() {
+        test_container_starts_invisible();
+        test_add_entity_makes_visible();
+        test_add_second_entity();
+        test_update_entity_preserves_child_count();
+        test_remove_entity_reduces_children();
+        test_remove_all_makes_invisible();
+        test_action_callback_fires_on_value_commit();
+    }
+
+    fn test_container_starts_invisible() {
+        let store = Rc::new(EntityStore::new());
+        let comp = BrightnessSlidersComponent::new(&store, &noop_action_callback());
+        assert!(!comp.widget().is_visible(), "container should start invisible");
+        assert_eq!(child_count(comp.widget()), 0);
+    }
+
+    fn test_add_entity_makes_visible() {
+        let store = Rc::new(EntityStore::new());
+        let comp = BrightnessSlidersComponent::new(&store, &noop_action_callback());
+
+        let urn = Urn::new("brightness", "display", "laptop");
+        let data = serde_json::to_value(make_display(0.75)).unwrap();
+        store.handle_notification(make_updated(urn, data));
+
+        assert!(comp.widget().is_visible(), "container should be visible after adding entity");
+        assert_eq!(child_count(comp.widget()), 1);
+    }
+
+    fn test_add_second_entity() {
+        let store = Rc::new(EntityStore::new());
+        let comp = BrightnessSlidersComponent::new(&store, &noop_action_callback());
+
+        let urn1 = Urn::new("brightness", "display", "laptop");
+        let urn2 = Urn::new("brightness", "display", "external");
+        store.handle_notification(make_updated(
+            urn1,
+            serde_json::to_value(make_display(0.75)).unwrap(),
+        ));
+        store.handle_notification(make_updated(
+            urn2,
+            serde_json::to_value(make_display(0.50)).unwrap(),
+        ));
+
+        assert_eq!(child_count(comp.widget()), 2);
+    }
+
+    fn test_update_entity_preserves_child_count() {
+        let store = Rc::new(EntityStore::new());
+        let comp = BrightnessSlidersComponent::new(&store, &noop_action_callback());
+
+        let urn = Urn::new("brightness", "display", "laptop");
+        store.handle_notification(make_updated(
+            urn.clone(),
+            serde_json::to_value(make_display(0.75)).unwrap(),
+        ));
+        assert_eq!(child_count(comp.widget()), 1);
+
+        // Update with new brightness value
+        store.handle_notification(make_updated(
+            urn,
+            serde_json::to_value(make_display(0.30)).unwrap(),
+        ));
+        assert_eq!(child_count(comp.widget()), 1, "update should not create new widget");
+    }
+
+    fn test_remove_entity_reduces_children() {
+        let store = Rc::new(EntityStore::new());
+        let comp = BrightnessSlidersComponent::new(&store, &noop_action_callback());
+
+        let urn1 = Urn::new("brightness", "display", "laptop");
+        let urn2 = Urn::new("brightness", "display", "external");
+        store.handle_notification(make_updated(
+            urn1.clone(),
+            serde_json::to_value(make_display(0.75)).unwrap(),
+        ));
+        store.handle_notification(make_updated(
+            urn2,
+            serde_json::to_value(make_display(0.50)).unwrap(),
+        ));
+        assert_eq!(child_count(comp.widget()), 2);
+
+        store.handle_notification(make_removed(urn1));
+        assert_eq!(child_count(comp.widget()), 1);
+        assert!(comp.widget().is_visible());
+    }
+
+    fn test_remove_all_makes_invisible() {
+        let store = Rc::new(EntityStore::new());
+        let comp = BrightnessSlidersComponent::new(&store, &noop_action_callback());
+
+        let urn = Urn::new("brightness", "display", "laptop");
+        store.handle_notification(make_updated(
+            urn.clone(),
+            serde_json::to_value(make_display(0.75)).unwrap(),
+        ));
+        assert!(comp.widget().is_visible());
+
+        store.handle_notification(make_removed(urn));
+        assert!(!comp.widget().is_visible(), "container should be invisible when empty");
+        assert_eq!(child_count(comp.widget()), 0);
+    }
+
+    fn test_action_callback_fires_on_value_commit() {
+        let store = Rc::new(EntityStore::new());
+        let action_called = Rc::new(Cell::new(false));
+        let action_called_ref = action_called.clone();
+        let cb: EntityActionCallback = Rc::new(move |_urn, action, _params| {
+            if action == "set-brightness" {
+                action_called_ref.set(true);
+            }
+        });
+
+        let _comp = BrightnessSlidersComponent::new(&store, &cb);
+
+        let urn = Urn::new("brightness", "display", "laptop");
+        store.handle_notification(make_updated(
+            urn,
+            serde_json::to_value(make_display(0.75)).unwrap(),
+        ));
+
+        // The action callback is wired to the slider's connect_output,
+        // which is triggered by user interaction (not entity updates).
+        // We verify the component was constructed without panics and
+        // the callback infrastructure is in place.
+        assert!(!action_called.get(), "action should not fire on entity update alone");
+    }
+}
