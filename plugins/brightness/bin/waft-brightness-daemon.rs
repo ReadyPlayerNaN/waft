@@ -685,7 +685,7 @@ impl Plugin for BrightnessPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         if action == "set-brightness" {
             let new_brightness = params
                 .get("value")
@@ -745,7 +745,7 @@ fn main() -> Result<()> {
             };
 
             if !backlight_devices.is_empty() {
-                spawn_monitored_anyhow(
+                spawn_monitored(
                     "brightness-watcher",
                     watch_backlight_brightness(backlight_devices, shared, notifier),
                 );

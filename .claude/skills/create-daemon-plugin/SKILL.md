@@ -117,7 +117,7 @@ impl Plugin for YourPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         match action.as_str() {
             "toggle" => {
                 let mut state = match self.state.lock() {

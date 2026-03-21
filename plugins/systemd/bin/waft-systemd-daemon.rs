@@ -1092,7 +1092,7 @@ impl Plugin for SystemdPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let entity_type = urn.entity_type();
 
         if entity_type == entity::session::SESSION_ENTITY_TYPE {
@@ -2339,13 +2339,13 @@ fn main() -> Result<()> {
         let session_conn = plugin.session_conn.clone();
 
         // Spawn signal monitoring task for services
-        spawn_monitored_anyhow(
+        spawn_monitored(
             "systemd",
             monitor_service_signals(session_conn.clone(), services, notifier.clone()),
         );
 
         // Spawn timer file monitoring task
-        spawn_monitored_anyhow(
+        spawn_monitored(
             "systemd-timers",
             monitor_timer_files(session_conn, timers, notifier),
         );

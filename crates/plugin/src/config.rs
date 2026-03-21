@@ -2,46 +2,9 @@
 //!
 //! Loads plugin-specific configuration from `~/.config/waft/config.toml`.
 
+use anyhow::{Context, bail};
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
-
-/// Error type for configuration loading.
-#[derive(Debug)]
-pub enum ConfigError {
-    /// Failed to determine config directory.
-    NoConfigDir,
-    /// I/O error reading config file.
-    Io(std::io::Error),
-    /// TOML parsing error.
-    Toml(toml::de::Error),
-    /// Config value deserialization error.
-    Deserialize(String),
-}
-
-impl std::fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConfigError::NoConfigDir => write!(f, "no config directory"),
-            ConfigError::Io(e) => write!(f, "I/O error: {e}"),
-            ConfigError::Toml(e) => write!(f, "TOML parse error: {e}"),
-            ConfigError::Deserialize(msg) => write!(f, "deserialization error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for ConfigError {}
-
-impl From<std::io::Error> for ConfigError {
-    fn from(e: std::io::Error) -> Self {
-        ConfigError::Io(e)
-    }
-}
-
-impl From<toml::de::Error> for ConfigError {
-    fn from(e: toml::de::Error) -> Self {
-        ConfigError::Toml(e)
-    }
-}
 
 /// Load plugin-specific configuration from waft config file.
 ///
@@ -57,7 +20,7 @@ impl From<toml::de::Error> for ConfigError {
 /// id = "clock"
 /// on_click = "gnome-calendar"
 /// ```
-pub fn load_plugin_config<T>(plugin_id: &str) -> Result<T, ConfigError>
+pub fn load_plugin_config<T>(plugin_id: &str) -> anyhow::Result<T>
 where
     T: Default + DeserializeOwned,
 {
@@ -68,8 +31,9 @@ where
         return Ok(T::default());
     }
 
-    let content = std::fs::read_to_string(&config_path)?;
-    let root: toml::Table = toml::from_str(&content)?;
+    let content = std::fs::read_to_string(&config_path)
+        .with_context(|| format!("failed to read config file {}", config_path.display()))?;
+    let root: toml::Table = toml::from_str(&content).context("failed to parse config TOML")?;
 
     if let Some(plugins) = root.get("plugins").and_then(|v| v.as_array()) {
         for plugin in plugins {
@@ -80,7 +44,9 @@ where
                 log::debug!("Found config for plugin '{plugin_id}'");
                 return toml::Value::Table(table.clone())
                     .try_into()
-                    .map_err(|e| ConfigError::Deserialize(format!("{e}")));
+                    .with_context(|| {
+                        format!("failed to deserialize config for plugin '{plugin_id}'")
+                    });
             }
         }
     }
@@ -90,8 +56,8 @@ where
 }
 
 /// Get the path to the waft config file.
-fn get_waft_config_path() -> Result<PathBuf, ConfigError> {
-    let config_dir = dirs::config_dir().ok_or(ConfigError::NoConfigDir)?;
+fn get_waft_config_path() -> anyhow::Result<PathBuf> {
+    let config_dir = dirs::config_dir().context("no config directory")?;
     Ok(config_dir.join("waft/config.toml"))
 }
 

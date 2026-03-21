@@ -229,7 +229,7 @@ impl Plugin for BatteryPlugin {
         _urn: Urn,
         _action: String,
         _params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         // Battery is display-only, no actions to handle
         Ok(serde_json::Value::Null)
     }
@@ -299,7 +299,7 @@ fn main() -> Result<()> {
             let monitor_conn = plugin.conn.clone();
 
             // Listen for D-Bus PropertiesChanged signals (instant, no polling)
-            spawn_monitored_anyhow("battery", monitor_battery_signals(monitor_conn, shared_info, notifier));
+            spawn_monitored("battery", monitor_battery_signals(monitor_conn, shared_info, notifier));
 
             Ok(plugin)
         })

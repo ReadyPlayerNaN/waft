@@ -40,22 +40,21 @@ impl SoundGallery {
         &mut self,
         filename: &str,
         data: &[u8],
-    ) -> Result<NotificationSound, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<NotificationSound> {
         // Validate size
         if data.len() as u64 > MAX_FILE_SIZE {
-            return Err(format!(
+            anyhow::bail!(
                 "file exceeds maximum size of {} bytes ({} bytes provided)",
                 MAX_FILE_SIZE,
                 data.len()
-            )
-            .into());
+            );
         }
 
         // Sanitize filename: only keep the base name (no path traversal)
         let base_filename = std::path::Path::new(filename)
             .file_name()
             .and_then(|n| n.to_str())
-            .ok_or("invalid filename")?;
+            .ok_or_else(|| anyhow::anyhow!("invalid filename"))?;
 
         // Validate extension
         let ext = std::path::Path::new(base_filename)
@@ -65,12 +64,11 @@ impl SoundGallery {
         match ext {
             Some(ref e) if SUPPORTED_EXTENSIONS.contains(&e.as_str()) => {}
             _ => {
-                return Err(format!(
+                anyhow::bail!(
                     "unsupported file extension: {}. Supported: {}",
                     ext.as_deref().unwrap_or("(none)"),
                     SUPPORTED_EXTENSIONS.join(", ")
-                )
-                .into());
+                );
             }
         }
         let ext = ext.unwrap();
@@ -87,7 +85,7 @@ impl SoundGallery {
 
         // Ensure directory exists
         if let Err(e) = std::fs::create_dir_all(&self.sounds_dir) {
-            return Err(format!("failed to create sounds directory: {e}").into());
+            anyhow::bail!("failed to create sounds directory: {e}");
         }
 
         // Write file
@@ -110,7 +108,7 @@ impl SoundGallery {
     pub fn remove_sound(
         &mut self,
         filename: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         let file_path = self.sounds_dir.join(filename);
         if file_path.exists() {
             std::fs::remove_file(&file_path)?;

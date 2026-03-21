@@ -14,7 +14,7 @@
 
 use std::sync::LazyLock;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::StateLocker;
@@ -51,7 +51,7 @@ impl NiriPlugin {
         &self,
         action: &str,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         // Check if config is in an editable mode
         let (current_mode, file_path) = {
             let state = self.lock_state();
@@ -71,11 +71,10 @@ impl NiriPlugin {
                 KeyboardConfigMode::Malformed => "Fix config file errors first.",
                 _ => "",
             };
-            return Err(format!(
+            anyhow::bail!(
                 "Cannot modify layouts in {:?} mode. {}",
                 current_mode, help
-            )
-            .into());
+            );
         }
 
         match action {
@@ -84,7 +83,7 @@ impl NiriPlugin {
                     params
                         .get("layout")
                         .cloned()
-                        .ok_or("Missing 'layout' parameter")?,
+                        .context("Missing 'layout' parameter")?,
                 )?;
 
                 let name: String = params
@@ -129,7 +128,7 @@ impl NiriPlugin {
                     params
                         .get("layout")
                         .cloned()
-                        .ok_or("Missing 'layout' parameter")?,
+                        .context("Missing 'layout' parameter")?,
                 )?;
 
                 let (mut new_layouts, mut new_names) = {
@@ -168,7 +167,7 @@ impl NiriPlugin {
                     params
                         .get("layouts")
                         .cloned()
-                        .ok_or("Missing 'layouts' parameter")?,
+                        .context("Missing 'layouts' parameter")?,
                 )?;
 
                 // Build code->name and code->variant maps from current state, then reorder
@@ -258,14 +257,14 @@ impl NiriPlugin {
                     params
                         .get("layout")
                         .cloned()
-                        .ok_or("Missing 'layout' parameter")?,
+                        .context("Missing 'layout' parameter")?,
                 )?;
 
                 let variant: String = serde_json::from_value(
                     params
                         .get("variant")
                         .cloned()
-                        .ok_or("Missing 'variant' parameter")?,
+                        .context("Missing 'variant' parameter")?,
                 )?;
 
                 let layouts = {
@@ -276,13 +275,13 @@ impl NiriPlugin {
                 let idx = layouts
                     .iter()
                     .position(|l| l == &layout)
-                    .ok_or_else(|| format!("Layout '{}' not found", layout))?;
+                    .with_context(|| format!("Layout '{}' not found", layout))?;
 
                 match &current_mode {
                     KeyboardConfigMode::ExternalFile => {
                         let path = file_path
                             .as_deref()
-                            .ok_or("ExternalFile mode but no file path in config")?;
+                            .context("ExternalFile mode but no file path in config")?;
                         let variant_opt = if variant.is_empty() {
                             None
                         } else {
@@ -372,23 +371,21 @@ impl NiriPlugin {
             }
             "rename" => {
                 if !matches!(current_mode, KeyboardConfigMode::ExternalFile) {
-                    return Err(
-                        "Rename is only supported in external-file mode".into()
-                    );
+                    anyhow::bail!("Rename is only supported in external-file mode");
                 }
 
                 let layout: String = serde_json::from_value(
                     params
                         .get("layout")
                         .cloned()
-                        .ok_or("Missing 'layout' parameter")?,
+                        .ok_or_else(|| anyhow::anyhow!("Missing 'layout' parameter"))?,
                 )?;
 
                 let name: String = serde_json::from_value(
                     params
                         .get("name")
                         .cloned()
-                        .ok_or("Missing 'name' parameter")?,
+                        .ok_or_else(|| anyhow::anyhow!("Missing 'name' parameter"))?,
                 )?;
 
                 let (layouts, mut names) = {
@@ -422,7 +419,7 @@ impl NiriPlugin {
 
                     self.reload_niri_config().await;
                 } else {
-                    return Err(format!("Layout '{}' not found", layout).into());
+                    anyhow::bail!("Layout '{}' not found", layout);
                 }
             }
             _ => {
@@ -440,10 +437,10 @@ impl NiriPlugin {
         file_path: Option<&str>,
         layouts: &[String],
         names: &[String],
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         match mode {
             KeyboardConfigMode::ExternalFile => {
-                let path = file_path.ok_or("ExternalFile mode but no file path in config")?;
+                let path = file_path.ok_or_else(|| anyhow::anyhow!("ExternalFile mode but no file path in config"))?;
                 config::write_xkb_layouts(path, layouts, names)?;
             }
             _ => {
@@ -513,7 +510,7 @@ impl Plugin for NiriPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let entity_type = urn.entity_type();
 
         if entity_type == KEYBOARD_ENTITY_TYPE {
@@ -527,7 +524,7 @@ impl Plugin for NiriPlugin {
                         params
                             .get("index")
                             .cloned()
-                            .ok_or("Missing 'index' parameter")?,
+                            .ok_or_else(|| anyhow::anyhow!("Missing 'index' parameter"))?,
                     )?;
                     debug!("[niri] Switching to keyboard layout index {}", index);
                     keyboard::switch_to(index).await?;

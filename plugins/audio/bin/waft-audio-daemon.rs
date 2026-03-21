@@ -17,7 +17,7 @@
 
 use std::sync::LazyLock;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::*;
@@ -328,7 +328,7 @@ impl Plugin for AudioPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let entity_type = urn.entity_type();
 
         if entity_type == entity::audio::CARD_ENTITY_TYPE {
@@ -426,7 +426,7 @@ impl Plugin for AudioPlugin {
                 let sink_name = params
                     .get("sink_name")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing 'sink_name' parameter")?;
+                    .context("missing 'sink_name' parameter")?;
                 self.handle_remove_virtual_device(sink_name).await?;
                 return Ok(serde_json::Value::Null);
             }
@@ -434,7 +434,7 @@ impl Plugin for AudioPlugin {
                 let source_name = params
                     .get("source_name")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing 'source_name' parameter")?;
+                    .context("missing 'source_name' parameter")?;
                 self.handle_remove_virtual_device(source_name).await?;
                 return Ok(serde_json::Value::Null);
             }
@@ -453,11 +453,11 @@ impl AudioPlugin {
         &self,
         module_type: &str,
         params: &serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         let label = params
             .get("label")
             .and_then(|v| v.as_str())
-            .ok_or("missing 'label' parameter")?;
+            .context("missing 'label' parameter")?;
 
         let base_name = virtual_device_config::sanitize_sink_name(label);
 
@@ -472,7 +472,7 @@ impl AudioPlugin {
         let module_index = match module_type {
             "null-sink" => pactl::load_null_sink(&sink_name, label).await?,
             "null-source" => pactl::load_null_source(&sink_name, label).await?,
-            other => return Err(format!("unsupported module_type: {other}").into()),
+            other => anyhow::bail!("unsupported module_type: {other}"),
         };
 
         let config = VirtualDeviceConfig {
@@ -506,7 +506,7 @@ impl AudioPlugin {
     async fn handle_remove_virtual_device(
         &self,
         name: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         let module_index = {
             let state = lock_or_recover(&self.state);
             state
@@ -560,14 +560,14 @@ impl AudioPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         match action.as_str() {
             "set-profile" => {
                 let card_name = _urn.id().to_string();
                 let profile = params
                     .get("profile")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing 'profile' parameter")?;
+                    .context("missing 'profile' parameter")?;
                 if let Err(e) = pactl::set_card_profile(&card_name, profile).await {
                     error!("[audio] Failed to set card profile: {}", e);
                     return Err(e.into());
@@ -642,11 +642,11 @@ impl AudioPlugin {
                 let sink = params
                     .get("sink")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing 'sink' parameter")?;
+                    .context("missing 'sink' parameter")?;
                 let port = params
                     .get("port")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing 'port' parameter")?;
+                    .context("missing 'port' parameter")?;
                 if let Err(e) = pactl::set_sink_port(sink, port).await {
                     error!("[audio] Failed to set sink port: {}", e);
                     return Err(e.into());
@@ -656,11 +656,11 @@ impl AudioPlugin {
                 let source = params
                     .get("source")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing 'source' parameter")?;
+                    .context("missing 'source' parameter")?;
                 let port = params
                     .get("port")
                     .and_then(|v| v.as_str())
-                    .ok_or("missing 'port' parameter")?;
+                    .context("missing 'port' parameter")?;
                 if let Err(e) = pactl::set_source_port(source, port).await {
                     error!("[audio] Failed to set source port: {}", e);
                     return Err(e.into());
@@ -888,7 +888,7 @@ fn main() -> Result<()> {
                 match pactl::subscribe_events() {
                     Ok(rx) => {
                         debug!("[audio] Started event subscription");
-                        spawn_monitored_anyhow("audio-monitor", async move {
+                        spawn_monitored("audio-monitor", async move {
                             monitor_events(rx, shared_state, notifier).await;
                             Ok(())
                         });

@@ -72,7 +72,7 @@ pub trait Plugin: Send + Sync {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
+    ) -> anyhow::Result<serde_json::Value>;
 
     /// Whether the plugin can stop gracefully.
     ///

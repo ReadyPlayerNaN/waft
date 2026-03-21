@@ -71,7 +71,7 @@ impl Plugin for XdgAppsPlugin {
         urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let stem = urn.id().to_string();
         match action.as_str() {
             "open" => {
@@ -117,7 +117,7 @@ impl Plugin for XdgAppsPlugin {
                     }
                     Err(e) => {
                         log::error!("[xdg-apps] failed to spawn '{stem}': {e}");
-                        return Err(Box::new(e));
+                        return Err(e.into());
                     }
                 }
             }
@@ -196,7 +196,7 @@ fn main() -> Result<()> {
             let apps_ref = plugin.apps.clone();
             let dirs = plugin.dirs.clone();
 
-            spawn_monitored_anyhow("xdg-apps/file-watcher", async move {
+            spawn_monitored("xdg-apps/file-watcher", async move {
                 watch_dirs(dirs, apps_ref, notifier).await
             });
 

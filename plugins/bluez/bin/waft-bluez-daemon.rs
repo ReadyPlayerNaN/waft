@@ -184,7 +184,7 @@ impl Plugin for BluezPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let entity_type = urn.entity_type();
 
         if entity_type == BluetoothAdapter::ENTITY_TYPE {
@@ -521,7 +521,7 @@ fn main() -> Result<()> {
         let monitor_conn = plugin.conn.clone();
 
         // Monitor BlueZ D-Bus signals
-        spawn_monitored_anyhow("bluetooth/signal-monitor", async move {
+        spawn_monitored("bluetooth/signal-monitor", async move {
             monitor_bluez_signals(monitor_conn, shared_state, notifier).await
         });
 

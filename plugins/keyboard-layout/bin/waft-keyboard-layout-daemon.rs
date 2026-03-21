@@ -89,7 +89,7 @@ impl Plugin for KeyboardLayoutPlugin {
         _urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         match action.as_str() {
             "cycle" => {
                 log::debug!("Cycling to next keyboard layout");

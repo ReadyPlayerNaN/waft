@@ -184,7 +184,7 @@ impl Plugin for EdsPlugin {
         urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         log::debug!("Received action '{}' for URN: {}", action, urn);
 
         if action == "refresh" {
@@ -3300,7 +3300,7 @@ fn main() -> Result<()> {
         // Spawn D-Bus monitoring task
         let monitor_state = shared_state.clone();
         let monitor_notifier = notifier.clone();
-        spawn_monitored_anyhow("eds/calendar-monitor", async move {
+        spawn_monitored("eds/calendar-monitor", async move {
             monitor_eds_calendars(conn, monitor_state, monitor_notifier).await
         });
 

@@ -33,7 +33,7 @@ pub trait Plugin: Send + Sync {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    ) -> anyhow::Result<serde_json::Value>;
 
     /// Whether the plugin can stop gracefully (default: true).
     fn can_stop(&self) -> bool { true }
@@ -514,9 +514,9 @@ impl Plugin for ClockPlugin {
         _urn: Urn,
         action: String,
         _params: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         if action == "click" { /* handle click */ }
-        Ok(())
+        Ok(serde_json::Value::Null)
     }
 }
 

@@ -566,7 +566,7 @@ impl Plugin for NetworkManagerPlugin {
         urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let entity_type = urn.entity_type();
 
         match entity_type {
@@ -614,7 +614,7 @@ impl NetworkManagerPlugin {
         adapter_name: &str,
         action: &str,
         params: &serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         // Determine adapter type
         let (is_wifi, is_tethering) = {
             let state = self.lock_state();
@@ -693,7 +693,7 @@ impl NetworkManagerPlugin {
         ssid: &str,
         action: &str,
         params: &serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         match action {
             "connect" => {
                 debug!("[nm] Connect to WiFi network: {}", ssid);
@@ -775,7 +775,7 @@ impl NetworkManagerPlugin {
                 let connections = get_connections_for_ssid(&self.conn, ssid).await?;
                 let conn_path = connections
                     .first()
-                    .ok_or_else(|| format!("No saved connection for SSID: {ssid}"))?;
+                    .ok_or_else(|| anyhow::anyhow!("No saved connection for SSID: {ssid}"))?;
 
                 update_connection_settings(&self.conn, conn_path, params).await?;
                 info!("[nm] Updated settings for WiFi network: {ssid}");
@@ -817,7 +817,7 @@ impl NetworkManagerPlugin {
         urn: &Urn,
         uuid: &str,
         action: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         match action {
             "activate" => {
                 info!("[nm] Activate ethernet connection: {}", uuid);
@@ -903,7 +903,7 @@ impl NetworkManagerPlugin {
         &self,
         vpn_name: &str,
         action: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         match action {
             "connect" => {
                 let conn_path = {
@@ -941,7 +941,7 @@ impl NetworkManagerPlugin {
         Ok(())
     }
 
-    async fn handle_toggle_wifi_on(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_toggle_wifi_on(&self) -> anyhow::Result<()> {
         {
             let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
@@ -974,7 +974,7 @@ impl NetworkManagerPlugin {
         Ok(())
     }
 
-    async fn handle_toggle_wifi_off(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_toggle_wifi_off(&self) -> anyhow::Result<()> {
         {
             let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
@@ -1008,7 +1008,7 @@ impl NetworkManagerPlugin {
         &self,
         ssid: &str,
         params: &serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         info!("[nm] Connecting to WiFi: {}", ssid);
 
         let connections = get_connections_for_ssid(&self.conn, ssid).await?;
@@ -1053,18 +1053,18 @@ impl NetworkManagerPlugin {
             };
 
             let Some(device_path) = device_path else {
-                return Err("No WiFi adapter available".into());
+                anyhow::bail!("No WiFi adapter available");
             };
             let Some(ap) = ap_info else {
-                return Err(format!("Access point not found for SSID: {ssid}").into());
+                anyhow::bail!("Access point not found for SSID: {ssid}");
             };
 
             // If secure and no password provided, ask for password
             if ap.security_type != SecurityType::Open && password.is_none() {
                 if ap.security_type == SecurityType::Enterprise {
-                    return Err("enterprise-not-supported".into());
+                    anyhow::bail!("enterprise-not-supported");
                 }
-                return Err("password-required".into());
+                anyhow::bail!("password-required");
             }
 
             // Set connecting state
@@ -1108,7 +1108,7 @@ impl NetworkManagerPlugin {
     async fn handle_disconnect_wifi(
         &self,
         device_path: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         info!("[nm] Disconnecting WiFi: {}", device_path);
 
         if let Err(e) = disconnect_device(&self.conn, device_path).await {
@@ -1131,7 +1131,7 @@ impl NetworkManagerPlugin {
     async fn handle_toggle_wired(
         &self,
         device_path: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         let is_connected = {
             let state = self.lock_state();
             state
@@ -1162,7 +1162,7 @@ impl NetworkManagerPlugin {
     async fn handle_connect_vpn(
         &self,
         conn_path: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         let conn_type = {
             let state = self.lock_state();
             state
@@ -1224,7 +1224,7 @@ impl NetworkManagerPlugin {
     async fn handle_disconnect_vpn(
         &self,
         conn_path: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         info!("[nm] Disconnecting VPN: {}", conn_path);
 
         let active_path = {
@@ -1262,7 +1262,7 @@ impl NetworkManagerPlugin {
             }
         } else {
             warn!("[nm] No active connection path for VPN: {} — connection was never activated or already disconnected", conn_path);
-            return Err(format!("VPN has no active connection to disconnect: {}", conn_path).into());
+            anyhow::bail!("VPN has no active connection to disconnect: {}", conn_path);
         }
 
         Ok(())
@@ -1272,7 +1272,7 @@ impl NetworkManagerPlugin {
         &self,
         uuid: &str,
         action: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         match action {
             "connect" => {
                 let conn_path = {
@@ -1312,7 +1312,7 @@ impl NetworkManagerPlugin {
     async fn handle_tethering_smart_toggle(
         &self,
         connect: bool,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         if connect {
             // Connect the first available tethering profile
             let conn_path = {
@@ -1354,7 +1354,7 @@ impl NetworkManagerPlugin {
     async fn handle_connect_tethering(
         &self,
         conn_path: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         info!("[nm] Connecting tethering: {}", conn_path);
 
         match activate_tethering(&self.conn, conn_path).await {
@@ -1386,7 +1386,7 @@ impl NetworkManagerPlugin {
         &self,
         active_path: &str,
         uuid: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<()> {
         info!("[nm] Disconnecting tethering: {}", active_path);
 
         match deactivate_tethering(&self.conn, active_path).await {
@@ -1440,7 +1440,7 @@ fn main() -> Result<()> {
         // Monitor NM D-Bus signals
         let monitor_state = shared_state.clone();
         let monitor_notifier = notifier.clone();
-        spawn_monitored_anyhow("nm/signal-monitor", async move {
+        spawn_monitored("nm/signal-monitor", async move {
             monitor_nm_signals(monitor_conn, monitor_state, monitor_notifier).await
         });
 
@@ -1449,7 +1449,7 @@ fn main() -> Result<()> {
         // missed signals due to match rule/stream contention in zbus.
         let bluez_state = shared_state.clone();
         let bluez_notifier = notifier.clone();
-        spawn_monitored_anyhow("nm/bluez-monitor", async move {
+        spawn_monitored("nm/bluez-monitor", async move {
             let bluez_conn = Connection::system().await?;
             monitor_bluez_signals(bluez_conn, bluez_state, bluez_notifier).await
         });

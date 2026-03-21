@@ -100,17 +100,17 @@ impl Plugin for WeatherPlugin {
         _urn: Urn,
         action: String,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> anyhow::Result<serde_json::Value> {
         match action.as_str() {
             "update-config" => {
                 let new_config: WeatherConfig = serde_json::from_value(params)?;
 
                 // Validate
                 if new_config.latitude < -90.0 || new_config.latitude > 90.0 {
-                    return Err("Invalid latitude (must be -90 to 90)".into());
+                    anyhow::bail!("Invalid latitude (must be -90 to 90)");
                 }
                 if new_config.longitude < -180.0 || new_config.longitude > 180.0 {
-                    return Err("Invalid longitude (must be -180 to 180)".into());
+                    anyhow::bail!("Invalid longitude (must be -180 to 180)");
                 }
 
                 log::info!(
@@ -129,7 +129,7 @@ impl Plugin for WeatherPlugin {
 
                 Ok(serde_json::Value::Null)
             }
-            _ => Err(format!("Unknown action: {action}").into()),
+            _ => anyhow::bail!("Unknown action: {action}"),
         }
     }
 }

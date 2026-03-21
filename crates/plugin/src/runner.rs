@@ -31,7 +31,7 @@ use crate::runtime::PluginRuntime;
 /// # impl waft_plugin::Plugin for MyPlugin {
 /// #     fn get_entities(&self) -> Vec<waft_plugin::Entity> { vec![] }
 /// #     async fn handle_action(&self, _: waft_plugin::Urn, _: String, _: serde_json::Value)
-/// #         -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> { Ok(serde_json::Value::Null) }
+/// #         -> anyhow::Result<serde_json::Value> { Ok(serde_json::Value::Null) }
 /// # }
 /// fn main() -> Result<()> {
 ///     PluginRunner::new("my-plugin", &["my-entity"])
@@ -143,19 +143,6 @@ impl<'a> PluginRunner<'a> {
 /// Use this instead of bare `tokio::spawn` for plugin background tasks
 /// (D-Bus signal monitors, event loops, etc.) to ensure failures are visible.
 pub fn spawn_monitored<F>(label: &'static str, fut: F) -> tokio::task::JoinHandle<()>
-where
-    F: Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send + 'static,
-{
-    tokio::spawn(async move {
-        if let Err(e) = fut.await {
-            log::error!("[{label}] task failed: {e}");
-        }
-        log::debug!("[{label}] task stopped");
-    })
-}
-
-/// Like [`spawn_monitored`] but accepts `anyhow::Result`.
-pub fn spawn_monitored_anyhow<F>(label: &'static str, fut: F) -> tokio::task::JoinHandle<()>
 where
     F: Future<Output = Result<()>> + Send + 'static,
 {
