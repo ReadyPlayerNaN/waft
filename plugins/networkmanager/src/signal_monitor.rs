@@ -12,7 +12,7 @@ use zbus::zvariant::{ObjectPath, OwnedValue};
 use crate::dbus_property::{
     DEVICE_TYPE_BLUETOOTH, DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI, NM_CONNECTION_ACTIVE_INTERFACE,
     NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_VPN_CONNECTION_INTERFACE,
-    get_property,
+    NM_WIRELESS_INTERFACE, get_property,
 };
 use crate::device_discovery::get_device_info_dbus;
 use crate::ethernet::refresh_ethernet_state;
@@ -155,6 +155,38 @@ pub async fn monitor_nm_signals(
                     changed = true;
                 }
 
+                // Handle WiFi disconnect via ActiveAccessPoint property change.
+                // When NM disconnects WiFi it sends a PropertiesChanged on
+                // org.freedesktop.NetworkManager.Device.Wireless with
+                // ActiveAccessPoint set to "/" (no active AP). This acts as a
+                // reliable secondary trigger alongside the StateChanged signal.
+                if prop_iface == NM_WIRELESS_INTERFACE {
+                    if let Some(ap_val) = props.get("ActiveAccessPoint") {
+                        let ap_path = String::try_from(ap_val.clone()).unwrap_or_default();
+                        if ap_path == "/" {
+                            let mut st = match state.lock() {
+                                Ok(g) => g,
+                                Err(e) => {
+                                    warn!("[nm] Mutex poisoned, recovering: {e}");
+                                    e.into_inner()
+                                }
+                            };
+                            if let Some(adapter) =
+                                st.wifi_adapters.iter_mut().find(|a| a.path == obj_path)
+                            {
+                                if adapter.active_ssid.is_some() {
+                                    debug!(
+                                        "[nm] WiFi {} ActiveAccessPoint cleared (disconnect)",
+                                        adapter.interface_name
+                                    );
+                                    adapter.active_ssid = None;
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if changed {
                     notifier.notify();
                 }
@@ -285,6 +317,23 @@ pub async fn monitor_nm_signals(
                                 e.into_inner()
                             }
                         };
+
+                        let path_known = st
+                            .ethernet_adapters
+                            .iter()
+                            .any(|a| a.path == obj_path)
+                            || st.wifi_adapters.iter().any(|a| a.path == obj_path)
+                            || st
+                                .bluetooth_devices
+                                .iter()
+                                .any(|d| d.path == obj_path);
+
+                        if !path_known {
+                            warn!(
+                                "[nm] StateChanged for unknown device path: {} (state={})",
+                                obj_path, new_state
+                            );
+                        }
 
                         // Update ethernet adapter state
                         if let Some(adapter) =
