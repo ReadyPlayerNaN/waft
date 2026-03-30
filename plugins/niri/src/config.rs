@@ -875,7 +875,7 @@ mod tests {
 
         let doc: KdlDocument = kdl.parse().unwrap();
         let modified =
-            modify_keyboard_layouts(doc, vec!["us".into(), "de".into(), "fr".into()]).unwrap();
+            modify_keyboard_layouts(doc, &vec!["us".into(), "de".into(), "fr".into()]).unwrap();
         let output = modified.to_string();
         assert!(
             output.contains(r#"layout "us,de,fr""#),
@@ -899,7 +899,7 @@ mod tests {
 "#;
 
         let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_layouts(doc, vec!["us".into(), "cz".into()]).unwrap();
+        let modified = modify_keyboard_layouts(doc, &vec!["us".into(), "cz".into()]).unwrap();
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.layouts, vec!["us", "cz"]);
@@ -918,7 +918,7 @@ mod tests {
 
         let doc: KdlDocument = kdl.parse().unwrap();
         let modified =
-            modify_keyboard_layouts(doc, vec!["cz".into(), "us".into(), "de".into()]).unwrap();
+            modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into(), "de".into()]).unwrap();
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.layouts, vec!["cz", "us", "de"]);
@@ -945,7 +945,7 @@ output "DP-1" {
 
         let doc: KdlDocument = kdl.parse().unwrap();
         let modified =
-            modify_keyboard_layouts(doc, vec!["fr".into(), "de".into()]).unwrap();
+            modify_keyboard_layouts(doc, &vec!["fr".into(), "de".into()]).unwrap();
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.layouts, vec!["fr", "de"]);
@@ -977,7 +977,7 @@ output "DP-1" {
 
         let doc: KdlDocument = kdl.parse().unwrap();
         let modified =
-            modify_keyboard_layouts(doc, vec!["us".into(), "de".into()]).unwrap();
+            modify_keyboard_layouts(doc, &vec!["us".into(), "de".into()]).unwrap();
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.mode, KeyboardConfigMode::LayoutList);
@@ -1036,7 +1036,7 @@ output "DP-1" {
 
         let doc: KdlDocument = kdl.parse().unwrap();
         let modified =
-            modify_keyboard_layouts(doc, vec!["cz".into(), "us".into()]).unwrap();
+            modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into()]).unwrap();
         let output = modified.to_string();
         eprintln!("=== v2 config output ===\n{}", output);
 
@@ -1074,7 +1074,7 @@ window-rule {
 
         let doc: KdlDocument = kdl.parse().unwrap();
         let modified =
-            modify_keyboard_layouts(doc, vec!["cz".into(), "us".into()]).unwrap();
+            modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into()]).unwrap();
         let output = modified.to_string();
         eprintln!("=== v1 config output ===\n{}", output);
 

@@ -126,6 +126,9 @@ impl BrightnessSlidersComponent {
 pub(crate) mod tests {
     use super::*;
     use std::cell::Cell;
+    use gtk::prelude::Cast;
+    use gtk::prelude::WidgetExt;
+    use waft_protocol::Urn;
     use waft_protocol::message::AppNotification;
 
     fn make_display(brightness: f64) -> entity::display::Display {
