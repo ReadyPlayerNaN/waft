@@ -1,5 +1,5 @@
-plugin-name = Wallpaper (swww)
-plugin-description = Wallpaper management via swww
+plugin-name = Wallpaper (awww/swww)
+plugin-description = Wallpaper management via awww or swww
 
 # Wallpaper modes
 mode-static = Static

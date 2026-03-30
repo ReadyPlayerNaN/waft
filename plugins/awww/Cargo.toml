@@ -1,11 +1,11 @@
 [package]
-name = "waft-plugin-swww"
+name = "waft-plugin-awww"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "waft-swww-daemon"
-path = "bin/waft-swww-daemon.rs"
+name = "waft-awww-daemon"
+path = "bin/waft-awww-daemon.rs"
 
 [dependencies]
 waft-plugin = { path = "../../crates/plugin" }

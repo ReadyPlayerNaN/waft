@@ -33,7 +33,7 @@ members = [
     "plugins/notifications",
     "plugins/syncthing",
     "plugins/claude",
-    "plugins/swww",
+    "plugins/awww",
     "plugins/internal-apps",
     "plugins/xdg-apps",
     "plugins/niri",

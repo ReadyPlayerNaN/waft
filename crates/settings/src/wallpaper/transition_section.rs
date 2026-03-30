@@ -22,7 +22,7 @@ pub enum TransitionSectionOutput {
 
 type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(TransitionSectionOutput)>>>>;
 
-/// Available swww transition types.
+/// Available awww/swww transition types.
 const TRANSITION_TYPES: &[&str] = &[
     "none", "simple", "fade", "wipe", "grow", "wave", "outer", "random",
 ];

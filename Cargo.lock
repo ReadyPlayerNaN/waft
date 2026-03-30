@@ -3586,6 +3586,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "waft-plugin-awww"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs 5.0.1",
+ "fastrand",
+ "futures-util",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.8.23",
+ "waft-i18n",
+ "waft-plugin",
+ "waft-protocol",
+ "zbus",
+]
+
+[[package]]
 name = "waft-plugin-battery"
 version = "0.1.0"
 dependencies = [
@@ -3851,27 +3872,6 @@ dependencies = [
  "waft-i18n",
  "waft-plugin",
  "waft-protocol",
-]
-
-[[package]]
-name = "waft-plugin-swww"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "dirs 5.0.1",
- "fastrand",
- "futures-util",
- "log",
- "serde",
- "serde_json",
- "tokio",
- "toml 0.8.23",
- "waft-i18n",
- "waft-plugin",
- "waft-protocol",
- "zbus",
 ]
 
 [[package]]

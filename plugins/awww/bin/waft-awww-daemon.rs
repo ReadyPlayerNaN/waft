@@ -1,8 +1,8 @@
-//! swww plugin -- wallpaper management via swww CLI.
+//! awww plugin -- wallpaper management via awww or swww CLI.
 //!
 //! Provides `wallpaper-manager` entities for each display output and a
-//! synthetic "all" entity for synchronized mode. Wraps `swww query` and
-//! `swww img` commands.
+//! synthetic "all" entity for synchronized mode. Wraps `awww query` and
+//! `awww img` commands (falls back to `swww` if `awww` is not installed).
 //!
 //! Supports three operational modes:
 //! - **Static**: Pick a wallpaper from the configured directory; it stays until changed.
@@ -12,7 +12,7 @@
 //! Configuration (in ~/.config/waft/config.toml):
 //! ```toml
 //! [[plugins]]
-//! id = "swww"
+//! id = "awww"
 //! wallpaper_dir = "~/.config/waft/wallpapers"
 //! sync = true
 //! mode = "static"   # "static" | "style-tracking" | "day-tracking"
@@ -44,8 +44,8 @@ use waft_protocol::entity::display::{
 };
 
 static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/swww.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/swww.ftl")),
+    ("en-US", include_str!("../locales/en-US/awww.ftl")),
+    ("cs-CZ", include_str!("../locales/cs-CZ/awww.ftl")),
 ]));
 
 fn i18n() -> &'static waft_i18n::I18n { &I18N }
@@ -57,7 +57,7 @@ const DARKMAN_INTERFACE: &str = "nl.whynothugo.darkman";
 /// Plugin configuration persisted to config.toml.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
-struct SwwwConfig {
+struct AwwwConfig {
     #[allow(dead_code)]
     id: String,
     wallpaper_dir: String,
@@ -66,10 +66,10 @@ struct SwwwConfig {
     mode: String,
 }
 
-impl Default for SwwwConfig {
+impl Default for AwwwConfig {
     fn default() -> Self {
         Self {
-            id: "swww".to_string(),
+            id: "awww".to_string(),
             wallpaper_dir: "~/.config/waft/wallpapers".to_string(),
             sync: true,
             transition: TransitionConfig::default(),
@@ -106,8 +106,10 @@ enum WallpaperCommand {
 }
 
 /// Shared plugin state.
-struct SwwwState {
-    /// Per-output current wallpaper paths (from swww query).
+struct AwwwState {
+    /// The CLI backend in use ("awww" or "swww").
+    backend: String,
+    /// Per-output current wallpaper paths (from query).
     outputs: HashMap<String, Option<String>>,
     /// Active transition config.
     transition: TransitionConfig,
@@ -115,7 +117,7 @@ struct SwwwState {
     wallpaper_dir: String,
     /// Sync mode.
     sync: bool,
-    /// Whether swww is available.
+    /// Whether the backend is available.
     available: bool,
     /// Active wallpaper mode.
     mode: WallpaperMode,
@@ -127,8 +129,23 @@ struct SwwwState {
     dark_mode_active: Option<bool>,
 }
 
-fn lock_state(state: &StdMutex<SwwwState>) -> std::sync::MutexGuard<'_, SwwwState> {
+fn lock_state(state: &StdMutex<AwwwState>) -> std::sync::MutexGuard<'_, AwwwState> {
     state.lock_or_recover()
+}
+
+/// Detect which wallpaper CLI backend is available. Prefers `awww`, falls back to `swww`.
+fn detect_backend() -> String {
+    for candidate in ["awww", "swww"] {
+        // A successful spawn (even if the command fails) means the binary exists.
+        if std::process::Command::new(candidate)
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
+            return candidate.to_string();
+        }
+    }
+    "awww".to_string()
 }
 
 /// Parse a mode string into WallpaperMode.
@@ -149,29 +166,32 @@ fn mode_to_str(mode: WallpaperMode) -> &'static str {
     }
 }
 
-/// The swww plugin.
-struct SwwwPlugin {
-    state: Arc<StdMutex<SwwwState>>,
+/// The awww plugin.
+struct AwwwPlugin {
+    state: Arc<StdMutex<AwwwState>>,
     wp_tx: tokio::sync::mpsc::Sender<WallpaperCommand>,
 }
 
-impl SwwwPlugin {
+impl AwwwPlugin {
     async fn new(wp_tx: tokio::sync::mpsc::Sender<WallpaperCommand>) -> Result<Self> {
-        let config: SwwwConfig =
-            waft_plugin::config::load_plugin_config("swww").unwrap_or_default();
+        // Load config: try "awww" first (new), fall back to "swww" (migration).
+        let config: AwwwConfig = waft_plugin::config::load_plugin_config("awww")
+            .or_else(|_| waft_plugin::config::load_plugin_config("swww"))
+            .unwrap_or_default();
 
         let mode = parse_mode(&config.mode);
+        let backend = detect_backend();
 
-        // Attempt `swww init` best-effort
-        if let Err(e) = run_swww_init().await {
-            log::debug!("[swww] swww init failed (best-effort): {e}");
+        // Attempt init best-effort
+        if let Err(e) = run_init(&backend).await {
+            log::debug!("[awww] {backend} init failed (best-effort): {e}");
         }
 
         // Query current state
-        let (available, outputs) = match run_swww_query().await {
+        let (available, outputs) = match run_query(&backend).await {
             Ok(outputs) => (true, outputs),
             Err(e) => {
-                log::warn!("[swww] swww query failed, marking unavailable: {e}");
+                log::warn!("[awww] {backend} query failed, marking unavailable: {e}");
                 (false, HashMap::new())
             }
         };
@@ -181,13 +201,14 @@ impl SwwwPlugin {
         let current_segment = Some(DaySegment::from_time(now.hour(), now.minute()));
 
         log::info!(
-            "[swww] Plugin started: available={available}, outputs={}, mode={:?}",
+            "[awww] Plugin started: backend={backend}, available={available}, outputs={}, mode={:?}",
             outputs.len(),
             mode,
         );
 
         Ok(Self {
-            state: Arc::new(StdMutex::new(SwwwState {
+            state: Arc::new(StdMutex::new(AwwwState {
+                backend,
                 outputs,
                 transition: config.transition,
                 wallpaper_dir: config.wallpaper_dir,
@@ -202,7 +223,7 @@ impl SwwwPlugin {
         })
     }
 
-    fn lock_state(&self) -> std::sync::MutexGuard<'_, SwwwState> {
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, AwwwState> {
         lock_state(&self.state)
     }
 
@@ -230,16 +251,17 @@ impl SwwwPlugin {
         path.to_string()
     }
 
-    /// Refresh outputs by re-running `swww query`.
+    /// Refresh outputs by re-running query.
     async fn refresh_state(&self) {
-        match run_swww_query().await {
+        let backend = self.lock_state().backend.clone();
+        match run_query(&backend).await {
             Ok(outputs) => {
                 let mut state = self.lock_state();
                 state.outputs = outputs;
                 state.available = true;
             }
             Err(e) => {
-                log::warn!("[swww] refresh query failed: {e}");
+                log::warn!("[awww] refresh query failed: {e}");
                 let mut state = self.lock_state();
                 state.available = false;
             }
@@ -247,7 +269,7 @@ impl SwwwPlugin {
     }
 
     /// Compute the active wallpaper directory based on mode.
-    fn active_wallpaper_dir(state: &SwwwState) -> String {
+    fn active_wallpaper_dir(state: &AwwwState) -> String {
         let base = Self::expand_tilde(&state.wallpaper_dir);
         match state.mode {
             WallpaperMode::Static => base,
@@ -256,7 +278,7 @@ impl SwwwPlugin {
                     Some(true) => "dark",
                     _ => "light",
                 };
-                format!("{}/{}", base, subfolder)
+                format!("{base}/{subfolder}")
             }
             WallpaperMode::DayTracking => {
                 let segment = state.current_segment.unwrap_or_else(|| {
@@ -274,25 +296,25 @@ impl SwwwPlugin {
         let config_path = match dirs::config_dir() {
             Some(d) => d.join("waft/config.toml"),
             None => {
-                log::warn!("[swww] cannot determine config directory for persistence");
+                log::warn!("[awww] cannot determine config directory for persistence");
                 return;
             }
         };
 
-        if let Err(e) = persist_swww_config(
+        if let Err(e) = persist_awww_config(
             &config_path,
             &state.wallpaper_dir,
             state.sync,
             &state.transition,
             state.mode,
         ) {
-            log::error!("[swww] failed to persist config: {e}");
+            log::error!("[awww] failed to persist config: {e}");
         }
     }
 }
 
 #[async_trait::async_trait]
-impl Plugin for SwwwPlugin {
+impl Plugin for AwwwPlugin {
     fn get_entities(&self) -> Vec<Entity> {
         let state = self.lock_state();
         let transition = Self::transition_from_config(&state.transition);
@@ -313,7 +335,7 @@ impl Plugin for SwwwPlugin {
                 style_tracking_available: state.style_tracking_available,
             };
             entities.push(Entity::new(
-                Urn::new("swww", WALLPAPER_MANAGER_ENTITY_TYPE, output),
+                Urn::new("awww", WALLPAPER_MANAGER_ENTITY_TYPE, output),
                 WALLPAPER_MANAGER_ENTITY_TYPE,
                 &manager,
             ));
@@ -338,7 +360,7 @@ impl Plugin for SwwwPlugin {
             style_tracking_available: state.style_tracking_available,
         };
         entities.push(Entity::new(
-            Urn::new("swww", WALLPAPER_MANAGER_ENTITY_TYPE, "all"),
+            Urn::new("awww", WALLPAPER_MANAGER_ENTITY_TYPE, "all"),
             WALLPAPER_MANAGER_ENTITY_TYPE,
             &all_manager,
         ));
@@ -361,29 +383,30 @@ impl Plugin for SwwwPlugin {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("missing 'path' parameter"))?;
 
-                let (transition, sync, targets): (TransitionConfig, bool, Option<String>) = {
+                let (backend, transition, sync, targets): (String, TransitionConfig, bool, Option<String>) = {
                     let state = self.lock_state();
                     let targets = if sync_applies(&output_id, state.sync) {
                         None
                     } else {
                         Some(output_id.clone())
                     };
-                    (state.transition.clone(), state.sync, targets)
+                    (state.backend.clone(), state.transition.clone(), state.sync, targets)
                 };
 
-                run_swww_img(path, targets.as_deref(), &transition).await?;
+                run_img(&backend, path, targets.as_deref(), &transition).await?;
 
                 if sync {
-                    log::debug!("[swww] set-wallpaper in sync mode, applied to all outputs");
+                    log::debug!("[awww] set-wallpaper in sync mode, applied to all outputs");
                 }
 
                 self.refresh_state().await;
             }
 
             "random" => {
-                let (dir, transition, sync) = {
+                let (backend, dir, transition, sync) = {
                     let state = self.lock_state();
                     (
+                        state.backend.clone(),
                         Self::active_wallpaper_dir(&state),
                         state.transition.clone(),
                         state.sync,
@@ -399,7 +422,7 @@ impl Plugin for SwwwPlugin {
                     Some(output_id.as_str())
                 };
 
-                run_swww_img(&path_str, targets, &transition).await?;
+                run_img(&backend, &path_str, targets, &transition).await?;
                 self.refresh_state().await;
             }
 
@@ -438,7 +461,7 @@ impl Plugin for SwwwPlugin {
                         if let Some(dir) = dir
                             && let Err(e) = self.wp_tx.try_send(WallpaperCommand::ApplyFromDir { dir })
                         {
-                            log::warn!("[swww] failed to queue style-tracking wallpaper: {e}");
+                            log::warn!("[awww] failed to queue style-tracking wallpaper: {e}");
                         }
                     }
                     WallpaperMode::DayTracking => {
@@ -447,7 +470,7 @@ impl Plugin for SwwwPlugin {
                             Self::active_wallpaper_dir(&state)
                         };
                         if let Err(e) = self.wp_tx.try_send(WallpaperCommand::ApplyFromDir { dir }) {
-                            log::warn!("[swww] failed to queue day-tracking wallpaper: {e}");
+                            log::warn!("[awww] failed to queue day-tracking wallpaper: {e}");
                         }
                     }
                 }
@@ -461,13 +484,13 @@ impl Plugin for SwwwPlugin {
                     if let Some(t) = params.get("transition_type").and_then(|v| v.as_str()) {
                         state.transition.transition_type = t.to_string();
                     }
-                    if let Some(fps) = params.get("fps").and_then(|v| v.as_u64()) {
+                    if let Some(fps) = params.get("fps").and_then(waft_plugin::serde_json::Value::as_u64) {
                         state.transition.fps = fps as u32;
                     }
-                    if let Some(angle) = params.get("angle").and_then(|v| v.as_u64()) {
+                    if let Some(angle) = params.get("angle").and_then(waft_plugin::serde_json::Value::as_u64) {
                         state.transition.angle = angle as u32;
                     }
-                    if let Some(duration) = params.get("duration").and_then(|v| v.as_f64()) {
+                    if let Some(duration) = params.get("duration").and_then(waft_plugin::serde_json::Value::as_f64) {
                         state.transition.duration = duration;
                     }
                 }
@@ -480,7 +503,7 @@ impl Plugin for SwwwPlugin {
                     if let Some(dir) = params.get("wallpaper_dir").and_then(|v| v.as_str()) {
                         state.wallpaper_dir = dir.to_string();
                     }
-                    if let Some(sync) = params.get("sync").and_then(|v| v.as_bool()) {
+                    if let Some(sync) = params.get("sync").and_then(waft_plugin::serde_json::Value::as_bool) {
                         state.sync = sync;
                     }
                 }
@@ -488,7 +511,7 @@ impl Plugin for SwwwPlugin {
             }
 
             other => {
-                log::debug!("[swww] Unknown action: {other}");
+                log::debug!("[awww] Unknown action: {other}");
             }
         }
 
@@ -505,35 +528,35 @@ fn sync_applies(output_id: &str, sync: bool) -> bool {
     output_id == "all" || sync
 }
 
-/// Run `swww init` best-effort to ensure the daemon is started.
-async fn run_swww_init() -> Result<()> {
-    let output = tokio::process::Command::new("swww")
+/// Run `<backend> init` best-effort to ensure the daemon is started.
+async fn run_init(backend: &str) -> Result<()> {
+    let output = tokio::process::Command::new(backend)
         .arg("init")
         .output()
         .await
-        .context("failed to run swww init")?;
+        .with_context(|| format!("failed to run {backend} init"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         // "already running" is not an error
         if !stderr.contains("already running") {
-            anyhow::bail!("swww init failed: {stderr}");
+            anyhow::bail!("{backend} init failed: {stderr}");
         }
     }
     Ok(())
 }
 
-/// Run `swww query` and parse the output into a map of output -> wallpaper path.
-async fn run_swww_query() -> Result<HashMap<String, Option<String>>> {
-    let output = tokio::process::Command::new("swww")
+/// Run `<backend> query` and parse the output into a map of output -> wallpaper path.
+async fn run_query(backend: &str) -> Result<HashMap<String, Option<String>>> {
+    let output = tokio::process::Command::new(backend)
         .arg("query")
         .output()
         .await
-        .context("failed to run swww query")?;
+        .with_context(|| format!("failed to run {backend} query"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("swww query failed: {stderr}");
+        anyhow::bail!("{backend} query failed: {stderr}");
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -562,13 +585,14 @@ async fn run_swww_query() -> Result<HashMap<String, Option<String>>> {
     Ok(outputs)
 }
 
-/// Run `swww img` to set wallpaper.
-async fn run_swww_img(
+/// Run `<backend> img` to set wallpaper.
+async fn run_img(
+    backend: &str,
     path: &str,
     output: Option<&str>,
     transition: &TransitionConfig,
 ) -> anyhow::Result<()> {
-    let mut cmd = tokio::process::Command::new("swww");
+    let mut cmd = tokio::process::Command::new(backend);
     cmd.arg("img").arg(path);
 
     if let Some(output_name) = output {
@@ -587,11 +611,11 @@ async fn run_swww_img(
     ]);
 
     let result = cmd.output().await
-        .map_err(|e| anyhow::anyhow!("failed to run swww img: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to run {backend} img: {e}"))?;
 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
-        anyhow::bail!("swww img failed: {stderr}");
+        anyhow::bail!("{backend} img failed: {stderr}");
     }
 
     Ok(())
@@ -614,7 +638,7 @@ fn pick_random_wallpaper(dir: &str) -> anyhow::Result<PathBuf> {
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
-                log::debug!("[swww] skipping dir entry: {e}");
+                log::debug!("[awww] skipping dir entry: {e}");
                 continue;
             }
         };
@@ -635,8 +659,9 @@ fn pick_random_wallpaper(dir: &str) -> anyhow::Result<PathBuf> {
     Ok(candidates.swap_remove(idx))
 }
 
-/// Persist swww config to the TOML config file using read-modify-write.
-fn persist_swww_config(
+/// Persist awww config to the TOML config file using read-modify-write.
+/// Writes as `id = "awww"`. Migrates existing `id = "swww"` entries on first write.
+fn persist_awww_config(
     config_path: &Path,
     wallpaper_dir: &str,
     sync: bool,
@@ -651,32 +676,35 @@ fn persist_swww_config(
 
     let mut root: toml::Table = toml::from_str(&content).unwrap_or_default();
 
-    // Find or create the swww plugin entry
+    // Find or create the awww plugin entry (also migrates from "swww" id)
     let plugins = root
         .entry("plugins")
         .or_insert_with(|| toml::Value::Array(Vec::new()));
 
     if let toml::Value::Array(arr) = plugins {
-        // Find existing entry
+        // Find existing entry by "awww" or legacy "swww" id
         let existing = arr.iter_mut().find(|p| {
             p.as_table()
                 .and_then(|t| t.get("id"))
                 .and_then(|v| v.as_str())
-                == Some("swww")
+                .map(|id| id == "awww" || id == "swww")
+                .unwrap_or(false)
         });
 
         let table = if let Some(entry) = existing {
             entry.as_table_mut().expect("plugin entry must be table")
         } else {
             let mut new_table = toml::Table::new();
-            new_table.insert("id".to_string(), toml::Value::String("swww".to_string()));
+            new_table.insert("id".to_string(), toml::Value::String("awww".to_string()));
             arr.push(toml::Value::Table(new_table));
             arr.last_mut()
-                .unwrap()
+                .expect("just pushed element")
                 .as_table_mut()
                 .expect("just inserted")
         };
 
+        // Always write canonical id
+        table.insert("id".to_string(), toml::Value::String("awww".to_string()));
         table.insert(
             "wallpaper_dir".to_string(),
             toml::Value::String(wallpaper_dir.to_string()),
@@ -718,7 +746,7 @@ fn persist_swww_config(
     let serialized = toml::to_string_pretty(&root).context("failed to serialize config")?;
     std::fs::write(config_path, serialized).context("failed to write config file")?;
 
-    log::debug!("[swww] Config persisted to {}", config_path.display());
+    log::debug!("[awww] Config persisted to {}", config_path.display());
     Ok(())
 }
 
@@ -751,14 +779,14 @@ async fn get_darkman_mode(conn: &Connection) -> Result<bool> {
 /// Monitor darkman D-Bus signals for dark/light mode changes.
 /// Updates state and sends wallpaper commands when in StyleTracking mode.
 async fn monitor_darkman_signals(
-    state: Arc<StdMutex<SwwwState>>,
+    state: Arc<StdMutex<AwwwState>>,
     wp_tx: tokio::sync::mpsc::Sender<WallpaperCommand>,
     notifier: EntityNotifier,
 ) -> Result<()> {
     let conn = match Connection::session().await {
         Ok(c) => c,
         Err(e) => {
-            log::warn!("[swww] cannot connect to session bus for darkman monitoring: {e}");
+            log::warn!("[awww] cannot connect to session bus for darkman monitoring: {e}");
             return Ok(());
         }
     };
@@ -769,11 +797,11 @@ async fn monitor_darkman_signals(
             let mut s = lock_state(&state);
             s.style_tracking_available = true;
             s.dark_mode_active = Some(dark);
-            log::info!("[swww] darkman available, dark_mode={dark}");
+            log::info!("[awww] darkman available, dark_mode={dark}");
         }
         Err(e) => {
-            log::info!("[swww] darkman not available: {e}");
-            // style_tracking_available stays false (set in SwwwPlugin::new)
+            log::info!("[awww] darkman not available: {e}");
+            // style_tracking_available stays false (set in AwwwPlugin::new)
         }
     }
     notifier.notify();
@@ -785,21 +813,21 @@ async fn monitor_darkman_signals(
         .member("ModeChanged")
         .build()?;
 
-    monitor_signal(conn, config, state, notifier, move |msg, swww_state| {
+    monitor_signal(conn, config, state, notifier, move |msg, awww_state| {
         let new_mode_str: String = msg.body().deserialize()?;
         let dark = new_mode_str == "dark";
-        let old_dark = swww_state.dark_mode_active;
-        swww_state.dark_mode_active = Some(dark);
-        swww_state.style_tracking_available = true;
+        let old_dark = awww_state.dark_mode_active;
+        awww_state.dark_mode_active = Some(dark);
+        awww_state.style_tracking_available = true;
 
-        log::info!("[swww] darkman mode changed: dark={dark}");
+        log::info!("[awww] darkman mode changed: dark={dark}");
 
-        if swww_state.mode == WallpaperMode::StyleTracking && old_dark != Some(dark) {
+        if awww_state.mode == WallpaperMode::StyleTracking && old_dark != Some(dark) {
             let subfolder = if dark { "dark" } else { "light" };
-            let dir = SwwwPlugin::expand_tilde(&swww_state.wallpaper_dir);
-            let segment_dir = format!("{}/{}", dir, subfolder);
+            let dir = AwwwPlugin::expand_tilde(&awww_state.wallpaper_dir);
+            let segment_dir = format!("{dir}/{subfolder}");
             if let Err(e) = wp_tx.try_send(WallpaperCommand::ApplyFromDir { dir: segment_dir }) {
-                log::warn!("[swww] failed to queue style-tracking wallpaper: {e}");
+                log::warn!("[awww] failed to queue style-tracking wallpaper: {e}");
             }
         }
         Ok(true)
@@ -810,7 +838,7 @@ async fn monitor_darkman_signals(
 /// Day-segment timer that sleeps to the next boundary (NO POLLING).
 /// Updates current_segment in state and sends wallpaper commands when in DayTracking mode.
 async fn day_segment_timer(
-    state: Arc<StdMutex<SwwwState>>,
+    state: Arc<StdMutex<AwwwState>>,
     wp_tx: tokio::sync::mpsc::Sender<WallpaperCommand>,
     notifier: EntityNotifier,
 ) {
@@ -828,21 +856,19 @@ async fn day_segment_timer(
 
             // Apply wallpaper if segment changed and mode is DayTracking
             if s.mode == WallpaperMode::DayTracking && prev_segment != Some(current) {
-                let dir = SwwwPlugin::expand_tilde(&s.wallpaper_dir);
+                let dir = AwwwPlugin::expand_tilde(&s.wallpaper_dir);
                 let segment_dir = format!("{}/{}", dir, current.folder_name());
                 if let Err(e) = wp_tx.try_send(WallpaperCommand::ApplyFromDir {
                     dir: segment_dir,
                 }) {
-                    log::warn!("[swww] failed to queue day-segment wallpaper: {e}");
+                    log::warn!("[awww] failed to queue day-segment wallpaper: {e}");
                 }
             }
         }
         notifier.notify();
 
         log::debug!(
-            "[swww] current segment: {:?}, sleeping {}s to next boundary",
-            current,
-            secs_to_next
+            "[awww] current segment: {current:?}, sleeping {secs_to_next}s to next boundary"
         );
         tokio::time::sleep(Duration::from_secs(secs_to_next)).await;
     }
@@ -851,7 +877,7 @@ async fn day_segment_timer(
 /// Wallpaper applicator task: receives commands and applies wallpapers.
 async fn wallpaper_applicator(
     mut rx: tokio::sync::mpsc::Receiver<WallpaperCommand>,
-    state: Arc<StdMutex<SwwwState>>,
+    state: Arc<StdMutex<AwwwState>>,
     notifier: EntityNotifier,
 ) {
     while let Some(cmd) = rx.recv().await {
@@ -860,45 +886,45 @@ async fn wallpaper_applicator(
                 match pick_random_wallpaper(&dir) {
                     Ok(path) => {
                         let path_str = path.to_string_lossy().to_string();
-                        let transition = {
+                        let (backend, transition) = {
                             let s = lock_state(&state);
-                            s.transition.clone()
+                            (s.backend.clone(), s.transition.clone())
                         };
-                        if let Err(e) = run_swww_img(&path_str, None, &transition).await {
-                            log::error!("[swww] failed to apply wallpaper: {e}");
+                        if let Err(e) = run_img(&backend, &path_str, None, &transition).await {
+                            log::error!("[awww] failed to apply wallpaper: {e}");
                             continue;
                         }
                         // Refresh state after applying
-                        match run_swww_query().await {
+                        match run_query(&backend).await {
                             Ok(outputs) => {
                                 let mut s = lock_state(&state);
                                 s.outputs = outputs;
                                 s.available = true;
                             }
                             Err(e) => {
-                                log::warn!("[swww] refresh after apply failed: {e}");
+                                log::warn!("[awww] refresh after apply failed: {e}");
                             }
                         }
                         notifier.notify();
                     }
                     Err(e) => {
-                        log::debug!("[swww] no wallpapers in {dir}: {e} (noop)");
+                        log::debug!("[awww] no wallpapers in {dir}: {e} (noop)");
                     }
                 }
             }
         }
     }
-    log::warn!("[swww] wallpaper applicator exited");
+    log::warn!("[awww] wallpaper applicator exited");
 }
 
 fn main() -> Result<()> {
-    PluginRunner::new("swww", &[WALLPAPER_MANAGER_ENTITY_TYPE])
+    PluginRunner::new("awww", &[WALLPAPER_MANAGER_ENTITY_TYPE])
         .i18n(i18n(), "plugin-name", "plugin-description")
         .run(|notifier| async move {
             // Create the wallpaper command channel BEFORE creating the plugin
             let (wp_tx, wp_rx) = tokio::sync::mpsc::channel::<WallpaperCommand>(16);
 
-            let plugin = SwwwPlugin::new(wp_tx).await?;
+            let plugin = AwwwPlugin::new(wp_tx).await?;
 
             // Clone all shared handles BEFORE plugin is moved into PluginRuntime
             let state_for_darkman = plugin.state.clone();
@@ -909,7 +935,7 @@ fn main() -> Result<()> {
 
             // Dark-mode D-Bus monitoring (style-tracking)
             let notifier_dark = notifier.clone();
-            spawn_monitored("swww-darkman", async move {
+            spawn_monitored("awww-darkman", async move {
                 monitor_darkman_signals(state_for_darkman, wp_tx_darkman, notifier_dark).await
             });
 

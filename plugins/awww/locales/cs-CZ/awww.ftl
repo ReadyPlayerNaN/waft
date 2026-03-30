@@ -1,5 +1,5 @@
-plugin-name = Tapeta (swww)
-plugin-description = Správa tapet přes swww
+plugin-name = Tapeta (awww/swww)
+plugin-description = Správa tapet přes awww nebo swww
 
 # Režimy tapet
 mode-static = Statický
