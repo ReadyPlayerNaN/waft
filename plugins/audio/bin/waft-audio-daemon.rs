@@ -90,7 +90,7 @@ impl AudioPlugin {
 
         // Load initial state
         if let Err(e) = reload_all(&state).await {
-            warn!("[audio] Failed to load initial state: {}", e);
+            warn!("[audio] Failed to load initial state: {e}");
         }
 
         // Reconcile virtual devices from config
@@ -163,7 +163,7 @@ async fn reload_cards(state: &Arc<StdMutex<AudioState>>) {
             lock_or_recover(state).cards = cards;
         }
         Err(e) => {
-            warn!("[audio] Failed to reload cards: {}", e);
+            warn!("[audio] Failed to reload cards: {e}");
         }
     }
 }
@@ -350,22 +350,22 @@ impl Plugin for AudioPlugin {
             "set-volume" => {
                 let volume = params
                     .get("value")
-                    .and_then(|v| v.as_f64())
+                    .and_then(waft_plugin::serde_json::Value::as_f64)
                     .unwrap_or(0.0)
                     .clamp(0.0, 1.0);
 
                 if is_output {
                     if let Err(e) = pactl::set_sink_volume(&device_id, volume).await {
-                        error!("[audio] Failed to set sink volume: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to set sink volume: {e}");
+                        return Err(e);
                     }
                 } else if is_input {
                     if let Err(e) = pactl::set_source_volume(&device_id, volume).await {
-                        error!("[audio] Failed to set source volume: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to set source volume: {e}");
+                        return Err(e);
                     }
                 } else {
-                    debug!("[audio] Unknown device for set-volume: {}", device_id);
+                    debug!("[audio] Unknown device for set-volume: {device_id}");
                 }
             }
             "toggle-mute" => {
@@ -378,8 +378,8 @@ impl Plugin for AudioPlugin {
                         .unwrap_or(false);
                     let new_muted = !current_muted;
                     if let Err(e) = pactl::set_sink_mute(&device_id, new_muted).await {
-                        error!("[audio] Failed to toggle sink mute: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to toggle sink mute: {e}");
+                        return Err(e);
                     }
                 } else if is_input {
                     let current_muted = lock_or_recover(&self.state)
@@ -390,28 +390,28 @@ impl Plugin for AudioPlugin {
                         .unwrap_or(false);
                     let new_muted = !current_muted;
                     if let Err(e) = pactl::set_source_mute(&device_id, new_muted).await {
-                        error!("[audio] Failed to toggle source mute: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to toggle source mute: {e}");
+                        return Err(e);
                     }
                 } else {
-                    debug!("[audio] Unknown device for toggle-mute: {}", device_id);
+                    debug!("[audio] Unknown device for toggle-mute: {device_id}");
                 }
             }
             "set-default" => {
                 if is_output {
                     if let Err(e) = pactl::set_default_sink(&device_id).await {
-                        error!("[audio] Failed to set default sink: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to set default sink: {e}");
+                        return Err(e);
                     }
                     lock_or_recover(&self.state).default_output = Some(device_id.clone());
                 } else if is_input {
                     if let Err(e) = pactl::set_default_source(&device_id).await {
-                        error!("[audio] Failed to set default source: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to set default source: {e}");
+                        return Err(e);
                     }
                     lock_or_recover(&self.state).default_input = Some(device_id.clone());
                 } else {
-                    debug!("[audio] Unknown device for set-default: {}", device_id);
+                    debug!("[audio] Unknown device for set-default: {device_id}");
                 }
             }
             "create-sink" => {
@@ -439,7 +439,7 @@ impl Plugin for AudioPlugin {
                 return Ok(serde_json::Value::Null);
             }
             other => {
-                debug!("[audio] Unknown action: {}", other);
+                debug!("[audio] Unknown action: {other}");
             }
         }
 
@@ -498,7 +498,7 @@ impl AudioPlugin {
             error!("[audio] Failed to sync default.pa: {e}");
         }
 
-        info!("[audio] Created virtual device '{}' (module {})", sink_name, module_index);
+        info!("[audio] Created virtual device '{sink_name}' (module {module_index})");
         Ok(())
     }
 
@@ -521,7 +521,7 @@ impl AudioPlugin {
             && let Err(e) = pactl::unload_module(idx).await
         {
             error!("[audio] Failed to unload module {idx} for '{name}': {e}");
-            return Err(e.into());
+            return Err(e);
         }
 
         // Remove from state
@@ -569,26 +569,26 @@ impl AudioPlugin {
                     .and_then(|v| v.as_str())
                     .context("missing 'profile' parameter")?;
                 if let Err(e) = pactl::set_card_profile(&card_name, profile).await {
-                    error!("[audio] Failed to set card profile: {}", e);
-                    return Err(e.into());
+                    error!("[audio] Failed to set card profile: {e}");
+                    return Err(e);
                 }
             }
             "set-volume" => {
                 let volume = params
                     .get("value")
-                    .and_then(|v| v.as_f64())
+                    .and_then(waft_plugin::serde_json::Value::as_f64)
                     .unwrap_or(0.0)
                     .clamp(0.0, 1.0);
 
                 if let Some(sink) = params.get("sink").and_then(|v| v.as_str()) {
                     if let Err(e) = pactl::set_sink_volume(sink, volume).await {
-                        error!("[audio] Failed to set sink volume: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to set sink volume: {e}");
+                        return Err(e);
                     }
                 } else if let Some(source) = params.get("source").and_then(|v| v.as_str()) {
                     if let Err(e) = pactl::set_source_volume(source, volume).await {
-                        error!("[audio] Failed to set source volume: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to set source volume: {e}");
+                        return Err(e);
                     }
                 } else {
                     debug!("[audio] set-volume on card: missing 'sink' or 'source' param");
@@ -603,8 +603,8 @@ impl AudioPlugin {
                         .map(|s| s.muted)
                         .unwrap_or(false);
                     if let Err(e) = pactl::set_sink_mute(sink_name, !current_muted).await {
-                        error!("[audio] Failed to toggle sink mute: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to toggle sink mute: {e}");
+                        return Err(e);
                     }
                 } else if let Some(source_name) = params.get("source").and_then(|v| v.as_str()) {
                     let current_muted = lock_or_recover(&self.state)
@@ -614,8 +614,8 @@ impl AudioPlugin {
                         .map(|s| s.muted)
                         .unwrap_or(false);
                     if let Err(e) = pactl::set_source_mute(source_name, !current_muted).await {
-                        error!("[audio] Failed to toggle source mute: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to toggle source mute: {e}");
+                        return Err(e);
                     }
                 } else {
                     debug!("[audio] toggle-mute on card: missing 'sink' or 'source' param");
@@ -624,14 +624,14 @@ impl AudioPlugin {
             "set-default" => {
                 if let Some(sink_name) = params.get("sink").and_then(|v| v.as_str()) {
                     if let Err(e) = pactl::set_default_sink(sink_name).await {
-                        error!("[audio] Failed to set default sink: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to set default sink: {e}");
+                        return Err(e);
                     }
                     lock_or_recover(&self.state).default_output = Some(sink_name.to_string());
                 } else if let Some(source_name) = params.get("source").and_then(|v| v.as_str()) {
                     if let Err(e) = pactl::set_default_source(source_name).await {
-                        error!("[audio] Failed to set default source: {}", e);
-                        return Err(e.into());
+                        error!("[audio] Failed to set default source: {e}");
+                        return Err(e);
                     }
                     lock_or_recover(&self.state).default_input = Some(source_name.to_string());
                 } else {
@@ -648,8 +648,8 @@ impl AudioPlugin {
                     .and_then(|v| v.as_str())
                     .context("missing 'port' parameter")?;
                 if let Err(e) = pactl::set_sink_port(sink, port).await {
-                    error!("[audio] Failed to set sink port: {}", e);
-                    return Err(e.into());
+                    error!("[audio] Failed to set sink port: {e}");
+                    return Err(e);
                 }
             }
             "set-source-port" => {
@@ -662,12 +662,12 @@ impl AudioPlugin {
                     .and_then(|v| v.as_str())
                     .context("missing 'port' parameter")?;
                 if let Err(e) = pactl::set_source_port(source, port).await {
-                    error!("[audio] Failed to set source port: {}", e);
-                    return Err(e.into());
+                    error!("[audio] Failed to set source port: {e}");
+                    return Err(e);
                 }
             }
             other => {
-                debug!("[audio] Unknown card action: {}", other);
+                debug!("[audio] Unknown card action: {other}");
             }
         }
 
@@ -852,7 +852,7 @@ async fn monitor_events(
     notifier: EntityNotifier,
 ) {
     while let Some(event) = rx.recv().await {
-        debug!("[audio] Received event: {:?}", event);
+        debug!("[audio] Received event: {event:?}");
 
         let card_ports = pactl::get_card_port_info().await.unwrap_or_default();
         lock_or_recover(&state).card_ports = card_ports.clone();
@@ -893,7 +893,7 @@ fn main() -> Result<()> {
                             Ok(())
                         });
                     }
-                    Err(e) => warn!("[audio] Failed to start event subscription: {}", e),
+                    Err(e) => warn!("[audio] Failed to start event subscription: {e}"),
                 }
             }
 

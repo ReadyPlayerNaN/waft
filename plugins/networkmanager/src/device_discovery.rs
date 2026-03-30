@@ -36,7 +36,7 @@ pub async fn discover_devices(conn: &Connection) -> Result<Vec<DeviceInfo>> {
             Ok(Some(info)) => result.push(info),
             Ok(None) => {} // filtered out (not ethernet/wifi, virtual, or unmanaged)
             Err(e) => {
-                log::warn!("[nm] Failed to read device {}: {}", device_path, e);
+                log::warn!("[nm] Failed to read device {device_path}: {e}");
             }
         }
     }

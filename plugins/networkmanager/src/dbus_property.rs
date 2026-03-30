@@ -39,7 +39,7 @@ where
     let (value,): (OwnedValue,) = proxy
         .call("Get", &(interface, property))
         .await
-        .with_context(|| format!("Failed to get property {}.{}", interface, property))?;
+        .with_context(|| format!("Failed to get property {interface}.{property}"))?;
 
-    T::try_from(value).map_err(|e| anyhow::anyhow!("Failed to convert property: {}", e))
+    T::try_from(value).map_err(|e| anyhow::anyhow!("Failed to convert property: {e}"))
 }

@@ -107,10 +107,10 @@ impl Plugin for XdgAppsPlugin {
                             let mut child = child;
                             match child.wait() {
                                 Ok(status) => {
-                                    log::debug!("[xdg-apps] '{stem}' exited: {status}")
+                                    log::debug!("[xdg-apps] '{stem}' exited: {status}");
                                 }
                                 Err(e) => {
-                                    log::warn!("[xdg-apps] wait failed for '{stem}': {e}")
+                                    log::warn!("[xdg-apps] wait failed for '{stem}': {e}");
                                 }
                             }
                         });

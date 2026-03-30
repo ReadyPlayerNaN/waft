@@ -49,7 +49,7 @@ pub fn toggle_menu(menu_store: &MenuStore, menu_id: &str) {
 /// assert_eq!(menu_id, "bluetooth:adapter0_menu");
 /// ```
 pub fn menu_id_for_widget(widget_id: &str) -> String {
-    format!("{}_menu", widget_id)
+    format!("{widget_id}_menu")
 }
 
 #[cfg(test)]

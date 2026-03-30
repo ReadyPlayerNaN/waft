@@ -11,7 +11,7 @@ use std::process::Stdio;
 /// Spawns the command on a background thread and waits for completion via
 /// a flume channel.
 pub async fn niri_msg(args: &[&str]) -> Result<Vec<u8>> {
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
     let (tx, rx) = flume::bounded(1);
 
     std::thread::spawn(move || {
@@ -39,7 +39,7 @@ pub async fn niri_msg(args: &[&str]) -> Result<Vec<u8>> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("niri msg failed: {}", stderr);
+        anyhow::bail!("niri msg failed: {stderr}");
     }
 
     Ok(output.stdout)

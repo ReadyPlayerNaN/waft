@@ -86,7 +86,7 @@ impl PatternRow {
             .build();
 
         let fl = field_labels();
-        let fl_refs: Vec<&str> = fl.iter().map(|s| s.as_str()).collect();
+        let fl_refs: Vec<&str> = fl.iter().map(std::string::String::as_str).collect();
         let field_model = gtk::StringList::new(&fl_refs);
         let field_dropdown = gtk::DropDown::builder()
             .model(&field_model)
@@ -96,7 +96,7 @@ impl PatternRow {
         root.append(&field_dropdown);
 
         let ol = operator_labels();
-        let ol_refs: Vec<&str> = ol.iter().map(|s| s.as_str()).collect();
+        let ol_refs: Vec<&str> = ol.iter().map(std::string::String::as_str).collect();
         let operator_model = gtk::StringList::new(&ol_refs);
         let operator_dropdown = gtk::DropDown::builder()
             .model(&operator_model)

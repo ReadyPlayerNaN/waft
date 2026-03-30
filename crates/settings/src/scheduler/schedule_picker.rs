@@ -253,10 +253,10 @@ impl SchedulePicker {
             FREQ_MINUTELY => "*:*:00".to_string(),
             FREQ_EVERY_N_MINUTES => {
                 let n = self.interval_row.value() as u32;
-                format!("*:0/{}:00", n)
+                format!("*:0/{n}:00")
             }
             FREQ_HOURLY => "*:00:00".to_string(),
-            FREQ_DAILY => format!("*-*-* {:02}:{:02}:00", h, m),
+            FREQ_DAILY => format!("*-*-* {h:02}:{m:02}:00"),
             FREQ_WEEKLY => {
                 let days: Vec<&str> = DOW_NAMES
                     .iter()
@@ -269,11 +269,11 @@ impl SchedulePicker {
                 } else {
                     days.join(",")
                 };
-                format!("{} *-*-* {:02}:{:02}:00", day_str, h, m)
+                format!("{day_str} *-*-* {h:02}:{m:02}:00")
             }
             FREQ_MONTHLY => {
                 let d = self.dom_row.value() as u32;
-                format!("*-*-{:02} {:02}:{:02}:00", d, h, m)
+                format!("*-*-{d:02} {h:02}:{m:02}:00")
             }
             _ => self.custom_row.text().trim().to_string(),
         }
@@ -283,6 +283,7 @@ impl SchedulePicker {
     pub fn is_valid(&self) -> bool {
         match self.freq_row.selected() {
             FREQ_CUSTOM => !self.custom_row.text().trim().is_empty(),
+            #[allow(clippy::redundant_closure_for_method_calls)]
             FREQ_WEEKLY => self.dow_buttons.iter().any(|b| b.is_active()),
             _ => true,
         }

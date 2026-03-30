@@ -37,7 +37,7 @@ impl Children {
     pub fn iter_widgets(&self) -> impl Iterator<Item = gtk::Widget> + '_ {
         let items: Box<dyn Iterator<Item = gtk::Widget> + '_> = match self {
             Children::One(child) => Box::new(std::iter::once(child.widget())),
-            Children::Many(children) => Box::new(children.iter().map(|c| c.widget())),
+            Children::Many(children) => Box::new(children.iter().map(Child::widget)),
         };
         items
     }

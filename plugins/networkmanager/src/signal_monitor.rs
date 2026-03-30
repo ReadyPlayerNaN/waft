@@ -82,15 +82,17 @@ pub async fn monitor_nm_signals(
         let msg = match msg {
             Ok(m) => m,
             Err(e) => {
-                warn!("[nm] D-Bus stream error: {}", e);
+                warn!("[nm] D-Bus stream error: {e}");
                 continue;
             }
         };
 
         let header = msg.header();
+        #[allow(clippy::redundant_closure_for_method_calls)]
         let member = header.member().map(|m| m.as_str()).unwrap_or("");
+        #[allow(clippy::redundant_closure_for_method_calls)]
         let iface = header.interface().map(|i| i.as_str()).unwrap_or("");
-        let obj_path = header.path().map(|p| p.to_string()).unwrap_or_default();
+        let obj_path = header.path().map(std::string::ToString::to_string).unwrap_or_default();
 
         match (iface, member) {
             ("org.freedesktop.DBus.Properties", "PropertiesChanged") => {
@@ -124,20 +126,18 @@ pub async fn monitor_nm_signals(
 
                     if is_vpn_type(&conn_type) {
                         debug!(
-                            "[nm] VPN state changed: path={}, state={}",
-                            obj_path, state_code
+                            "[nm] VPN state changed: path={obj_path}, state={state_code}"
                         );
                         if let Err(e) = refresh_vpn_states(&conn, &state).await {
-                            error!("[nm] Failed to refresh VPN states: {}", e);
+                            error!("[nm] Failed to refresh VPN states: {e}");
                         }
                         changed = true;
                     } else if conn_type == "bluetooth" {
                         debug!(
-                            "[nm] Tethering state changed: path={}, state={}",
-                            obj_path, state_code
+                            "[nm] Tethering state changed: path={obj_path}, state={state_code}"
                         );
                         if let Err(e) = refresh_tethering_states(&conn, &state).await {
-                            error!("[nm] Failed to refresh tethering states: {}", e);
+                            error!("[nm] Failed to refresh tethering states: {e}");
                         }
                         changed = true;
                     }
@@ -148,9 +148,9 @@ pub async fn monitor_nm_signals(
                     && prop_iface == NM_VPN_CONNECTION_INTERFACE
                     && props.contains_key("VpnState")
                 {
-                    debug!("[nm] VPN.Connection state changed: {}", obj_path);
+                    debug!("[nm] VPN.Connection state changed: {obj_path}");
                     if let Err(e) = refresh_vpn_states(&conn, &state).await {
-                        error!("[nm] Failed to refresh VPN states: {}", e);
+                        error!("[nm] Failed to refresh VPN states: {e}");
                     }
                     changed = true;
                 }
@@ -160,8 +160,8 @@ pub async fn monitor_nm_signals(
                 // org.freedesktop.NetworkManager.Device.Wireless with
                 // ActiveAccessPoint set to "/" (no active AP). This acts as a
                 // reliable secondary trigger alongside the StateChanged signal.
-                if prop_iface == NM_WIRELESS_INTERFACE {
-                    if let Some(ap_val) = props.get("ActiveAccessPoint") {
+                if prop_iface == NM_WIRELESS_INTERFACE
+                    && let Some(ap_val) = props.get("ActiveAccessPoint") {
                         let ap_path = String::try_from(ap_val.clone()).unwrap_or_default();
                         if ap_path == "/" {
                             let mut st = match state.lock() {
@@ -173,8 +173,7 @@ pub async fn monitor_nm_signals(
                             };
                             if let Some(adapter) =
                                 st.wifi_adapters.iter_mut().find(|a| a.path == obj_path)
-                            {
-                                if adapter.active_ssid.is_some() {
+                                && adapter.active_ssid.is_some() {
                                     debug!(
                                         "[nm] WiFi {} ActiveAccessPoint cleared (disconnect)",
                                         adapter.interface_name
@@ -182,10 +181,8 @@ pub async fn monitor_nm_signals(
                                     adapter.active_ssid = None;
                                     changed = true;
                                 }
-                            }
                         }
                     }
-                }
 
                 if changed {
                     notifier.notify();
@@ -195,7 +192,7 @@ pub async fn monitor_nm_signals(
             (iface_str, "DeviceAdded") if iface_str == NM_INTERFACE => {
                 if let Ok(path) = msg.body().deserialize::<ObjectPath<'_>>() {
                     let device_path = path.to_string();
-                    info!("[nm] Device added: {}", device_path);
+                    info!("[nm] Device added: {device_path}");
 
                     // Read device type first, then branch without holding locks across awaits
                     let device_type: u32 =
@@ -251,8 +248,7 @@ pub async fn monitor_nm_signals(
                                     .await
                                     .unwrap_or(0);
                             info!(
-                                "[nm] Bluetooth device added: {} state={}",
-                                device_path, bt_state
+                                "[nm] Bluetooth device added: {device_path} state={bt_state}"
                             );
                             {
                                 let mut st = match state.lock() {
@@ -270,7 +266,7 @@ pub async fn monitor_nm_signals(
                                 }
                             }
                             if let Err(e) = refresh_tethering_states(&conn, &state).await {
-                                error!("[nm] Failed to refresh tethering states: {}", e);
+                                error!("[nm] Failed to refresh tethering states: {e}");
                             }
                         }
                         _ => {}
@@ -283,7 +279,7 @@ pub async fn monitor_nm_signals(
             (iface_str, "DeviceRemoved") if iface_str == NM_INTERFACE => {
                 if let Ok(path) = msg.body().deserialize::<ObjectPath<'_>>() {
                     let device_path = path.to_string();
-                    info!("[nm] Device removed: {}", device_path);
+                    info!("[nm] Device removed: {device_path}");
 
                     let mut st = match state.lock() {
                         Ok(g) => g,
@@ -330,8 +326,7 @@ pub async fn monitor_nm_signals(
 
                         if !path_known {
                             warn!(
-                                "[nm] StateChanged for unknown device path: {} (state={})",
-                                obj_path, new_state
+                                "[nm] StateChanged for unknown device path: {obj_path} (state={new_state})"
                             );
                         }
 
@@ -420,7 +415,7 @@ pub async fn monitor_nm_signals(
 
                         // Refresh ethernet profile active connection state
                         if let Err(e) = refresh_ethernet_state(&conn, &state).await {
-                            warn!("[nm] Failed to refresh ethernet state: {}", e);
+                            warn!("[nm] Failed to refresh ethernet state: {e}");
                         }
 
                         // Also refresh public IP
@@ -446,7 +441,7 @@ pub async fn monitor_nm_signals(
                                     e.into_inner()
                                 }
                             };
-                            st.ethernet_adapters.iter().any(|a| a.is_connected())
+                            st.ethernet_adapters.iter().any(super::state::EthernetAdapterState::is_connected)
                                 || st.wifi_adapters.iter().any(|a| a.active_ssid.is_some())
                         };
                         if !any_connected {

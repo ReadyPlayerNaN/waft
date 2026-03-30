@@ -4,7 +4,7 @@
 pub fn format_time_range(start: i64, end: i64) -> String {
     let start_str = format_timestamp(start);
     let end_str = format_timestamp(end);
-    format!("{} \u{2013} {}", start_str, end_str)
+    format!("{start_str} \u{2013} {end_str}")
 }
 
 /// Format a unix timestamp as "HH:MM" in local time using glib::DateTime.

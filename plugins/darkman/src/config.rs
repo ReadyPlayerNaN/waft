@@ -41,8 +41,8 @@ pub fn parse_darkman_config() -> Result<DarkmanYamlConfig> {
     match serde_yaml::from_str(&yaml_str) {
         Ok(config) => Ok(config),
         Err(e) => {
-            log::error!("[darkman-config] Failed to parse config.yaml: {}", e);
-            Err(anyhow::anyhow!("Config file has syntax errors: {}", e))
+            log::error!("[darkman-config] Failed to parse config.yaml: {e}");
+            Err(anyhow::anyhow!("Config file has syntax errors: {e}"))
         }
     }
 }
@@ -154,7 +154,7 @@ pub fn validate_field(field: &str, value: &serde_json::Value) -> Result<()> {
                 serde_json::from_value(value.clone()).context("Value must be a boolean")?;
         }
         _ => {
-            return Err(anyhow::anyhow!("Unknown field: {}", field));
+            return Err(anyhow::anyhow!("Unknown field: {field}"));
         }
     }
     Ok(())
@@ -174,9 +174,9 @@ pub async fn restart_darkman_service() -> Result<()> {
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            Err(anyhow::anyhow!("systemctl restart failed: {}", stderr))
+            Err(anyhow::anyhow!("systemctl restart failed: {stderr}"))
         }
-        Err(e) => Err(anyhow::anyhow!("Failed to execute systemctl: {}", e)),
+        Err(e) => Err(anyhow::anyhow!("Failed to execute systemctl: {e}")),
     }
 }
 

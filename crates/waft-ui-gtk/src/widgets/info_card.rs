@@ -64,7 +64,7 @@ impl InfoCardWidget {
         let props = InfoCardProps {
             icon: icon.to_string(),
             title: title.to_string(),
-            description: description.map(|s| s.to_string()),
+            description: description.map(std::string::ToString::to_string),
         };
         let inner = Rc::new(RenderComponent::<InfoCardRender>::build(&props));
         Self {
@@ -90,7 +90,7 @@ impl InfoCardWidget {
     /// Update the description text and visibility.
     pub fn set_description(&self, description: Option<&str>) {
         let mut props = self.props.borrow_mut();
-        props.description = description.map(|s| s.to_string());
+        props.description = description.map(std::string::ToString::to_string);
         self.inner.update(&*props);
     }
 

@@ -224,7 +224,7 @@ mod tests {
             Err(TransportError::FrameTooLarge(size)) => {
                 assert_eq!(size, (MAX_FRAME_SIZE + 1));
             }
-            _ => panic!("Expected FrameTooLarge error, got: {:?}", result),
+            _ => panic!("Expected FrameTooLarge error, got: {result:?}"),
         }
     }
 
@@ -244,7 +244,7 @@ mod tests {
             Err(TransportError::Serialization(_)) => {
                 // Expected
             }
-            _ => panic!("Expected Serialization error, got: {:?}", result),
+            _ => panic!("Expected Serialization error, got: {result:?}"),
         }
     }
 
@@ -260,7 +260,7 @@ mod tests {
             Err(TransportError::Io(_)) => {
                 // Expected: UnexpectedEof
             }
-            _ => panic!("Expected I/O error, got: {:?}", result),
+            _ => panic!("Expected I/O error, got: {result:?}"),
         }
     }
 

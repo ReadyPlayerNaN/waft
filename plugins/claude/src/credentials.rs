@@ -66,8 +66,7 @@ mod tests {
         let claude_dir = dir.join(".claude");
         std::fs::create_dir_all(&claude_dir).unwrap();
         let json = format!(
-            r#"{{"claudeAiOauth":{{"accessToken":"test-token","refreshToken":"ref","expiresAt":{}}}}}"#,
-            expires_at
+            r#"{{"claudeAiOauth":{{"accessToken":"test-token","refreshToken":"ref","expiresAt":{expires_at}}}}}"#
         );
         std::fs::write(claude_dir.join(".credentials.json"), json).unwrap();
     }
@@ -102,7 +101,7 @@ mod tests {
         if let Some(h) = original_home {
             unsafe { std::env::set_var("HOME", h) };
         }
-        assert!(result.is_ok(), "expected Ok for valid token, got {:?}", result);
+        assert!(result.is_ok(), "expected Ok for valid token, got {result:?}");
         assert_eq!(result.unwrap(), "test-token");
     }
 }

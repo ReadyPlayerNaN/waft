@@ -135,7 +135,7 @@ impl LocaledBackend {
             .await
             .context("Failed to set keyboard layout")?;
 
-        info!("[keyboard-layout:localed] Layout set to: {}", layout);
+        info!("[keyboard-layout:localed] Layout set to: {layout}");
         Ok(())
     }
 }
@@ -272,12 +272,13 @@ impl KeyboardLayoutBackend for LocaledBackend {
                 let msg = match msg {
                     Ok(m) => m,
                     Err(e) => {
-                        warn!("[keyboard-layout:localed] D-Bus stream error: {}", e);
+                        warn!("[keyboard-layout:localed] D-Bus stream error: {e}");
                         continue;
                     }
                 };
 
                 let header = msg.header();
+                #[allow(clippy::redundant_closure_for_method_calls)]
                 if header.member().map(|m| m.as_str()) != Some("PropertiesChanged")
                     || header.interface().map(|i| i.as_str())
                         != Some("org.freedesktop.DBus.Properties")
@@ -296,8 +297,7 @@ impl KeyboardLayoutBackend for LocaledBackend {
                     && let Ok(layout_str) = <String>::try_from(value.clone())
                 {
                     debug!(
-                        "[keyboard-layout:localed] Configuration changed: {}",
-                        layout_str
+                        "[keyboard-layout:localed] Configuration changed: {layout_str}"
                     );
                     let available = Self::parse_xkb_layouts(&layout_str);
                     if !available.is_empty() {

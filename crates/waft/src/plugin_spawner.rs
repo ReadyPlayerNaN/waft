@@ -93,7 +93,7 @@ impl PluginSpawner {
                 if let Some(child) = spawned.child.take() {
                     let name = plugin_name.to_string();
                     std::thread::Builder::new()
-                        .name(format!("reap-{}", plugin_name))
+                        .name(format!("reap-{plugin_name}"))
                         .spawn(move || {
                             let mut child = child;
                             match child.wait() {
@@ -117,7 +117,7 @@ impl PluginSpawner {
                 self.spawned.insert(plugin_name.to_string(), spawned);
             }
             Err(e) => {
-                error!("failed to spawn plugin '{}': {e}", plugin_name);
+                error!("failed to spawn plugin '{plugin_name}': {e}");
             }
         }
     }

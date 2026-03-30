@@ -172,7 +172,7 @@ pub async fn discover_accounts(
                 accounts.push((id, path_str, account));
             }
             None => {
-                warn!("[goa] Account object at {} missing Id property, skipping", path_str);
+                warn!("[goa] Account object at {path_str} missing Id property, skipping");
             }
         }
     }
@@ -206,8 +206,7 @@ pub async fn set_service_disabled(
         ))?;
 
     debug!(
-        "[goa] Set {} = {} on {}",
-        prop_name, disabled, account_path
+        "[goa] Set {prop_name} = {disabled} on {account_path}"
     );
 
     Ok(())
@@ -222,7 +221,7 @@ pub async fn remove_account(conn: &Connection, account_path: &str) -> Result<()>
         .call("Remove", &())
         .await
         .context(format!("Failed to call Remove on {account_path}"))?;
-    debug!("[goa] Called Remove on {}", account_path);
+    debug!("[goa] Called Remove on {account_path}");
     Ok(())
 }
 
@@ -247,11 +246,10 @@ const KNOWN_PROVIDERS: &[(&str, &str, &str)] = &[
 
 /// Check if a GOA provider type is supported via `Manager.IsSupportedProvider`.
 async fn is_supported_provider(conn: &Connection, provider_type: &str) -> bool {
-    let proxy = match zbus::Proxy::new(conn, GOA_BUS_NAME, GOA_MANAGER_PATH, GOA_MANAGER_IFACE)
+    let Ok(proxy) = zbus::Proxy::new(conn, GOA_BUS_NAME, GOA_MANAGER_PATH, GOA_MANAGER_IFACE)
         .await
-    {
-        Ok(p) => p,
-        Err(_) => return false,
+    else {
+        return false;
     };
 
     match proxy
@@ -261,8 +259,7 @@ async fn is_supported_provider(conn: &Connection, provider_type: &str) -> bool {
         Ok((supported,)) => supported,
         Err(e) => {
             debug!(
-                "[goa] IsSupportedProvider({}) failed: {}",
-                provider_type, e
+                "[goa] IsSupportedProvider({provider_type}) failed: {e}"
             );
             false
         }

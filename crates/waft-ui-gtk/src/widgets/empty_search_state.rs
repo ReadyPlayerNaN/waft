@@ -21,7 +21,7 @@ pub struct EmptySearchStateWidget {
 }
 
 impl EmptySearchStateWidget {
-    pub fn new(props: EmptySearchStateProps) -> Self {
+    pub fn new(props: &EmptySearchStateProps) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .valign(gtk::Align::Center)

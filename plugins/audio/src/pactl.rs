@@ -253,7 +253,7 @@ pub async fn set_sink_volume(sink_name: &str, volume: f64) -> Result<()> {
     let output = run_pactl(&[
         "set-sink-volume",
         sink_name,
-        &format!("{}%", volume_percent),
+        &format!("{volume_percent}%"),
     ])
     .await?;
 
@@ -274,7 +274,7 @@ pub async fn set_source_volume(source_name: &str, volume: f64) -> Result<()> {
     let output = run_pactl(&[
         "set-source-volume",
         source_name,
-        &format!("{}%", volume_percent),
+        &format!("{volume_percent}%"),
     ])
     .await?;
 
@@ -611,7 +611,7 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
                      active_port: Option<String>,
                      ports_lines: &[String],
                      sinks: &mut Vec<SinkInfo>| {
-        let port_refs: Vec<&str> = ports_lines.iter().map(|s| s.as_str()).collect();
+        let port_refs: Vec<&str> = ports_lines.iter().map(std::string::String::as_str).collect();
         let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
         let ports = parse_ports_structured(ports_lines);
         let is_default = default_sink.is_some_and(|d| d == name);
@@ -767,7 +767,7 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
         if name.contains(".monitor") {
             return;
         }
-        let port_refs: Vec<&str> = ports_lines.iter().map(|s| s.as_str()).collect();
+        let port_refs: Vec<&str> = ports_lines.iter().map(std::string::String::as_str).collect();
         let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
         let ports = parse_ports_structured(ports_lines);
         let is_default = default_source.is_some_and(|d| d == name);
@@ -916,7 +916,7 @@ pub fn parse_card_ports(output: &str) -> CardPortMap {
                     },
                 );
             }
-            current_card_id = trimmed.strip_prefix("Card #").map(|s| s.to_string());
+            current_card_id = trimmed.strip_prefix("Card #").map(std::string::ToString::to_string);
             in_ports = false;
             in_port_properties = false;
             current_port_name = None;
@@ -1371,9 +1371,8 @@ fn parse_modules_short(output: &str) -> Vec<ModuleInfo> {
             continue;
         }
 
-        let index = match parts[0].parse::<u32>() {
-            Ok(i) => i,
-            Err(_) => continue,
+        let Ok(index) = parts[0].parse::<u32>() else {
+            continue;
         };
 
         modules.push(ModuleInfo {

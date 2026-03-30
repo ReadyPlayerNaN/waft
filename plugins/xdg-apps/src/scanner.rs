@@ -68,7 +68,7 @@ fn scan_dir(dir: &Path) -> std::io::Result<Vec<DiscoveredApp>> {
         let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
-            .map(|s| s.to_lowercase())
+            .map(str::to_lowercase)
             .unwrap_or_default();
         if stem.is_empty() {
             continue;

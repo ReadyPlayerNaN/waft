@@ -111,13 +111,13 @@ where
 
     /// Get read access to the current state.
     pub fn get_state(&self) -> std::sync::RwLockReadGuard<'_, State> {
-        self.state.read().unwrap()
+        self.state.read().expect("state RwLock was poisoned")
     }
 
     /// Apply configuration to the state.
-    pub fn configure(&self, config: State::Config) {
-        let mut state = self.state.write().unwrap();
-        state.configure(&config);
+    pub fn configure(&self, config: &State::Config) {
+        let mut state = self.state.write().expect("state RwLock was poisoned");
+        state.configure(config);
     }
 
     /// Emit an operation to modify state.
@@ -127,7 +127,7 @@ where
     /// all subscribers are notified.
     pub fn emit(&self, op: Op) {
         let changed = {
-            let mut state = self.state.write().unwrap();
+            let mut state = self.state.write().expect("state RwLock was poisoned");
             (self.processor)(&mut state, op)
         };
         if changed {

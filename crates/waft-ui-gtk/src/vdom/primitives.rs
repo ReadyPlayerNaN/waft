@@ -35,7 +35,7 @@ impl VCustomButton {
     }
 
     pub fn css_classes(mut self, classes: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.css_classes.extend(classes.into_iter().map(|c| c.into()));
+        self.css_classes.extend(classes.into_iter().map(std::convert::Into::into));
         self
     }
 
@@ -252,7 +252,7 @@ impl VIcon {
     }
 
     pub fn css_classes(mut self, classes: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.css_classes.extend(classes.into_iter().map(|c| c.into()));
+        self.css_classes.extend(classes.into_iter().map(std::convert::Into::into));
         self
     }
 }
@@ -579,7 +579,7 @@ impl VToggleButton {
     }
 
     pub fn css_classes(mut self, classes: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.css_classes.extend(classes.into_iter().map(|c| c.into()));
+        self.css_classes.extend(classes.into_iter().map(std::convert::Into::into));
         self
     }
 

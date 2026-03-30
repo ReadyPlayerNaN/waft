@@ -58,7 +58,7 @@ pub async fn monitor_goa_signals(
         let msg = match msg {
             Ok(m) => m,
             Err(e) => {
-                warn!("[goa] D-Bus stream error: {}", e);
+                warn!("[goa] D-Bus stream error: {e}");
                 continue;
             }
         };
@@ -120,8 +120,7 @@ fn handle_account_properties_changed(
         Some(id) => id.to_string(),
         None => {
             debug!(
-                "[goa] PropertiesChanged for unknown path {}, ignoring",
-                obj_path
+                "[goa] PropertiesChanged for unknown path {obj_path}, ignoring"
             );
             return false;
         }
@@ -153,7 +152,7 @@ fn handle_account_properties_changed(
         && let Ok(locked) = bool::try_from(val.clone())
         && account.locked != locked
     {
-        info!("[goa] Account {} locked: {}", account_id, locked);
+        info!("[goa] Account {account_id} locked: {locked}");
         account.locked = locked;
         changed = true;
     }
@@ -169,8 +168,7 @@ fn handle_account_properties_changed(
                 && svc.enabled != enabled
             {
                 info!(
-                    "[goa] Account {} service {} enabled: {}",
-                    account_id, service_id, enabled
+                    "[goa] Account {account_id} service {service_id} enabled: {enabled}"
                 );
                 svc.enabled = enabled;
                 changed = true;
@@ -226,8 +224,7 @@ fn handle_interfaces_added(state: &Arc<StdMutex<GoaState>>, msg: &zbus::Message)
 
     let Some((id, account)) = dbus::parse_account(account_props) else {
         warn!(
-            "[goa] InterfacesAdded for {} but missing Id property",
-            path_str
+            "[goa] InterfacesAdded for {path_str} but missing Id property"
         );
         return false;
     };
@@ -260,12 +257,11 @@ fn handle_interfaces_removed(state: &Arc<StdMutex<GoaState>>, msg: &zbus::Messag
     let mut st = state.lock_or_recover();
 
     if let Some(id) = st.remove_by_path(&path_str) {
-        info!("[goa] Account removed: {} at {}", id, path_str);
+        info!("[goa] Account removed: {id} at {path_str}");
         true
     } else {
         debug!(
-            "[goa] InterfacesRemoved for unknown path {}, ignoring",
-            path_str
+            "[goa] InterfacesRemoved for unknown path {path_str}, ignoring"
         );
         false
     }

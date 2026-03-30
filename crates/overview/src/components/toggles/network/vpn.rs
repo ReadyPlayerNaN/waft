@@ -36,7 +36,7 @@ impl VpnToggles {
         store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
         menu_store: &Rc<waft_core::menu_state::MenuStore>,
-        rebuild_callback: Rc<dyn Fn()>,
+        rebuild_callback: &Rc<dyn Fn()>,
     ) -> Self {
         let entries: Rc<RefCell<Vec<ToggleEntry>>> = Rc::new(RefCell::new(Vec::new()));
 

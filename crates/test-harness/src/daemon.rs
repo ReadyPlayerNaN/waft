@@ -28,12 +28,13 @@ impl TestDaemon {
         // Point WAFT_DAEMON_DIR to an empty temp directory so no plugins are discovered.
         let plugin_dir = TempDir::new().expect("failed to create temp dir for plugins");
         // SAFETY: Tests run serialized via #[serial] so no concurrent env var mutation.
+        #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("WAFT_DAEMON_DIR", plugin_dir.path());
         }
 
         let daemon =
-            WaftDaemon::new(socket_path.clone()).expect("failed to create test WaftDaemon");
+            WaftDaemon::new(&socket_path).expect("failed to create test WaftDaemon");
 
         // Spawn on a LocalSet because WaftDaemon::run() returns Box<dyn Error>
         // which is not Send. We use spawn_blocking + a dedicated runtime instead.

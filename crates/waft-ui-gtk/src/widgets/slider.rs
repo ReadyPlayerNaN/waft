@@ -67,7 +67,7 @@ impl RenderFn for SliderRender {
                 }),
         );
 
-        println!("Slider {:?}", props);
+        println!("Slider {props:?}");
 
         // Expand button with chevron icon (inside a revealer)
         let emit_expand = emit.clone();

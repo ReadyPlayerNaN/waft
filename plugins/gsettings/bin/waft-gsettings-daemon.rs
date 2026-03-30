@@ -101,9 +101,8 @@ impl GsettingsPlugin {
 #[async_trait::async_trait]
 impl Plugin for GsettingsPlugin {
     fn get_entities(&self) -> Vec<Entity> {
-        let color = match self.current_color() {
-            Some(c) => c,
-            None => return Vec::new(),
+        let Some(color) = self.current_color() else {
+            return Vec::new();
         };
 
         let appearance = entity::appearance::GtkAppearance {

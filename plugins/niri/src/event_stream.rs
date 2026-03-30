@@ -97,12 +97,9 @@ pub fn spawn_event_stream() -> flume::Receiver<NiriEvent> {
             }
         };
 
-        let stdout = match child.stdout.take() {
-            Some(s) => s,
-            None => {
-                log::error!("[niri] Failed to capture event stream stdout");
-                return;
-            }
+        let Some(stdout) = child.stdout.take() else {
+            log::error!("[niri] Failed to capture event stream stdout");
+            return;
         };
 
         let reader = std::io::BufReader::new(stdout);

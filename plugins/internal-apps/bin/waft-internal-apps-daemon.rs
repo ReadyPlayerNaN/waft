@@ -20,8 +20,7 @@ impl InternalAppsPlugin {
     async fn new() -> Self {
         let settings_path = Self::resolve_binary("waft-settings").await;
         log::info!(
-            "[internal-apps] waft-settings path: {:?}",
-            settings_path
+            "[internal-apps] waft-settings path: {settings_path:?}"
         );
         Self { settings_path }
     }

@@ -131,9 +131,8 @@ impl WiFiPage {
             let pending = pending_share_ssid.clone();
             let root_for_dialog = root.clone();
             entity_store.on_action_success(move |_action_id, data| {
-                let ssid = match pending.borrow_mut().take() {
-                    Some(ssid) => ssid,
-                    None => return,
+                let Some(ssid) = pending.borrow_mut().take() else {
+                    return;
                 };
                 if let Some(data) = data {
                     if let Some(qr_string) = data.get("qr_string").and_then(|v| v.as_str()) {

@@ -61,7 +61,7 @@ async fn probe_backend(conn: &Connection) -> Result<Backend> {
         let proxy =
             zbus::Proxy::new(conn, SCREENSAVER_DESTINATION, *path, SCREENSAVER_INTERFACE).await?;
         if proxy.call::<_, _, (bool,)>("GetActive", &()).await.is_ok() {
-            info!("[caffeine] ScreenSaver backend available at {}", path);
+            info!("[caffeine] ScreenSaver backend available at {path}");
             return Ok(Backend::ScreenSaver { path });
         }
     }
@@ -88,7 +88,7 @@ impl CaffeinePlugin {
             .map_err(|e| anyhow::anyhow!("Failed to connect to session bus: {e}"))?;
 
         let backend = probe_backend(&conn).await?;
-        info!("[caffeine] Using backend: {:?}", backend);
+        info!("[caffeine] Using backend: {backend:?}");
 
         Ok(Self {
             conn,
@@ -136,7 +136,7 @@ impl CaffeinePlugin {
                     .await?;
 
                 self.state.lock_or_recover().screensaver_cookie = Some(cookie);
-                debug!("[caffeine] ScreenSaver inhibit cookie: {}", cookie);
+                debug!("[caffeine] ScreenSaver inhibit cookie: {cookie}");
             }
         }
         self.state.lock_or_recover().active = true;
@@ -204,7 +204,7 @@ impl Plugin for CaffeinePlugin {
 
             if let Err(e) = result {
                 log::error!("[caffeine] Toggle failed: {e}");
-                return Err(e.into());
+                return Err(e);
             }
         }
         Ok(serde_json::Value::Null)

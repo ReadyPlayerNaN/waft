@@ -287,7 +287,7 @@ impl GroupsSection {
                 GroupFormOutput::SaveRequested => {
                     let group = {
                         let st = state_ref.borrow();
-                        st.form.as_ref().and_then(|f| f.get_group())
+                        st.form.as_ref().and_then(super::group_form::GroupForm::get_group)
                     };
                     if let Some(group) = group {
                         let urn =
@@ -350,7 +350,7 @@ impl GroupsSection {
                 GroupFormOutput::SaveRequested => {
                     let group = {
                         let st = state_ref.borrow();
-                        st.form.as_ref().and_then(|f| f.get_group())
+                        st.form.as_ref().and_then(super::group_form::GroupForm::get_group)
                     };
                     if let Some(group) = group {
                         let urn =

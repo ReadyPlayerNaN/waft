@@ -37,7 +37,7 @@ impl TetheringToggles {
         store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
         menu_store: &Rc<waft_core::menu_state::MenuStore>,
-        rebuild_callback: Rc<dyn Fn()>,
+        rebuild_callback: &Rc<dyn Fn()>,
     ) -> Self {
         let entries: Rc<RefCell<Vec<ToggleEntry>>> = Rc::new(RefCell::new(Vec::new()));
 
@@ -89,7 +89,7 @@ impl TetheringToggles {
                         entry.connected.set(adapter.connected);
                     } else {
                         // Create new toggle for this adapter
-                        let widget_id = format!("tethering-toggle-{}", urn_str);
+                        let widget_id = format!("tethering-toggle-{urn_str}");
                         let menu_id = menu_id_for_widget(&widget_id);
 
                         let menu = FeatureToggleMenuWidget::new();

@@ -181,7 +181,7 @@ fn parse_enabled(parent: &kdl::KdlNode) -> Option<bool> {
 
 /// Parse a color value from a named child node (e.g. `active-color "#7fc8ff"`).
 fn parse_color_child(parent: &kdl::KdlNode, child_name: &str) -> Option<String> {
-    find_child(parent, child_name).and_then(|n| node_str_arg(n).map(|s| s.to_string()))
+    find_child(parent, child_name).and_then(|n| node_str_arg(n).map(std::string::ToString::to_string))
 }
 
 /// Parse an integer from a named child node.
@@ -195,13 +195,13 @@ fn parse_offset(parent: &kdl::KdlNode) -> Option<(i32, i32)> {
     let x = offset_node
         .entries()
         .iter()
-        .find(|e| e.name().map(|n| n.value()) == Some("x"))
+        .find(|e| e.name().map(kdl::KdlIdentifier::value) == Some("x"))
         .and_then(|e| e.value().as_integer().map(|v| v as i32))
         .unwrap_or(0);
     let y = offset_node
         .entries()
         .iter()
-        .find(|e| e.name().map(|n| n.value()) == Some("y"))
+        .find(|e| e.name().map(kdl::KdlIdentifier::value) == Some("y"))
         .and_then(|e| e.value().as_integer().map(|v| v as i32))
         .unwrap_or(0);
     Some((x, y))
@@ -303,9 +303,8 @@ pub fn load_layout_config(path: &Path) -> Result<NiriLayoutConfig, String> {
     let doc = config.doc();
 
     let layout_node = doc.nodes().iter().find(|n| n.name().value() == "layout");
-    let layout_node = match layout_node {
-        Some(n) => n,
-        None => return Ok(NiriLayoutConfig::default()),
+    let Some(layout_node) = layout_node else {
+        return Ok(NiriLayoutConfig::default());
     };
 
     let defaults = NiriLayoutConfig::default();
@@ -563,14 +562,13 @@ pub fn load_background_color(path: &Path) -> Result<Option<String>, String> {
         .nodes()
         .iter()
         .find(|n| n.name().value() == "layout");
-    let layout = match layout {
-        Some(n) => n,
-        None => return Ok(None),
+    let Some(layout) = layout else {
+        return Ok(None);
     };
 
     let color = find_child(layout, "background-color")
         .and_then(node_str_arg)
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     Ok(color)
 }
 

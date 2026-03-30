@@ -75,7 +75,7 @@ pub async fn wifi_scan_task(
                 }
             }
             Err(e) => {
-                error!("[nm] WiFi scan failed: {}", e);
+                error!("[nm] WiFi scan failed: {e}");
                 let mut st = lock_or_recover(&state);
                 for adapter in &mut st.wifi_adapters {
                     adapter.scanning = false;

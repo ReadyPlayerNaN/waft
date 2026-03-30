@@ -185,7 +185,7 @@ fn apply_css() {
     let provider = gtk::CssProvider::new();
     provider.load_from_data(include_str!("../style.css"));
     gtk::style_context_add_provider_for_display(
-        &gtk::gdk::Display::default().unwrap(),
+        &gtk::gdk::Display::default().expect("GDK display must be available"),
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );

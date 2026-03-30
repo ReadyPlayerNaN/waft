@@ -66,8 +66,7 @@ pub async fn scan_wifi_networks(
             Ok(p) => p,
             Err(e) => {
                 warn!(
-                    "[nm] Failed to create Wireless proxy for {}: {}",
-                    adapter_path, e
+                    "[nm] Failed to create Wireless proxy for {adapter_path}: {e}"
                 );
                 continue;
             }
@@ -76,7 +75,7 @@ pub async fn scan_wifi_networks(
         let options: HashMap<String, zbus::zvariant::Value<'_>> = HashMap::new();
         let scan_result: Result<(), _> = proxy.call("RequestScan", &(options,)).await;
         if let Err(e) = scan_result {
-            warn!("[nm] Failed to trigger scan on {}: {}", adapter_path, e);
+            warn!("[nm] Failed to trigger scan on {adapter_path}: {e}");
         }
     }
 
@@ -98,8 +97,7 @@ pub async fn scan_wifi_networks(
             Ok(p) => p,
             Err(e) => {
                 warn!(
-                    "[nm] Failed to create Wireless proxy for {}: {}",
-                    adapter_path, e
+                    "[nm] Failed to create Wireless proxy for {adapter_path}: {e}"
                 );
                 continue;
             }
@@ -109,8 +107,7 @@ pub async fn scan_wifi_networks(
             Ok(p) => p,
             Err(e) => {
                 warn!(
-                    "[nm] Failed to get access points from {}: {}",
-                    adapter_path, e
+                    "[nm] Failed to get access points from {adapter_path}: {e}"
                 );
                 continue;
             }
@@ -120,7 +117,7 @@ pub async fn scan_wifi_networks(
             let ap = match read_access_point(conn, ap_path.as_str()).await {
                 Ok(ap) => ap,
                 Err(e) => {
-                    debug!("[nm] Failed to read AP {}: {}", ap_path, e);
+                    debug!("[nm] Failed to read AP {ap_path}: {e}");
                     continue;
                 }
             };
@@ -469,14 +466,13 @@ pub async fn connect_wired_dbus(conn: &Connection, device_path: &str) -> Result<
         ObjectPath::try_from(first.as_str()).unwrap_or(ObjectPath::from_static_str_unchecked("/"))
     } else {
         log::debug!(
-            "[nm] No available connections for {}, using auto-detect",
-            device_path
+            "[nm] No available connections for {device_path}, using auto-detect"
         );
         ObjectPath::from_static_str_unchecked("/")
     };
 
     let device_obj = ObjectPath::try_from(device_path)
-        .with_context(|| format!("Invalid device path: {}", device_path))?;
+        .with_context(|| format!("Invalid device path: {device_path}"))?;
     let no_specific = ObjectPath::from_static_str_unchecked("/");
 
     let nm_proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
@@ -491,8 +487,7 @@ pub async fn connect_wired_dbus(conn: &Connection, device_path: &str) -> Result<
         .await
         .with_context(|| {
             format!(
-                "Failed to activate wired connection {} on {}",
-                connection_path, device_path
+                "Failed to activate wired connection {connection_path} on {device_path}"
             )
         })?;
 
@@ -603,24 +598,24 @@ pub async fn update_connection_settings(
         proxy.call("GetSettings", &()).await?;
 
     // Apply autoconnect
-    if let Some(ac) = updates.get("autoconnect").and_then(|v| v.as_bool()) {
+    if let Some(ac) = updates.get("autoconnect").and_then(serde_json::Value::as_bool) {
         let section = settings
             .entry("connection".to_string())
             .or_insert_with(HashMap::new);
         section.insert(
             "autoconnect".to_string(),
-            Value::from(ac).try_into().unwrap(),
+            Value::from(ac).try_into().expect("bool is a valid zvariant Value"),
         );
     }
 
     // Apply metered (NM metered values: 0=unknown, 1=yes, 2=no, 3=guess-yes, 4=guess-no)
-    if let Some(metered) = updates.get("metered").and_then(|v| v.as_i64()) {
+    if let Some(metered) = updates.get("metered").and_then(serde_json::Value::as_i64) {
         let section = settings
             .entry("connection".to_string())
             .or_insert_with(HashMap::new);
         section.insert(
             "metered".to_string(),
-            Value::from(metered as i32).try_into().unwrap(),
+            Value::from(metered as i32).try_into().expect("i32 is a valid zvariant Value"),
         );
     }
 
@@ -631,7 +626,7 @@ pub async fn update_connection_settings(
             .or_insert_with(HashMap::new);
         section.insert(
             "method".to_string(),
-            Value::from(method).try_into().unwrap(),
+            Value::from(method).try_into().expect("&str is a valid zvariant Value"),
         );
     }
 
@@ -647,7 +642,7 @@ pub async fn update_connection_settings(
             .or_insert_with(HashMap::new);
         section.insert(
             "dns".to_string(),
-            Value::from(addrs).try_into().unwrap(),
+            Value::from(addrs).try_into().expect("Vec<u32> is a valid zvariant Value"),
         );
     }
 

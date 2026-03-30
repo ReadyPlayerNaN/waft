@@ -275,9 +275,8 @@ impl ProfilesSection {
 
         // Show groups that are in profile.rules and exist in the groups list
         for group in groups {
-            let rule = match profile.rules.get(&group.id) {
-                Some(r) => r,
-                None => continue,
+            let Some(rule) = profile.rules.get(&group.id) else {
+                continue;
             };
 
             let row = Self::build_group_row(
@@ -719,7 +718,7 @@ impl ProfilesSection {
 
     fn create_rule_dropdown() -> gtk::DropDown {
         let options = rule_options();
-        let refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+        let refs: Vec<&str> = options.iter().map(std::string::String::as_str).collect();
         let string_list = gtk::StringList::new(&refs);
         gtk::DropDown::builder()
             .model(&string_list)

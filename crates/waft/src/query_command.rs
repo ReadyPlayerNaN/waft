@@ -240,7 +240,7 @@ fn print_text(entities: &[CollectedEntity]) {
         }
         println!("  {}", entity.urn);
         if let Some(obj) = entity.data.as_object() {
-            let max_key_len = obj.keys().map(|k| k.len()).max().unwrap_or(0);
+            let max_key_len = obj.keys().map(std::string::String::len).max().unwrap_or(0);
             for (key, value) in obj {
                 println!(
                     "    {:<width$}  {}",

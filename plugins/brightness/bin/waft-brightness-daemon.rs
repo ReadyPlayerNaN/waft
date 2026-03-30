@@ -62,7 +62,7 @@ async fn run_command(program: &str, args: &[&str]) -> Result<std::process::Outpu
         .stderr(Stdio::piped())
         .output()
         .await
-        .map_err(|e| anyhow!("Failed to execute {}: {}", program, e))
+        .map_err(|e| anyhow!("Failed to execute {program}: {e}"))
 }
 
 /// Check if a CLI tool is available on PATH.
@@ -109,7 +109,7 @@ async fn discover_backlight_devices() -> Result<Vec<Display>> {
             let display_name = humanize_backlight_name(device_name);
 
             displays.push(Display {
-                id: format!("backlight:{}", device_name),
+                id: format!("backlight:{device_name}"),
                 name: display_name,
                 display_type: DisplayType::Backlight,
                 brightness,
@@ -141,7 +141,7 @@ async fn parse_ddc_monitors(ddcutil_output: &str) -> Result<Vec<Display>> {
                 && let Ok(brightness) = get_ddc_brightness(display_num).await
             {
                 displays.push(Display {
-                    id: format!("ddc:{}", display_num),
+                    id: format!("ddc:{display_num}"),
                     name: model,
                     display_type: DisplayType::External,
                     brightness,
@@ -165,7 +165,7 @@ async fn parse_ddc_monitors(ddcutil_output: &str) -> Result<Vec<Display>> {
         && let Ok(brightness) = get_ddc_brightness(display_num).await
     {
         displays.push(Display {
-            id: format!("ddc:{}", display_num),
+            id: format!("ddc:{display_num}"),
             name: model,
             display_type: DisplayType::External,
             brightness,
@@ -217,10 +217,10 @@ async fn set_brightness(device_id: &str, value: f64) -> Result<()> {
     } else if let Some(display_num) = device_id.strip_prefix("ddc:") {
         let num: u32 = display_num
             .parse()
-            .map_err(|_| anyhow!("Invalid DDC display number: {}", display_num))?;
+            .map_err(|_| anyhow!("Invalid DDC display number: {display_num}"))?;
         set_ddc_brightness(num, value).await
     } else {
-        Err(anyhow!("Unknown device type: {}", device_id))
+        Err(anyhow!("Unknown device type: {device_id}"))
     }
 }
 
@@ -228,7 +228,7 @@ async fn set_backlight_brightness(device_name: &str, value: f64) -> Result<()> {
     let percent = (value * 100.0).round() as u32;
     let output = run_command(
         "brightnessctl",
-        &["-d", device_name, "set", &format!("{}%", percent)],
+        &["-d", device_name, "set", &format!("{percent}%")],
     )
     .await?;
 
@@ -387,7 +387,7 @@ fn resolve_ddc_connector(display_num: u32, ddcutil_output: &str) -> Option<Strin
 
 /// Parse the I2C bus number for a given display from `ddcutil detect` output.
 fn parse_i2c_bus_for_display(display_num: u32, output: &str) -> Option<u32> {
-    let target = format!("Display {}", display_num);
+    let target = format!("Display {display_num}");
     let mut in_target_display = false;
 
     for line in output.lines() {
@@ -413,7 +413,7 @@ fn match_i2c_bus_to_connector(i2c_bus: u32) -> Option<String> {
     let drm_dir = Path::new("/sys/class/drm");
     let entries = std::fs::read_dir(drm_dir).ok()?;
 
-    let target_suffix = format!("i2c-{}", i2c_bus);
+    let target_suffix = format!("i2c-{i2c_bus}");
 
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -598,7 +598,7 @@ impl BrightnessPlugin {
                     debug!("[brightness] Found {} backlight device(s)", devs.len());
                     displays.extend(devs);
                 }
-                Err(e) => warn!("[brightness] Failed to discover backlight devices: {}", e),
+                Err(e) => warn!("[brightness] Failed to discover backlight devices: {e}"),
             }
         } else {
             info!("[brightness] brightnessctl not available");
@@ -611,7 +611,7 @@ impl BrightnessPlugin {
                     debug!("[brightness] Found {} DDC monitor(s)", devs.len());
                     displays.extend(devs);
                 }
-                Err(e) => warn!("[brightness] Failed to discover DDC monitors: {}", e),
+                Err(e) => warn!("[brightness] Failed to discover DDC monitors: {e}"),
             }
         } else if !is_tool_available("ddcutil").await {
             info!("[brightness] ddcutil not available");
@@ -689,7 +689,7 @@ impl Plugin for BrightnessPlugin {
         if action == "set-brightness" {
             let new_brightness = params
                 .get("value")
-                .and_then(|v| v.as_f64())
+                .and_then(waft_plugin::serde_json::Value::as_f64)
                 .unwrap_or(0.0)
                 .clamp(0.0, 1.0);
 
@@ -697,11 +697,9 @@ impl Plugin for BrightnessPlugin {
 
             if let Err(e) = set_brightness(&device_id, new_brightness).await {
                 log::error!(
-                    "[brightness] Failed to set brightness for {}: {}",
-                    device_id,
-                    e
+                    "[brightness] Failed to set brightness for {device_id}: {e}"
                 );
-                return Err(e.into());
+                return Err(e);
             }
 
             // Update local state
@@ -712,7 +710,7 @@ impl Plugin for BrightnessPlugin {
                 }
             }
         } else {
-            log::debug!("[brightness] Unknown action: {}", action);
+            log::debug!("[brightness] Unknown action: {action}");
         }
 
         Ok(serde_json::Value::Null)

@@ -141,7 +141,7 @@ impl EdsPlugin {
 
     /// Create occurrence key from UID and start time.
     fn make_occurrence_key(uid: &str, start_time: i64) -> String {
-        format!("{}::{}", uid, start_time)
+        format!("{uid}::{start_time}")
     }
 }
 
@@ -185,7 +185,7 @@ impl Plugin for EdsPlugin {
         action: String,
         _params: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
-        log::debug!("Received action '{}' for URN: {}", action, urn);
+        log::debug!("Received action '{action}' for URN: {urn}");
 
         if action == "refresh" {
             let allowed = {
@@ -203,9 +203,7 @@ impl Plugin for EdsPlugin {
         }
 
         log::warn!(
-            "EDS plugin does not support action '{}' (urn={})",
-            action,
-            urn
+            "EDS plugin does not support action '{action}' (urn={urn})"
         );
         Ok(serde_json::Value::Null)
     }
@@ -389,7 +387,7 @@ async fn spawn_session_monitor(
 
     // Resolve session path: prefer XDG_SESSION_ID, fall back to "auto".
     let session_path = match std::env::var("XDG_SESSION_ID") {
-        Ok(id) => format!("/org/freedesktop/login1/session/{}", id),
+        Ok(id) => format!("/org/freedesktop/login1/session/{id}"),
         Err(_) => "/org/freedesktop/login1/session/auto".to_string(),
     };
 
@@ -398,8 +396,7 @@ async fn spawn_session_monitor(
     for (member, is_lock) in &[("Lock", true), ("Unlock", false)] {
         let rule = format!(
             "type='signal',interface='org.freedesktop.login1.Session',\
-             member='{}',path='{}'",
-            member, session_path
+             member='{member}',path='{session_path}'"
         );
 
         let sys_conn = sys_conn.clone();
@@ -631,8 +628,7 @@ async fn open_calendar(conn: &Connection, source_uid: &str) -> Result<(String, S
         .context("Failed to open calendar")?;
 
     debug!(
-        "[eds] Opened calendar '{}': path={}, bus={}",
-        source_uid, object_path, bus_name
+        "[eds] Opened calendar '{source_uid}': path={object_path}, bus={bus_name}"
     );
     Ok((object_path, bus_name))
 }
@@ -668,9 +664,8 @@ async fn check_backend_online(
     match result {
         Ok(value) if value == "false" => {
             warn!(
-                "[eds] Calendar '{}' ({}) is OFFLINE — credentials may have expired. \
-                Re-authenticate in GNOME Settings → Online Accounts.",
-                display_name, source_uid
+                "[eds] Calendar '{display_name}' ({source_uid}) is OFFLINE — credentials may have expired. \
+                Re-authenticate in GNOME Settings → Online Accounts."
             );
         }
         Ok(_) => {}
@@ -702,7 +697,7 @@ async fn create_view(
         .context("Failed to create calendar view")?;
 
     let view_path = view_path.to_string();
-    debug!("[eds] Created view: {}", view_path);
+    debug!("[eds] Created view: {view_path}");
     Ok(view_path)
 }
 
@@ -717,7 +712,7 @@ async fn start_view(conn: &Connection, bus_name: &str, view_path: &str) -> Resul
         .await
         .context("Failed to start calendar view")?;
 
-    debug!("[eds] Started view: {}", view_path);
+    debug!("[eds] Started view: {view_path}");
     Ok(())
 }
 
@@ -992,8 +987,7 @@ async fn spawn_view_monitor(
     // the initial ObjectsAdded batch before our AddMatch is registered.
     for member in &["ObjectsAdded", "ObjectsModified", "ObjectsRemoved"] {
         let rule = format!(
-            "type='signal',interface='{}',path='{}',member='{}'",
-            CALENDAR_VIEW_IFACE, view_path, member
+            "type='signal',interface='{CALENDAR_VIEW_IFACE}',path='{view_path}',member='{member}'"
         );
         if let Err(e) = conn
             .call_method(
@@ -1005,7 +999,7 @@ async fn spawn_view_monitor(
             )
             .await
         {
-            warn!("[eds] Failed to add match rule for {}: {e}", member);
+            warn!("[eds] Failed to add match rule for {member}: {e}");
         }
     }
 
@@ -1017,13 +1011,13 @@ async fn spawn_view_monitor(
     debug!("[eds] Start() returned for view {view_path}, monitoring loop starting");
 
     let handle = tokio::spawn(async move {
-        debug!("[eds] Monitoring view: {}", view_path);
+        debug!("[eds] Monitoring view: {view_path}");
 
         while let Some(msg_result) = stream.next().await {
             let msg = match msg_result {
                 Ok(m) => m,
                 Err(e) => {
-                    warn!("[eds] Message stream error: {}", e);
+                    warn!("[eds] Message stream error: {e}");
                     break;
                 }
             };
@@ -1100,7 +1094,7 @@ async fn spawn_view_monitor(
                             notifier.notify();
                         }
                     } else {
-                        warn!("[eds] view={} Failed to deserialize ObjectsAdded signal body", view_path);
+                        warn!("[eds] view={view_path} Failed to deserialize ObjectsAdded signal body");
                     }
                 }
                 "ObjectsModified" => {
@@ -1135,7 +1129,7 @@ async fn spawn_view_monitor(
                             notifier.notify();
                         }
                     } else {
-                        warn!("[eds] view={} Failed to deserialize ObjectsModified signal body", view_path);
+                        warn!("[eds] view={view_path} Failed to deserialize ObjectsModified signal body");
                     }
                 }
                 "ObjectsRemoved" => {
@@ -1160,7 +1154,7 @@ async fn spawn_view_monitor(
             paths.remove(&view_path);
         }
 
-        debug!("[eds] View monitor stopped: {}", view_path);
+        debug!("[eds] View monitor stopped: {view_path}");
     });
 
     Ok(handle)
@@ -1670,7 +1664,7 @@ fn days_in_month(year: i32, month: u32) -> u32 {
         if month == 12 { 1 } else { month + 1 },
         1,
     )
-    .map(|d| (d - chrono::NaiveDate::from_ymd_opt(year, month, 1).unwrap()).num_days() as u32)
+    .map(|d| (d - chrono::NaiveDate::from_ymd_opt(year, month, 1).expect("valid date")).num_days() as u32)
     .unwrap_or(30)
 }
 
@@ -1861,8 +1855,7 @@ fn update_state_remove_events(state: &Arc<StdMutex<EdsState>>, uids: &[String]) 
         );
     } else {
         warn!(
-            "[eds] remove_events: no matching occurrences found for UIDs: {:?}",
-            uids
+            "[eds] remove_events: no matching occurrences found for UIDs: {uids:?}"
         );
     }
 }

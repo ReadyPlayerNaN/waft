@@ -290,8 +290,8 @@ fn render_node(
             }
 
             let component = RightColumnStackComponent::new(
-                controls_box.upcast(),
-                exit_box.upcast(),
+                &controls_box.upcast(),
+                &exit_box.upcast(),
                 &ctx.controls_tab_btn,
                 &ctx.exit_tab_btn,
             );
@@ -311,8 +311,7 @@ fn render_node(
         // Legacy Widget and Unmatched nodes are no longer supported
         LayoutNode::Widget { id } => {
             warn!(
-                "[renderer] Legacy <Widget id=\"{}\"> elements are no longer supported",
-                id
+                "[renderer] Legacy <Widget id=\"{id}\"> elements are no longer supported"
             );
             gtk::Box::new(gtk::Orientation::Vertical, 0).upcast()
         }
@@ -432,7 +431,7 @@ fn render_feature_toggle_grid(
     // Create toggle components and wire into a grid
     let resize_cb: Rc<dyn Fn()> = Rc::new(trigger_window_resize);
     let grid = Rc::new(FeatureGridWidget::new(
-        Vec::new(),
+        &[],
         menu_store.clone(),
         Some(resize_cb),
     ));
@@ -496,7 +495,7 @@ fn render_feature_toggle_grid(
                             &ctx.store,
                             &ctx.action_callback,
                             menu_store,
-                            dynamic_rebuild.clone(),
+                            &dynamic_rebuild,
                         ));
                         dynamic_sources.push(bt.clone());
                         keep.push(Box::new(bt));
@@ -506,7 +505,7 @@ fn render_feature_toggle_grid(
                             &ctx.store,
                             &ctx.action_callback,
                             menu_store,
-                            dynamic_rebuild.clone(),
+                            &dynamic_rebuild,
                         ));
                         dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
@@ -516,7 +515,7 @@ fn render_feature_toggle_grid(
                             &ctx.store,
                             &ctx.action_callback,
                             menu_store,
-                            dynamic_rebuild.clone(),
+                            &dynamic_rebuild,
                         ));
                         dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
@@ -526,7 +525,7 @@ fn render_feature_toggle_grid(
                             &ctx.store,
                             &ctx.action_callback,
                             menu_store,
-                            dynamic_rebuild.clone(),
+                            &dynamic_rebuild,
                         ));
                         dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
@@ -536,7 +535,7 @@ fn render_feature_toggle_grid(
                             &ctx.store,
                             &ctx.action_callback,
                             menu_store,
-                            dynamic_rebuild.clone(),
+                            &dynamic_rebuild,
                         ));
                         dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
@@ -554,7 +553,7 @@ fn render_feature_toggle_grid(
                     _ => warn!("[renderer] Unknown toggle component in FeatureToggleGrid: {name}"),
                 },
                 LayoutNode::Widget { id } => {
-                    debug!("[renderer] FeatureToggleGrid legacy Widget child: {}", id);
+                    debug!("[renderer] FeatureToggleGrid legacy Widget child: {id}");
                     // Legacy Widget children in a mixed grid are not supported.
                     // They should use a separate FeatureToggleGrid with only Widget children.
                     warn!(

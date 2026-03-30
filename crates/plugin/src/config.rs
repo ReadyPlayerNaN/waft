@@ -2,7 +2,7 @@
 //!
 //! Loads plugin-specific configuration from `~/.config/waft/config.toml`.
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
 

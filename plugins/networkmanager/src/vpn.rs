@@ -146,9 +146,7 @@ pub async fn activate_vpn(
     conn_type: &str,
 ) -> Result<String> {
     log::info!(
-        "[nm] Activating {} connection: {}",
-        conn_type,
-        connection_path
+        "[nm] Activating {conn_type} connection: {connection_path}"
     );
 
     let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
@@ -164,9 +162,7 @@ pub async fn activate_vpn(
         .await
         .map_err(|e| {
             anyhow::anyhow!(
-                "Failed to activate {} connection {}: {e}",
-                conn_type,
-                connection_path,
+                "Failed to activate {conn_type} connection {connection_path}: {e}",
             )
         })?;
 

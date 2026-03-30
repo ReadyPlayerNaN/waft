@@ -123,7 +123,7 @@ pub fn extract_abbreviation(name: &str) -> String {
 
     // Fallback: use first 2 chars uppercase
     name.chars()
-        .filter(|c| c.is_ascii_alphabetic())
+        .filter(char::is_ascii_alphabetic)
         .take(2)
         .collect::<String>()
         .to_uppercase()

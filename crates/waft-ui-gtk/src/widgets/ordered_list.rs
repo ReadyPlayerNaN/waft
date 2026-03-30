@@ -56,7 +56,7 @@ pub struct OrderedList {
 
 impl OrderedList {
     /// Create a new ordered list.
-    pub fn new(props: OrderedListProps) -> Self {
+    pub fn new(props: &OrderedListProps) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .css_classes(["ordered-list"])
@@ -205,7 +205,7 @@ impl OrderedList {
 
     /// Append a drop zone at the end of the container.
     fn insert_drop_zone_at_end(&self, state: &mut OrderedListState, index: usize) {
-        let zone = DropZone::new(DropZoneProps {
+        let zone = DropZone::new(&DropZoneProps {
             index,
             visible: false,
             hover: false,
@@ -236,7 +236,7 @@ impl OrderedList {
 
         for (i, (_, row)) in state.rows.iter().enumerate() {
             // Drop zone before this row
-            let zone = DropZone::new(DropZoneProps {
+            let zone = DropZone::new(&DropZoneProps {
                 index: i,
                 visible: false,
                 hover: false,
@@ -250,7 +250,7 @@ impl OrderedList {
         }
 
         // Final drop zone after last row
-        let zone = DropZone::new(DropZoneProps {
+        let zone = DropZone::new(&DropZoneProps {
             index: state.rows.len(),
             visible: false,
             hover: false,
@@ -293,19 +293,16 @@ impl OrderedList {
             let dropped_id = match value.get::<String>() {
                 Ok(id) => id,
                 Err(e) => {
-                    log::warn!("[ordered-list] Failed to get dropped value: {}", e);
+                    log::warn!("[ordered-list] Failed to get dropped value: {e}");
                     return false;
                 }
             };
 
             // Find source index
             let s = state_ref.borrow();
-            let from_index = match s.rows.iter().position(|(id, _)| id == &dropped_id) {
-                Some(idx) => idx,
-                None => {
-                    log::warn!("[ordered-list] Dropped item ID not found: {}", dropped_id);
-                    return false;
-                }
+            let Some(from_index) = s.rows.iter().position(|(id, _)| id == &dropped_id) else {
+                log::warn!("[ordered-list] Dropped item ID not found: {dropped_id}");
+                return false;
             };
 
             // Target index is the drop zone index

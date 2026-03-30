@@ -161,7 +161,7 @@ fn print_plugin_list_text(plugins: &[DiscoveredPlugin]) {
     for plugin in plugins {
         let label = format!("{} ({})", plugin.display_name, plugin.id);
         let types = plugin.entity_types.join(", ");
-        println!("{:<width$}  {types}", label, width = max_label);
+        println!("{label:<max_label$}  {types}");
     }
 }
 
@@ -236,14 +236,11 @@ pub fn print_plugin_description(plugin_name: &str, json: bool) {
     let daemon_dir = detect_daemon_dir();
     let plugins = discover_plugins(&daemon_dir);
 
-    let plugin = match plugins.iter().find(|p| p.id == plugin_name) {
-        Some(p) => p,
-        None => {
-            eprintln!(
-                "error: plugin '{plugin_name}' not found. Run 'waft plugin ls' to see available plugins."
-            );
-            std::process::exit(1);
-        }
+    let Some(plugin) = plugins.iter().find(|p| p.id == plugin_name) else {
+        eprintln!(
+            "error: plugin '{plugin_name}' not found. Run 'waft plugin ls' to see available plugins."
+        );
+        std::process::exit(1);
     };
 
     if json {
@@ -465,7 +462,7 @@ fn discover_plugins(dir: &PathBuf) -> Vec<DiscoveredPlugin> {
     };
 
     let candidates: Vec<(String, PathBuf)> = entries
-        .filter_map(|entry| entry.ok())
+        .filter_map(std::result::Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().to_string();
             let plugin_name = name
@@ -634,7 +631,7 @@ mod tests {
 
     #[test]
     fn json_output_structure() {
-        let plugins = vec![DiscoveredPlugin {
+        let plugins = [DiscoveredPlugin {
             id: "sunsetr".to_string(),
             display_name: "Sunsetr".to_string(),
             description: "Night light control".to_string(),

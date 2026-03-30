@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::Path;
 
 use log::{debug, error, info, warn};
 use tokio::net::UnixListener;
@@ -61,8 +61,8 @@ pub struct WaftDaemon {
 }
 
 impl WaftDaemon {
-    pub fn new(socket_path: PathBuf) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let listener = UnixListener::bind(&socket_path)?;
+    pub fn new(socket_path: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let listener = UnixListener::bind(socket_path)?;
         let (event_tx, event_rx) = mpsc::channel(256);
 
         // Build the discovery cache on a blocking thread so we don't block the

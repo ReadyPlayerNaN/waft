@@ -113,7 +113,7 @@ pub async fn setup() -> Result<adw::Application> {
             };
 
             let on_command = move |cmd: IpcCommand| {
-                eprintln!("[ipc] received command: {:?}", cmd);
+                eprintln!("[ipc] received command: {cmd:?}");
                 // Convert IPC command to window input
                 let input = match cmd {
                     IpcCommand::Show => MainWindowInput::ShowOverlay,
@@ -219,7 +219,7 @@ pub async fn setup() -> Result<adw::Application> {
             let waft_client_for_entity_actions = waft_client_slot.clone();
             let entity_action_callback: EntityActionCallback =
                 Rc::new(move |urn, action_name, params| {
-                    debug!("[entity] Entity action on {}: {}", urn, action_name);
+                    debug!("[entity] Entity action on {urn}: {action_name}");
                     let guard = match waft_client_for_entity_actions.lock() {
                         Ok(g) => g,
                         Err(e) => {

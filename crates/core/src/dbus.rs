@@ -323,14 +323,14 @@ impl DbusHandle {
                 let iface_req = rule_str.contains("interface='");
                 let iface_ok = !iface_req
                     || h.interface()
-                        .map(|i| rule_str.contains(&format!("interface='{}'", i)))
+                        .map(|i| rule_str.contains(&format!("interface='{i}'")))
                         .unwrap_or(false);
 
                 // Filter by member if specified in match rule
                 let member_req = rule_str.contains("member='");
                 let member_ok = !member_req
                     || h.member()
-                        .map(|m| rule_str.contains(&format!("member='{}'", m)))
+                        .map(|m| rule_str.contains(&format!("member='{m}'")))
                         .unwrap_or(false);
 
                 if iface_ok && member_ok && tx.send(msg).is_err() {

@@ -57,7 +57,7 @@ impl GoaPlugin {
 
         match action.as_str() {
             "add-account" => {
-                info!("[goa] Add account requested for provider: {}", provider_type);
+                info!("[goa] Add account requested for provider: {provider_type}");
 
                 // Spawn the add-account helper as a subprocess.
                 // Use our own binary with --add-account flag.
@@ -79,22 +79,22 @@ impl GoaPlugin {
                         tokio::spawn(async move {
                             match child.wait().await {
                                 Ok(status) => {
-                                    debug!("[goa] add-account helper exited: {}", status);
+                                    debug!("[goa] add-account helper exited: {status}");
                                 }
                                 Err(e) => {
-                                    warn!("[goa] add-account helper wait error: {}", e);
+                                    warn!("[goa] add-account helper wait error: {e}");
                                 }
                             }
                         });
                     }
                     Err(e) => {
-                        error!("[goa] Failed to spawn add-account helper: {}", e);
+                        error!("[goa] Failed to spawn add-account helper: {e}");
                         anyhow::bail!("failed to spawn add-account helper: {e}");
                     }
                 }
             }
             _ => {
-                debug!("[goa] Unknown provider action: {}", action);
+                debug!("[goa] Unknown provider action: {action}");
             }
         }
 
@@ -134,8 +134,7 @@ impl Plugin for GoaPlugin {
                 };
 
                 debug!(
-                    "[goa] Enable service '{}' on account {}",
-                    service_name, account_id
+                    "[goa] Enable service '{service_name}' on account {account_id}"
                 );
 
                 let account_path = {
@@ -143,7 +142,7 @@ impl Plugin for GoaPlugin {
                     match state.object_path_for_id(&account_id) {
                         Some(p) => p.to_string(),
                         None => {
-                            warn!("[goa] Account not found: {}", account_id);
+                            warn!("[goa] Account not found: {account_id}");
                             anyhow::bail!("account not found: {account_id}");
                         }
                     }
@@ -154,10 +153,9 @@ impl Plugin for GoaPlugin {
                         .await
                 {
                     error!(
-                        "[goa] Failed to enable service '{}' on {}: {}",
-                        service_name, account_id, e
+                        "[goa] Failed to enable service '{service_name}' on {account_id}: {e}"
                     );
-                    return Err(e.into());
+                    return Err(e);
                 }
 
                 // Optimistic update (signal monitoring will also catch this)
@@ -182,8 +180,7 @@ impl Plugin for GoaPlugin {
                 };
 
                 debug!(
-                    "[goa] Disable service '{}' on account {}",
-                    service_name, account_id
+                    "[goa] Disable service '{service_name}' on account {account_id}"
                 );
 
                 let account_path = {
@@ -191,7 +188,7 @@ impl Plugin for GoaPlugin {
                     match state.object_path_for_id(&account_id) {
                         Some(p) => p.to_string(),
                         None => {
-                            warn!("[goa] Account not found: {}", account_id);
+                            warn!("[goa] Account not found: {account_id}");
                             anyhow::bail!("account not found: {account_id}");
                         }
                     }
@@ -202,10 +199,9 @@ impl Plugin for GoaPlugin {
                         .await
                 {
                     error!(
-                        "[goa] Failed to disable service '{}' on {}: {}",
-                        service_name, account_id, e
+                        "[goa] Failed to disable service '{service_name}' on {account_id}: {e}"
                     );
-                    return Err(e.into());
+                    return Err(e);
                 }
 
                 // Optimistic update
@@ -226,7 +222,7 @@ impl Plugin for GoaPlugin {
                     let path = match state.object_path_for_id(&account_id) {
                         Some(p) => p.to_string(),
                         None => {
-                            warn!("[goa] Account not found: {}", account_id);
+                            warn!("[goa] Account not found: {account_id}");
                             anyhow::bail!("account not found: {account_id}");
                         }
                     };
@@ -238,14 +234,14 @@ impl Plugin for GoaPlugin {
                     (path, locked)
                 };
                 if locked {
-                    anyhow::bail!("account {} is locked", account_id);
+                    anyhow::bail!("account {account_id} is locked");
                 }
                 dbus::remove_account(&self.conn, &account_path)
                     .await?;
             }
 
             _ => {
-                debug!("[goa] Unknown action: {}", action);
+                debug!("[goa] Unknown action: {action}");
             }
         }
 
@@ -261,8 +257,7 @@ impl Plugin for GoaPlugin {
 /// new account via `InterfacesAdded` automatically.
 fn run_add_account(provider_type: &str) -> Result<()> {
     info!(
-        "[goa] add-account helper invoked for provider: {}",
-        provider_type
+        "[goa] add-account helper invoked for provider: {provider_type}"
     );
 
     // Use gnome-control-center to trigger the native add-account flow.
@@ -279,14 +274,13 @@ fn run_add_account(provider_type: &str) -> Result<()> {
             if s.success() {
                 info!("[goa] add-account helper completed successfully");
             } else {
-                warn!("[goa] gnome-control-center exited with: {}", s);
+                warn!("[goa] gnome-control-center exited with: {s}");
             }
         }
         Err(e) => {
             error!(
-                "[goa] Failed to launch gnome-control-center: {}. \
-                 Install gnome-control-center or GNOME Settings for add-account support.",
-                e
+                "[goa] Failed to launch gnome-control-center: {e}. \
+                 Install gnome-control-center or GNOME Settings for add-account support."
             );
         }
     }
@@ -334,8 +328,7 @@ fn main() -> Result<()> {
             }
             Err(e) => {
                 warn!(
-                    "[goa] Failed to discover accounts (goa-daemon may not be running): {}",
-                    e
+                    "[goa] Failed to discover accounts (goa-daemon may not be running): {e}"
                 );
             }
         }

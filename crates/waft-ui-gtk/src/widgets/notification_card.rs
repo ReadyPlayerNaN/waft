@@ -88,7 +88,7 @@ impl NotificationCard {
 
         // Icon (32px)
         let icons = convert_icon_hints(icon_hints);
-        let icon_widget = IconWidget::new(icons, 32);
+        let icon_widget = IconWidget::new(&icons, 32);
 
         // Content box
         let content_box = gtk::Box::builder()

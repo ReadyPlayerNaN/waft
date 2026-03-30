@@ -30,7 +30,7 @@ pub fn load_startup_entries(config_path: &Path) -> Result<Vec<StartupEntry>, Str
                 .entries()
                 .iter()
                 .filter(|e| e.name().is_none())
-                .filter_map(|e| e.value().as_string().map(|s| s.to_string()))
+                .filter_map(|e| e.value().as_string().map(std::string::ToString::to_string))
                 .collect();
 
             if let Some(command) = args.first() {

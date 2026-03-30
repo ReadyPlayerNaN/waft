@@ -60,7 +60,7 @@ impl SearchPaneWidget {
             selected: 0,
         }));
 
-        let empty_state = EmptySearchStateWidget::new(EmptySearchStateProps {
+        let empty_state = EmptySearchStateWidget::new(&EmptySearchStateProps {
             query: String::new(),
         });
 
@@ -120,7 +120,7 @@ impl SearchPaneWidget {
             if let Some(ref cb) = *on_output_list.borrow() {
                 match event {
                     SearchResultListOutput::Activated(i) => {
-                        cb(SearchPaneOutput::ResultActivated(i))
+                        cb(SearchPaneOutput::ResultActivated(i));
                     }
                 }
             }

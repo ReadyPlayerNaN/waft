@@ -74,14 +74,12 @@ pub fn ensure_unique_sink_name(base: &str, existing: &[VirtualDeviceConfig]) -> 
 /// is absent, or the virtual_devices key does not exist.
 pub fn read_virtual_devices() -> Vec<VirtualDeviceConfig> {
     let config = waft_config::Config::load();
-    let settings = match config.get_plugin_settings("audio") {
-        Some(s) => s,
-        None => return Vec::new(),
+    let Some(settings) = config.get_plugin_settings("audio") else {
+        return Vec::new();
     };
 
-    let devices_value = match settings.get("virtual_devices") {
-        Some(v) => v,
-        None => return Vec::new(),
+    let Some(devices_value) = settings.get("virtual_devices") else {
+        return Vec::new();
     };
 
     match devices_value.clone().try_into::<Vec<VirtualDeviceConfig>>() {
@@ -118,9 +116,8 @@ fn get_audio_table(
         .entry("plugins")
         .or_insert_with(|| toml::Value::Array(Vec::new()));
 
-    let plugins_array = match plugins {
-        toml::Value::Array(arr) => arr,
-        _ => anyhow::bail!("plugins is not an array"),
+    let toml::Value::Array(plugins_array) = plugins else {
+        anyhow::bail!("plugins is not an array");
     };
 
     let idx = plugins_array.iter().position(|p| {
@@ -130,14 +127,15 @@ fn get_audio_table(
             .unwrap_or(false)
     });
 
-    let idx = match idx {
-        Some(i) => i,
-        None => {
-            let mut new_entry = toml::Table::new();
-            new_entry.insert("id".to_string(), toml::Value::String("audio".to_string()));
-            plugins_array.push(toml::Value::Table(new_entry));
-            plugins_array.len() - 1
-        }
+    let Some(idx) = idx else {
+        let mut new_entry = toml::Table::new();
+        new_entry.insert("id".to_string(), toml::Value::String("audio".to_string()));
+        plugins_array.push(toml::Value::Table(new_entry));
+        let idx = plugins_array.len() - 1;
+        return match &mut plugins_array[idx] {
+            toml::Value::Table(t) => Ok(t),
+            _ => anyhow::bail!("plugin entry is not a table"),
+        };
     };
 
     match &mut plugins_array[idx] {

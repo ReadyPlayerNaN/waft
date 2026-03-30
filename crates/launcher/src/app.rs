@@ -94,7 +94,7 @@ pub fn run() -> anyhow::Result<()> {
 
     app.add_main_option(
         "command",
-        'c'.try_into().unwrap(),
+        'c'.try_into().expect("'c' is a valid OptionChar"),
         gtk::glib::OptionFlags::NONE,
         gtk::glib::OptionArg::None,
         "Open in command palette mode",

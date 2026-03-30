@@ -33,15 +33,15 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
             children: parse_children(node)?,
         }),
         "Box" => Ok(LayoutNode::Box {
-            halign: node.attribute("halign").map(|s| s.to_string()),
+            halign: node.attribute("halign").map(std::string::ToString::to_string),
             children: parse_children(node)?,
         }),
         "Row" => Ok(LayoutNode::Row {
-            halign: node.attribute("halign").map(|s| s.to_string()),
+            halign: node.attribute("halign").map(std::string::ToString::to_string),
             children: parse_children(node)?,
         }),
         "Col" => Ok(LayoutNode::Col {
-            halign: node.attribute("halign").map(|s| s.to_string()),
+            halign: node.attribute("halign").map(std::string::ToString::to_string),
             children: parse_children(node)?,
         }),
         "Divider" => Ok(LayoutNode::Divider),
@@ -57,11 +57,11 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
         "RightColumnStack" => {
             let mut controls = Vec::new();
             let mut exit = Vec::new();
-            for child in node.children().filter(|n| n.is_element()) {
+            for child in node.children().filter(roxmltree::Node::is_element) {
                 match child.tag_name().name() {
                     "Controls" => controls = parse_children(&child)?,
                     "Exit" => exit = parse_children(&child)?,
-                    tag => return Err(anyhow!("Unknown RightColumnStack child tag: {}", tag)),
+                    tag => return Err(anyhow!("Unknown RightColumnStack child tag: {tag}")),
                 }
             }
             Ok(LayoutNode::RightColumnStack { controls, exit })
@@ -77,13 +77,13 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
         | "BackupToggle" | "ClaudeUsage") => Ok(LayoutNode::Component {
             name: tag.to_string(),
         }),
-        tag => Err(anyhow!("Unknown layout tag: {}", tag)),
+        tag => Err(anyhow!("Unknown layout tag: {tag}")),
     }
 }
 
 fn parse_children(node: &roxmltree::Node) -> Result<Vec<LayoutNode>> {
     node.children()
-        .filter(|n| n.is_element())
+        .filter(roxmltree::Node::is_element)
         .map(|n| parse_node(&n))
         .collect()
 }

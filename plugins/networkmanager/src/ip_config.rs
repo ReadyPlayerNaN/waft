@@ -43,14 +43,13 @@ pub async fn get_device_ip4_config(
         match get_property(conn, path_str, NM_IP4CONFIG_INTERFACE, "AddressData").await {
             Ok(data) => data,
             Err(e) => {
-                debug!("[nm] Failed to read AddressData from {}: {}", path_str, e);
+                debug!("[nm] Failed to read AddressData from {path_str}: {e}");
                 return Ok(None);
             }
         };
 
-    let first = match address_data.first() {
-        Some(entry) => entry,
-        None => return Ok(None),
+    let Some(first) = address_data.first() else {
+        return Ok(None);
     };
 
     let address = match first.get("address") {
@@ -106,20 +105,20 @@ async fn fetch_public_ip_inner() -> Option<String> {
     let mut stream = match TcpStream::connect("ifconfig.me:80").await {
         Ok(s) => s,
         Err(e) => {
-            debug!("[nm] Failed to connect to ifconfig.me: {}", e);
+            debug!("[nm] Failed to connect to ifconfig.me: {e}");
             return None;
         }
     };
 
     let request = "GET / HTTP/1.1\r\nHost: ifconfig.me\r\nUser-Agent: curl/8.0\r\nAccept: */*\r\nConnection: close\r\n\r\n";
     if let Err(e) = stream.write_all(request.as_bytes()).await {
-        debug!("[nm] Failed to send HTTP request: {}", e);
+        debug!("[nm] Failed to send HTTP request: {e}");
         return None;
     }
 
     let mut response = Vec::new();
     if let Err(e) = stream.read_to_end(&mut response).await {
-        debug!("[nm] Failed to read HTTP response: {}", e);
+        debug!("[nm] Failed to read HTTP response: {e}");
         return None;
     }
 
@@ -133,7 +132,7 @@ async fn fetch_public_ip_inner() -> Option<String> {
     if ip.contains('.') || ip.contains(':') {
         Some(ip)
     } else {
-        debug!("[nm] Unexpected public IP response: {}", ip);
+        debug!("[nm] Unexpected public IP response: {ip}");
         None
     }
 }

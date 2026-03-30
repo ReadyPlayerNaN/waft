@@ -178,8 +178,7 @@ impl State {
                     .push((notification, lifecycle));
             } else {
                 log::warn!(
-                    "[get_grouped_notifications] Notification {} in panel_notifications not found in notifications HashMap",
-                    id
+                    "[get_grouped_notifications] Notification {id} in panel_notifications not found in notifications HashMap"
                 );
                 missing_count += 1;
             }

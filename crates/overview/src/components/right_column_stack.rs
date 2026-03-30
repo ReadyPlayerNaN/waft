@@ -17,14 +17,14 @@ impl RightColumnStackComponent {
     ///
     /// The buttons must already be linked into a toggle group before calling this.
     pub fn new(
-        controls_child: gtk::Widget,
-        exit_child: gtk::Widget,
+        controls_child: &gtk::Widget,
+        exit_child: &gtk::Widget,
         controls_btn: &gtk::ToggleButton,
         exit_btn: &gtk::ToggleButton,
     ) -> Self {
         let stack = adw::ViewStack::builder().build();
-        stack.add_named(&controls_child, Some("controls"));
-        stack.add_named(&exit_child, Some("exit"));
+        stack.add_named(controls_child, Some("controls"));
+        stack.add_named(exit_child, Some("exit"));
 
         // Wire toggle buttons to switch stack pages
         {

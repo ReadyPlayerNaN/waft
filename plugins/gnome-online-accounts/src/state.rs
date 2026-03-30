@@ -58,7 +58,7 @@ impl GoaState {
 
     /// Get the D-Bus object path for an account ID.
     pub fn object_path_for_id(&self, id: &str) -> Option<&str> {
-        self.paths.get(id).map(|p| p.as_str())
+        self.paths.get(id).map(std::string::String::as_str)
     }
 
     /// Convert all accounts and providers to protocol entities.

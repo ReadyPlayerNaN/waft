@@ -79,7 +79,7 @@ type UnitTuple = (
 /// Checks `XDG_SESSION_ID` environment variable and falls back to `/session/auto`.
 fn get_session_path() -> String {
     if let Ok(session_id) = std::env::var("XDG_SESSION_ID") {
-        format!("/org/freedesktop/login1/session/{}", session_id)
+        format!("/org/freedesktop/login1/session/{session_id}")
     } else {
         "/org/freedesktop/login1/session/auto".to_string()
     }
@@ -109,7 +109,7 @@ fn urn_id_to_unit(id: &str) -> String {
     if id.ends_with(".service") {
         id.to_string()
     } else {
-        format!("{}.service", id)
+        format!("{id}.service")
     }
 }
 
@@ -146,7 +146,7 @@ impl SystemdPlugin {
             .context("Failed to connect to session D-Bus")?;
 
         let session_path = get_session_path();
-        log::info!("[systemd] Using session path: {}", session_path);
+        log::info!("[systemd] Using session path: {session_path}");
 
         let services = Arc::new(StdMutex::new(HashMap::new()));
         let timers = Arc::new(StdMutex::new(HashMap::new()));
@@ -223,7 +223,7 @@ impl SystemdPlugin {
                     added += 1;
                 }
                 if added > 0 {
-                    log::info!("[systemd] Discovered {} additional unit files", added);
+                    log::info!("[systemd] Discovered {added} additional unit files");
                 }
             }
             Err(e) => {
@@ -312,24 +312,21 @@ impl SystemdPlugin {
         let unit_path: Option<zbus::zvariant::OwnedObjectPath> =
             manager.try_call("GetUnit", &(unit,)).await;
 
-        let unit_path = match unit_path {
-            Some(p) => p,
-            None => {
-                // Unit unloaded -- update in-place to inactive/dead, preserve identity
-                let enabled = self.get_unit_file_state(unit).await;
-                let mut services = self.services.lock_or_recover();
-                let urn_id = unit_to_urn_id(unit);
-                if let Some(svc) = services.get_mut(&urn_id) {
-                    let was_different = svc.active_state != "inactive"
-                        || svc.sub_state != "dead"
-                        || svc.enabled != enabled;
-                    svc.active_state = "inactive".to_string();
-                    svc.sub_state = "dead".to_string();
-                    svc.enabled = enabled;
-                    return was_different;
-                }
-                return false;
+        let Some(unit_path) = unit_path else {
+            // Unit unloaded -- update in-place to inactive/dead, preserve identity
+            let enabled = self.get_unit_file_state(unit).await;
+            let mut services = self.services.lock_or_recover();
+            let urn_id = unit_to_urn_id(unit);
+            if let Some(svc) = services.get_mut(&urn_id) {
+                let was_different = svc.active_state != "inactive"
+                    || svc.sub_state != "dead"
+                    || svc.enabled != enabled;
+                svc.active_state = "inactive".to_string();
+                svc.sub_state = "dead".to_string();
+                svc.enabled = enabled;
+                return was_different;
             }
+            return false;
         };
 
         // Read properties from the unit object (uses get_property which needs zbus::Proxy)
@@ -376,14 +373,14 @@ impl SystemdPlugin {
             LOGIN1_SESSION_INTERFACE,
         );
         let _: () = session.call(method, &()).await?;
-        log::info!("[systemd] Session.{}() executed", method);
+        log::info!("[systemd] Session.{method}() executed");
         Ok(())
     }
 
     /// Call a method on the login1 manager interface with an `interactive: bool` argument.
     async fn call_login1_manager_method(&self, method: &str, interactive: bool) -> Result<()> {
         let _: () = self.login1_manager().call(method, &(interactive,)).await?;
-        log::info!("[systemd] Manager.{}(interactive={}) executed", method, interactive);
+        log::info!("[systemd] Manager.{method}(interactive={interactive}) executed");
         Ok(())
     }
 
@@ -450,7 +447,7 @@ fn section_get<'a>(
         .get(section)?
         .get(key)?
         .first()
-        .map(|s| s.as_str())
+        .map(std::string::String::as_str)
 }
 
 /// Get all values for a key in a parsed unit file section.
@@ -462,7 +459,7 @@ fn section_get_all<'a>(
     sections
         .get(section)
         .and_then(|s| s.get(key))
-        .map(|v| v.iter().map(|s| s.as_str()).collect())
+        .map(|v| v.iter().map(std::string::String::as_str).collect())
         .unwrap_or_default()
 }
 
@@ -678,13 +675,13 @@ async fn read_timer_unit_content(
                     let s = parse_unit_file(&content);
                     (
                         section_get(&s, "Service", "ExecStart").unwrap_or("").to_string(),
-                        section_get(&s, "Service", "WorkingDirectory").map(|v| v.to_string()),
+                        section_get(&s, "Service", "WorkingDirectory").map(std::string::ToString::to_string),
                         parse_environment(&section_get_all(&s, "Service", "Environment")),
                         section_get_all(&s, "Unit", "After")
-                            .iter().flat_map(|v| v.split_whitespace()).map(|v| v.to_string()).collect(),
+                            .iter().flat_map(|v| v.split_whitespace()).map(std::string::ToString::to_string).collect(),
                         section_get(&s, "Service", "Restart").map(parse_restart_policy).unwrap_or(RestartPolicy::No),
-                        section_get(&s, "Service", "CPUQuota").map(|v| v.to_string()),
-                        section_get(&s, "Service", "MemoryLimit").map(|v| v.to_string()),
+                        section_get(&s, "Service", "CPUQuota").map(std::string::ToString::to_string),
+                        section_get(&s, "Service", "MemoryLimit").map(std::string::ToString::to_string),
                     )
                 }
                 Err(_) => (String::new(), None, Vec::new(), Vec::new(), RestartPolicy::No, None, None),
@@ -721,16 +718,14 @@ async fn query_timer_dbus_state(
 
     let (active, last_trigger, next_elapse) = match timer_path {
         Some(path) => {
-            let timer_proxy = match zbus::Proxy::new(
+            let Ok(timer_proxy) = zbus::Proxy::new(
                 conn,
                 SYSTEMD1_DESTINATION,
                 path.as_str(),
                 "org.freedesktop.systemd1.Unit",
             )
-            .await
-            {
-                Ok(p) => p,
-                Err(_) => return (false, enabled, None, None, None),
+            .await else {
+                return (false, enabled, None, None, None);
             };
 
             let active_state: String = timer_proxy
@@ -740,16 +735,14 @@ async fn query_timer_dbus_state(
             let active = active_state == "active";
 
             // Read timer-specific properties from the Timer interface
-            let timer_iface_proxy = match zbus::Proxy::new(
+            let Ok(timer_iface_proxy) = zbus::Proxy::new(
                 conn,
                 SYSTEMD1_DESTINATION,
                 path.as_str(),
                 "org.freedesktop.systemd1.Timer",
             )
-            .await
-            {
-                Ok(p) => p,
-                Err(_) => return (active, enabled, None, None, None),
+            .await else {
+                return (active, enabled, None, None, None);
             };
 
             let last_trigger = timer_iface_proxy
@@ -821,7 +814,7 @@ async fn validate_calendar_spec(spec: &str) -> Result<()> {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let msg = if !stderr.is_empty() { stderr } else { stdout };
-        Err(anyhow::anyhow!("Invalid OnCalendar expression {:?}: {}", spec, msg))
+        Err(anyhow::anyhow!("Invalid OnCalendar expression {spec:?}: {msg}"))
     }
 }
 
@@ -1022,7 +1015,7 @@ impl Plugin for SystemdPlugin {
                 "reboot" => self.call_login1_manager_method("Reboot", true).await?,
                 "shutdown" => self.call_login1_manager_method("PowerOff", true).await?,
                 "suspend" => self.call_login1_manager_method("Suspend", true).await?,
-                other => log::warn!("[systemd] Unknown session action: {}", other),
+                other => log::warn!("[systemd] Unknown session action: {other}"),
             }
         } else if entity_type == entity::session::USER_SERVICE_ENTITY_TYPE {
             let unit = urn_id_to_unit(urn.id());
@@ -1032,26 +1025,26 @@ impl Plugin for SystemdPlugin {
                 "start" => {
                     let _: zbus::zvariant::OwnedObjectPath =
                         manager.call("StartUnit", &(&unit, "replace")).await?;
-                    log::info!("[systemd] Started {}", unit);
+                    log::info!("[systemd] Started {unit}");
                 }
                 "stop" => {
                     let _: zbus::zvariant::OwnedObjectPath =
                         manager.call("StopUnit", &(&unit, "replace")).await?;
-                    log::info!("[systemd] Stopped {}", unit);
+                    log::info!("[systemd] Stopped {unit}");
                 }
                 "enable" => {
                     let _: (bool, Vec<(String, String, String)>) = manager
                         .call("EnableUnitFiles", &(vec![&unit as &str], false, true))
                         .await?;
-                    log::info!("[systemd] Enabled {}", unit);
+                    log::info!("[systemd] Enabled {unit}");
                 }
                 "disable" => {
                     let _: Vec<(String, String, String)> = manager
                         .call("DisableUnitFiles", &(vec![&unit as &str], false))
                         .await?;
-                    log::info!("[systemd] Disabled {}", unit);
+                    log::info!("[systemd] Disabled {unit}");
                 }
-                other => log::warn!("[systemd] Unknown user-service action: {}", other),
+                other => log::warn!("[systemd] Unknown user-service action: {other}"),
             }
 
             // Refresh this service's state after the action
@@ -1082,7 +1075,7 @@ impl Plugin for SystemdPlugin {
                         .await
                         .with_context(|| format!("Failed to run systemctl --user --no-block start {service_unit}"))?;
                     if !status.success() {
-                        return Err(anyhow::anyhow!("systemctl --user --no-block start {service_unit} failed with {status}").into());
+                        return Err(anyhow::anyhow!("systemctl --user --no-block start {service_unit} failed with {status}"));
                     }
                     log::info!("[systemd] Started service {service_unit} (no-block)");
                 }
@@ -1157,7 +1150,7 @@ impl Plugin for SystemdPlugin {
             // Without this, the UI waits for the next 5-second polling cycle.
             self.notifier.notify();
         } else {
-            log::warn!("[systemd] Unknown entity type: {}", entity_type);
+            log::warn!("[systemd] Unknown entity type: {entity_type}");
         }
 
         Ok(serde_json::Value::Null)
@@ -1358,7 +1351,7 @@ async fn monitor_service_signals(
                 continue;
             }
 
-            log::info!("[systemd] UnitNew: {}", unit_name);
+            log::info!("[systemd] UnitNew: {unit_name}");
             changed = handle_unit_new(&services, &unit_name, &conn).await;
         } else if iface == SYSTEMD1_MANAGER_INTERFACE && member == "UnitRemoved" {
             let Ok((unit_name, _obj_path)) =
@@ -1371,7 +1364,7 @@ async fn monitor_service_signals(
                 continue;
             }
 
-            log::info!("[systemd] UnitRemoved: {}", unit_name);
+            log::info!("[systemd] UnitRemoved: {unit_name}");
             let urn_id = unit_to_urn_id(&unit_name);
             let mut svc = services.lock_or_recover();
             if let Some(service) = svc.get_mut(&urn_id)
@@ -1413,7 +1406,7 @@ async fn handle_unit_properties_changed(
     {
         Ok(p) => p,
         Err(e) => {
-            log::debug!("[systemd] Failed to create unit proxy for {}: {e}", obj_path);
+            log::debug!("[systemd] Failed to create unit proxy for {obj_path}: {e}");
             return false;
         }
     };
@@ -1421,7 +1414,7 @@ async fn handle_unit_properties_changed(
     let unit_name: String = match unit_proxy.get_property("Id").await {
         Ok(id) => id,
         Err(e) => {
-            log::debug!("[systemd] Failed to get Id for {}: {e}", obj_path);
+            log::debug!("[systemd] Failed to get Id for {obj_path}: {e}");
             return false;
         }
     };
@@ -1507,7 +1500,7 @@ async fn handle_unit_new(
     {
         Ok(p) => p,
         Err(e) => {
-            log::warn!("[systemd] Failed to create unit proxy for {}: {e}", unit_name);
+            log::warn!("[systemd] Failed to create unit proxy for {unit_name}: {e}");
             return false;
         }
     };

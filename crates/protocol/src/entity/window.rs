@@ -38,6 +38,6 @@ mod tests {
             "workspace_id": 2
         });
         let window: Window = serde_json::from_value(json).unwrap();
-        assert_eq!(window.focused, false);
+        assert!(!window.focused);
     }
 }

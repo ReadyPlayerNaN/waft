@@ -72,8 +72,7 @@ impl NiriPlugin {
                 _ => "",
             };
             anyhow::bail!(
-                "Cannot modify layouts in {:?} mode. {}",
-                current_mode, help
+                "Cannot modify layouts in {current_mode:?} mode. {help}"
             );
         }
 
@@ -108,7 +107,7 @@ impl NiriPlugin {
                         &new_layouts,
                         &new_names,
                     )?;
-                    info!("[niri] Added keyboard layout: {}", layout);
+                    info!("[niri] Added keyboard layout: {layout}");
 
                     // Update state
                     {
@@ -151,7 +150,7 @@ impl NiriPlugin {
                     &new_layouts,
                     &new_names,
                 )?;
-                info!("[niri] Removed keyboard layout: {}", layout);
+                info!("[niri] Removed keyboard layout: {layout}");
 
                 // Update state
                 {
@@ -183,7 +182,7 @@ impl NiriPlugin {
 
                     // Build code->variant map for LayoutList mode
                     let variant_slots: Vec<String> = if let Some(ref v) = state.keyboard_config.variant {
-                        v.split(',').map(|s| s.to_string()).collect()
+                        v.split(',').map(std::string::ToString::to_string).collect()
                     } else {
                         vec![String::new(); state.keyboard_config.layouts.len()]
                     };
@@ -215,7 +214,7 @@ impl NiriPlugin {
                         })
                         .collect();
 
-                    let variant = if reordered_variants.iter().all(|s| s.is_empty()) {
+                    let variant = if reordered_variants.iter().all(std::string::String::is_empty) {
                         None
                     } else {
                         Some(reordered_variants.join(","))
@@ -275,7 +274,7 @@ impl NiriPlugin {
                 let idx = layouts
                     .iter()
                     .position(|l| l == &layout)
-                    .with_context(|| format!("Layout '{}' not found", layout))?;
+                    .with_context(|| format!("Layout '{layout}' not found"))?;
 
                 match &current_mode {
                     KeyboardConfigMode::ExternalFile => {
@@ -297,7 +296,7 @@ impl NiriPlugin {
                         };
 
                         let mut slots: Vec<String> = if let Some(ref v) = current_variant {
-                            v.split(',').map(|s| s.to_string()).collect()
+                            v.split(',').map(std::string::ToString::to_string).collect()
                         } else {
                             vec![String::new(); layouts.len()]
                         };
@@ -310,7 +309,7 @@ impl NiriPlugin {
                         slots[idx] = variant.clone();
 
                         // Build new variant string; set to None if all slots are empty
-                        let new_variant = if slots.iter().all(|s| s.is_empty()) {
+                        let new_variant = if slots.iter().all(std::string::String::is_empty) {
                             String::new()
                         } else {
                             slots.join(",")
@@ -335,7 +334,7 @@ impl NiriPlugin {
                         // The config reload event will update this, but set it now for responsiveness
                         let current_variant = s.keyboard_config.variant.clone();
                         let mut slots: Vec<String> = if let Some(ref v) = current_variant {
-                            v.split(',').map(|s| s.to_string()).collect()
+                            v.split(',').map(std::string::ToString::to_string).collect()
                         } else {
                             vec![String::new(); s.keyboard_config.layouts.len()]
                         };
@@ -343,7 +342,7 @@ impl NiriPlugin {
                             slots.push(String::new());
                         }
                         slots[idx] = variant;
-                        let new_variant = if slots.iter().all(|s| s.is_empty()) {
+                        let new_variant = if slots.iter().all(std::string::String::is_empty) {
                             None
                         } else {
                             Some(slots.join(","))
@@ -351,7 +350,7 @@ impl NiriPlugin {
                         s.keyboard_config.variant = new_variant;
                     } else {
                         let mut slots: Vec<String> = if let Some(ref v) = s.keyboard_config.variant {
-                            v.split(',').map(|s| s.to_string()).collect()
+                            v.split(',').map(std::string::ToString::to_string).collect()
                         } else {
                             vec![String::new(); s.keyboard_config.layouts.len()]
                         };
@@ -359,7 +358,7 @@ impl NiriPlugin {
                             slots.push(String::new());
                         }
                         slots[idx] = variant;
-                        s.keyboard_config.variant = if slots.iter().all(|s| s.is_empty()) {
+                        s.keyboard_config.variant = if slots.iter().all(std::string::String::is_empty) {
                             None
                         } else {
                             Some(slots.join(","))
@@ -409,7 +408,7 @@ impl NiriPlugin {
                         &layouts,
                         &names,
                     )?;
-                    info!("[niri] Renamed keyboard layout '{}' to '{}'", layout, name);
+                    info!("[niri] Renamed keyboard layout '{layout}' to '{name}'");
 
                     // Update state
                     {
@@ -419,11 +418,11 @@ impl NiriPlugin {
 
                     self.reload_niri_config().await;
                 } else {
-                    anyhow::bail!("Layout '{}' not found", layout);
+                    anyhow::bail!("Layout '{layout}' not found");
                 }
             }
             _ => {
-                warn!("[niri] Unknown keyboard config action: {}", action);
+                warn!("[niri] Unknown keyboard config action: {action}");
             }
         }
 
@@ -444,7 +443,7 @@ impl NiriPlugin {
                 config::write_xkb_layouts(path, layouts, names)?;
             }
             _ => {
-                config::write_keyboard_layouts(layouts.to_vec())?;
+                config::write_keyboard_layouts(layouts)?;
             }
         }
         Ok(())
@@ -457,8 +456,7 @@ impl NiriPlugin {
             }
             Err(e) => {
                 warn!(
-                    "[niri] Config reload failed (config saved but not applied): {}",
-                    e
+                    "[niri] Config reload failed (config saved but not applied): {e}"
                 );
             }
         }
@@ -526,11 +524,11 @@ impl Plugin for NiriPlugin {
                             .cloned()
                             .ok_or_else(|| anyhow::anyhow!("Missing 'index' parameter"))?,
                     )?;
-                    debug!("[niri] Switching to keyboard layout index {}", index);
+                    debug!("[niri] Switching to keyboard layout index {index}");
                     keyboard::switch_to(index).await?;
                 }
                 _ => {
-                    debug!("[niri] Unknown keyboard action: {}", action);
+                    debug!("[niri] Unknown keyboard action: {action}");
                 }
             }
         } else if entity_type == CONFIG_ENTITY_TYPE {
@@ -547,7 +545,7 @@ impl Plugin for NiriPlugin {
                     display::handle_action(&output_name, &action, &params, &os).await?;
                 }
                 None => {
-                    warn!("[niri] Display output not found: {}", output_name);
+                    warn!("[niri] Display output not found: {output_name}");
                 }
             }
         } else if entity_type == entity::window::ENTITY_TYPE {
@@ -557,13 +555,12 @@ impl Plugin for NiriPlugin {
                     commands::niri_action(&["focus-window", "--id", &window_id]).await?;
                 }
                 _ => {
-                    debug!("[niri] Unknown window action: {}", action);
+                    debug!("[niri] Unknown window action: {action}");
                 }
             }
         } else {
             debug!(
-                "[niri] Unknown entity type: {} (action: {})",
-                entity_type, action
+                "[niri] Unknown entity type: {entity_type} (action: {action})"
             );
         }
 
@@ -651,7 +648,7 @@ fn main() -> Result<()> {
                             .unwrap_or(0),
                         os.modes
                             .get(os.current_mode_idx)
-                            .map(|m| m.refresh_rate_hz())
+                            .map(waft_plugin_niri::state::ModeInfo::refresh_rate_hz)
                             .unwrap_or(0.0),
                         os.modes.len()
                     );
@@ -759,8 +756,7 @@ fn main() -> Result<()> {
                             }
                             Err(e) => {
                                 warn!(
-                                    "[niri] Failed to re-parse keyboard config after reload: {}",
-                                    e
+                                    "[niri] Failed to re-parse keyboard config after reload: {e}"
                                 );
                                 {
                                     let mut s = event_state.lock_or_recover();

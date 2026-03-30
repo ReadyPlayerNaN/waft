@@ -50,7 +50,7 @@ impl CombinatorEditor {
             .build();
 
         let op_labels = [t("notif-match-all-and"), t("notif-match-any-or")];
-        let op_refs: Vec<&str> = op_labels.iter().map(|s| s.as_str()).collect();
+        let op_refs: Vec<&str> = op_labels.iter().map(std::string::String::as_str).collect();
         let operator_model = gtk::StringList::new(&op_refs);
         let operator_dropdown = gtk::DropDown::builder()
             .model(&operator_model)

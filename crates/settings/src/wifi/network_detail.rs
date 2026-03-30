@@ -145,7 +145,7 @@ impl NetworkDetailPage {
 
         // Metered dropdown
         let metered_labels = metered_labels();
-        let metered_str_refs: Vec<&str> = metered_labels.iter().map(|s| s.as_str()).collect();
+        let metered_str_refs: Vec<&str> = metered_labels.iter().map(std::string::String::as_str).collect();
         let metered_row = adw::ComboRow::builder()
             .title(t("wifi-detail-metered"))
             .model(&gtk::StringList::new(&metered_str_refs))
@@ -174,7 +174,7 @@ impl NetworkDetailPage {
 
         // IP Method dropdown
         let ip_labels = ip_method_labels();
-        let ip_str_refs: Vec<&str> = ip_labels.iter().map(|s| s.as_str()).collect();
+        let ip_str_refs: Vec<&str> = ip_labels.iter().map(std::string::String::as_str).collect();
         let ip_method_row = adw::ComboRow::builder()
             .title(t("wifi-detail-ip-method"))
             .model(&gtk::StringList::new(&ip_str_refs))

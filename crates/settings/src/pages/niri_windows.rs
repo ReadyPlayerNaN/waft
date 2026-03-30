@@ -228,13 +228,13 @@ impl NiriWindowsPage {
                     FocusRingSectionOutput::Toggled(v) => cfg.focus_ring.enabled = v,
                     FocusRingSectionOutput::WidthChanged(v) => cfg.focus_ring.width = v,
                     FocusRingSectionOutput::ActiveColorChanged(v) => {
-                        cfg.focus_ring.active_color = v
+                        cfg.focus_ring.active_color = v;
                     }
                     FocusRingSectionOutput::InactiveColorChanged(v) => {
-                        cfg.focus_ring.inactive_color = v
+                        cfg.focus_ring.inactive_color = v;
                     }
                     FocusRingSectionOutput::UrgentColorChanged(v) => {
-                        cfg.focus_ring.urgent_color = Some(v)
+                        cfg.focus_ring.urgent_color = Some(v);
                     }
                 }
                 drop(cfg);
@@ -274,7 +274,7 @@ impl NiriWindowsPage {
                     ShadowSectionOutput::OffsetYChanged(v) => cfg.shadow.offset_y = v,
                     ShadowSectionOutput::ColorChanged(v) => cfg.shadow.color = v,
                     ShadowSectionOutput::InactiveColorChanged(v) => {
-                        cfg.shadow.inactive_color = Some(v)
+                        cfg.shadow.inactive_color = Some(v);
                     }
                 }
                 drop(cfg);
@@ -294,16 +294,16 @@ impl NiriWindowsPage {
                     TabIndicatorSectionOutput::GapChanged(v) => cfg.tab_indicator.gap = v,
                     TabIndicatorSectionOutput::WidthChanged(v) => cfg.tab_indicator.width = v,
                     TabIndicatorSectionOutput::CornerRadiusChanged(v) => {
-                        cfg.tab_indicator.corner_radius = v
+                        cfg.tab_indicator.corner_radius = v;
                     }
                     TabIndicatorSectionOutput::ActiveColorChanged(v) => {
-                        cfg.tab_indicator.active_color = v
+                        cfg.tab_indicator.active_color = v;
                     }
                     TabIndicatorSectionOutput::InactiveColorChanged(v) => {
-                        cfg.tab_indicator.inactive_color = v
+                        cfg.tab_indicator.inactive_color = v;
                     }
                     TabIndicatorSectionOutput::UrgentColorChanged(v) => {
-                        cfg.tab_indicator.urgent_color = Some(v)
+                        cfg.tab_indicator.urgent_color = Some(v);
                     }
                 }
                 drop(cfg);

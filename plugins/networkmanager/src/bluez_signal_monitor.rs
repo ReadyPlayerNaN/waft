@@ -55,6 +55,7 @@ pub async fn monitor_bluez_signals(
         };
 
         let header = msg.header();
+        #[allow(clippy::redundant_closure_for_method_calls)]
         if header.member().map(|m| m.as_str()) != Some("PropertiesChanged")
             || header.interface().map(|i| i.as_str()) != Some("org.freedesktop.DBus.Properties")
         {
@@ -98,8 +99,7 @@ pub async fn monitor_bluez_signals(
                         .and_then(|v| bool::try_from(v.clone()).ok())
                         .unwrap_or(false);
                     info!(
-                        "[nm] BlueZ device paired: {} connected={}",
-                        obj_path, connected
+                        "[nm] BlueZ device paired: {obj_path} connected={connected}"
                     );
                     st.bluez_paired_devices.push(BluezPairedDevice {
                         path: obj_path.clone(),
@@ -112,7 +112,7 @@ pub async fn monitor_bluez_signals(
                 let before = st.bluez_paired_devices.len();
                 st.bluez_paired_devices.retain(|d| d.path != obj_path);
                 if st.bluez_paired_devices.len() != before {
-                    info!("[nm] BlueZ device unpaired: {}", obj_path);
+                    info!("[nm] BlueZ device unpaired: {obj_path}");
                     changed = true;
                 }
             }
@@ -137,7 +137,7 @@ pub async fn monitor_bluez_signals(
             {
                 // Known paired device — update connection state
                 if device.connected != connected {
-                    info!("[nm] BlueZ device {} connected: {}", obj_path, connected);
+                    info!("[nm] BlueZ device {obj_path} connected: {connected}");
                     device.connected = connected;
                     changed = true;
                 }
@@ -145,7 +145,7 @@ pub async fn monitor_bluez_signals(
                 // Unknown device connecting — might be newly paired while running.
                 // Add to tracking (we only care about connected devices here;
                 // the Paired signal handler above catches the pairing event).
-                info!("[nm] BlueZ unknown device connected, adding: {}", obj_path);
+                info!("[nm] BlueZ unknown device connected, adding: {obj_path}");
                 st.bluez_paired_devices.push(BluezPairedDevice {
                     path: obj_path.clone(),
                     connected: true,

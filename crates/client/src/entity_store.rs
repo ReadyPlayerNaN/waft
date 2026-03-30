@@ -70,7 +70,7 @@ impl EntityStore {
                 entity_type,
                 data,
             } => {
-                self.handle_entity_updated(urn, entity_type, data);
+                self.handle_entity_updated(urn, &entity_type, data);
             }
             AppNotification::EntityRemoved { urn, entity_type } => {
                 self.handle_entity_removed(&urn, &entity_type);
@@ -203,7 +203,7 @@ impl EntityStore {
             .collect()
     }
 
-    fn handle_entity_updated(&self, urn: Urn, entity_type: String, data: serde_json::Value) {
+    fn handle_entity_updated(&self, urn: Urn, entity_type: &str, data: serde_json::Value) {
         let urn_str = urn.as_str().to_string();
 
         // Skip if data unchanged
@@ -220,12 +220,12 @@ impl EntityStore {
             urn_str,
             CachedEntity {
                 urn,
-                entity_type: entity_type.clone(),
+                entity_type: entity_type.to_string(),
                 data,
             },
         );
 
-        self.notify_type(&entity_type);
+        self.notify_type(entity_type);
     }
 
     fn handle_entity_removed(&self, urn: &Urn, entity_type: &str) {

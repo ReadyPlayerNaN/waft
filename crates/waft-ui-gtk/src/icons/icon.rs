@@ -43,7 +43,7 @@ pub fn resolve_themed_icon(name: &str) -> Option<String> {
         return Some(name.to_string());
     }
 
-    let symbolic = format!("{}-symbolic", name);
+    let symbolic = format!("{name}-symbolic");
     if icon_theme.has_icon(&symbolic) {
         return Some(symbolic);
     }
@@ -53,7 +53,7 @@ pub fn resolve_themed_icon(name: &str) -> Option<String> {
         return Some(lowercase);
     }
 
-    let lowercase_symbolic = format!("{}-symbolic", lowercase);
+    let lowercase_symbolic = format!("{lowercase}-symbolic");
     if icon_theme.has_icon(&lowercase_symbolic) {
         return Some(lowercase_symbolic);
     }
@@ -70,7 +70,7 @@ pub struct IconWidget {
 
 impl IconWidget {
     /// Create a new icon widget, trying each icon hint until one succeeds.
-    pub fn new(icon_hints: Vec<Icon>, pixel_size: i32) -> Self {
+    pub fn new(icon_hints: &[Icon], pixel_size: i32) -> Self {
         Self::with_fallback(icon_hints, pixel_size, true)
     }
 
@@ -78,20 +78,20 @@ impl IconWidget {
     ///
     /// When `fallback` is `true` (default), a failed resolution shows
     /// `dialog-information-symbolic`. When `false`, the image is cleared.
-    pub fn with_fallback(icon_hints: Vec<Icon>, pixel_size: i32, fallback: bool) -> Self {
+    pub fn with_fallback(icon_hints: &[Icon], pixel_size: i32, fallback: bool) -> Self {
         let image = gtk::Image::builder()
             .pixel_size(pixel_size)
             .valign(gtk::Align::Center)
             .build();
 
-        Self::apply_first_valid_icon(&image, &icon_hints, fallback);
+        Self::apply_first_valid_icon(&image, icon_hints, fallback);
 
         Self { image, fallback }
     }
 
     /// Convenience constructor for a single named icon.
     pub fn from_name(icon_name: &str, pixel_size: i32) -> Self {
-        Self::new(vec![Icon::Themed(icon_name.to_string())], pixel_size)
+        Self::new(&[Icon::Themed(icon_name.to_string())], pixel_size)
     }
 
     /// Try each icon hint in order until one succeeds, falling back to default.
@@ -146,14 +146,14 @@ impl IconWidget {
 
     /// Update the icon to a new set of hints.
     /// Tries each hint in order, falling back to default if all fail.
-    pub fn update_icon(&self, icon_hints: Vec<Icon>) {
-        Self::apply_first_valid_icon(&self.image, &icon_hints, self.fallback);
+    pub fn update_icon(&self, icon_hints: &[Icon]) {
+        Self::apply_first_valid_icon(&self.image, icon_hints, self.fallback);
     }
 
     /// Update the icon to a single named icon.
     /// Convenience method for updating to a themed icon name.
     pub fn set_icon(&self, icon_name: &str) {
-        self.update_icon(vec![Icon::Themed(icon_name.to_string())]);
+        self.update_icon(&[Icon::Themed(icon_name.to_string())]);
     }
 
     pub fn set_size(&self, size: i32) {
@@ -180,7 +180,7 @@ mod tests {
             Icon::FilePath(path) => {
                 assert_eq!(path, PathBuf::from("/usr/share/icons/test.png"));
             }
-            _ => panic!("Expected Icon::FilePath, got {:?}", icon),
+            _ => panic!("Expected Icon::FilePath, got {icon:?}"),
         }
     }
 
@@ -191,7 +191,7 @@ mod tests {
             Icon::FilePath(path) => {
                 assert_eq!(path, PathBuf::from("./icons/test.png"));
             }
-            _ => panic!("Expected Icon::FilePath, got {:?}", icon),
+            _ => panic!("Expected Icon::FilePath, got {icon:?}"),
         }
     }
 
@@ -202,7 +202,7 @@ mod tests {
             Icon::FilePath(path) => {
                 assert_eq!(path, PathBuf::from("~/icons/test.png"));
             }
-            _ => panic!("Expected Icon::FilePath, got {:?}", icon),
+            _ => panic!("Expected Icon::FilePath, got {icon:?}"),
         }
     }
 
@@ -213,7 +213,7 @@ mod tests {
             Icon::Themed(name) => {
                 assert_eq!(name, "dialog-information");
             }
-            _ => panic!("Expected Icon::Themed, got {:?}", icon),
+            _ => panic!("Expected Icon::Themed, got {icon:?}"),
         }
     }
 
@@ -224,7 +224,7 @@ mod tests {
             Icon::Themed(name) => {
                 assert_eq!(name, "dialog-information");
             }
-            _ => panic!("Expected Icon::Themed, got {:?}", icon),
+            _ => panic!("Expected Icon::Themed, got {icon:?}"),
         }
     }
 
@@ -235,7 +235,7 @@ mod tests {
             Icon::FilePath(path) => {
                 assert_eq!(path, PathBuf::from("/usr/share/icons/test.png"));
             }
-            _ => panic!("Expected Icon::FilePath, got {:?}", icon),
+            _ => panic!("Expected Icon::FilePath, got {icon:?}"),
         }
     }
 
@@ -296,7 +296,7 @@ mod tests {
     #[ignore = "requires GTK display connection"]
     fn test_icon_widget_update_icon_with_hints() {
         let widget = IconWidget::from_name("dialog-information-symbolic", 24);
-        widget.update_icon(vec![
+        widget.update_icon(&[
             Icon::Themed("non-existent-icon".to_string()),
             Icon::Themed("dialog-warning-symbolic".to_string()),
         ]);

@@ -49,7 +49,7 @@ pub async fn discover_bluez_paired_devices(conn: &Connection) -> Result<Vec<Blue
                 .and_then(|v| bool::try_from(v.clone()).ok())
                 .unwrap_or(false);
 
-            debug!("[nm] BlueZ paired device: {} connected={}", path, connected);
+            debug!("[nm] BlueZ paired device: {path} connected={connected}");
 
             devices.push(BluezPairedDevice {
                 path: path.to_string(),

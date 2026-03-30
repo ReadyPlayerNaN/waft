@@ -89,7 +89,7 @@ impl I18n {
 fn detect_locale() -> LanguageIdentifier {
     sys_locale::get_locale()
         .and_then(|locale_str| locale_str.parse().ok())
-        .unwrap_or_else(|| "en-US".parse().unwrap())
+        .unwrap_or_else(|| "en-US".parse().expect("en-US is a valid language identifier"))
 }
 
 /// Load a translation bundle, picking the best locale match.
@@ -100,7 +100,7 @@ fn load_bundle(
     let mut bundle = ConcurrentFluentBundle::new_concurrent(vec![locale.clone()]);
 
     let ftl_content = find_ftl(locale, translations)
-        .or_else(|| find_ftl(&"en-US".parse().unwrap(), translations))
+        .or_else(|| find_ftl(&"en-US".parse().expect("en-US is a valid language identifier"), translations))
         .unwrap_or_default();
 
     if let Ok(resource) = FluentResource::try_new(ftl_content) {

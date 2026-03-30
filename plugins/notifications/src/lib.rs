@@ -269,7 +269,7 @@ impl Plugin for NotificationsPlugin {
                     .app
                     .as_ref()
                     .and_then(|a| a.title.as_ref())
-                    .map(|t| t.to_string()),
+                    .map(std::string::ToString::to_string),
                 app_id: notif.app.as_ref().map(|a| a.ident.to_string()),
                 urgency: match notif.urgency {
                     NotificationUrgency::Low => proto::NotificationUrgency::Low,
@@ -303,7 +303,7 @@ impl Plugin for NotificationsPlugin {
                     .map(|d| d.as_millis() as i64)
                     .unwrap_or(0),
                 resident: notif.resident,
-                workspace: notif.workspace.as_ref().map(|w| w.to_string()),
+                workspace: notif.workspace.as_ref().map(std::string::ToString::to_string),
                 suppress_toast: notif.suppress_toast,
                 ttl: notif.ttl,
             };
@@ -764,8 +764,7 @@ impl Plugin for NotificationsPlugin {
 
             _ => {
                 debug!(
-                    "[notifications] Unknown action '{}' on entity type '{}'",
-                    action, entity_type
+                    "[notifications] Unknown action '{action}' on entity type '{entity_type}'"
                 );
             }
         }

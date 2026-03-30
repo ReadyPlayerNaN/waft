@@ -50,9 +50,9 @@ fn schedule_summary(schedule: &ScheduleKind) -> String {
             ..
         } => {
             if let Some(repeat) = on_unit_active_sec {
-                format!("Every {}s", repeat)
+                format!("Every {repeat}s")
             } else if let Some(boot) = on_boot_sec {
-                format!("{}s after boot", boot)
+                format!("{boot}s after boot")
             } else {
                 t("scheduler-relative")
             }

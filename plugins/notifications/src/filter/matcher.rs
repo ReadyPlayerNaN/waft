@@ -15,13 +15,13 @@ fn extract_field(field: MatchField, notification: &IngressedNotification) -> Str
         MatchField::AppName => notification
             .app_name
             .as_ref()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default(),
         MatchField::AppId => notification
             .hints
             .desktop_entry
             .as_ref()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default(),
         MatchField::Title => notification.title.to_string(),
         MatchField::Body => notification.description.to_string(),
@@ -29,7 +29,7 @@ fn extract_field(field: MatchField, notification: &IngressedNotification) -> Str
             .hints
             .category_raw
             .as_ref()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default(),
         MatchField::Urgency => match notification.hints.urgency {
             crate::types::NotificationUrgency::Low => "low".to_string(),

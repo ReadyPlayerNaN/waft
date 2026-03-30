@@ -121,7 +121,7 @@ impl LocationSettingsGroup {
 
         // Units combo
         let units_labels = units_options();
-        let units_refs: Vec<&str> = units_labels.iter().map(|s| s.as_str()).collect();
+        let units_refs: Vec<&str> = units_labels.iter().map(std::string::String::as_str).collect();
         let units_model = gtk::StringList::new(&units_refs);
         let units_row = adw::ComboRow::builder()
             .title(t("weather-temp-unit"))

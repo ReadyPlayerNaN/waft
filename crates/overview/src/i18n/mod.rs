@@ -72,7 +72,7 @@ pub fn t_args(id: &str, args: &[(&str, &str)]) -> String {
 fn detect_locale() -> LanguageIdentifier {
     sys_locale::get_locale()
         .and_then(|locale_str| locale_str.parse().ok())
-        .unwrap_or_else(|| "en-US".parse().unwrap())
+        .unwrap_or_else(|| "en-US".parse().expect("en-US is a valid BCP47 locale"))
 }
 
 /// Load a translation bundle for the given locale.
@@ -81,7 +81,7 @@ fn load_bundle(locale: &LanguageIdentifier) -> ConcurrentFluentBundle<FluentReso
 
     // Try to load the requested locale, fall back to en-US
     let ftl_content = load_ftl_for_locale(locale)
-        .or_else(|| load_ftl_for_locale(&"en-US".parse().unwrap()))
+        .or_else(|| load_ftl_for_locale(&"en-US".parse().expect("en-US is a valid BCP47 locale")))
         .unwrap_or_default();
 
     if let Ok(resource) = FluentResource::try_new(ftl_content) {
@@ -105,8 +105,8 @@ fn load_ftl_for_locale(locale: &LanguageIdentifier) -> Option<String> {
 
     // Map language codes to full locale codes we support
     match lang {
-        "cs" => get_embedded_ftl("cs-CZ").map(|s| s.to_string()),
-        "en" => get_embedded_ftl("en-US").map(|s| s.to_string()),
+        "cs" => get_embedded_ftl("cs-CZ").map(std::string::ToString::to_string),
+        "en" => get_embedded_ftl("en-US").map(std::string::ToString::to_string),
         _ => None,
     }
 }

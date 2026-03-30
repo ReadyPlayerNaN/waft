@@ -101,7 +101,7 @@ impl CrashTracker {
     pub fn circuit_broken(&self, plugin_name: &str) -> bool {
         self.history
             .get(plugin_name)
-            .is_some_and(|h| h.circuit_broken())
+            .is_some_and(CrashHistory::circuit_broken)
     }
 
     /// Reset crash history for a plugin (e.g. after a successful long run).

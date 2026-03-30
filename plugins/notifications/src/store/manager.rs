@@ -24,7 +24,7 @@ pub fn process_op(state: &mut State, op: NotificationOp, i18n: &waft_i18n::I18n)
             changed
         }
         NotificationOp::Ingress(n) => {
-            process_ingress(state, *n, i18n);
+            process_ingress(state, &n, i18n);
             true
         }
         NotificationOp::NotificationDismiss(id) => process_dismiss(state, id),
@@ -37,7 +37,7 @@ pub fn process_op(state: &mut State, op: NotificationOp, i18n: &waft_i18n::I18n)
     }
 }
 
-fn process_ingress(state: &mut State, n: IngressedNotification, i18n: &waft_i18n::I18n) {
+fn process_ingress(state: &mut State, n: &IngressedNotification, i18n: &waft_i18n::I18n) {
     // Handle replaces_id: remove the old notification if it exists
     if let Some(old_id) = n.replaces_id
         && old_id != 0
@@ -47,7 +47,7 @@ fn process_ingress(state: &mut State, n: IngressedNotification, i18n: &waft_i18n
         remove_notification(state, old_id);
     }
 
-    let notification = create_notification(&n, i18n);
+    let notification = create_notification(n, i18n);
     let notif_id = notification.id;
     let group_id = notification.app_ident();
     let app_title = notification.app_title();
@@ -96,7 +96,7 @@ fn process_ttl_expiry(state: &mut State, ids: Vec<u64>) -> bool {
     let mut changed = false;
     for id in ids {
         if state.notifications.contains_key(&id) {
-            log::debug!("[store] Notification {} TTL expired", id);
+            log::debug!("[store] Notification {id} TTL expired");
             remove_notification(state, id);
             changed = true;
         }
@@ -108,7 +108,7 @@ fn process_ttl_expiry(state: &mut State, ids: Vec<u64>) -> bool {
 
 /// Remove all traces of a notification from state.
 fn remove_notification(state: &mut State, id: u64) {
-    let group_id = state.notifications.get(&id).map(|n| n.app_ident());
+    let group_id = state.notifications.get(&id).map(super::types::Notification::app_ident);
 
     state.notifications.remove(&id);
     state.panel_notifications.shift_remove(&id);
@@ -207,7 +207,7 @@ fn derive_app_ident(
 
     let raw_name = app_ident
         .as_deref()
-        .or(desktop.as_ref().map(|d| d.as_ref()));
+        .or(desktop.as_ref().map(std::convert::AsRef::as_ref));
 
     raw_name.map(|name| {
         let lowercased = name.to_lowercase();

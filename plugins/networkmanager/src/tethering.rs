@@ -74,9 +74,8 @@ pub async fn get_tethering_profiles(conn: &Connection) -> Result<Vec<TetheringPr
                 });
             if bdaddr.is_none() {
                 warn!(
-                    "[nm] Tethering profile {} missing bdaddr, \
+                    "[nm] Tethering profile {path_str} missing bdaddr, \
                                  cannot match to BlueZ device",
-                    path_str,
                 );
             }
 

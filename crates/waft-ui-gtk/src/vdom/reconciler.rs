@@ -276,7 +276,7 @@ impl<C: VdomContainer> Reconciler<C> {
             .children
             .iter()
             .map(|(k, _)| k.as_str())
-            .eq(desired_key_order.iter().map(|k| k.as_str()));
+            .eq(desired_key_order.iter().map(std::string::String::as_str));
 
         if !current_order_matches {
             let mut old_entries: std::collections::HashMap<String, ReconcilerEntry> =
@@ -380,26 +380,26 @@ fn kind_tag_of(vnode: &VNode) -> KindTag {
 
 fn build_entry(vnode: VNode) -> ReconcilerEntry {
     match vnode.kind {
-        VNodeKind::Component(desc)          => build_component_entry(desc),
-        VNodeKind::Label(vlabel)            => build_label_entry(vlabel),
+        VNodeKind::Component(desc)          => build_component_entry(&desc),
+        VNodeKind::Label(vlabel)            => build_label_entry(&vlabel),
         VNodeKind::Box(vbox)               => build_box_entry(vbox),
         VNodeKind::Button(vbtn)            => build_button_entry(vbtn),
         VNodeKind::Switch(vsw)             => build_switch_entry(vsw),
         VNodeKind::ToggleButton(vtb)       => build_toggle_button_entry(vtb),
-        VNodeKind::Spinner(vsp)            => build_spinner_entry(vsp),
-        VNodeKind::Icon(vi)                => build_icon_entry(vi),
+        VNodeKind::Spinner(vsp)            => build_spinner_entry(&vsp),
+        VNodeKind::Icon(vi)                => build_icon_entry(&vi),
         VNodeKind::CustomButton(vcb)       => build_custom_button_entry(vcb),
         VNodeKind::PreferencesGroup(vpg)   => build_preferences_group_entry(vpg),
         VNodeKind::ActionRow(vrow)         => build_action_row_entry(vrow),
         VNodeKind::SwitchRow(vsr)          => build_switch_row_entry(vsr),
         VNodeKind::EntryRow(ver)           => build_entry_row_entry(ver),
         VNodeKind::Revealer(vrev)          => build_revealer_entry(vrev),
-        VNodeKind::ProgressBar(vpb)        => build_progress_bar_entry(vpb),
+        VNodeKind::ProgressBar(vpb)        => build_progress_bar_entry(&vpb),
         VNodeKind::Scale(vs)               => build_scale_entry(vs),
     }
 }
 
-fn build_component_entry(desc: ComponentDesc) -> ReconcilerEntry {
+fn build_component_entry(desc: &ComponentDesc) -> ReconcilerEntry {
     let component = (desc.build)();
     ReconcilerEntry::Component {
         last_props: Rc::clone(&desc.props),
@@ -408,10 +408,10 @@ fn build_component_entry(desc: ComponentDesc) -> ReconcilerEntry {
     }
 }
 
-fn build_label_entry(vlabel: VLabel) -> ReconcilerEntry {
+fn build_label_entry(vlabel: &VLabel) -> ReconcilerEntry {
     let widget = gtk::Label::new(Some(&vlabel.text));
-    apply_label_markup(&widget, &vlabel);
-    apply_label_props(&widget, &vlabel);
+    apply_label_markup(&widget, vlabel);
+    apply_label_props(&widget, vlabel);
     ReconcilerEntry::Label { widget }
 }
 
@@ -434,7 +434,7 @@ fn build_button_entry(vbtn: VButton) -> ReconcilerEntry {
 
 fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
     let widget = gtk::Button::new();
-    let classes: Vec<&str> = vcb.css_classes.iter().map(|s| s.as_str()).collect();
+    let classes: Vec<&str> = vcb.css_classes.iter().map(std::string::String::as_str).collect();
     widget.set_css_classes(&classes);
     widget.set_visible(vcb.visible);
     widget.set_sensitive(vcb.sensitive);
@@ -450,15 +450,15 @@ fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
     ReconcilerEntry::CustomButton { widget, handler_id, cb, child_reconciler }
 }
 
-fn build_icon_entry(vi: VIcon) -> ReconcilerEntry {
-    let widget = IconWidget::with_fallback(vi.hints, vi.pixel_size, vi.fallback);
+fn build_icon_entry(vi: &VIcon) -> ReconcilerEntry {
+    let widget = IconWidget::with_fallback(&vi.hints, vi.pixel_size, vi.fallback);
     widget.widget().set_visible(vi.visible);
-    let classes: Vec<&str> = vi.css_classes.iter().map(|s| s.as_str()).collect();
+    let classes: Vec<&str> = vi.css_classes.iter().map(std::string::String::as_str).collect();
     widget.widget().set_css_classes(&classes);
     ReconcilerEntry::Icon { widget }
 }
 
-fn build_spinner_entry(vsp: VSpinner) -> ReconcilerEntry {
+fn build_spinner_entry(vsp: &VSpinner) -> ReconcilerEntry {
     let widget = gtk::Spinner::new();
     widget.set_spinning(vsp.spinning);
     widget.set_visible(vsp.visible);
@@ -469,7 +469,7 @@ fn build_switch_entry(vsw: VSwitch) -> ReconcilerEntry {
     let widget = gtk::Switch::new();
     widget.set_active(vsw.active);
     widget.set_sensitive(vsw.sensitive);
-    let classes: Vec<&str> = vsw.css_classes.iter().map(|s| s.as_str()).collect();
+    let classes: Vec<&str> = vsw.css_classes.iter().map(std::string::String::as_str).collect();
     widget.set_css_classes(&classes);
     let cb = vsw.on_toggle;
     let handler_id = connect_switch_handler(&widget, &cb);
@@ -480,7 +480,7 @@ fn build_toggle_button_entry(vtb: VToggleButton) -> ReconcilerEntry {
     let widget = gtk::ToggleButton::new();
     widget.set_active(vtb.active);
     widget.set_sensitive(vtb.sensitive);
-    let classes: Vec<&str> = vtb.css_classes.iter().map(|s| s.as_str()).collect();
+    let classes: Vec<&str> = vtb.css_classes.iter().map(std::string::String::as_str).collect();
     widget.set_css_classes(&classes);
     let cb = vtb.on_toggle;
     let handler_id = connect_toggle_button_handler(&widget, &cb);
@@ -573,10 +573,10 @@ fn build_revealer_entry(vrev: VRevealer) -> ReconcilerEntry {
     ReconcilerEntry::Revealer { widget, child_reconciler }
 }
 
-fn build_progress_bar_entry(vpb: VProgressBar) -> ReconcilerEntry {
+fn build_progress_bar_entry(vpb: &VProgressBar) -> ReconcilerEntry {
     let widget = gtk::ProgressBar::new();
     widget.set_fraction(vpb.fraction);
-    let classes: Vec<&str> = vpb.css_classes.iter().map(|s| s.as_str()).collect();
+    let classes: Vec<&str> = vpb.css_classes.iter().map(std::string::String::as_str).collect();
     widget.set_css_classes(&classes);
     widget.set_visible(vpb.visible);
     ReconcilerEntry::ProgressBar { widget }
@@ -622,7 +622,7 @@ fn build_scale_entry(vs: VScale) -> ReconcilerEntry {
     let scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&adjustment));
     scale.set_draw_value(false);
     scale.set_hexpand(true);
-    let classes: Vec<&str> = vs.css_classes.iter().map(|s| s.as_str()).collect();
+    let classes: Vec<&str> = vs.css_classes.iter().map(std::string::String::as_str).collect();
     scale.set_css_classes(&classes);
 
     let scale_wrapper = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -780,7 +780,7 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             // Set active BEFORE reconnecting handler to avoid spurious callbacks.
             widget.set_active(vsw.active);
             widget.set_sensitive(vsw.sensitive);
-            let classes: Vec<&str> = vsw.css_classes.iter().map(|s| s.as_str()).collect();
+            let classes: Vec<&str> = vsw.css_classes.iter().map(std::string::String::as_str).collect();
             widget.set_css_classes(&classes);
             if !same_cb {
                 *handler_id = connect_switch_handler(widget, &vsw.on_toggle);
@@ -796,7 +796,7 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             // Set active BEFORE reconnecting handler to avoid spurious callbacks.
             widget.set_active(vtb.active);
             widget.set_sensitive(vtb.sensitive);
-            let classes: Vec<&str> = vtb.css_classes.iter().map(|s| s.as_str()).collect();
+            let classes: Vec<&str> = vtb.css_classes.iter().map(std::string::String::as_str).collect();
             widget.set_css_classes(&classes);
             if !same_cb {
                 *handler_id = connect_toggle_button_handler(widget, &vtb.on_toggle);
@@ -809,14 +809,14 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             widget.set_visible(vsp.visible);
         }
         (ReconcilerEntry::Icon { widget }, VNodeKind::Icon(vi)) => {
-            widget.update_icon(vi.hints);
+            widget.update_icon(&vi.hints);
             widget.widget().set_visible(vi.visible);
-            let classes: Vec<&str> = vi.css_classes.iter().map(|s| s.as_str()).collect();
+            let classes: Vec<&str> = vi.css_classes.iter().map(std::string::String::as_str).collect();
             widget.widget().set_css_classes(&classes);
         }
         (ReconcilerEntry::CustomButton { widget, handler_id, cb, child_reconciler },
          VNodeKind::CustomButton(vcb)) => {
-            let classes: Vec<&str> = vcb.css_classes.iter().map(|s| s.as_str()).collect();
+            let classes: Vec<&str> = vcb.css_classes.iter().map(std::string::String::as_str).collect();
             widget.set_css_classes(&classes);
             widget.set_visible(vcb.visible);
             widget.set_sensitive(vcb.sensitive);
@@ -895,7 +895,7 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
         }
         (ReconcilerEntry::ProgressBar { widget }, VNodeKind::ProgressBar(vpb)) => {
             widget.set_fraction(vpb.fraction);
-            let classes: Vec<&str> = vpb.css_classes.iter().map(|s| s.as_str()).collect();
+            let classes: Vec<&str> = vpb.css_classes.iter().map(std::string::String::as_str).collect();
             widget.set_css_classes(&classes);
             widget.set_visible(vpb.visible);
         }
@@ -915,7 +915,7 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
                 widget.set_value(vs.value * 100.0);
                 widget.unblock_signal(handler_id);
             }
-            let classes: Vec<&str> = vs.css_classes.iter().map(|s| s.as_str()).collect();
+            let classes: Vec<&str> = vs.css_classes.iter().map(std::string::String::as_str).collect();
             widget.set_css_classes(&classes);
             // Replace the inner callback values. All closures (value-changed
             // handler, gesture handlers, scroll handler) hold Rc-clones of
@@ -944,7 +944,7 @@ fn apply_label_markup(widget: &gtk::Label, vlabel: &VLabel) {
 }
 
 fn apply_label_props(widget: &gtk::Label, vlabel: &VLabel) {
-    let classes: Vec<&str> = vlabel.css_classes.iter().map(|s| s.as_str()).collect();
+    let classes: Vec<&str> = vlabel.css_classes.iter().map(std::string::String::as_str).collect();
     widget.set_css_classes(&classes);
     if let Some(x) = vlabel.xalign {
         widget.set_xalign(x);
@@ -960,7 +960,7 @@ fn apply_label_props(widget: &gtk::Label, vlabel: &VLabel) {
 }
 
 fn apply_box_props(widget: &gtk::Box, vbox: &VBox) {
-    let classes: Vec<&str> = vbox.css_classes.iter().map(|s| s.as_str()).collect();
+    let classes: Vec<&str> = vbox.css_classes.iter().map(std::string::String::as_str).collect();
     widget.set_css_classes(&classes);
     if let Some(a) = vbox.valign { widget.set_valign(a); }
     if let Some(a) = vbox.halign { widget.set_halign(a); }

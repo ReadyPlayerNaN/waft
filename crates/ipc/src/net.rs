@@ -73,10 +73,9 @@ impl From<IpcError> for IpcNetError {
 }
 
 /// Compute a client-friendly error if server is not available.
-fn map_connect_err(e: std::io::Error) -> IpcNetError {
+fn map_connect_err(_e: std::io::Error) -> IpcNetError {
     // We intentionally avoid platform-specific errno matching; treat any connect failure
     // as "no server" for CLI UX.
-    let _ = e;
     IpcNetError::NoServer
 }
 

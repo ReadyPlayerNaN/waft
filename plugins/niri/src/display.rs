@@ -66,7 +66,7 @@ pub async fn toggle_vrr(output_name: &str, enable: bool) -> Result<()> {
 
 /// Set the scale for an output.
 pub async fn set_scale(output_name: &str, scale: f64) -> Result<()> {
-    let scale_str = format!("{:.2}", scale);
+    let scale_str = format!("{scale:.2}");
     commands::niri_output(&[output_name, "scale", &scale_str]).await
 }
 
@@ -154,7 +154,7 @@ pub fn parse_niri_transform(s: &str) -> DisplayTransform {
         "Flipped180" => DisplayTransform::FlippedRotate180,
         "Flipped270" => DisplayTransform::FlippedRotate270,
         _ => {
-            log::warn!("[niri] Unknown transform '{}', defaulting to Normal", s);
+            log::warn!("[niri] Unknown transform '{s}', defaulting to Normal");
             DisplayTransform::Normal
         }
     }
@@ -255,9 +255,7 @@ pub async fn handle_action(
 
             if !(0.25..=4.0).contains(&scale) {
                 anyhow::bail!(
-                    "scale {} out of range (must be 0.25..4.0) for output {}",
-                    scale,
-                    output_name
+                    "scale {scale} out of range (must be 0.25..4.0) for output {output_name}"
                 );
             }
 
@@ -282,7 +280,7 @@ pub async fn handle_action(
             set_enabled(output_name, enabled).await
         }
         _ => {
-            log::debug!("[niri] Unknown display output action: {}", action);
+            log::debug!("[niri] Unknown display output action: {action}");
             Ok(())
         }
     }

@@ -87,7 +87,7 @@ impl AccentColourSection {
                         .build();
                     button.add_css_class("circular");
                     button.add_css_class("flat");
-                    button.add_css_class(&format!("accent-swatch-{}", value));
+                    button.add_css_class(&format!("accent-swatch-{value}"));
 
                     overlay.set_child(Some(&button));
 
@@ -198,8 +198,7 @@ fn load_swatch_css() {
         let mut css = String::new();
         for (value, _i18n_key, hex) in ACCENT_COLOURS {
             css.push_str(&format!(
-                ".accent-swatch-{} {{ background-color: {}; min-width: 36px; min-height: 36px; }}\n",
-                value, hex
+                ".accent-swatch-{value} {{ background-color: {hex}; min-width: 36px; min-height: 36px; }}\n"
             ));
         }
 

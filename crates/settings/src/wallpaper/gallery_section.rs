@@ -77,7 +77,7 @@ impl GallerySection {
 
         *self.wallpaper_dir.borrow_mut() = wallpaper_dir.to_string();
         *self.current_mode.borrow_mut() = *mode;
-        *self.current_wallpaper.borrow_mut() = current_wallpaper.map(|s| s.to_string());
+        *self.current_wallpaper.borrow_mut() = current_wallpaper.map(std::string::ToString::to_string);
         *self.current_urn.borrow_mut() = Some(urn.clone());
 
         if dir_changed || mode_changed {
@@ -308,7 +308,7 @@ fn load_thumbnails(folder: &Path) -> Vec<ThumbnailWidget> {
     };
 
     let mut paths: Vec<PathBuf> = entries
-        .filter_map(|entry| entry.ok())
+        .filter_map(std::result::Result::ok)
         .map(|entry| entry.path())
         .filter(|path| {
             path.extension()
@@ -659,15 +659,12 @@ fn create_gallery_group_impl(
             let expanded = expand_tilde(&dir);
 
             // Determine source folder
-            let source_folder = match source_folder_name(&source_path, &expanded) {
-                Some(f) => f,
-                None => {
-                    log::warn!(
-                        "[wallpaper/gallery] dropped file not inside wallpaper dir: {}",
-                        source_path.display()
-                    );
-                    return false;
-                }
+            let Some(source_folder) = source_folder_name(&source_path, &expanded) else {
+                log::warn!(
+                    "[wallpaper/gallery] dropped file not inside wallpaper dir: {}",
+                    source_path.display()
+                );
+                return false;
             };
 
             // No-op if same folder

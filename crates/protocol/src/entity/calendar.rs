@@ -125,7 +125,7 @@ mod tests {
         let sync = CalendarSync { last_refresh: Some(1_000_000), syncing: true };
         let json = serde_json::to_value(&sync).unwrap();
         let decoded: CalendarSync = serde_json::from_value(json).unwrap();
-        assert_eq!(decoded.syncing, true);
+        assert!(decoded.syncing);
         assert_eq!(decoded.last_refresh, Some(1_000_000));
     }
 }

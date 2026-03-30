@@ -23,7 +23,7 @@ pub enum HintValue {
     Bytes(Vec<u8>),
 }
 
-fn decode_bytes_array(a: Array<'_>) -> Option<HintValue> {
+fn decode_bytes_array(a: &Array<'_>) -> Option<HintValue> {
     // Only accept `ay` (array of u8).
     let mut bytes: Vec<u8> = Vec::new();
     for item in a.iter() {
@@ -57,7 +57,7 @@ fn decode_hint_value(v: &OwnedValue) -> Option<HintValue> {
         Value::U32(u) => Some(HintValue::U32(u)),
         Value::Str(s) => Some(HintValue::String(s.to_string())),
         Value::Signature(s) => Some(HintValue::String(s.to_string())),
-        Value::Array(a) => decode_bytes_array(a),
+        Value::Array(ref a) => decode_bytes_array(a),
         _ => None,
     }
 }

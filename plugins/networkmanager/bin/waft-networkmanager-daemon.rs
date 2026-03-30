@@ -108,7 +108,7 @@ impl NetworkManagerPlugin {
                 }
             }
             Err(e) => {
-                error!("[nm] Failed to discover devices: {}", e);
+                error!("[nm] Failed to discover devices: {e}");
             }
         }
 
@@ -153,10 +153,10 @@ impl NetworkManagerPlugin {
         }
 
         // Fetch public IP if any adapter is connected
-        let any_connected = state.ethernet_adapters.iter().any(|a| a.is_connected())
+        let any_connected = state.ethernet_adapters.iter().any(waft_plugin_networkmanager::state::EthernetAdapterState::is_connected)
             || state.wifi_adapters.iter().any(|a| a.active_ssid.is_some());
         if any_connected && let Some(public_ip) = fetch_public_ip().await {
-            debug!("[nm] Public IP: {}", public_ip);
+            debug!("[nm] Public IP: {public_ip}");
             state.public_ip = Some(public_ip);
         }
 
@@ -179,7 +179,7 @@ impl NetworkManagerPlugin {
                 }
             }
             Err(e) => {
-                error!("[nm] Failed to get ethernet profiles: {}", e);
+                error!("[nm] Failed to get ethernet profiles: {e}");
             }
         }
 
@@ -219,7 +219,7 @@ impl NetworkManagerPlugin {
                 }
             }
             Err(e) => {
-                error!("[nm] Failed to get VPN profiles: {}", e);
+                error!("[nm] Failed to get VPN profiles: {e}");
             }
         }
 
@@ -235,7 +235,7 @@ impl NetworkManagerPlugin {
                 state.bluetooth_devices = devices;
             }
             Err(e) => {
-                warn!("[nm] Failed to discover bluetooth devices: {}", e);
+                warn!("[nm] Failed to discover bluetooth devices: {e}");
             }
         }
 
@@ -251,7 +251,7 @@ impl NetworkManagerPlugin {
                 state.bluez_paired_devices = devices;
             }
             Err(e) => {
-                warn!("[nm] Failed to discover BlueZ paired devices: {}", e);
+                warn!("[nm] Failed to discover BlueZ paired devices: {e}");
             }
         }
 
@@ -286,7 +286,7 @@ impl NetworkManagerPlugin {
                 }
             }
             Err(e) => {
-                error!("[nm] Failed to get tethering profiles: {}", e);
+                error!("[nm] Failed to get tethering profiles: {e}");
             }
         }
 
@@ -573,7 +573,7 @@ impl Plugin for NetworkManagerPlugin {
             "network-adapter" => {
                 let adapter_id = urn.id();
                 self.handle_adapter_action(adapter_id, &action, &params)
-                    .await?
+                    .await?;
             }
             "wifi-network" => {
                 let ssid = urn.id();
@@ -584,19 +584,19 @@ impl Plugin for NetworkManagerPlugin {
             "ethernet-connection" => {
                 let uuid = urn.id();
                 self.handle_ethernet_connection_action(&urn, uuid, &action)
-                    .await?
+                    .await?;
             }
             "vpn" => {
                 let vpn_id = urn.id();
-                self.handle_vpn_action(vpn_id, &action).await?
+                self.handle_vpn_action(vpn_id, &action).await?;
             }
             "tethering-connection" => {
                 let uuid = urn.id();
                 self.handle_tethering_connection_action(uuid, &action)
-                    .await?
+                    .await?;
             }
             _ => {
-                debug!("[nm] Unknown entity type: {}", entity_type);
+                debug!("[nm] Unknown entity type: {entity_type}");
             }
         }
 
@@ -696,11 +696,11 @@ impl NetworkManagerPlugin {
     ) -> anyhow::Result<serde_json::Value> {
         match action {
             "connect" => {
-                debug!("[nm] Connect to WiFi network: {}", ssid);
+                debug!("[nm] Connect to WiFi network: {ssid}");
                 self.handle_connect_wifi(ssid, params).await?;
             }
             "disconnect" => {
-                debug!("[nm] Disconnect WiFi network: {}", ssid);
+                debug!("[nm] Disconnect WiFi network: {ssid}");
                 // Find the WiFi adapter and disconnect it
                 let device_path = {
                     let state = self.lock_state();
@@ -714,13 +714,12 @@ impl NetworkManagerPlugin {
                     disconnect_device(&self.conn, &path).await?;
                 } else {
                     warn!(
-                        "[nm] Cannot disconnect - WiFi adapter not found for: {}",
-                        ssid
+                        "[nm] Cannot disconnect - WiFi adapter not found for: {ssid}"
                     );
                 }
             }
             "forget" => {
-                info!("[nm] Forget WiFi network: {}", ssid);
+                info!("[nm] Forget WiFi network: {ssid}");
 
                 // If currently connected, disconnect first
                 let device_path = {
@@ -745,7 +744,7 @@ impl NetworkManagerPlugin {
                     for conn_path in &connections {
                         if let Err(e) = delete_connection(&self.conn, conn_path).await {
                             error!("[nm] Failed to delete connection {conn_path}: {e}");
-                            return Err(e.into());
+                            return Err(e);
                         }
                     }
                     info!(
@@ -806,7 +805,7 @@ impl NetworkManagerPlugin {
                 return Ok(serde_json::json!({ "qr_string": qr_string }));
             }
             _ => {
-                debug!("[nm] Unknown wifi-network action: {}", action);
+                debug!("[nm] Unknown wifi-network action: {action}");
             }
         }
         Ok(serde_json::Value::Null)
@@ -820,7 +819,7 @@ impl NetworkManagerPlugin {
     ) -> anyhow::Result<()> {
         match action {
             "activate" => {
-                info!("[nm] Activate ethernet connection: {}", uuid);
+                info!("[nm] Activate ethernet connection: {uuid}");
 
                 // Find the connection path and device path
                 let (conn_path, device_path) = {
@@ -838,7 +837,7 @@ impl NetworkManagerPlugin {
                 if let (Some(conn_path), Some(device_path)) = (conn_path, device_path) {
                     match activate_ethernet_connection(&self.conn, &conn_path, &device_path).await {
                         Ok(_) => {
-                            info!("[nm] Ethernet connection activated: {}", uuid);
+                            info!("[nm] Ethernet connection activated: {uuid}");
                             let mut state = self.lock_state();
                             for adapter in &mut state.ethernet_adapters {
                                 if adapter.path == device_path {
@@ -847,8 +846,8 @@ impl NetworkManagerPlugin {
                             }
                         }
                         Err(e) => {
-                            error!("[nm] Failed to activate ethernet connection: {}", e);
-                            return Err(e.into());
+                            error!("[nm] Failed to activate ethernet connection: {e}");
+                            return Err(e);
                         }
                     }
                 } else {
@@ -860,7 +859,7 @@ impl NetworkManagerPlugin {
                 }
             }
             "deactivate" => {
-                info!("[nm] Deactivate ethernet connection: {}", uuid);
+                info!("[nm] Deactivate ethernet connection: {uuid}");
 
                 // Find the device path
                 let device_path = {
@@ -875,7 +874,7 @@ impl NetworkManagerPlugin {
                 if let Some(device_path) = device_path {
                     match deactivate_ethernet_connection(&self.conn, &device_path).await {
                         Ok(()) => {
-                            info!("[nm] Ethernet connection deactivated: {}", uuid);
+                            info!("[nm] Ethernet connection deactivated: {uuid}");
                             let mut state = self.lock_state();
                             for adapter in &mut state.ethernet_adapters {
                                 if adapter.path == device_path {
@@ -884,16 +883,16 @@ impl NetworkManagerPlugin {
                             }
                         }
                         Err(e) => {
-                            error!("[nm] Failed to deactivate ethernet connection: {}", e);
-                            return Err(e.into());
+                            error!("[nm] Failed to deactivate ethernet connection: {e}");
+                            return Err(e);
                         }
                     }
                 } else {
-                    warn!("[nm] No active ethernet connection with UUID: {}", uuid);
+                    warn!("[nm] No active ethernet connection with UUID: {uuid}");
                 }
             }
             _ => {
-                debug!("[nm] Unknown ethernet-connection action: {}", action);
+                debug!("[nm] Unknown ethernet-connection action: {action}");
             }
         }
         Ok(())
@@ -950,12 +949,12 @@ impl NetworkManagerPlugin {
         }
 
         if let Err(e) = set_wifi_enabled_dbus(&self.conn, true).await {
-            error!("[nm] Failed to enable WiFi: {}", e);
+            error!("[nm] Failed to enable WiFi: {e}");
             let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
                 adapter.busy = false;
             }
-            return Err(e.into());
+            return Err(e);
         }
 
         {
@@ -983,12 +982,12 @@ impl NetworkManagerPlugin {
         }
 
         if let Err(e) = set_wifi_enabled_dbus(&self.conn, false).await {
-            error!("[nm] Failed to disable WiFi: {}", e);
+            error!("[nm] Failed to disable WiFi: {e}");
             let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
                 adapter.busy = false;
             }
-            return Err(e.into());
+            return Err(e);
         }
 
         {
@@ -1009,7 +1008,7 @@ impl NetworkManagerPlugin {
         ssid: &str,
         params: &serde_json::Value,
     ) -> anyhow::Result<()> {
-        info!("[nm] Connecting to WiFi: {}", ssid);
+        info!("[nm] Connecting to WiFi: {ssid}");
 
         let connections = get_connections_for_ssid(&self.conn, ssid).await?;
         if let Some(conn_path) = connections.first() {
@@ -1022,7 +1021,7 @@ impl NetworkManagerPlugin {
             if let Some(ref device_path) = device_path {
                 match activate_connection(&self.conn, Some(conn_path), device_path, None).await {
                     Ok(_) => {
-                        info!("[nm] WiFi connection activated for {}", ssid);
+                        info!("[nm] WiFi connection activated for {ssid}");
                         let mut state = self.lock_state();
                         for adapter in &mut state.wifi_adapters {
                             if adapter.path == *device_path {
@@ -1031,8 +1030,8 @@ impl NetworkManagerPlugin {
                         }
                     }
                     Err(e) => {
-                        error!("[nm] Failed to activate WiFi: {}", e);
-                        return Err(e.into());
+                        error!("[nm] Failed to activate WiFi: {e}");
+                        return Err(e);
                     }
                 }
             }
@@ -1097,7 +1096,7 @@ impl NetworkManagerPlugin {
                     error!("[nm] AddAndActivateConnection failed: {e}");
                     let mut state = self.lock_state();
                     state.connecting_ssid = None;
-                    return Err(e.into());
+                    return Err(e);
                 }
             }
         }
@@ -1109,11 +1108,11 @@ impl NetworkManagerPlugin {
         &self,
         device_path: &str,
     ) -> anyhow::Result<()> {
-        info!("[nm] Disconnecting WiFi: {}", device_path);
+        info!("[nm] Disconnecting WiFi: {device_path}");
 
         if let Err(e) = disconnect_device(&self.conn, device_path).await {
-            error!("[nm] Failed to disconnect WiFi: {}", e);
-            return Err(e.into());
+            error!("[nm] Failed to disconnect WiFi: {e}");
+            return Err(e);
         }
 
         {
@@ -1138,21 +1137,21 @@ impl NetworkManagerPlugin {
                 .ethernet_adapters
                 .iter()
                 .find(|a| a.path == device_path)
-                .map(|a| a.is_connected())
+                .map(waft_plugin_networkmanager::state::EthernetAdapterState::is_connected)
                 .unwrap_or(false)
         };
 
         if is_connected {
-            info!("[nm] Disconnecting wired: {}", device_path);
+            info!("[nm] Disconnecting wired: {device_path}");
             if let Err(e) = disconnect_device(&self.conn, device_path).await {
-                error!("[nm] Failed to disconnect wired: {}", e);
-                return Err(e.into());
+                error!("[nm] Failed to disconnect wired: {e}");
+                return Err(e);
             }
         } else {
-            info!("[nm] Connecting wired: {}", device_path);
+            info!("[nm] Connecting wired: {device_path}");
             if let Err(e) = connect_wired_dbus(&self.conn, device_path).await {
-                error!("[nm] Failed to connect wired: {}", e);
-                return Err(e.into());
+                error!("[nm] Failed to connect wired: {e}");
+                return Err(e);
             }
         }
 
@@ -1173,7 +1172,7 @@ impl NetworkManagerPlugin {
                 .unwrap_or_else(|| "vpn".to_string())
         };
 
-        info!("[nm] Connecting {} VPN: {}", conn_type, conn_path);
+        info!("[nm] Connecting {conn_type} VPN: {conn_path}");
 
         {
             let mut state = self.lock_state();
@@ -1189,8 +1188,7 @@ impl NetworkManagerPlugin {
         match activate_vpn(&self.conn, conn_path, &conn_type).await {
             Ok(active_path) => {
                 info!(
-                    "[nm] {} VPN connection initiated: {} -> {}",
-                    conn_type, conn_path, active_path
+                    "[nm] {conn_type} VPN connection initiated: {conn_path} -> {active_path}"
                 );
                 let mut state = self.lock_state();
                 if let Some(vpn) = state
@@ -1203,8 +1201,7 @@ impl NetworkManagerPlugin {
             }
             Err(e) => {
                 error!(
-                    "[nm] Failed to connect {} VPN {}: {}",
-                    conn_type, conn_path, e
+                    "[nm] Failed to connect {conn_type} VPN {conn_path}: {e}"
                 );
                 let mut state = self.lock_state();
                 if let Some(vpn) = state
@@ -1214,7 +1211,7 @@ impl NetworkManagerPlugin {
                 {
                     vpn.state = VpnState::Disconnected;
                 }
-                return Err(e.into());
+                return Err(e);
             }
         }
 
@@ -1225,7 +1222,7 @@ impl NetworkManagerPlugin {
         &self,
         conn_path: &str,
     ) -> anyhow::Result<()> {
-        info!("[nm] Disconnecting VPN: {}", conn_path);
+        info!("[nm] Disconnecting VPN: {conn_path}");
 
         let active_path = {
             let state = self.lock_state();
@@ -1249,7 +1246,7 @@ impl NetworkManagerPlugin {
             }
 
             if let Err(e) = deactivate_vpn(&self.conn, active_path).await {
-                error!("[nm] Failed to disconnect VPN: {}", e);
+                error!("[nm] Failed to disconnect VPN: {e}");
                 let mut state = self.lock_state();
                 if let Some(vpn) = state
                     .vpn_connections
@@ -1258,11 +1255,11 @@ impl NetworkManagerPlugin {
                 {
                     vpn.state = VpnState::Connected;
                 }
-                return Err(e.into());
+                return Err(e);
             }
         } else {
-            warn!("[nm] No active connection path for VPN: {} — connection was never activated or already disconnected", conn_path);
-            anyhow::bail!("VPN has no active connection to disconnect: {}", conn_path);
+            warn!("[nm] No active connection path for VPN: {conn_path} — connection was never activated or already disconnected");
+            anyhow::bail!("VPN has no active connection to disconnect: {conn_path}");
         }
 
         Ok(())
@@ -1355,13 +1352,12 @@ impl NetworkManagerPlugin {
         &self,
         conn_path: &str,
     ) -> anyhow::Result<()> {
-        info!("[nm] Connecting tethering: {}", conn_path);
+        info!("[nm] Connecting tethering: {conn_path}");
 
         match activate_tethering(&self.conn, conn_path).await {
             Ok(active_path) => {
                 info!(
-                    "[nm] Tethering connection initiated: {} -> {}",
-                    conn_path, active_path
+                    "[nm] Tethering connection initiated: {conn_path} -> {active_path}"
                 );
                 let mut state = self.lock_state();
                 if let Some(conn) = state
@@ -1374,8 +1370,8 @@ impl NetworkManagerPlugin {
                 }
             }
             Err(e) => {
-                error!("[nm] Failed to connect tethering: {}", e);
-                return Err(e.into());
+                error!("[nm] Failed to connect tethering: {e}");
+                return Err(e);
             }
         }
 
@@ -1387,11 +1383,11 @@ impl NetworkManagerPlugin {
         active_path: &str,
         uuid: &str,
     ) -> anyhow::Result<()> {
-        info!("[nm] Disconnecting tethering: {}", active_path);
+        info!("[nm] Disconnecting tethering: {active_path}");
 
         match deactivate_tethering(&self.conn, active_path).await {
             Ok(()) => {
-                info!("[nm] Tethering disconnected: {}", uuid);
+                info!("[nm] Tethering disconnected: {uuid}");
                 let mut state = self.lock_state();
                 if let Some(conn) = state
                     .tethering_connections
@@ -1403,8 +1399,8 @@ impl NetworkManagerPlugin {
                 }
             }
             Err(e) => {
-                error!("[nm] Failed to disconnect tethering: {}", e);
-                return Err(e.into());
+                error!("[nm] Failed to disconnect tethering: {e}");
+                return Err(e);
             }
         }
 

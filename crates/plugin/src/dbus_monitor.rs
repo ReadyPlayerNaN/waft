@@ -126,6 +126,7 @@ where
         };
 
         let header = msg.header();
+        #[allow(clippy::redundant_closure_for_method_calls)]
         if header.member().map(|m| m.as_str()) == Some(&config.member)
             && header.interface().map(|i| i.as_str()) == Some(&config.interface)
         {
@@ -203,6 +204,7 @@ where
         };
 
         let header = msg.header();
+        #[allow(clippy::redundant_closure_for_method_calls)]
         if header.member().map(|m| m.as_str()) == Some(&config.member)
             && header.interface().map(|i| i.as_str()) == Some(&config.interface)
         {

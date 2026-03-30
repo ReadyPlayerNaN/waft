@@ -80,16 +80,13 @@ impl MonthGrid {
         let on_output: OutputCallback<MonthGridOutput> = Rc::new(RefCell::new(None));
 
         // Compute first day of the month and its weekday
-        let first_of_month = match NaiveDate::from_ymd_opt(props.year, props.month, 1) {
-            Some(d) => d,
-            None => {
-                // Fallback: return empty grid
-                container.append(&grid);
-                return Self {
-                    root: container,
-                    on_output,
-                };
-            }
+        let Some(first_of_month) = NaiveDate::from_ymd_opt(props.year, props.month, 1) else {
+            // Fallback: return empty grid
+            container.append(&grid);
+            return Self {
+                root: container,
+                on_output,
+            };
         };
 
         // Monday = 0, Sunday = 6 (ISO weekday - 1)

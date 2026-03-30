@@ -82,7 +82,7 @@ impl BluezPlugin {
                 s
             }
             Err(e) => {
-                warn!("[bluetooth] Failed to load initial state: {}", e);
+                warn!("[bluetooth] Failed to load initial state: {e}");
                 State::default()
             }
         };
@@ -192,14 +192,11 @@ impl Plugin for BluezPlugin {
 
             match action.as_str() {
                 "toggle-power" => {
-                    debug!("[bluetooth] Toggle adapter power: {}", aid);
+                    debug!("[bluetooth] Toggle adapter power: {aid}");
 
-                    let adapter_path = match self.find_adapter_path(&aid) {
-                        Some(p) => p,
-                        None => {
-                            warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(serde_json::Value::Null);
-                        }
+                    let Some(adapter_path) = self.find_adapter_path(&aid) else {
+                        warn!("[bluetooth] Adapter not found: {aid}");
+                        return Ok(serde_json::Value::Null);
                     };
 
                     let current_powered = {
@@ -215,8 +212,8 @@ impl Plugin for BluezPlugin {
                     let new_powered = !current_powered;
                     if let Err(e) = dbus::set_powered(&self.conn, &adapter_path, new_powered).await
                     {
-                        error!("[bluetooth] Failed to set powered: {}", e);
-                        return Err(e.into());
+                        error!("[bluetooth] Failed to set powered: {e}");
+                        return Err(e);
                     }
 
                     // Optimistic update (signal monitoring will also catch this)
@@ -231,14 +228,11 @@ impl Plugin for BluezPlugin {
                 }
 
                 "toggle-discoverable" => {
-                    debug!("[bluetooth] Toggle adapter discoverable: {}", aid);
+                    debug!("[bluetooth] Toggle adapter discoverable: {aid}");
 
-                    let adapter_path = match self.find_adapter_path(&aid) {
-                        Some(p) => p,
-                        None => {
-                            warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(serde_json::Value::Null);
-                        }
+                    let Some(adapter_path) = self.find_adapter_path(&aid) else {
+                        warn!("[bluetooth] Adapter not found: {aid}");
+                        return Ok(serde_json::Value::Null);
                     };
 
                     let current_discoverable = {
@@ -255,8 +249,8 @@ impl Plugin for BluezPlugin {
                     if let Err(e) =
                         dbus::set_discoverable(&self.conn, &adapter_path, new_discoverable).await
                     {
-                        error!("[bluetooth] Failed to set discoverable: {}", e);
-                        return Err(e.into());
+                        error!("[bluetooth] Failed to set discoverable: {e}");
+                        return Err(e);
                     }
 
                     // Optimistic update
@@ -271,27 +265,21 @@ impl Plugin for BluezPlugin {
                 }
 
                 "set-alias" => {
-                    let alias = match params["alias"].as_str() {
-                        Some(a) => a.to_string(),
-                        None => {
-                            warn!("[bluetooth] set-alias action missing 'alias' param");
-                            return Ok(serde_json::Value::Null);
-                        }
+                    let Some(alias) = params["alias"].as_str().map(str::to_string) else {
+                        warn!("[bluetooth] set-alias action missing 'alias' param");
+                        return Ok(serde_json::Value::Null);
                     };
-                    debug!("[bluetooth] Set adapter alias: {} -> {}", aid, alias);
+                    debug!("[bluetooth] Set adapter alias: {aid} -> {alias}");
 
-                    let adapter_path = match self.find_adapter_path(&aid) {
-                        Some(p) => p,
-                        None => {
-                            warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(serde_json::Value::Null);
-                        }
+                    let Some(adapter_path) = self.find_adapter_path(&aid) else {
+                        warn!("[bluetooth] Adapter not found: {aid}");
+                        return Ok(serde_json::Value::Null);
                     };
 
                     if let Err(e) = dbus::set_adapter_alias(&self.conn, &adapter_path, &alias).await
                     {
-                        error!("[bluetooth] Failed to set alias: {}", e);
-                        return Err(e.into());
+                        error!("[bluetooth] Failed to set alias: {e}");
+                        return Err(e);
                     }
 
                     // Optimistic update
@@ -306,19 +294,16 @@ impl Plugin for BluezPlugin {
                 }
 
                 "start-discovery" => {
-                    debug!("[bluetooth] Start discovery: {}", aid);
+                    debug!("[bluetooth] Start discovery: {aid}");
 
-                    let adapter_path = match self.find_adapter_path(&aid) {
-                        Some(p) => p,
-                        None => {
-                            warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(serde_json::Value::Null);
-                        }
+                    let Some(adapter_path) = self.find_adapter_path(&aid) else {
+                        warn!("[bluetooth] Adapter not found: {aid}");
+                        return Ok(serde_json::Value::Null);
                     };
 
                     if let Err(e) = dbus::start_discovery(&self.conn, &adapter_path).await {
-                        error!("[bluetooth] Failed to start discovery: {}", e);
-                        return Err(e.into());
+                        error!("[bluetooth] Failed to start discovery: {e}");
+                        return Err(e);
                     }
 
                     // Optimistic update
@@ -333,19 +318,16 @@ impl Plugin for BluezPlugin {
                 }
 
                 "stop-discovery" => {
-                    debug!("[bluetooth] Stop discovery: {}", aid);
+                    debug!("[bluetooth] Stop discovery: {aid}");
 
-                    let adapter_path = match self.find_adapter_path(&aid) {
-                        Some(p) => p,
-                        None => {
-                            warn!("[bluetooth] Adapter not found: {}", aid);
-                            return Ok(serde_json::Value::Null);
-                        }
+                    let Some(adapter_path) = self.find_adapter_path(&aid) else {
+                        warn!("[bluetooth] Adapter not found: {aid}");
+                        return Ok(serde_json::Value::Null);
                     };
 
                     if let Err(e) = dbus::stop_discovery(&self.conn, &adapter_path).await {
-                        error!("[bluetooth] Failed to stop discovery: {}", e);
-                        return Err(e.into());
+                        error!("[bluetooth] Failed to stop discovery: {e}");
+                        return Err(e);
                     }
 
                     // Optimistic update
@@ -360,7 +342,7 @@ impl Plugin for BluezPlugin {
                 }
 
                 _ => {
-                    debug!("[bluetooth] Unknown adapter action: {}", action);
+                    debug!("[bluetooth] Unknown adapter action: {action}");
                 }
             }
         } else if entity_type == BluetoothDevice::ENTITY_TYPE {
@@ -368,7 +350,7 @@ impl Plugin for BluezPlugin {
 
             match action.as_str() {
                 "toggle-connect" => {
-                    debug!("[bluetooth] Toggle device connection: {}", did);
+                    debug!("[bluetooth] Toggle device connection: {did}");
 
                     // Find the device path and current connection state
                     let (device_path, current_state) = {
@@ -385,13 +367,11 @@ impl Plugin for BluezPlugin {
                                 break;
                             }
                         }
-                        match found {
-                            Some(f) => f,
-                            None => {
-                                warn!("[bluetooth] Device not found: {}", did);
-                                return Ok(serde_json::Value::Null);
-                            }
-                        }
+                        let Some(f) = found else {
+                            warn!("[bluetooth] Device not found: {did}");
+                            return Ok(serde_json::Value::Null);
+                        };
+                        f
                     };
 
                     // Set intermediate state
@@ -441,46 +421,40 @@ impl Plugin for BluezPlugin {
                             }
                         }
                         self.notify(); // Push reverted state to UI
-                        return Err(e.into());
+                        return Err(e);
                     }
                     // On success: signal monitor will catch the Connected property change
                     // and update the state to Connected/Disconnected
                 }
 
                 "pair-device" => {
-                    debug!("[bluetooth] Pair device: {}", did);
+                    debug!("[bluetooth] Pair device: {did}");
 
-                    let device_path = match self.find_device_paths(&did) {
-                        Some((dp, _)) => dp,
-                        None => {
-                            warn!("[bluetooth] Device not found: {}", did);
-                            return Ok(serde_json::Value::Null);
-                        }
+                    let Some((device_path, _)) = self.find_device_paths(&did) else {
+                        warn!("[bluetooth] Device not found: {did}");
+                        return Ok(serde_json::Value::Null);
                     };
 
                     if let Err(e) = dbus::pair_device(&self.conn, &device_path).await {
-                        error!("[bluetooth] Failed to pair device: {}", e);
-                        return Err(e.into());
+                        error!("[bluetooth] Failed to pair device: {e}");
+                        return Err(e);
                     }
                     // Signal monitor will catch the Paired property change
                 }
 
                 "remove-device" => {
-                    debug!("[bluetooth] Remove device: {}", did);
+                    debug!("[bluetooth] Remove device: {did}");
 
-                    let (device_path, adapter_path) = match self.find_device_paths(&did) {
-                        Some(paths) => paths,
-                        None => {
-                            warn!("[bluetooth] Device not found: {}", did);
-                            return Ok(serde_json::Value::Null);
-                        }
+                    let Some((device_path, adapter_path)) = self.find_device_paths(&did) else {
+                        warn!("[bluetooth] Device not found: {did}");
+                        return Ok(serde_json::Value::Null);
                     };
 
                     if let Err(e) =
                         dbus::remove_device(&self.conn, &adapter_path, &device_path).await
                     {
-                        error!("[bluetooth] Failed to remove device: {}", e);
-                        return Err(e.into());
+                        error!("[bluetooth] Failed to remove device: {e}");
+                        return Err(e);
                     }
 
                     // Remove device from state
@@ -494,13 +468,12 @@ impl Plugin for BluezPlugin {
                 }
 
                 _ => {
-                    debug!("[bluetooth] Unknown device action: {}", action);
+                    debug!("[bluetooth] Unknown device action: {action}");
                 }
             }
         } else {
             debug!(
-                "[bluetooth] Unknown entity type: {} (action: {})",
-                entity_type, action
+                "[bluetooth] Unknown entity type: {entity_type} (action: {action})"
             );
         }
 

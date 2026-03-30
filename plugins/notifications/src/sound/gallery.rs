@@ -60,7 +60,7 @@ impl SoundGallery {
         let ext = std::path::Path::new(base_filename)
             .extension()
             .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase());
+            .map(str::to_lowercase);
         match ext {
             Some(ref e) if SUPPORTED_EXTENSIONS.contains(&e.as_str()) => {}
             _ => {
@@ -71,7 +71,7 @@ impl SoundGallery {
                 );
             }
         }
-        let ext = ext.unwrap();
+        let ext = ext.expect("ext is Some after extension validation above");
 
         // Sanitize the stem to kebab-case
         let raw_stem = std::path::Path::new(base_filename)
@@ -204,9 +204,8 @@ fn sounds_directory() -> PathBuf {
 fn scan_directory(dir: &PathBuf) -> Vec<NotificationSound> {
     let mut sounds = Vec::new();
 
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return sounds,
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return sounds;
     };
 
     for entry in entries.flatten() {
@@ -218,15 +217,14 @@ fn scan_directory(dir: &PathBuf) -> Vec<NotificationSound> {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase());
+            .map(str::to_lowercase);
         let supported = matches!(ext, Some(ref e) if SUPPORTED_EXTENSIONS.contains(&e.as_str()));
         if !supported {
             continue;
         }
 
-        let filename = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
+        let Some(filename) = path.file_name().and_then(|n| n.to_str()).map(str::to_string) else {
+            continue;
         };
 
         let size = entry.metadata().map(|m| m.len()).unwrap_or(0);

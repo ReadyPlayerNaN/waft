@@ -65,7 +65,7 @@ async fn run_sunsetr(args: &[&str]) -> Result<(i32, String, String)> {
         .stderr(Stdio::piped())
         .output()
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to run sunsetr {:?}: {e}", args))?;
+        .map_err(|e| anyhow::anyhow!("Failed to run sunsetr {args:?}: {e}"))?;
 
     let code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -146,7 +146,7 @@ fn parse_status_event(ev: &SunsetrJsonEvent) -> (Option<String>, Option<String>)
         .period
         .as_deref()
         .or(ev.to_period.as_deref())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     let next_transition = ev.next_period.as_deref().and_then(hhmm_from_rfc3339);
 
@@ -205,9 +205,9 @@ async fn query_presets() -> Result<Vec<String>> {
 
     let presets: Vec<String> = stdout
         .lines()
-        .map(|line| line.trim())
+        .map(str::trim)
         .filter(|line| !line.is_empty())
-        .map(|line| line.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     Ok(presets)
@@ -437,7 +437,7 @@ impl Plugin for SunsetrPlugin {
                     .context("select_preset requires string parameter")?
                     .to_string();
 
-                debug!("[sunsetr] Selecting preset: {}", preset_name);
+                debug!("[sunsetr] Selecting preset: {preset_name}");
 
                 if preset_name == "default" {
                     if let Err(e) = set_preset("default").await {
@@ -447,7 +447,7 @@ impl Plugin for SunsetrPlugin {
                         self.state.lock_or_recover().active_preset = None;
                     }
                 } else if let Err(e) = set_preset(&preset_name).await {
-                    warn!("[sunsetr] preset switch to '{}' failed: {e}", preset_name);
+                    warn!("[sunsetr] preset switch to '{preset_name}' failed: {e}");
                     return Err(e);
                 } else {
                     self.state.lock_or_recover().active_preset = Some(preset_name);
@@ -604,13 +604,10 @@ fn spawn_follow_task(state: Arc<StdMutex<SunsetrState>>, notifier: EntityNotifie
             }
         };
 
-        let stdout = match child.stdout.take() {
-            Some(s) => s,
-            None => {
-                warn!("[sunsetr] follow stdout missing");
-                let _ = child.wait();
-                return;
-            }
+        let Some(stdout) = child.stdout.take() else {
+            warn!("[sunsetr] follow stdout missing");
+            let _ = child.wait();
+            return;
         };
 
         let reader = std::io::BufReader::new(stdout);

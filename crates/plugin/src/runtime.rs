@@ -403,6 +403,7 @@ pub fn daemon_socket_path() -> PathBuf {
     }
 
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
+        #[allow(unsafe_code)]
         let uid = unsafe { libc::getuid() };
         format!("/run/user/{uid}")
     });

@@ -31,7 +31,7 @@ pub struct FeatureGridWidget {
 impl FeatureGridWidget {
     /// Create a new feature grid with the given toggles.
     pub fn new(
-        items: Vec<FeatureGridItem>,
+        items: &[FeatureGridItem],
         menu_store: Rc<MenuStore>,
         on_content_changed: Option<Rc<dyn Fn()>>,
     ) -> Self {
@@ -54,7 +54,7 @@ impl FeatureGridWidget {
             toggle_ids,
         };
 
-        widget.populate_grid(&items);
+        widget.populate_grid(items);
         widget.root.append(&widget.grid);
 
         widget

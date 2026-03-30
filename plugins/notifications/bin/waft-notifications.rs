@@ -147,24 +147,24 @@ fn main() -> Result<()> {
                                 app_name: notification
                                     .app_name
                                     .as_ref()
-                                    .map(|s| s.as_ref()),
+                                    .map(std::convert::AsRef::as_ref),
                                 urgency: notification.hints.urgency,
                                 suppress_sound: notification.hints.suppress_sound,
                                 sound_file: notification
                                     .hints
                                     .sound_file
                                     .as_ref()
-                                    .map(|s| s.as_ref()),
+                                    .map(std::convert::AsRef::as_ref),
                                 sound_name: notification
                                     .hints
                                     .sound_name
                                     .as_ref()
-                                    .map(|s| s.as_ref()),
+                                    .map(std::convert::AsRef::as_ref),
                                 category: notification
                                     .hints
                                     .category_raw
                                     .as_ref()
-                                    .map(|s| s.as_ref()),
+                                    .map(std::convert::AsRef::as_ref),
                                 dnd_active: guard.dnd,
                             };
                             let policy = ingress_sound_policy.lock_or_recover();
@@ -183,12 +183,12 @@ fn main() -> Result<()> {
                                 app_name: notification
                                     .app_name
                                     .as_ref()
-                                    .map(|s| s.to_string()),
+                                    .map(std::string::ToString::to_string),
                                 app_id: notification
                                     .hints
                                     .desktop_entry
                                     .as_ref()
-                                    .map(|s| s.to_string()),
+                                    .map(std::string::ToString::to_string),
                                 urgency: match notification.hints.urgency {
                                     waft_plugin_notifications::types::NotificationUrgency::Low => {
                                         waft_protocol::entity::notification::NotificationUrgency::Low

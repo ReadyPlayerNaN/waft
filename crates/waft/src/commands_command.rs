@@ -284,7 +284,7 @@ fn print_text(commands: &[ResolvedCommand]) {
     let max_label = commands.iter().map(|c| c.label.len()).max().unwrap_or(0);
     let max_subtitle = commands
         .iter()
-        .map(|c| c.subtitle.as_deref().map_or(0, |s| s.len()))
+        .map(|c| c.subtitle.as_deref().map_or(0, str::len))
         .max()
         .unwrap_or(0);
 

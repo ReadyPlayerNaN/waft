@@ -81,7 +81,7 @@ fn run_daemon() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         info!("starting daemon at {}", socket_path.display());
 
-        let daemon = WaftDaemon::new(socket_path)?;
+        let daemon = WaftDaemon::new(&socket_path)?;
         daemon.run().await?;
 
         // Keep the D-Bus connection alive for the daemon's lifetime

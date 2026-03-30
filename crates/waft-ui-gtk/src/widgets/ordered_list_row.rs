@@ -47,7 +47,7 @@ pub struct OrderedListRow {
 
 impl OrderedListRow {
     /// Create a new ordered list row.
-    pub fn new(props: OrderedListRowProps) -> Self {
+    pub fn new(props: &OrderedListRowProps) -> Self {
         let mut builder = adw::ActionRow::builder()
             .title(&props.title)
             .activatable(false)

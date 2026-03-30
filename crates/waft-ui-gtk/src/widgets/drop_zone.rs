@@ -63,8 +63,8 @@ pub struct DropZone {
 
 impl DropZone {
     /// Create a new drop zone.
-    pub fn new(props: DropZoneProps) -> Self {
-        let inner = Rc::new(DropZoneComponent::build(&props));
+    pub fn new(props: &DropZoneProps) -> Self {
+        let inner = Rc::new(DropZoneComponent::build(props));
         let root = inner.widget();
 
         Self {

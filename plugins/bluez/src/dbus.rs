@@ -170,8 +170,7 @@ pub async fn set_powered(conn: &Connection, adapter_path: &str, powered: bool) -
         .context("Failed to set Powered property")?;
 
     info!(
-        "[bluetooth] Set adapter {} powered: {}",
-        adapter_path, powered
+        "[bluetooth] Set adapter {adapter_path} powered: {powered}"
     );
 
     Ok(())
@@ -193,8 +192,7 @@ pub async fn set_discoverable(
         .context("Failed to set Discoverable property")?;
 
     info!(
-        "[bluetooth] Set adapter {} discoverable: {}",
-        adapter_path, discoverable
+        "[bluetooth] Set adapter {adapter_path} discoverable: {discoverable}"
     );
 
     Ok(())
@@ -211,7 +209,7 @@ pub async fn set_adapter_alias(conn: &Connection, adapter_path: &str, alias: &st
         .await
         .context("Failed to set Alias property")?;
 
-    info!("[bluetooth] Set adapter {} alias: {}", adapter_path, alias);
+    info!("[bluetooth] Set adapter {adapter_path} alias: {alias}");
 
     Ok(())
 }
@@ -226,7 +224,7 @@ pub async fn start_discovery(conn: &Connection, adapter_path: &str) -> Result<()
         .await
         .context("Failed to start discovery")?;
 
-    info!("[bluetooth] Started discovery on {}", adapter_path);
+    info!("[bluetooth] Started discovery on {adapter_path}");
 
     Ok(())
 }
@@ -241,7 +239,7 @@ pub async fn stop_discovery(conn: &Connection, adapter_path: &str) -> Result<()>
         .await
         .context("Failed to stop discovery")?;
 
-    info!("[bluetooth] Stopped discovery on {}", adapter_path);
+    info!("[bluetooth] Stopped discovery on {adapter_path}");
 
     Ok(())
 }
@@ -256,7 +254,7 @@ pub async fn pair_device(conn: &Connection, device_path: &str) -> Result<()> {
         .await
         .context("Failed to pair device")?;
 
-    info!("[bluetooth] Paired device {}", device_path);
+    info!("[bluetooth] Paired device {device_path}");
 
     Ok(())
 }
@@ -274,8 +272,7 @@ pub async fn remove_device(conn: &Connection, adapter_path: &str, device_path: &
         .context("Failed to remove device")?;
 
     info!(
-        "[bluetooth] Removed device {} from adapter {}",
-        device_path, adapter_path
+        "[bluetooth] Removed device {device_path} from adapter {adapter_path}"
     );
 
     Ok(())

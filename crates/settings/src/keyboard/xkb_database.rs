@@ -23,7 +23,7 @@ pub fn get_variants_for_layout(layout: &str) -> Vec<XkbVariant> {
     match std::fs::read_to_string(BASE_LST_PATH) {
         Ok(content) => parse_variants_for_layout(&content, layout),
         Err(e) => {
-            log::debug!("[keyboard] Failed to read {}: {}", BASE_LST_PATH, e);
+            log::debug!("[keyboard] Failed to read {BASE_LST_PATH}: {e}");
             Vec::new()
         }
     }

@@ -147,7 +147,7 @@ impl Plugin for SyncthingPlugin {
                     }
                     Err(e) => {
                         log::error!("Failed to toggle syncthing: {e}");
-                        return Err(e.into());
+                        return Err(e);
                     }
                 }
             }
@@ -160,7 +160,7 @@ impl Plugin for SyncthingPlugin {
                         }
                         Err(e) => {
                             log::error!("Failed to enable syncthing: {e}");
-                            return Err(e.into());
+                            return Err(e);
                         }
                     }
                 }
@@ -174,7 +174,7 @@ impl Plugin for SyncthingPlugin {
                         }
                         Err(e) => {
                             log::error!("Failed to disable syncthing: {e}");
-                            return Err(e.into());
+                            return Err(e);
                         }
                     }
                 }

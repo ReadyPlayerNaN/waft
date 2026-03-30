@@ -137,7 +137,7 @@ pub(crate) fn build_rate_mode_indices(
 }
 
 pub(crate) fn format_resolution(w: u32, h: u32) -> String {
-    format!("{}\u{00D7}{}", w, h)
+    format!("{w}\u{00D7}{h}")
 }
 
 pub(crate) fn format_refresh_rate(rate: f64, preferred: bool) -> String {
@@ -146,7 +146,7 @@ pub(crate) fn format_refresh_rate(rate: f64, preferred: bool) -> String {
     } else {
         String::new()
     };
-    format!("{:.2} Hz{}", rate, suffix)
+    format!("{rate:.2} Hz{suffix}")
 }
 
 pub(crate) fn rotation_labels() -> Vec<String> {
@@ -160,7 +160,7 @@ pub(crate) fn rotation_labels() -> Vec<String> {
 
 /// Check if any output has pending changes.
 pub(crate) fn any_dirty(pending: &HashMap<String, PendingOutputChanges>) -> bool {
-    pending.values().any(|p| p.dirty())
+    pending.values().any(PendingOutputChanges::dirty)
 }
 
 /// Update an existing output group's widgets from new entity data.
@@ -195,7 +195,7 @@ pub(crate) fn update_output_group(
         Some([w, h]) => {
             widgets
                 .physical_size_row
-                .set_subtitle(&format!("{} \u{00D7} {} mm", w, h));
+                .set_subtitle(&format!("{w} \u{00D7} {h} mm"));
             widgets.physical_size_row.set_visible(true);
         }
         None => {
@@ -221,7 +221,7 @@ pub(crate) fn update_output_group(
             .iter()
             .map(|&(w, h)| format_resolution(w, h))
             .collect();
-        let res_str_refs: Vec<&str> = res_strings.iter().map(|s| s.as_str()).collect();
+        let res_str_refs: Vec<&str> = res_strings.iter().map(std::string::String::as_str).collect();
         let res_list = gtk::StringList::new(&res_str_refs);
         widgets.resolution_row.set_model(Some(&res_list));
         widgets
@@ -242,7 +242,7 @@ pub(crate) fn update_output_group(
                     format_refresh_rate(rate, preferred)
                 })
                 .collect();
-            let rate_str_refs: Vec<&str> = rate_strings.iter().map(|s| s.as_str()).collect();
+            let rate_str_refs: Vec<&str> = rate_strings.iter().map(std::string::String::as_str).collect();
             let rate_list = gtk::StringList::new(&rate_str_refs);
             widgets.refresh_rate_row.set_model(Some(&rate_list));
 
@@ -339,7 +339,7 @@ pub(crate) fn create_output_rows(
         .visible(output.physical_size.is_some())
         .build();
     if let Some([w, h]) = output.physical_size {
-        physical_size_row.set_subtitle(&format!("{} \u{00D7} {} mm", w, h));
+        physical_size_row.set_subtitle(&format!("{w} \u{00D7} {h} mm"));
     }
     group.add(&physical_size_row);
 
@@ -358,7 +358,7 @@ pub(crate) fn create_output_rows(
         .iter()
         .map(|&(w, h)| format_resolution(w, h))
         .collect();
-    let res_str_refs: Vec<&str> = res_strings.iter().map(|s| s.as_str()).collect();
+    let res_str_refs: Vec<&str> = res_strings.iter().map(std::string::String::as_str).collect();
 
     let resolution_row = adw::ComboRow::builder()
         .title(t("display-resolution"))
@@ -386,7 +386,7 @@ pub(crate) fn create_output_rows(
                 format_refresh_rate(rate, preferred)
             })
             .collect();
-        let rate_str_refs: Vec<&str> = rate_strings.iter().map(|s| s.as_str()).collect();
+        let rate_str_refs: Vec<&str> = rate_strings.iter().map(std::string::String::as_str).collect();
         refresh_rate_row.set_model(Some(&gtk::StringList::new(&rate_str_refs)));
 
         let current_rate_idx = rates
@@ -427,7 +427,7 @@ pub(crate) fn create_output_rows(
 
                     let rate_list = gtk::StringList::new(&[]);
                     if let Some(&first_mode_idx) = mode_indices.first() {
-                        rate_list.append(&format!("{}\u{00D7}{}", w, h));
+                        rate_list.append(&format!("{w}\u{00D7}{h}"));
                         rate_row.set_model(Some(&rate_list));
                         rate_row.set_selected(0);
 
@@ -546,7 +546,7 @@ pub(crate) fn create_output_rows(
 
     // --- Rotation ---
     let labels = rotation_labels();
-    let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+    let label_refs: Vec<&str> = labels.iter().map(std::string::String::as_str).collect();
     let rotation_list = gtk::StringList::new(&label_refs);
     let (rotation_idx, flipped) = output.transform.decompose();
 

@@ -65,7 +65,7 @@ impl SwayBackend {
 
     /// Run a swaymsg command on a background thread.
     async fn run_swaymsg(args: &[&str]) -> Result<std::process::Output> {
-        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
         let (tx, rx) = flume::bounded(1);
         std::thread::spawn(move || {
             let result = std::process::Command::new("swaymsg")
@@ -86,7 +86,7 @@ impl SwayBackend {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("swaymsg failed: {}", stderr);
+            anyhow::bail!("swaymsg failed: {stderr}");
         }
 
         let inputs: Vec<SwayInput> =
@@ -146,7 +146,7 @@ impl KeyboardLayoutBackend for SwayBackend {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("swaymsg xkb_switch_layout failed: {}", stderr);
+            anyhow::bail!("swaymsg xkb_switch_layout failed: {stderr}");
         }
 
         Ok(())
@@ -158,7 +158,7 @@ impl KeyboardLayoutBackend for SwayBackend {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("swaymsg xkb_switch_layout failed: {}", stderr);
+            anyhow::bail!("swaymsg xkb_switch_layout failed: {stderr}");
         }
 
         Ok(())
@@ -191,23 +191,17 @@ impl KeyboardLayoutBackend for SwayBackend {
                 }
             };
 
-            let stdout = match child.stdout.take() {
-                Some(s) => s,
-                None => {
-                    let _ = sender.send(LayoutEvent::Error(
-                        "Failed to capture swaymsg stdout".to_string(),
-                    ));
-                    return;
-                }
+            let Some(stdout) = child.stdout.take() else {
+                let _ = sender.send(LayoutEvent::Error(
+                    "Failed to capture swaymsg stdout".to_string(),
+                ));
+                return;
             };
 
             let reader = std::io::BufReader::new(stdout);
 
             for line in reader.lines() {
-                let line = match line {
-                    Ok(l) => l,
-                    Err(_) => break,
-                };
+                let Ok(line) = line else { break };
                 let line = line.trim();
                 if line.is_empty() {
                     continue;
@@ -222,7 +216,7 @@ impl KeyboardLayoutBackend for SwayBackend {
                                 event.input.xkb_active_layout_index,
                             )
                         {
-                            debug!("[keyboard-layout:sway] Layout changed to index {}", index);
+                            debug!("[keyboard-layout:sway] Layout changed to index {index}");
                             let info = Self::to_layout_info(names, index);
                             if sender.send(LayoutEvent::Changed(info)).is_err() {
                                 break;

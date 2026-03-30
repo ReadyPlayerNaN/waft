@@ -217,7 +217,7 @@ impl TimerDialog {
                 let env_str: Vec<String> = timer
                     .environment
                     .iter()
-                    .map(|(k, v)| format!("{}={}", k, v))
+                    .map(|(k, v)| format!("{k}={v}"))
                     .collect();
                 env_row.set_text(&env_str.join(" "));
             }
@@ -477,7 +477,7 @@ fn parse_env_vars(text: &str) -> Vec<(String, String)> {
 fn parse_space_list(text: &str) -> Vec<String> {
     text.split_whitespace()
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
 }
 
@@ -507,7 +507,7 @@ fn is_valid_memory_size(s: &str) -> bool {
     let suffix_len = s
         .chars()
         .rev()
-        .take_while(|c| c.is_ascii_alphabetic())
+        .take_while(char::is_ascii_alphabetic)
         .count();
     let (num_part, suffix) = s.split_at(s.len() - suffix_len);
     matches!(

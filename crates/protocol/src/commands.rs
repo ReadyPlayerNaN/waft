@@ -26,7 +26,7 @@ fn no_subtitle(_v: &serde_json::Value) -> Option<String> {
 }
 
 fn active_subtitle(v: &serde_json::Value) -> Option<String> {
-    v.get("active").and_then(|a| a.as_bool()).map(|active| {
+    v.get("active").and_then(serde_json::Value::as_bool).map(|active| {
         if active {
             "Active".to_string()
         } else {
@@ -38,7 +38,7 @@ fn active_subtitle(v: &serde_json::Value) -> Option<String> {
 fn name_subtitle(v: &serde_json::Value) -> Option<String> {
     v.get("name")
         .and_then(|n| n.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 pub static COMMAND_DEFS: &[CommandDef] = &[

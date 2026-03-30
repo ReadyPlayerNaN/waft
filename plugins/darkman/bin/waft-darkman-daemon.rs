@@ -94,7 +94,7 @@ impl DarkmanPlugin {
         log::info!("Initial darkman mode: {mode:?}");
 
         let yaml_config = config::parse_darkman_config().unwrap_or_default();
-        log::debug!("Darkman YAML config: {:?}", yaml_config);
+        log::debug!("Darkman YAML config: {yaml_config:?}");
 
         Ok(Self {
             config,
@@ -202,7 +202,7 @@ impl DarkmanPlugin {
                 "auto_location" => yaml_config.usegeoclue = Some(serde_json::from_value(value)?),
                 "dbus_api" => yaml_config.dbusserver = Some(serde_json::from_value(value)?),
                 "portal_api" => yaml_config.portal = Some(serde_json::from_value(value)?),
-                _ => anyhow::bail!("Unknown field: {}", field),
+                _ => anyhow::bail!("Unknown field: {field}"),
             }
 
             // Backup and write config
@@ -267,7 +267,7 @@ impl Plugin for DarkmanPlugin {
 
                 if let Err(e) = self.set_mode(new_mode).await {
                     log::error!("Failed to set darkman mode: {e}");
-                    return Err(e.into());
+                    return Err(e);
                 }
 
                 // Update shared state
@@ -275,7 +275,7 @@ impl Plugin for DarkmanPlugin {
                 log::debug!("Mode toggled to: {new_mode:?}");
             }
             "update_field" => {
-                log::debug!("Update field action received: {:?}", params);
+                log::debug!("Update field action received: {params:?}");
 
                 let field: String = serde_json::from_value(
                     params
@@ -291,7 +291,7 @@ impl Plugin for DarkmanPlugin {
                 self.update_config_field(&field, value).await?;
             }
             _ => {
-                log::warn!("Unknown action: {}", action);
+                log::warn!("Unknown action: {action}");
             }
         }
         Ok(serde_json::Value::Null)

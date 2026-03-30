@@ -362,7 +362,7 @@ mod tests {
             name: name.to_string(),
             icon: "test".to_string(),
             available: true,
-            keywords: keywords.iter().map(|s| s.to_string()).collect(),
+            keywords: keywords.iter().map(std::string::ToString::to_string).collect(),
             description: None,
         }
     }
@@ -692,7 +692,7 @@ mod tests {
             action: action.to_string(),
             label: label.to_string(),
             icon: icon.to_string(),
-            subtitle: subtitle.map(|s| s.to_string()),
+            subtitle: subtitle.map(std::string::ToString::to_string),
             label_norm: normalize_for_search(label),
         }
     }

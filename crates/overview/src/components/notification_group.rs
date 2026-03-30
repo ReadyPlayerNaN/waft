@@ -89,7 +89,7 @@ impl NotificationGroup {
 
         // App icon (16px)
         let icons = convert_icon_hints(icon_hints);
-        let icon_widget = IconWidget::new(icons, 16);
+        let icon_widget = IconWidget::new(&icons, 16);
 
         // App title
         let app_title_label = gtk::Label::builder()
@@ -229,7 +229,7 @@ impl NotificationGroup {
 
         // Update header controls visibility
         if total > 1 {
-            self.count_label.set_label(&format!("{}", total));
+            self.count_label.set_label(&format!("{total}"));
             self.count_label.set_visible(true);
             self.expand_btn.set_visible(true);
             self.clear_btn.set_visible(true);

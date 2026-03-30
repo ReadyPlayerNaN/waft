@@ -399,7 +399,7 @@ mod tests {
         // Older plugins may send ActionSuccess without the `data` field.
         // #[serde(default)] ensures this deserializes correctly.
         let id = Uuid::new_v4();
-        let json = format!(r#"{{"type":"ActionSuccess","action_id":"{}"}}"#, id);
+        let json = format!(r#"{{"type":"ActionSuccess","action_id":"{id}"}}"#);
         let msg: PluginMessage = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(
             msg,
@@ -413,7 +413,7 @@ mod tests {
     #[test]
     fn app_action_success_backward_compat_no_data_field() {
         let id = Uuid::new_v4();
-        let json = format!(r#"{{"type":"ActionSuccess","action_id":"{}"}}"#, id);
+        let json = format!(r#"{{"type":"ActionSuccess","action_id":"{id}"}}"#);
         let msg: AppNotification = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(
             msg,

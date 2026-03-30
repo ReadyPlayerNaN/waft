@@ -47,7 +47,7 @@ impl SessionMonitor {
     fn get_session_path() -> Result<String> {
         // Try XDG_SESSION_ID first (most reliable)
         if let Ok(session_id) = env::var("XDG_SESSION_ID") {
-            return Ok(format!("/org/freedesktop/login1/session/{}", session_id));
+            return Ok(format!("/org/freedesktop/login1/session/{session_id}"));
         }
 
         // Fallback: use "auto" which logind resolves to the caller's session
@@ -67,13 +67,11 @@ impl SessionMonitor {
 
         // Subscribe to Lock signal
         let lock_rule = format!(
-            "type='signal',interface='org.freedesktop.login1.Session',member='Lock',path='{}'",
-            session_path
+            "type='signal',interface='org.freedesktop.login1.Session',member='Lock',path='{session_path}'"
         );
 
         let unlock_rule = format!(
-            "type='signal',interface='org.freedesktop.login1.Session',member='Unlock',path='{}'",
-            session_path
+            "type='signal',interface='org.freedesktop.login1.Session',member='Unlock',path='{session_path}'"
         );
 
         // Start listener for Lock signals
@@ -145,7 +143,7 @@ impl SessionMonitor {
                     .unwrap_or(false);
 
                 if iface_ok && member_ok {
-                    debug!("[session] Received {:?} signal", event);
+                    debug!("[session] Received {event:?} signal");
                     let _ = event_tx.send(event);
                 }
             }

@@ -53,9 +53,8 @@ fn get_notifications_table(
         .entry("plugins")
         .or_insert_with(|| toml::Value::Array(Vec::new()));
 
-    let plugins_array = match plugins {
-        toml::Value::Array(arr) => arr,
-        _ => anyhow::bail!("plugins is not an array"),
+    let toml::Value::Array(plugins_array) = plugins else {
+        anyhow::bail!("plugins is not an array");
     };
 
     // Find the index of the notifications plugin entry, or create one

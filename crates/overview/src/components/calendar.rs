@@ -208,18 +208,16 @@ impl CalendarComponent {
 
             if let (Some(start), Some(end)) = (start_dt, end_dt) {
                 // For each day the event spans, if it falls in our viewed month, count it
-                let first_of_month = match NaiveDate::from_ymd_opt(year, month, 1) {
-                    Some(d) => d,
-                    None => continue,
+                let Some(first_of_month) = NaiveDate::from_ymd_opt(year, month, 1) else {
+                    continue;
                 };
                 let (next_year, next_month) = if month == 12 {
                     (year + 1, 1)
                 } else {
                     (year, month + 1)
                 };
-                let first_of_next = match NaiveDate::from_ymd_opt(next_year, next_month, 1) {
-                    Some(d) => d,
-                    None => continue,
+                let Some(first_of_next) = NaiveDate::from_ymd_opt(next_year, next_month, 1) else {
+                    continue;
                 };
 
                 let event_start_date = start.date_naive();

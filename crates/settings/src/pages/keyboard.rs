@@ -80,7 +80,7 @@ impl KeyboardPage {
             .build();
 
         // Create OrderedList instead of manual ListBox
-        let ordered_list = OrderedList::new(OrderedListProps {
+        let ordered_list = OrderedList::new(&OrderedListProps {
             css_classes: vec!["boxed-list".to_string()],
         });
         ordered_list.root.set_visible(false);
@@ -143,10 +143,7 @@ impl KeyboardPage {
             ordered_list.connect_output(move |output| {
                 let OrderedListOutput::Reordered(layout_code, from_index, to_index) = output;
                 log::debug!(
-                    "[keyboard-page] Layout '{}' reordered from {} to {}",
-                    layout_code,
-                    from_index,
-                    to_index
+                    "[keyboard-page] Layout '{layout_code}' reordered from {from_index} to {to_index}"
                 );
 
                 // Compute new order
@@ -185,9 +182,7 @@ impl KeyboardPage {
                         &root_ref,
                         move |layout_code, layout_name| {
                             log::debug!(
-                                "[keyboard-page] Adding layout: {} ({})",
-                                layout_code,
-                                layout_name
+                                "[keyboard-page] Adding layout: {layout_code} ({layout_name})"
                             );
                             let params =
                                 serde_json::json!({ "layout": layout_code, "name": layout_name });
@@ -319,11 +314,11 @@ impl KeyboardPage {
             let subtitle = if current_variant.is_empty() {
                 layout_code.clone()
             } else {
-                format!("{} ({})", layout_code, current_variant)
+                format!("{layout_code} ({current_variant})")
             };
 
             // Create OrderedListRow with native ActionRow layout
-            let row = OrderedListRow::new(OrderedListRowProps {
+            let row = OrderedListRow::new(&OrderedListRowProps {
                 id: layout_code.clone(),
                 draggable: true,
                 title: full_name,
@@ -360,8 +355,7 @@ impl KeyboardPage {
                         };
                         if let Some(urn) = layout_urn {
                             log::debug!(
-                                "[keyboard-page] Switching to layout index {}",
-                                index
+                                "[keyboard-page] Switching to layout index {index}"
                             );
                             let params = serde_json::json!({ "index": index });
                             cb_clone(urn, "set-active".to_string(), params);
@@ -470,9 +464,7 @@ impl KeyboardPage {
                         &current_name,
                         move |new_name| {
                             log::debug!(
-                                "[keyboard-page] Renaming layout '{}' to '{}'",
-                                code,
-                                new_name
+                                "[keyboard-page] Renaming layout '{code}' to '{new_name}'"
                             );
                             let params = serde_json::json!({ "layout": code, "name": new_name });
                             cb(urn.clone(), "rename".to_string(), params);
@@ -495,7 +487,7 @@ impl KeyboardPage {
             let cb_clone = action_callback.clone();
             let urn_clone = urn.clone();
             remove_btn.connect_clicked(move |_| {
-                log::debug!("[keyboard-page] Removing layout: {}", code_clone);
+                log::debug!("[keyboard-page] Removing layout: {code_clone}");
                 let params = serde_json::json!({ "layout": code_clone });
                 cb_clone(urn_clone.clone(), "remove".to_string(), params);
             });
@@ -563,9 +555,7 @@ impl KeyboardPage {
                 keymap_widget.set_visible(true);
             } else {
                 log::debug!(
-                    "[keyboard-page] No keymap grid for layout '{}' variant '{}'",
-                    code,
-                    keymap_variant
+                    "[keyboard-page] No keymap grid for layout '{code}' variant '{keymap_variant}'"
                 );
                 keymap_widget.set_visible(false);
             }
@@ -583,7 +573,7 @@ impl KeyboardPage {
 fn parse_variant_slots(variant: &Option<String>, layout_count: usize) -> Vec<String> {
     match variant {
         Some(v) if !v.is_empty() => {
-            let mut slots: Vec<String> = v.split(',').map(|s| s.to_string()).collect();
+            let mut slots: Vec<String> = v.split(',').map(std::string::ToString::to_string).collect();
             // Pad with empty strings if needed
             while slots.len() < layout_count {
                 slots.push(String::new());

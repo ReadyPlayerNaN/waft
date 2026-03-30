@@ -85,7 +85,7 @@ pub fn handle_provides_full(
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 2 && args[1] == "provides" {
         let manifest = PluginManifest {
-            entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
+            entity_types: entity_types.iter().map(ToString::to_string).collect(),
             name: name.to_string(),
             description: description.to_string(),
         };
@@ -118,7 +118,7 @@ pub fn handle_manifest(
         if want_describe {
             if let Some(f) = describe_fn {
                 let manifest = PluginManifestDescribed {
-                    entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
+                    entity_types: entity_types.iter().map(ToString::to_string).collect(),
                     name: name.to_string(),
                     description: description.to_string(),
                     plugin: f(),
@@ -140,7 +140,7 @@ pub fn handle_manifest(
 
 fn print_basic_manifest(entity_types: &[&str], name: &str, description: &str) {
     let manifest = PluginManifest {
-        entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
+        entity_types: entity_types.iter().map(ToString::to_string).collect(),
         name: name.to_string(),
         description: description.to_string(),
     };
@@ -193,7 +193,7 @@ pub fn handle_provides_described<P: Plugin>(
         if describe {
             let plugin_desc = plugin.describe();
             let manifest = PluginManifestDescribed {
-                entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
+                entity_types: entity_types.iter().map(ToString::to_string).collect(),
                 name: name.to_string(),
                 description: description.to_string(),
                 plugin: plugin_desc,
@@ -204,7 +204,7 @@ pub fn handle_provides_described<P: Plugin>(
             }
         } else {
             let manifest = PluginManifest {
-                entity_types: entity_types.iter().map(|s| s.to_string()).collect(),
+                entity_types: entity_types.iter().map(ToString::to_string).collect(),
                 name: name.to_string(),
                 description: description.to_string(),
             };

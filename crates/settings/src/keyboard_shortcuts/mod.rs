@@ -64,7 +64,7 @@ pub struct BindEntry {
 impl BindEntry {
     /// Format the key chord (e.g. "Mod+Shift+D").
     pub fn key_chord(&self) -> String {
-        let mut parts: Vec<String> = self.modifiers.iter().map(|m| m.to_string()).collect();
+        let mut parts: Vec<String> = self.modifiers.iter().map(std::string::ToString::to_string).collect();
         parts.push(self.key.clone());
         parts.join("+")
     }
@@ -159,7 +159,7 @@ fn parse_bind_node(key_chord: &str, node: &kdl::KdlNode) -> Option<BindEntry> {
         if let Some(name) = entry.name() {
             match name.value() {
                 "hotkey-overlay-title" => {
-                    hotkey_overlay_title = entry.value().as_string().map(|s| s.to_string());
+                    hotkey_overlay_title = entry.value().as_string().map(std::string::ToString::to_string);
                 }
                 "allow-when-locked" => {
                     if let Some(v) = entry.value().as_bool() {
@@ -184,7 +184,7 @@ fn parse_bind_node(key_chord: &str, node: &kdl::KdlNode) -> Option<BindEntry> {
             .entries()
             .iter()
             .filter(|e| e.name().is_none())
-            .filter_map(|e| e.value().as_string().map(|s| s.to_string()))
+            .filter_map(|e| e.value().as_string().map(std::string::ToString::to_string))
             .collect();
         if args.is_empty() {
             return None;

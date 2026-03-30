@@ -76,9 +76,8 @@ pub fn parse_symbols_block(content: &str, variant: &str) -> HashMap<String, Stri
     let mut result = HashMap::new();
 
     // Find the right xkb_symbols block
-    let block_content = match find_symbols_block(content, variant) {
-        Some(c) => c,
-        None => return result,
+    let Some(block_content) = find_symbols_block(content, variant) else {
+        return result;
     };
 
     for line in block_content.lines() {
@@ -132,9 +131,8 @@ pub fn resolve_includes(
     let mut result = HashMap::new();
 
     // Find the right xkb_symbols block
-    let block_content = match find_symbols_block(content, variant) {
-        Some(c) => c,
-        None => return result,
+    let Some(block_content) = find_symbols_block(content, variant) else {
+        return result;
     };
 
     for line in block_content.lines() {
@@ -210,7 +208,7 @@ fn find_symbols_block<'a>(content: &'a str, variant: &str) -> Option<&'a str> {
             None => true, // Accept first block
             Some(v) => {
                 // Check if the header contains the variant name in quotes
-                header.contains(&format!("\"{}\"", v))
+                header.contains(&format!("\"{v}\""))
             }
         };
 

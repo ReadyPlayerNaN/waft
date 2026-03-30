@@ -56,7 +56,7 @@ pub async fn monitor_bluez_signals(
         let msg = match msg {
             Ok(m) => m,
             Err(e) => {
-                warn!("[bluetooth] D-Bus stream error: {}", e);
+                warn!("[bluetooth] D-Bus stream error: {e}");
                 continue;
             }
         };
@@ -124,7 +124,7 @@ fn handle_adapter_properties_changed(
         && let Ok(powered) = <bool>::try_from(powered_val.clone())
         && adapter.powered != powered
     {
-        info!("[bluetooth] Adapter {} powered: {}", obj_path, powered);
+        info!("[bluetooth] Adapter {obj_path} powered: {powered}");
         adapter.powered = powered;
         changed = true;
     }
@@ -134,8 +134,7 @@ fn handle_adapter_properties_changed(
         && adapter.discoverable != discoverable
     {
         info!(
-            "[bluetooth] Adapter {} discoverable: {}",
-            obj_path, discoverable
+            "[bluetooth] Adapter {obj_path} discoverable: {discoverable}"
         );
         adapter.discoverable = discoverable;
         changed = true;
@@ -146,8 +145,7 @@ fn handle_adapter_properties_changed(
         && adapter.discovering != discovering
     {
         info!(
-            "[bluetooth] Adapter {} discovering: {}",
-            obj_path, discovering
+            "[bluetooth] Adapter {obj_path} discovering: {discovering}"
         );
         adapter.discovering = discovering;
         changed = true;
@@ -194,8 +192,7 @@ fn handle_device_properties_changed(
             };
             if device.connection_state != new_state {
                 info!(
-                    "[bluetooth] Device {} connection_state: {:?}",
-                    obj_path, new_state
+                    "[bluetooth] Device {obj_path} connection_state: {new_state:?}"
                 );
                 device.connection_state = new_state;
                 changed = true;
@@ -206,7 +203,7 @@ fn handle_device_properties_changed(
             && let Ok(paired) = <bool>::try_from(paired_val.clone())
             && device.paired != paired
         {
-            info!("[bluetooth] Device {} paired: {}", obj_path, paired);
+            info!("[bluetooth] Device {obj_path} paired: {paired}");
             device.paired = paired;
             changed = true;
         }
@@ -215,7 +212,7 @@ fn handle_device_properties_changed(
             && let Ok(trusted) = <bool>::try_from(trusted_val.clone())
             && device.trusted != trusted
         {
-            info!("[bluetooth] Device {} trusted: {}", obj_path, trusted);
+            info!("[bluetooth] Device {obj_path} trusted: {trusted}");
             device.trusted = trusted;
             changed = true;
         }
@@ -225,7 +222,7 @@ fn handle_device_properties_changed(
         {
             let new_rssi = Some(rssi);
             if device.rssi != new_rssi {
-                debug!("[bluetooth] Device {} rssi: {}", obj_path, rssi);
+                debug!("[bluetooth] Device {obj_path} rssi: {rssi}");
                 device.rssi = new_rssi;
                 changed = true;
             }
@@ -276,8 +273,7 @@ fn handle_interfaces_added(state: &Arc<StdMutex<State>>, msg: &zbus::Message) ->
 
     let Some(adapter) = adapter else {
         debug!(
-            "[bluetooth] InterfacesAdded for device {} but no matching adapter found",
-            path_str
+            "[bluetooth] InterfacesAdded for device {path_str} but no matching adapter found"
         );
         return false;
     };
@@ -324,7 +320,7 @@ fn handle_interfaces_removed(state: &Arc<StdMutex<State>>, msg: &zbus::Message) 
         let before = adapter.devices.len();
         adapter.devices.retain(|d| d.path != path_str);
         if adapter.devices.len() != before {
-            info!("[bluetooth] Device removed: {}", path_str);
+            info!("[bluetooth] Device removed: {path_str}");
             removed = true;
         }
     }

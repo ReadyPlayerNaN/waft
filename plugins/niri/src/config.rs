@@ -210,7 +210,7 @@ fn build_xkb_include(parsed: &XkbInclude) -> String {
     for (i, layout) in parsed.layouts.iter().enumerate() {
         let mut part = layout.code.clone();
         if let Some(ref variant) = layout.variant {
-            part = format!("{}({})", part, variant);
+            part = format!("{part}({variant})");
         }
         if layout_count > 1 && i > 0 {
             part = format!("{}:{}", part, i + 1);
@@ -330,24 +330,20 @@ fn expand_tilde(path: &str) -> String {
 /// Extract keyboard config from a parsed KDL document.
 fn extract_keyboard_config(doc: &KdlDocument) -> KeyboardConfig {
     // Navigate to input.keyboard.xkb node
-    let input_node = match doc.get("input") {
-        Some(node) => node,
-        None => return KeyboardConfig::default(),
+    let Some(input_node) = doc.get("input") else {
+        return KeyboardConfig::default();
     };
 
-    let keyboard_node = match input_node.children().and_then(|c| c.get("keyboard")) {
-        Some(node) => node,
-        None => return KeyboardConfig::default(),
+    let Some(keyboard_node) = input_node.children().and_then(|c| c.get("keyboard")) else {
+        return KeyboardConfig::default();
     };
 
-    let xkb_node = match keyboard_node.children().and_then(|c| c.get("xkb")) {
-        Some(node) => node,
-        None => return KeyboardConfig::default(),
+    let Some(xkb_node) = keyboard_node.children().and_then(|c| c.get("xkb")) else {
+        return KeyboardConfig::default();
     };
 
-    let xkb_children = match xkb_node.children() {
-        Some(c) => c,
-        None => return KeyboardConfig::default(),
+    let Some(xkb_children) = xkb_node.children() else {
+        return KeyboardConfig::default();
     };
 
     // Check for "file" option first (ExternalFile mode)
@@ -359,14 +355,13 @@ fn extract_keyboard_config(doc: &KdlDocument) -> KeyboardConfig {
                     Some(parsed) => (parsed.layouts, parsed.variant, parsed.names),
                     None => {
                         log::warn!(
-                            "[niri] Could not extract layouts from XKB file: {}",
-                            file_path
+                            "[niri] Could not extract layouts from XKB file: {file_path}"
                         );
                         (vec![], None, vec![])
                     }
                 },
                 Err(e) => {
-                    log::warn!("[niri] Failed to read XKB file '{}': {}", file_path, e);
+                    log::warn!("[niri] Failed to read XKB file '{file_path}': {e}");
                     (vec![], None, vec![])
                 }
             };
@@ -393,12 +388,12 @@ fn extract_keyboard_config(doc: &KdlDocument) -> KeyboardConfig {
             let options = xkb_children
                 .get_arg("options")
                 .and_then(|v| v.as_string())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             let variant = xkb_children
                 .get_arg("variant")
                 .and_then(|v| v.as_string())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             return KeyboardConfig {
                 mode: KeyboardConfigMode::LayoutList,
@@ -422,7 +417,7 @@ fn quoted_kdl_entry(value: &str) -> kdl::KdlEntry {
     let mut entry = kdl::KdlEntry::new(value);
     entry.set_format(kdl::KdlEntryFormat {
         leading: " ".into(),
-        value_repr: format!("\"{}\"", value),
+        value_repr: format!("\"{value}\""),
         ..Default::default()
     });
     entry
@@ -432,7 +427,7 @@ fn quoted_kdl_entry(value: &str) -> kdl::KdlEntry {
 ///
 /// Updates the `layout` value inside `input.keyboard.xkb`, creating
 /// the node hierarchy if it doesn't exist.
-pub fn modify_keyboard_layouts(mut doc: KdlDocument, layouts: Vec<String>) -> Result<KdlDocument> {
+pub fn modify_keyboard_layouts(mut doc: KdlDocument, layouts: &[String]) -> Result<KdlDocument> {
     let layout_str = layouts.join(",");
 
     // Ensure input node exists
@@ -489,8 +484,7 @@ pub fn write_niri_config_with_backup(config_path: &Path, doc: &KdlDocument) -> R
             if backup_path.exists()
                 && let Err(restore_err) = std::fs::copy(&backup_path, config_path) {
                     log::error!(
-                        "[niri] Failed to restore backup after write failure: {}",
-                        restore_err
+                        "[niri] Failed to restore backup after write failure: {restore_err}"
                     );
                 }
             Err(e).context("Failed to write config file")
@@ -499,7 +493,7 @@ pub fn write_niri_config_with_backup(config_path: &Path, doc: &KdlDocument) -> R
 }
 
 /// Write keyboard layouts to niri config file.
-pub fn write_keyboard_layouts(layouts: Vec<String>) -> Result<()> {
+pub fn write_keyboard_layouts(layouts: &[String]) -> Result<()> {
     let config_path = niri_config_path();
 
     let doc = if config_path.exists() {
@@ -599,7 +593,7 @@ pub fn modify_xkb_content_variant(
                 // Find the layout and update its variant
                 let layout_found = parsed.layouts.iter_mut().any(|l| {
                     if l.code == layout {
-                        l.variant = variant.filter(|v| !v.is_empty()).map(|v| v.to_string());
+                        l.variant = variant.filter(|v| !v.is_empty()).map(std::string::ToString::to_string);
                         true
                     } else {
                         false
@@ -607,12 +601,12 @@ pub fn modify_xkb_content_variant(
                 });
 
                 if !layout_found {
-                    anyhow::bail!("Layout '{}' not found in XKB include directive", layout);
+                    anyhow::bail!("Layout '{layout}' not found in XKB include directive");
                 }
 
                 let new_include = build_xkb_include(&parsed);
                 let indent = &line[..line.len() - trimmed.len()];
-                lines.push(format!("{}include \"{}\"", indent, new_include));
+                lines.push(format!("{indent}include \"{new_include}\""));
                 found = true;
                 continue;
             }
@@ -643,16 +637,16 @@ pub fn write_xkb_variant(file_path: &str, layout: &str, variant: Option<&str>) -
     let path = Path::new(&expanded);
 
     let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read XKB file: {}", expanded))?;
+        .with_context(|| format!("Failed to read XKB file: {expanded}"))?;
 
     let modified = modify_xkb_content_variant(&content, layout, variant)?;
 
-    let backup_path = format!("{}.backup", expanded);
+    let backup_path = format!("{expanded}.backup");
     std::fs::copy(path, &backup_path)
-        .with_context(|| format!("Failed to create XKB backup: {}", backup_path))?;
+        .with_context(|| format!("Failed to create XKB backup: {backup_path}"))?;
 
     std::fs::write(path, &modified)
-        .with_context(|| format!("Failed to write XKB file: {}", expanded))?;
+        .with_context(|| format!("Failed to write XKB file: {expanded}"))?;
 
     Ok(())
 }
@@ -706,7 +700,7 @@ pub fn modify_xkb_content(
 
                         let new_include = build_xkb_include(&parsed);
                         indent = line[..line.len() - trimmed.len()].to_string();
-                        lines.push(format!("{}include \"{}\"", indent, new_include));
+                        lines.push(format!("{indent}include \"{new_include}\""));
                         found = true;
                         continue;
                     }
@@ -752,16 +746,16 @@ pub fn write_xkb_layouts(file_path: &str, new_layouts: &[String], new_names: &[S
     let path = Path::new(&expanded);
 
     let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read XKB file: {}", expanded))?;
+        .with_context(|| format!("Failed to read XKB file: {expanded}"))?;
 
     let modified = modify_xkb_content(&content, new_layouts, new_names)?;
 
-    let backup_path = format!("{}.backup", expanded);
+    let backup_path = format!("{expanded}.backup");
     std::fs::copy(path, &backup_path)
-        .with_context(|| format!("Failed to create XKB backup: {}", backup_path))?;
+        .with_context(|| format!("Failed to create XKB backup: {backup_path}"))?;
 
     std::fs::write(path, &modified)
-        .with_context(|| format!("Failed to write XKB file: {}", expanded))?;
+        .with_context(|| format!("Failed to write XKB file: {expanded}"))?;
 
     Ok(())
 }

@@ -350,7 +350,7 @@ impl MainWindowWidget {
 
             .relm4-overlay-surface {{
                 background: @window_bg_color;
-                border-radius: {}px;
+                border-radius: {OVERLAY_CORNER_RADIUS_PX}px;
                 padding: 24px;
             }}
 
@@ -948,8 +948,7 @@ impl MainWindowWidget {
                 opacity: 1.0;
             }}
 
-            "#,
-            OVERLAY_CORNER_RADIUS_PX
+            "#
         );
 
         let provider = gtk::CssProvider::new();
@@ -1033,6 +1032,7 @@ impl MainWindowWidget {
         // Keep render context and menu store alive (components hold entity subscriptions).
         // We attach them as object data on the clip frame so they are dropped when the
         // frame is finalized rather than immediately here.
+        #[allow(unsafe_code)]
         unsafe {
             clip.set_data("waft-render-ctx", ctx);
             clip.set_data("waft-menu-store", menu_store);

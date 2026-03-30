@@ -47,7 +47,7 @@ pub struct HyprlandBackend {
 
 /// Run a hyprctl command on a background thread.
 async fn run_hyprctl(args: &[&str]) -> Result<std::process::Output> {
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
     let (tx, rx) = flume::bounded(1);
     std::thread::spawn(move || {
         let result = std::process::Command::new("hyprctl")
@@ -128,7 +128,7 @@ impl HyprlandBackend {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("hyprctl devices failed: {}", stderr);
+            anyhow::bail!("hyprctl devices failed: {stderr}");
         }
 
         let devices: HyprlandDevices =
@@ -172,7 +172,7 @@ impl HyprlandBackend {
     fn get_socket_path() -> Option<String> {
         let signature = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok()?;
         let runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok()?;
-        Some(format!("{}/hypr/{}/.socket2.sock", runtime_dir, signature))
+        Some(format!("{runtime_dir}/hypr/{signature}/.socket2.sock"))
     }
 }
 
@@ -188,7 +188,7 @@ impl KeyboardLayoutBackend for HyprlandBackend {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("hyprctl switchxkblayout failed: {}", stderr);
+            anyhow::bail!("hyprctl switchxkblayout failed: {stderr}");
         }
 
         Ok(())
@@ -199,7 +199,7 @@ impl KeyboardLayoutBackend for HyprlandBackend {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("hyprctl switchxkblayout failed: {}", stderr);
+            anyhow::bail!("hyprctl switchxkblayout failed: {stderr}");
         }
 
         Ok(())
@@ -218,14 +218,11 @@ impl KeyboardLayoutBackend for HyprlandBackend {
 
             debug!("[keyboard-layout:hyprland] Starting socket subscription");
 
-            let socket_path = match Self::get_socket_path() {
-                Some(p) => p,
-                None => {
-                    let _ = sender.send(LayoutEvent::Error(
-                        "Could not determine Hyprland socket path".to_string(),
-                    ));
-                    return;
-                }
+            let Some(socket_path) = Self::get_socket_path() else {
+                let _ = sender.send(LayoutEvent::Error(
+                    "Could not determine Hyprland socket path".to_string(),
+                ));
+                return;
             };
 
             let stream = match std::os::unix::net::UnixStream::connect(&socket_path) {
@@ -241,10 +238,7 @@ impl KeyboardLayoutBackend for HyprlandBackend {
             let reader = std::io::BufReader::new(stream);
 
             for line in reader.lines() {
-                let line = match line {
-                    Ok(l) => l,
-                    Err(_) => break,
-                };
+                let Ok(line) = line else { break };
 
                 // Hyprland events are in format: eventname>>data
                 // Layout change: activelayout>>keyboard_name,layout_name
@@ -253,8 +247,7 @@ impl KeyboardLayoutBackend for HyprlandBackend {
                     .and_then(|data| data.split_once(','))
                 {
                     debug!(
-                        "[keyboard-layout:hyprland] Layout changed to: {}",
-                        layout_name
+                        "[keyboard-layout:hyprland] Layout changed to: {layout_name}"
                     );
 
                     let available: Vec<String> = if !layout_names.is_empty() {

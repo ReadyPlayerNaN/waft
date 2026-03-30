@@ -556,7 +556,7 @@ mod tests {
         for variant in &variants {
             let (rotation, flipped) = variant.decompose();
             let recomposed = DisplayTransform::compose(rotation, flipped);
-            assert_eq!(*variant, recomposed, "Roundtrip failed for {:?}", variant);
+            assert_eq!(*variant, recomposed, "Roundtrip failed for {variant:?}");
         }
     }
 

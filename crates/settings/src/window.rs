@@ -295,8 +295,7 @@ impl SettingsWindow {
                 stack.add_named(&widget, Some(default_page));
             } else if initial_page.is_some() {
                 log::warn!(
-                    "[settings] Requested page '{}' not found, falling back to bluetooth",
-                    default_page
+                    "[settings] Requested page '{default_page}' not found, falling back to bluetooth"
                 );
                 // Construct bluetooth as fallback
                 if let Some(factory) = factories.borrow_mut().remove("bluetooth") {

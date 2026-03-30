@@ -267,6 +267,7 @@ fn write_with_poll(stream: &mut std::os::unix::net::UnixStream, buf: &[u8]) -> s
                     revents: 0,
                 };
                 // Safety: single pollfd, valid fd, bounded timeout
+                #[allow(unsafe_code)]
                 let ret = unsafe { libc::poll(&mut pollfd, 1, 5000) };
                 if ret < 0 {
                     return Err(std::io::Error::last_os_error());

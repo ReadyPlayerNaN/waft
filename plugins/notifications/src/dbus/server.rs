@@ -191,7 +191,7 @@ impl NotificationsService {
     fn get_capabilities(&self) -> Vec<String> {
         advertised_capabilities()
             .into_iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect()
     }
 
@@ -221,9 +221,9 @@ impl NotificationsService {
         hints: HashMap<String, OwnedValue>,
         expire_timeout: i32,
     ) -> fdo::Result<u32> {
-        let dbus_sender = header.sender().map(|s| s.to_string());
+        let dbus_sender = header.sender().map(std::string::ToString::to_string);
         if let Some(ref sender) = dbus_sender {
-            let mut guard = self.inner._last_sender.lock().unwrap();
+            let mut guard = self.inner._last_sender.lock().expect("_last_sender mutex poisoned");
             *guard = Some(sender.clone());
         }
 
@@ -234,24 +234,15 @@ impl NotificationsService {
             let decoded = decode_hints(hints.clone());
             debug!(
                 "[notifications/dbus] Notify raw payload:\n  \
-                 sender={:?}\n  \
-                 app_name={:?}\n  \
-                 replaces_id={}\n  \
-                 icon={:?}\n  \
-                 summary={:?}\n  \
-                 body={:?}\n  \
-                 actions={:?}\n  \
-                 expire_timeout={}\n  \
-                 hints={:#?}",
-                dbus_sender,
-                app_name,
-                replaces_id,
-                icon,
-                summary,
-                body,
-                actions,
-                expire_timeout,
-                decoded,
+                 sender={dbus_sender:?}\n  \
+                 app_name={app_name:?}\n  \
+                 replaces_id={replaces_id}\n  \
+                 icon={icon:?}\n  \
+                 summary={summary:?}\n  \
+                 body={body:?}\n  \
+                 actions={actions:?}\n  \
+                 expire_timeout={expire_timeout}\n  \
+                 hints={decoded:#?}",
             );
         }
 
@@ -307,12 +298,9 @@ async fn outbound_signal_loop(
     conn: Connection,
     outbound_rx: Receiver<OutboundEvent>,
 ) -> Result<()> {
-    let emitter = match SignalEmitter::new(&conn, OBJECT_PATH) {
-        Ok(e) => e,
-        Err(_) => {
-            warn!("Failed to create signal emitter");
-            return Ok(());
-        }
+    let Ok(emitter) = SignalEmitter::new(&conn, OBJECT_PATH) else {
+        warn!("Failed to create signal emitter");
+        return Ok(());
     };
 
     while let Ok(ev) = outbound_rx.recv_async().await {
