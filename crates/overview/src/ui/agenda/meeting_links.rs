@@ -61,13 +61,63 @@ fn extract_urls_from_text(text: &str, links: &mut Vec<MeetingLink>) {
     while let Some(pos) = text[search_from..].find("https://") {
         let abs_pos = search_from + pos;
         let url = extract_url_at(text, abs_pos);
-        if url.contains("zoom.us/") && !links.iter().any(|l| l.url == url) {
+        if url.contains("zoom.us/j/") && !links.iter().any(|l| l.url == url) {
             links.push(MeetingLink {
                 url,
                 provider: MeetingProvider::Zoom,
             });
         }
         search_from = abs_pos + "https://".len();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_event(description: Option<&str>, location: Option<&str>) -> CalendarEvent {
+        CalendarEvent {
+            uid: "test".to_string(),
+            summary: "Test".to_string(),
+            start_time: 0,
+            end_time: 3600,
+            all_day: false,
+            description: description.map(str::to_string),
+            location: location.map(str::to_string),
+            attendees: vec![],
+        }
+    }
+
+    #[test]
+    fn zoom_single_join_link() {
+        let event = make_event(
+            Some("Join Zoom Meeting\nhttps://us06web.zoom.us/j/12345678?pwd=abc\nMeeting ID: 123"),
+            None,
+        );
+        let links = extract_meeting_links(&event);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].url, "https://us06web.zoom.us/j/12345678?pwd=abc");
+    }
+
+    #[test]
+    fn zoom_ignores_find_local_number_url() {
+        // Typical Zoom invite: join link + "find your local number" link.
+        let desc = "Join Zoom Meeting\n\
+            https://us06web.zoom.us/j/12345678?pwd=abc\n\
+            \n\
+            Find your local number: https://us06web.zoom.us/u/xyzxyz";
+        let event = make_event(Some(desc), None);
+        let links = extract_meeting_links(&event);
+        assert_eq!(links.len(), 1, "only the /j/ join URL should be extracted, not /u/");
+        assert_eq!(links[0].url, "https://us06web.zoom.us/j/12345678?pwd=abc");
+    }
+
+    #[test]
+    fn zoom_deduplicates_same_url_in_description_and_location() {
+        let url = "https://zoom.us/j/99999?pwd=zzz";
+        let event = make_event(Some(url), Some(url));
+        let links = extract_meeting_links(&event);
+        assert_eq!(links.len(), 1, "same URL in both fields must be deduplicated");
     }
 }
 
