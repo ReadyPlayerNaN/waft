@@ -91,7 +91,7 @@ fn linkify_urls(text: &str, is_markup: bool) -> String {
         if !inside_anchor {
             let rest: String = chars[i..].iter().collect();
             if rest.starts_with("http://") || rest.starts_with("https://") {
-                let url_end = find_url_end(&rest);
+                let url_end = find_url_end(&rest, is_markup);
                 let url = &rest[..url_end];
                 let domain = extract_domain(url);
                 result.push_str(&format!(
@@ -146,12 +146,32 @@ fn strip_anchor_tags(text: &str) -> String {
 
 /// Find the end index (byte offset) of a URL starting at the beginning of `s`.
 ///
-/// Stops at whitespace, `<`, `>`, or end of string. Strips trailing punctuation
+/// Stops at whitespace, `<`, `>`, `"`, or end of string. Strips trailing punctuation
 /// that is unlikely to be part of the URL (`.`, `,`, `)`, `!`, `?`, `;`, `:`).
-fn find_url_end(s: &str) -> usize {
-    let end = s
-        .find(|c: char| c.is_whitespace() || c == '<' || c == '>' || c == '"')
-        .unwrap_or(s.len());
+///
+/// When `is_markup` is true, also stops at XML entity-encoded delimiters
+/// (`&quot;`, `&apos;`, `&lt;`, `&gt;`) so that URLs inside markup like
+/// `&quot;https://example.com&quot;` are correctly terminated.
+fn find_url_end(s: &str, is_markup: bool) -> usize {
+    let mut end = s.len();
+
+    for (i, c) in s.char_indices() {
+        if c.is_whitespace() || c == '<' || c == '>' || c == '"' {
+            end = i;
+            break;
+        }
+        if is_markup {
+            let rest = &s[i..];
+            if rest.starts_with("&quot;")
+                || rest.starts_with("&apos;")
+                || rest.starts_with("&lt;")
+                || rest.starts_with("&gt;")
+            {
+                end = i;
+                break;
+            }
+        }
+    }
 
     let url = &s[..end];
     // Strip trailing punctuation that is commonly not part of URLs
@@ -239,6 +259,43 @@ mod tests {
         let input = "<a href=\"https://example.com\">click here</a>";
         let result = prepare_description(input);
         assert_eq!(result, input);
+    }
+
+    #[test]
+    fn description_url_delimited_by_entity_encoded_quotes() {
+        // URL surrounded by &quot; entities — common from chat/CI tools (Slack, Turborepo, etc.)
+        // The &quot; after the URL must not end up inside the href attribute.
+        let input = r#"check &quot;https://turbo-cache.clb.si&quot; for details"#;
+        let result = prepare_description(input);
+        assert!(
+            result.contains("https://turbo-cache.clb.si"),
+            "URL should be linkified: {result}"
+        );
+        assert!(
+            !result.contains("turbo-cache.clb.si&quot"),
+            "href must not include &quot; in domain/url: {result}"
+        );
+        assert!(
+            !result.contains("turbo-cache.clb.si&amp;quot"),
+            "domain display text must not include escaped entity: {result}"
+        );
+        // The surrounding &quot; delimiters must be preserved outside the link
+        assert!(
+            result.contains("&quot;"),
+            "surrounding &quot; entities should be preserved: {result}"
+        );
+    }
+
+    #[test]
+    fn description_url_followed_by_entity_semicolon_not_in_href() {
+        // Regression: &quot; stripped of trailing ';' must not appear as &quot in href
+        let input = r#"export VAR=&quot;https://example.com&quot; done"#;
+        let result = prepare_description(input);
+        // href must end cleanly at the domain, no dangling entity fragment
+        assert!(
+            !result.contains("example.com&quot"),
+            "href must not contain truncated entity: {result}"
+        );
     }
 
     // -- linkify_urls --
