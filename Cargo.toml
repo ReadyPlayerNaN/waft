@@ -39,6 +39,11 @@ members = [
     "plugins/niri",
 ]
 
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
 [workspace.lints.rust]
 unsafe_code = "warn"
 

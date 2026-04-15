@@ -120,7 +120,10 @@ impl<'a> PluginRunner<'a> {
         crate::init_plugin_logger("info");
         log::info!("Starting {} plugin...", self.name);
 
-        let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .context("failed to create tokio runtime")?;
         rt.block_on(async {
             let (notifier, notifier_rx) = EntityNotifier::new_pair();
             // Keep a clone of the notifier alive for the duration of the

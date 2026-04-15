@@ -695,7 +695,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("failed to create tokio runtime")?;
     rt.block_on(async {
         // Query initial status
         let (active, period, next_transition, active_preset) =
