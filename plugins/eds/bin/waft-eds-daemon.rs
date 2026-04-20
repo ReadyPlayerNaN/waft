@@ -71,6 +71,13 @@ struct EdsState {
     /// Object paths of calendar backends that returned "not supported" (Code11) on Refresh().
     /// Cleared at midnight rebuild so backends get a fresh chance after reconfiguration.
     refresh_unsupported: HashSet<String>,
+    /// UIDs of calendar sources we've already set up a view for. Used to dedupe
+    /// between initial discovery and InterfacesAdded events from SourceManager.
+    /// Cleared at midnight rebuild.
+    known_source_uids: HashSet<String>,
+    /// Shared set of view paths currently being monitored. Cleared at midnight
+    /// rebuild; populated by setup_source and dynamic InterfacesAdded handling.
+    view_paths: Arc<StdMutex<HashSet<String>>>,
     /// Unix timestamp of the last refresh attempt (overlay-triggered or scheduled).
     last_refresh: Option<i64>,
     /// Instant when the last Refresh() D-Bus call was dispatched.
@@ -89,6 +96,8 @@ impl EdsState {
             debounce_recent: VecDeque::new(),
             calendar_backends: Vec::new(),
             refresh_unsupported: HashSet::new(),
+            known_source_uids: HashSet::new(),
+            view_paths: Arc::new(StdMutex::new(HashSet::new())),
             last_refresh: None,
             last_refresh_instant: None,
             syncing: false,
@@ -770,6 +779,95 @@ fn secs_until_eds_midnight() -> u64 {
     (tomorrow.timestamp() - now.timestamp()).max(1) as u64
 }
 
+/// Set up a single calendar source: open it, record its backend, create a view,
+/// and spawn a view monitor. Used by both initial discovery and the
+/// SourceManager InterfacesAdded handler.
+///
+/// Returns after all work completes (or fails) for this source. The spawned
+/// view monitor's `JoinHandle` is stored in `state.view_monitor_handles`.
+async fn setup_source(
+    conn: Connection,
+    state: Arc<StdMutex<EdsState>>,
+    notifier: EntityNotifier,
+    source: CalendarSource,
+    query: String,
+    time_range: TimeRange,
+) {
+    // Dedupe: skip if we've already set this source up (e.g. initial discovery
+    // plus InterfacesAdded racing during startup).
+    let view_paths = {
+        let mut st = state.lock_or_recover();
+        if !st.known_source_uids.insert(source.uid.clone()) {
+            debug!("[eds] Source {} already set up, skipping", source.uid);
+            return;
+        }
+        st.view_paths.clone()
+    };
+
+    let (calendar_path, bus_name) = match open_calendar(&conn, &source.uid).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("[eds] Failed to open calendar {}: {e}", source.uid);
+            // Roll back dedupe entry so a later retry can succeed.
+            state.lock_or_recover().known_source_uids.remove(&source.uid);
+            return;
+        }
+    };
+
+    // Check whether the backend has valid credentials.
+    // Offline = GOA OAuth token expired; log a prominent warning.
+    check_backend_online(
+        &conn,
+        &bus_name,
+        &calendar_path,
+        &source.display_name,
+        &source.uid,
+    )
+    .await;
+
+    // Record this backend so do_refresh can Open()+Refresh() it later.
+    {
+        let mut st = state.lock_or_recover();
+        st.calendar_backends
+            .push((bus_name.clone(), calendar_path.clone()));
+    }
+
+    let view_path = match create_view(&conn, &bus_name, &calendar_path, &query).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("[eds] Failed to create view for {}: {e}", source.uid);
+            return;
+        }
+    };
+
+    {
+        let mut paths = view_paths.lock_or_recover();
+        paths.insert(view_path.clone());
+    }
+
+    match spawn_view_monitor(
+        conn,
+        bus_name,
+        view_path,
+        state.clone(),
+        notifier,
+        view_paths,
+        time_range,
+    )
+    .await
+    {
+        Ok(monitor_handle) => {
+            state
+                .lock_or_recover()
+                .view_monitor_handles
+                .push(monitor_handle);
+        }
+        Err(e) => warn!("[eds] View monitor error: {e}"),
+    }
+
+    debug!("[eds] View task for {} set up", source.uid);
+}
+
 /// Discover EDS calendar sources, create views for today+30d, and spawn
 /// view-monitor tasks. Returns the handles so callers can abort them later.
 async fn setup_calendar_views(
@@ -790,84 +888,21 @@ async fn setup_calendar_views(
         return vec![];
     }
 
-    let view_paths = Arc::new(StdMutex::new(HashSet::new()));
     let (time_range, query) = build_time_range_query_from_today();
 
-    let mut handles = Vec::new();
-    for source in &sources {
-        let conn_clone = conn.clone();
-        let state_clone = state.clone();
-        let notifier_clone = notifier.clone();
-        let source_uid = source.uid.clone();
-        let source_display_name = source.display_name.clone();
-        let query_clone = query.clone();
-        let view_paths_clone = view_paths.clone();
-
-        let handle = tokio::spawn(async move {
-            match open_calendar(&conn_clone, &source_uid).await {
-                Ok((calendar_path, bus_name)) => {
-                    // Check whether the backend has valid credentials.
-                    // Offline = GOA OAuth token expired; log a prominent warning.
-                    check_backend_online(
-                        &conn_clone,
-                        &bus_name,
-                        &calendar_path,
-                        &source_display_name,
-                        &source_uid,
-                    )
-                    .await;
-
-                    // Record this backend so do_refresh can Open()+Refresh() it later.
-                    {
-                        let mut st = state_clone.lock_or_recover();
-                        st.calendar_backends
-                            .push((bus_name.clone(), calendar_path.clone()));
-                    }
-
-                    match create_view(&conn_clone, &bus_name, &calendar_path, &query_clone).await {
-                        Ok(view_path) => {
-                            {
-                                let mut paths = view_paths_clone.lock_or_recover();
-                                paths.insert(view_path.clone());
-                            }
-
-                            // spawn_view_monitor registers AddMatch then calls
-                            // start_view internally, so the initial ObjectsAdded
-                            // batch is never missed.
-                            //
-                            // The returned JoinHandle is for the background monitor
-                            // loop — store it in state so midnight rebuild can abort it.
-                            let state_for_handle = state_clone.clone();
-                            match spawn_view_monitor(
-                                conn_clone,
-                                bus_name,
-                                view_path,
-                                state_clone,
-                                notifier_clone,
-                                view_paths_clone,
-                                time_range,
-                            )
-                            .await
-                            {
-                                Ok(monitor_handle) => {
-                                    let mut st = state_for_handle.lock_or_recover();
-                                    st.view_monitor_handles.push(monitor_handle);
-                                }
-                                Err(e) => warn!("[eds] View monitor error: {e}"),
-                            }
-                        }
-                        Err(e) => warn!("[eds] Failed to create view for {source_uid}: {e}"),
-                    }
-                }
-                Err(e) => warn!("[eds] Failed to open calendar {source_uid}: {e}"),
-            }
-            debug!("[eds] View task for {source_uid} stopped");
-        });
-
-        handles.push(handle);
-    }
-
-    handles
+    sources
+        .into_iter()
+        .map(|source| {
+            tokio::spawn(setup_source(
+                conn.clone(),
+                state.clone(),
+                notifier.clone(),
+                source,
+                query.clone(),
+                time_range,
+            ))
+        })
+        .collect()
 }
 
 /// Monitor EDS calendars and populate shared state.
@@ -926,6 +961,8 @@ async fn monitor_eds_calendars(
             // a fresh chance after midnight.
             st.calendar_backends.clear();
             st.refresh_unsupported.clear();
+            st.known_source_uids.clear();
+            st.view_paths.lock_or_recover().clear();
 
             let stale_keys: Vec<String> = st
                 .events
@@ -955,6 +992,126 @@ async fn monitor_eds_calendars(
 
         debug!("[eds] Calendar views rebuilt for new day");
     }
+}
+
+/// Monitor EDS SourceManager for new calendar sources appearing after startup.
+///
+/// At login the waft EDS daemon often starts before `evolution-source-registry`
+/// and `goa-daemon` have populated GOA-backed calendars. Initial discovery
+/// then misses those sources until the next midnight rebuild. Listening for
+/// `InterfacesAdded` on the SourceManager's ObjectManager lets us set up new
+/// calendars as soon as they are registered — including when the user adds a
+/// new account at runtime.
+async fn monitor_source_manager(
+    conn: Connection,
+    state: Arc<StdMutex<EdsState>>,
+    notifier: EntityNotifier,
+) -> Result<()> {
+    const OBJECT_MANAGER_IFACE: &str = "org.freedesktop.DBus.ObjectManager";
+    const SOURCE_IFACE: &str = "org.gnome.evolution.dataserver.Source";
+
+    // Create the message stream before registering match rules so no signals
+    // slip through the gap between AddMatch and stream creation.
+    let mut stream = MessageStream::from(&conn);
+
+    let rule = format!(
+        "type='signal',sender='{SOURCES_DEST}',path='{SOURCES_PATH}',interface='{OBJECT_MANAGER_IFACE}',member='InterfacesAdded'"
+    );
+    conn.call_method(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        Some("org.freedesktop.DBus"),
+        "AddMatch",
+        &(&rule,),
+    )
+    .await
+    .context("failed to add match rule for SourceManager.InterfacesAdded")?;
+
+    debug!("[eds] Monitoring SourceManager for new calendar sources");
+
+    while let Some(msg_result) = stream.next().await {
+        let msg = match msg_result {
+            Ok(m) => m,
+            Err(e) => {
+                warn!("[eds] SourceManager message stream error: {e}");
+                break;
+            }
+        };
+
+        if msg.header().message_type() != zbus::message::Type::Signal {
+            continue;
+        }
+
+        let iface = msg
+            .header()
+            .interface()
+            .map(|i| i.to_string())
+            .unwrap_or_default();
+        if iface != OBJECT_MANAGER_IFACE {
+            continue;
+        }
+
+        let member = msg
+            .header()
+            .member()
+            .map(|m| m.to_string())
+            .unwrap_or_default();
+        if member != "InterfacesAdded" {
+            continue;
+        }
+
+        let body = msg.body();
+        let (object_path, interfaces): (
+            zvariant::OwnedObjectPath,
+            HashMap<String, HashMap<String, OwnedValue>>,
+        ) = match body.deserialize() {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("[eds] Failed to deserialize InterfacesAdded body: {e}");
+                continue;
+            }
+        };
+
+        let Some(props) = interfaces.get(SOURCE_IFACE) else {
+            continue;
+        };
+
+        let uid = props.get("UID").and_then(|v| match v.clone().into() {
+            zvariant::Value::Str(s) => Some(s.to_string()),
+            _ => None,
+        });
+        let data = props.get("Data").and_then(|v| match v.clone().into() {
+            zvariant::Value::Str(s) => Some(s.to_string()),
+            _ => None,
+        });
+
+        let (Some(uid), Some(data)) = (uid, data) else {
+            continue;
+        };
+
+        if !data.contains("[Calendar]") {
+            continue;
+        }
+
+        let display_name = extract_display_name(&data).unwrap_or_else(|| uid.clone());
+        info!(
+            "[eds] SourceManager added calendar source: uid={uid} display_name={display_name:?} path={}",
+            object_path.as_str()
+        );
+
+        let (time_range, query) = build_time_range_query_from_today();
+        tokio::spawn(setup_source(
+            conn.clone(),
+            state.clone(),
+            notifier.clone(),
+            CalendarSource { uid, display_name },
+            query,
+            time_range,
+        ));
+    }
+
+    warn!("[eds] SourceManager monitor stream ended");
+    Ok(())
 }
 
 /// Spawn a monitor task for a calendar view.
@@ -3293,8 +3450,19 @@ fn main() -> Result<()> {
         // Spawn D-Bus monitoring task
         let monitor_state = shared_state.clone();
         let monitor_notifier = notifier.clone();
+        let monitor_conn = conn.clone();
         spawn_monitored("eds/calendar-monitor", async move {
-            monitor_eds_calendars(conn, monitor_state, monitor_notifier).await
+            monitor_eds_calendars(monitor_conn, monitor_state, monitor_notifier).await
+        });
+
+        // Watch SourceManager for calendars that appear after startup
+        // (GOA-backed accounts registering late, or user adding a new account).
+        let source_monitor_state = shared_state.clone();
+        let source_monitor_notifier = notifier.clone();
+        let source_monitor_conn = conn.clone();
+        spawn_monitored("eds/source-monitor", async move {
+            monitor_source_manager(source_monitor_conn, source_monitor_state, source_monitor_notifier)
+                .await
         });
 
         // Spawn session monitor
