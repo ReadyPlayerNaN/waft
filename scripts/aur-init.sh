@@ -22,7 +22,7 @@ readonly PKG_DIR="$REPO_ROOT/packaging"
 readonly WORK_DIR="${AUR_WORK_DIR:-/tmp/waft-aur}"
 readonly AUR_HOST="aur@aur.archlinux.org"
 
-ALL_PKGS=(waft-git waft-overview-git waft-settings-git waft-toasts-git)
+ALL_PKGS=(waft-git waft-launcher-git waft-overview-git waft-settings-git waft-toasts-git)
 PKGS=("${@:-${ALL_PKGS[@]}}")
 
 if [[ -n "${AUR_SSH_KEY:-}" ]]; then
