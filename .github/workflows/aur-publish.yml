@@ -1,0 +1,67 @@
+name: aur-publish
+
+# Pushes the four PKGBUILDs to their AUR repositories.
+#
+# Triggers:
+#   - tag push matching `release/*` (cuts a release of all four packages)
+#   - manual dispatch (choose a single package or `all`)
+#
+# Required repository secrets:
+#   AUR_SSH_PRIVATE_KEY  - private key registered with the AUR account
+#                         that owns the packages.
+
+on:
+  push:
+    tags:
+      - 'release/*'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish (or "all")'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - waft-git
+          - waft-overview-git
+          - waft-settings-git
+          - waft-toasts-git
+
+jobs:
+  publish:
+    name: publish ${{ matrix.pkg }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg:
+          - waft-git
+          - waft-overview-git
+          - waft-settings-git
+          - waft-toasts-git
+    steps:
+      - name: Skip non-matching package on manual dispatch
+        if: >
+          github.event_name == 'workflow_dispatch'
+          && github.event.inputs.package != 'all'
+          && github.event.inputs.package != matrix.pkg
+        run: echo "skipped" && exit 0
+
+      - uses: actions/checkout@v4
+
+      - name: Publish ${{ matrix.pkg }} to AUR
+        if: >
+          github.event_name != 'workflow_dispatch'
+          || github.event.inputs.package == 'all'
+          || github.event.inputs.package == matrix.pkg
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        with:
+          pkgname: ${{ matrix.pkg }}
+          pkgbuild: packaging/${{ matrix.pkg }}/PKGBUILD
+          commit_username: ${{ vars.AUR_USERNAME || 'just-paja' }}
+          commit_email: ${{ vars.AUR_EMAIL || 'just.paja@gmail.com' }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ github.ref_name }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519
+          updpkgsums: false

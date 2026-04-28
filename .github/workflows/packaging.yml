@@ -1,0 +1,53 @@
+name: packaging
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'packaging/**'
+      - '.github/workflows/packaging.yml'
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - '.github/workflows/packaging.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: validate ${{ matrix.pkg }}
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg:
+          - waft-git
+          - waft-overview-git
+          - waft-settings-git
+          - waft-toasts-git
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed git namcap pacman-contrib
+
+      - uses: actions/checkout@v4
+
+      - name: Allow non-root makepkg user
+        run: |
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+
+      - name: Generate .SRCINFO
+        working-directory: packaging/${{ matrix.pkg }}
+        run: sudo -u builder makepkg --printsrcinfo > .SRCINFO
+
+      - name: Lint with namcap
+        working-directory: packaging/${{ matrix.pkg }}
+        run: namcap PKGBUILD
+
+      - name: Upload .SRCINFO
+        uses: actions/upload-artifact@v4
+        with:
+          name: srcinfo-${{ matrix.pkg }}
+          path: packaging/${{ matrix.pkg }}/.SRCINFO
