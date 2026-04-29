@@ -1017,7 +1017,7 @@ impl MainWindowWidget {
         scroller.set_child(Some(&body_box));
 
         // Outer vertical box: fixed header on top, scrollable body below
-        let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let outer = gtk::Box::new(gtk::Orientation::Vertical, 24);
         outer.append(&header_box);
         outer.append(&scroller);
 
