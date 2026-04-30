@@ -7,6 +7,7 @@ pub mod backup;
 pub mod bluetooth;
 pub mod css;
 pub mod icons;
+pub mod links;
 pub mod menu_state;
 pub mod widget_base;
 pub mod vdom;

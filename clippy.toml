@@ -6,3 +6,17 @@ cognitive-complexity-threshold = 30
 
 # Max lines in a function body before triggering too_many_lines
 too-many-lines-threshold = 200
+
+# Forbid URI-launching APIs that go through GIO/GDK launch contexts. On a
+# layer-shell window these end up calling `zxdg_exporter_v2::export_toplevel`
+# on a non-`xdg_surface`, which the compositor treats as a protocol violation
+# and terminates our connection. Always go through `waft_ui_gtk::links::open_uri`.
+disallowed-methods = [
+    { path = "gio::AppInfo::launch_default_for_uri", reason = "use waft_ui_gtk::links::open_uri — GIO's default launch context exports the layer-shell surface and the compositor kills us" },
+    { path = "gio::AppInfo::launch_default_for_uri_async", reason = "use waft_ui_gtk::links::open_uri" },
+    { path = "gio::AppInfo::launch_uris", reason = "use waft_ui_gtk::links::open_uri" },
+    { path = "gtk4::functions::show_uri", reason = "use waft_ui_gtk::links::open_uri" },
+    { path = "gtk4::UriLauncher::launch", reason = "use waft_ui_gtk::links::open_uri" },
+    { path = "gtk4::FileLauncher::launch", reason = "use waft_ui_gtk::links::open_uri" },
+    { path = "gdk4::Toplevel::export_handle", reason = "exporting a layer-shell wl_surface via xdg_foreign is a Wayland protocol violation; do not export the toplevel" },
+]

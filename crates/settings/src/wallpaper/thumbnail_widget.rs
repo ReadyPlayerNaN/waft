@@ -75,11 +75,7 @@ impl ThumbnailWidget {
         gesture.connect_pressed(move |_gesture, n_press, _x, _y| {
             if n_press == 2 {
                 let uri = format!("file://{path_for_click}");
-                if let Err(e) =
-                    gtk::gio::AppInfo::launch_default_for_uri(&uri, gtk::gio::AppLaunchContext::NONE)
-                {
-                    log::warn!("[wallpaper/thumbnail] failed to open image: {e}");
-                }
+                waft_ui_gtk::links::open_uri(&uri);
             }
         });
 

@@ -21,6 +21,7 @@ use waft_protocol::entity::notification::{NotificationAction, NotificationIconHi
 use super::countdown_bar::{CountdownBarOutput, CountdownBarWidget};
 use super::notification_markup;
 use crate::icons::{Icon, IconWidget};
+use crate::links::{connect_label_link_handler, open_uri};
 
 /// Type alias for output callback to reduce complexity.
 type OutputCallback<T> = Rc<RefCell<Option<Box<dyn Fn(T)>>>>;
@@ -122,6 +123,7 @@ impl NotificationCard {
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .build();
         description_label.set_markup(&prepared_desc);
+        connect_label_link_handler(&description_label);
 
         // Expanded description (full text, hidden by default)
         let expanded_label = gtk::Label::builder()
@@ -132,6 +134,7 @@ impl NotificationCard {
             .use_markup(true)
             .build();
         expanded_label.set_markup(&prepared_desc);
+        connect_label_link_handler(&expanded_label);
 
         let expand_revealer = gtk::Revealer::builder()
             .transition_type(gtk::RevealerTransitionType::SlideDown)
@@ -343,18 +346,35 @@ impl NotificationCard {
             let hidden_ref = hidden.clone();
             let left_click = gtk::GestureClick::new();
             left_click.set_button(1);
+            // Capture phase so we see the press *before* the label's own gesture.
+            // This lets us intercept link clicks and prevent GTK's default
+            // activate-link handler from running gtk_show_uri(), which on a
+            // layer-shell window would call zxdg_exporter_v2::export_toplevel
+            // on a non-xdg surface and get the connection killed by the
+            // compositor.
+            left_click.set_propagation_phase(gtk::PropagationPhase::Capture);
             left_click.connect_pressed(move |gesture, _n_press, x, y| {
                 if *hidden_ref.borrow() {
                     return;
                 }
 
-                // Don't fire default action when clicking interactive elements
+                // Don't fire default action when clicking interactive elements.
+                // For label links, also open the URI ourselves and claim the
+                // gesture sequence so the label never emits activate-link.
                 if let Some(widget) = gesture.widget()
                     && let Some(picked) = widget.pick(x, y, gtk::PickFlags::DEFAULT)
                 {
                     let mut current: Option<gtk::Widget> = Some(picked);
                     while let Some(ref w) = current {
                         if w.downcast_ref::<gtk::Button>().is_some() {
+                            return;
+                        }
+                        if let Some(label) = w.downcast_ref::<gtk::Label>()
+                            && let Some(uri) = label.current_uri()
+                            && !uri.is_empty()
+                        {
+                            open_uri(&uri);
+                            gesture.set_state(gtk::EventSequenceState::Claimed);
                             return;
                         }
                         current = w.parent();

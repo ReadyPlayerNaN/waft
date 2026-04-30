@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use gtk::prelude::*;
-use log::warn;
+use waft_ui_gtk::links::open_uri;
 
 use crate::menu_state::{MenuOp, MenuStore};
 
@@ -41,11 +41,7 @@ impl MeetingButton {
 
                 let url = link.url.clone();
                 btn.connect_clicked(move |_| {
-                    if let Err(e) =
-                        gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE)
-                    {
-                        warn!("[agenda] failed to open meeting URL: {e}");
-                    }
+                    open_uri(&url);
                 });
 
                 Some(Self { root: btn.upcast() })
@@ -84,11 +80,7 @@ impl MeetingButton {
                     let url = link.url.clone();
                     let popover_ref = popover.clone();
                     btn.connect_clicked(move |_| {
-                        if let Err(e) =
-                            gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE)
-                        {
-                            warn!("[agenda] failed to open meeting URL: {e}");
-                        }
+                        open_uri(&url);
                         popover_ref.popdown();
                     });
 
