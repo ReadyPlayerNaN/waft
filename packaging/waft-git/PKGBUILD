@@ -31,18 +31,21 @@ source=("$pkgname::git+https://github.com/readyplayernan/waft.git")
 sha256sums=('SKIP')
 
 # Plugin daemons bundled with the waft package.
-# Keep in sync with the 18-plugin set documented in AGENTS.md.
+# Keep in sync with the plugin set documented in AGENTS.md.
 _plugin_bins=(
   waft-audio-daemon
+  waft-awww-daemon
   waft-battery-daemon
   waft-bluez-daemon
   waft-brightness-daemon
   waft-caffeine-daemon
+  waft-claude-daemon
   waft-clock-daemon
   waft-darkman-daemon
   waft-eds-daemon
   waft-gnome-online-accounts-daemon
   waft-gsettings-daemon
+  waft-internal-apps-daemon
   waft-keyboard-layout-daemon
   waft-networkmanager-daemon
   waft-niri-daemon
@@ -51,6 +54,7 @@ _plugin_bins=(
   waft-syncthing-daemon
   waft-systemd-daemon
   waft-weather-daemon
+  waft-xdg-apps-daemon
 )
 
 pkgver() {

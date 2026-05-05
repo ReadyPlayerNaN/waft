@@ -93,7 +93,7 @@ When implementing features:
 
 ### Plugins
 
-All 18 plugins are standalone daemon binaries implementing the `Plugin` trait from `waft-plugin`. They provide domain entities to the central daemon, which routes updates to subscribed apps.
+All bundled plugins are standalone daemon binaries implementing the `Plugin` trait from `waft-plugin`. They provide domain entities to the central daemon, which routes updates to subscribed apps.
 
 | Plugin              | Entity Types                                                                                                                | Purpose                                                             |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -115,6 +115,10 @@ All 18 plugins are standalone daemon binaries implementing the `Plugin` trait fr
 | **gsettings**       | `gtk-appearance`                                                                                                            | GTK accent colour configuration via gsettings CLI                   |
 | **sunsetr**         | `night-light`                                                                                                               | Night light control via sunsetr CLI                                 |
 | **syncthing**       | `backup-method`                                                                                                             | Syncthing service toggle                                            |
+| **awww**            | `wallpaper-manager`                                                                                                         | Per-output wallpaper management (static / day-tracking / style-tracking) via awww or swww CLI |
+| **claude**          | `claude-usage`                                                                                                              | Claude Code API usage utilization for the 5-hour and 7-day windows  |
+| **internal-apps**   | `app`                                                                                                                       | Launchable entries for waft's own apps (e.g. `waft-settings`)       |
+| **xdg-apps**        | `app`                                                                                                                       | Launchable entries discovered from XDG `.desktop` files             |
 
 Additionally, _session lock detection_ is an internal feature in `crates/overview/src/features/session/`.
 
@@ -216,6 +220,10 @@ plugins/
     gsettings/      bin/          # Entity types: gtk-appearance
     sunsetr/        bin/          # Entity types: night-light
     syncthing/      bin/          # Entity types: backup-method
+    awww/           bin/          # Entity types: wallpaper-manager
+    claude/         bin/          # Entity types: claude-usage
+    internal-apps/  bin/          # Entity types: app
+    xdg-apps/       bin/          # Entity types: app
 crates/
     settings/                     # waft-settings: standalone settings application
         src/
@@ -416,7 +424,7 @@ See `prevent-silent-hangs` skill: covers `let _ =` on fallible ops, logging asyn
 
 ## Current Status
 
-**All 18 plugins use the entity-based architecture** with central daemon routing.
+**All bundled plugins use the entity-based architecture** with central daemon routing.
 
 - `waft-protocol` with entity types, messages, URN, transport, static entity registry, plugin descriptions
 - `waft-plugin` with `Plugin` trait, `PluginRuntime`, `EntityNotifier`, extended manifest (`provides --describe`)
