@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use cli::{Cli, Command, PluginCommand};
 use daemon::WaftDaemon;
-use log::{info, warn};
+use log::info;
 
 /// Well-known D-Bus name for the waft daemon.
 const DBUS_NAME: &str = "org.waft.Daemon";
@@ -64,18 +64,11 @@ fn run_daemon() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         // Register on the session bus so clients can discover us and
-        // D-Bus activation can auto-start the daemon.
-        let dbus_conn = match register_dbus_name().await {
-            Ok(conn) => {
-                info!("registered as {DBUS_NAME} on session bus");
-                Some(conn)
-            }
-            Err(e) => {
-                warn!("failed to register on D-Bus: {e}");
-                warn!("continuing without D-Bus name (clients must connect directly)");
-                None
-            }
-        };
+        // D-Bus activation can auto-start the daemon. A failure here means
+        // another instance already owns the name — refuse to start rather
+        // than running headless and racing the existing daemon.
+        let dbus_conn = register_dbus_name().await?;
+        info!("registered as {DBUS_NAME} on session bus");
 
         let socket_path = daemon_socket_path()?;
 
@@ -89,6 +82,24 @@ fn run_daemon() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         Ok(())
     })
+}
+
+/// Detect whether a daemon is already listening on the given socket path.
+///
+/// Returns:
+/// - `Ok(true)`  — file is present and a process accepts connections (live daemon).
+/// - `Ok(false)` — file is missing, or present but refuses connections (orphan).
+/// - `Err(_)`    — the probe itself failed (permission denied, etc.).
+fn probe_existing_listener(path: &std::path::Path) -> std::io::Result<bool> {
+    use std::io::ErrorKind;
+
+    match std::os::unix::net::UnixStream::connect(path) {
+        Ok(_) => Ok(true),
+        Err(e) => match e.kind() {
+            ErrorKind::NotFound | ErrorKind::ConnectionRefused => Ok(false),
+            _ => Err(e),
+        },
+    }
 }
 
 /// Request the well-known D-Bus name on the session bus.
@@ -126,8 +137,16 @@ fn daemon_socket_path() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sy
     std::fs::create_dir_all(&path)?;
     path.push("daemon.sock");
 
-    // Remove stale socket from previous run
+    // Probe before unlinking: if a real daemon is listening, refuse to clobber
+    // its socket. Only remove the file when it's an orphan from a previous run.
     if path.exists() {
+        if probe_existing_listener(&path)? {
+            return Err(format!(
+                "another waft daemon is already listening on {}",
+                path.display()
+            )
+            .into());
+        }
         std::fs::remove_file(&path)?;
     }
 
