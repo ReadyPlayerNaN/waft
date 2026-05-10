@@ -30,32 +30,19 @@ options=('!lto')
 source=("$pkgname::git+https://github.com/readyplayernan/waft.git")
 sha256sums=('SKIP')
 
-# Plugin daemons bundled with the waft package.
-# Keep in sync with the plugin set documented in AGENTS.md.
-_plugin_bins=(
-  waft-audio-daemon
-  waft-awww-daemon
-  waft-battery-daemon
-  waft-bluez-daemon
-  waft-brightness-daemon
-  waft-caffeine-daemon
-  waft-claude-daemon
-  waft-clock-daemon
-  waft-darkman-daemon
-  waft-eds-daemon
-  waft-gnome-online-accounts-daemon
-  waft-gsettings-daemon
-  waft-internal-apps-daemon
-  waft-keyboard-layout-daemon
-  waft-networkmanager-daemon
-  waft-niri-daemon
-  waft-notifications-daemon
-  waft-sunsetr-daemon
-  waft-syncthing-daemon
-  waft-systemd-daemon
-  waft-weather-daemon
-  waft-xdg-apps-daemon
-)
+# Discover plugin daemon binaries from plugins/*/Cargo.toml at build time.
+# Any [[bin]] target declared under plugins/<name>/ is bundled with waft.
+_discover_plugin_bins() {
+  awk '
+    /^\[\[bin\]\]/ { in_bin = 1; next }
+    /^\[/          { in_bin = 0 }
+    in_bin && /^name[[:space:]]*=/ {
+      sub(/^[^"]*"/, "")
+      sub(/".*$/,   "")
+      print
+    }
+  ' "$srcdir/$pkgname"/plugins/*/Cargo.toml
+}
 
 pkgver() {
   cd "$srcdir/$pkgname"
@@ -72,6 +59,8 @@ build() {
   cd "$srcdir/$pkgname"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
+
+  mapfile -t _plugin_bins < <(_discover_plugin_bins)
 
   local bin_args=(--bin waft)
   local b
@@ -91,6 +80,8 @@ check() {
 
 package() {
   cd "$srcdir/$pkgname"
+
+  mapfile -t _plugin_bins < <(_discover_plugin_bins)
 
   install -Dm755 "target/release/waft" "$pkgdir/usr/bin/waft"
 
