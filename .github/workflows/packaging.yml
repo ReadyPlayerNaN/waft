@@ -26,6 +26,7 @@ jobs:
           - waft-overview-git
           - waft-settings-git
           - waft-toasts-git
+          - waft-launcher-git
     steps:
       - name: Install dependencies
         run: |

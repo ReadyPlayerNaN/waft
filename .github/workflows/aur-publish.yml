@@ -1,9 +1,11 @@
 name: aur-publish
 
-# Pushes the four PKGBUILDs to their AUR repositories.
+# Pushes the PKGBUILDs to their AUR repositories.
 #
 # Triggers:
-#   - tag push matching `release/*` (cuts a release of all four packages)
+#   - successful `packaging` workflow run on master (keeps AUR in sync with
+#     PKGBUILD changes merged to master, after validation passes)
+#   - tag push matching `release/*` (cuts a release of all packages)
 #   - manual dispatch (choose a single package or `all`)
 #
 # Required repository secrets:
@@ -11,6 +13,10 @@ name: aur-publish
 #                         that owns the packages.
 
 on:
+  workflow_run:
+    workflows: ["packaging"]
+    types: [completed]
+    branches: [master]
   push:
     tags:
       - 'release/*'
@@ -27,11 +33,15 @@ on:
           - waft-overview-git
           - waft-settings-git
           - waft-toasts-git
+          - waft-launcher-git
 
 jobs:
   publish:
     name: publish ${{ matrix.pkg }}
     runs-on: ubuntu-latest
+    if: >
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +50,7 @@ jobs:
           - waft-overview-git
           - waft-settings-git
           - waft-toasts-git
+          - waft-launcher-git
     steps:
       - name: Skip non-matching package on manual dispatch
         if: >
@@ -49,6 +60,17 @@ jobs:
         run: echo "skipped" && exit 0
 
       - uses: actions/checkout@v4
+
+      - name: Resolve commit message
+        id: msg
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "value=Update to ${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "value=Sync PKGBUILD from master (${{ github.event.workflow_run.head_sha }})" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=Manual publish from ${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish ${{ matrix.pkg }} to AUR
         if: >
@@ -62,6 +84,6 @@ jobs:
           commit_username: ${{ vars.AUR_USERNAME || 'just-paja' }}
           commit_email: ${{ vars.AUR_EMAIL || 'just.paja@gmail.com' }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to ${{ github.ref_name }}"
+          commit_message: ${{ steps.msg.outputs.value }}
           ssh_keyscan_types: rsa,ecdsa,ed25519
           updpkgsums: false
