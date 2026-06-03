@@ -29,7 +29,7 @@ fn i18n() -> &'static waft_i18n::I18n { &I18N }
 use waft_plugin_networkmanager::bluez_discovery::discover_bluez_paired_devices;
 use waft_plugin_networkmanager::bluez_signal_monitor::monitor_bluez_signals;
 use waft_plugin_networkmanager::dbus_property::{DEVICE_TYPE_ETHERNET, DEVICE_TYPE_WIFI};
-use waft_plugin_networkmanager::device_discovery::{discover_bluetooth_devices, discover_devices};
+use waft_plugin_networkmanager::nmrs_adapter;
 use waft_plugin_networkmanager::ethernet::{
     activate_ethernet_connection, deactivate_ethernet_connection,
 };
@@ -40,16 +40,12 @@ use waft_plugin_networkmanager::state::{
     WiFiAdapterState,
 };
 use waft_plugin_networkmanager::tethering::{
-    activate_tethering, deactivate_tethering, get_active_tethering_connections,
-    get_tethering_profiles,
+    deactivate_tethering, get_active_tethering_connections, get_tethering_profiles,
 };
-use waft_plugin_networkmanager::vpn::{
-    activate_vpn, deactivate_vpn, get_active_vpn_connections, get_vpn_profiles,
-};
+use waft_plugin_networkmanager::vpn::{get_active_vpn_connections, get_vpn_profiles};
 use waft_plugin_networkmanager::wifi::{
     activate_connection, add_and_activate_connection, build_wifi_qr_string, connect_wired_dbus,
-    delete_connection, disconnect_device, get_active_access_point, get_connections_for_ssid,
-    get_wifi_psk, set_wifi_enabled_dbus, update_connection_settings,
+    get_connections_for_ssid, get_wifi_psk,
 };
 use waft_plugin_networkmanager::wifi_scan::wifi_scan_task;
 
@@ -59,6 +55,7 @@ use waft_plugin_networkmanager::wifi_scan::wifi_scan_task;
 
 struct NetworkManagerPlugin {
     conn: Connection,
+    nm: nmrs::NetworkManager,
     state: Arc<StdMutex<NmState>>,
     /// Channel to request WiFi scan from background task.
     scan_tx: tokio::sync::mpsc::Sender<()>,
@@ -69,11 +66,14 @@ impl NetworkManagerPlugin {
         let conn = Connection::system()
             .await
             .context("Failed to connect to system bus")?;
+        let nm = nmrs::NetworkManager::new()
+            .await
+            .context("Failed to create nmrs NetworkManager client")?;
 
         let mut state = NmState::default();
 
         // Discover devices
-        match discover_devices(&conn).await {
+        match nmrs_adapter::discover_devices(&nm).await {
             Ok(devices) => {
                 info!("[nm] Found {} network devices", devices.len());
                 for device in devices {
@@ -142,7 +142,7 @@ impl NetworkManagerPlugin {
         // Populates both active_ssid and access_points so the connected network
         // is immediately visible as a wifi-network entity without waiting for a scan.
         for adapter in &mut state.wifi_adapters {
-            if let Some(ap_info) = get_active_access_point(&conn, &adapter.path).await {
+            if let Ok(Some(ap_info)) = nmrs_adapter::get_active_access_point(&nm, &adapter.interface_name).await {
                 debug!(
                     "[nm] WiFi {} already connected to {}",
                     adapter.interface_name, ap_info.ssid
@@ -161,7 +161,7 @@ impl NetworkManagerPlugin {
         }
 
         // Discover ethernet connection profiles
-        match waft_plugin_networkmanager::ethernet::get_ethernet_profiles(&conn).await {
+        match waft_plugin_networkmanager::ethernet::get_ethernet_profiles(&nm).await {
             Ok(profiles) => {
                 info!("[nm] Found {} ethernet profiles", profiles.len());
                 for adapter in &mut state.ethernet_adapters {
@@ -184,22 +184,17 @@ impl NetworkManagerPlugin {
         }
 
         // Discover VPN connections
-        match get_vpn_profiles(&conn).await {
+        match get_vpn_profiles(&nm).await {
             Ok(profiles) => {
                 info!("[nm] Found {} VPN profiles", profiles.len());
 
-                let active_vpns = get_active_vpn_connections(&conn).await.unwrap_or_default();
+                let active_vpns = get_active_vpn_connections(&nm).await.unwrap_or_default();
 
                 for profile in profiles {
-                    let active_info = active_vpns
-                        .iter()
-                        .find(|(_, _, uuid, _)| *uuid == profile.uuid);
-
-                    let vpn_state = active_info
-                        .map(|(_, _, _, state_code)| VpnState::from_active_state(*state_code))
+                    let vpn_state = active_vpns
+                        .get(&profile.uuid)
+                        .cloned()
                         .unwrap_or(VpnState::Disconnected);
-
-                    let active_path = active_info.map(|(ap, _, _, _)| ap.clone());
 
                     debug!(
                         "[nm] VPN {}: path={}, state={:?}",
@@ -213,7 +208,7 @@ impl NetworkManagerPlugin {
                             name: profile.name,
                             conn_type: profile.conn_type,
                             state: vpn_state,
-                            active_path,
+                            active_path: None,
                         },
                     );
                 }
@@ -224,7 +219,7 @@ impl NetworkManagerPlugin {
         }
 
         // Discover bluetooth NM devices (tethering is only visible when one is ready)
-        match discover_bluetooth_devices(&conn).await {
+        match nmrs_adapter::discover_bluetooth_devices(&nm).await {
             Ok(devices) => {
                 let ready_count = devices.iter().filter(|d| d.ready()).count();
                 info!(
@@ -256,22 +251,27 @@ impl NetworkManagerPlugin {
         }
 
         // Discover tethering (bluetooth) connections
-        match get_tethering_profiles(&conn).await {
+        match get_tethering_profiles(&nm).await {
             Ok(profiles) => {
                 info!("[nm] Found {} tethering profiles", profiles.len());
 
-                let active = get_active_tethering_connections(&conn)
+                let active = get_active_tethering_connections(&nm)
                     .await
                     .unwrap_or_default();
 
                 for profile in profiles {
-                    let active_info = active.iter().find(|(_, uuid)| *uuid == profile.uuid);
+                    let is_active = profile
+                        .bdaddr
+                        .as_ref()
+                        .and_then(|bdaddr| active.get(bdaddr))
+                        .copied()
+                        .unwrap_or(false);
 
                     debug!(
                         "[nm] Tethering {}: path={}, active={}, bdaddr={:?}",
                         profile.name,
                         profile.path,
-                        active_info.is_some(),
+                        is_active,
                         profile.bdaddr
                     );
 
@@ -279,8 +279,8 @@ impl NetworkManagerPlugin {
                         path: profile.path,
                         uuid: profile.uuid,
                         name: profile.name,
-                        active: active_info.is_some(),
-                        active_path: active_info.map(|(ap, _)| ap.clone()),
+                        active: is_active,
+                        active_path: None,
                         bdaddr: profile.bdaddr,
                     });
                 }
@@ -292,6 +292,7 @@ impl NetworkManagerPlugin {
 
         let plugin = Self {
             conn,
+            nm,
             state: Arc::new(StdMutex::new(state)),
             scan_tx,
         };
@@ -341,6 +342,107 @@ fn nm_ip_method_to_entity(method: &str) -> IpMethod {
         "link-local" => IpMethod::LinkLocal,
         "disabled" => IpMethod::Disabled,
         _ => IpMethod::Auto,
+    }
+}
+
+fn entity_metered_to_nm(value: &serde_json::Value) -> Option<i32> {
+    value.as_i64().map(|v| v as i32).or_else(|| match value.as_str()? {
+        "Unknown" => Some(0),
+        "Yes" => Some(1),
+        "No" => Some(2),
+        "GuessYes" => Some(3),
+        "GuessNo" => Some(4),
+        _ => None,
+    })
+}
+
+fn entity_ip_method_to_nm(value: &serde_json::Value) -> Option<String> {
+    Some(match value.as_str()? {
+        "Auto" => "auto",
+        "Manual" => "manual",
+        "LinkLocal" => "link-local",
+        "Disabled" => "disabled",
+        other => other,
+    }
+    .to_string())
+}
+
+fn parse_ipv4_to_u32_local(s: &str) -> Option<u32> {
+    let parts: Vec<u8> = s.split('.').filter_map(|p| p.parse().ok()).collect();
+    if parts.len() == 4 {
+        Some(u32::from_le_bytes([parts[0], parts[1], parts[2], parts[3]]))
+    } else {
+        None
+    }
+}
+
+fn build_wifi_settings_patch(params: &serde_json::Value) -> nmrs::models::SettingsPatch {
+    let mut patch = nmrs::models::SettingsPatch::default();
+    patch.autoconnect = params.get("autoconnect").and_then(serde_json::Value::as_bool);
+    patch.raw_overlay = None;
+
+    if let Some(metered) = params.get("metered").and_then(entity_metered_to_nm) {
+        let overlay = patch.raw_overlay.get_or_insert_with(std::collections::HashMap::new);
+        overlay
+            .entry("connection".to_string())
+            .or_insert_with(std::collections::HashMap::new)
+            .insert("metered".to_string(), zbus::zvariant::OwnedValue::from(metered));
+    }
+
+    if let Some(method) = params.get("ip_method").and_then(entity_ip_method_to_nm) {
+        let overlay = patch.raw_overlay.get_or_insert_with(std::collections::HashMap::new);
+        overlay
+            .entry("ipv4".to_string())
+            .or_insert_with(std::collections::HashMap::new)
+            .insert(
+                "method".to_string(),
+                zbus::zvariant::Value::from(method)
+                    .try_into()
+                    .expect("String is a valid zvariant Value"),
+            );
+    }
+
+    if let Some(dns_arr) = params.get("dns_servers").and_then(serde_json::Value::as_array) {
+        let addrs: Vec<u32> = dns_arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter_map(parse_ipv4_to_u32_local)
+            .collect();
+        let overlay = patch.raw_overlay.get_or_insert_with(std::collections::HashMap::new);
+        overlay
+            .entry("ipv4".to_string())
+            .or_insert_with(std::collections::HashMap::new)
+            .insert(
+                "dns".to_string(),
+                zbus::zvariant::Value::from(addrs)
+                    .try_into()
+                    .expect("Vec<u32> is a valid zvariant Value"),
+            );
+    }
+
+    patch
+}
+
+fn build_nmrs_wifi_security(
+    security_type: SecurityType,
+    password: Option<&str>,
+    known: bool,
+) -> anyhow::Result<nmrs::WifiSecurity> {
+    match security_type {
+        SecurityType::Open => Ok(nmrs::WifiSecurity::Open),
+        SecurityType::Enterprise => anyhow::bail!("enterprise-not-supported"),
+        SecurityType::Wep => anyhow::bail!("wep-uses-legacy-flow"),
+        SecurityType::Wpa | SecurityType::Wpa2 | SecurityType::Wpa3 => {
+            if let Some(password) = password {
+                Ok(nmrs::WifiSecurity::WpaPsk {
+                    psk: password.to_string(),
+                })
+            } else if known {
+                Ok(nmrs::WifiSecurity::Open)
+            } else {
+                anyhow::bail!("password-required")
+            }
+        }
     }
 }
 
@@ -701,7 +803,6 @@ impl NetworkManagerPlugin {
             }
             "disconnect" => {
                 debug!("[nm] Disconnect WiFi network: {ssid}");
-                // Find the WiFi adapter and disconnect it
                 let device_path = {
                     let state = self.lock_state();
                     state
@@ -711,7 +812,7 @@ impl NetworkManagerPlugin {
                         .map(|a| a.path.clone())
                 };
                 if let Some(path) = device_path {
-                    disconnect_device(&self.conn, &path).await?;
+                    self.handle_disconnect_wifi(&path).await?;
                 } else {
                     warn!(
                         "[nm] Cannot disconnect - WiFi adapter not found for: {ssid}"
@@ -731,26 +832,29 @@ impl NetworkManagerPlugin {
                         .map(|a| a.path.clone())
                 };
                 if let Some(ref path) = device_path
-                    && let Err(e) = disconnect_device(&self.conn, path).await
+                    && let Err(e) = self.handle_disconnect_wifi(path).await
                 {
                     warn!("[nm] Failed to disconnect before forget: {e}");
                 }
 
                 // Delete all saved connection profiles for this SSID
-                let connections = get_connections_for_ssid(&self.conn, ssid).await?;
-                if connections.is_empty() {
+                let saved = self.nm.list_saved_connections().await?;
+                let mut deleted = 0usize;
+                for conn in saved {
+                    if let nmrs::models::SettingsSummary::Wifi { ssid: saved_ssid, .. } = &conn.summary
+                        && saved_ssid == ssid
+                    {
+                        if let Err(e) = self.nm.delete_saved_connection(&conn.uuid).await {
+                            error!("[nm] Failed to delete connection {}: {e}", conn.uuid);
+                            return Err(e.into());
+                        }
+                        deleted += 1;
+                    }
+                }
+                if deleted == 0 {
                     warn!("[nm] No saved connections found for SSID: {ssid}");
                 } else {
-                    for conn_path in &connections {
-                        if let Err(e) = delete_connection(&self.conn, conn_path).await {
-                            error!("[nm] Failed to delete connection {conn_path}: {e}");
-                            return Err(e);
-                        }
-                    }
-                    info!(
-                        "[nm] Deleted {} connection(s) for SSID: {ssid}",
-                        connections.len()
-                    );
+                    info!("[nm] Deleted {deleted} connection(s) for SSID: {ssid}");
                 }
 
                 // Update state: mark network as not known, clear active SSID if needed
@@ -771,12 +875,14 @@ impl NetworkManagerPlugin {
             "update-settings" => {
                 debug!("[nm] Update settings for WiFi network: {ssid}");
 
-                let connections = get_connections_for_ssid(&self.conn, ssid).await?;
-                let conn_path = connections
-                    .first()
+                let saved = self.nm.list_saved_connections().await?;
+                let conn = saved
+                    .into_iter()
+                    .find(|conn| matches!(&conn.summary, nmrs::models::SettingsSummary::Wifi { ssid: saved_ssid, .. } if saved_ssid == ssid))
                     .ok_or_else(|| anyhow::anyhow!("No saved connection for SSID: {ssid}"))?;
 
-                update_connection_settings(&self.conn, conn_path, params).await?;
+                let patch = build_wifi_settings_patch(params);
+                self.nm.update_saved_connection(&conn.uuid, patch).await?;
                 info!("[nm] Updated settings for WiFi network: {ssid}");
             }
             "share" => {
@@ -905,31 +1011,31 @@ impl NetworkManagerPlugin {
     ) -> anyhow::Result<()> {
         match action {
             "connect" => {
-                let conn_path = {
+                let vpn = {
                     let state = self.lock_state();
                     state
                         .vpn_connections
                         .iter()
                         .find(|v| v.name == vpn_name)
-                        .map(|v| v.path.clone())
+                        .map(|v| (v.uuid.clone(), v.name.clone(), v.conn_type.clone()))
                 };
-                if let Some(path) = conn_path {
-                    self.handle_connect_vpn(&path).await?;
+                if let Some((uuid, name, conn_type)) = vpn {
+                    self.handle_connect_vpn(&uuid, &name, &conn_type).await?;
                 } else {
                     warn!("[nm] VPN not found: {vpn_name}");
                 }
             }
             "disconnect" => {
-                let conn_path = {
+                let vpn = {
                     let state = self.lock_state();
                     state
                         .vpn_connections
                         .iter()
                         .find(|v| v.name == vpn_name)
-                        .map(|v| v.path.clone())
+                        .map(|v| (v.uuid.clone(), v.name.clone()))
                 };
-                if let Some(path) = conn_path {
-                    self.handle_disconnect_vpn(&path).await?;
+                if let Some((uuid, name)) = vpn {
+                    self.handle_disconnect_vpn(&uuid, &name).await?;
                 } else {
                     warn!("[nm] VPN not found: {vpn_name}");
                 }
@@ -948,13 +1054,13 @@ impl NetworkManagerPlugin {
             }
         }
 
-        if let Err(e) = set_wifi_enabled_dbus(&self.conn, true).await {
+        if let Err(e) = self.nm.set_wireless_enabled(true).await {
             error!("[nm] Failed to enable WiFi: {e}");
             let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
                 adapter.busy = false;
             }
-            return Err(e);
+            return Err(e.into());
         }
 
         {
@@ -981,13 +1087,13 @@ impl NetworkManagerPlugin {
             }
         }
 
-        if let Err(e) = set_wifi_enabled_dbus(&self.conn, false).await {
+        if let Err(e) = self.nm.set_wireless_enabled(false).await {
             error!("[nm] Failed to disable WiFi: {e}");
             let mut state = self.lock_state();
             for adapter in &mut state.wifi_adapters {
                 adapter.busy = false;
             }
-            return Err(e);
+            return Err(e.into());
         }
 
         {
@@ -1010,94 +1116,101 @@ impl NetworkManagerPlugin {
     ) -> anyhow::Result<()> {
         info!("[nm] Connecting to WiFi: {ssid}");
 
-        let connections = get_connections_for_ssid(&self.conn, ssid).await?;
-        if let Some(conn_path) = connections.first() {
-            // Saved network: use existing ActivateConnection flow
-            let device_path = {
-                let state = self.lock_state();
-                state.wifi_adapters.first().map(|a| a.path.clone())
-            };
-
-            if let Some(ref device_path) = device_path {
-                match activate_connection(&self.conn, Some(conn_path), device_path, None).await {
-                    Ok(_) => {
-                        info!("[nm] WiFi connection activated for {ssid}");
-                        let mut state = self.lock_state();
-                        for adapter in &mut state.wifi_adapters {
-                            if adapter.path == *device_path {
-                                adapter.active_ssid = Some(ssid.to_string());
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("[nm] Failed to activate WiFi: {e}");
-                        return Err(e);
-                    }
-                }
-            }
-        } else {
-            // Unsaved network: need AddAndActivateConnection
-            let password = params.get("password").and_then(|v| v.as_str());
-
-            let (device_path, ap_info) = {
-                let state = self.lock_state();
-                let device = state.wifi_adapters.first().map(|a| a.path.clone());
-                let ap = state
-                    .wifi_adapters
-                    .iter()
-                    .flat_map(|a| a.access_points.iter())
-                    .find(|ap| ap.ssid == ssid)
-                    .cloned();
-                (device, ap)
-            };
-
-            let Some(device_path) = device_path else {
-                anyhow::bail!("No WiFi adapter available");
-            };
-            let Some(ap) = ap_info else {
-                anyhow::bail!("Access point not found for SSID: {ssid}");
-            };
-
-            // If secure and no password provided, ask for password
-            if ap.security_type != SecurityType::Open && password.is_none() {
-                if ap.security_type == SecurityType::Enterprise {
-                    anyhow::bail!("enterprise-not-supported");
-                }
-                anyhow::bail!("password-required");
-            }
-
-            // Set connecting state
-            {
-                let mut state = self.lock_state();
-                state.connecting_ssid = Some(ssid.to_string());
-            }
-
-            match add_and_activate_connection(
-                &self.conn,
-                &device_path,
-                &ap.ap_path,
-                ssid,
-                ap.security_type,
-                password,
+        let password = params.get("password").and_then(|v| v.as_str());
+        let (interface_name, device_path, ap_info) = {
+            let state = self.lock_state();
+            let adapter = state.wifi_adapters.first().cloned();
+            let ap = state
+                .wifi_adapters
+                .iter()
+                .flat_map(|a| a.access_points.iter())
+                .find(|ap| ap.ssid == ssid)
+                .cloned();
+            (
+                adapter.as_ref().map(|a| a.interface_name.clone()),
+                adapter.as_ref().map(|a| a.path.clone()),
+                ap,
             )
-            .await
-            {
-                Ok(_) => {
-                    info!("[nm] New WiFi connection created for {ssid}");
-                    let mut state = self.lock_state();
-                    state.connecting_ssid = None;
-                    for adapter in &mut state.wifi_adapters {
-                        if adapter.path == device_path {
-                            adapter.active_ssid = Some(ssid.to_string());
-                        }
+        };
+
+        let Some(interface_name) = interface_name else {
+            anyhow::bail!("No WiFi adapter available");
+        };
+
+        let fallback_legacy = match ap_info.as_ref() {
+            Some(ap) => matches!(ap.security_type, SecurityType::Wep | SecurityType::Enterprise),
+            None => false,
+        };
+
+        if fallback_legacy {
+            let connections = get_connections_for_ssid(&self.conn, ssid).await?;
+            if let Some(conn_path) = connections.first() {
+                let Some(device_path) = device_path.clone() else {
+                    anyhow::bail!("No WiFi adapter available");
+                };
+                activate_connection(&self.conn, Some(conn_path), &device_path, None).await?;
+            } else {
+                let Some(device_path) = device_path.clone() else {
+                    anyhow::bail!("No WiFi adapter available");
+                };
+                let Some(ap) = ap_info.as_ref() else {
+                    anyhow::bail!("Access point not found for SSID: {ssid}");
+                };
+                if ap.security_type != SecurityType::Open && password.is_none() {
+                    if ap.security_type == SecurityType::Enterprise {
+                        anyhow::bail!("enterprise-not-supported");
+                    }
+                    anyhow::bail!("password-required");
+                }
+                add_and_activate_connection(
+                    &self.conn,
+                    &device_path,
+                    &ap.ap_path,
+                    ssid,
+                    ap.security_type,
+                    password,
+                )
+                .await?;
+            }
+
+            let mut state = self.lock_state();
+            state.connecting_ssid = None;
+            for adapter in &mut state.wifi_adapters {
+                if adapter.interface_name == interface_name {
+                    adapter.active_ssid = Some(ssid.to_string());
+                }
+            }
+            return Ok(());
+        }
+
+        let known = ap_info.as_ref().map(|ap| ap.known).unwrap_or(true);
+        let security_type = ap_info
+            .as_ref()
+            .map(|ap| ap.security_type)
+            .unwrap_or(SecurityType::Open);
+        let creds = build_nmrs_wifi_security(security_type, password, known)?;
+
+        {
+            let mut state = self.lock_state();
+            state.connecting_ssid = Some(ssid.to_string());
+        }
+
+        match self.nm.wifi(&interface_name).connect(ssid, creds).await {
+            Ok(_) => {
+                info!("[nm] WiFi connection activated for {ssid}");
+                let mut state = self.lock_state();
+                state.connecting_ssid = None;
+                for adapter in &mut state.wifi_adapters {
+                    if adapter.interface_name == interface_name {
+                        adapter.active_ssid = Some(ssid.to_string());
                     }
                 }
-                Err(e) => {
-                    error!("[nm] AddAndActivateConnection failed: {e}");
-                    let mut state = self.lock_state();
-                    state.connecting_ssid = None;
-                    return Err(e);
-                }
+            }
+            Err(e) => {
+                error!("[nm] Failed to connect WiFi via nmrs: {e}");
+                let mut state = self.lock_state();
+                state.connecting_ssid = None;
+                return Err(anyhow::anyhow!(e));
             }
         }
 
@@ -1110,9 +1223,22 @@ impl NetworkManagerPlugin {
     ) -> anyhow::Result<()> {
         info!("[nm] Disconnecting WiFi: {device_path}");
 
-        if let Err(e) = disconnect_device(&self.conn, device_path).await {
-            error!("[nm] Failed to disconnect WiFi: {e}");
-            return Err(e);
+        let interface_name = {
+            let state = self.lock_state();
+            state
+                .wifi_adapters
+                .iter()
+                .find(|a| a.path == device_path)
+                .map(|a| a.interface_name.clone())
+        };
+
+        let Some(interface_name) = interface_name else {
+            anyhow::bail!("WiFi adapter not found for path: {device_path}");
+        };
+
+        if let Err(e) = self.nm.wifi(&interface_name).disconnect().await {
+            error!("[nm] Failed to disconnect WiFi via nmrs: {e}");
+            return Err(anyhow::anyhow!(e));
         }
 
         {
@@ -1131,25 +1257,41 @@ impl NetworkManagerPlugin {
         &self,
         device_path: &str,
     ) -> anyhow::Result<()> {
-        let is_connected = {
+        let (is_connected, interface_name, adapter_count) = {
             let state = self.lock_state();
-            state
-                .ethernet_adapters
-                .iter()
-                .find(|a| a.path == device_path)
-                .map(waft_plugin_networkmanager::state::EthernetAdapterState::is_connected)
-                .unwrap_or(false)
+            (
+                state
+                    .ethernet_adapters
+                    .iter()
+                    .find(|a| a.path == device_path)
+                    .map(waft_plugin_networkmanager::state::EthernetAdapterState::is_connected)
+                    .unwrap_or(false),
+                state
+                    .ethernet_adapters
+                    .iter()
+                    .find(|a| a.path == device_path)
+                    .map(|a| a.interface_name.clone()),
+                state.ethernet_adapters.len(),
+            )
         };
 
         if is_connected {
-            info!("[nm] Disconnecting wired: {device_path}");
-            if let Err(e) = disconnect_device(&self.conn, device_path).await {
-                error!("[nm] Failed to disconnect wired: {e}");
-                return Err(e);
+            let Some(interface_name) = interface_name else {
+                anyhow::bail!("Ethernet adapter not found for path: {device_path}");
+            };
+            info!("[nm] Disconnecting wired: {interface_name}");
+            if let Err(e) = self.nm.disconnect(Some(&interface_name)).await {
+                error!("[nm] Failed to disconnect wired via nmrs: {e}");
+                return Err(e.into());
             }
         } else {
             info!("[nm] Connecting wired: {device_path}");
-            if let Err(e) = connect_wired_dbus(&self.conn, device_path).await {
+            if adapter_count <= 1 {
+                if let Err(e) = self.nm.connect_wired().await {
+                    error!("[nm] Failed to connect wired via nmrs: {e}");
+                    return Err(e.into());
+                }
+            } else if let Err(e) = connect_wired_dbus(&self.conn, device_path).await {
                 error!("[nm] Failed to connect wired: {e}");
                 return Err(e);
             }
@@ -1160,59 +1302,26 @@ impl NetworkManagerPlugin {
 
     async fn handle_connect_vpn(
         &self,
-        conn_path: &str,
+        uuid: &str,
+        name: &str,
+        conn_type: &str,
     ) -> anyhow::Result<()> {
-        let conn_type = {
-            let state = self.lock_state();
-            state
-                .vpn_connections
-                .iter()
-                .find(|v| v.path == conn_path)
-                .map(|v| v.conn_type.clone())
-                .unwrap_or_else(|| "vpn".to_string())
-        };
-
-        info!("[nm] Connecting {conn_type} VPN: {conn_path}");
+        info!("[nm] Connecting {conn_type} VPN: {name} ({uuid})");
 
         {
             let mut state = self.lock_state();
-            if let Some(vpn) = state
-                .vpn_connections
-                .iter_mut()
-                .find(|v| v.path == conn_path)
-            {
+            if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
                 vpn.state = VpnState::Connecting;
             }
         }
 
-        match activate_vpn(&self.conn, conn_path, &conn_type).await {
-            Ok(active_path) => {
-                info!(
-                    "[nm] {conn_type} VPN connection initiated: {conn_path} -> {active_path}"
-                );
-                let mut state = self.lock_state();
-                if let Some(vpn) = state
-                    .vpn_connections
-                    .iter_mut()
-                    .find(|v| v.path == conn_path)
-                {
-                    vpn.active_path = Some(active_path);
-                }
+        if let Err(e) = self.nm.connect_vpn_by_uuid(uuid).await {
+            error!("[nm] Failed to connect {conn_type} VPN {name} ({uuid}): {e}");
+            let mut state = self.lock_state();
+            if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
+                vpn.state = VpnState::Disconnected;
             }
-            Err(e) => {
-                error!(
-                    "[nm] Failed to connect {conn_type} VPN {conn_path}: {e}"
-                );
-                let mut state = self.lock_state();
-                if let Some(vpn) = state
-                    .vpn_connections
-                    .iter_mut()
-                    .find(|v| v.path == conn_path)
-                {
-                    vpn.state = VpnState::Disconnected;
-                }
-                return Err(e);
-            }
+            return Err(e.into());
         }
 
         Ok(())
@@ -1220,46 +1329,25 @@ impl NetworkManagerPlugin {
 
     async fn handle_disconnect_vpn(
         &self,
-        conn_path: &str,
+        uuid: &str,
+        name: &str,
     ) -> anyhow::Result<()> {
-        info!("[nm] Disconnecting VPN: {conn_path}");
+        info!("[nm] Disconnecting VPN: {name} ({uuid})");
 
-        let active_path = {
-            let state = self.lock_state();
-            state
-                .vpn_connections
-                .iter()
-                .find(|v| v.path == conn_path)
-                .and_then(|v| v.active_path.clone())
-        };
-
-        if let Some(ref active_path) = active_path {
-            {
-                let mut state = self.lock_state();
-                if let Some(vpn) = state
-                    .vpn_connections
-                    .iter_mut()
-                    .find(|v| v.path == conn_path)
-                {
-                    vpn.state = VpnState::Disconnecting;
-                }
+        {
+            let mut state = self.lock_state();
+            if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
+                vpn.state = VpnState::Disconnecting;
             }
+        }
 
-            if let Err(e) = deactivate_vpn(&self.conn, active_path).await {
-                error!("[nm] Failed to disconnect VPN: {e}");
-                let mut state = self.lock_state();
-                if let Some(vpn) = state
-                    .vpn_connections
-                    .iter_mut()
-                    .find(|v| v.path == conn_path)
-                {
-                    vpn.state = VpnState::Connected;
-                }
-                return Err(e);
+        if let Err(e) = self.nm.disconnect_vpn_by_uuid(uuid).await {
+            error!("[nm] Failed to disconnect VPN {name} ({uuid}): {e}");
+            let mut state = self.lock_state();
+            if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
+                vpn.state = VpnState::Connected;
             }
-        } else {
-            warn!("[nm] No active connection path for VPN: {conn_path} — connection was never activated or already disconnected");
-            anyhow::bail!("VPN has no active connection to disconnect: {conn_path}");
+            return Err(e.into());
         }
 
         Ok(())
@@ -1272,31 +1360,25 @@ impl NetworkManagerPlugin {
     ) -> anyhow::Result<()> {
         match action {
             "connect" => {
-                let conn_path = {
-                    let state = self.lock_state();
-                    state
-                        .tethering_connections
-                        .iter()
-                        .find(|c| c.uuid == uuid)
-                        .map(|c| c.path.clone())
-                };
-                if let Some(path) = conn_path {
-                    self.handle_connect_tethering(&path).await?;
+                if self
+                    .lock_state()
+                    .tethering_connections
+                    .iter()
+                    .any(|c| c.uuid == uuid)
+                {
+                    self.handle_connect_tethering(uuid).await?;
                 } else {
                     warn!("[nm] Tethering connection not found: {uuid}");
                 }
             }
             "disconnect" => {
-                let active_path = {
-                    let state = self.lock_state();
-                    state
-                        .tethering_connections
-                        .iter()
-                        .find(|c| c.uuid == uuid)
-                        .and_then(|c| c.active_path.clone())
-                };
-                if let Some(path) = active_path {
-                    self.handle_disconnect_tethering(&path, uuid).await?;
+                if self
+                    .lock_state()
+                    .tethering_connections
+                    .iter()
+                    .any(|c| c.uuid == uuid)
+                {
+                    self.handle_disconnect_tethering(uuid).await?;
                 } else {
                     warn!("[nm] No active tethering connection for: {uuid}");
                 }
@@ -1312,37 +1394,32 @@ impl NetworkManagerPlugin {
     ) -> anyhow::Result<()> {
         if connect {
             // Connect the first available tethering profile
-            let conn_path = {
+            let conn_uuid = {
                 let state = self.lock_state();
                 state
                     .tethering_connections
                     .iter()
                     .find(|c| !c.active)
-                    .map(|c| c.path.clone())
+                    .map(|c| c.uuid.clone())
             };
-            if let Some(path) = conn_path {
-                self.handle_connect_tethering(&path).await?;
+            if let Some(uuid) = conn_uuid {
+                self.handle_connect_tethering(&uuid).await?;
             } else {
                 debug!("[nm] No inactive tethering connections to activate");
             }
         } else {
             // Disconnect all active tethering connections
-            let active_connections: Vec<(String, String)> = {
+            let active_connections: Vec<String> = {
                 let state = self.lock_state();
                 state
                     .tethering_connections
                     .iter()
                     .filter(|c| c.active)
-                    .filter_map(|c| {
-                        c.active_path
-                            .as_ref()
-                            .map(|ap| (ap.clone(), c.uuid.clone()))
-                    })
+                    .map(|c| c.uuid.clone())
                     .collect()
             };
-            for (active_path, uuid) in active_connections {
-                self.handle_disconnect_tethering(&active_path, &uuid)
-                    .await?;
+            for uuid in active_connections {
+                self.handle_disconnect_tethering(&uuid).await?;
             }
         }
         Ok(())
@@ -1350,29 +1427,42 @@ impl NetworkManagerPlugin {
 
     async fn handle_connect_tethering(
         &self,
-        conn_path: &str,
+        uuid: &str,
     ) -> anyhow::Result<()> {
-        info!("[nm] Connecting tethering: {conn_path}");
+        let (name, bdaddr) = {
+            let state = self.lock_state();
+            state
+                .tethering_connections
+                .iter()
+                .find(|c| c.uuid == uuid)
+                .map(|c| (c.name.clone(), c.bdaddr.clone()))
+                .ok_or_else(|| anyhow::anyhow!("Tethering connection not found: {uuid}"))?
+        };
 
-        match activate_tethering(&self.conn, conn_path).await {
-            Ok(active_path) => {
-                info!(
-                    "[nm] Tethering connection initiated: {conn_path} -> {active_path}"
-                );
-                let mut state = self.lock_state();
-                if let Some(conn) = state
-                    .tethering_connections
-                    .iter_mut()
-                    .find(|c| c.path == conn_path)
-                {
-                    conn.active = true;
-                    conn.active_path = Some(active_path);
-                }
-            }
-            Err(e) => {
-                error!("[nm] Failed to connect tethering: {e}");
-                return Err(e);
-            }
+        let bdaddr = bdaddr.ok_or_else(|| anyhow::anyhow!("Tethering profile missing Bluetooth address: {uuid}"))?;
+        info!("[nm] Connecting tethering: {name} ({bdaddr})");
+
+        let bt_device = self
+            .nm
+            .list_bluetooth_devices()
+            .await?
+            .into_iter()
+            .find(|device| device.bdaddr == bdaddr)
+            .ok_or_else(|| anyhow::anyhow!("No Bluetooth device found for tethering address: {bdaddr}"))?;
+
+        let identity = nmrs::models::BluetoothIdentity::new(
+            bdaddr.clone(),
+            bt_device.bt_caps.into(),
+        )?;
+
+        if let Err(e) = self.nm.connect_bluetooth(&name, &identity).await {
+            error!("[nm] Failed to connect tethering via nmrs: {e}");
+            return Err(e.into());
+        }
+
+        let mut state = self.lock_state();
+        if let Some(conn) = state.tethering_connections.iter_mut().find(|c| c.uuid == uuid) {
+            conn.active = true;
         }
 
         Ok(())
@@ -1380,28 +1470,52 @@ impl NetworkManagerPlugin {
 
     async fn handle_disconnect_tethering(
         &self,
-        active_path: &str,
         uuid: &str,
     ) -> anyhow::Result<()> {
-        info!("[nm] Disconnecting tethering: {active_path}");
+        let (active_path, bdaddr) = {
+            let state = self.lock_state();
+            state
+                .tethering_connections
+                .iter()
+                .find(|c| c.uuid == uuid)
+                .map(|c| (c.active_path.clone(), c.bdaddr.clone()))
+                .ok_or_else(|| anyhow::anyhow!("Tethering connection not found: {uuid}"))?
+        };
 
-        match deactivate_tethering(&self.conn, active_path).await {
-            Ok(()) => {
-                info!("[nm] Tethering disconnected: {uuid}");
-                let mut state = self.lock_state();
-                if let Some(conn) = state
-                    .tethering_connections
-                    .iter_mut()
-                    .find(|c| c.uuid == uuid)
-                {
-                    conn.active = false;
-                    conn.active_path = None;
-                }
+        let interface = if let Some(bdaddr) = bdaddr.as_ref() {
+            self.nm
+                .list_devices()
+                .await?
+                .into_iter()
+                .find(|device| {
+                    device.is_bluetooth()
+                        && (device.identity.current_mac == *bdaddr
+                            || device.identity.permanent_mac == *bdaddr)
+                })
+                .map(|device| device.interface)
+        } else {
+            None
+        };
+
+        if let Some(interface) = interface {
+            if let Err(e) = self.nm.disconnect(Some(&interface)).await {
+                error!("[nm] Failed to disconnect tethering via nmrs: {e}");
+                return Err(e.into());
             }
-            Err(e) => {
+        } else if let Some(active_path) = active_path.as_ref() {
+            if let Err(e) = deactivate_tethering(&self.conn, active_path).await {
                 error!("[nm] Failed to disconnect tethering: {e}");
                 return Err(e);
             }
+        } else {
+            anyhow::bail!("No tethering interface or active connection found for: {uuid}");
+        }
+
+        info!("[nm] Tethering disconnected: {uuid}");
+        let mut state = self.lock_state();
+        if let Some(conn) = state.tethering_connections.iter_mut().find(|c| c.uuid == uuid) {
+            conn.active = false;
+            conn.active_path = None;
         }
 
         Ok(())
@@ -1431,13 +1545,15 @@ fn main() -> Result<()> {
 
         let shared_state = plugin.shared_state();
         let monitor_conn = plugin.conn.clone();
+        let monitor_nm = plugin.nm.clone();
         let scan_conn = plugin.conn.clone();
+        let scan_nm = plugin.nm.clone();
 
         // Monitor NM D-Bus signals
         let monitor_state = shared_state.clone();
         let monitor_notifier = notifier.clone();
         spawn_monitored("nm/signal-monitor", async move {
-            monitor_nm_signals(monitor_conn, monitor_state, monitor_notifier).await
+            monitor_nm_signals(monitor_conn, monitor_nm, monitor_state, monitor_notifier).await
         });
 
         // Monitor BlueZ D-Bus signals (paired device connection state for tethering).
@@ -1454,7 +1570,7 @@ fn main() -> Result<()> {
         let scan_state = shared_state.clone();
         let scan_notifier = notifier.clone();
         tokio::spawn(async move {
-            wifi_scan_task(scan_rx, scan_conn, scan_state, scan_notifier).await;
+            wifi_scan_task(scan_rx, scan_conn, scan_nm, scan_state, scan_notifier).await;
         });
 
         Ok(plugin)

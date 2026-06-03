@@ -8,6 +8,7 @@ pub mod dbus_property;
 pub mod device_discovery;
 pub mod ethernet;
 pub mod ip_config;
+pub mod nmrs_adapter;
 pub mod signal_monitor;
 pub mod state;
 pub mod tethering;

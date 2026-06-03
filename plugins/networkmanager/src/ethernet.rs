@@ -1,69 +1,30 @@
 //! Ethernet connection profile discovery and management.
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{Context, Result};
 use log::{debug, warn};
 use zbus::Connection;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::zvariant::OwnedObjectPath;
 
 use crate::dbus_property::{
     NM_CONNECTION_ACTIVE_INTERFACE, NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE,
-    NM_SETTINGS_INTERFACE, NM_SETTINGS_PATH, get_property,
+    get_property,
 };
 use crate::state::{EthernetProfileInfo, NmState};
 
-/// List all saved 802-3-ethernet connection profiles from NM Settings.
-pub async fn get_ethernet_profiles(conn: &Connection) -> Result<Vec<EthernetProfileInfo>> {
-    let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_SETTINGS_PATH, NM_SETTINGS_INTERFACE)
-        .await
-        .context("Failed to create Settings proxy")?;
-
-    let (settings_paths,): (Vec<OwnedObjectPath>,) = proxy
-        .call("ListConnections", &())
-        .await
-        .context("Failed to list connections")?;
-
-    let mut profiles = Vec::new();
-
-    for settings_path in settings_paths {
-        let path_str = settings_path.as_str();
-
-        let conn_proxy = zbus::Proxy::new(
-            conn,
-            NM_SERVICE,
-            path_str,
-            "org.freedesktop.NetworkManager.Settings.Connection",
-        )
-        .await?;
-
-        let (settings,): (HashMap<String, HashMap<String, OwnedValue>>,) =
-            conn_proxy.call("GetSettings", &()).await?;
-
-        if let Some(connection) = settings.get("connection")
-            && let Some(conn_type) = connection.get("type")
-            && let Ok(type_str) = String::try_from(conn_type.clone())
-            && type_str == "802-3-ethernet"
-        {
-            let name = connection
-                .get("id")
-                .and_then(|v| String::try_from(v.clone()).ok())
-                .unwrap_or_else(|| "Wired Connection".to_string());
-            let uuid = connection
-                .get("uuid")
-                .and_then(|v| String::try_from(v.clone()).ok())
-                .unwrap_or_default();
-
-            profiles.push(EthernetProfileInfo {
-                path: path_str.to_string(),
-                uuid,
-                name,
-            });
-        }
-    }
-
-    Ok(profiles)
+/// List all saved 802-3-ethernet connection profiles from NetworkManager.
+pub async fn get_ethernet_profiles(nm: &nmrs::NetworkManager) -> Result<Vec<EthernetProfileInfo>> {
+    let saved = nm.list_saved_connections().await?;
+    Ok(saved
+        .into_iter()
+        .filter(|conn| conn.connection_type == "802-3-ethernet")
+        .map(|conn| EthernetProfileInfo {
+            path: conn.path.to_string(),
+            uuid: conn.uuid,
+            name: conn.id,
+        })
+        .collect())
 }
 
 /// Get the active connection UUID for an ethernet device.
@@ -148,9 +109,10 @@ pub async fn deactivate_ethernet_connection(conn: &Connection, device_path: &str
 /// Refresh ethernet profiles and active connection state for all adapters.
 pub async fn refresh_ethernet_state(
     conn: &Connection,
+    nm: &nmrs::NetworkManager,
     state: &Arc<StdMutex<NmState>>,
 ) -> Result<()> {
-    let profiles = get_ethernet_profiles(conn).await?;
+    let profiles = get_ethernet_profiles(nm).await?;
 
     // Get device paths for active connection UUID lookup
     let adapter_paths: Vec<(String, String)> = {

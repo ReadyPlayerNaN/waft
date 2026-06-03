@@ -1894,12 +1894,13 @@ dependencies = [
 
 [[package]]
 name = "nmrs"
-version = "2.4.0"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7d01d7eb7634d4811c0295d81de64cb4e9acbdfb91cf7148db02d8b091402c6"
+checksum = "14d7fceaffc27cf15f5d86e36869c86209ae44dfc24e1698c488ab58d2f4205a"
 dependencies = [
  "async-trait",
  "base64",
+ "bitflags 2.12.1",
  "futures",
  "futures-timer",
  "log",
@@ -3453,7 +3454,6 @@ dependencies = [
  "libadwaita",
  "libc",
  "log",
- "nmrs",
  "once_cell",
  "reqwest",
  "roxmltree",
@@ -3737,6 +3737,7 @@ dependencies = [
  "async-trait",
  "futures-util",
  "log",
+ "nmrs",
  "serde_json",
  "tokio",
  "waft-i18n",

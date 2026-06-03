@@ -14,7 +14,7 @@ use crate::dbus_property::{
     NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_VPN_CONNECTION_INTERFACE,
     NM_WIRELESS_INTERFACE, get_property,
 };
-use crate::device_discovery::get_device_info_dbus;
+use crate::nmrs_adapter;
 use crate::ethernet::refresh_ethernet_state;
 use crate::ip_config::{fetch_public_ip, get_device_ip4_config};
 use crate::state::{
@@ -27,6 +27,7 @@ use waft_plugin::EntityNotifier;
 /// Monitor NM D-Bus signals and update shared state accordingly.
 pub async fn monitor_nm_signals(
     conn: Connection,
+    nm: nmrs::NetworkManager,
     state: Arc<StdMutex<NmState>>,
     notifier: EntityNotifier,
 ) -> Result<()> {
@@ -128,7 +129,7 @@ pub async fn monitor_nm_signals(
                         debug!(
                             "[nm] VPN state changed: path={obj_path}, state={state_code}"
                         );
-                        if let Err(e) = refresh_vpn_states(&conn, &state).await {
+                        if let Err(e) = refresh_vpn_states(&conn, &nm, &state).await {
                             error!("[nm] Failed to refresh VPN states: {e}");
                         }
                         changed = true;
@@ -136,7 +137,7 @@ pub async fn monitor_nm_signals(
                         debug!(
                             "[nm] Tethering state changed: path={obj_path}, state={state_code}"
                         );
-                        if let Err(e) = refresh_tethering_states(&conn, &state).await {
+                        if let Err(e) = refresh_tethering_states(&conn, &nm, &state).await {
                             error!("[nm] Failed to refresh tethering states: {e}");
                         }
                         changed = true;
@@ -149,7 +150,7 @@ pub async fn monitor_nm_signals(
                     && props.contains_key("VpnState")
                 {
                     debug!("[nm] VPN.Connection state changed: {obj_path}");
-                    if let Err(e) = refresh_vpn_states(&conn, &state).await {
+                    if let Err(e) = refresh_vpn_states(&conn, &nm, &state).await {
                         error!("[nm] Failed to refresh VPN states: {e}");
                     }
                     changed = true;
@@ -202,7 +203,7 @@ pub async fn monitor_nm_signals(
 
                     match device_type {
                         DEVICE_TYPE_ETHERNET | DEVICE_TYPE_WIFI => {
-                            if let Ok(Some(info)) = get_device_info_dbus(&conn, &device_path).await
+                            if let Ok(Some(info)) = nmrs_adapter::get_device_info_by_path(&nm, &device_path).await
                             {
                                 let mut st = match state.lock() {
                                     Ok(g) => g,
@@ -265,7 +266,7 @@ pub async fn monitor_nm_signals(
                                     });
                                 }
                             }
-                            if let Err(e) = refresh_tethering_states(&conn, &state).await {
+                            if let Err(e) = refresh_tethering_states(&conn, &nm, &state).await {
                                 error!("[nm] Failed to refresh tethering states: {e}");
                             }
                         }
@@ -414,7 +415,7 @@ pub async fn monitor_nm_signals(
                         }
 
                         // Refresh ethernet profile active connection state
-                        if let Err(e) = refresh_ethernet_state(&conn, &state).await {
+                        if let Err(e) = refresh_ethernet_state(&conn, &nm, &state).await {
                             warn!("[nm] Failed to refresh ethernet state: {e}");
                         }
 
@@ -459,8 +460,22 @@ pub async fn monitor_nm_signals(
                     // Populate active_ssid and access_points when WiFi device reaches activated state
                     if let Some(device_path) = refresh_ssid_for {
                         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                        if let Some(ap_info) =
-                            crate::wifi::get_active_access_point(&conn, &device_path).await
+                        let interface_name = {
+                            let st = match state.lock() {
+                                Ok(g) => g,
+                                Err(e) => {
+                                    warn!("[nm] Mutex poisoned, recovering: {e}");
+                                    e.into_inner()
+                                }
+                            };
+                            st.wifi_adapters
+                                .iter()
+                                .find(|a| a.path == device_path)
+                                .map(|a| a.interface_name.clone())
+                        };
+                        if let Some(interface_name) = interface_name
+                            && let Ok(Some(ap_info)) =
+                                crate::nmrs_adapter::get_active_access_point(&nm, &interface_name).await
                         {
                             let mut st = match state.lock() {
                                 Ok(g) => g,
