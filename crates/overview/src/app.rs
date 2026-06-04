@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use adw::prelude::*;
+use glib::object::Cast as _;
 
 use crate::features::session::SessionEvent;
 use crate::menu_state::create_menu_store;
@@ -19,7 +20,7 @@ use waft_client::{
 };
 use waft_ipc::net as ipc_net;
 use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
-use waft_protocol::entity;
+use waft_protocol::{Urn, entity};
 
 /// All entity types the overview subscribes to.
 const ENTITY_TYPES: &[&str] = &[
@@ -48,6 +49,28 @@ const ENTITY_TYPES: &[&str] = &[
     entity::storage::BACKUP_METHOD_ENTITY_TYPE,
     entity::app::ENTITY_TYPE,
 ];
+
+fn sync_overview_color_scheme(
+    style_manager: &adw::StyleManager,
+    entity_store: &EntityStore,
+) {
+    if style_manager.system_supports_color_schemes() {
+        style_manager.set_color_scheme(adw::ColorScheme::Default);
+        return;
+    }
+
+    let dark_mode_urn = Urn::new("darkman", entity::display::DARK_MODE_ENTITY_TYPE, "default");
+    if let Some(dark_mode) = entity_store.get_entity_typed::<entity::display::DarkMode>(&dark_mode_urn)
+    {
+        style_manager.set_color_scheme(if dark_mode.active {
+            adw::ColorScheme::ForceDark
+        } else {
+            adw::ColorScheme::ForceLight
+        });
+    } else {
+        style_manager.set_color_scheme(adw::ColorScheme::Default);
+    }
+}
 
 /// Set up the overlay host app and return the GTK Application.
 ///
@@ -214,6 +237,27 @@ pub async fn setup() -> Result<adw::Application> {
 
             // Create entity store for daemon notification distribution
             let entity_store = Rc::new(EntityStore::new());
+
+            // Libadwaita's default behavior is to follow the system color-scheme
+            // preference via AdwStyleManager. When the session does not expose
+            // that preference (e.g. portal unavailable or unsupported), fall
+            // back to Waft's dark-mode entity so the overview still tracks the
+            // effective light/dark state.
+            let style_manager = adw::StyleManager::default();
+            let sync_theme = {
+                let style_manager = style_manager.clone();
+                let entity_store = entity_store.clone();
+                Rc::new(move || sync_overview_color_scheme(&style_manager, &entity_store))
+            };
+            entity_store.subscribe_type(entity::display::DARK_MODE_ENTITY_TYPE, {
+                let sync_theme = sync_theme.clone();
+                move || sync_theme()
+            });
+            style_manager.connect_notify_local(Some("system-supports-color-schemes"), {
+                let sync_theme = sync_theme.clone();
+                move |_, _| sync_theme()
+            });
+            glib::idle_add_local_once(move || sync_theme());
 
             // Entity action callback routes actions from components back through WaftClient
             let waft_client_for_entity_actions = waft_client_slot.clone();
