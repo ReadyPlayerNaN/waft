@@ -130,7 +130,9 @@ impl ClaimTracker {
             if let Some(claim) = self.pending.get_mut(&claim_id) {
                 claim.received.insert(conn_id); // treat as responded
                 // any_claimed unchanged (disconnect = pass)
-                if claim.expected == claim.received && let Some(resolution) = self.resolve(claim_id) {
+                if claim.expected == claim.received
+                    && let Some(resolution) = self.resolve(claim_id)
+                {
                     resolutions.push(resolution);
                 }
             }

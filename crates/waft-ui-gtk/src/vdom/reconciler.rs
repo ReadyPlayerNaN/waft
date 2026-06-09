@@ -1,6 +1,6 @@
 use std::any::Any;
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use gtk::prelude::*;
 
@@ -12,10 +12,16 @@ use adw::prelude::*;
 use gtk::glib;
 
 use super::component::AnyWidget;
-use super::container::{ActionRowPrefixContainer, ActionRowSuffixContainer, ButtonChildContainer, ToggleButtonChildContainer, VdomContainer};
+use super::container::{
+    ActionRowPrefixContainer, ActionRowSuffixContainer, ButtonChildContainer,
+    ToggleButtonChildContainer, VdomContainer,
+};
 use crate::icons::IconWidget;
 
-use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VProgressBar, VRevealer, VScale, VSpinner, VSwitch, VToggleButton, VSwitchRow};
+use super::primitives::{
+    VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup,
+    VProgressBar, VRevealer, VScale, VSpinner, VSwitch, VSwitchRow, VToggleButton,
+};
 use super::vnode::{ComponentDesc, VNode, VNodeKind};
 
 // -- Kind tag -----------------------------------------------------------------
@@ -45,31 +51,31 @@ enum KindTag {
 
 enum ReconcilerEntry {
     Component {
-        component:  Box<dyn AnyWidget>,
+        component: Box<dyn AnyWidget>,
         last_props: Rc<dyn Any>,
-        type_id:    std::any::TypeId,
+        type_id: std::any::TypeId,
     },
     Label {
         widget: gtk::Label,
     },
     Box {
-        widget:           gtk::Box,
+        widget: gtk::Box,
         child_reconciler: std::boxed::Box<Reconciler<gtk::Box>>,
     },
     Button {
-        widget:     gtk::Button,
+        widget: gtk::Button,
         handler_id: Option<glib::SignalHandlerId>,
-        cb:         Option<Rc<dyn Fn()>>,
+        cb: Option<Rc<dyn Fn()>>,
     },
     Switch {
-        widget:     gtk::Switch,
+        widget: gtk::Switch,
         handler_id: Option<glib::SignalHandlerId>,
-        cb:         Option<Rc<dyn Fn(bool)>>,
+        cb: Option<Rc<dyn Fn(bool)>>,
     },
     ToggleButton {
-        widget:           gtk::ToggleButton,
-        handler_id:       Option<glib::SignalHandlerId>,
-        cb:               Option<Rc<dyn Fn(bool)>>,
+        widget: gtk::ToggleButton,
+        handler_id: Option<glib::SignalHandlerId>,
+        cb: Option<Rc<dyn Fn(bool)>>,
         child_reconciler: std::boxed::Box<Reconciler<ToggleButtonChildContainer>>,
     },
     Spinner {
@@ -79,34 +85,34 @@ enum ReconcilerEntry {
         widget: IconWidget,
     },
     CustomButton {
-        widget:           gtk::Button,
-        handler_id:       Option<glib::SignalHandlerId>,
-        cb:               Option<Rc<dyn Fn()>>,
+        widget: gtk::Button,
+        handler_id: Option<glib::SignalHandlerId>,
+        cb: Option<Rc<dyn Fn()>>,
         child_reconciler: std::boxed::Box<Reconciler<ButtonChildContainer>>,
     },
     PreferencesGroup {
-        widget:           adw::PreferencesGroup,
+        widget: adw::PreferencesGroup,
         child_reconciler: std::boxed::Box<Reconciler<adw::PreferencesGroup>>,
     },
     ActionRow {
-        widget:            adw::ActionRow,
-        handler_id:        Option<glib::SignalHandlerId>,
-        cb:                Option<Rc<dyn Fn()>>,
+        widget: adw::ActionRow,
+        handler_id: Option<glib::SignalHandlerId>,
+        cb: Option<Rc<dyn Fn()>>,
         suffix_reconciler: std::boxed::Box<Reconciler<ActionRowSuffixContainer>>,
         prefix_reconciler: std::boxed::Box<Reconciler<ActionRowPrefixContainer>>,
     },
     SwitchRow {
-        widget:     adw::SwitchRow,
+        widget: adw::SwitchRow,
         handler_id: Option<glib::SignalHandlerId>,
-        cb:         Option<Rc<dyn Fn(bool)>>,
+        cb: Option<Rc<dyn Fn(bool)>>,
     },
     EntryRow {
-        widget:     adw::EntryRow,
+        widget: adw::EntryRow,
         handler_id: Option<glib::SignalHandlerId>,
-        cb:         Option<Rc<dyn Fn(String)>>,
+        cb: Option<Rc<dyn Fn(String)>>,
     },
     Revealer {
-        widget:           gtk::Revealer,
+        widget: gtk::Revealer,
         child_reconciler: std::boxed::Box<Reconciler<gtk::Box>>,
     },
     ProgressBar {
@@ -114,59 +120,59 @@ enum ReconcilerEntry {
     },
     Scale {
         /// Outer wrapper box that holds the scale and receives gesture controllers.
-        scale_wrapper:    gtk::Box,
-        widget:           gtk::Scale,
-        handler_id:       glib::SignalHandlerId,
-        interacting:      Rc<std::cell::RefCell<bool>>,
+        scale_wrapper: gtk::Box,
+        widget: gtk::Scale,
+        handler_id: glib::SignalHandlerId,
+        interacting: Rc<std::cell::RefCell<bool>>,
         #[allow(dead_code)]
-        pointer_down:     Rc<std::cell::RefCell<bool>>,
+        pointer_down: Rc<std::cell::RefCell<bool>>,
         #[allow(dead_code)]
-        debounce_source:  Rc<std::cell::RefCell<Option<glib::SourceId>>>,
-        on_value_change:  ValueCallback,
-        on_value_commit:  ValueCallback,
+        debounce_source: Rc<std::cell::RefCell<Option<glib::SourceId>>>,
+        on_value_change: ValueCallback,
+        on_value_commit: ValueCallback,
     },
 }
 
 impl ReconcilerEntry {
     fn widget(&self) -> gtk::Widget {
         match self {
-            Self::Component        { component, .. } => component.widget(),
-            Self::Label            { widget }        => widget.clone().upcast(),
-            Self::Box              { widget, .. }    => widget.clone().upcast(),
-            Self::Button           { widget, .. }    => widget.clone().upcast(),
-            Self::Switch           { widget, .. }    => widget.clone().upcast(),
-            Self::ToggleButton     { widget, .. }    => widget.clone().upcast(),
-            Self::Spinner          { widget }        => widget.clone().upcast(),
-            Self::Icon             { widget }        => widget.widget().clone().upcast(),
-            Self::CustomButton     { widget, .. }    => widget.clone().upcast(),
-            Self::PreferencesGroup { widget, .. }    => widget.clone().upcast(),
-            Self::ActionRow        { widget, .. }    => widget.clone().upcast(),
-            Self::SwitchRow        { widget, .. }    => widget.clone().upcast(),
-            Self::EntryRow         { widget, .. }    => widget.clone().upcast(),
-            Self::Revealer         { widget, .. }    => widget.clone().upcast(),
-            Self::ProgressBar      { widget }              => widget.clone().upcast(),
-            Self::Scale            { scale_wrapper, .. }   => scale_wrapper.clone().upcast(),
+            Self::Component { component, .. } => component.widget(),
+            Self::Label { widget } => widget.clone().upcast(),
+            Self::Box { widget, .. } => widget.clone().upcast(),
+            Self::Button { widget, .. } => widget.clone().upcast(),
+            Self::Switch { widget, .. } => widget.clone().upcast(),
+            Self::ToggleButton { widget, .. } => widget.clone().upcast(),
+            Self::Spinner { widget } => widget.clone().upcast(),
+            Self::Icon { widget } => widget.widget().clone().upcast(),
+            Self::CustomButton { widget, .. } => widget.clone().upcast(),
+            Self::PreferencesGroup { widget, .. } => widget.clone().upcast(),
+            Self::ActionRow { widget, .. } => widget.clone().upcast(),
+            Self::SwitchRow { widget, .. } => widget.clone().upcast(),
+            Self::EntryRow { widget, .. } => widget.clone().upcast(),
+            Self::Revealer { widget, .. } => widget.clone().upcast(),
+            Self::ProgressBar { widget } => widget.clone().upcast(),
+            Self::Scale { scale_wrapper, .. } => scale_wrapper.clone().upcast(),
         }
     }
 
     fn kind_tag(&self) -> KindTag {
         match self {
-            Self::Component        { type_id, .. } => KindTag::Component(*type_id),
-            Self::Label            { .. }          => KindTag::Label,
-            Self::Box              { .. }          => KindTag::Box,
-            Self::Button           { .. }          => KindTag::Button,
-            Self::Switch           { .. }          => KindTag::Switch,
-            Self::ToggleButton     { .. }          => KindTag::ToggleButton,
-            Self::Spinner          { .. }          => KindTag::Spinner,
-            Self::Icon             { .. }          => KindTag::Icon,
-            Self::CustomButton     { .. }          => KindTag::CustomButton,
-            Self::PreferencesGroup { .. }          => KindTag::PreferencesGroup,
-            Self::ActionRow        { .. }          => KindTag::ActionRow,
-            Self::SwitchRow        { .. }          => KindTag::SwitchRow,
-            Self::EntryRow         { .. }          => KindTag::EntryRow,
-            Self::Revealer         { .. }          => KindTag::Revealer,
-            Self::ProgressBar      { .. }          => KindTag::ProgressBar,
-            Self::Scale            { .. }          => KindTag::Scale,
+            Self::Component { type_id, .. } => KindTag::Component(*type_id),
+            Self::Label { .. } => KindTag::Label,
+            Self::Box { .. } => KindTag::Box,
+            Self::Button { .. } => KindTag::Button,
+            Self::Switch { .. } => KindTag::Switch,
+            Self::ToggleButton { .. } => KindTag::ToggleButton,
+            Self::Spinner { .. } => KindTag::Spinner,
+            Self::Icon { .. } => KindTag::Icon,
+            Self::CustomButton { .. } => KindTag::CustomButton,
+            Self::PreferencesGroup { .. } => KindTag::PreferencesGroup,
+            Self::ActionRow { .. } => KindTag::ActionRow,
+            Self::SwitchRow { .. } => KindTag::SwitchRow,
+            Self::EntryRow { .. } => KindTag::EntryRow,
+            Self::Revealer { .. } => KindTag::Revealer,
+            Self::ProgressBar { .. } => KindTag::ProgressBar,
+            Self::Scale { .. } => KindTag::Scale,
         }
     }
 }
@@ -186,7 +192,7 @@ impl ReconcilerEntry {
 /// - **Key present, kind changed** → old widget removed, new one built.
 /// - **Key absent from new list** → widget removed from container.
 pub struct Reconciler<C: VdomContainer = gtk::Box> {
-    children:  Vec<(String, ReconcilerEntry)>,
+    children: Vec<(String, ReconcilerEntry)>,
     key_index: std::collections::HashMap<String, usize>,
     container: C,
 }
@@ -194,7 +200,7 @@ pub struct Reconciler<C: VdomContainer = gtk::Box> {
 impl<C: VdomContainer> Reconciler<C> {
     pub fn new(container: C) -> Self {
         Self {
-            children:  Vec::new(),
+            children: Vec::new(),
             key_index: std::collections::HashMap::new(),
             container,
         }
@@ -217,8 +223,7 @@ impl<C: VdomContainer> Reconciler<C> {
             keyed.iter().map(|(k, _)| k.as_str()).collect();
 
         // Collect desired key order for the reordering step.
-        let desired_key_order: Vec<String> =
-            keyed.iter().map(|(k, _)| k.clone()).collect();
+        let desired_key_order: Vec<String> = keyed.iter().map(|(k, _)| k.clone()).collect();
 
         // 1. Remove entries absent from the new list.
         let to_remove: Vec<String> = self
@@ -290,8 +295,7 @@ impl<C: VdomContainer> Reconciler<C> {
                 self.key_index.insert(key.clone(), new_pos);
             }
 
-            let widgets: Vec<gtk::Widget> =
-                self.children.iter().map(|(_, e)| e.widget()).collect();
+            let widgets: Vec<gtk::Widget> = self.children.iter().map(|(_, e)| e.widget()).collect();
             self.container.vdom_reorder_children(&widgets);
         }
     }
@@ -359,43 +363,43 @@ impl SingleChildReconciler {
 
 fn kind_tag_of(vnode: &VNode) -> KindTag {
     match &vnode.kind {
-        VNodeKind::Component(desc)       => KindTag::Component(desc.type_id),
-        VNodeKind::Label(_)              => KindTag::Label,
-        VNodeKind::Box(_)                => KindTag::Box,
-        VNodeKind::Button(_)             => KindTag::Button,
-        VNodeKind::Switch(_)             => KindTag::Switch,
-        VNodeKind::ToggleButton(_)       => KindTag::ToggleButton,
-        VNodeKind::Spinner(_)            => KindTag::Spinner,
-        VNodeKind::Icon(_)               => KindTag::Icon,
-        VNodeKind::CustomButton(_)       => KindTag::CustomButton,
-        VNodeKind::PreferencesGroup(_)   => KindTag::PreferencesGroup,
-        VNodeKind::ActionRow(_)          => KindTag::ActionRow,
-        VNodeKind::SwitchRow(_)          => KindTag::SwitchRow,
-        VNodeKind::EntryRow(_)           => KindTag::EntryRow,
-        VNodeKind::Revealer(_)           => KindTag::Revealer,
-        VNodeKind::ProgressBar(_)        => KindTag::ProgressBar,
-        VNodeKind::Scale(_)              => KindTag::Scale,
+        VNodeKind::Component(desc) => KindTag::Component(desc.type_id),
+        VNodeKind::Label(_) => KindTag::Label,
+        VNodeKind::Box(_) => KindTag::Box,
+        VNodeKind::Button(_) => KindTag::Button,
+        VNodeKind::Switch(_) => KindTag::Switch,
+        VNodeKind::ToggleButton(_) => KindTag::ToggleButton,
+        VNodeKind::Spinner(_) => KindTag::Spinner,
+        VNodeKind::Icon(_) => KindTag::Icon,
+        VNodeKind::CustomButton(_) => KindTag::CustomButton,
+        VNodeKind::PreferencesGroup(_) => KindTag::PreferencesGroup,
+        VNodeKind::ActionRow(_) => KindTag::ActionRow,
+        VNodeKind::SwitchRow(_) => KindTag::SwitchRow,
+        VNodeKind::EntryRow(_) => KindTag::EntryRow,
+        VNodeKind::Revealer(_) => KindTag::Revealer,
+        VNodeKind::ProgressBar(_) => KindTag::ProgressBar,
+        VNodeKind::Scale(_) => KindTag::Scale,
     }
 }
 
 fn build_entry(vnode: VNode) -> ReconcilerEntry {
     match vnode.kind {
-        VNodeKind::Component(desc)          => build_component_entry(&desc),
-        VNodeKind::Label(vlabel)            => build_label_entry(&vlabel),
-        VNodeKind::Box(vbox)               => build_box_entry(vbox),
-        VNodeKind::Button(vbtn)            => build_button_entry(vbtn),
-        VNodeKind::Switch(vsw)             => build_switch_entry(vsw),
-        VNodeKind::ToggleButton(vtb)       => build_toggle_button_entry(vtb),
-        VNodeKind::Spinner(vsp)            => build_spinner_entry(&vsp),
-        VNodeKind::Icon(vi)                => build_icon_entry(&vi),
-        VNodeKind::CustomButton(vcb)       => build_custom_button_entry(vcb),
-        VNodeKind::PreferencesGroup(vpg)   => build_preferences_group_entry(vpg),
-        VNodeKind::ActionRow(vrow)         => build_action_row_entry(vrow),
-        VNodeKind::SwitchRow(vsr)          => build_switch_row_entry(vsr),
-        VNodeKind::EntryRow(ver)           => build_entry_row_entry(ver),
-        VNodeKind::Revealer(vrev)          => build_revealer_entry(vrev),
-        VNodeKind::ProgressBar(vpb)        => build_progress_bar_entry(&vpb),
-        VNodeKind::Scale(vs)               => build_scale_entry(vs),
+        VNodeKind::Component(desc) => build_component_entry(&desc),
+        VNodeKind::Label(vlabel) => build_label_entry(&vlabel),
+        VNodeKind::Box(vbox) => build_box_entry(vbox),
+        VNodeKind::Button(vbtn) => build_button_entry(vbtn),
+        VNodeKind::Switch(vsw) => build_switch_entry(vsw),
+        VNodeKind::ToggleButton(vtb) => build_toggle_button_entry(vtb),
+        VNodeKind::Spinner(vsp) => build_spinner_entry(&vsp),
+        VNodeKind::Icon(vi) => build_icon_entry(&vi),
+        VNodeKind::CustomButton(vcb) => build_custom_button_entry(vcb),
+        VNodeKind::PreferencesGroup(vpg) => build_preferences_group_entry(vpg),
+        VNodeKind::ActionRow(vrow) => build_action_row_entry(vrow),
+        VNodeKind::SwitchRow(vsr) => build_switch_row_entry(vsr),
+        VNodeKind::EntryRow(ver) => build_entry_row_entry(ver),
+        VNodeKind::Revealer(vrev) => build_revealer_entry(vrev),
+        VNodeKind::ProgressBar(vpb) => build_progress_bar_entry(&vpb),
+        VNodeKind::Scale(vs) => build_scale_entry(vs),
     }
 }
 
@@ -403,7 +407,7 @@ fn build_component_entry(desc: &ComponentDesc) -> ReconcilerEntry {
     let component = (desc.build)();
     ReconcilerEntry::Component {
         last_props: Rc::clone(&desc.props),
-        type_id:    desc.type_id,
+        type_id: desc.type_id,
         component,
     }
 }
@@ -421,7 +425,10 @@ fn build_box_entry(vbox: VBox) -> ReconcilerEntry {
     let mut child_reconciler: std::boxed::Box<Reconciler<gtk::Box>> =
         std::boxed::Box::new(Reconciler::new(widget.clone()));
     child_reconciler.reconcile(vbox.children);
-    ReconcilerEntry::Box { widget, child_reconciler }
+    ReconcilerEntry::Box {
+        widget,
+        child_reconciler,
+    }
 }
 
 fn build_button_entry(vbtn: VButton) -> ReconcilerEntry {
@@ -429,12 +436,20 @@ fn build_button_entry(vbtn: VButton) -> ReconcilerEntry {
     widget.set_sensitive(vbtn.sensitive);
     let cb = vbtn.on_click;
     let handler_id = connect_button_handler(&widget, &cb);
-    ReconcilerEntry::Button { widget, handler_id, cb }
+    ReconcilerEntry::Button {
+        widget,
+        handler_id,
+        cb,
+    }
 }
 
 fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
     let widget = gtk::Button::new();
-    let classes: Vec<&str> = vcb.css_classes.iter().map(std::string::String::as_str).collect();
+    let classes: Vec<&str> = vcb
+        .css_classes
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     widget.set_css_classes(&classes);
     widget.set_visible(vcb.visible);
     widget.set_sensitive(vcb.sensitive);
@@ -447,13 +462,22 @@ fn build_custom_button_entry(vcb: VCustomButton) -> ReconcilerEntry {
         std::boxed::Box::new(Reconciler::new(ButtonChildContainer(widget.clone())));
     child_reconciler.reconcile(std::iter::once(*vcb.child));
 
-    ReconcilerEntry::CustomButton { widget, handler_id, cb, child_reconciler }
+    ReconcilerEntry::CustomButton {
+        widget,
+        handler_id,
+        cb,
+        child_reconciler,
+    }
 }
 
 fn build_icon_entry(vi: &VIcon) -> ReconcilerEntry {
     let widget = IconWidget::with_fallback(&vi.hints, vi.pixel_size, vi.fallback);
     widget.widget().set_visible(vi.visible);
-    let classes: Vec<&str> = vi.css_classes.iter().map(std::string::String::as_str).collect();
+    let classes: Vec<&str> = vi
+        .css_classes
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     widget.widget().set_css_classes(&classes);
     ReconcilerEntry::Icon { widget }
 }
@@ -469,18 +493,30 @@ fn build_switch_entry(vsw: VSwitch) -> ReconcilerEntry {
     let widget = gtk::Switch::new();
     widget.set_active(vsw.active);
     widget.set_sensitive(vsw.sensitive);
-    let classes: Vec<&str> = vsw.css_classes.iter().map(std::string::String::as_str).collect();
+    let classes: Vec<&str> = vsw
+        .css_classes
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     widget.set_css_classes(&classes);
     let cb = vsw.on_toggle;
     let handler_id = connect_switch_handler(&widget, &cb);
-    ReconcilerEntry::Switch { widget, handler_id, cb }
+    ReconcilerEntry::Switch {
+        widget,
+        handler_id,
+        cb,
+    }
 }
 
 fn build_toggle_button_entry(vtb: VToggleButton) -> ReconcilerEntry {
     let widget = gtk::ToggleButton::new();
     widget.set_active(vtb.active);
     widget.set_sensitive(vtb.sensitive);
-    let classes: Vec<&str> = vtb.css_classes.iter().map(std::string::String::as_str).collect();
+    let classes: Vec<&str> = vtb
+        .css_classes
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     widget.set_css_classes(&classes);
     let cb = vtb.on_toggle;
     let handler_id = connect_toggle_button_handler(&widget, &cb);
@@ -489,22 +525,34 @@ fn build_toggle_button_entry(vtb: VToggleButton) -> ReconcilerEntry {
         std::boxed::Box::new(Reconciler::new(ToggleButtonChildContainer(widget.clone())));
     child_reconciler.reconcile(std::iter::once(*vtb.child));
 
-    ReconcilerEntry::ToggleButton { widget, handler_id, cb, child_reconciler }
+    ReconcilerEntry::ToggleButton {
+        widget,
+        handler_id,
+        cb,
+        child_reconciler,
+    }
 }
 
 fn build_preferences_group_entry(vpg: VPreferencesGroup) -> ReconcilerEntry {
     let widget = adw::PreferencesGroup::new();
-    if let Some(ref t) = vpg.title { widget.set_title(t); }
+    if let Some(ref t) = vpg.title {
+        widget.set_title(t);
+    }
     let mut child_reconciler: std::boxed::Box<Reconciler<adw::PreferencesGroup>> =
         std::boxed::Box::new(Reconciler::new(widget.clone()));
     child_reconciler.reconcile(vpg.children);
-    ReconcilerEntry::PreferencesGroup { widget, child_reconciler }
+    ReconcilerEntry::PreferencesGroup {
+        widget,
+        child_reconciler,
+    }
 }
 
 fn build_action_row_entry(vrow: VActionRow) -> ReconcilerEntry {
     let widget = adw::ActionRow::new();
     widget.set_title(&vrow.title);
-    if let Some(ref s) = vrow.subtitle { widget.set_subtitle(s); }
+    if let Some(ref s) = vrow.subtitle {
+        widget.set_subtitle(s);
+    }
     widget.set_activatable(vrow.activatable);
 
     let cb = vrow.on_activate;
@@ -513,23 +561,29 @@ fn build_action_row_entry(vrow: VActionRow) -> ReconcilerEntry {
         widget.connect_activated(move |_| f())
     });
 
-    let mut suffix_reconciler = std::boxed::Box::new(
-        Reconciler::new(ActionRowSuffixContainer(widget.clone()))
-    );
+    let mut suffix_reconciler =
+        std::boxed::Box::new(Reconciler::new(ActionRowSuffixContainer(widget.clone())));
     suffix_reconciler.reconcile(vrow.suffix);
 
-    let mut prefix_reconciler = std::boxed::Box::new(
-        Reconciler::new(ActionRowPrefixContainer(widget.clone()))
-    );
+    let mut prefix_reconciler =
+        std::boxed::Box::new(Reconciler::new(ActionRowPrefixContainer(widget.clone())));
     prefix_reconciler.reconcile(vrow.prefix);
 
-    ReconcilerEntry::ActionRow { widget, handler_id, cb, suffix_reconciler, prefix_reconciler }
+    ReconcilerEntry::ActionRow {
+        widget,
+        handler_id,
+        cb,
+        suffix_reconciler,
+        prefix_reconciler,
+    }
 }
 
 fn build_switch_row_entry(vsr: VSwitchRow) -> ReconcilerEntry {
     let widget = adw::SwitchRow::new();
     widget.set_title(&vsr.title);
-    if let Some(ref s) = vsr.subtitle { widget.set_subtitle(s); }
+    if let Some(ref s) = vsr.subtitle {
+        widget.set_subtitle(s);
+    }
     widget.set_sensitive(vsr.sensitive);
     // Set active before connecting handler to avoid spurious callback.
     widget.set_active(vsr.active);
@@ -538,7 +592,11 @@ fn build_switch_row_entry(vsr: VSwitchRow) -> ReconcilerEntry {
         let f = f.clone();
         widget.connect_active_notify(move |sw| f(sw.is_active()))
     });
-    ReconcilerEntry::SwitchRow { widget, handler_id, cb }
+    ReconcilerEntry::SwitchRow {
+        widget,
+        handler_id,
+        cb,
+    }
 }
 
 fn build_entry_row_entry(ver: VEntryRow) -> ReconcilerEntry {
@@ -552,7 +610,11 @@ fn build_entry_row_entry(ver: VEntryRow) -> ReconcilerEntry {
         let f = f.clone();
         widget.connect_text_notify(move |er| f(er.text().into()))
     });
-    ReconcilerEntry::EntryRow { widget, handler_id, cb }
+    ReconcilerEntry::EntryRow {
+        widget,
+        handler_id,
+        cb,
+    }
 }
 
 fn build_revealer_entry(vrev: VRevealer) -> ReconcilerEntry {
@@ -570,13 +632,20 @@ fn build_revealer_entry(vrev: VRevealer) -> ReconcilerEntry {
         std::boxed::Box::new(Reconciler::new(child_container));
     child_reconciler.reconcile(std::iter::once(*vrev.child));
 
-    ReconcilerEntry::Revealer { widget, child_reconciler }
+    ReconcilerEntry::Revealer {
+        widget,
+        child_reconciler,
+    }
 }
 
 fn build_progress_bar_entry(vpb: &VProgressBar) -> ReconcilerEntry {
     let widget = gtk::ProgressBar::new();
     widget.set_fraction(vpb.fraction);
-    let classes: Vec<&str> = vpb.css_classes.iter().map(std::string::String::as_str).collect();
+    let classes: Vec<&str> = vpb
+        .css_classes
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     widget.set_css_classes(&classes);
     widget.set_visible(vpb.visible);
     ReconcilerEntry::ProgressBar { widget }
@@ -602,17 +671,15 @@ fn schedule_scale_interaction_end(
     let debounce_source_inner = debounce_source.clone();
     let on_value_commit = on_value_commit.clone();
 
-    let source_id = glib::timeout_add_local_once(
-        std::time::Duration::from_millis(delay_ms),
-        move || {
+    let source_id =
+        glib::timeout_add_local_once(std::time::Duration::from_millis(delay_ms), move || {
             *debounce_source_inner.borrow_mut() = None;
             let committed_value = scale.value() / 100.0;
             *interacting.borrow_mut() = false;
             if let Some(ref callback) = *on_value_commit.borrow() {
                 callback(committed_value);
             }
-        },
-    );
+        });
 
     *debounce_source.borrow_mut() = Some(source_id);
 }
@@ -622,7 +689,11 @@ fn build_scale_entry(vs: VScale) -> ReconcilerEntry {
     let scale = gtk::Scale::new(gtk::Orientation::Horizontal, Some(&adjustment));
     scale.set_draw_value(false);
     scale.set_hexpand(true);
-    let classes: Vec<&str> = vs.css_classes.iter().map(std::string::String::as_str).collect();
+    let classes: Vec<&str> = vs
+        .css_classes
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     scale.set_css_classes(&classes);
 
     let scale_wrapper = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -634,10 +705,8 @@ fn build_scale_entry(vs: VScale) -> ReconcilerEntry {
     let debounce_source: SourceIdRefCell = Rc::new(RefCell::new(None));
 
     // Wrap callbacks in Rc<RefCell<...>> so closures always read the latest version.
-    let on_value_change: ValueCallback =
-        Rc::new(RefCell::new(vs.on_value_change));
-    let on_value_commit: ValueCallback =
-        Rc::new(RefCell::new(vs.on_value_commit));
+    let on_value_change: ValueCallback = Rc::new(RefCell::new(vs.on_value_change));
+    let on_value_commit: ValueCallback = Rc::new(RefCell::new(vs.on_value_commit));
 
     // Connect value-changed signal
     let on_vc = on_value_change.clone();
@@ -748,7 +817,14 @@ fn build_scale_entry(vs: VScale) -> ReconcilerEntry {
 
 fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
     match (entry, vnode.kind) {
-        (ReconcilerEntry::Component { component, last_props, .. }, VNodeKind::Component(desc)) => {
+        (
+            ReconcilerEntry::Component {
+                component,
+                last_props,
+                ..
+            },
+            VNodeKind::Component(desc),
+        ) => {
             if !(desc.props_eq)(last_props) {
                 (desc.update)(component.as_ref());
                 *last_props = Rc::clone(&desc.props);
@@ -759,20 +835,42 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             apply_label_markup(widget, &vlabel);
             apply_label_props(widget, &vlabel);
         }
-        (ReconcilerEntry::Box { widget, child_reconciler }, VNodeKind::Box(vbox)) => {
+        (
+            ReconcilerEntry::Box {
+                widget,
+                child_reconciler,
+            },
+            VNodeKind::Box(vbox),
+        ) => {
             apply_box_props(widget, &vbox);
             child_reconciler.reconcile(vbox.children);
         }
-        (ReconcilerEntry::Button { widget, handler_id, cb }, VNodeKind::Button(vbtn)) => {
+        (
+            ReconcilerEntry::Button {
+                widget,
+                handler_id,
+                cb,
+            },
+            VNodeKind::Button(vbtn),
+        ) => {
             widget.set_label(&vbtn.label);
             widget.set_sensitive(vbtn.sensitive);
             if !rc_option_ptr_eq(cb, &vbtn.on_click) {
-                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+                if let Some(id) = handler_id.take() {
+                    widget.disconnect(id);
+                }
                 *handler_id = connect_button_handler(widget, &vbtn.on_click);
                 *cb = vbtn.on_click;
             }
         }
-        (ReconcilerEntry::Switch { widget, handler_id, cb }, VNodeKind::Switch(vsw)) => {
+        (
+            ReconcilerEntry::Switch {
+                widget,
+                handler_id,
+                cb,
+            },
+            VNodeKind::Switch(vsw),
+        ) => {
             let same_cb = rc_option_ptr_eq(cb, &vsw.on_toggle);
             if !same_cb && let Some(id) = handler_id.take() {
                 widget.disconnect(id);
@@ -780,15 +878,26 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             // Set active BEFORE reconnecting handler to avoid spurious callbacks.
             widget.set_active(vsw.active);
             widget.set_sensitive(vsw.sensitive);
-            let classes: Vec<&str> = vsw.css_classes.iter().map(std::string::String::as_str).collect();
+            let classes: Vec<&str> = vsw
+                .css_classes
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             widget.set_css_classes(&classes);
             if !same_cb {
                 *handler_id = connect_switch_handler(widget, &vsw.on_toggle);
                 *cb = vsw.on_toggle;
             }
         }
-        (ReconcilerEntry::ToggleButton { widget, handler_id, cb, child_reconciler },
-         VNodeKind::ToggleButton(vtb)) => {
+        (
+            ReconcilerEntry::ToggleButton {
+                widget,
+                handler_id,
+                cb,
+                child_reconciler,
+            },
+            VNodeKind::ToggleButton(vtb),
+        ) => {
             let same_cb = rc_option_ptr_eq(cb, &vtb.on_toggle);
             if !same_cb && let Some(id) = handler_id.take() {
                 widget.disconnect(id);
@@ -796,7 +905,11 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             // Set active BEFORE reconnecting handler to avoid spurious callbacks.
             widget.set_active(vtb.active);
             widget.set_sensitive(vtb.sensitive);
-            let classes: Vec<&str> = vtb.css_classes.iter().map(std::string::String::as_str).collect();
+            let classes: Vec<&str> = vtb
+                .css_classes
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             widget.set_css_classes(&classes);
             if !same_cb {
                 *handler_id = connect_toggle_button_handler(widget, &vtb.on_toggle);
@@ -811,42 +924,74 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
         (ReconcilerEntry::Icon { widget }, VNodeKind::Icon(vi)) => {
             widget.update_icon(&vi.hints);
             widget.widget().set_visible(vi.visible);
-            let classes: Vec<&str> = vi.css_classes.iter().map(std::string::String::as_str).collect();
+            let classes: Vec<&str> = vi
+                .css_classes
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             widget.widget().set_css_classes(&classes);
         }
-        (ReconcilerEntry::CustomButton { widget, handler_id, cb, child_reconciler },
-         VNodeKind::CustomButton(vcb)) => {
-            let classes: Vec<&str> = vcb.css_classes.iter().map(std::string::String::as_str).collect();
+        (
+            ReconcilerEntry::CustomButton {
+                widget,
+                handler_id,
+                cb,
+                child_reconciler,
+            },
+            VNodeKind::CustomButton(vcb),
+        ) => {
+            let classes: Vec<&str> = vcb
+                .css_classes
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             widget.set_css_classes(&classes);
             widget.set_visible(vcb.visible);
             widget.set_sensitive(vcb.sensitive);
             widget.set_hexpand(vcb.hexpand);
             widget.set_vexpand(vcb.vexpand);
             if !rc_option_ptr_eq(cb, &vcb.on_click) {
-                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+                if let Some(id) = handler_id.take() {
+                    widget.disconnect(id);
+                }
                 *handler_id = connect_button_handler(widget, &vcb.on_click);
                 *cb = vcb.on_click;
             }
             child_reconciler.reconcile(std::iter::once(*vcb.child));
         }
-        (ReconcilerEntry::PreferencesGroup { widget, child_reconciler },
-         VNodeKind::PreferencesGroup(vpg)) => {
+        (
+            ReconcilerEntry::PreferencesGroup {
+                widget,
+                child_reconciler,
+            },
+            VNodeKind::PreferencesGroup(vpg),
+        ) => {
             match vpg.title {
                 Some(ref t) => widget.set_title(t),
-                None        => widget.set_title(""),
+                None => widget.set_title(""),
             }
             child_reconciler.reconcile(vpg.children);
         }
-        (ReconcilerEntry::ActionRow { widget, handler_id, cb, suffix_reconciler, prefix_reconciler },
-         VNodeKind::ActionRow(vrow)) => {
+        (
+            ReconcilerEntry::ActionRow {
+                widget,
+                handler_id,
+                cb,
+                suffix_reconciler,
+                prefix_reconciler,
+            },
+            VNodeKind::ActionRow(vrow),
+        ) => {
             widget.set_title(&vrow.title);
             match vrow.subtitle {
                 Some(ref s) => widget.set_subtitle(s),
-                None        => widget.set_subtitle(""),
+                None => widget.set_subtitle(""),
             }
             widget.set_activatable(vrow.activatable);
             if !rc_option_ptr_eq(cb, &vrow.on_activate) {
-                if let Some(id) = handler_id.take() { widget.disconnect(id); }
+                if let Some(id) = handler_id.take() {
+                    widget.disconnect(id);
+                }
                 *handler_id = vrow.on_activate.as_ref().map(|f| {
                     let f = f.clone();
                     widget.connect_activated(move |_| f())
@@ -856,11 +1001,18 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
             suffix_reconciler.reconcile(vrow.suffix);
             prefix_reconciler.reconcile(vrow.prefix);
         }
-        (ReconcilerEntry::SwitchRow { widget, handler_id, cb }, VNodeKind::SwitchRow(vsr)) => {
+        (
+            ReconcilerEntry::SwitchRow {
+                widget,
+                handler_id,
+                cb,
+            },
+            VNodeKind::SwitchRow(vsr),
+        ) => {
             widget.set_title(&vsr.title);
             match vsr.subtitle {
                 Some(ref s) => widget.set_subtitle(s),
-                None        => widget.set_subtitle(""),
+                None => widget.set_subtitle(""),
             }
             widget.set_sensitive(vsr.sensitive);
             let same_cb = rc_option_ptr_eq(cb, &vsr.on_toggle);
@@ -877,7 +1029,14 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
                 *cb = vsr.on_toggle;
             }
         }
-        (ReconcilerEntry::EntryRow { widget, handler_id, cb }, VNodeKind::EntryRow(ver)) => {
+        (
+            ReconcilerEntry::EntryRow {
+                widget,
+                handler_id,
+                cb,
+            },
+            VNodeKind::EntryRow(ver),
+        ) => {
             widget.set_title(&ver.title);
             widget.set_sensitive(ver.sensitive);
             let same_cb = rc_option_ptr_eq(cb, &ver.on_change);
@@ -895,27 +1054,48 @@ fn update_entry(entry: &mut ReconcilerEntry, vnode: VNode) {
         }
         (ReconcilerEntry::ProgressBar { widget }, VNodeKind::ProgressBar(vpb)) => {
             widget.set_fraction(vpb.fraction);
-            let classes: Vec<&str> = vpb.css_classes.iter().map(std::string::String::as_str).collect();
+            let classes: Vec<&str> = vpb
+                .css_classes
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             widget.set_css_classes(&classes);
             widget.set_visible(vpb.visible);
         }
-        (ReconcilerEntry::Revealer { widget, child_reconciler },
-         VNodeKind::Revealer(vrev)) => {
+        (
+            ReconcilerEntry::Revealer {
+                widget,
+                child_reconciler,
+            },
+            VNodeKind::Revealer(vrev),
+        ) => {
             widget.set_reveal_child(vrev.reveal);
             widget.set_transition_type(vrev.transition_type);
             widget.set_transition_duration(vrev.transition_duration);
             child_reconciler.reconcile(std::iter::once(*vrev.child));
         }
-        (ReconcilerEntry::Scale { widget, handler_id, interacting,
-                                  on_value_change, on_value_commit, .. },
-         VNodeKind::Scale(vs)) => {
+        (
+            ReconcilerEntry::Scale {
+                widget,
+                handler_id,
+                interacting,
+                on_value_change,
+                on_value_commit,
+                ..
+            },
+            VNodeKind::Scale(vs),
+        ) => {
             // If the user is actively interacting, skip the backend value update.
             if !*interacting.borrow() {
                 widget.block_signal(handler_id);
                 widget.set_value(vs.value * 100.0);
                 widget.unblock_signal(handler_id);
             }
-            let classes: Vec<&str> = vs.css_classes.iter().map(std::string::String::as_str).collect();
+            let classes: Vec<&str> = vs
+                .css_classes
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             widget.set_css_classes(&classes);
             // Replace the inner callback values. All closures (value-changed
             // handler, gesture handlers, scroll handler) hold Rc-clones of
@@ -944,7 +1124,11 @@ fn apply_label_markup(widget: &gtk::Label, vlabel: &VLabel) {
 }
 
 fn apply_label_props(widget: &gtk::Label, vlabel: &VLabel) {
-    let classes: Vec<&str> = vlabel.css_classes.iter().map(std::string::String::as_str).collect();
+    let classes: Vec<&str> = vlabel
+        .css_classes
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     widget.set_css_classes(&classes);
     if let Some(x) = vlabel.xalign {
         widget.set_xalign(x);
@@ -960,10 +1144,18 @@ fn apply_label_props(widget: &gtk::Label, vlabel: &VLabel) {
 }
 
 fn apply_box_props(widget: &gtk::Box, vbox: &VBox) {
-    let classes: Vec<&str> = vbox.css_classes.iter().map(std::string::String::as_str).collect();
+    let classes: Vec<&str> = vbox
+        .css_classes
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     widget.set_css_classes(&classes);
-    if let Some(a) = vbox.valign { widget.set_valign(a); }
-    if let Some(a) = vbox.halign { widget.set_halign(a); }
+    if let Some(a) = vbox.valign {
+        widget.set_valign(a);
+    }
+    if let Some(a) = vbox.halign {
+        widget.set_halign(a);
+    }
     widget.set_hexpand(vbox.hexpand);
     widget.set_vexpand(vbox.vexpand);
     // orientation and spacing are set at construction and cannot be changed cheaply.
@@ -975,8 +1167,8 @@ fn apply_box_props(widget: &gtk::Box, vbox: &VBox) {
 fn rc_option_ptr_eq<T: ?Sized>(a: &Option<Rc<T>>, b: &Option<Rc<T>>) -> bool {
     match (a, b) {
         (Some(a), Some(b)) => Rc::ptr_eq(a, b),
-        (None,    None)    => true,
-        _                  => false,
+        (None, None) => true,
+        _ => false,
     }
 }
 

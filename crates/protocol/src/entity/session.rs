@@ -143,7 +143,11 @@ mod tests {
 
     #[test]
     fn restart_policy_serde_roundtrip() {
-        for policy in [RestartPolicy::No, RestartPolicy::OnFailure, RestartPolicy::Always] {
+        for policy in [
+            RestartPolicy::No,
+            RestartPolicy::OnFailure,
+            RestartPolicy::Always,
+        ] {
             let json = serde_json::to_value(policy).unwrap();
             let decoded: RestartPolicy = serde_json::from_value(json).unwrap();
             assert_eq!(policy, decoded);

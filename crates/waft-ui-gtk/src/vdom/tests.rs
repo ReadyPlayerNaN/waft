@@ -1,14 +1,17 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk::prelude::*;
 use adw::prelude::*;
+use gtk::prelude::*;
 
+use super::primitives::{
+    VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup,
+    VProgressBar, VRevealer, VScale, VSpinner, VSwitch, VSwitchRow,
+};
+use super::{RenderCallback, RenderComponent, RenderFn};
 use crate::icons::Icon;
 use crate::test_init::init_gtk_for_tests;
 use crate::vdom::{Component, Reconciler, VNode};
-use super::{RenderCallback, RenderComponent, RenderFn};
-use super::primitives::{VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup, VProgressBar, VRevealer, VScale, VSpinner, VSwitch, VSwitchRow};
 
 // ── Minimal test component ────────────────────────────────────────────────
 
@@ -24,11 +27,13 @@ struct LabelComponent {
 }
 
 impl Component for LabelComponent {
-    type Props  = LabelProps;
+    type Props = LabelProps;
     type Output = Never;
 
     fn build(props: &LabelProps) -> Self {
-        Self { label: gtk::Label::new(Some(&props.text)) }
+        Self {
+            label: gtk::Label::new(Some(&props.text)),
+        }
     }
 
     fn update(&self, props: &LabelProps) {
@@ -72,7 +77,11 @@ fn test_updates_widget_when_props_change() {
     let (container, mut r) = make_reconciler();
     r.reconcile([label_node("hello").key("x")]);
 
-    let child = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    let child = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
     assert_eq!(child.label(), "hello");
 
     r.reconcile([label_node("world").key("x")]);
@@ -83,7 +92,9 @@ fn test_updates_widget_when_props_change() {
 
 fn test_preserves_widget_identity_when_props_unchanged() {
     let (container, mut r) = make_reconciler();
-    let props = LabelProps { text: "stable".into() };
+    let props = LabelProps {
+        text: "stable".into(),
+    };
 
     r.reconcile([VNode::new::<LabelComponent>(props.clone()).key("x")]);
     let ptr_before = container.first_child().unwrap().as_ptr();
@@ -104,16 +115,28 @@ fn test_removes_widget_when_key_absent() {
 
 fn test_rebuilds_widget_when_component_type_changes() {
     #[derive(Clone, PartialEq)]
-    struct ButtonProps { label: String }
+    struct ButtonProps {
+        label: String,
+    }
 
-    struct ButtonComponent { button: gtk::Button }
+    struct ButtonComponent {
+        button: gtk::Button,
+    }
 
     impl Component for ButtonComponent {
-        type Props  = ButtonProps;
+        type Props = ButtonProps;
         type Output = Never;
-        fn build(p: &ButtonProps) -> Self { Self { button: gtk::Button::with_label(&p.label) } }
-        fn update(&self, p: &ButtonProps) { self.button.set_label(&p.label); }
-        fn widget(&self) -> gtk::Widget { self.button.clone().upcast() }
+        fn build(p: &ButtonProps) -> Self {
+            Self {
+                button: gtk::Button::with_label(&p.label),
+            }
+        }
+        fn update(&self, p: &ButtonProps) {
+            self.button.set_label(&p.label);
+        }
+        fn widget(&self) -> gtk::Widget {
+            self.button.clone().upcast()
+        }
         fn connect_output<F: Fn(Never) + 'static>(&self, _: F) {}
     }
 
@@ -122,9 +145,10 @@ fn test_rebuilds_widget_when_component_type_changes() {
     r.reconcile([label_node("hello").key("x")]);
     let old_ptr = container.first_child().unwrap().as_ptr();
 
-    r.reconcile([
-        VNode::new::<ButtonComponent>(ButtonProps { label: "click".into() }).key("x"),
-    ]);
+    r.reconcile([VNode::new::<ButtonComponent>(ButtonProps {
+        label: "click".into(),
+    })
+    .key("x")]);
     // Type changed → old widget destroyed, new widget created.
     assert_ne!(container.first_child().unwrap().as_ptr(), old_ptr);
     assert_eq!(container.observe_children().n_items(), 1);
@@ -134,7 +158,11 @@ fn test_clears_all_children(r: &mut Reconciler, container: &gtk::Box) {
     r.reconcile([label_node("a").key("a"), label_node("b").key("b")]);
     assert_eq!(container.observe_children().n_items(), 2);
     r.reconcile(std::iter::empty::<VNode>());
-    assert_eq!(container.observe_children().n_items(), 0, "reconciling empty list must remove all children");
+    assert_eq!(
+        container.observe_children().n_items(),
+        0,
+        "reconciling empty list must remove all children"
+    );
 }
 
 fn test_wires_output_callback_at_build_time() {
@@ -142,7 +170,9 @@ fn test_wires_output_callback_at_build_time() {
     struct ClickProps;
 
     #[allow(dead_code)]
-    enum ClickOutput { Clicked }
+    enum ClickOutput {
+        Clicked,
+    }
 
     struct ClickComponent {
         button: gtk::Button,
@@ -150,13 +180,18 @@ fn test_wires_output_callback_at_build_time() {
     }
 
     impl Component for ClickComponent {
-        type Props  = ClickProps;
+        type Props = ClickProps;
         type Output = ClickOutput;
         fn build(_: &ClickProps) -> Self {
-            Self { button: gtk::Button::new(), on_output: Rc::new(RefCell::new(None)) }
+            Self {
+                button: gtk::Button::new(),
+                on_output: Rc::new(RefCell::new(None)),
+            }
         }
         fn update(&self, _: &ClickProps) {}
-        fn widget(&self) -> gtk::Widget { self.button.clone().upcast() }
+        fn widget(&self) -> gtk::Widget {
+            self.button.clone().upcast()
+        }
         fn connect_output<F: Fn(ClickOutput) + 'static>(&self, callback: F) {
             *self.on_output.borrow_mut() = Some(Box::new(callback));
         }
@@ -168,13 +203,17 @@ fn test_wires_output_callback_at_build_time() {
     let fired = Rc::new(RefCell::new(false));
     let fired_clone = fired.clone();
 
-    r.reconcile([
-        VNode::with_output::<ClickComponent>(ClickProps, move |_| {
+    r.reconcile([VNode::with_output::<ClickComponent>(
+        ClickProps,
+        move |_| {
             *fired_clone.borrow_mut() = true;
-        }),
-    ]);
+        },
+    )]);
 
-    assert!(!*fired.borrow(), "callback fires only on user action, not on build");
+    assert!(
+        !*fired.borrow(),
+        "callback fires only on user action, not on build"
+    );
 }
 
 // ── Primitive VNode tests ─────────────────────────────────────────────────
@@ -183,14 +222,22 @@ fn test_label_builds_gtk_label() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::label(VLabel::new("hello"))]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let child = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    let child = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
     assert_eq!(child.label(), "hello");
 }
 
 fn test_label_updates_text_on_reconcile() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::label(VLabel::new("hello")).key("l")]);
-    let child = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    let child = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
     assert_eq!(child.label(), "hello");
 
     r.reconcile([VNode::label(VLabel::new("world")).key("l")]);
@@ -201,7 +248,11 @@ fn test_label_updates_text_on_reconcile() {
 fn test_label_applies_css_classes() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::label(VLabel::new("x").css_class("dim-label"))]);
-    let child = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    let child = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
     assert!(child.css_classes().iter().any(|c| c == "dim-label"));
 }
 
@@ -213,7 +264,11 @@ fn test_vbox_builds_with_children() {
             .child(VNode::label(VLabel::new("b"))),
     )]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let inner = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    let inner = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Box>()
+        .unwrap();
     assert_eq!(inner.observe_children().n_items(), 2);
 }
 
@@ -225,14 +280,17 @@ fn test_vbox_reconciles_child_list() {
             .child(VNode::label(VLabel::new("b")).key("b")),
     )
     .key("box")]);
-    let inner = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    let inner = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Box>()
+        .unwrap();
     assert_eq!(inner.observe_children().n_items(), 2);
 
     // Remove one child.
-    r.reconcile([VNode::vbox(
-        VBox::vertical(0).child(VNode::label(VLabel::new("a")).key("a")),
-    )
-    .key("box")]);
+    r.reconcile([
+        VNode::vbox(VBox::vertical(0).child(VNode::label(VLabel::new("a")).key("a"))).key("box"),
+    ]);
     assert_eq!(inner.observe_children().n_items(), 1);
 }
 
@@ -241,11 +299,9 @@ fn test_button_connects_click_handler() {
     let clicked_clone = clicked.clone();
 
     let (_, mut r) = make_reconciler();
-    r.reconcile([VNode::button(
-        VButton::new("OK").on_click(move || {
-            *clicked_clone.borrow_mut() = true;
-        }),
-    )]);
+    r.reconcile([VNode::button(VButton::new("OK").on_click(move || {
+        *clicked_clone.borrow_mut() = true;
+    }))]);
 
     // Verify the widget was built (click simulation not needed for handler wiring test).
     assert!(!*clicked.borrow(), "click not fired on build");
@@ -254,7 +310,11 @@ fn test_button_connects_click_handler() {
 fn test_switch_sets_active_state() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::switch(VSwitch::new(true)).key("sw")]);
-    let child = container.first_child().unwrap().downcast::<gtk::Switch>().unwrap();
+    let child = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Switch>()
+        .unwrap();
     assert!(child.is_active());
 
     r.reconcile([VNode::switch(VSwitch::new(false)).key("sw")]);
@@ -280,10 +340,12 @@ fn test_render_component_builds_from_render_fn() {
     struct SimpleRender;
 
     #[derive(Clone, PartialEq)]
-    struct SimpleProps { text: String }
+    struct SimpleProps {
+        text: String,
+    }
 
     impl RenderFn for SimpleRender {
-        type Props  = SimpleProps;
+        type Props = SimpleProps;
         type Output = ();
         fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
             VNode::label(VLabel::new(&props.text))
@@ -291,12 +353,16 @@ fn test_render_component_builds_from_render_fn() {
     }
 
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::new::<RenderComponent<SimpleRender>>(
-        SimpleProps { text: "hello".into() },
-    )]);
+    r.reconcile([VNode::new::<RenderComponent<SimpleRender>>(SimpleProps {
+        text: "hello".into(),
+    })]);
     assert_eq!(container.observe_children().n_items(), 1);
     // Root widget is the rendered label directly — no gtk::Box wrapper.
-    let label = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    let label = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
     assert_eq!(label.label(), "hello");
 }
 
@@ -304,10 +370,12 @@ fn test_render_component_updates_on_props_change() {
     struct UpdatingRender;
 
     #[derive(Clone, PartialEq)]
-    struct UpdatingProps { text: String }
+    struct UpdatingProps {
+        text: String,
+    }
 
     impl RenderFn for UpdatingRender {
-        type Props  = UpdatingProps;
+        type Props = UpdatingProps;
         type Output = ();
         fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
             VNode::label(VLabel::new(&props.text))
@@ -315,19 +383,27 @@ fn test_render_component_updates_on_props_change() {
     }
 
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::new::<RenderComponent<UpdatingRender>>(
-        UpdatingProps { text: "before".into() },
-    )
-    .key("rc")]);
+    r.reconcile([
+        VNode::new::<RenderComponent<UpdatingRender>>(UpdatingProps {
+            text: "before".into(),
+        })
+        .key("rc"),
+    ]);
 
     // Root widget is the rendered label directly — no gtk::Box wrapper.
-    let label = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    let label = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
     assert_eq!(label.label(), "before");
 
-    r.reconcile([VNode::new::<RenderComponent<UpdatingRender>>(
-        UpdatingProps { text: "after".into() },
-    )
-    .key("rc")]);
+    r.reconcile([
+        VNode::new::<RenderComponent<UpdatingRender>>(UpdatingProps {
+            text: "after".into(),
+        })
+        .key("rc"),
+    ]);
     assert_eq!(label.label(), "after");
 }
 
@@ -338,20 +414,20 @@ fn test_render_component_emit_callback_wired() {
     struct EmitProps;
 
     #[allow(dead_code)]
-    enum EmitOutput { Fired }
+    enum EmitOutput {
+        Fired,
+    }
 
     impl RenderFn for EmittingRender {
-        type Props  = EmitProps;
+        type Props = EmitProps;
         type Output = EmitOutput;
         fn render(_props: &Self::Props, emit: &RenderCallback<EmitOutput>) -> VNode {
             let emit = emit.clone();
-            VNode::button(
-                super::primitives::VButton::new("Fire").on_click(move || {
-                    if let Some(ref cb) = *emit.borrow() {
-                        cb(EmitOutput::Fired);
-                    }
-                }),
-            )
+            VNode::button(super::primitives::VButton::new("Fire").on_click(move || {
+                if let Some(ref cb) = *emit.borrow() {
+                    cb(EmitOutput::Fired);
+                }
+            }))
         }
     }
 
@@ -361,7 +437,9 @@ fn test_render_component_emit_callback_wired() {
 
     r.reconcile([VNode::with_output::<RenderComponent<EmittingRender>>(
         EmitProps,
-        move |_| { *fired_clone.borrow_mut() = true; },
+        move |_| {
+            *fired_clone.borrow_mut() = true;
+        },
     )]);
 
     // Output callback is wired; clicking would set fired=true.
@@ -375,7 +453,11 @@ fn test_spinner_builds_and_reflects_state() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::spinner(VSpinner::new(true))]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let spinner = container.first_child().unwrap().downcast::<gtk::Spinner>().unwrap();
+    let spinner = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Spinner>()
+        .unwrap();
     assert!(spinner.is_spinning());
     assert!(spinner.is_visible());
 }
@@ -383,7 +465,11 @@ fn test_spinner_builds_and_reflects_state() {
 fn test_spinner_updates_state() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::spinner(VSpinner::new(true)).key("s")]);
-    let spinner = container.first_child().unwrap().downcast::<gtk::Spinner>().unwrap();
+    let spinner = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Spinner>()
+        .unwrap();
     r.reconcile([VNode::spinner(VSpinner::new(false).visible(false)).key("s")]);
     assert!(!spinner.is_spinning());
     assert!(!spinner.is_visible());
@@ -408,17 +494,25 @@ fn test_icon_hidden_when_invisible() {
 
 fn test_vbox_valign_applied() {
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::vbox(
-        VBox::horizontal(4).valign(gtk::Align::Center),
-    )]);
-    let child = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
+    r.reconcile([VNode::vbox(VBox::horizontal(4).valign(gtk::Align::Center))]);
+    let child = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Box>()
+        .unwrap();
     assert_eq!(child.valign(), gtk::Align::Center);
 }
 
 fn test_vswitch_css_classes_applied() {
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::switch(VSwitch::new(false).css_class("device-switch"))]);
-    let child = container.first_child().unwrap().downcast::<gtk::Switch>().unwrap();
+    r.reconcile([VNode::switch(
+        VSwitch::new(false).css_class("device-switch"),
+    )]);
+    let child = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Switch>()
+        .unwrap();
     assert!(child.css_classes().iter().any(|c| c == "device-switch"));
 }
 
@@ -427,17 +521,25 @@ fn test_vlabel_ellipsize_applied() {
     r.reconcile([VNode::label(
         VLabel::new("long text").ellipsize(gtk::pango::EllipsizeMode::End),
     )]);
-    let child = container.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    let child = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
     assert_eq!(child.ellipsize(), gtk::pango::EllipsizeMode::End);
 }
 
 fn test_custom_button_builds_with_child_vnode() {
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::custom_button(
-        VCustomButton::new(VNode::label(VLabel::new("inner"))),
-    )]);
+    r.reconcile([VNode::custom_button(VCustomButton::new(VNode::label(
+        VLabel::new("inner"),
+    )))]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let btn = container.first_child().unwrap().downcast::<gtk::Button>().unwrap();
+    let btn = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Button>()
+        .unwrap();
     // Child is set directly on the button — no intermediate gtk::Box wrapper.
     let label = btn.child().unwrap().downcast::<gtk::Label>().unwrap();
     assert_eq!(label.label(), "inner");
@@ -445,17 +547,23 @@ fn test_custom_button_builds_with_child_vnode() {
 
 fn test_custom_button_updates_child_vnode() {
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::custom_button(
-        VCustomButton::new(VNode::label(VLabel::new("before")).key("l")),
-    ).key("cb")]);
-    let btn = container.first_child().unwrap().downcast::<gtk::Button>().unwrap();
+    r.reconcile([VNode::custom_button(VCustomButton::new(
+        VNode::label(VLabel::new("before")).key("l"),
+    ))
+    .key("cb")]);
+    let btn = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Button>()
+        .unwrap();
     // Child is set directly on the button — no intermediate gtk::Box wrapper.
     let label = btn.child().unwrap().downcast::<gtk::Label>().unwrap();
     assert_eq!(label.label(), "before");
 
-    r.reconcile([VNode::custom_button(
-        VCustomButton::new(VNode::label(VLabel::new("after")).key("l")),
-    ).key("cb")]);
+    r.reconcile([VNode::custom_button(VCustomButton::new(
+        VNode::label(VLabel::new("after")).key("l"),
+    ))
+    .key("cb")]);
     assert_eq!(label.label(), "after");
     assert_eq!(container.observe_children().n_items(), 1);
 }
@@ -463,10 +571,13 @@ fn test_custom_button_updates_child_vnode() {
 fn test_custom_button_css_classes() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::custom_button(
-        VCustomButton::new(VNode::label(VLabel::new("x")))
-            .css_classes(["flat", "device-row"]),
+        VCustomButton::new(VNode::label(VLabel::new("x"))).css_classes(["flat", "device-row"]),
     )]);
-    let btn = container.first_child().unwrap().downcast::<gtk::Button>().unwrap();
+    let btn = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Button>()
+        .unwrap();
     assert!(btn.css_classes().iter().any(|c| c == "flat"));
     assert!(btn.css_classes().iter().any(|c| c == "device-row"));
 }
@@ -479,7 +590,11 @@ fn test_preferences_group_builds_with_title() {
         VPreferencesGroup::new().title("Devices"),
     )]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let pg = container.first_child().unwrap().downcast::<adw::PreferencesGroup>().unwrap();
+    let pg = container
+        .first_child()
+        .unwrap()
+        .downcast::<adw::PreferencesGroup>()
+        .unwrap();
     assert_eq!(pg.title(), "Devices");
 }
 
@@ -489,7 +604,8 @@ fn test_preferences_group_reconciles_children() {
         VPreferencesGroup::new()
             .child(VNode::action_row(VActionRow::new("Row A")).key("a"))
             .child(VNode::action_row(VActionRow::new("Row B")).key("b")),
-    ).key("pg")]);
+    )
+    .key("pg")]);
     // adw::PreferencesGroup manages its own internal header/footer widgets so
     // observe_children() cannot be used to count rows directly. We verify that
     // the outer container holds exactly 1 group and that re-reconciling with
@@ -498,9 +614,9 @@ fn test_preferences_group_reconciles_children() {
     // with all other container primitives.
     assert_eq!(container.observe_children().n_items(), 1);
     r.reconcile([VNode::preferences_group(
-        VPreferencesGroup::new()
-            .child(VNode::action_row(VActionRow::new("Row A")).key("a")),
-    ).key("pg")]);
+        VPreferencesGroup::new().child(VNode::action_row(VActionRow::new("Row A")).key("a")),
+    )
+    .key("pg")]);
     assert_eq!(container.observe_children().n_items(), 1);
 }
 
@@ -510,7 +626,11 @@ fn test_action_row_builds_with_title_and_subtitle() {
         VActionRow::new("My Row").subtitle("Details here"),
     )]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let row = container.first_child().unwrap().downcast::<adw::ActionRow>().unwrap();
+    let row = container
+        .first_child()
+        .unwrap()
+        .downcast::<adw::ActionRow>()
+        .unwrap();
     assert_eq!(row.title(), "My Row");
     assert_eq!(row.subtitle().as_deref(), Some("Details here"));
 }
@@ -518,7 +638,11 @@ fn test_action_row_builds_with_title_and_subtitle() {
 fn test_action_row_updates_title() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::action_row(VActionRow::new("Before")).key("r")]);
-    let row = container.first_child().unwrap().downcast::<adw::ActionRow>().unwrap();
+    let row = container
+        .first_child()
+        .unwrap()
+        .downcast::<adw::ActionRow>()
+        .unwrap();
     assert_eq!(row.title(), "Before");
 
     r.reconcile([VNode::action_row(VActionRow::new("After")).key("r")]);
@@ -529,8 +653,7 @@ fn test_action_row_updates_title() {
 fn test_action_row_suffix_builds() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::action_row(
-        VActionRow::new("Row")
-            .suffix(VNode::label(VLabel::new("suffix text"))),
+        VActionRow::new("Row").suffix(VNode::label(VLabel::new("suffix text"))),
     )]);
     assert_eq!(container.observe_children().n_items(), 1);
 }
@@ -539,7 +662,11 @@ fn test_switch_row_builds_active() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::switch_row(VSwitchRow::new("Toggle", true))]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let sw = container.first_child().unwrap().downcast::<adw::SwitchRow>().unwrap();
+    let sw = container
+        .first_child()
+        .unwrap()
+        .downcast::<adw::SwitchRow>()
+        .unwrap();
     assert_eq!(sw.title(), "Toggle");
     assert!(sw.is_active());
 }
@@ -549,25 +676,36 @@ fn test_switch_row_updates_active_without_spurious_callback() {
     let fired_clone = fired.clone();
 
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::switch_row(
-        VSwitchRow::new("T", false).on_toggle(move |_| {
+    r.reconcile([
+        VNode::switch_row(VSwitchRow::new("T", false).on_toggle(move |_| {
             *fired_clone.borrow_mut() += 1;
-        }),
-    ).key("sw")]);
-    let sw = container.first_child().unwrap().downcast::<adw::SwitchRow>().unwrap();
+        }))
+        .key("sw"),
+    ]);
+    let sw = container
+        .first_child()
+        .unwrap()
+        .downcast::<adw::SwitchRow>()
+        .unwrap();
     // Programmatic update must not fire the callback.
     r.reconcile([VNode::switch_row(VSwitchRow::new("T", true)).key("sw")]);
     assert!(sw.is_active());
-    assert_eq!(*fired.borrow(), 0, "programmatic active change must not fire on_toggle");
+    assert_eq!(
+        *fired.borrow(),
+        0,
+        "programmatic active change must not fire on_toggle"
+    );
 }
 
 fn test_entry_row_builds_with_text() {
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::entry_row(
-        VEntryRow::new("Name").text("hello"),
-    )]);
+    r.reconcile([VNode::entry_row(VEntryRow::new("Name").text("hello"))]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let er = container.first_child().unwrap().downcast::<adw::EntryRow>().unwrap();
+    let er = container
+        .first_child()
+        .unwrap()
+        .downcast::<adw::EntryRow>()
+        .unwrap();
     assert_eq!(er.title(), "Name");
     assert_eq!(er.text().as_str(), "hello");
 }
@@ -577,15 +715,24 @@ fn test_entry_row_updates_text_without_spurious_callback() {
     let fired_clone = fired.clone();
 
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::entry_row(
-        VEntryRow::new("Label").text("a").on_change(move |_| {
+    r.reconcile([
+        VNode::entry_row(VEntryRow::new("Label").text("a").on_change(move |_| {
             *fired_clone.borrow_mut() += 1;
-        }),
-    ).key("er")]);
-    let er = container.first_child().unwrap().downcast::<adw::EntryRow>().unwrap();
+        }))
+        .key("er"),
+    ]);
+    let er = container
+        .first_child()
+        .unwrap()
+        .downcast::<adw::EntryRow>()
+        .unwrap();
     r.reconcile([VNode::entry_row(VEntryRow::new("Label").text("b")).key("er")]);
     assert_eq!(er.text().as_str(), "b");
-    assert_eq!(*fired.borrow(), 0, "programmatic text change must not fire on_change");
+    assert_eq!(
+        *fired.borrow(),
+        0,
+        "programmatic text change must not fire on_change"
+    );
 }
 
 fn test_switch_updates_active_without_spurious_callback() {
@@ -593,60 +740,89 @@ fn test_switch_updates_active_without_spurious_callback() {
     let fired_clone = fired.clone();
 
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::switch(
-        VSwitch::new(false).on_toggle(move |_| {
-            *fired_clone.borrow_mut() += 1;
-        }),
-    ).key("sw")]);
-    let sw = container.first_child().unwrap().downcast::<gtk::Switch>().unwrap();
+    r.reconcile([VNode::switch(VSwitch::new(false).on_toggle(move |_| {
+        *fired_clone.borrow_mut() += 1;
+    }))
+    .key("sw")]);
+    let sw = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Switch>()
+        .unwrap();
     // Programmatic update must not fire the callback.
     r.reconcile([VNode::switch(VSwitch::new(true)).key("sw")]);
     assert!(sw.is_active());
-    assert_eq!(*fired.borrow(), 0, "programmatic active change must not fire on_toggle");
+    assert_eq!(
+        *fired.borrow(),
+        0,
+        "programmatic active change must not fire on_toggle"
+    );
 }
 
 // ── Revealer primitive tests ──────────────────────────────────────────────
 
 fn test_revealer_build_creates_widget() {
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::revealer(
-        VRevealer::new(true, VNode::label(VLabel::new("content"))),
-    )]);
+    r.reconcile([VNode::revealer(VRevealer::new(
+        true,
+        VNode::label(VLabel::new("content")),
+    ))]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let rev = container.first_child().unwrap().downcast::<gtk::Revealer>().unwrap();
+    let rev = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Revealer>()
+        .unwrap();
     assert!(rev.reveals_child());
-    assert_eq!(rev.transition_type(), gtk::RevealerTransitionType::SlideDown);
+    assert_eq!(
+        rev.transition_type(),
+        gtk::RevealerTransitionType::SlideDown
+    );
     assert_eq!(rev.transition_duration(), 200);
 }
 
 fn test_revealer_update_toggles_reveal() {
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::revealer(
-        VRevealer::new(true, VNode::label(VLabel::new("c"))),
-    ).key("rev")]);
-    let rev = container.first_child().unwrap().downcast::<gtk::Revealer>().unwrap();
+    r.reconcile([VNode::revealer(VRevealer::new(true, VNode::label(VLabel::new("c")))).key("rev")]);
+    let rev = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Revealer>()
+        .unwrap();
     assert!(rev.reveals_child());
 
-    r.reconcile([VNode::revealer(
-        VRevealer::new(false, VNode::label(VLabel::new("c"))),
-    ).key("rev")]);
+    r.reconcile([
+        VNode::revealer(VRevealer::new(false, VNode::label(VLabel::new("c")))).key("rev"),
+    ]);
     assert!(!rev.reveals_child());
     assert_eq!(container.observe_children().n_items(), 1);
 }
 
 fn test_revealer_child_reconciled() {
     let (container, mut r) = make_reconciler();
-    r.reconcile([VNode::revealer(
-        VRevealer::new(true, VNode::label(VLabel::new("before")).key("l")),
-    ).key("rev")]);
-    let rev = container.first_child().unwrap().downcast::<gtk::Revealer>().unwrap();
+    r.reconcile([VNode::revealer(VRevealer::new(
+        true,
+        VNode::label(VLabel::new("before")).key("l"),
+    ))
+    .key("rev")]);
+    let rev = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Revealer>()
+        .unwrap();
     let inner_box = rev.child().unwrap().downcast::<gtk::Box>().unwrap();
-    let label = inner_box.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+    let label = inner_box
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
     assert_eq!(label.label(), "before");
 
-    r.reconcile([VNode::revealer(
-        VRevealer::new(true, VNode::label(VLabel::new("after")).key("l")),
-    ).key("rev")]);
+    r.reconcile([VNode::revealer(VRevealer::new(
+        true,
+        VNode::label(VLabel::new("after")).key("l"),
+    ))
+    .key("rev")]);
     assert_eq!(label.label(), "after");
 }
 
@@ -658,15 +834,27 @@ fn test_progress_bar_builds_widget() {
         VProgressBar::new(0.5).css_class("notification-progress"),
     )]);
     assert_eq!(container.observe_children().n_items(), 1);
-    let pb = container.first_child().unwrap().downcast::<gtk::ProgressBar>().unwrap();
+    let pb = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::ProgressBar>()
+        .unwrap();
     assert!((pb.fraction() - 0.5).abs() < 0.001);
-    assert!(pb.css_classes().iter().any(|c| c == "notification-progress"));
+    assert!(
+        pb.css_classes()
+            .iter()
+            .any(|c| c == "notification-progress")
+    );
 }
 
 fn test_progress_bar_updates_fraction() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::progress_bar(VProgressBar::new(0.3)).key("pb")]);
-    let pb = container.first_child().unwrap().downcast::<gtk::ProgressBar>().unwrap();
+    let pb = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::ProgressBar>()
+        .unwrap();
     assert!((pb.fraction() - 0.3).abs() < 0.001);
 
     r.reconcile([VNode::progress_bar(VProgressBar::new(0.7)).key("pb")]);
@@ -681,21 +869,45 @@ fn test_scale_builds_widget() {
     r.reconcile([VNode::scale(VScale::new(0.5).css_class("slider-scale"))]);
     assert_eq!(container.observe_children().n_items(), 1);
     // VScale renders as a gtk::Box wrapper containing the gtk::Scale.
-    let wrapper = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
-    let scale = wrapper.first_child().unwrap().downcast::<gtk::Scale>().unwrap();
-    assert!((scale.value() - 50.0).abs() < 0.1, "scale value should be 50.0, got {}", scale.value());
+    let wrapper = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Box>()
+        .unwrap();
+    let scale = wrapper
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Scale>()
+        .unwrap();
+    assert!(
+        (scale.value() - 50.0).abs() < 0.1,
+        "scale value should be 50.0, got {}",
+        scale.value()
+    );
     assert!(scale.css_classes().iter().any(|c| c == "slider-scale"));
 }
 
 fn test_scale_updates_value() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::scale(VScale::new(0.3)).key("sc")]);
-    let wrapper = container.first_child().unwrap().downcast::<gtk::Box>().unwrap();
-    let scale = wrapper.first_child().unwrap().downcast::<gtk::Scale>().unwrap();
+    let wrapper = container
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Box>()
+        .unwrap();
+    let scale = wrapper
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Scale>()
+        .unwrap();
     assert!((scale.value() - 30.0).abs() < 0.1);
 
     r.reconcile([VNode::scale(VScale::new(0.7)).key("sc")]);
-    assert!((scale.value() - 70.0).abs() < 0.1, "scale value should be 70.0 after update, got {}", scale.value());
+    assert!(
+        (scale.value() - 70.0).abs() < 0.1,
+        "scale value should be 70.0 after update, got {}",
+        scale.value()
+    );
     assert_eq!(container.observe_children().n_items(), 1);
 }
 
@@ -740,7 +952,12 @@ fn test_reorder_preserves_widget_identity() {
         VNode::label(VLabel::new("b")).key("b"),
     ]);
     let ptr_a = container.first_child().unwrap().as_ptr();
-    let ptr_b = container.first_child().unwrap().next_sibling().unwrap().as_ptr();
+    let ptr_b = container
+        .first_child()
+        .unwrap()
+        .next_sibling()
+        .unwrap()
+        .as_ptr();
 
     // Swap order.
     r.reconcile([
@@ -750,8 +967,16 @@ fn test_reorder_preserves_widget_identity() {
     // Same widget instances, just reordered.
     let new_first = container.first_child().unwrap();
     let new_second = new_first.next_sibling().unwrap();
-    assert_eq!(new_first.as_ptr(), ptr_b, "first child should now be widget b");
-    assert_eq!(new_second.as_ptr(), ptr_a, "second child should now be widget a");
+    assert_eq!(
+        new_first.as_ptr(),
+        ptr_b,
+        "first child should now be widget b"
+    );
+    assert_eq!(
+        new_second.as_ptr(),
+        ptr_a,
+        "second child should now be widget a"
+    );
 }
 
 fn test_reorder_with_insert_and_remove() {
@@ -800,7 +1025,10 @@ fn test_countdown_bar_render() {
     });
     let widget = component.widget();
     // RenderComponent now returns the rendered widget directly — a gtk::ProgressBar.
-    assert!(widget.downcast::<gtk::ProgressBar>().is_ok(), "CountdownBarRender should produce a gtk::ProgressBar");
+    assert!(
+        widget.downcast::<gtk::ProgressBar>().is_ok(),
+        "CountdownBarRender should produce a gtk::ProgressBar"
+    );
 }
 
 // ── Single GTK test entry point ───────────────────────────────────────────

@@ -121,7 +121,10 @@ async fn action_success_routed_to_app() {
 
     // Plugin responds with ActionSuccess
     plugin
-        .send(&PluginMessage::ActionSuccess { action_id, data: None })
+        .send(&PluginMessage::ActionSuccess {
+            action_id,
+            data: None,
+        })
         .await;
 
     // App should receive ActionSuccess

@@ -4,8 +4,8 @@ use std::process::Command;
 
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use waft_protocol::description::PropertyValueType;
 use waft_protocol::PluginDescription;
+use waft_protocol::description::PropertyValueType;
 
 /// Manifest returned by `provides` (basic) or `provides --describe` (extended).
 ///
@@ -356,7 +356,12 @@ fn print_describe_text_full(desc: &PluginDescription) {
             println!();
             println!("    Properties:");
 
-            let max_name = et.properties.iter().map(|p| p.name.len()).max().unwrap_or(0);
+            let max_name = et
+                .properties
+                .iter()
+                .map(|p| p.name.len())
+                .max()
+                .unwrap_or(0);
             let max_type = et
                 .properties
                 .iter()
@@ -392,7 +397,11 @@ fn print_describe_text_full(desc: &PluginDescription) {
                 );
 
                 for param in &action.params {
-                    let req = if param.required { "required" } else { "optional" };
+                    let req = if param.required {
+                        "required"
+                    } else {
+                        "optional"
+                    };
                     println!(
                         "        {}: {} ({})  {}",
                         param.name,
@@ -569,10 +578,7 @@ fn run_binary_with_timeout(binary: &PathBuf, args: &[&str]) -> Option<String> {
             use std::io::Read;
             let mut buf = String::new();
             if let Err(e) = pipe.read_to_string(&mut buf) {
-                warn!(
-                    "failed to read stdout from {}: {e}",
-                    binary.display()
-                );
+                warn!("failed to read stdout from {}: {e}", binary.display());
                 return None;
             }
             Some(buf)
@@ -596,10 +602,7 @@ fn query_manifest_described(binary: &PathBuf) -> Option<PluginManifestDescribed>
     match serde_json::from_str::<PluginManifestDescribed>(&stdout) {
         Ok(manifest) => Some(manifest),
         Err(e) => {
-            warn!(
-                "failed to parse manifest from {}: {e}",
-                binary.display()
-            );
+            warn!("failed to parse manifest from {}: {e}", binary.display());
             None
         }
     }

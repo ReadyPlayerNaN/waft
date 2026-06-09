@@ -29,7 +29,9 @@ pub fn run(json: bool, entity_type: Option<&str>, start: bool, timeout_ms: u64) 
     if let Some(et) = entity_type {
         let all = registry::all_entity_types();
         if !all.iter().any(|info| info.entity_type == et) {
-            eprintln!("Unknown entity type: '{et}'. Run `waft protocol` to see all available types.");
+            eprintln!(
+                "Unknown entity type: '{et}'. Run `waft protocol` to see all available types."
+            );
             std::process::exit(1);
         }
     }
@@ -182,9 +184,9 @@ async fn collect_responses(
             Ok(Ok(Some(notification))) => {
                 collect_notification(entities, notification);
             }
-            Ok(Ok(None)) => break,    // clean disconnect
+            Ok(Ok(None)) => break, // clean disconnect
             Ok(Err(e)) => return Err(format!("Failed to read from daemon: {e}")),
-            Err(_) => break,           // timeout — no more messages
+            Err(_) => break, // timeout — no more messages
         }
     }
     Ok(())
@@ -363,8 +365,16 @@ mod tests {
     #[test]
     fn dedup_keeps_last_occurrence() {
         let mut entities = vec![
-            make_entity("clock/clock/default", "clock", serde_json::json!({"time": "14:30"})),
-            make_entity("clock/clock/default", "clock", serde_json::json!({"time": "14:31"})),
+            make_entity(
+                "clock/clock/default",
+                "clock",
+                serde_json::json!({"time": "14:30"}),
+            ),
+            make_entity(
+                "clock/clock/default",
+                "clock",
+                serde_json::json!({"time": "14:31"}),
+            ),
         ];
         dedup_by_urn(&mut entities);
         assert_eq!(entities.len(), 1);
@@ -374,8 +384,16 @@ mod tests {
     #[test]
     fn dedup_preserves_different_urns() {
         let mut entities = vec![
-            make_entity("clock/clock/default", "clock", serde_json::json!({"time": "14:30"})),
-            make_entity("battery/battery/BAT0", "battery", serde_json::json!({"percentage": 85})),
+            make_entity(
+                "clock/clock/default",
+                "clock",
+                serde_json::json!({"time": "14:30"}),
+            ),
+            make_entity(
+                "battery/battery/BAT0",
+                "battery",
+                serde_json::json!({"percentage": 85}),
+            ),
         ];
         dedup_by_urn(&mut entities);
         assert_eq!(entities.len(), 2);

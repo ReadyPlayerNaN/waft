@@ -102,7 +102,9 @@ impl EntityStore {
             AppNotification::ClaimCheck { .. } => {
                 // ClaimCheck is handled at the app level, not the entity store.
                 // The app must respond via WaftClient::send_claim_response().
-                log::debug!("[entity-store] received ClaimCheck (handled by app, not entity store)");
+                log::debug!(
+                    "[entity-store] received ClaimCheck (handled by app, not entity store)"
+                );
             }
         }
     }
@@ -135,10 +137,7 @@ impl EntityStore {
     /// Register a callback invoked when an action succeeds.
     ///
     /// The callback receives the action UUID and optional response data.
-    pub fn on_action_success<F: Fn(Uuid, Option<serde_json::Value>) + 'static>(
-        &self,
-        callback: F,
-    ) {
+    pub fn on_action_success<F: Fn(Uuid, Option<serde_json::Value>) + 'static>(&self, callback: F) {
         self.action_success_callbacks
             .borrow_mut()
             .push(Rc::new(callback));

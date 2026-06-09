@@ -9,8 +9,8 @@ pub mod css;
 pub mod icons;
 pub mod links;
 pub mod menu_state;
-pub mod widget_base;
 pub mod vdom;
+pub mod widget_base;
 pub mod widgets;
 
 pub use widget_base::{Child, Children, WidgetBase};

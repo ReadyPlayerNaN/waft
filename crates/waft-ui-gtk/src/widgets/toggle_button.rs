@@ -4,7 +4,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::icons::Icon;
-use crate::vdom::{Component, RenderCallback, RenderComponent, RenderFn, VIcon, VNode, VToggleButton};
+use crate::vdom::{
+    Component, RenderCallback, RenderComponent, RenderFn, VIcon, VNode, VToggleButton,
+};
 
 /// Properties for the toggle button.
 #[derive(Clone, PartialEq, Debug)]
@@ -23,8 +25,8 @@ impl RenderFn for ToggleButtonRender {
 
     fn render(props: &Self::Props, _emit: &RenderCallback<ToggleButtonOutput>) -> VNode {
         let icon = VIcon::new(vec![Icon::Themed(props.icon.clone())], 24);
-        let toggle_button = VToggleButton::new(props.active, VNode::icon(icon))
-            .css_class("toggle-button");
+        let toggle_button =
+            VToggleButton::new(props.active, VNode::icon(icon)).css_class("toggle-button");
         VNode::toggle_button(toggle_button)
     }
 }

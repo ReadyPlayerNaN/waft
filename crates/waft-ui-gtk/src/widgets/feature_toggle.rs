@@ -128,7 +128,9 @@ impl RenderFn for FeatureToggleRender {
         );
 
         // Root box: main button + expand revealer (horizontal layout)
-        let mut root = VBox::horizontal(0).css_class("feature-toggle").hexpand(true);
+        let mut root = VBox::horizontal(0)
+            .css_class("feature-toggle")
+            .hexpand(true);
 
         // Apply state CSS classes
         if props.active {
@@ -160,13 +162,18 @@ pub struct FeatureToggleWidget {
 
 impl FeatureToggleWidget {
     /// Create a new feature toggle widget (backward-compatible factory).
-    pub fn new(props: FeatureToggleProps, _menu_store: Option<std::rc::Rc<waft_core::menu_state::MenuStore>>) -> Self {
+    pub fn new(
+        props: FeatureToggleProps,
+        _menu_store: Option<std::rc::Rc<waft_core::menu_state::MenuStore>>,
+    ) -> Self {
         let menu_id = props.menu_id.clone();
         let props_with_expanded = FeatureToggleProps {
             expanded: false,
             ..props
         };
-        let inner = Rc::new(RenderComponent::<FeatureToggleRender>::build(&props_with_expanded));
+        let inner = Rc::new(RenderComponent::<FeatureToggleRender>::build(
+            &props_with_expanded,
+        ));
         Self {
             inner,
             props: Rc::new(RefCell::new(props_with_expanded)),

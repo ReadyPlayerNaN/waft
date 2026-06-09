@@ -6,8 +6,8 @@
 use std::time::Duration;
 
 use serial_test::serial;
-use waft_protocol::urn::Urn;
 use waft_protocol::AppNotification;
+use waft_protocol::urn::Urn;
 use waft_test_harness::{TestApp, TestDaemon, TestPlugin};
 
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -170,7 +170,11 @@ async fn entity_removed_forwarded_to_subscriber() {
     let mut plugin = TestPlugin::connect(&daemon.socket_path).await;
     let urn = Urn::new("test-plugin", "test-entity", "item-to-remove");
     plugin
-        .send_entity(urn.clone(), "test-entity", serde_json::json!({"temp": true}))
+        .send_entity(
+            urn.clone(),
+            "test-entity",
+            serde_json::json!({"temp": true}),
+        )
         .await;
 
     // App receives the EntityUpdated
@@ -180,9 +184,7 @@ async fn entity_removed_forwarded_to_subscriber() {
         .expect("app should receive initial EntityUpdated");
 
     // Plugin sends EntityRemoved
-    plugin
-        .send_entity_removed(urn.clone(), "test-entity")
-        .await;
+    plugin.send_entity_removed(urn.clone(), "test-entity").await;
 
     // App should receive the EntityRemoved
     let notification = app

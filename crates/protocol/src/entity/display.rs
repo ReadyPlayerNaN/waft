@@ -124,7 +124,6 @@ impl DisplayTransform {
             _ => unreachable!(),
         }
     }
-
 }
 
 impl DisplayOutput {
@@ -289,11 +288,11 @@ impl DaySegment {
         let minutes = hour * 60 + minute;
         match minutes {
             60..=269 => Self::MidnightOil,   // 1:00 - 4:29
-            270..=449 => Self::EarlyMorning,  // 4:30 - 7:29
-            450..=719 => Self::Morning,       // 7:30 - 11:59
-            720..=1019 => Self::Afternoon,    // 12:00 - 16:59
-            1020..=1259 => Self::Evening,     // 17:00 - 20:59
-            _ => Self::Night,                 // 21:00 - 0:59
+            270..=449 => Self::EarlyMorning, // 4:30 - 7:29
+            450..=719 => Self::Morning,      // 7:30 - 11:59
+            720..=1019 => Self::Afternoon,   // 12:00 - 16:59
+            1020..=1259 => Self::Evening,    // 17:00 - 20:59
+            _ => Self::Night,                // 21:00 - 0:59
         }
     }
 
@@ -301,12 +300,12 @@ impl DaySegment {
     pub fn seconds_to_next(hour: u32, minute: u32, second: u32) -> u64 {
         let total_minutes = hour * 60 + minute;
         let next_boundary_minutes = match Self::from_time(hour, minute) {
-            Self::MidnightOil => 270,   // 4:30
-            Self::EarlyMorning => 450,  // 7:30
-            Self::Morning => 720,       // 12:00
-            Self::Afternoon => 1020,    // 17:00
-            Self::Evening => 1260,      // 21:00
-            Self::Night => 60,          // 1:00 (next day)
+            Self::MidnightOil => 270,  // 4:30
+            Self::EarlyMorning => 450, // 7:30
+            Self::Morning => 720,      // 12:00
+            Self::Afternoon => 1020,   // 17:00
+            Self::Evening => 1260,     // 21:00
+            Self::Night => 60,         // 1:00 (next day)
         };
 
         let remaining_minutes = if next_boundary_minutes > total_minutes {
@@ -538,7 +537,11 @@ mod tests {
             .map(|v| serde_json::to_string(v).unwrap())
             .collect();
         let unique: std::collections::HashSet<&String> = serialized.iter().collect();
-        assert_eq!(unique.len(), 8, "All 8 transforms must serialize distinctly");
+        assert_eq!(
+            unique.len(),
+            8,
+            "All 8 transforms must serialize distinctly"
+        );
     }
 
     #[test]
@@ -727,7 +730,11 @@ mod tests {
 
     #[test]
     fn wallpaper_mode_serde_roundtrip() {
-        for mode in [WallpaperMode::Static, WallpaperMode::StyleTracking, WallpaperMode::DayTracking] {
+        for mode in [
+            WallpaperMode::Static,
+            WallpaperMode::StyleTracking,
+            WallpaperMode::DayTracking,
+        ] {
             let json = serde_json::to_value(mode).unwrap();
             let decoded: WallpaperMode = serde_json::from_value(json).unwrap();
             assert_eq!(mode, decoded);

@@ -63,10 +63,7 @@ pub fn run(json: bool, filter: Option<&str>, run: bool) {
 }
 
 /// Connect to daemon, subscribe to command entity types, collect entities, resolve commands.
-async fn run_commands(
-    filter: Option<&str>,
-    run: bool,
-) -> Result<Vec<ResolvedCommand>, String> {
+async fn run_commands(filter: Option<&str>, run: bool) -> Result<Vec<ResolvedCommand>, String> {
     let mut stream = connect_daemon().await?;
 
     // Subscribe to all command entity types to trigger plugin spawning
@@ -100,10 +97,7 @@ async fn run_commands(
                     data,
                 } = notification
                 {
-                    entity_map
-                        .entry(entity_type)
-                        .or_default()
-                        .push((urn, data));
+                    entity_map.entry(entity_type).or_default().push((urn, data));
                 }
             }
             Ok(Ok(None)) => break,
@@ -135,10 +129,7 @@ async fn run_commands(
                     data,
                 } = notification
                 {
-                    entity_map
-                        .entry(entity_type)
-                        .or_default()
-                        .push((urn, data));
+                    entity_map.entry(entity_type).or_default().push((urn, data));
                 }
             }
             Ok(Ok(None)) => break,

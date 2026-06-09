@@ -35,7 +35,10 @@ impl RenderFn for AudioDeviceRowRender {
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
         let emit = emit.clone();
         let device_icon_name = audio_device_icon(&props.device_type, props.kind);
-        let conn_icon_name = props.connection_type.as_deref().and_then(audio_connection_icon);
+        let conn_icon_name = props
+            .connection_type
+            .as_deref()
+            .and_then(audio_connection_icon);
 
         let icon_box = VBox::horizontal(4)
             .valign(gtk::Align::Center)
@@ -56,11 +59,8 @@ impl RenderFn for AudioDeviceRowRender {
         let right_box = VBox::horizontal(4)
             .valign(gtk::Align::Center)
             .child(VNode::icon(
-                VIcon::new(
-                    vec![Icon::Themed("object-select-symbolic".to_string())],
-                    16,
-                )
-                .visible(props.active),
+                VIcon::new(vec![Icon::Themed("object-select-symbolic".to_string())], 16)
+                    .visible(props.active),
             ));
 
         let inner = VBox::horizontal(8)

@@ -134,8 +134,16 @@ impl ToastManager {
 
     /// Handle a ClaimCheck from the daemon: respond whether we still want this entity.
     pub fn handle_claim_check(&self, urn: &Urn, claim_id: uuid::Uuid) {
-        let in_active = self.active_toasts.borrow().iter().any(|item| &item.urn == urn);
-        let in_pending = self.pending_queue.borrow().iter().any(|item| &item.urn == urn);
+        let in_active = self
+            .active_toasts
+            .borrow()
+            .iter()
+            .any(|item| &item.urn == urn);
+        let in_pending = self
+            .pending_queue
+            .borrow()
+            .iter()
+            .any(|item| &item.urn == urn);
         let claimed = in_active || in_pending;
 
         if self.claim_tx.send((claim_id, claimed)).is_err() {
@@ -297,7 +305,6 @@ impl ToastManager {
             self.show_toast(item);
         }
     }
-
 }
 
 /// Filter logic: suppress toast if the notification is flagged or DND is active.

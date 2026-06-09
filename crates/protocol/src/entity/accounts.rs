@@ -75,9 +75,18 @@ mod tests {
             presentation_identity: "user@gmail.com".to_string(),
             status: AccountStatus::Active,
             services: vec![
-                ServiceInfo { name: "mail".to_string(), enabled: true },
-                ServiceInfo { name: "calendar".to_string(), enabled: true },
-                ServiceInfo { name: "contacts".to_string(), enabled: false },
+                ServiceInfo {
+                    name: "mail".to_string(),
+                    enabled: true,
+                },
+                ServiceInfo {
+                    name: "calendar".to_string(),
+                    enabled: true,
+                },
+                ServiceInfo {
+                    name: "contacts".to_string(),
+                    enabled: false,
+                },
             ],
             locked: false,
         };
@@ -108,9 +117,10 @@ mod tests {
             provider_name: "Nextcloud".to_string(),
             presentation_identity: "admin@company.example".to_string(),
             status: AccountStatus::NeedsAttention,
-            services: vec![
-                ServiceInfo { name: "files".to_string(), enabled: true },
-            ],
+            services: vec![ServiceInfo {
+                name: "files".to_string(),
+                enabled: true,
+            }],
             locked: true,
         };
         let json = serde_json::to_value(&account).unwrap();

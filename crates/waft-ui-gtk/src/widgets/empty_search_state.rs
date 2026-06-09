@@ -2,8 +2,8 @@
 
 use gtk::prelude::*;
 
-use crate::widget_base::WidgetBase;
 use crate::icons::IconWidget;
+use crate::widget_base::WidgetBase;
 
 /// Properties for the empty search state.
 pub struct EmptySearchStateProps {
@@ -50,7 +50,10 @@ impl EmptySearchStateWidget {
             .build();
         root.append(&message_label);
 
-        Self { root, message_label }
+        Self {
+            root,
+            message_label,
+        }
     }
 
     /// Update the displayed query. Pass empty string to hide the widget.

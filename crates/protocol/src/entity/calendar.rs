@@ -117,12 +117,18 @@ mod tests {
     fn calendar_sync_syncing_defaults_false_on_deserialize() {
         let json = serde_json::json!({ "last_refresh": null });
         let sync: CalendarSync = serde_json::from_value(json).unwrap();
-        assert!(!sync.syncing, "syncing must default to false when absent from JSON");
+        assert!(
+            !sync.syncing,
+            "syncing must default to false when absent from JSON"
+        );
     }
 
     #[test]
     fn calendar_sync_syncing_roundtrips() {
-        let sync = CalendarSync { last_refresh: Some(1_000_000), syncing: true };
+        let sync = CalendarSync {
+            last_refresh: Some(1_000_000),
+            syncing: true,
+        };
         let json = serde_json::to_value(&sync).unwrap();
         let decoded: CalendarSync = serde_json::from_value(json).unwrap();
         assert!(decoded.syncing);

@@ -6,8 +6,8 @@
 use std::time::Duration;
 
 use serial_test::serial;
-use waft_protocol::urn::Urn;
 use waft_protocol::AppNotification;
+use waft_protocol::urn::Urn;
 use waft_test_harness::{TestApp, TestDaemon, TestPlugin};
 
 const TIMEOUT: Duration = Duration::from_secs(2);

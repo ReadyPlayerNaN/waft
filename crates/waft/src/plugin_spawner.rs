@@ -106,9 +106,7 @@ impl PluginSpawner {
                             }
                         })
                         .unwrap_or_else(|e| {
-                            warn!(
-                                "failed to spawn reaper thread for '{plugin_name}': {e}"
-                            );
+                            warn!("failed to spawn reaper thread for '{plugin_name}': {e}");
                             // At minimum, we tried. The child will be reaped on daemon exit.
                             std::thread::spawn(|| {})
                         });

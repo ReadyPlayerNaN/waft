@@ -143,7 +143,11 @@ mod tests {
         let cli = Cli::try_parse_from(["waft", "protocol"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Protocol { entity_type: None, domain: None, verbose: false })
+            Some(Command::Protocol {
+                entity_type: None,
+                domain: None,
+                verbose: false
+            })
         ));
     }
 
@@ -151,7 +155,11 @@ mod tests {
     fn protocol_subcommand_with_entity_type() {
         let cli = Cli::try_parse_from(["waft", "protocol", "audio-device"]).unwrap();
         match cli.command {
-            Some(Command::Protocol { entity_type, domain, verbose }) => {
+            Some(Command::Protocol {
+                entity_type,
+                domain,
+                verbose,
+            }) => {
                 assert_eq!(entity_type.as_deref(), Some("audio-device"));
                 assert_eq!(domain, None);
                 assert!(!verbose);
@@ -164,7 +172,11 @@ mod tests {
     fn protocol_subcommand_with_domain_filter() {
         let cli = Cli::try_parse_from(["waft", "protocol", "--domain", "audio"]).unwrap();
         match cli.command {
-            Some(Command::Protocol { entity_type, domain, verbose }) => {
+            Some(Command::Protocol {
+                entity_type,
+                domain,
+                verbose,
+            }) => {
                 assert_eq!(entity_type, None);
                 assert_eq!(domain.as_deref(), Some("audio"));
                 assert!(!verbose);
@@ -177,7 +189,11 @@ mod tests {
     fn protocol_subcommand_verbose() {
         let cli = Cli::try_parse_from(["waft", "protocol", "--verbose"]).unwrap();
         match cli.command {
-            Some(Command::Protocol { entity_type, domain, verbose }) => {
+            Some(Command::Protocol {
+                entity_type,
+                domain,
+                verbose,
+            }) => {
                 assert_eq!(entity_type, None);
                 assert_eq!(domain, None);
                 assert!(verbose);
@@ -261,7 +277,10 @@ mod tests {
         assert!(cli.json);
         assert!(matches!(
             cli.command,
-            Some(Command::Commands { filter: None, run: false })
+            Some(Command::Commands {
+                filter: None,
+                run: false
+            })
         ));
     }
 
@@ -282,7 +301,11 @@ mod tests {
     fn query_no_args() {
         let cli = Cli::try_parse_from(["waft", "query"]).unwrap();
         match cli.command {
-            Some(Command::Query { entity_type, start, timeout_ms }) => {
+            Some(Command::Query {
+                entity_type,
+                start,
+                timeout_ms,
+            }) => {
                 assert_eq!(entity_type, None);
                 assert!(!start);
                 assert_eq!(timeout_ms, 5000);
@@ -295,7 +318,11 @@ mod tests {
     fn query_with_entity_type() {
         let cli = Cli::try_parse_from(["waft", "query", "battery"]).unwrap();
         match cli.command {
-            Some(Command::Query { entity_type, start, timeout_ms }) => {
+            Some(Command::Query {
+                entity_type,
+                start,
+                timeout_ms,
+            }) => {
                 assert_eq!(entity_type.as_deref(), Some("battery"));
                 assert!(!start);
                 assert_eq!(timeout_ms, 5000);
@@ -319,7 +346,11 @@ mod tests {
     fn query_with_start_flag() {
         let cli = Cli::try_parse_from(["waft", "query", "audio-device", "--start"]).unwrap();
         match cli.command {
-            Some(Command::Query { entity_type, start, timeout_ms }) => {
+            Some(Command::Query {
+                entity_type,
+                start,
+                timeout_ms,
+            }) => {
                 assert_eq!(entity_type.as_deref(), Some("audio-device"));
                 assert!(start);
                 assert_eq!(timeout_ms, 5000);
@@ -332,7 +363,9 @@ mod tests {
     fn query_with_start_short_flag() {
         let cli = Cli::try_parse_from(["waft", "query", "-s", "audio-device"]).unwrap();
         match cli.command {
-            Some(Command::Query { entity_type, start, .. }) => {
+            Some(Command::Query {
+                entity_type, start, ..
+            }) => {
                 assert_eq!(entity_type.as_deref(), Some("audio-device"));
                 assert!(start);
             }
@@ -342,9 +375,21 @@ mod tests {
 
     #[test]
     fn query_with_timeout() {
-        let cli = Cli::try_parse_from(["waft", "query", "--start", "--timeout-ms", "10000", "battery"]).unwrap();
+        let cli = Cli::try_parse_from([
+            "waft",
+            "query",
+            "--start",
+            "--timeout-ms",
+            "10000",
+            "battery",
+        ])
+        .unwrap();
         match cli.command {
-            Some(Command::Query { entity_type, start, timeout_ms }) => {
+            Some(Command::Query {
+                entity_type,
+                start,
+                timeout_ms,
+            }) => {
                 assert_eq!(entity_type.as_deref(), Some("battery"));
                 assert!(start);
                 assert_eq!(timeout_ms, 10000);

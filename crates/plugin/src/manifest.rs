@@ -77,11 +77,7 @@ pub fn handle_provides_i18n(
 }
 
 /// Like [`handle_provides_i18n`], but accepts pre-resolved strings.
-pub fn handle_provides_full(
-    entity_types: &[&str],
-    name: &str,
-    description: &str,
-) -> bool {
+pub fn handle_provides_full(entity_types: &[&str], name: &str, description: &str) -> bool {
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 2 && args[1] == "provides" {
         let manifest = PluginManifest {

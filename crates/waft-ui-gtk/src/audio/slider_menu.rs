@@ -60,9 +60,7 @@ impl RenderFn for AudioSliderMenuRender {
                         SliderRenderOutput::ValueChanged(v) => {
                             AudioSliderMenuOutput::ValueChanged(v)
                         }
-                        SliderRenderOutput::ValueCommit(v) => {
-                            AudioSliderMenuOutput::ValueCommit(v)
-                        }
+                        SliderRenderOutput::ValueCommit(v) => AudioSliderMenuOutput::ValueCommit(v),
                         SliderRenderOutput::IconClick => AudioSliderMenuOutput::IconClick,
                         SliderRenderOutput::ExpandClick => AudioSliderMenuOutput::ExpandClick,
                     });
@@ -74,11 +72,14 @@ impl RenderFn for AudioSliderMenuRender {
         for device in &props.devices {
             let urn = device.urn.clone();
             let emit_device = emit.clone();
-            let row = VNode::with_output::<AudioDeviceRow>(device.props.clone(), move |_: AudioDeviceRowOutput| {
-                if let Some(ref cb) = *emit_device.borrow() {
-                    cb(AudioSliderMenuOutput::SelectDevice(urn.clone()));
-                }
-            })
+            let row = VNode::with_output::<AudioDeviceRow>(
+                device.props.clone(),
+                move |_: AudioDeviceRowOutput| {
+                    if let Some(ref cb) = *emit_device.borrow() {
+                        cb(AudioSliderMenuOutput::SelectDevice(urn.clone()));
+                    }
+                },
+            )
             .key(device.urn.as_str());
             menu_box = menu_box.child(row);
         }

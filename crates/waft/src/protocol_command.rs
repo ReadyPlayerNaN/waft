@@ -1,7 +1,12 @@
 use waft_protocol::entity::registry::{self, EntityTypeInfo};
 
 /// Run the `waft protocol` command, printing entity type information to stdout.
-pub fn run(json: bool, verbose: bool, entity_type_filter: Option<&str>, domain_filter: Option<&str>) {
+pub fn run(
+    json: bool,
+    verbose: bool,
+    entity_type_filter: Option<&str>,
+    domain_filter: Option<&str>,
+) {
     let all = registry::all_entity_types();
 
     let filtered: Vec<&EntityTypeInfo> = all
@@ -98,7 +103,12 @@ fn print_text_verbose(entries: &[&EntityTypeInfo]) {
 
         if !entry.properties.is_empty() {
             println!("    Properties:");
-            let max_name = entry.properties.iter().map(|p| p.name.len()).max().unwrap_or(0);
+            let max_name = entry
+                .properties
+                .iter()
+                .map(|p| p.name.len())
+                .max()
+                .unwrap_or(0);
             let max_type = entry
                 .properties
                 .iter()
@@ -131,7 +141,11 @@ fn print_text_verbose(entries: &[&EntityTypeInfo]) {
             for action in entry.actions {
                 println!("      {}  {}", action.name, action.description);
                 for param in action.params {
-                    let req = if param.required { "required" } else { "optional" };
+                    let req = if param.required {
+                        "required"
+                    } else {
+                        "optional"
+                    };
                     println!(
                         "        {}: {} ({})  {}",
                         param.name, param.type_description, req, param.description,
@@ -168,10 +182,8 @@ mod tests {
     #[test]
     fn filter_by_domain() {
         let all = registry::all_entity_types();
-        let filtered: Vec<&EntityTypeInfo> = all
-            .iter()
-            .filter(|e| e.domain == "bluetooth")
-            .collect();
+        let filtered: Vec<&EntityTypeInfo> =
+            all.iter().filter(|e| e.domain == "bluetooth").collect();
         assert_eq!(filtered.len(), 2);
     }
 

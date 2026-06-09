@@ -33,8 +33,7 @@ impl TestDaemon {
             std::env::set_var("WAFT_DAEMON_DIR", plugin_dir.path());
         }
 
-        let daemon =
-            WaftDaemon::new(&socket_path).expect("failed to create test WaftDaemon");
+        let daemon = WaftDaemon::new(&socket_path).expect("failed to create test WaftDaemon");
 
         // Spawn on a LocalSet because WaftDaemon::run() returns Box<dyn Error>
         // which is not Send. We use spawn_blocking + a dedicated runtime instead.

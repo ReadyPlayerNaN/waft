@@ -158,10 +158,8 @@ impl SearchPaneWidget {
         } else {
             self.selected.set(0);
             *self.items.borrow_mut() = items.clone();
-            self.result_list.update(&SearchResultListProps {
-                items,
-                selected: 0,
-            });
+            self.result_list
+                .update(&SearchResultListProps { items, selected: 0 });
             self.scroll.vadjustment().set_value(0.0);
             self.stack.set_visible_child_name("results");
         }

@@ -48,59 +48,98 @@ mod tests {
 
     #[test]
     fn headset_always_shows_headset_icon() {
-        assert_eq!(audio_device_icon("headset", AudioDeviceKind::Output), "audio-headset-symbolic");
-        assert_eq!(audio_device_icon("headset", AudioDeviceKind::Input), "audio-headset-symbolic");
+        assert_eq!(
+            audio_device_icon("headset", AudioDeviceKind::Output),
+            "audio-headset-symbolic"
+        );
+        assert_eq!(
+            audio_device_icon("headset", AudioDeviceKind::Input),
+            "audio-headset-symbolic"
+        );
     }
 
     #[test]
     fn headphone_shows_headphones_icon() {
-        assert_eq!(audio_device_icon("headphone", AudioDeviceKind::Output), "audio-headphones-symbolic");
+        assert_eq!(
+            audio_device_icon("headphone", AudioDeviceKind::Output),
+            "audio-headphones-symbolic"
+        );
     }
 
     #[test]
     fn hands_free_shows_headphones_icon() {
-        assert_eq!(audio_device_icon("hands-free", AudioDeviceKind::Output), "audio-headphones-symbolic");
+        assert_eq!(
+            audio_device_icon("hands-free", AudioDeviceKind::Output),
+            "audio-headphones-symbolic"
+        );
     }
 
     #[test]
     fn webcam_shows_camera_icon() {
-        assert_eq!(audio_device_icon("webcam", AudioDeviceKind::Input), "camera-web-symbolic");
+        assert_eq!(
+            audio_device_icon("webcam", AudioDeviceKind::Input),
+            "camera-web-symbolic"
+        );
     }
 
     #[test]
     fn display_shows_video_display_icon() {
-        assert_eq!(audio_device_icon("display", AudioDeviceKind::Output), "video-display-symbolic");
+        assert_eq!(
+            audio_device_icon("display", AudioDeviceKind::Output),
+            "video-display-symbolic"
+        );
     }
 
     #[test]
     fn microphone_shows_microphone_icon() {
-        assert_eq!(audio_device_icon("microphone", AudioDeviceKind::Input), "audio-input-microphone-symbolic");
+        assert_eq!(
+            audio_device_icon("microphone", AudioDeviceKind::Input),
+            "audio-input-microphone-symbolic"
+        );
     }
 
     #[test]
     fn card_shows_audio_card_icon() {
-        assert_eq!(audio_device_icon("card", AudioDeviceKind::Output), "audio-card-symbolic");
+        assert_eq!(
+            audio_device_icon("card", AudioDeviceKind::Output),
+            "audio-card-symbolic"
+        );
     }
 
     #[test]
     fn speaker_shows_speakers_icon() {
-        assert_eq!(audio_device_icon("speaker", AudioDeviceKind::Output), "audio-speakers-symbolic");
+        assert_eq!(
+            audio_device_icon("speaker", AudioDeviceKind::Output),
+            "audio-speakers-symbolic"
+        );
     }
 
     #[test]
     fn unknown_type_falls_back_to_direction() {
-        assert_eq!(audio_device_icon("something-new", AudioDeviceKind::Output), "audio-speakers-symbolic");
-        assert_eq!(audio_device_icon("something-new", AudioDeviceKind::Input), "audio-input-microphone-symbolic");
+        assert_eq!(
+            audio_device_icon("something-new", AudioDeviceKind::Output),
+            "audio-speakers-symbolic"
+        );
+        assert_eq!(
+            audio_device_icon("something-new", AudioDeviceKind::Input),
+            "audio-input-microphone-symbolic"
+        );
     }
 
     #[test]
     fn bluetooth_connection_icon() {
-        assert_eq!(audio_connection_icon("bluetooth"), Some("bluetooth-symbolic"));
+        assert_eq!(
+            audio_connection_icon("bluetooth"),
+            Some("bluetooth-symbolic")
+        );
     }
 
     #[test]
     fn usb_connection_icon() {
-        assert_eq!(audio_connection_icon("usb"), Some("media-removable-symbolic"));
+        assert_eq!(
+            audio_connection_icon("usb"),
+            Some("media-removable-symbolic")
+        );
     }
 
     #[test]
@@ -110,7 +149,10 @@ mod tests {
 
     #[test]
     fn hdmi_connection_icon() {
-        assert_eq!(audio_connection_icon("hdmi"), Some("video-joined-displays-symbolic"));
+        assert_eq!(
+            audio_connection_icon("hdmi"),
+            Some("video-joined-displays-symbolic")
+        );
     }
 
     #[test]
@@ -120,6 +162,9 @@ mod tests {
 
     #[test]
     fn virtual_shows_science_badge() {
-        assert_eq!(audio_connection_icon("virtual"), Some("applications-science-symbolic"));
+        assert_eq!(
+            audio_connection_icon("virtual"),
+            Some("applications-science-symbolic")
+        );
     }
 }

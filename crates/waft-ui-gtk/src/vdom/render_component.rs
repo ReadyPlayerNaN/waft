@@ -12,22 +12,27 @@ use super::reconciler::SingleChildReconciler;
 /// On every `update()`, `F::render()` is called and the result diffed.
 pub struct RenderComponent<F: RenderFn> {
     reconciler: RefCell<SingleChildReconciler>,
-    emit:       RenderCallback<F::Output>,
+    emit: RenderCallback<F::Output>,
 }
 
 impl<F: RenderFn> Component for RenderComponent<F> {
-    type Props  = F::Props;
+    type Props = F::Props;
     type Output = F::Output;
 
     fn build(props: &Self::Props) -> Self {
         let emit: RenderCallback<F::Output> = Rc::new(RefCell::new(None));
         let mut reconciler = SingleChildReconciler::new();
         reconciler.reconcile(F::render(props, &emit));
-        Self { reconciler: RefCell::new(reconciler), emit }
+        Self {
+            reconciler: RefCell::new(reconciler),
+            emit,
+        }
     }
 
     fn update(&self, props: &Self::Props) {
-        self.reconciler.borrow_mut().reconcile(F::render(props, &self.emit));
+        self.reconciler
+            .borrow_mut()
+            .reconcile(F::render(props, &self.emit));
     }
 
     fn widget(&self) -> gtk::Widget {

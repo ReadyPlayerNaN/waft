@@ -4,7 +4,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::icons::Icon;
-use crate::vdom::{Component, RenderCallback, RenderComponent, RenderFn, VBox, VIcon, VNode, VCustomButton};
+use crate::vdom::{
+    Component, RenderCallback, RenderComponent, RenderFn, VBox, VCustomButton, VIcon, VNode,
+};
 
 /// An option for StatusCycleButton.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,11 +41,7 @@ impl RenderFn for StatusCycleButtonRender {
         let mut box_content = VBox::horizontal(8);
         box_content = box_content.child(VNode::icon(icon));
 
-        box_content = box_content.child(
-            VNode::label(
-                crate::vdom::VLabel::new(label)
-            )
-        );
+        box_content = box_content.child(VNode::label(crate::vdom::VLabel::new(label)));
 
         // Create the button with cycling logic
         let options = props.options.clone();
@@ -158,18 +156,31 @@ mod tests {
     #[test]
     fn test_find_label_found() {
         let options = vec![
-            StatusOption { id: "a".to_string(), label: "Label A".to_string() },
-            StatusOption { id: "b".to_string(), label: "Label B".to_string() },
+            StatusOption {
+                id: "a".to_string(),
+                label: "Label A".to_string(),
+            },
+            StatusOption {
+                id: "b".to_string(),
+                label: "Label B".to_string(),
+            },
         ];
-        assert_eq!(StatusCycleButtonRender::find_label("a", &options), "Label A");
-        assert_eq!(StatusCycleButtonRender::find_label("b", &options), "Label B");
+        assert_eq!(
+            StatusCycleButtonRender::find_label("a", &options),
+            "Label A"
+        );
+        assert_eq!(
+            StatusCycleButtonRender::find_label("b", &options),
+            "Label B"
+        );
     }
 
     #[test]
     fn test_find_label_not_found() {
-        let options = vec![
-            StatusOption { id: "a".to_string(), label: "Label A".to_string() },
-        ];
+        let options = vec![StatusOption {
+            id: "a".to_string(),
+            label: "Label A".to_string(),
+        }];
         assert_eq!(StatusCycleButtonRender::find_label("x", &options), "---");
     }
 
@@ -182,9 +193,18 @@ mod tests {
     #[test]
     fn test_next_option_id_cycle() {
         let options = vec![
-            StatusOption { id: "a".to_string(), label: "A".to_string() },
-            StatusOption { id: "b".to_string(), label: "B".to_string() },
-            StatusOption { id: "c".to_string(), label: "C".to_string() },
+            StatusOption {
+                id: "a".to_string(),
+                label: "A".to_string(),
+            },
+            StatusOption {
+                id: "b".to_string(),
+                label: "B".to_string(),
+            },
+            StatusOption {
+                id: "c".to_string(),
+                label: "C".to_string(),
+            },
         ];
 
         assert_eq!(StatusCycleButtonRender::next_option_id("a", &options), "b");
@@ -195,8 +215,14 @@ mod tests {
     #[test]
     fn test_next_option_id_not_found() {
         let options = vec![
-            StatusOption { id: "a".to_string(), label: "A".to_string() },
-            StatusOption { id: "b".to_string(), label: "B".to_string() },
+            StatusOption {
+                id: "a".to_string(),
+                label: "A".to_string(),
+            },
+            StatusOption {
+                id: "b".to_string(),
+                label: "B".to_string(),
+            },
         ];
 
         // If not found, returns the first option
@@ -211,9 +237,10 @@ mod tests {
 
     #[test]
     fn test_next_option_id_single() {
-        let options = vec![
-            StatusOption { id: "a".to_string(), label: "A".to_string() },
-        ];
+        let options = vec![StatusOption {
+            id: "a".to_string(),
+            label: "A".to_string(),
+        }];
 
         // Cycling with single option returns itself
         assert_eq!(StatusCycleButtonRender::next_option_id("a", &options), "a");

@@ -27,10 +27,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     match cli.command {
         None | Some(Command::Daemon) => {
-            env_logger::Builder::from_env(
-                env_logger::Env::default().default_filter_or("info"),
-            )
-            .init();
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+                .init();
             run_daemon()?;
         }
         Some(Command::Plugin { command }) => match command {
@@ -44,15 +42,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some(Command::Commands { filter, run }) => {
             commands_command::run(cli.json, filter.as_deref(), run);
         }
-        Some(Command::Protocol { entity_type, domain, verbose }) => {
-            protocol_command::run(
-                cli.json,
-                verbose,
-                entity_type.as_deref(),
-                domain.as_deref(),
-            );
+        Some(Command::Protocol {
+            entity_type,
+            domain,
+            verbose,
+        }) => {
+            protocol_command::run(cli.json, verbose, entity_type.as_deref(), domain.as_deref());
         }
-        Some(Command::Query { entity_type, start, timeout_ms }) => {
+        Some(Command::Query {
+            entity_type,
+            start,
+            timeout_ms,
+        }) => {
             query_command::run(cli.json, entity_type.as_deref(), start, timeout_ms);
         }
     }
@@ -106,7 +107,8 @@ fn probe_existing_listener(path: &std::path::Path) -> std::io::Result<bool> {
 ///
 /// Returns the connection handle (must be kept alive). Fails if another
 /// instance already owns the name.
-async fn register_dbus_name() -> Result<zbus::Connection, Box<dyn std::error::Error + Send + Sync>> {
+async fn register_dbus_name() -> Result<zbus::Connection, Box<dyn std::error::Error + Send + Sync>>
+{
     let conn = zbus::Connection::session().await?;
 
     let well_known_name = zbus::names::WellKnownName::try_from(DBUS_NAME)?;

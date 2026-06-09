@@ -6,8 +6,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::vdom::{Component, RenderCallback, RenderComponent, RenderFn, VNode};
 use crate::vdom::primitives::VBox;
+use crate::vdom::{Component, RenderCallback, RenderComponent, RenderFn, VNode};
 use crate::widget_base::WidgetBase;
 
 /// Properties for the drop zone.

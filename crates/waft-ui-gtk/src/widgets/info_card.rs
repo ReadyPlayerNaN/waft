@@ -27,9 +27,7 @@ impl RenderFn for InfoCardRender {
     fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
         let icon = VIcon::new(vec![Icon::parse(&props.icon)], 32);
 
-        let title = VLabel::new(&props.title)
-            .css_class("title-3")
-            .xalign(0.0);
+        let title = VLabel::new(&props.title).css_class("title-3").xalign(0.0);
 
         let mut labels_box = VBox::vertical(0)
             .valign(gtk::Align::Center)
@@ -37,9 +35,7 @@ impl RenderFn for InfoCardRender {
 
         // Add description label only if Some
         if let Some(desc) = &props.description {
-            let description = VLabel::new(desc)
-                .css_class("dim-label")
-                .xalign(0.0);
+            let description = VLabel::new(desc).css_class("dim-label").xalign(0.0);
             labels_box = labels_box.child(VNode::label(description));
         }
 

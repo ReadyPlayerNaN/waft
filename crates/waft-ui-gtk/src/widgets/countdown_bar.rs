@@ -9,8 +9,8 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::vdom::{Component, RenderCallback, RenderComponent, RenderFn, VNode, VProgressBar};
 

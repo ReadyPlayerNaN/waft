@@ -22,14 +22,14 @@ pub fn daemon_socket_path() -> Result<PathBuf, String> {
 /// Connect to the daemon socket, returning a helpful error on failure.
 pub async fn connect_daemon() -> Result<UnixStream, String> {
     let socket_path = daemon_socket_path()?;
-    UnixStream::connect(&socket_path).await.map_err(|e| {
-        match e.kind() {
+    UnixStream::connect(&socket_path)
+        .await
+        .map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused => {
                 "waft daemon is not running. Start it with `waft` or `waft daemon`.".to_string()
             }
             _ => format!("Failed to connect to daemon: {e}"),
-        }
-    })
+        })
 }
 
 /// Send a length-prefixed JSON message to the daemon.

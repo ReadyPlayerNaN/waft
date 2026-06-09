@@ -41,12 +41,7 @@ impl TestPlugin {
     }
 
     /// Send an EntityUpdated message.
-    pub async fn send_entity(
-        &mut self,
-        urn: Urn,
-        entity_type: &str,
-        data: serde_json::Value,
-    ) {
+    pub async fn send_entity(&mut self, urn: Urn, entity_type: &str, data: serde_json::Value) {
         self.send(&PluginMessage::EntityUpdated {
             urn,
             entity_type: entity_type.to_string(),

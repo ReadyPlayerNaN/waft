@@ -26,13 +26,15 @@ fn no_subtitle(_v: &serde_json::Value) -> Option<String> {
 }
 
 fn active_subtitle(v: &serde_json::Value) -> Option<String> {
-    v.get("active").and_then(serde_json::Value::as_bool).map(|active| {
-        if active {
-            "Active".to_string()
-        } else {
-            "Inactive".to_string()
-        }
-    })
+    v.get("active")
+        .and_then(serde_json::Value::as_bool)
+        .map(|active| {
+            if active {
+                "Active".to_string()
+            } else {
+                "Inactive".to_string()
+            }
+        })
 }
 
 fn name_subtitle(v: &serde_json::Value) -> Option<String> {
