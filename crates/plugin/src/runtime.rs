@@ -94,8 +94,7 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
         // ClaimSender immediately; without this keepalive the channel would
         // close instantly and claim_rx.recv() would return None on every poll
         // iteration, causing the select! loop below to busy-spin at 100% CPU.
-        let (claim_tx, mut claim_rx) =
-            tokio::sync::mpsc::channel::<crate::claim::ClaimRequest>(16);
+        let (claim_tx, mut claim_rx) = tokio::sync::mpsc::channel::<crate::claim::ClaimRequest>(16);
         self.plugin
             .set_claim_sender(crate::claim::ClaimSender::new(claim_tx.clone()));
 
@@ -148,6 +147,18 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                                     };
                                     tokio::spawn(async move {
                                         ctx.plugin.handle_claim_result(urn, claim_id, claimed).await;
+                                        send_all_entities(&*ctx.plugin, &ctx.tx, &ctx.name, &ctx.previous).await;
+                                    });
+                                }
+                                PluginCommand::SubscriberCountChanged { entity_type, count } => {
+                                    let ctx = ActionContext {
+                                        plugin: self.plugin.clone(),
+                                        tx: write_tx.clone(),
+                                        name: self.name.clone(),
+                                        previous: previous.clone(),
+                                    };
+                                    tokio::spawn(async move {
+                                        ctx.plugin.handle_subscriber_count_changed(entity_type, count).await;
                                         send_all_entities(&*ctx.plugin, &ctx.tx, &ctx.name, &ctx.previous).await;
                                     });
                                 }
@@ -371,12 +382,9 @@ mod tests {
         // NoOpPlugin drops the ClaimSender immediately. The retained claim_tx
         // must keep the channel open so recv() properly awaits instead of
         // returning None (which would trigger a busy-spin in the select! loop).
-        let timed_out = tokio::time::timeout(
-            std::time::Duration::from_millis(20),
-            claim_rx.recv(),
-        )
-        .await
-        .is_err();
+        let timed_out = tokio::time::timeout(std::time::Duration::from_millis(20), claim_rx.recv())
+            .await
+            .is_err();
 
         assert!(
             timed_out,

@@ -104,4 +104,10 @@ pub trait Plugin: Send + Sync {
     ///
     /// Default: no-op (plugin ignores claim results).
     async fn handle_claim_result(&self, _urn: Urn, _claim_id: Uuid, _claimed: bool) {}
+
+    /// Called by the runtime when the daemon's subscriber count for an entity type changes.
+    ///
+    /// Plugins can use this to lazily start or stop expensive monitoring work.
+    /// Default: no-op.
+    async fn handle_subscriber_count_changed(&self, _entity_type: String, _count: usize) {}
 }

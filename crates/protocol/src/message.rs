@@ -106,9 +106,7 @@ pub enum AppNotification {
     EntityOutdated { urn: Urn, entity_type: String },
 
     /// Response to a Describe request.
-    DescribeResponse {
-        plugins: Vec<PluginDescription>,
-    },
+    DescribeResponse { plugins: Vec<PluginDescription> },
 
     /// Ask whether the app still wants a specific entity (from daemon, originated by plugin).
     ClaimCheck { urn: Urn, claim_id: Uuid },
@@ -130,7 +128,14 @@ pub enum PluginCommand {
     },
 
     /// Aggregated result of a claim check: whether any subscriber claimed the entity.
-    ClaimResult { urn: Urn, claim_id: Uuid, claimed: bool },
+    ClaimResult {
+        urn: Urn,
+        claim_id: Uuid,
+        claimed: bool,
+    },
+
+    /// Current subscriber count for an entity type changed.
+    SubscriberCountChanged { entity_type: String, count: usize },
 }
 
 #[cfg(test)]
@@ -298,6 +303,14 @@ mod tests {
     }
 
     #[test]
+    fn plugin_command_subscriber_count_changed() {
+        roundtrip_json(&PluginCommand::SubscriberCountChanged {
+            entity_type: "user-timer".to_string(),
+            count: 2,
+        });
+    }
+
+    #[test]
     fn plugin_command_trigger_action() {
         roundtrip_json(&PluginCommand::TriggerAction {
             urn: Urn::new("caffeine", "sleep-inhibitor", "default"),
@@ -309,9 +322,7 @@ mod tests {
 
     #[test]
     fn app_message_describe_all() {
-        roundtrip_json(&AppMessage::Describe {
-            plugin_name: None,
-        });
+        roundtrip_json(&AppMessage::Describe { plugin_name: None });
     }
 
     #[test]
@@ -348,9 +359,7 @@ mod tests {
 
     #[test]
     fn app_notification_describe_response_empty() {
-        roundtrip_json(&AppNotification::DescribeResponse {
-            plugins: vec![],
-        });
+        roundtrip_json(&AppNotification::DescribeResponse { plugins: vec![] });
     }
 
     #[test]

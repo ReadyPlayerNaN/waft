@@ -97,6 +97,11 @@ impl AppRegistry {
             .is_some_and(|s| !s.is_empty())
     }
 
+    /// Get the current subscriber count for an entity type.
+    pub fn subscriber_count(&self, entity_type: &str) -> usize {
+        self.subscriptions.get(entity_type).map_or(0, HashSet::len)
+    }
+
     /// Remove all subscriptions for a disconnected connection.
     pub fn remove_connection(&mut self, conn_id: Uuid) {
         self.subscriptions.retain(|_, subs| {

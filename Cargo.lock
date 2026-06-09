@@ -3831,6 +3831,7 @@ dependencies = [
  "dirs 5.0.1",
  "futures-util",
  "log",
+ "notify",
  "serde",
  "serde_json",
  "tokio",

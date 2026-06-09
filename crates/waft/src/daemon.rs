@@ -241,10 +241,11 @@ impl WaftDaemon {
                     name: plugin_name.clone(),
                 };
             }
-            self.plugin_registry
-                .register(plugin_name.clone(), conn_id);
+            self.plugin_registry.register(plugin_name.clone(), conn_id);
             // Clear stopped state since the plugin is now running
             self.stopped_plugins.remove(&plugin_name);
+            self.send_initial_subscriber_counts_to_plugin(&plugin_name, conn_id)
+                .await;
             let result = self.handle_plugin_message(conn_id, msg).await;
             // Emit updated plugin-status (now Running)
             self.emit_plugin_status(&plugin_name).await;
@@ -374,7 +375,9 @@ impl WaftDaemon {
                         claim_id,
                         claimed: false,
                     };
-                    if let Some(conn) = self.connections.get(&conn_id) && let Err(e) = conn.send(&cmd).await {
+                    if let Some(conn) = self.connections.get(&conn_id)
+                        && let Err(e) = conn.send(&cmd).await
+                    {
                         warn!("failed to send immediate ClaimResult to plugin: {e}");
                     }
                 } else {
@@ -392,7 +395,9 @@ impl WaftDaemon {
                         claim_id,
                     };
                     for app_id in &subscribers {
-                        if let Some(conn) = self.connections.get(app_id) && let Err(e) = conn.send(&notification).await {
+                        if let Some(conn) = self.connections.get(app_id)
+                            && let Err(e) = conn.send(&notification).await
+                        {
                             warn!("failed to send ClaimCheck to {app_id}: {e}");
                         }
                     }
@@ -444,6 +449,9 @@ impl WaftDaemon {
                 self.app_registry.subscribe(entity_type.clone(), conn_id);
                 debug!("app {conn_id} subscribed to {entity_type}");
 
+                self.broadcast_subscriber_count_for_entity_type(&entity_type)
+                    .await;
+
                 // Track subscription in connection state
                 if let Some(conn) = self.connections.get_mut(&conn_id)
                     && let ClientKind::App { subscriptions } = &mut conn.kind
@@ -465,6 +473,9 @@ impl WaftDaemon {
             AppMessage::Unsubscribe { entity_type } => {
                 self.app_registry.unsubscribe(&entity_type, conn_id);
                 debug!("app {conn_id} unsubscribed from {entity_type}");
+
+                self.broadcast_subscriber_count_for_entity_type(&entity_type)
+                    .await;
 
                 if let Some(conn) = self.connections.get_mut(&conn_id)
                     && let ClientKind::App { subscriptions } = &mut conn.kind
@@ -544,8 +555,9 @@ impl WaftDaemon {
             }
 
             AppMessage::ClaimResponse { claim_id, claimed } => {
-                if let Some(resolution) =
-                    self.claim_tracker.record_response(claim_id, conn_id, claimed)
+                if let Some(resolution) = self
+                    .claim_tracker
+                    .record_response(claim_id, conn_id, claimed)
                 {
                     self.send_claim_result(&resolution).await;
                 }
@@ -640,7 +652,9 @@ impl WaftDaemon {
             claim_id: resolution.claim_id,
             claimed: resolution.claimed,
         };
-        if let Some(conn) = self.connections.get(&resolution.plugin_conn_id) && let Err(e) = conn.send(&cmd).await {
+        if let Some(conn) = self.connections.get(&resolution.plugin_conn_id)
+            && let Err(e) = conn.send(&cmd).await
+        {
             warn!(
                 "failed to send ClaimResult to plugin {}: {e}",
                 resolution.plugin_conn_id
@@ -648,17 +662,63 @@ impl WaftDaemon {
         }
     }
 
-    /// Get the entity types a plugin provides (from the entity cache).
+    /// Get the entity types a plugin provides from discovery metadata.
     fn entity_types_for_plugin(&self, plugin_name: &str) -> Vec<String> {
-        let mut types: Vec<String> = self
-            .entity_cache
-            .values()
-            .filter(|e| e.urn.plugin() == plugin_name)
-            .map(|e| e.entity_type.clone())
-            .collect();
-        types.sort();
-        types.dedup();
-        types
+        self.plugin_spawner
+            .all_plugins()
+            .into_iter()
+            .find(|(name, _)| name == plugin_name)
+            .map(|(_, types)| types)
+            .unwrap_or_default()
+    }
+
+    /// Notify all connected providers of an entity type about the current subscriber count.
+    async fn broadcast_subscriber_count_for_entity_type(&self, entity_type: &str) {
+        let count = self.app_registry.subscriber_count(entity_type);
+
+        for (plugin_name, entity_types) in self.plugin_spawner.all_plugins() {
+            if !entity_types.iter().any(|et| et == entity_type) {
+                continue;
+            }
+
+            if let Some(conn_id) = self.plugin_registry.connection_for_plugin(&plugin_name)
+                && let Some(conn) = self.connections.get(&conn_id)
+                && let Err(e) = conn
+                    .send(&PluginCommand::SubscriberCountChanged {
+                        entity_type: entity_type.to_string(),
+                        count,
+                    })
+                    .await
+            {
+                warn!(
+                    "failed to send SubscriberCountChanged({entity_type}, {count}) to {plugin_name}: {e}"
+                );
+            }
+        }
+    }
+
+    /// Send initial subscriber counts for all entity types a plugin provides.
+    async fn send_initial_subscriber_counts_to_plugin(&self, plugin_name: &str, conn_id: Uuid) {
+        let entity_types = self.entity_types_for_plugin(plugin_name);
+        let Some(conn) = self.connections.get(&conn_id) else {
+            return;
+        };
+
+        for entity_type in entity_types {
+            let count = self.app_registry.subscriber_count(&entity_type);
+            if let Err(e) = conn
+                .send(&PluginCommand::SubscriberCountChanged {
+                    entity_type: entity_type.clone(),
+                    count,
+                })
+                .await
+            {
+                warn!(
+                    "failed to send initial SubscriberCountChanged({}, {}) to {}: {e}",
+                    entity_type, count, plugin_name
+                );
+            }
+        }
     }
 
     /// Check if a plugin has any subscribers across all its entity types.
@@ -704,15 +764,18 @@ impl WaftDaemon {
 
     /// Clean up all state for a disconnected connection.
     async fn remove_connection(&mut self, conn_id: Uuid) {
-        let plugin_name = if let Some(conn) = self.connections.remove(&conn_id) {
-            if let ClientKind::Plugin { ref name } = conn.kind {
-                info!("plugin {name} disconnected (conn {conn_id})");
-                Some(name.clone())
-            } else {
-                None
+        let (plugin_name, app_subscriptions) = if let Some(conn) = self.connections.remove(&conn_id)
+        {
+            match conn.kind {
+                ClientKind::Plugin { name } => {
+                    info!("plugin {name} disconnected (conn {conn_id})");
+                    (Some(name), None)
+                }
+                ClientKind::App { subscriptions } => (None, Some(subscriptions)),
+                ClientKind::Unknown => (None, None),
             }
         } else {
-            None
+            (None, None)
         };
 
         // Collect entity info before removing from cache (needed for notifications)
@@ -779,9 +842,7 @@ impl WaftDaemon {
                         if let Some(conn) = self.connections.get(&app_id)
                             && let Err(e) = conn.send(&notification).await
                         {
-                            warn!(
-                                "failed to send stale/outdated notification to {app_id}: {e}"
-                            );
+                            warn!("failed to send stale/outdated notification to {app_id}: {e}");
                         }
                     }
                 }
@@ -799,15 +860,11 @@ impl WaftDaemon {
                                 self.plugin_spawner.ensure_plugin_for_entity_type(et);
                             }
                         } else {
-                            info!(
-                                "plugin {name} crashed but has no subscribers, not restarting"
-                            );
+                            info!("plugin {name} crashed but has no subscribers, not restarting");
                         }
                     }
                     CrashOutcome::CircuitBroken => {
-                        warn!(
-                            "plugin {name} crashed too many times, circuit breaker tripped"
-                        );
+                        warn!("plugin {name} crashed too many times, circuit breaker tripped");
                     }
                 }
             }
@@ -822,6 +879,13 @@ impl WaftDaemon {
 
         // When an app disconnects, check if any plugins now have zero subscribers
         if plugin_name.is_none() {
+            if let Some(subscriptions) = app_subscriptions {
+                for entity_type in subscriptions {
+                    self.broadcast_subscriber_count_for_entity_type(&entity_type)
+                        .await;
+                }
+            }
+
             let all_plugins = self.plugin_registry.all_plugin_names();
             for name in all_plugins {
                 if !self.pending_can_stops.contains_key(&name)
@@ -863,7 +927,11 @@ impl WaftDaemon {
     fn compute_plugin_state(&self, plugin_name: &str) -> PluginState {
         if self.crash_tracker.circuit_broken(plugin_name) {
             PluginState::Failed
-        } else if self.plugin_registry.connection_for_plugin(plugin_name).is_some() {
+        } else if self
+            .plugin_registry
+            .connection_for_plugin(plugin_name)
+            .is_some()
+        {
             PluginState::Running
         } else if self.stopped_plugins.contains(plugin_name) {
             PluginState::Stopped

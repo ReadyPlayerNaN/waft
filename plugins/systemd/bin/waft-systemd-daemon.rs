@@ -36,25 +36,31 @@
 //! ```
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
-use waft_plugin::*;
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use tokio::task::JoinHandle;
 use waft_plugin::dbus_proxy::DbusService;
+use waft_plugin::*;
 use waft_protocol::entity::session::{RestartPolicy, ScheduleKind, UserService, UserTimer};
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
 use waft_plugin::StateLocker;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/systemd.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/systemd.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/systemd.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/systemd.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 const LOGIN1_DESTINATION: &str = "org.freedesktop.login1";
 const LOGIN1_MANAGER_PATH: &str = "/org/freedesktop/login1";
@@ -70,8 +76,16 @@ const IFACE_PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 // name, description, load_state, active_state, sub_state,
 // followed_by, object_path, queued_job_id, job_type, job_object_path
 type UnitTuple = (
-    String, String, String, String, String,
-    String, zbus::zvariant::OwnedObjectPath, u32, String, zbus::zvariant::OwnedObjectPath,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    zbus::zvariant::OwnedObjectPath,
+    u32,
+    String,
+    zbus::zvariant::OwnedObjectPath,
 );
 
 /// Resolve the current session's D-Bus object path.
@@ -132,7 +146,17 @@ struct SystemdPlugin {
     screen_name: Option<String>,
     services: Arc<StdMutex<HashMap<String, UserService>>>,
     timers: Arc<StdMutex<HashMap<String, UserTimer>>>,
+    monitors: Arc<tokio::sync::Mutex<MonitorState>>,
     notifier: EntityNotifier,
+}
+
+#[derive(Default)]
+struct MonitorState {
+    user_service_subscribers: usize,
+    user_timer_subscribers: usize,
+    service_monitor_task: Option<JoinHandle<()>>,
+    timer_signal_task: Option<JoinHandle<()>>,
+    timer_file_watch_task: Option<JoinHandle<()>>,
 }
 
 impl SystemdPlugin {
@@ -151,7 +175,7 @@ impl SystemdPlugin {
         let services = Arc::new(StdMutex::new(HashMap::new()));
         let timers = Arc::new(StdMutex::new(HashMap::new()));
 
-        let mut plugin = Self {
+        Ok(Self {
             system_conn,
             session_conn,
             session_path,
@@ -159,13 +183,9 @@ impl SystemdPlugin {
             screen_name: get_screen_name(),
             services,
             timers,
+            monitors: Arc::new(tokio::sync::Mutex::new(MonitorState::default())),
             notifier,
-        };
-
-        plugin.load_services().await;
-        plugin.load_timers().await;
-
-        Ok(plugin)
+        })
     }
 
     /// D-Bus handle for the systemd1 Manager interface on the session bus.
@@ -189,14 +209,14 @@ impl SystemdPlugin {
     }
 
     /// Load user services from systemd1 on the session bus.
-    async fn load_services(&mut self) {
+    async fn load_services(&self) {
+        let mut new_services: HashMap<String, UserService> = HashMap::new();
+
         match self.list_services().await {
             Ok(svc_list) => {
-                let mut services = self.services.lock_or_recover();
                 for svc in svc_list {
-                    services.insert(unit_to_urn_id(&svc.unit), svc);
+                    new_services.insert(unit_to_urn_id(&svc.unit), svc);
                 }
-                log::info!("[systemd] Loaded {} user services", services.len());
             }
             Err(e) => {
                 log::warn!("[systemd] Failed to list user services: {e}");
@@ -206,20 +226,22 @@ impl SystemdPlugin {
         // Discover additional enabled/disabled unit files not currently loaded
         match self.list_unit_files().await {
             Ok(unit_files) => {
-                let mut services = self.services.lock_or_recover();
                 let mut added = 0usize;
                 for (unit_name, file_state) in unit_files {
                     let urn_id = unit_to_urn_id(&unit_name);
-                    if services.contains_key(&urn_id) {
+                    if new_services.contains_key(&urn_id) {
                         continue;
                     }
-                    services.insert(urn_id, UserService {
-                        unit: unit_name,
-                        description: String::new(),
-                        active_state: "inactive".to_string(),
-                        sub_state: "dead".to_string(),
-                        enabled: unit_file_state_to_enabled(&file_state),
-                    });
+                    new_services.insert(
+                        urn_id,
+                        UserService {
+                            unit: unit_name,
+                            description: String::new(),
+                            active_state: "inactive".to_string(),
+                            sub_state: "dead".to_string(),
+                            enabled: unit_file_state_to_enabled(&file_state),
+                        },
+                    );
                     added += 1;
                 }
                 if added > 0 {
@@ -227,9 +249,15 @@ impl SystemdPlugin {
                 }
             }
             Err(e) => {
-                log::warn!("[systemd] Failed to list unit files (continuing with loaded services only): {e}");
+                log::warn!(
+                    "[systemd] Failed to list unit files (continuing with loaded services only): {e}"
+                );
             }
         }
+
+        let loaded = new_services.len();
+        *self.services.lock_or_recover() = new_services;
+        log::info!("[systemd] Loaded {loaded} user services");
     }
 
     /// List loaded .service units from the user systemd instance.
@@ -240,10 +268,7 @@ impl SystemdPlugin {
         let units: Vec<UnitTuple> = manager
             .call(
                 "ListUnitsByPatterns",
-                &(
-                    vec!["loaded"] as Vec<&str>,
-                    vec!["*.service"] as Vec<&str>,
-                ),
+                &(vec!["loaded"] as Vec<&str>, vec!["*.service"] as Vec<&str>),
             )
             .await?;
 
@@ -280,19 +305,13 @@ impl SystemdPlugin {
             .systemd1_manager()
             .call(
                 "ListUnitFilesByPatterns",
-                &(
-                    Vec::<&str>::new(),
-                    vec!["*.service"] as Vec<&str>,
-                ),
+                &(Vec::<&str>::new(), vec!["*.service"] as Vec<&str>),
             )
             .await?;
 
         let mut result = Vec::with_capacity(files.len());
         for (file_path, state) in files {
-            let basename = file_path
-                .rsplit('/')
-                .next()
-                .unwrap_or(&file_path);
+            let basename = file_path.rsplit('/').next().unwrap_or(&file_path);
             // Filter out template units
             if basename.contains('@') {
                 continue;
@@ -339,9 +358,18 @@ impl SystemdPlugin {
         .await
         {
             Ok(p) => {
-                let active_state = p.get_property::<String>("ActiveState").await.unwrap_or_else(|_| "unknown".to_string());
-                let sub_state = p.get_property::<String>("SubState").await.unwrap_or_else(|_| "unknown".to_string());
-                let description = p.get_property::<String>("Description").await.unwrap_or_default();
+                let active_state = p
+                    .get_property::<String>("ActiveState")
+                    .await
+                    .unwrap_or_else(|_| "unknown".to_string());
+                let sub_state = p
+                    .get_property::<String>("SubState")
+                    .await
+                    .unwrap_or_else(|_| "unknown".to_string());
+                let description = p
+                    .get_property::<String>("Description")
+                    .await
+                    .unwrap_or_default();
                 (active_state, sub_state, description)
             }
             Err(_) => ("unknown".to_string(), "unknown".to_string(), String::new()),
@@ -385,19 +413,84 @@ impl SystemdPlugin {
     }
 
     /// Load user timers from `~/.config/systemd/user/*.timer` and query D-Bus for status.
-    async fn load_timers(&mut self) {
+    async fn load_timers(&self) {
         match scan_user_timers(&self.session_conn).await {
             Ok(timer_list) => {
-                let mut timers = self.timers.lock_or_recover();
-                for (urn_id, timer) in timer_list {
-                    timers.insert(urn_id, timer);
-                }
-                log::info!("[systemd] Loaded {} user timers", timers.len());
+                let loaded = timer_list.len();
+                *self.timers.lock_or_recover() = timer_list.into_iter().collect();
+                log::info!("[systemd] Loaded {loaded} user timers");
             }
             Err(e) => {
                 log::warn!("[systemd] Failed to scan user timers: {e}");
             }
         }
+    }
+
+    async fn start_service_monitoring(&self) {
+        self.load_services().await;
+
+        let mut monitors = self.monitors.lock().await;
+        if monitors.service_monitor_task.is_none() {
+            let conn = self.session_conn.clone();
+            let services = self.services.clone();
+            let notifier = self.notifier.clone();
+            monitors.service_monitor_task = Some(tokio::spawn(async move {
+                if let Err(e) = monitor_service_signals(conn, services, notifier).await {
+                    log::warn!("[systemd] user-service monitor stopped: {e}");
+                }
+            }));
+        }
+    }
+
+    async fn stop_service_monitoring(&self) {
+        let mut monitors = self.monitors.lock().await;
+        if let Some(task) = monitors.service_monitor_task.take() {
+            task.abort();
+        }
+        drop(monitors);
+
+        self.services.lock_or_recover().clear();
+        self.notifier.notify();
+    }
+
+    async fn start_timer_monitoring(&self) {
+        self.load_timers().await;
+
+        let mut monitors = self.monitors.lock().await;
+        if monitors.timer_signal_task.is_none() {
+            let conn = self.session_conn.clone();
+            let timers = self.timers.clone();
+            let notifier = self.notifier.clone();
+            monitors.timer_signal_task = Some(tokio::spawn(async move {
+                if let Err(e) = monitor_timer_signals(conn, timers, notifier).await {
+                    log::warn!("[systemd] user-timer signal monitor stopped: {e}");
+                }
+            }));
+        }
+        if monitors.timer_file_watch_task.is_none() {
+            let conn = self.session_conn.clone();
+            let timers = self.timers.clone();
+            let notifier = self.notifier.clone();
+            monitors.timer_file_watch_task = Some(tokio::spawn(async move {
+                if let Err(e) = watch_timer_unit_dir(conn, timers, notifier).await {
+                    log::warn!("[systemd] user-timer file watcher stopped: {e}");
+                }
+            }));
+        }
+    }
+
+    async fn stop_timer_monitoring(&self) {
+        let mut monitors = self.monitors.lock().await;
+        if let Some(task) = monitors.timer_signal_task.take() {
+            task.abort();
+        }
+        if let Some(task) = monitors.timer_file_watch_task.take() {
+            task.abort();
+        }
+        drop(monitors);
+
+        self.timers.lock_or_recover().clear();
+        self.notifier.notify();
     }
 }
 
@@ -490,8 +583,7 @@ fn parse_schedule(sections: &HashMap<String, HashMap<String, Vec<String>>>) -> S
         }
     } else {
         ScheduleKind::Relative {
-            on_boot_sec: section_get(sections, "Timer", "OnBootSec")
-                .and_then(parse_duration_secs),
+            on_boot_sec: section_get(sections, "Timer", "OnBootSec").and_then(parse_duration_secs),
             on_startup_sec: section_get(sections, "Timer", "OnStartupSec")
                 .and_then(parse_duration_secs),
             on_unit_active_sec: section_get(sections, "Timer", "OnUnitActiveSec")
@@ -538,15 +630,34 @@ async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>>
     // ListUnits returns an array of (name, description, load_state, active_state,
     // sub_state, following, object_path, job_id, job_type, job_object_path).
     type UnitRow = (
-        String, String, String, String, String, String,
-        zbus::zvariant::OwnedObjectPath, u32, String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        zbus::zvariant::OwnedObjectPath,
+        u32,
+        String,
         zbus::zvariant::OwnedObjectPath,
     );
     let units: Vec<UnitRow> = manager.call("ListUnits", &()).await?;
 
     let mut timers = Vec::new();
 
-    for (unit_name, description, _load, active_state, _sub, _following, _obj, _job_id, _job_type, _job_obj) in units {
+    for (
+        unit_name,
+        description,
+        _load,
+        active_state,
+        _sub,
+        _following,
+        _obj,
+        _job_id,
+        _job_type,
+        _job_obj,
+    ) in units
+    {
         let name = match unit_name.strip_suffix(".timer") {
             Some(n) => n.to_string(),
             None => continue,
@@ -570,21 +681,52 @@ async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>>
         let (last_trigger, next_elapse, fragment_path) = match timer_path {
             Some(path) => {
                 let fragment_path = if let Ok(unit_proxy) = zbus::Proxy::new(
-                    conn, SYSTEMD1_DESTINATION, path.as_str(), "org.freedesktop.systemd1.Unit",
-                ).await {
-                    unit_proxy.get_property::<String>("FragmentPath").await.ok()
+                    conn,
+                    SYSTEMD1_DESTINATION,
+                    path.as_str(),
+                    "org.freedesktop.systemd1.Unit",
+                )
+                .await
+                {
+                    unit_proxy
+                        .get_property::<String>("FragmentPath")
+                        .await
+                        .ok()
                         .filter(|s| !s.is_empty())
                 } else {
                     None
                 };
 
                 let (last_trigger, next_elapse) = if let Ok(timer_iface) = zbus::Proxy::new(
-                    conn, SYSTEMD1_DESTINATION, path.as_str(), "org.freedesktop.systemd1.Timer",
-                ).await {
-                    let last = timer_iface.get_property::<u64>("LastTriggerUSec").await.ok()
-                        .and_then(|u| if u == 0 { None } else { Some((u / 1_000_000) as i64) });
-                    let next = timer_iface.get_property::<u64>("NextElapseUSecRealtime").await.ok()
-                        .and_then(|u| if u == 0 { None } else { Some((u / 1_000_000) as i64) });
+                    conn,
+                    SYSTEMD1_DESTINATION,
+                    path.as_str(),
+                    "org.freedesktop.systemd1.Timer",
+                )
+                .await
+                {
+                    let last = timer_iface
+                        .get_property::<u64>("LastTriggerUSec")
+                        .await
+                        .ok()
+                        .and_then(|u| {
+                            if u == 0 {
+                                None
+                            } else {
+                                Some((u / 1_000_000) as i64)
+                            }
+                        });
+                    let next = timer_iface
+                        .get_property::<u64>("NextElapseUSecRealtime")
+                        .await
+                        .ok()
+                        .and_then(|u| {
+                            if u == 0 {
+                                None
+                            } else {
+                                Some((u / 1_000_000) as i64)
+                            }
+                        });
                     (last, next)
                 } else {
                     (None, None)
@@ -596,39 +738,8 @@ async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>>
         };
 
         // Read unit file content for schedule/service config
-        let (schedule, command, working_directory, environment, after, restart, cpu_quota, memory_limit) =
-            if let Some(ref fp) = fragment_path {
-                read_timer_unit_content(fp, &name).await
-            } else {
-                (
-                    ScheduleKind::Calendar { spec: String::new(), persistent: false },
-                    String::new(), None, Vec::new(), Vec::new(), RestartPolicy::No, None, None,
-                )
-            };
-
-        // Get last exit code from paired service
-        let last_exit_code = {
-            let svc_unit = format!("{name}.service");
-            let svc_path: Option<zbus::zvariant::OwnedObjectPath> =
-                manager.try_call("GetUnit", &(svc_unit.as_str(),)).await;
-            match svc_path {
-                Some(p) => match zbus::Proxy::new(conn, SYSTEMD1_DESTINATION, p.as_str(), "org.freedesktop.systemd1.Service").await {
-                    Ok(proxy) => proxy.get_property::<i32>("ExecMainStatus").await.ok(),
-                    Err(_) => None,
-                },
-                None => None,
-            }
-        };
-
-        timers.push((name.clone(), UserTimer {
-            name,
-            description,
-            enabled,
-            active,
+        let (
             schedule,
-            last_trigger,
-            next_elapse,
-            last_exit_code,
             command,
             working_directory,
             environment,
@@ -636,7 +747,65 @@ async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>>
             restart,
             cpu_quota,
             memory_limit,
-        }));
+        ) = if let Some(ref fp) = fragment_path {
+            read_timer_unit_content(fp, &name).await
+        } else {
+            (
+                ScheduleKind::Calendar {
+                    spec: String::new(),
+                    persistent: false,
+                },
+                String::new(),
+                None,
+                Vec::new(),
+                Vec::new(),
+                RestartPolicy::No,
+                None,
+                None,
+            )
+        };
+
+        // Get last exit code from paired service
+        let last_exit_code = {
+            let svc_unit = format!("{name}.service");
+            let svc_path: Option<zbus::zvariant::OwnedObjectPath> =
+                manager.try_call("GetUnit", &(svc_unit.as_str(),)).await;
+            match svc_path {
+                Some(p) => match zbus::Proxy::new(
+                    conn,
+                    SYSTEMD1_DESTINATION,
+                    p.as_str(),
+                    "org.freedesktop.systemd1.Service",
+                )
+                .await
+                {
+                    Ok(proxy) => proxy.get_property::<i32>("ExecMainStatus").await.ok(),
+                    Err(_) => None,
+                },
+                None => None,
+            }
+        };
+
+        timers.push((
+            name.clone(),
+            UserTimer {
+                name,
+                description,
+                enabled,
+                active,
+                schedule,
+                last_trigger,
+                next_elapse,
+                last_exit_code,
+                command,
+                working_directory,
+                environment,
+                after,
+                restart,
+                cpu_quota,
+                memory_limit,
+            },
+        ));
     }
 
     Ok(timers)
@@ -646,11 +815,31 @@ async fn scan_user_timers(conn: &Connection) -> Result<Vec<(String, UserTimer)>>
 async fn read_timer_unit_content(
     fragment_path: &str,
     name: &str,
-) -> (ScheduleKind, String, Option<String>, Vec<(String, String)>, Vec<String>, RestartPolicy, Option<String>, Option<String>) {
-    let empty = || (
-        ScheduleKind::Calendar { spec: String::new(), persistent: false },
-        String::new(), None, Vec::new(), Vec::new(), RestartPolicy::No, None, None,
-    );
+) -> (
+    ScheduleKind,
+    String,
+    Option<String>,
+    Vec<(String, String)>,
+    Vec<String>,
+    RestartPolicy,
+    Option<String>,
+    Option<String>,
+) {
+    let empty = || {
+        (
+            ScheduleKind::Calendar {
+                spec: String::new(),
+                persistent: false,
+            },
+            String::new(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            RestartPolicy::No,
+            None,
+            None,
+        )
+    };
 
     let timer_content = match tokio::fs::read_to_string(fragment_path).await {
         Ok(c) => c,
@@ -674,22 +863,57 @@ async fn read_timer_unit_content(
                 Ok(content) => {
                     let s = parse_unit_file(&content);
                     (
-                        section_get(&s, "Service", "ExecStart").unwrap_or("").to_string(),
-                        section_get(&s, "Service", "WorkingDirectory").map(std::string::ToString::to_string),
+                        section_get(&s, "Service", "ExecStart")
+                            .unwrap_or("")
+                            .to_string(),
+                        section_get(&s, "Service", "WorkingDirectory")
+                            .map(std::string::ToString::to_string),
                         parse_environment(&section_get_all(&s, "Service", "Environment")),
                         section_get_all(&s, "Unit", "After")
-                            .iter().flat_map(|v| v.split_whitespace()).map(std::string::ToString::to_string).collect(),
-                        section_get(&s, "Service", "Restart").map(parse_restart_policy).unwrap_or(RestartPolicy::No),
-                        section_get(&s, "Service", "CPUQuota").map(std::string::ToString::to_string),
-                        section_get(&s, "Service", "MemoryLimit").map(std::string::ToString::to_string),
+                            .iter()
+                            .flat_map(|v| v.split_whitespace())
+                            .map(std::string::ToString::to_string)
+                            .collect(),
+                        section_get(&s, "Service", "Restart")
+                            .map(parse_restart_policy)
+                            .unwrap_or(RestartPolicy::No),
+                        section_get(&s, "Service", "CPUQuota")
+                            .map(std::string::ToString::to_string),
+                        section_get(&s, "Service", "MemoryLimit")
+                            .map(std::string::ToString::to_string),
                     )
                 }
-                Err(_) => (String::new(), None, Vec::new(), Vec::new(), RestartPolicy::No, None, None),
+                Err(_) => (
+                    String::new(),
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    RestartPolicy::No,
+                    None,
+                    None,
+                ),
             },
-            None => (String::new(), None, Vec::new(), Vec::new(), RestartPolicy::No, None, None),
+            None => (
+                String::new(),
+                None,
+                Vec::new(),
+                Vec::new(),
+                RestartPolicy::No,
+                None,
+                None,
+            ),
         };
 
-    (schedule, command, working_directory, environment, after, restart, cpu_quota, memory_limit)
+    (
+        schedule,
+        command,
+        working_directory,
+        environment,
+        after,
+        restart,
+        cpu_quota,
+        memory_limit,
+    )
 }
 
 /// Query D-Bus for a timer's runtime state: active, enabled, last trigger, next elapse, exit code.
@@ -724,7 +948,8 @@ async fn query_timer_dbus_state(
                 path.as_str(),
                 "org.freedesktop.systemd1.Unit",
             )
-            .await else {
+            .await
+            else {
                 return (false, enabled, None, None, None);
             };
 
@@ -741,7 +966,8 @@ async fn query_timer_dbus_state(
                 path.as_str(),
                 "org.freedesktop.systemd1.Timer",
             )
-            .await else {
+            .await
+            else {
                 return (active, enabled, None, None, None);
             };
 
@@ -814,13 +1040,16 @@ async fn validate_calendar_spec(spec: &str) -> Result<()> {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let msg = if !stderr.is_empty() { stderr } else { stdout };
-        Err(anyhow::anyhow!("Invalid OnCalendar expression {spec:?}: {msg}"))
+        Err(anyhow::anyhow!(
+            "Invalid OnCalendar expression {spec:?}: {msg}"
+        ))
     }
 }
 
 async fn write_timer_unit_files(name: &str, timer: &UserTimer) -> Result<()> {
     // Validate calendar spec before touching the filesystem
-    if let waft_protocol::entity::session::ScheduleKind::Calendar { ref spec, .. } = timer.schedule {
+    if let waft_protocol::entity::session::ScheduleKind::Calendar { ref spec, .. } = timer.schedule
+    {
         validate_calendar_spec(spec).await?;
     }
 
@@ -884,10 +1113,7 @@ fn build_timer_unit_content(timer: &UserTimer) -> String {
 
 /// Build the content of a .service unit file.
 fn build_service_unit_content(timer: &UserTimer) -> String {
-    let mut content = format!(
-        "[Unit]\nDescription={} (service)\n",
-        timer.description
-    );
+    let mut content = format!("[Unit]\nDescription={} (service)\n", timer.description);
 
     if !timer.after.is_empty() {
         content.push_str(&format!("After={}\n", timer.after.join(" ")));
@@ -960,11 +1186,7 @@ impl Plugin for SystemdPlugin {
         };
 
         let mut entities = vec![Entity::new(
-            Urn::new(
-                "systemd",
-                entity::session::SESSION_ENTITY_TYPE,
-                "default",
-            ),
+            Urn::new("systemd", entity::session::SESSION_ENTITY_TYPE, "default"),
             entity::session::SESSION_ENTITY_TYPE,
             &session,
         )];
@@ -973,11 +1195,7 @@ impl Plugin for SystemdPlugin {
 
         for (urn_id, svc) in services.iter() {
             entities.push(Entity::new(
-                Urn::new(
-                    "systemd",
-                    entity::session::USER_SERVICE_ENTITY_TYPE,
-                    urn_id,
-                ),
+                Urn::new("systemd", entity::session::USER_SERVICE_ENTITY_TYPE, urn_id),
                 entity::session::USER_SERVICE_ENTITY_TYPE,
                 svc,
             ));
@@ -987,11 +1205,7 @@ impl Plugin for SystemdPlugin {
 
         for (urn_id, timer) in timers.iter() {
             entities.push(Entity::new(
-                Urn::new(
-                    "systemd",
-                    entity::session::USER_TIMER_ENTITY_TYPE,
-                    urn_id,
-                ),
+                Urn::new("systemd", entity::session::USER_TIMER_ENTITY_TYPE, urn_id),
                 entity::session::USER_TIMER_ENTITY_TYPE,
                 timer,
             ));
@@ -1073,9 +1287,15 @@ impl Plugin for SystemdPlugin {
                         .args(["--user", "--no-block", "start", &service_unit])
                         .status()
                         .await
-                        .with_context(|| format!("Failed to run systemctl --user --no-block start {service_unit}"))?;
+                        .with_context(|| {
+                            format!(
+                                "Failed to run systemctl --user --no-block start {service_unit}"
+                            )
+                        })?;
                     if !status.success() {
-                        return Err(anyhow::anyhow!("systemctl --user --no-block start {service_unit} failed with {status}"));
+                        return Err(anyhow::anyhow!(
+                            "systemctl --user --no-block start {service_unit} failed with {status}"
+                        ));
                     }
                     log::info!("[systemd] Started service {service_unit} (no-block)");
                 }
@@ -1108,8 +1328,8 @@ impl Plugin for SystemdPlugin {
                     log::info!("[systemd] Deleted timer {name}");
                 }
                 "create" => {
-                    let timer: UserTimer = serde_json::from_value(params)
-                        .context("Invalid create params")?;
+                    let timer: UserTimer =
+                        serde_json::from_value(params).context("Invalid create params")?;
                     write_timer_unit_files(&timer.name, &timer).await?;
                     systemctl_user("enable", &format!("{}.timer", timer.name)).await?;
                     // Start the timer unit so it begins tracking the next elapse immediately.
@@ -1122,8 +1342,8 @@ impl Plugin for SystemdPlugin {
                     log::info!("[systemd] Created timer {name}");
                 }
                 "update" => {
-                    let timer: UserTimer = serde_json::from_value(params)
-                        .context("Invalid update params")?;
+                    let timer: UserTimer =
+                        serde_json::from_value(params).context("Invalid update params")?;
                     write_timer_unit_files(&name, &timer).await?;
 
                     self.timers.lock_or_recover().insert(name.clone(), timer);
@@ -1147,13 +1367,48 @@ impl Plugin for SystemdPlugin {
             }
 
             // Push updated entity state to subscribed apps immediately.
-            // Without this, the UI waits for the next 5-second polling cycle.
             self.notifier.notify();
         } else {
             log::warn!("[systemd] Unknown entity type: {entity_type}");
         }
 
         Ok(serde_json::Value::Null)
+    }
+
+    async fn handle_subscriber_count_changed(&self, entity_type: String, count: usize) {
+        if entity_type == entity::session::USER_SERVICE_ENTITY_TYPE {
+            let previous = {
+                let mut monitors = self.monitors.lock().await;
+                let previous = monitors.user_service_subscribers;
+                monitors.user_service_subscribers = count;
+                previous
+            };
+
+            if previous == 0 && count > 0 {
+                log::info!("[systemd] Starting user-service monitoring (subscribers={count})");
+                self.start_service_monitoring().await;
+                self.notifier.notify();
+            } else if previous > 0 && count == 0 {
+                log::info!("[systemd] Stopping user-service monitoring");
+                self.stop_service_monitoring().await;
+            }
+        } else if entity_type == entity::session::USER_TIMER_ENTITY_TYPE {
+            let previous = {
+                let mut monitors = self.monitors.lock().await;
+                let previous = monitors.user_timer_subscribers;
+                monitors.user_timer_subscribers = count;
+                previous
+            };
+
+            if previous == 0 && count > 0 {
+                log::info!("[systemd] Starting user-timer monitoring (subscribers={count})");
+                self.start_timer_monitoring().await;
+                self.notifier.notify();
+            } else if previous > 0 && count == 0 {
+                log::info!("[systemd] Stopping user-timer monitoring");
+                self.stop_timer_monitoring().await;
+            }
+        }
     }
 }
 
@@ -1166,7 +1421,9 @@ async fn refresh_all_enabled_states(
 ) -> bool {
     let keys: Vec<(String, String)> = {
         let svc = services.lock_or_recover();
-        svc.iter().map(|(k, v)| (k.clone(), v.unit.clone())).collect()
+        svc.iter()
+            .map(|(k, v)| (k.clone(), v.unit.clone()))
+            .collect()
     };
 
     let manager = DbusService::new(
@@ -1191,69 +1448,262 @@ async fn refresh_all_enabled_states(
     let mut any_changed = false;
     for (urn_id, enabled) in updates {
         if let Some(service) = svc.get_mut(&urn_id)
-            && service.enabled != enabled {
-                log::info!(
-                    "[systemd] {} enabled: {} -> {}",
-                    service.unit, service.enabled, enabled,
-                );
-                service.enabled = enabled;
-                any_changed = true;
-            }
+            && service.enabled != enabled
+        {
+            log::info!(
+                "[systemd] {} enabled: {} -> {}",
+                service.unit,
+                service.enabled,
+                enabled,
+            );
+            service.enabled = enabled;
+            any_changed = true;
+        }
     }
 
     any_changed
 }
 
-/// Periodically re-scan user timers from disk and D-Bus, emitting updates on changes.
-async fn monitor_timer_files(
+async fn refresh_timer_snapshot(
+    conn: &Connection,
+    timers: &Arc<StdMutex<HashMap<String, UserTimer>>>,
+) -> Result<bool> {
+    let new_map: HashMap<String, UserTimer> = scan_user_timers(conn).await?.into_iter().collect();
+    let mut current = timers.lock_or_recover();
+    let changed = *current != new_map;
+    if changed {
+        *current = new_map;
+    }
+    Ok(changed)
+}
+
+fn timer_unit_relevant(
+    timers: &Arc<StdMutex<HashMap<String, UserTimer>>>,
+    unit_name: &str,
+) -> bool {
+    if unit_name.ends_with(".timer") {
+        return true;
+    }
+
+    if let Some(base) = unit_name.strip_suffix(".service") {
+        return timers.lock_or_recover().contains_key(base);
+    }
+
+    false
+}
+
+async fn timer_path_relevant(
+    conn: &Connection,
+    timers: &Arc<StdMutex<HashMap<String, UserTimer>>>,
+    obj_path: &str,
+) -> bool {
+    if !obj_path.contains("_2etimer") && !obj_path.contains("_2eservice") {
+        return false;
+    }
+
+    let unit_proxy = match zbus::Proxy::new(
+        conn,
+        SYSTEMD1_DESTINATION,
+        obj_path,
+        "org.freedesktop.systemd1.Unit",
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    let unit_name: String = match unit_proxy.get_property("Id").await {
+        Ok(id) => id,
+        Err(_) => return false,
+    };
+
+    timer_unit_relevant(timers, &unit_name)
+}
+
+/// Monitor timer-related systemd D-Bus signals and refresh the timer snapshot on demand.
+async fn monitor_timer_signals(
     conn: Connection,
     timers: Arc<StdMutex<HashMap<String, UserTimer>>>,
     notifier: EntityNotifier,
 ) -> Result<()> {
-    loop {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    let props_rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(SYSTEMD1_DESTINATION)?
+        .interface(IFACE_PROPERTIES)?
+        .member("PropertiesChanged")?
+        .build();
 
-        let new_timers = match scan_user_timers(&conn).await {
-            Ok(t) => t,
+    let manager_rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(SYSTEMD1_DESTINATION)?
+        .interface(SYSTEMD1_MANAGER_INTERFACE)?
+        .build();
+
+    let dbus_proxy = zbus::fdo::DBusProxy::new(&conn)
+        .await
+        .context("Failed to create DBus proxy")?;
+
+    dbus_proxy
+        .add_match_rule(props_rule)
+        .await
+        .context("Failed to add timer PropertiesChanged match rule")?;
+
+    dbus_proxy
+        .add_match_rule(manager_rule)
+        .await
+        .context("Failed to add timer Manager signal match rule")?;
+
+    log::info!("[systemd] Listening for user timer signals");
+
+    let mut stream = zbus::MessageStream::from(&conn);
+    while let Some(msg) = stream.next().await {
+        let msg = match msg {
+            Ok(m) => m,
             Err(e) => {
-                log::debug!("[systemd] Timer re-scan failed: {e}");
+                log::warn!("[systemd] Timer D-Bus stream error: {e}");
                 continue;
             }
         };
 
-        let new_map: HashMap<String, UserTimer> = new_timers.into_iter().collect();
-        let mut current = timers.lock_or_recover();
+        let header = msg.header();
+        let member = match header.member() {
+            Some(m) => m.as_str().to_string(),
+            None => continue,
+        };
+        let iface = match header.interface() {
+            Some(i) => i.as_str().to_string(),
+            None => continue,
+        };
 
-        // Detect changes: added, modified, or removed timers
-        let mut changed = false;
+        let mut should_refresh = false;
 
-        // Check for removed timers
-        let old_keys: Vec<String> = current.keys().cloned().collect();
-        for key in &old_keys {
-            if !new_map.contains_key(key) {
-                current.remove(key);
-                changed = true;
-                log::info!("[systemd] Timer removed from disk: {key}");
+        if iface == IFACE_PROPERTIES && member == "PropertiesChanged" {
+            let obj_path = match header.path() {
+                Some(p) => p.to_string(),
+                None => continue,
+            };
+
+            let Ok((prop_iface, _props, _invalidated)) =
+                msg.body()
+                    .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+            else {
+                continue;
+            };
+
+            if matches!(
+                prop_iface.as_str(),
+                "org.freedesktop.systemd1.Unit"
+                    | "org.freedesktop.systemd1.Timer"
+                    | "org.freedesktop.systemd1.Service"
+            ) {
+                should_refresh = timer_path_relevant(&conn, &timers, &obj_path).await;
             }
+        } else if iface == SYSTEMD1_MANAGER_INTERFACE
+            && (member == "UnitNew" || member == "UnitRemoved")
+        {
+            let Ok((unit_name, _obj_path)) = msg
+                .body()
+                .deserialize::<(String, zbus::zvariant::OwnedObjectPath)>()
+            else {
+                continue;
+            };
+
+            should_refresh = timer_unit_relevant(&timers, &unit_name);
+        } else if iface == SYSTEMD1_MANAGER_INTERFACE && member == "UnitFilesChanged" {
+            should_refresh = true;
         }
 
-        // Check for added or modified timers
-        for (key, new_timer) in new_map {
-            match current.get(&key) {
-                Some(existing) if existing == &new_timer => {}
-                _ => {
-                    current.insert(key, new_timer);
-                    changed = true;
+        if should_refresh {
+            match refresh_timer_snapshot(&conn, &timers).await {
+                Ok(true) => {
+                    notifier.notify();
                 }
+                Ok(false) => {}
+                Err(e) => log::debug!("[systemd] Timer refresh failed after signal: {e}"),
             }
-        }
-
-        drop(current);
-
-        if changed {
-            notifier.notify();
         }
     }
+
+    log::warn!("[systemd] Timer signal stream ended -- timer monitoring is now unresponsive");
+
+    Ok(())
+}
+
+fn event_targets_timer_dir(event_paths: &[PathBuf], user_dir: &Path) -> bool {
+    event_paths.iter().any(|path| {
+        path.starts_with(user_dir)
+            && path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| matches!(ext, "timer" | "service"))
+    })
+}
+
+/// Watch `~/.config/systemd/user/` while timer subscribers exist.
+async fn watch_timer_unit_dir(
+    conn: Connection,
+    timers: Arc<StdMutex<HashMap<String, UserTimer>>>,
+    notifier: EntityNotifier,
+) -> Result<()> {
+    let Some(user_dir) = user_unit_dir() else {
+        return Ok(());
+    };
+
+    let watch_path = if user_dir.exists() {
+        user_dir.clone()
+    } else if let Some(parent) = user_dir.parent().filter(|p| p.exists()) {
+        parent.to_path_buf()
+    } else {
+        return Ok(());
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<notify::Result<notify::Event>>();
+    let mut watcher = RecommendedWatcher::new(
+        move |result| {
+            let _ = tx.send(result);
+        },
+        notify::Config::default(),
+    )
+    .context("Failed to create timer file watcher")?;
+
+    watcher
+        .watch(&watch_path, RecursiveMode::NonRecursive)
+        .with_context(|| format!("Failed to watch {}", watch_path.display()))?;
+
+    log::info!(
+        "[systemd] Watching {} for timer unit changes",
+        watch_path.display()
+    );
+
+    while let Some(result) = rx.recv().await {
+        let event = match result {
+            Ok(event) => event,
+            Err(e) => {
+                log::warn!("[systemd] Timer file watcher error: {e}");
+                continue;
+            }
+        };
+
+        let is_structural = matches!(
+            event.kind,
+            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+        ) && !matches!(event.kind, EventKind::Access(_));
+
+        if !is_structural || !event_targets_timer_dir(&event.paths, &user_dir) {
+            continue;
+        }
+
+        match refresh_timer_snapshot(&conn, &timers).await {
+            Ok(true) => {
+                notifier.notify();
+            }
+            Ok(false) => {}
+            Err(e) => log::debug!("[systemd] Timer refresh failed after file event: {e}"),
+        }
+    }
+
+    Ok(())
 }
 
 /// Monitor PropertiesChanged, UnitNew, and UnitRemoved signals on the session bus.
@@ -1341,8 +1791,9 @@ async fn monitor_service_signals(
             // Extract unit name from changed properties or find it from the path
             changed = handle_unit_properties_changed(&services, &props, &obj_path, &conn).await;
         } else if iface == SYSTEMD1_MANAGER_INTERFACE && member == "UnitNew" {
-            let Ok((unit_name, _obj_path)) =
-                msg.body().deserialize::<(String, zbus::zvariant::OwnedObjectPath)>()
+            let Ok((unit_name, _obj_path)) = msg
+                .body()
+                .deserialize::<(String, zbus::zvariant::OwnedObjectPath)>()
             else {
                 continue;
             };
@@ -1354,8 +1805,9 @@ async fn monitor_service_signals(
             log::info!("[systemd] UnitNew: {unit_name}");
             changed = handle_unit_new(&services, &unit_name, &conn).await;
         } else if iface == SYSTEMD1_MANAGER_INTERFACE && member == "UnitRemoved" {
-            let Ok((unit_name, _obj_path)) =
-                msg.body().deserialize::<(String, zbus::zvariant::OwnedObjectPath)>()
+            let Ok((unit_name, _obj_path)) = msg
+                .body()
+                .deserialize::<(String, zbus::zvariant::OwnedObjectPath)>()
             else {
                 continue;
             };
@@ -1368,11 +1820,12 @@ async fn monitor_service_signals(
             let urn_id = unit_to_urn_id(&unit_name);
             let mut svc = services.lock_or_recover();
             if let Some(service) = svc.get_mut(&urn_id)
-                && (service.active_state != "inactive" || service.sub_state != "dead") {
-                    service.active_state = "inactive".to_string();
-                    service.sub_state = "dead".to_string();
-                    changed = true;
-                }
+                && (service.active_state != "inactive" || service.sub_state != "dead")
+            {
+                service.active_state = "inactive".to_string();
+                service.sub_state = "dead".to_string();
+                changed = true;
+            }
         } else if iface == SYSTEMD1_MANAGER_INTERFACE && member == "UnitFilesChanged" {
             log::info!("[systemd] UnitFilesChanged signal received");
             changed = refresh_all_enabled_states(&services, &conn).await;
@@ -1435,25 +1888,31 @@ async fn handle_unit_properties_changed(
 
     if let Some(active_val) = props.get("ActiveState")
         && let Ok(active_state) = String::try_from(active_val.clone())
-            && service.active_state != active_state {
-                log::info!(
-                    "[systemd] {} active_state: {} -> {}",
-                    unit_name, service.active_state, active_state,
-                );
-                service.active_state = active_state;
-                changed = true;
-            }
+        && service.active_state != active_state
+    {
+        log::info!(
+            "[systemd] {} active_state: {} -> {}",
+            unit_name,
+            service.active_state,
+            active_state,
+        );
+        service.active_state = active_state;
+        changed = true;
+    }
 
     if let Some(sub_val) = props.get("SubState")
         && let Ok(sub_state) = String::try_from(sub_val.clone())
-            && service.sub_state != sub_state {
-                log::debug!(
-                    "[systemd] {} sub_state: {} -> {}",
-                    unit_name, service.sub_state, sub_state,
-                );
-                service.sub_state = sub_state;
-                changed = true;
-            }
+        && service.sub_state != sub_state
+    {
+        log::debug!(
+            "[systemd] {} sub_state: {} -> {}",
+            unit_name,
+            service.sub_state,
+            sub_state,
+        );
+        service.sub_state = sub_state;
+        changed = true;
+    }
 
     changed
 }
@@ -1482,13 +1941,11 @@ async fn handle_unit_new(
         SYSTEMD1_MANAGER_INTERFACE,
     );
 
-    let unit_path: zbus::zvariant::OwnedObjectPath = match manager
-        .try_call("GetUnit", &(unit_name,))
-        .await
-    {
-        Some(p) => p,
-        None => return false,
-    };
+    let unit_path: zbus::zvariant::OwnedObjectPath =
+        match manager.try_call("GetUnit", &(unit_name,)).await {
+            Some(p) => p,
+            None => return false,
+        };
 
     let unit_proxy = match zbus::Proxy::new(
         conn,
@@ -1505,9 +1962,18 @@ async fn handle_unit_new(
         }
     };
 
-    let description = unit_proxy.get_property::<String>("Description").await.unwrap_or_default();
-    let active_state = unit_proxy.get_property::<String>("ActiveState").await.unwrap_or_else(|_| "unknown".to_string());
-    let sub_state = unit_proxy.get_property::<String>("SubState").await.unwrap_or_else(|_| "unknown".to_string());
+    let description = unit_proxy
+        .get_property::<String>("Description")
+        .await
+        .unwrap_or_default();
+    let active_state = unit_proxy
+        .get_property::<String>("ActiveState")
+        .await
+        .unwrap_or_else(|_| "unknown".to_string());
+    let sub_state = unit_proxy
+        .get_property::<String>("SubState")
+        .await
+        .unwrap_or_else(|_| "unknown".to_string());
 
     // Get unit file state for enabled
     let enabled = manager
@@ -1594,9 +2060,8 @@ mod tests {
     ) -> bool {
         let urn_id = unit_to_urn_id(unit);
         if let Some(svc) = services.get_mut(&urn_id) {
-            let was_different = svc.active_state != "inactive"
-                || svc.sub_state != "dead"
-                || svc.enabled != enabled;
+            let was_different =
+                svc.active_state != "inactive" || svc.sub_state != "dead" || svc.enabled != enabled;
             svc.active_state = "inactive".to_string();
             svc.sub_state = "dead".to_string();
             svc.enabled = enabled;
@@ -1622,7 +2087,10 @@ mod tests {
 
         let (changed, still_present) = simulate_unit_removed(&mut services, "test.service");
 
-        assert!(changed, "should report changed when transitioning from active to inactive");
+        assert!(
+            changed,
+            "should report changed when transitioning from active to inactive"
+        );
         assert!(still_present, "service must NOT be removed from the map");
         let svc = &services["test"];
         assert_eq!(svc.active_state, "inactive");
@@ -1639,7 +2107,10 @@ mod tests {
 
         let (changed, still_present) = simulate_unit_removed(&mut services, "test.service");
 
-        assert!(!changed, "should not report changed when already inactive/dead");
+        assert!(
+            !changed,
+            "should not report changed when already inactive/dead"
+        );
         assert!(still_present, "service must remain in the map");
     }
 
@@ -1659,7 +2130,10 @@ mod tests {
     #[test]
     fn refresh_failure_updates_active_service_in_place() {
         let mut services = HashMap::new();
-        services.insert("pipewire".to_string(), make_service("active", "running", true));
+        services.insert(
+            "pipewire".to_string(),
+            make_service("active", "running", true),
+        );
 
         let changed = simulate_refresh_failure_update(&mut services, "pipewire.service", false);
 
@@ -1667,8 +2141,14 @@ mod tests {
         let svc = &services["pipewire"];
         assert_eq!(svc.active_state, "inactive");
         assert_eq!(svc.sub_state, "dead");
-        assert!(!svc.enabled, "enabled should be updated to the queried value");
-        assert_eq!(svc.description, "Test service", "description must be preserved");
+        assert!(
+            !svc.enabled,
+            "enabled should be updated to the queried value"
+        );
+        assert_eq!(
+            svc.description, "Test service",
+            "description must be preserved"
+        );
     }
 
     #[test]
@@ -1689,7 +2169,10 @@ mod tests {
 
         let changed = simulate_refresh_failure_update(&mut services, "test.service", false);
 
-        assert!(!changed, "should not report changed when state already matches");
+        assert!(
+            !changed,
+            "should not report changed when state already matches"
+        );
     }
 
     #[test]
@@ -1699,7 +2182,10 @@ mod tests {
         let changed = simulate_refresh_failure_update(&mut services, "unknown.service", true);
 
         assert!(!changed, "should return false for unknown service");
-        assert!(!services.contains_key("unknown"), "should not insert unknown service");
+        assert!(
+            !services.contains_key("unknown"),
+            "should not insert unknown service"
+        );
     }
 
     /// Helper: simulates the basename extraction + template filtering from list_unit_files().
@@ -1724,13 +2210,16 @@ mod tests {
             if services.contains_key(&urn_id) {
                 continue;
             }
-            services.insert(urn_id, UserService {
-                unit: unit_name.to_string(),
-                description: String::new(),
-                active_state: "inactive".to_string(),
-                sub_state: "dead".to_string(),
-                enabled: unit_file_state_to_enabled(file_state),
-            });
+            services.insert(
+                urn_id,
+                UserService {
+                    unit: unit_name.to_string(),
+                    description: String::new(),
+                    active_state: "inactive".to_string(),
+                    sub_state: "dead".to_string(),
+                    enabled: unit_file_state_to_enabled(file_state),
+                },
+            );
             added += 1;
         }
         added
@@ -1810,7 +2299,10 @@ mod tests {
     #[test]
     fn unit_file_merge_skips_existing_services() {
         let mut services = HashMap::new();
-        services.insert("pipewire".to_string(), make_service("active", "running", true));
+        services.insert(
+            "pipewire".to_string(),
+            make_service("active", "running", true),
+        );
 
         let added = simulate_unit_file_merge(
             &mut services,
@@ -1820,18 +2312,30 @@ mod tests {
             ],
         );
 
-        assert_eq!(added, 1, "should only add wireplumber, not overwrite pipewire");
+        assert_eq!(
+            added, 1,
+            "should only add wireplumber, not overwrite pipewire"
+        );
         assert_eq!(services.len(), 2);
         // pipewire must retain its original state
         assert_eq!(services["pipewire"].active_state, "active");
-        assert!(services["pipewire"].enabled, "existing pipewire must not be overwritten");
+        assert!(
+            services["pipewire"].enabled,
+            "existing pipewire must not be overwritten"
+        );
     }
 
     #[test]
     fn enabled_state_refresh_updates_changed_services() {
         let mut services = HashMap::new();
-        services.insert("pipewire".to_string(), make_service("active", "running", true));
-        services.insert("wireplumber".to_string(), make_service("active", "running", false));
+        services.insert(
+            "pipewire".to_string(),
+            make_service("active", "running", true),
+        );
+        services.insert(
+            "wireplumber".to_string(),
+            make_service("active", "running", false),
+        );
 
         let changed = simulate_enabled_state_refresh(
             &mut services,
@@ -1846,25 +2350,28 @@ mod tests {
     #[test]
     fn enabled_state_refresh_noop_when_unchanged() {
         let mut services = HashMap::new();
-        services.insert("pipewire".to_string(), make_service("active", "running", true));
-
-        let changed = simulate_enabled_state_refresh(
-            &mut services,
-            &[("pipewire", true)],
+        services.insert(
+            "pipewire".to_string(),
+            make_service("active", "running", true),
         );
 
-        assert!(!changed, "should not report changed when enabled state is the same");
+        let changed = simulate_enabled_state_refresh(&mut services, &[("pipewire", true)]);
+
+        assert!(
+            !changed,
+            "should not report changed when enabled state is the same"
+        );
     }
 
     #[test]
     fn enabled_state_refresh_ignores_unknown_services() {
         let mut services = HashMap::new();
-        services.insert("pipewire".to_string(), make_service("active", "running", true));
-
-        let changed = simulate_enabled_state_refresh(
-            &mut services,
-            &[("unknown", false)],
+        services.insert(
+            "pipewire".to_string(),
+            make_service("active", "running", true),
         );
+
+        let changed = simulate_enabled_state_refresh(&mut services, &[("unknown", false)]);
 
         assert!(!changed, "should not report changed for unknown service");
         assert!(!services.contains_key("unknown"));
@@ -1890,12 +2397,18 @@ mod tests {
         let changed = simulate_refresh_failure_update(&mut services, "pipewire.service", true);
 
         assert!(changed);
-        assert!(services.contains_key("pipewire"), "service must remain in map");
+        assert!(
+            services.contains_key("pipewire"),
+            "service must remain in map"
+        );
         let svc = &services["pipewire"];
         assert_eq!(svc.active_state, "inactive");
         assert_eq!(svc.sub_state, "dead");
         assert_eq!(svc.unit, "pipewire.service", "unit must be preserved");
-        assert_eq!(svc.description, "PipeWire Multimedia Service", "description must be preserved");
+        assert_eq!(
+            svc.description, "PipeWire Multimedia Service",
+            "description must be preserved"
+        );
     }
 
     /// Task 3 / Test 5.2: Given an active service, simulating UnitRemoved sets
@@ -1923,7 +2436,10 @@ mod tests {
         assert_eq!(svc.active_state, "inactive");
         assert_eq!(svc.sub_state, "dead");
         assert_eq!(svc.unit, "wireplumber.service", "unit must be preserved");
-        assert_eq!(svc.description, "WirePlumber Session Manager", "description must be preserved");
+        assert_eq!(
+            svc.description, "WirePlumber Session Manager",
+            "description must be preserved"
+        );
         assert!(svc.enabled, "enabled must be preserved");
     }
 
@@ -1933,27 +2449,26 @@ mod tests {
     #[test]
     fn unit_file_state_refresh_updates_enabled() {
         let mut services = HashMap::new();
-        services.insert("xdg-desktop-portal".to_string(), UserService {
-            unit: "xdg-desktop-portal.service".to_string(),
-            description: "Portal service".to_string(),
-            active_state: "active".to_string(),
-            enabled: true,
-            sub_state: "running".to_string(),
-        });
+        services.insert(
+            "xdg-desktop-portal".to_string(),
+            UserService {
+                unit: "xdg-desktop-portal.service".to_string(),
+                description: "Portal service".to_string(),
+                active_state: "active".to_string(),
+                enabled: true,
+                sub_state: "running".to_string(),
+            },
+        );
 
         // First call: enabled true -> false should report changed
-        let changed = simulate_enabled_state_refresh(
-            &mut services,
-            &[("xdg-desktop-portal", false)],
-        );
+        let changed =
+            simulate_enabled_state_refresh(&mut services, &[("xdg-desktop-portal", false)]);
         assert!(changed, "enabled true->false should report changed");
         assert!(!services["xdg-desktop-portal"].enabled);
 
         // Second call: enabled false -> false should report no change
-        let changed = simulate_enabled_state_refresh(
-            &mut services,
-            &[("xdg-desktop-portal", false)],
-        );
+        let changed =
+            simulate_enabled_state_refresh(&mut services, &[("xdg-desktop-portal", false)]);
         assert!(!changed, "same enabled state should not report changed");
     }
 
@@ -1973,10 +2488,16 @@ Persistent=true
 WantedBy=timers.target
 ";
         let sections = parse_unit_file(content);
-        assert_eq!(section_get(&sections, "Unit", "Description"), Some("My timer"));
+        assert_eq!(
+            section_get(&sections, "Unit", "Description"),
+            Some("My timer")
+        );
         assert_eq!(section_get(&sections, "Timer", "OnCalendar"), Some("daily"));
         assert_eq!(section_get(&sections, "Timer", "Persistent"), Some("true"));
-        assert_eq!(section_get(&sections, "Install", "WantedBy"), Some("timers.target"));
+        assert_eq!(
+            section_get(&sections, "Install", "WantedBy"),
+            Some("timers.target")
+        );
     }
 
     #[test]
@@ -2054,10 +2575,13 @@ OnUnitActiveSec=1h
     #[test]
     fn parse_environment_values() {
         let envs = parse_environment(&["\"FOO=bar\"", "BAZ=qux"]);
-        assert_eq!(envs, vec![
-            ("FOO".to_string(), "bar".to_string()),
-            ("BAZ".to_string(), "qux".to_string()),
-        ]);
+        assert_eq!(
+            envs,
+            vec![
+                ("FOO".to_string(), "bar".to_string()),
+                ("BAZ".to_string(), "qux".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -2208,24 +2732,7 @@ fn main() -> Result<()> {
     )
     .i18n(i18n(), "plugin-name", "plugin-description")
     .run(|notifier| async move {
-        let plugin = SystemdPlugin::new(notifier.clone()).await?;
-
-        let services = plugin.services.clone();
-        let timers = plugin.timers.clone();
-        let session_conn = plugin.session_conn.clone();
-
-        // Spawn signal monitoring task for services
-        spawn_monitored(
-            "systemd",
-            monitor_service_signals(session_conn.clone(), services, notifier.clone()),
-        );
-
-        // Spawn timer file monitoring task
-        spawn_monitored(
-            "systemd-timers",
-            monitor_timer_files(session_conn, timers, notifier),
-        );
-
+        let plugin = SystemdPlugin::new(notifier).await?;
         Ok(plugin)
     })
 }
