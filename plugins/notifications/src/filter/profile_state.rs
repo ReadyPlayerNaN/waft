@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn save_and_load_active_profile() {
         let path = PathBuf::from("/tmp/waft-test-profile-roundtrip");
-        save_active_profile_to_path(&path, "work").unwrap();
+        save_active_profile_to_path(&path, "work").expect("expected value");
 
         let loaded = load_active_profile_from_path(&path);
         assert_eq!(loaded, Some("work".to_string()));
@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn load_active_profile_trims_whitespace() {
         let path = PathBuf::from("/tmp/waft-test-profile-whitespace");
-        std::fs::write(&path, "  work  \n").unwrap();
+        std::fs::write(&path, "  work  \n").expect("expected value");
 
         let loaded = load_active_profile_from_path(&path);
         assert_eq!(loaded, Some("work".to_string()));
@@ -78,7 +78,7 @@ mod tests {
     #[test]
     fn load_active_profile_empty_file_returns_none() {
         let path = PathBuf::from("/tmp/waft-test-profile-empty");
-        std::fs::write(&path, "   \n").unwrap();
+        std::fs::write(&path, "   \n").expect("expected value");
 
         let loaded = load_active_profile_from_path(&path);
         assert_eq!(loaded, None);

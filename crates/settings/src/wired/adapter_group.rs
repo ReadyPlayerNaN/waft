@@ -94,10 +94,10 @@ impl RenderFn for WiredAdapterGroupRender {
                         if let Some(ref cb) = *emit.borrow() {
                             match output {
                                 ConnectionRowOutput::Activate => {
-                                    cb(WiredAdapterGroupOutput::ActivateConnection(urn.clone()))
+                                    cb(WiredAdapterGroupOutput::ActivateConnection(urn.clone()));
                                 }
                                 ConnectionRowOutput::Deactivate => {
-                                    cb(WiredAdapterGroupOutput::DeactivateConnection(urn.clone()))
+                                    cb(WiredAdapterGroupOutput::DeactivateConnection(urn.clone()));
                                 }
                             }
                         }

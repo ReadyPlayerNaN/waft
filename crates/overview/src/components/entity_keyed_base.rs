@@ -230,7 +230,7 @@ pub(crate) mod tests {
         EntityKeyedContainer::reconcile(
             &container,
             &mut entries.borrow_mut(),
-            &vec!["a".to_string(), "b".to_string()],
+            &["a".to_string(), "b".to_string()],
             |_, _| {},
             |key| Some(TestEntry::new(key)),
         );
@@ -240,7 +240,7 @@ pub(crate) mod tests {
         EntityKeyedContainer::reconcile(
             &container,
             &mut entries.borrow_mut(),
-            &vec!["b".to_string()],
+            &["b".to_string()],
             |_, _| {},
             |_| unreachable!("should not create"),
         );
@@ -257,7 +257,7 @@ pub(crate) mod tests {
         EntityKeyedContainer::reconcile(
             &container,
             &mut entries.borrow_mut(),
-            &vec!["a".to_string()],
+            &["a".to_string()],
             |_, _| {},
             |key| Some(TestEntry::new(key)),
         );
@@ -267,7 +267,7 @@ pub(crate) mod tests {
         EntityKeyedContainer::reconcile(
             &container,
             &mut entries.borrow_mut(),
-            &vec![],
+            &[],
             |_, _| {},
             |_| unreachable!("should not create"),
         );
@@ -285,7 +285,7 @@ pub(crate) mod tests {
         EntityKeyedContainer::reconcile(
             &container,
             &mut entries.borrow_mut(),
-            &vec!["a".to_string()],
+            &["a".to_string()],
             |_, _| {},
             |_| None, // skip creation
         );
@@ -302,7 +302,7 @@ pub(crate) mod tests {
         EntityKeyedContainer::reconcile(
             &container,
             &mut entries.borrow_mut(),
-            &vec!["a".to_string(), "b".to_string()],
+            &["a".to_string(), "b".to_string()],
             |_, _| {},
             |key| Some(TestEntry::new(key)),
         );
@@ -313,7 +313,7 @@ pub(crate) mod tests {
         EntityKeyedContainer::reconcile(
             &container,
             &mut entries.borrow_mut(),
-            &vec!["b".to_string(), "c".to_string()],
+            &["b".to_string(), "c".to_string()],
             |key, _| {
                 updated_keys.push(key.to_string());
             },

@@ -74,8 +74,8 @@ mod tests {
             discoverable: false,
             discovering: false,
         };
-        let json = serde_json::to_value(&adapter).unwrap();
-        let decoded: BluetoothAdapter = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&adapter).expect("expected value");
+        let decoded: BluetoothAdapter = serde_json::from_value(json).expect("expected value");
         assert_eq!(adapter, decoded);
     }
 
@@ -87,8 +87,8 @@ mod tests {
             discoverable: true,
             discovering: true,
         };
-        let json = serde_json::to_value(&adapter).unwrap();
-        let decoded: BluetoothAdapter = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&adapter).expect("expected value");
+        let decoded: BluetoothAdapter = serde_json::from_value(json).expect("expected value");
         assert_eq!(adapter, decoded);
     }
 
@@ -98,7 +98,7 @@ mod tests {
             "name": "hci0",
             "powered": true
         });
-        let adapter: BluetoothAdapter = serde_json::from_value(json).unwrap();
+        let adapter: BluetoothAdapter = serde_json::from_value(json).expect("expected value");
         assert_eq!(adapter.name, "hci0");
         assert!(adapter.powered);
         assert!(!adapter.discoverable);
@@ -116,8 +116,8 @@ mod tests {
             trusted: false,
             rssi: None,
         };
-        let json = serde_json::to_value(&device).unwrap();
-        let decoded: BluetoothDevice = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&device).expect("expected value");
+        let decoded: BluetoothDevice = serde_json::from_value(json).expect("expected value");
         assert_eq!(device, decoded);
     }
 
@@ -132,8 +132,8 @@ mod tests {
             trusted: true,
             rssi: Some(-42),
         };
-        let json = serde_json::to_value(&device).unwrap();
-        let decoded: BluetoothDevice = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&device).expect("expected value");
+        let decoded: BluetoothDevice = serde_json::from_value(json).expect("expected value");
         assert_eq!(device, decoded);
     }
 
@@ -145,7 +145,7 @@ mod tests {
             "connection_state": "Connected",
             "battery_percentage": 85
         });
-        let device: BluetoothDevice = serde_json::from_value(json).unwrap();
+        let device: BluetoothDevice = serde_json::from_value(json).expect("expected value");
         assert_eq!(device.name, "WH-1000XM4");
         assert_eq!(device.device_type, "audio-headphones");
         assert_eq!(device.connection_state, ConnectionState::Connected);
@@ -166,8 +166,8 @@ mod tests {
             trusted: false,
             rssi: None,
         };
-        let json = serde_json::to_value(&device).unwrap();
-        let decoded: BluetoothDevice = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&device).expect("expected value");
+        let decoded: BluetoothDevice = serde_json::from_value(json).expect("expected value");
         assert_eq!(device, decoded);
     }
 
@@ -262,8 +262,8 @@ mod tests {
             ConnectionState::Connected,
             ConnectionState::Disconnecting,
         ] {
-            let json = serde_json::to_value(state).unwrap();
-            let decoded: ConnectionState = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(state).expect("expected value");
+            let decoded: ConnectionState = serde_json::from_value(json).expect("expected value");
             assert_eq!(state, decoded);
         }
     }

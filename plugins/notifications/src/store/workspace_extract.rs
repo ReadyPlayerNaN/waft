@@ -54,14 +54,15 @@ mod tests {
 
     #[test]
     fn extracts_slack_workspace() {
-        let result = extract_workspace("Slack", "[Engineering] New message from Alice").unwrap();
+        let result = extract_workspace("Slack", "[Engineering] New message from Alice")
+            .expect("expected value");
         assert_eq!(&*result.workspace, "Engineering");
         assert_eq!(&*result.cleaned_title, "New message from Alice");
     }
 
     #[test]
     fn case_insensitive_app_name() {
-        let result = extract_workspace("slack", "[Marketing] PR update").unwrap();
+        let result = extract_workspace("slack", "[Marketing] PR update").expect("expected value");
         assert_eq!(&*result.workspace, "Marketing");
         assert_eq!(&*result.cleaned_title, "PR update");
     }
@@ -83,14 +84,15 @@ mod tests {
 
     #[test]
     fn workspace_only_no_title() {
-        let result = extract_workspace("Slack", "[Engineering]").unwrap();
+        let result = extract_workspace("Slack", "[Engineering]").expect("expected value");
         assert_eq!(&*result.workspace, "Engineering");
         assert_eq!(&*result.cleaned_title, "[Engineering]");
     }
 
     #[test]
     fn workspace_with_spaces() {
-        let result = extract_workspace("Slack", "[My Company] Thread reply").unwrap();
+        let result =
+            extract_workspace("Slack", "[My Company] Thread reply").expect("expected value");
         assert_eq!(&*result.workspace, "My Company");
         assert_eq!(&*result.cleaned_title, "Thread reply");
     }

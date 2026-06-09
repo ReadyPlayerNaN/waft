@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_parse_niri_response() {
         let json = r#"{"names":["English (US)","Czech (QWERTY)"],"current_idx":0}"#;
-        let response: NiriLayoutsResponse = serde_json::from_str(json).unwrap();
+        let response: NiriLayoutsResponse = serde_json::from_str(json).expect("expected value");
 
         assert_eq!(response.names.len(), 2);
         assert_eq!(response.names[0], "English (US)");
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn test_parse_niri_response_single_layout() {
         let json = r#"{"names":["English (US)"],"current_idx":0}"#;
-        let response: NiriLayoutsResponse = serde_json::from_str(json).unwrap();
+        let response: NiriLayoutsResponse = serde_json::from_str(json).expect("expected value");
 
         assert_eq!(response.names.len(), 1);
         assert_eq!(response.current_idx, 0);

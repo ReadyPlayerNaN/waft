@@ -165,7 +165,7 @@ mod tests {
     fn compute_next_deadline_no_ttl() {
         let state = Arc::new(StdMutex::new(State::new()));
         {
-            let mut guard = state.lock().unwrap();
+            let mut guard = state.lock().expect("expected value");
             store::process_op(
                 &mut guard,
                 store::NotificationOp::Ingress(Box::new(make_notification(1, None))),
@@ -179,7 +179,7 @@ mod tests {
     fn compute_next_deadline_with_ttl() {
         let state = Arc::new(StdMutex::new(State::new()));
         {
-            let mut guard = state.lock().unwrap();
+            let mut guard = state.lock().expect("expected value");
             store::process_op(
                 &mut guard,
                 store::NotificationOp::Ingress(Box::new(make_notification(1, Some(5000)))),
@@ -189,7 +189,7 @@ mod tests {
         let deadline = compute_next_deadline(&state);
         assert!(deadline.is_some());
         // Deadline should be in the future (roughly 5 seconds from now)
-        let deadline = deadline.unwrap();
+        let deadline = deadline.expect("expected value");
         assert!(deadline > Instant::now());
     }
 
@@ -197,7 +197,7 @@ mod tests {
     fn collect_expired_none_expired() {
         let state = Arc::new(StdMutex::new(State::new()));
         {
-            let mut guard = state.lock().unwrap();
+            let mut guard = state.lock().expect("expected value");
             store::process_op(
                 &mut guard,
                 store::NotificationOp::Ingress(Box::new(make_notification(1, Some(60000)))),
@@ -212,7 +212,7 @@ mod tests {
     fn collect_expired_with_zero_ttl_skipped() {
         let state = Arc::new(StdMutex::new(State::new()));
         {
-            let mut guard = state.lock().unwrap();
+            let mut guard = state.lock().expect("expected value");
             // ttl=0 means "server default" which we treat as no expiry in store
             store::process_op(
                 &mut guard,
@@ -228,7 +228,7 @@ mod tests {
     fn collect_expired_past_deadline() {
         let state = Arc::new(StdMutex::new(State::new()));
         {
-            let mut guard = state.lock().unwrap();
+            let mut guard = state.lock().expect("expected value");
             store::process_op(
                 &mut guard,
                 store::NotificationOp::Ingress(Box::new(make_notification(1, Some(1)))),

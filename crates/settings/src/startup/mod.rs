@@ -75,32 +75,32 @@ mod tests {
 
     #[test]
     fn load_empty_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        std::fs::File::create(&path).unwrap();
-        let entries = load_startup_entries(&path).unwrap();
+        std::fs::File::create(&path).expect("expected value");
+        let entries = load_startup_entries(&path).expect("expected value");
         assert!(entries.is_empty());
     }
 
     #[test]
     fn load_nonexistent_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("nonexistent.kdl");
-        let entries = load_startup_entries(&path).unwrap();
+        let entries = load_startup_entries(&path).expect("expected value");
         assert!(entries.is_empty());
     }
 
     #[test]
     fn load_and_save_round_trip() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(f, r#"some-other-setting "value""#).unwrap();
-        writeln!(f, r#"spawn-at-startup "waybar""#).unwrap();
-        writeln!(f, r#"spawn-at-startup "sh" "-c" "echo hello""#).unwrap();
+        let mut f = std::fs::File::create(&path).expect("expected value");
+        writeln!(f, r#"some-other-setting "value""#).expect("expected value");
+        writeln!(f, r#"spawn-at-startup "waybar""#).expect("expected value");
+        writeln!(f, r#"spawn-at-startup "sh" "-c" "echo hello""#).expect("expected value");
         drop(f);
 
-        let entries = load_startup_entries(&path).unwrap();
+        let entries = load_startup_entries(&path).expect("expected value");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].command, "waybar");
         assert!(entries[0].args.is_empty());
@@ -112,10 +112,10 @@ mod tests {
             command: "foot".to_string(),
             args: vec![],
         }];
-        save_startup_entries(&path, &new_entries).unwrap();
+        save_startup_entries(&path, &new_entries).expect("expected value");
 
         // Verify other settings preserved
-        let content = std::fs::read_to_string(&path).unwrap();
+        let content = std::fs::read_to_string(&path).expect("expected value");
         assert!(content.contains("some-other-setting"));
         assert!(!content.contains("waybar"));
         assert!(content.contains("foot"));
@@ -127,23 +127,23 @@ mod tests {
 
     #[test]
     fn save_creates_file_if_missing() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("subdir").join("config.kdl");
 
         let entries = vec![StartupEntry {
             command: "waybar".to_string(),
             args: vec![],
         }];
-        save_startup_entries(&path, &entries).unwrap();
+        save_startup_entries(&path, &entries).expect("expected value");
 
-        let loaded = load_startup_entries(&path).unwrap();
+        let loaded = load_startup_entries(&path).expect("expected value");
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].command, "waybar");
     }
 
     #[test]
     fn save_multi_arg_entry_round_trips() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
 
         let entries = vec![
@@ -160,9 +160,9 @@ mod tests {
                 ],
             },
         ];
-        save_startup_entries(&path, &entries).unwrap();
+        save_startup_entries(&path, &entries).expect("expected value");
 
-        let loaded = load_startup_entries(&path).unwrap();
+        let loaded = load_startup_entries(&path).expect("expected value");
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded[0].command, "sh");
         assert_eq!(loaded[0].args, vec!["-c", "echo hello"]);
@@ -172,24 +172,24 @@ mod tests {
 
     #[test]
     fn save_entry_with_spaces_in_args() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
 
         let entries = vec![StartupEntry {
             command: "sh".to_string(),
             args: vec!["-c".to_string(), "echo hello world".to_string()],
         }];
-        save_startup_entries(&path, &entries).unwrap();
+        save_startup_entries(&path, &entries).expect("expected value");
 
         // Verify raw file contains quoted strings (KDL v1 quoting)
-        let raw = std::fs::read_to_string(&path).unwrap();
+        let raw = std::fs::read_to_string(&path).expect("expected value");
         assert!(
             raw.contains("\"echo hello world\""),
             "arg with spaces must be quoted in output, got: {raw}"
         );
 
         // Verify round-trip preserves the space-containing arg
-        let loaded = load_startup_entries(&path).unwrap();
+        let loaded = load_startup_entries(&path).expect("expected value");
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].command, "sh");
         assert_eq!(loaded[0].args, vec!["-c", "echo hello world"]);

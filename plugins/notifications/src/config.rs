@@ -486,7 +486,7 @@ mod tests {
         assert_eq!(profile.name, "Work");
         assert_eq!(profile.rules.len(), 1);
 
-        let rule = profile.rules.get("team-chats").unwrap();
+        let rule = profile.rules.get("team-chats").expect("expected value");
         assert_eq!(rule.hide, RuleValue::Off);
         assert_eq!(rule.no_toast, RuleValue::On);
         assert_eq!(rule.no_sound, RuleValue::Default);

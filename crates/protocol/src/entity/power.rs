@@ -40,8 +40,8 @@ mod tests {
             time_to_empty: 14400,
             time_to_full: 0,
         };
-        let json = serde_json::to_value(&battery).unwrap();
-        let decoded: Battery = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&battery).expect("expected value");
+        let decoded: Battery = serde_json::from_value(json).expect("expected value");
         assert_eq!(battery, decoded);
     }
 
@@ -57,8 +57,8 @@ mod tests {
             BatteryState::PendingDischarge,
         ];
         for state in states {
-            let json = serde_json::to_value(state).unwrap();
-            let decoded: BatteryState = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(state).expect("expected value");
+            let decoded: BatteryState = serde_json::from_value(json).expect("expected value");
             assert_eq!(state, decoded);
         }
     }

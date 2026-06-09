@@ -95,6 +95,23 @@ fn extract_urls_from_text(text: &str, links: &mut Vec<MeetingLink>) {
     }
 }
 
+/// Extract a URL starting at `start` in `text`, stopping at termination characters.
+fn extract_url_at(text: &str, start: usize) -> String {
+    let rest = &text[start..];
+    let end = rest
+        .find(|c: char| {
+            c == '"'
+                || c == '\''
+                || c == '<'
+                || c == '>'
+                || c == '('
+                || c == ')'
+                || c.is_whitespace()
+        })
+        .unwrap_or(rest.len());
+    rest[..end].to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,21 +201,4 @@ mod tests {
             "all URL variants of the same meeting must collapse to one link"
         );
     }
-}
-
-/// Extract a URL starting at `start` in `text`, stopping at termination characters.
-fn extract_url_at(text: &str, start: usize) -> String {
-    let rest = &text[start..];
-    let end = rest
-        .find(|c: char| {
-            c == '"'
-                || c == '\''
-                || c == '<'
-                || c == '>'
-                || c == '('
-                || c == ')'
-                || c.is_whitespace()
-        })
-        .unwrap_or(rest.len());
-    rest[..end].to_string()
 }

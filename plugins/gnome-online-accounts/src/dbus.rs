@@ -333,8 +333,7 @@ mod tests {
             assert_eq!(
                 service_name_to_property(service),
                 Some(prop.to_string()),
-                "Failed for service: {}",
-                service
+                "Failed for service: {service}"
             );
         }
     }
@@ -347,11 +346,11 @@ mod tests {
     }
 
     fn string_val(s: &str) -> OwnedValue {
-        OwnedValue::try_from(zbus::zvariant::Value::from(s.to_string())).unwrap()
+        OwnedValue::try_from(zbus::zvariant::Value::from(s.to_string())).expect("expected value")
     }
 
     fn bool_val(b: bool) -> OwnedValue {
-        OwnedValue::try_from(zbus::zvariant::Value::from(b)).unwrap()
+        OwnedValue::try_from(zbus::zvariant::Value::from(b)).expect("expected value")
     }
 
     #[test]
@@ -397,7 +396,7 @@ mod tests {
             ("MailDisabled", bool_val(false)),
             ("CalendarDisabled", bool_val(true)),
         ]);
-        let (id, account) = parse_account(&props).unwrap();
+        let (id, account) = parse_account(&props).expect("expected value");
         assert_eq!(id, "account_123");
         assert_eq!(account.provider_name, "Google");
         assert_eq!(account.presentation_identity, "user@gmail.com");
@@ -415,7 +414,7 @@ mod tests {
             ("AttentionNeeded", bool_val(true)),
             ("IsLocked", bool_val(true)),
         ]);
-        let (id, account) = parse_account(&props).unwrap();
+        let (id, account) = parse_account(&props).expect("expected value");
         assert_eq!(id, "account_456");
         assert_eq!(account.status, AccountStatus::NeedsAttention);
         assert!(account.locked);
@@ -433,7 +432,7 @@ mod tests {
     #[test]
     fn parse_account_defaults_for_missing_fields() {
         let props = make_props(&[("Id", string_val("acc_minimal"))]);
-        let (id, account) = parse_account(&props).unwrap();
+        let (id, account) = parse_account(&props).expect("expected value");
         assert_eq!(id, "acc_minimal");
         assert_eq!(account.provider_name, "Unknown");
         assert_eq!(account.presentation_identity, "");

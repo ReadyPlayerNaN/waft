@@ -114,27 +114,27 @@ mod tests {
 
     #[test]
     fn load_nonexistent_returns_empty_doc() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("nonexistent.kdl");
-        let config = KdlConfigFile::load(&path).unwrap();
+        let config = KdlConfigFile::load(&path).expect("expected value");
         assert!(config.doc.nodes().is_empty());
     }
 
     #[test]
     fn load_existing_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        std::fs::write(&path, "node-a\nnode-b\n").unwrap();
+        std::fs::write(&path, "node-a\nnode-b\n").expect("expected value");
 
-        let config = KdlConfigFile::load(&path).unwrap();
+        let config = KdlConfigFile::load(&path).expect("expected value");
         assert_eq!(config.doc.nodes().len(), 2);
     }
 
     #[test]
     fn load_invalid_kdl_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        std::fs::write(&path, "{{{{ not valid kdl").unwrap();
+        std::fs::write(&path, "{{{{ not valid kdl").expect("expected value");
 
         let err = KdlConfigFile::load(&path)
             .err()
@@ -144,11 +144,12 @@ mod tests {
 
     #[test]
     fn remove_nodes_by_name_filters_correctly() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        std::fs::write(&path, "keep-me\nremove-me\nkeep-me-too\nremove-me\n").unwrap();
+        std::fs::write(&path, "keep-me\nremove-me\nkeep-me-too\nremove-me\n")
+            .expect("expected value");
 
-        let mut config = KdlConfigFile::load(&path).unwrap();
+        let mut config = KdlConfigFile::load(&path).expect("expected value");
         assert_eq!(config.doc.nodes().len(), 4);
 
         config.remove_nodes_by_name("remove-me");
@@ -164,44 +165,44 @@ mod tests {
 
     #[test]
     fn save_creates_backup() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        std::fs::write(&path, "original\n").unwrap();
+        std::fs::write(&path, "original\n").expect("expected value");
 
-        let mut config = KdlConfigFile::load(&path).unwrap();
-        config.save().unwrap();
+        let mut config = KdlConfigFile::load(&path).expect("expected value");
+        config.save().expect("expected value");
 
         let backup = path.with_extension("kdl.bak");
         assert!(backup.exists());
-        let backup_content = std::fs::read_to_string(&backup).unwrap();
+        let backup_content = std::fs::read_to_string(&backup).expect("expected value");
         assert!(backup_content.contains("original"));
     }
 
     #[test]
     fn save_creates_parent_dirs() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("sub").join("dir").join("config.kdl");
 
-        let mut config = KdlConfigFile::load(&path).unwrap();
+        let mut config = KdlConfigFile::load(&path).expect("expected value");
         config
             .doc_mut()
             .nodes_mut()
             .push(kdl::KdlNode::new("test-node"));
-        config.save().unwrap();
+        config.save().expect("expected value");
 
         assert!(path.exists());
-        let content = std::fs::read_to_string(&path).unwrap();
+        let content = std::fs::read_to_string(&path).expect("expected value");
         assert!(content.contains("test-node"));
     }
 
     #[test]
     fn save_no_backup_for_new_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("new-config.kdl");
 
-        let mut config = KdlConfigFile::load(&path).unwrap();
+        let mut config = KdlConfigFile::load(&path).expect("expected value");
         config.doc_mut().nodes_mut().push(kdl::KdlNode::new("node"));
-        config.save().unwrap();
+        config.save().expect("expected value");
 
         let backup = path.with_extension("kdl.bak");
         assert!(!backup.exists());
@@ -209,18 +210,18 @@ mod tests {
 
     #[test]
     fn save_produces_quoted_strings() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
 
         // KDL v2 allows bare identifiers as values, but v1 requires quoted strings.
         // Build a node with a string argument and verify ensure_v1() produces quotes.
-        let mut config = KdlConfigFile::load(&path).unwrap();
+        let mut config = KdlConfigFile::load(&path).expect("expected value");
         let mut node = kdl::KdlNode::new("spawn-at-startup");
         node.push(kdl::KdlEntry::new("bash".to_string()));
         config.doc_mut().nodes_mut().push(node);
-        config.save().unwrap();
+        config.save().expect("expected value");
 
-        let raw_bytes = std::fs::read_to_string(&path).unwrap();
+        let raw_bytes = std::fs::read_to_string(&path).expect("expected value");
         assert!(
             raw_bytes.contains('"'),
             "saved file must contain quoted strings for v1 compatibility, got: {raw_bytes}"
@@ -233,20 +234,20 @@ mod tests {
 
     #[test]
     fn save_round_trips_through_reload() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
 
         // Write a config, save, reload, verify content preserved
-        let mut config = KdlConfigFile::load(&path).unwrap();
+        let mut config = KdlConfigFile::load(&path).expect("expected value");
         let mut node = kdl::KdlNode::new("binds");
         let mut child_doc = kdl::KdlDocument::new();
         child_doc.nodes_mut().push(kdl::KdlNode::new("Mod+Return"));
         node.set_children(child_doc);
         config.doc_mut().nodes_mut().push(node);
-        config.save().unwrap();
+        config.save().expect("expected value");
 
         // Reload and verify
-        let reloaded = KdlConfigFile::load(&path).unwrap();
+        let reloaded = KdlConfigFile::load(&path).expect("expected value");
         assert_eq!(reloaded.doc.nodes().len(), 1);
         assert_eq!(reloaded.doc.nodes()[0].name().value(), "binds");
         assert!(reloaded.doc.nodes()[0].children().is_some());

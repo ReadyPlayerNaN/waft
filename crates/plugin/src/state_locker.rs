@@ -44,7 +44,7 @@ mod tests {
         let m = Arc::new(Mutex::new(42));
         let m2 = m.clone();
         let _ = std::thread::spawn(move || {
-            let _g = m2.lock().unwrap();
+            let _g = m2.lock().expect("expected value");
             panic!("intentional poison");
         })
         .join();

@@ -109,7 +109,7 @@ mod tests {
 
         let resolved = tracker.resolve(action_id);
         assert!(resolved.is_some());
-        let resolved = resolved.unwrap();
+        let resolved = resolved.expect("expected value");
         assert_eq!(resolved.action_id, action_id);
         assert_eq!(resolved.app_conn_id, app);
         assert_eq!(resolved.plugin_conn_id, plugin);
@@ -172,7 +172,7 @@ mod tests {
         tracker.track(Uuid::new_v4(), app, plugin, Some(100));
         tracker.track(Uuid::new_v4(), app, plugin, Some(5000));
 
-        let deadline = tracker.next_deadline().unwrap();
+        let deadline = tracker.next_deadline().expect("expected value");
         // The nearest deadline should be roughly 100ms from now
         assert!(deadline <= Instant::now() + Duration::from_millis(200));
     }

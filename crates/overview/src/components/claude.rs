@@ -132,7 +132,7 @@ mod tests {
     fn format_remaining_minutes() {
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("expected value")
             .as_millis() as i64;
         let reset = now_ms + 45 * 60 * 1000;
         assert_eq!(format_remaining(reset), "45m");
@@ -142,7 +142,7 @@ mod tests {
     fn format_remaining_hours() {
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("expected value")
             .as_millis() as i64;
         let reset = now_ms + (2 * 3600 + 15 * 60) * 1000;
         assert_eq!(format_remaining(reset), "2h 15m");
@@ -152,7 +152,7 @@ mod tests {
     fn format_remaining_days() {
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("expected value")
             .as_millis() as i64;
         let reset = now_ms + (6 * 86400 + 4 * 3600) * 1000;
         assert_eq!(format_remaining(reset), "6d 4h");

@@ -196,7 +196,7 @@ mod tests {
 
         let result = tracker.record_response(claim_id, app, true);
         assert!(result.is_some());
-        assert!(result.unwrap().claimed);
+        assert!(result.expect("expected value").claimed);
     }
 
     #[test]
@@ -216,7 +216,7 @@ mod tests {
 
         let result = tracker.record_response(claim_id, app, false);
         assert!(result.is_some());
-        assert!(!result.unwrap().claimed);
+        assert!(!result.expect("expected value").claimed);
     }
 
     #[test]
@@ -242,7 +242,7 @@ mod tests {
         // Second response: claimed
         let result = tracker.record_response(claim_id, app2, true);
         assert!(result.is_some());
-        assert!(result.unwrap().claimed); // OR of both
+        assert!(result.expect("expected value").claimed); // OR of both
     }
 
     #[test]
@@ -267,7 +267,7 @@ mod tests {
         // Real app still needed
         let result = tracker.record_response(claim_id, app, false);
         assert!(result.is_some());
-        assert!(!result.unwrap().claimed);
+        assert!(!result.expect("expected value").claimed);
     }
 
     #[test]

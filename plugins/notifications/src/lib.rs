@@ -932,7 +932,7 @@ mod tests {
         let (tx, _rx) = flume::unbounded();
         let plugin = make_plugin(state.clone(), tx);
 
-        assert!(!state.lock().unwrap().dnd);
+        assert!(!state.lock().expect("expected value").dnd);
 
         plugin
             .handle_action(
@@ -941,9 +941,9 @@ mod tests {
                 serde_json::Value::Null,
             )
             .await
-            .unwrap();
+            .expect("expected value");
 
-        assert!(state.lock().unwrap().dnd);
+        assert!(state.lock().expect("expected value").dnd);
 
         // Toggle again
         plugin
@@ -953,9 +953,9 @@ mod tests {
                 serde_json::Value::Null,
             )
             .await
-            .unwrap();
+            .expect("expected value");
 
-        assert!(!state.lock().unwrap().dnd);
+        assert!(!state.lock().expect("expected value").dnd);
     }
 
     #[tokio::test]
@@ -965,7 +965,13 @@ mod tests {
         let plugin = make_plugin(state.clone(), tx);
 
         plugin.process_ingress(make_notification(10));
-        assert!(state.lock().unwrap().notifications.contains_key(&10));
+        assert!(
+            state
+                .lock()
+                .expect("expected value")
+                .notifications
+                .contains_key(&10)
+        );
 
         plugin
             .handle_action(
@@ -974,12 +980,18 @@ mod tests {
                 serde_json::Value::Null,
             )
             .await
-            .unwrap();
+            .expect("expected value");
 
-        assert!(!state.lock().unwrap().notifications.contains_key(&10));
+        assert!(
+            !state
+                .lock()
+                .expect("expected value")
+                .notifications
+                .contains_key(&10)
+        );
 
         // Should have emitted NotificationClosed
-        let event = rx.try_recv().unwrap();
+        let event = rx.try_recv().expect("expected value");
         assert!(matches!(
             event,
             OutboundEvent::NotificationClosed {
@@ -1004,17 +1016,23 @@ mod tests {
                 serde_json::json!({"key": "default"}),
             )
             .await
-            .unwrap();
+            .expect("expected value");
 
-        assert!(!state.lock().unwrap().notifications.contains_key(&20));
+        assert!(
+            !state
+                .lock()
+                .expect("expected value")
+                .notifications
+                .contains_key(&20)
+        );
 
         // Should have emitted ActionInvoked then NotificationClosed
-        let event1 = rx.try_recv().unwrap();
+        let event1 = rx.try_recv().expect("expected value");
         assert!(matches!(
             event1,
             OutboundEvent::ActionInvoked { id: 20, .. }
         ));
-        let event2 = rx.try_recv().unwrap();
+        let event2 = rx.try_recv().expect("expected value");
         assert!(matches!(
             event2,
             OutboundEvent::NotificationClosed { id: 20, .. }
@@ -1030,9 +1048,15 @@ mod tests {
         plugin.process_ingress(make_notification(30));
         plugin.process_close(30);
 
-        assert!(!state.lock().unwrap().notifications.contains_key(&30));
+        assert!(
+            !state
+                .lock()
+                .expect("expected value")
+                .notifications
+                .contains_key(&30)
+        );
 
-        let event = rx.try_recv().unwrap();
+        let event = rx.try_recv().expect("expected value");
         assert!(matches!(
             event,
             OutboundEvent::NotificationClosed {

@@ -250,7 +250,7 @@ mod tests {
             }
         ]"#;
 
-        let inputs: Vec<SwayInput> = serde_json::from_str(json).unwrap();
+        let inputs: Vec<SwayInput> = serde_json::from_str(json).expect("expected value");
         assert_eq!(inputs.len(), 1);
         assert_eq!(inputs[0].input_type, "keyboard");
         assert_eq!(
@@ -281,7 +281,7 @@ mod tests {
             }
         ]"#;
 
-        let inputs: Vec<SwayInput> = serde_json::from_str(json).unwrap();
+        let inputs: Vec<SwayInput> = serde_json::from_str(json).expect("expected value");
         assert_eq!(inputs.len(), 2);
 
         // First device is a pointer
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn test_parse_sway_input_event() {
         let json = r#"{"change":"xkb_layout","input":{"type":"keyboard","xkb_active_layout_name":"Czech","xkb_layout_names":["English (US)","Czech"],"xkb_active_layout_index":1}}"#;
-        let event: SwayInputEvent = serde_json::from_str(json).unwrap();
+        let event: SwayInputEvent = serde_json::from_str(json).expect("expected value");
 
         assert_eq!(event.change, "xkb_layout");
         assert_eq!(event.input.input_type, "keyboard");

@@ -342,7 +342,7 @@ mod tests {
         // In real use, XDG_RUNTIME_DIR is always set on Linux.
         let path = daemon_socket_path();
         if std::env::var("XDG_RUNTIME_DIR").is_ok() {
-            let path = path.unwrap();
+            let path = path.expect("expected value");
             assert!(path.to_string_lossy().contains("waft/daemon.sock"));
         } else {
             assert!(matches!(path, Err(WaftClientError::SocketNotFound)));
@@ -350,6 +350,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn socket_not_found_when_no_runtime_dir() {
         // Verify that a missing runtime dir yields SocketNotFound
         let saved = std::env::var("XDG_RUNTIME_DIR").ok();

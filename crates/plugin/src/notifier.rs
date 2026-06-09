@@ -55,7 +55,7 @@ mod tests {
         assert_eq!(*rx.borrow(), 0);
 
         notifier.notify();
-        assert!(rx.has_changed().unwrap());
+        assert!(rx.has_changed().expect("expected value"));
         assert_eq!(*rx.borrow_and_update(), 1);
 
         notifier.notify();

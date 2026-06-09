@@ -87,7 +87,7 @@ impl GoaState {
         }
 
         // Sort by URN for stable ordering
-        entities.sort_by(|a, b| a.urn.to_string().cmp(&b.urn.to_string()));
+        entities.sort_by_key(|a| a.urn.to_string());
         entities
     }
 }
@@ -101,7 +101,7 @@ mod tests {
         OnlineAccount {
             id: id.to_string(),
             provider_name: provider.to_string(),
-            presentation_identity: format!("{}@example.com", id),
+            presentation_identity: format!("{id}@example.com"),
             status: AccountStatus::Active,
             services: vec![ServiceInfo {
                 name: "mail".to_string(),
@@ -143,9 +143,9 @@ mod tests {
         );
 
         state.remove_account("acc1");
-        assert!(state.accounts.get("acc1").is_none());
-        assert!(state.paths.get("acc1").is_none());
-        assert!(state.accounts.get("acc2").is_some());
+        assert!(!state.accounts.contains_key("acc1"));
+        assert!(!state.paths.contains_key("acc1"));
+        assert!(state.accounts.contains_key("acc2"));
     }
 
     #[test]

@@ -249,7 +249,7 @@ mod tests {
     use std::fs;
 
     fn temp_gallery() -> (tempfile::TempDir, SoundGallery) {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let gallery = SoundGallery {
             sounds_dir: dir.path().to_path_buf(),
             sounds: Vec::new(),
@@ -259,17 +259,17 @@ mod tests {
 
     #[test]
     fn scan_empty_directory() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let sounds = scan_directory(&dir.path().to_path_buf());
         assert!(sounds.is_empty());
     }
 
     #[test]
     fn scan_directory_with_files() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("alert.ogg"), b"fake ogg data").unwrap();
-        fs::write(dir.path().join("bell.wav"), b"fake wav data").unwrap();
-        fs::write(dir.path().join("readme.txt"), b"not audio").unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
+        fs::write(dir.path().join("alert.ogg"), b"fake ogg data").expect("expected value");
+        fs::write(dir.path().join("bell.wav"), b"fake wav data").expect("expected value");
+        fs::write(dir.path().join("readme.txt"), b"not audio").expect("expected value");
 
         let sounds = scan_directory(&dir.path().to_path_buf());
         assert_eq!(sounds.len(), 2);
@@ -281,7 +281,7 @@ mod tests {
     fn add_sound_writes_file_and_updates_list() {
         let (_dir, mut gallery) = temp_gallery();
         let data = b"fake audio content";
-        let sound = gallery.add_sound("test.ogg", data).unwrap();
+        let sound = gallery.add_sound("test.ogg", data).expect("expected value");
 
         assert_eq!(sound.filename, "test.ogg");
         assert_eq!(sound.reference, "sounds/test.ogg");
@@ -295,8 +295,12 @@ mod tests {
     #[test]
     fn add_sound_deduplicates_instead_of_replacing() {
         let (_dir, mut gallery) = temp_gallery();
-        let first = gallery.add_sound("test.ogg", b"first").unwrap();
-        let second = gallery.add_sound("test.ogg", b"second version").unwrap();
+        let first = gallery
+            .add_sound("test.ogg", b"first")
+            .expect("expected value");
+        let second = gallery
+            .add_sound("test.ogg", b"second version")
+            .expect("expected value");
 
         assert_eq!(gallery.sounds().len(), 2);
         assert_eq!(first.filename, "test.ogg");
@@ -307,9 +311,15 @@ mod tests {
     #[test]
     fn add_sound_maintains_sorted_order() {
         let (_dir, mut gallery) = temp_gallery();
-        gallery.add_sound("zebra.ogg", b"data").unwrap();
-        gallery.add_sound("alpha.wav", b"data").unwrap();
-        gallery.add_sound("middle.flac", b"data").unwrap();
+        gallery
+            .add_sound("zebra.ogg", b"data")
+            .expect("expected value");
+        gallery
+            .add_sound("alpha.wav", b"data")
+            .expect("expected value");
+        gallery
+            .add_sound("middle.flac", b"data")
+            .expect("expected value");
 
         let names: Vec<&str> = gallery
             .sounds()
@@ -322,10 +332,12 @@ mod tests {
     #[test]
     fn remove_sound_deletes_file_and_updates_list() {
         let (_dir, mut gallery) = temp_gallery();
-        gallery.add_sound("test.ogg", b"data").unwrap();
+        gallery
+            .add_sound("test.ogg", b"data")
+            .expect("expected value");
         assert_eq!(gallery.sounds().len(), 1);
 
-        gallery.remove_sound("test.ogg").unwrap();
+        gallery.remove_sound("test.ogg").expect("expected value");
         assert!(gallery.sounds().is_empty());
         assert!(!gallery.sounds_dir.join("test.ogg").exists());
     }
@@ -336,7 +348,12 @@ mod tests {
         let oversized = vec![0u8; (MAX_FILE_SIZE + 1) as usize];
         let result = gallery.add_sound("big.ogg", &oversized);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("maximum size"));
+        assert!(
+            result
+                .expect_err("expected error")
+                .to_string()
+                .contains("maximum size")
+        );
     }
 
     #[test]
@@ -344,7 +361,12 @@ mod tests {
         let (_dir, mut gallery) = temp_gallery();
         let result = gallery.add_sound("readme.txt", b"not audio");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unsupported"));
+        assert!(
+            result
+                .expect_err("expected error")
+                .to_string()
+                .contains("unsupported")
+        );
     }
 
     #[test]
@@ -373,7 +395,7 @@ mod tests {
         let result = gallery.add_sound("../../../etc/passwd.ogg", b"data");
         // Should strip path traversal and sanitize the stem
         assert!(result.is_ok());
-        let sound = result.unwrap();
+        let sound = result.expect("expected value");
         assert_eq!(sound.filename, "passwd.ogg");
     }
 
@@ -458,7 +480,9 @@ mod tests {
     #[test]
     fn add_sound_sanitizes_filename() {
         let (_dir, mut gallery) = temp_gallery();
-        let sound = gallery.add_sound("My Cool Alert.ogg", b"data").unwrap();
+        let sound = gallery
+            .add_sound("My Cool Alert.ogg", b"data")
+            .expect("expected value");
         assert_eq!(sound.filename, "my-cool-alert.ogg");
         assert_eq!(sound.reference, "sounds/my-cool-alert.ogg");
         assert!(gallery.sounds_dir.join("my-cool-alert.ogg").exists());
@@ -467,8 +491,12 @@ mod tests {
     #[test]
     fn add_sound_duplicate_upload_creates_distinct_entries() {
         let (_dir, mut gallery) = temp_gallery();
-        let first = gallery.add_sound("My File.ogg", b"data1").unwrap();
-        let second = gallery.add_sound("My File.ogg", b"data2").unwrap();
+        let first = gallery
+            .add_sound("My File.ogg", b"data1")
+            .expect("expected value");
+        let second = gallery
+            .add_sound("My File.ogg", b"data2")
+            .expect("expected value");
 
         assert_eq!(first.filename, "my-file.ogg");
         assert_eq!(second.filename, "my-file-2.ogg");

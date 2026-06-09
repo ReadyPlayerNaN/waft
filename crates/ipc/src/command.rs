@@ -206,24 +206,24 @@ mod tests {
     #[test]
     fn json_extract_supports_cmd_and_command_keys() {
         assert_eq!(
-            command_name_from_json(r#"{"cmd":"toggle"}"#).unwrap(),
+            command_name_from_json(r#"{"cmd":"toggle"}"#).expect("expected value"),
             Some("toggle".to_string())
         );
         assert_eq!(
-            command_name_from_json(r#"{"command":"show"}"#).unwrap(),
+            command_name_from_json(r#"{"command":"show"}"#).expect("expected value"),
             Some("show".to_string())
         );
     }
 
     #[test]
     fn parse_command_from_json_rejects_missing_cmd() {
-        let err = parse_command_from_json(r#"{"x":"toggle"}"#).unwrap_err();
+        let err = parse_command_from_json(r#"{"x":"toggle"}"#).expect_err("expected error");
         assert!(matches!(err, IpcError::InvalidRequest(_)));
     }
 
     #[test]
     fn parse_command_from_json_rejects_unknown_cmd() {
-        let err = parse_command_from_json(r#"{"cmd":"wat"}"#).unwrap_err();
+        let err = parse_command_from_json(r#"{"cmd":"wat"}"#).expect_err("expected error");
         assert!(matches!(err, IpcError::UnknownCommand(_)));
     }
 
@@ -238,12 +238,18 @@ mod tests {
     #[test]
     fn command_from_args_supports_words_and_json() {
         let args = vec!["waft-overview".to_string(), "toggle".to_string()];
-        assert_eq!(command_from_args(&args).unwrap(), Some(IpcCommand::Toggle));
+        assert_eq!(
+            command_from_args(&args).expect("expected value"),
+            Some(IpcCommand::Toggle)
+        );
 
         let args = vec!["waft-overview".to_string(), r#"{"cmd":"hide"}"#.to_string()];
-        assert_eq!(command_from_args(&args).unwrap(), Some(IpcCommand::Hide));
+        assert_eq!(
+            command_from_args(&args).expect("expected value"),
+            Some(IpcCommand::Hide)
+        );
 
         let args = vec!["waft-overview".to_string()];
-        assert_eq!(command_from_args(&args).unwrap(), None);
+        assert_eq!(command_from_args(&args).expect("expected value"), None);
     }
 }

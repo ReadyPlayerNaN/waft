@@ -653,8 +653,8 @@ mod tests {
             })
             .collect();
 
-        let json = serde_json::to_value(&entries).unwrap();
-        let arr = json.as_array().unwrap();
+        let json = serde_json::to_value(&entries).expect("expected value");
+        let arr = json.as_array().expect("expected value");
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["id"], "sunsetr");
         assert_eq!(arr[0]["name"], "Sunsetr");
@@ -671,14 +671,14 @@ mod tests {
             description: String::new(),
         };
 
-        let json = serde_json::to_value(&entry).unwrap();
+        let json = serde_json::to_value(&entry).expect("expected value");
         assert_eq!(json["description"], "");
     }
 
     #[test]
     fn basic_manifest_parses_as_described() {
         let json = r#"{"entity_types": ["clock"], "name": "Clock"}"#;
-        let manifest: PluginManifestDescribed = serde_json::from_str(json).unwrap();
+        let manifest: PluginManifestDescribed = serde_json::from_str(json).expect("expected value");
         assert_eq!(manifest.entity_types, vec!["clock"]);
         assert_eq!(manifest.name, "Clock");
         assert!(manifest.plugin.is_none());
@@ -703,9 +703,9 @@ mod tests {
                 }]
             }
         }"#;
-        let manifest: PluginManifestDescribed = serde_json::from_str(json).unwrap();
+        let manifest: PluginManifestDescribed = serde_json::from_str(json).expect("expected value");
         assert_eq!(manifest.entity_types, vec!["clock"]);
-        let plugin = manifest.plugin.unwrap();
+        let plugin = manifest.plugin.expect("expected value");
         assert_eq!(plugin.name, "clock");
         assert_eq!(plugin.entity_types.len(), 1);
     }
@@ -790,7 +790,7 @@ mod tests {
         assert_eq!(output.entity_types[0].actions[0].name, "click");
 
         // Verify JSON roundtrip
-        let json = serde_json::to_value(&output).unwrap();
+        let json = serde_json::to_value(&output).expect("expected value");
         assert_eq!(json["id"], "clock");
         assert_eq!(json["entity_types"][0]["properties"][0]["type"], "string");
     }
@@ -815,18 +815,18 @@ mod tests {
         assert!(output.entity_types[0].actions.is_empty());
 
         // Verify JSON serialization -- empty vecs are omitted, None is absent
-        let json = serde_json::to_string(&output).unwrap();
-        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&output).expect("expected value");
+        let val: serde_json::Value = serde_json::from_str(&json).expect("expected value");
         assert!(
             !val["entity_types"][0]
                 .as_object()
-                .unwrap()
+                .expect("expected value")
                 .contains_key("properties")
         );
         assert!(
             !val["entity_types"][0]
                 .as_object()
-                .unwrap()
+                .expect("expected value")
                 .contains_key("actions")
         );
     }

@@ -776,7 +776,7 @@ mod tests {
             }
         "#;
 
-        let config = parse_keyboard_config_from_string(kdl).unwrap();
+        let config = parse_keyboard_config_from_string(kdl).expect("expected value");
         assert_eq!(config.mode, KeyboardConfigMode::LayoutList);
         assert_eq!(config.layouts, vec!["us", "de", "cz"]);
         assert_eq!(config.options, Some("grp:win_space_toggle".to_string()));
@@ -794,7 +794,7 @@ mod tests {
             }
         "#;
 
-        let config = parse_keyboard_config_from_string(kdl).unwrap();
+        let config = parse_keyboard_config_from_string(kdl).expect("expected value");
         assert_eq!(config.mode, KeyboardConfigMode::LayoutList);
         assert_eq!(config.layouts, vec!["us"]);
     }
@@ -811,7 +811,7 @@ mod tests {
             }
         "#;
 
-        let config = parse_keyboard_config_from_string(kdl).unwrap();
+        let config = parse_keyboard_config_from_string(kdl).expect("expected value");
         assert_eq!(config.mode, KeyboardConfigMode::ExternalFile);
         assert_eq!(config.file_path, Some("~/.config/keymap.xkb".to_string()));
         assert!(config.layouts.is_empty());
@@ -827,7 +827,7 @@ mod tests {
             }
         "#;
 
-        let config = parse_keyboard_config_from_string(kdl).unwrap();
+        let config = parse_keyboard_config_from_string(kdl).expect("expected value");
         assert_eq!(config.mode, KeyboardConfigMode::SystemDefault);
         assert!(config.layouts.is_empty());
     }
@@ -843,7 +843,7 @@ mod tests {
             }
         "#;
 
-        let config = parse_keyboard_config_from_string(kdl).unwrap();
+        let config = parse_keyboard_config_from_string(kdl).expect("expected value");
         assert_eq!(config.mode, KeyboardConfigMode::SystemDefault);
     }
 
@@ -858,7 +858,11 @@ mod tests {
     #[test]
     fn get_niri_config_path() {
         let path = niri_config_path();
-        assert!(path.to_str().unwrap().contains("niri/config.kdl"));
+        assert!(
+            path.to_str()
+                .expect("expected value")
+                .contains("niri/config.kdl")
+        );
     }
 
     #[test]
@@ -872,14 +876,13 @@ mod tests {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified =
-            modify_keyboard_layouts(doc, &vec!["us".into(), "de".into(), "fr".into()]).unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified = modify_keyboard_layouts(doc, &["us".into(), "de".into(), "fr".into()])
+            .expect("expected value");
         let output = modified.to_string();
         assert!(
             output.contains(r#"layout "us,de,fr""#),
-            "Expected quoted layout value, got:\n{}",
-            output
+            "Expected quoted layout value, got:\n{output}"
         );
         let config = extract_keyboard_config(&modified);
 
@@ -897,8 +900,9 @@ mod tests {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_layouts(doc, &vec!["us".into(), "cz".into()]).unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified =
+            modify_keyboard_layouts(doc, &["us".into(), "cz".into()]).expect("expected value");
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.layouts, vec!["us", "cz"]);
@@ -915,9 +919,9 @@ mod tests {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified =
-            modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into(), "de".into()]).unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified = modify_keyboard_layouts(doc, &["cz".into(), "us".into(), "de".into()])
+            .expect("expected value");
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.layouts, vec!["cz", "us", "de"]);
@@ -942,8 +946,9 @@ output "DP-1" {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_layouts(doc, &vec!["fr".into(), "de".into()]).unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified =
+            modify_keyboard_layouts(doc, &["fr".into(), "de".into()]).expect("expected value");
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.layouts, vec!["fr", "de"]);
@@ -958,8 +963,7 @@ output "DP-1" {
         // Verify layout value is quoted
         assert!(
             modified_str.contains(r#"layout "fr,de""#),
-            "Expected quoted layout value in:\n{}",
-            modified_str
+            "Expected quoted layout value in:\n{modified_str}"
         );
     }
 
@@ -973,8 +977,9 @@ output "DP-1" {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_layouts(doc, &vec!["us".into(), "de".into()]).unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified =
+            modify_keyboard_layouts(doc, &["us".into(), "de".into()]).expect("expected value");
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.mode, KeyboardConfigMode::LayoutList);
@@ -985,13 +990,13 @@ output "DP-1" {
     fn write_config_creates_backup() {
         use std::io::Write;
 
-        let temp_dir = tempfile::TempDir::new().unwrap();
+        let temp_dir = tempfile::TempDir::new().expect("expected value");
         let config_path = temp_dir.path().join("config.kdl");
         let backup_path = temp_dir.path().join("config.kdl.backup");
 
         // Write initial config
-        let mut file = std::fs::File::create(&config_path).unwrap();
-        write!(file, "input {{ }}").unwrap();
+        let mut file = std::fs::File::create(&config_path).expect("expected value");
+        write!(file, "input {{ }}").expect("expected value");
         drop(file);
 
         // Modify and write
@@ -1003,16 +1008,16 @@ output "DP-1" {
     }
 }"#
         .parse()
-        .unwrap();
-        write_niri_config_with_backup(&config_path, &doc).unwrap();
+        .expect("expected value");
+        write_niri_config_with_backup(&config_path, &doc).expect("expected value");
 
         // Verify backup exists
         assert!(backup_path.exists());
-        let backup_content = std::fs::read_to_string(&backup_path).unwrap();
+        let backup_content = std::fs::read_to_string(&backup_path).expect("expected value");
         assert_eq!(backup_content, "input { }");
 
         // Verify new content written
-        let new_content = std::fs::read_to_string(&config_path).unwrap();
+        let new_content = std::fs::read_to_string(&config_path).expect("expected value");
         assert!(new_content.contains("layout"));
     }
 
@@ -1031,21 +1036,20 @@ output "DP-1" {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into()]).unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified =
+            modify_keyboard_layouts(doc, &["cz".into(), "us".into()]).expect("expected value");
         let output = modified.to_string();
-        eprintln!("=== v2 config output ===\n{}", output);
+        eprintln!("=== v2 config output ===\n{output}");
 
         assert!(
             output.contains(r#"layout "cz,us""#),
-            "Expected quoted layout, got:\n{}",
-            output
+            "Expected quoted layout, got:\n{output}"
         );
         // variant is not touched by modify_keyboard_layouts, check it stays quoted
         assert!(
             output.contains(r#"variant ",qwerty""#),
-            "Expected quoted variant, got:\n{}",
-            output
+            "Expected quoted variant, got:\n{output}"
         );
     }
 
@@ -1068,27 +1072,25 @@ window-rule {
 }
 "##;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into()]).unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified =
+            modify_keyboard_layouts(doc, &["cz".into(), "us".into()]).expect("expected value");
         let output = modified.to_string();
-        eprintln!("=== v1 config output ===\n{}", output);
+        eprintln!("=== v1 config output ===\n{output}");
 
         // Layout must be quoted
         assert!(
             output.contains(r#"layout "cz,us""#),
-            "Expected quoted layout, got:\n{}",
-            output
+            "Expected quoted layout, got:\n{output}"
         );
         // Variant and options must stay quoted
         assert!(
             output.contains(r#"variant ",qwerty""#),
-            "Expected quoted variant, got:\n{}",
-            output
+            "Expected quoted variant, got:\n{output}"
         );
         assert!(
             output.contains(r#"options "grp:win_space_toggle""#),
-            "Expected quoted options, got:\n{}",
-            output
+            "Expected quoted options, got:\n{output}"
         );
     }
 
@@ -1110,7 +1112,7 @@ window-rule {
             }
         "##;
 
-        let config = parse_keyboard_config_from_string(kdl).unwrap();
+        let config = parse_keyboard_config_from_string(kdl).expect("expected value");
         assert_eq!(config.mode, KeyboardConfigMode::LayoutList);
         assert_eq!(config.layouts, vec!["us", "cz"]);
     }
@@ -1128,7 +1130,7 @@ window-rule {
             }
         "#;
 
-        let config = parse_keyboard_config_from_string(kdl).unwrap();
+        let config = parse_keyboard_config_from_string(kdl).expect("expected value");
         assert_eq!(config.mode, KeyboardConfigMode::LayoutList);
         assert_eq!(config.layouts, vec!["us"]);
         assert_eq!(config.variant, Some("dvorak".to_string()));
@@ -1180,7 +1182,7 @@ xkb_keymap {
 
         let result = parse_xkb_content(xkb);
         assert!(result.is_some());
-        let parsed = result.unwrap();
+        let parsed = result.expect("expected value");
         assert_eq!(parsed.layouts, vec!["us", "cz"]);
         assert_eq!(parsed.variant, Some(",qwerty".to_string()));
         assert_eq!(parsed.names, vec!["English (US)", "Czech (QWERTY)"]);
@@ -1198,7 +1200,7 @@ xkb_keymap {
 };
 "#;
 
-        let parsed = parse_xkb_content(xkb).unwrap();
+        let parsed = parse_xkb_content(xkb).expect("expected value");
         assert_eq!(parsed.layouts, vec!["us", "de", "fr"]);
         assert_eq!(parsed.names, vec!["English (US)", "German", "French"]);
     }
@@ -1215,7 +1217,7 @@ xkb_keymap {
 };
 "#;
 
-        let parsed = parse_xkb_content(xkb).unwrap();
+        let parsed = parse_xkb_content(xkb).expect("expected value");
         assert_eq!(parsed.layouts, vec!["us", "cz", "sk"]);
         assert_eq!(parsed.names, vec!["English (US)", "Czech (QWERTY)", ""]);
     }
@@ -1224,10 +1226,10 @@ xkb_keymap {
     fn parse_config_external_file_with_xkb_layouts() {
         use std::io::Write;
 
-        let temp_dir = tempfile::TempDir::new().unwrap();
+        let temp_dir = tempfile::TempDir::new().expect("expected value");
         let xkb_path = temp_dir.path().join("keymap.xkb");
 
-        let mut xkb_file = std::fs::File::create(&xkb_path).unwrap();
+        let mut xkb_file = std::fs::File::create(&xkb_path).expect("expected value");
         write!(
             xkb_file,
             r#"xkb_keymap {{
@@ -1243,7 +1245,7 @@ xkb_keymap {
 }};
 "#
         )
-        .unwrap();
+        .expect("expected value");
         drop(xkb_file);
 
         let kdl = format!(
@@ -1259,7 +1261,7 @@ xkb_keymap {
             xkb_path.display()
         );
 
-        let config = parse_keyboard_config_from_string(&kdl).unwrap();
+        let config = parse_keyboard_config_from_string(&kdl).expect("expected value");
         assert_eq!(config.mode, KeyboardConfigMode::ExternalFile);
         assert_eq!(config.layouts, vec!["us", "cz"]);
         assert_eq!(config.variant, Some(",qwerty".to_string()));
@@ -1332,7 +1334,7 @@ xkb_keymap {
                 "German".into(),
             ],
         )
-        .unwrap();
+        .expect("expected value");
         assert!(modified.contains(r#"include "pc+us+cz(qwerty):2+de:3+inet(evdev)""#));
         assert!(modified.contains(r#"name[group1]="English (US)";"#));
         assert!(modified.contains(r#"name[group2]="Czech (QWERTY)";"#));
@@ -1353,7 +1355,8 @@ xkb_keymap {
 };
 "#;
 
-        let modified = modify_xkb_content(xkb, &["us".into()], &["English (US)".into()]).unwrap();
+        let modified = modify_xkb_content(xkb, &["us".into()], &["English (US)".into()])
+            .expect("expected value");
         assert!(modified.contains(r#"include "pc+us+inet(evdev)""#));
         assert!(modified.contains(r#"name[group1]="English (US)";"#));
         assert!(!modified.contains("name[group2]"));
@@ -1375,7 +1378,7 @@ xkb_keymap {
             &["cz".into(), "us".into()],
             &["Czech (QWERTY)".into(), "English (US)".into()],
         )
-        .unwrap();
+        .expect("expected value");
         // cz should keep its qwerty variant, now in position 1 (no suffix)
         // us should be in position 2 (with :2 suffix)
         assert!(modified.contains(r#"include "pc+cz(qwerty)+us:2+inet(evdev)""#));
@@ -1393,7 +1396,8 @@ xkb_keymap {
 };
 "#;
 
-        let modified = modify_xkb_content(xkb, &["us".into(), "de".into()], &[]).unwrap();
+        let modified =
+            modify_xkb_content(xkb, &["us".into(), "de".into()], &[]).expect("expected value");
         assert!(modified.contains(r#"include "pc+us+de:2+inet(evdev)""#));
         assert!(!modified.contains("name[group"));
     }
@@ -1402,7 +1406,7 @@ xkb_keymap {
     fn write_xkb_layouts_creates_backup() {
         use std::io::Write;
 
-        let temp_dir = tempfile::TempDir::new().unwrap();
+        let temp_dir = tempfile::TempDir::new().expect("expected value");
         let xkb_path = temp_dir.path().join("keymap.xkb");
         let backup_path = temp_dir.path().join("keymap.xkb.backup");
 
@@ -1413,12 +1417,12 @@ xkb_keymap {
 };
 "#;
 
-        let mut file = std::fs::File::create(&xkb_path).unwrap();
-        write!(file, "{}", original).unwrap();
+        let mut file = std::fs::File::create(&xkb_path).expect("expected value");
+        write!(file, "{original}").expect("expected value");
         drop(file);
 
         write_xkb_layouts(
-            xkb_path.to_str().unwrap(),
+            xkb_path.to_str().expect("expected value"),
             &["us".into(), "cz".into(), "de".into()],
             &[
                 "English (US)".into(),
@@ -1426,15 +1430,15 @@ xkb_keymap {
                 "German".into(),
             ],
         )
-        .unwrap();
+        .expect("expected value");
 
         // Backup should contain original content
         assert!(backup_path.exists());
-        let backup_content = std::fs::read_to_string(&backup_path).unwrap();
+        let backup_content = std::fs::read_to_string(&backup_path).expect("expected value");
         assert_eq!(backup_content, original);
 
         // New content should have 3 layouts
-        let new_content = std::fs::read_to_string(&xkb_path).unwrap();
+        let new_content = std::fs::read_to_string(&xkb_path).expect("expected value");
         assert!(new_content.contains(r#"include "pc+us+cz(qwerty):2+de:3+inet(evdev)""#));
         assert!(new_content.contains(r#"name[group1]="English (US)";"#));
         assert!(new_content.contains(r#"name[group3]="German";"#));
@@ -1451,8 +1455,8 @@ xkb_keymap {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_variant(doc, ",qwerty").unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified = modify_keyboard_variant(doc, ",qwerty").expect("expected value");
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.variant, Some(",qwerty".to_string()));
@@ -1470,8 +1474,8 @@ xkb_keymap {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_variant(doc, "dvorak,qwerty").unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified = modify_keyboard_variant(doc, "dvorak,qwerty").expect("expected value");
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.variant, Some("dvorak,qwerty".to_string()));
@@ -1489,8 +1493,8 @@ xkb_keymap {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_variant(doc, "").unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified = modify_keyboard_variant(doc, "").expect("expected value");
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.variant, None);
@@ -1508,8 +1512,8 @@ xkb_keymap {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_variant(doc, ",").unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified = modify_keyboard_variant(doc, ",").expect("expected value");
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.variant, None);
@@ -1527,8 +1531,8 @@ xkb_keymap {
 }
 "#;
 
-        let doc: KdlDocument = kdl.parse().unwrap();
-        let modified = modify_keyboard_variant(doc, ",qwerty").unwrap();
+        let doc: KdlDocument = kdl.parse().expect("expected value");
+        let modified = modify_keyboard_variant(doc, ",qwerty").expect("expected value");
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.layouts, vec!["us", "cz"]);
@@ -1545,7 +1549,8 @@ xkb_keymap {
 };
 "#;
 
-        let modified = modify_xkb_content_variant(xkb, "cz", Some("qwerty")).unwrap();
+        let modified =
+            modify_xkb_content_variant(xkb, "cz", Some("qwerty")).expect("expected value");
         assert!(modified.contains(r#"include "pc+us+cz(qwerty):2+inet(evdev)""#));
     }
 
@@ -1558,7 +1563,7 @@ xkb_keymap {
 };
 "#;
 
-        let modified = modify_xkb_content_variant(xkb, "cz", None).unwrap();
+        let modified = modify_xkb_content_variant(xkb, "cz", None).expect("expected value");
         assert!(modified.contains(r#"include "pc+us+cz:2+inet(evdev)""#));
     }
 
@@ -1571,7 +1576,7 @@ xkb_keymap {
 };
 "#;
 
-        let modified = modify_xkb_content_variant(xkb, "cz", Some("")).unwrap();
+        let modified = modify_xkb_content_variant(xkb, "cz", Some("")).expect("expected value");
         assert!(modified.contains(r#"include "pc+us+cz:2+inet(evdev)""#));
     }
 
@@ -1584,7 +1589,8 @@ xkb_keymap {
 };
 "#;
 
-        let modified = modify_xkb_content_variant(xkb, "us", Some("colemak")).unwrap();
+        let modified =
+            modify_xkb_content_variant(xkb, "us", Some("colemak")).expect("expected value");
         assert!(modified.contains(r#"include "pc+us(colemak)+cz(qwerty):2+inet(evdev)""#));
     }
 

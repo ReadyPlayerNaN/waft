@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn test_parse_keyboard_layouts_changed() {
         let json = r#"{"KeyboardLayoutsChanged":{"keyboard_layouts":{"names":["English (US)","Czech"],"current_idx":1}}}"#;
-        let event: RawNiriEvent = serde_json::from_str(json).unwrap();
+        let event: RawNiriEvent = serde_json::from_str(json).expect("expected value");
 
         let payload = event
             .keyboard_layouts_changed
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_parse_keyboard_layout_switched() {
         let json = r#"{"KeyboardLayoutSwitched":{"idx":1}}"#;
-        let event: RawNiriEvent = serde_json::from_str(json).unwrap();
+        let event: RawNiriEvent = serde_json::from_str(json).expect("expected value");
 
         let payload = event
             .keyboard_layout_switched
@@ -205,14 +205,14 @@ mod tests {
     #[test]
     fn test_parse_config_loaded() {
         let json = r#"{"ConfigLoaded":{}}"#;
-        let event: RawNiriEvent = serde_json::from_str(json).unwrap();
+        let event: RawNiriEvent = serde_json::from_str(json).expect("expected value");
         assert!(event.config_loaded.is_some());
     }
 
     #[test]
     fn test_parse_windows_changed() {
         let json = r#"{"WindowsChanged":{"windows":[{"id":1,"title":"Claude Code","app_id":"Alacritty","workspace_id":1,"is_focused":true},{"id":2,"title":"Mozilla Firefox","app_id":"firefox","workspace_id":2,"is_focused":false}]}}"#;
-        let event: RawNiriEvent = serde_json::from_str(json).unwrap();
+        let event: RawNiriEvent = serde_json::from_str(json).expect("expected value");
         let payload = event.windows_changed.expect("Expected WindowsChanged");
         assert_eq!(payload.windows.len(), 2);
         assert_eq!(payload.windows[0].id, 1);
@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn test_parse_unknown_event() {
         let json = r#"{"WindowOpenedOrChanged":{"window":{}}}"#;
-        let event: RawNiriEvent = serde_json::from_str(json).unwrap();
+        let event: RawNiriEvent = serde_json::from_str(json).expect("expected value");
         assert!(event.keyboard_layouts_changed.is_none());
         assert!(event.keyboard_layout_switched.is_none());
         assert!(event.config_loaded.is_none());

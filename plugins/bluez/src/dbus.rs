@@ -151,7 +151,7 @@ pub async fn load_state(conn: &Connection) -> Result<State> {
         }
 
         // Sort devices by name
-        devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        devices.sort_by_key(|a| a.name.to_lowercase());
         adapter.devices = devices;
     }
 

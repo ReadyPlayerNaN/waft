@@ -228,18 +228,21 @@ pub async fn monitor_nm_signals(
                                             });
                                         }
                                     }
-                                    DEVICE_TYPE_WIFI => {
-                                        if !st.wifi_adapters.iter().any(|a| a.path == info.path) {
-                                            st.wifi_adapters.push(WiFiAdapterState {
-                                                path: info.path,
-                                                interface_name: info.interface_name,
-                                                enabled: true,
-                                                busy: false,
-                                                active_ssid: None,
-                                                access_points: Vec::new(),
-                                                scanning: false,
-                                            });
-                                        }
+                                    DEVICE_TYPE_WIFI
+                                        if !st
+                                            .wifi_adapters
+                                            .iter()
+                                            .any(|a| a.path == info.path) =>
+                                    {
+                                        st.wifi_adapters.push(WiFiAdapterState {
+                                            path: info.path,
+                                            interface_name: info.interface_name,
+                                            enabled: true,
+                                            busy: false,
+                                            active_ssid: None,
+                                            access_points: Vec::new(),
+                                            scanning: false,
+                                        });
                                     }
                                     _ => {}
                                 }

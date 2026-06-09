@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn parse_simple_urn() {
-        let urn = Urn::parse("battery/battery/BAT0").unwrap();
+        let urn = Urn::parse("battery/battery/BAT0").expect("expected value");
         assert_eq!(urn.plugin(), "battery");
         assert_eq!(urn.entity_type(), "battery");
         assert_eq!(urn.id(), "BAT0");
@@ -190,7 +190,8 @@ mod tests {
 
     #[test]
     fn parse_nested_urn() {
-        let urn = Urn::parse("blueman/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC").unwrap();
+        let urn = Urn::parse("blueman/bluetooth-adapter/hci0/bluetooth-device/AA:BB:CC")
+            .expect("expected value");
         assert_eq!(urn.plugin(), "blueman");
         assert_eq!(urn.root_entity_type(), "bluetooth-adapter");
         assert_eq!(urn.entity_type(), "bluetooth-device");
@@ -228,7 +229,7 @@ mod tests {
     fn display_roundtrip() {
         let urn = Urn::new("audio", "audio-device", "speakers");
         let displayed = urn.to_string();
-        let parsed = Urn::parse(&displayed).unwrap();
+        let parsed = Urn::parse(&displayed).expect("expected value");
         assert_eq!(urn, parsed);
     }
 
@@ -237,22 +238,22 @@ mod tests {
         let urn =
             Urn::new("blueman", "bluetooth-adapter", "hci0").child("bluetooth-device", "AA:BB:CC");
         let displayed = urn.to_string();
-        let parsed = Urn::parse(&displayed).unwrap();
+        let parsed = Urn::parse(&displayed).expect("expected value");
         assert_eq!(urn, parsed);
     }
 
     #[test]
     fn serde_roundtrip() {
         let urn = Urn::new("audio", "audio-device", "speakers");
-        let json = serde_json::to_string(&urn).unwrap();
-        let deserialized: Urn = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&urn).expect("expected value");
+        let deserialized: Urn = serde_json::from_str(&json).expect("expected value");
         assert_eq!(urn, deserialized);
     }
 
     #[test]
     fn urn_equality() {
         let a = Urn::new("clock", "clock", "default");
-        let b = Urn::parse("clock/clock/default").unwrap();
+        let b = Urn::parse("clock/clock/default").expect("expected value");
         assert_eq!(a, b);
     }
 }

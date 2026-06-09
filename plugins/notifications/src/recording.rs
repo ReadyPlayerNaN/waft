@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn recorder_inactive_does_not_write() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let log_path = dir.path().join("test.jsonl");
 
         let recorder = NotificationRecorder {
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn recorder_active_writes_jsonl() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let log_path = dir.path().join("test.jsonl");
 
         let recorder = NotificationRecorder {
@@ -221,22 +221,22 @@ mod tests {
         let notif = make_test_notification();
         recorder.record(&notif, "notifications/notification/42");
 
-        let content = fs::read_to_string(&log_path).unwrap();
+        let content = fs::read_to_string(&log_path).expect("expected value");
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 1);
 
-        let record: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        let record: serde_json::Value = serde_json::from_str(lines[0]).expect("expected value");
         assert_eq!(record["urn"], "notifications/notification/42");
         assert_eq!(record["title"], "Test Title");
         assert!(record["recorded_at_ms"].is_number());
         // Bytes icon should be replaced
-        let icons = record["icon_hints"].as_array().unwrap();
+        let icons = record["icon_hints"].as_array().expect("expected value");
         assert_eq!(icons[1]["FilePath"], "<bytes:4>");
     }
 
     #[test]
     fn set_active_truncates_on_enable() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let log_path = dir.path().join("test.jsonl");
 
         let recorder = NotificationRecorder {
@@ -246,7 +246,11 @@ mod tests {
 
         let notif = make_test_notification();
         recorder.record(&notif, "notifications/notification/1");
-        assert!(fs::read_to_string(&log_path).unwrap().len() > 0);
+        assert!(
+            !fs::read_to_string(&log_path)
+                .expect("expected value")
+                .is_empty()
+        );
 
         // Disable
         recorder.set_active(false);
@@ -255,13 +259,13 @@ mod tests {
         // Re-enable should truncate
         recorder.set_active(true);
         assert!(recorder.is_active());
-        let content = fs::read_to_string(&log_path).unwrap();
+        let content = fs::read_to_string(&log_path).expect("expected value");
         assert!(content.is_empty());
     }
 
     #[test]
     fn set_active_no_truncate_when_already_active() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let log_path = dir.path().join("test.jsonl");
 
         let recorder = NotificationRecorder {
@@ -271,11 +275,11 @@ mod tests {
 
         let notif = make_test_notification();
         recorder.record(&notif, "notifications/notification/1");
-        let original_content = fs::read_to_string(&log_path).unwrap();
+        let original_content = fs::read_to_string(&log_path).expect("expected value");
 
         // set_active(true) when already active should NOT truncate
         recorder.set_active(true);
-        let content = fs::read_to_string(&log_path).unwrap();
+        let content = fs::read_to_string(&log_path).expect("expected value");
         assert_eq!(content, original_content);
     }
 }

@@ -325,6 +325,40 @@ fn deduplicate_device_names(devices: &[(Urn, entity::audio::AudioDevice)]) -> Ve
         .collect()
 }
 
+/// Compute the volume-level icon for an audio device slider.
+///
+/// The slider icon reflects the current volume level and mute state rather than
+/// the device type. This keeps the device-type icon stable on the device itself
+/// while the slider icon dynamically tracks volume changes.
+fn slider_icon(device: &entity::audio::AudioDevice) -> String {
+    match device.kind {
+        AudioDeviceKind::Output => {
+            if device.muted || device.volume < 0.01 {
+                "audio-volume-muted-symbolic".to_string()
+            } else if device.volume < 0.34 {
+                "audio-volume-low-symbolic".to_string()
+            } else if device.volume < 0.67 {
+                "audio-volume-medium-symbolic".to_string()
+            } else {
+                "audio-volume-high-symbolic".to_string()
+            }
+        }
+        AudioDeviceKind::Input => {
+            if device.muted {
+                "microphone-disabled-symbolic".to_string()
+            } else if device.volume < 0.01 {
+                "audio-input-microphone-symbolic".to_string()
+            } else if device.volume < 0.34 {
+                "microphone-sensitivity-low-symbolic".to_string()
+            } else if device.volume < 0.67 {
+                "microphone-sensitivity-medium-symbolic".to_string()
+            } else {
+                "microphone-sensitivity-high-symbolic".to_string()
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -334,7 +368,7 @@ pub(crate) mod tests {
         AudioDevice {
             name: name.to_string(),
             device_type: "card".to_string(),
-            connection_type: connection_type.map(|s| s.to_string()),
+            connection_type: connection_type.map(std::string::ToString::to_string),
             volume: 0.5,
             muted: false,
             default: false,
@@ -529,7 +563,7 @@ pub(crate) mod tests {
     }
 
     fn child_count(container: &gtk::Widget) -> u32 {
-        let bx: &gtk::Box = container.downcast_ref().unwrap();
+        let bx: &gtk::Box = container.downcast_ref().expect("expected value");
         let mut count = 0u32;
         let mut child = bx.first_child();
         while let Some(c) = child {
@@ -566,8 +600,8 @@ pub(crate) mod tests {
         let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
 
         let urn = Urn::new("audio", "audio-device", "speakers");
-        let data =
-            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        let data = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true))
+            .expect("expected value");
         store.handle_notification(make_audio_updated(urn, data));
 
         assert!(
@@ -584,14 +618,14 @@ pub(crate) mod tests {
 
         // Add default output
         let urn_out = Urn::new("audio", "audio-device", "speakers");
-        let data_out =
-            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        let data_out = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true))
+            .expect("expected value");
         store.handle_notification(make_audio_updated(urn_out, data_out));
 
         // Add default input
         let urn_in = Urn::new("audio", "audio-device", "mic");
-        let data_in =
-            serde_json::to_value(make_audio_entity(AudioDeviceKind::Input, 0.50, true)).unwrap();
+        let data_in = serde_json::to_value(make_audio_entity(AudioDeviceKind::Input, 0.50, true))
+            .expect("expected value");
         store.handle_notification(make_audio_updated(urn_in, data_in));
 
         assert_eq!(
@@ -607,14 +641,14 @@ pub(crate) mod tests {
         let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
 
         let urn = Urn::new("audio", "audio-device", "speakers");
-        let data1 =
-            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        let data1 = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true))
+            .expect("expected value");
         store.handle_notification(make_audio_updated(urn.clone(), data1));
         assert_eq!(child_count(comp.widget()), 1);
 
         // Update volume
-        let data2 =
-            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.30, true)).unwrap();
+        let data2 = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.30, true))
+            .expect("expected value");
         store.handle_notification(make_audio_updated(urn, data2));
         assert_eq!(
             child_count(comp.widget()),
@@ -629,8 +663,8 @@ pub(crate) mod tests {
         let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
 
         let urn = Urn::new("audio", "audio-device", "speakers");
-        let data =
-            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        let data = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true))
+            .expect("expected value");
         store.handle_notification(make_audio_updated(urn.clone(), data));
         assert!(comp.widget().is_visible());
 
@@ -649,8 +683,8 @@ pub(crate) mod tests {
 
         // Add a non-default output device
         let urn = Urn::new("audio", "audio-device", "headphones");
-        let data =
-            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.60, false)).unwrap();
+        let data = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.60, false))
+            .expect("expected value");
         store.handle_notification(make_audio_updated(urn, data));
 
         // Audio sliders only render for default devices
@@ -660,39 +694,5 @@ pub(crate) mod tests {
             "non-default device should not create slider"
         );
         assert!(!comp.widget().is_visible());
-    }
-}
-
-/// Compute the volume-level icon for an audio device slider.
-///
-/// The slider icon reflects the current volume level and mute state rather than
-/// the device type. This keeps the device-type icon stable on the device itself
-/// while the slider icon dynamically tracks volume changes.
-fn slider_icon(device: &entity::audio::AudioDevice) -> String {
-    match device.kind {
-        AudioDeviceKind::Output => {
-            if device.muted || device.volume < 0.01 {
-                "audio-volume-muted-symbolic".to_string()
-            } else if device.volume < 0.34 {
-                "audio-volume-low-symbolic".to_string()
-            } else if device.volume < 0.67 {
-                "audio-volume-medium-symbolic".to_string()
-            } else {
-                "audio-volume-high-symbolic".to_string()
-            }
-        }
-        AudioDeviceKind::Input => {
-            if device.muted {
-                "microphone-disabled-symbolic".to_string()
-            } else if device.volume < 0.01 {
-                "audio-input-microphone-symbolic".to_string()
-            } else if device.volume < 0.34 {
-                "microphone-sensitivity-low-symbolic".to_string()
-            } else if device.volume < 0.67 {
-                "microphone-sensitivity-medium-symbolic".to_string()
-            } else {
-                "microphone-sensitivity-high-symbolic".to_string()
-            }
-        }
     }
 }

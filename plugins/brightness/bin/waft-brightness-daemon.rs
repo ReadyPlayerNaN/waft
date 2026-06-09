@@ -807,7 +807,7 @@ mod tests {
         assert_eq!(entities[0].entity_type, "display");
 
         let data: entity::display::Display =
-            serde_json::from_value(entities[0].data.clone()).unwrap();
+            serde_json::from_value(entities[0].data.clone()).expect("expected value");
         assert_eq!(data.name, "backlight:intel_backlight");
         assert!((data.brightness - 0.5).abs() < 0.001);
         assert_eq!(data.kind, entity::display::DisplayKind::Backlight);
@@ -825,11 +825,11 @@ mod tests {
         assert_eq!(entities.len(), 2);
 
         let data0: entity::display::Display =
-            serde_json::from_value(entities[0].data.clone()).unwrap();
+            serde_json::from_value(entities[0].data.clone()).expect("expected value");
         assert_eq!(data0.kind, entity::display::DisplayKind::Backlight);
 
         let data1: entity::display::Display =
-            serde_json::from_value(entities[1].data.clone()).unwrap();
+            serde_json::from_value(entities[1].data.clone()).expect("expected value");
         assert_eq!(data1.kind, entity::display::DisplayKind::External);
     }
 
@@ -886,7 +886,7 @@ Display 2
         };
         let entities = plugin.get_entities();
         let data: entity::display::Display =
-            serde_json::from_value(entities[0].data.clone()).unwrap();
+            serde_json::from_value(entities[0].data.clone()).expect("expected value");
         assert_eq!(data.connector, None);
     }
 
@@ -903,7 +903,7 @@ Display 2
         };
         let entities = plugin.get_entities();
         let data: entity::display::Display =
-            serde_json::from_value(entities[0].data.clone()).unwrap();
+            serde_json::from_value(entities[0].data.clone()).expect("expected value");
         assert_eq!(data.connector, Some("eDP-1".to_string()));
     }
 }

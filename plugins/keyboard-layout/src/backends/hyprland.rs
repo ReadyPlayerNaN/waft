@@ -293,7 +293,7 @@ mod tests {
             ]
         }"#;
 
-        let devices: HyprlandDevices = serde_json::from_str(json).unwrap();
+        let devices: HyprlandDevices = serde_json::from_str(json).expect("expected value");
         assert_eq!(devices.keyboards.len(), 1);
         assert_eq!(devices.keyboards[0].active_keymap, "English (US)");
         assert!(devices.keyboards[0].main);
@@ -316,19 +316,23 @@ mod tests {
             ]
         }"#;
 
-        let devices: HyprlandDevices = serde_json::from_str(json).unwrap();
+        let devices: HyprlandDevices = serde_json::from_str(json).expect("expected value");
         assert_eq!(devices.keyboards.len(), 2);
 
         // Main keyboard should be the second one
-        let main_keyboard = devices.keyboards.iter().find(|k| k.main).unwrap();
+        let main_keyboard = devices
+            .keyboards
+            .iter()
+            .find(|k| k.main)
+            .expect("expected value");
         assert_eq!(main_keyboard.active_keymap, "English (US)");
     }
 
     #[test]
     fn test_parse_activelayout_event() {
         let line = "activelayout>>at-translated-set-2-keyboard,Czech";
-        let data = line.strip_prefix("activelayout>>").unwrap();
-        let (keyboard, layout) = data.split_once(',').unwrap();
+        let data = line.strip_prefix("activelayout>>").expect("expected value");
+        let (keyboard, layout) = data.split_once(',').expect("expected value");
 
         assert_eq!(keyboard, "at-translated-set-2-keyboard");
         assert_eq!(layout, "Czech");

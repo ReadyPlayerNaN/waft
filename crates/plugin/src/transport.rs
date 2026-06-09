@@ -67,8 +67,10 @@ mod tests {
             text: "hello".to_string(),
         };
 
-        write_framed(&mut client, &original).await.unwrap();
-        let decoded: Option<TestMsg> = read_framed(&mut server).await.unwrap();
+        write_framed(&mut client, &original)
+            .await
+            .expect("expected value");
+        let decoded: Option<TestMsg> = read_framed(&mut server).await.expect("expected value");
         assert_eq!(decoded, Some(original));
     }
 
@@ -88,7 +90,7 @@ mod tests {
         client
             .write_all(&oversized_len.to_be_bytes())
             .await
-            .unwrap();
+            .expect("expected value");
 
         let result: Result<Option<TestMsg>, _> = read_framed(&mut server).await;
         assert!(matches!(result, Err(TransportError::FrameTooLarge(_))));

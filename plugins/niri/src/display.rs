@@ -293,7 +293,8 @@ mod tests {
 
     #[test]
     fn test_parse_outputs_response() {
-        let response: NiriOutputsResponse = serde_json::from_str(fixture_json()).unwrap();
+        let response: NiriOutputsResponse =
+            serde_json::from_str(fixture_json()).expect("expected value");
         assert_eq!(response.len(), 1);
 
         let dp3 = &response["DP-3"];
@@ -308,7 +309,8 @@ mod tests {
 
     #[test]
     fn test_parse_mode_refresh_rate_millihertz() {
-        let response: NiriOutputsResponse = serde_json::from_str(fixture_json()).unwrap();
+        let response: NiriOutputsResponse =
+            serde_json::from_str(fixture_json()).expect("expected value");
         let dp3 = &response["DP-3"];
 
         // First mode: 5120x1440@239761mHz
@@ -321,7 +323,8 @@ mod tests {
 
     #[test]
     fn test_response_to_states() {
-        let response: NiriOutputsResponse = serde_json::from_str(fixture_json()).unwrap();
+        let response: NiriOutputsResponse =
+            serde_json::from_str(fixture_json()).expect("expected value");
         let states = response_to_states(&response);
 
         assert_eq!(states.len(), 1);
@@ -334,7 +337,8 @@ mod tests {
 
     #[test]
     fn test_to_entity() {
-        let response: NiriOutputsResponse = serde_json::from_str(fixture_json()).unwrap();
+        let response: NiriOutputsResponse =
+            serde_json::from_str(fixture_json()).expect("expected value");
         let states = response_to_states(&response);
         let dp3 = &states["DP-3"];
 
@@ -404,7 +408,7 @@ mod tests {
             }
         }"#;
 
-        let response: NiriOutputsResponse = serde_json::from_str(json).unwrap();
+        let response: NiriOutputsResponse = serde_json::from_str(json).expect("expected value");
         assert_eq!(response.len(), 2);
 
         let states = response_to_states(&response);
@@ -431,15 +435,21 @@ mod tests {
         };
 
         let params = serde_json::json!({"mode_index": 0});
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Runtime::new().expect("expected value");
         let result = rt.block_on(handle_action("DP-3", "set-mode", &params, &state));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("out of range"));
+        assert!(
+            result
+                .expect_err("expected error")
+                .to_string()
+                .contains("out of range")
+        );
     }
 
     #[test]
     fn test_response_to_states_new_fields() {
-        let response: NiriOutputsResponse = serde_json::from_str(fixture_json()).unwrap();
+        let response: NiriOutputsResponse =
+            serde_json::from_str(fixture_json()).expect("expected value");
         let states = response_to_states(&response);
         let dp3 = &states["DP-3"];
 
@@ -467,7 +477,7 @@ mod tests {
             }
         }"#;
 
-        let response: NiriOutputsResponse = serde_json::from_str(json).unwrap();
+        let response: NiriOutputsResponse = serde_json::from_str(json).expect("expected value");
         let states = response_to_states(&response);
         let dp3 = &states["DP-3"];
         assert!(!dp3.enabled);
@@ -477,7 +487,8 @@ mod tests {
 
     #[test]
     fn test_to_entity_new_fields() {
-        let response: NiriOutputsResponse = serde_json::from_str(fixture_json()).unwrap();
+        let response: NiriOutputsResponse =
+            serde_json::from_str(fixture_json()).expect("expected value");
         let states = response_to_states(&response);
         let dp3 = &states["DP-3"];
 
@@ -536,8 +547,7 @@ mod tests {
             let cli_str = transform_to_niri_cli(*variant);
             assert!(
                 !cli_str.is_empty(),
-                "CLI string should not be empty for {:?}",
-                variant
+                "CLI string should not be empty for {variant:?}"
             );
         }
     }
@@ -560,14 +570,24 @@ mod tests {
         };
 
         let params = serde_json::json!({"value": 5.0});
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Runtime::new().expect("expected value");
         let result = rt.block_on(handle_action("DP-3", "set-scale", &params, &state));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("out of range"));
+        assert!(
+            result
+                .expect_err("expected error")
+                .to_string()
+                .contains("out of range")
+        );
 
         let params = serde_json::json!({"value": 0.1});
         let result = rt.block_on(handle_action("DP-3", "set-scale", &params, &state));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("out of range"));
+        assert!(
+            result
+                .expect_err("expected error")
+                .to_string()
+                .contains("out of range")
+        );
     }
 }

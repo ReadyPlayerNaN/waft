@@ -527,30 +527,30 @@ mod tests {
 
     #[test]
     fn load_nonexistent_returns_empty() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        let loaded = load_binds(&path).unwrap();
+        let loaded = load_binds(&path).expect("expected value");
         assert!(loaded.entries.is_empty());
         assert!(loaded.raw.is_empty());
     }
 
     #[test]
     fn load_no_binds_block() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(f, r#"some-setting "value""#).unwrap();
+        let mut f = std::fs::File::create(&path).expect("expected value");
+        writeln!(f, r#"some-setting "value""#).expect("expected value");
         drop(f);
 
-        let loaded = load_binds(&path).unwrap();
+        let loaded = load_binds(&path).expect("expected value");
         assert!(loaded.entries.is_empty());
     }
 
     #[test]
     fn parse_simple_spawn_bind() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        let mut f = std::fs::File::create(&path).unwrap();
+        let mut f = std::fs::File::create(&path).expect("expected value");
         writeln!(
             f,
             r#"binds {{
@@ -559,10 +559,10 @@ mod tests {
     }}
 }}"#
         )
-        .unwrap();
+        .expect("expected value");
         drop(f);
 
-        let loaded = load_binds(&path).unwrap();
+        let loaded = load_binds(&path).expect("expected value");
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(loaded.entries[0].modifiers, vec![Modifier::Mod]);
         assert_eq!(loaded.entries[0].key, "T");
@@ -577,9 +577,9 @@ mod tests {
 
     #[test]
     fn parse_niri_action_bind() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        let mut f = std::fs::File::create(&path).unwrap();
+        let mut f = std::fs::File::create(&path).expect("expected value");
         writeln!(
             f,
             r#"binds {{
@@ -588,10 +588,10 @@ mod tests {
     }}
 }}"#
         )
-        .unwrap();
+        .expect("expected value");
         drop(f);
 
-        let loaded = load_binds(&path).unwrap();
+        let loaded = load_binds(&path).expect("expected value");
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(
             loaded.entries[0].action,
@@ -604,10 +604,10 @@ mod tests {
 
     #[test]
     fn round_trip_binds() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
-        let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(f, r#"some-other-setting "keep-me""#).unwrap();
+        let mut f = std::fs::File::create(&path).expect("expected value");
+        writeln!(f, r#"some-other-setting "keep-me""#).expect("expected value");
         writeln!(
             f,
             r#"binds {{
@@ -616,10 +616,10 @@ mod tests {
     }}
 }}"#
         )
-        .unwrap();
+        .expect("expected value");
         drop(f);
 
-        let loaded = load_binds(&path).unwrap();
+        let loaded = load_binds(&path).expect("expected value");
         assert_eq!(loaded.entries.len(), 1);
 
         // Save with modified entries
@@ -634,16 +634,16 @@ mod tests {
             allow_when_locked: false,
             repeat: None,
         }];
-        save_binds(&path, &new_entries, &[]).unwrap();
+        save_binds(&path, &new_entries, &[]).expect("expected value");
 
         // Verify other settings preserved
-        let content = std::fs::read_to_string(&path).unwrap();
+        let content = std::fs::read_to_string(&path).expect("expected value");
         assert!(content.contains("some-other-setting"));
         assert!(content.contains("fuzzel"));
         assert!(!content.contains("foot"));
 
         // Reload and verify
-        let reloaded = load_binds(&path).unwrap();
+        let reloaded = load_binds(&path).expect("expected value");
         assert_eq!(reloaded.entries.len(), 1);
         assert_eq!(reloaded.entries[0].key_chord(), "Mod+Shift+D");
         assert_eq!(
@@ -724,7 +724,7 @@ mod tests {
 
     #[test]
     fn save_spawn_bind_round_trips() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
 
         let entries = vec![BindEntry {
@@ -738,9 +738,9 @@ mod tests {
             allow_when_locked: false,
             repeat: None,
         }];
-        save_binds(&path, &entries, &[]).unwrap();
+        save_binds(&path, &entries, &[]).expect("expected value");
 
-        let loaded = load_binds(&path).unwrap();
+        let loaded = load_binds(&path).expect("expected value");
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(loaded.entries[0].key_chord(), "Mod+T");
         assert_eq!(

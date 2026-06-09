@@ -91,7 +91,7 @@ pub async fn refresh_tethering_states(
             let is_active = profile
                 .bdaddr
                 .as_ref()
-                .and_then(|bdaddr| active.get(bdaddr).map(|v| *v))
+                .and_then(|bdaddr| active.get(bdaddr).copied())
                 .unwrap_or(false);
 
             TetheringConnectionState {

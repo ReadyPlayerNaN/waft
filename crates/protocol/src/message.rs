@@ -439,7 +439,7 @@ mod tests {
             action_id: Uuid::nil(),
             data: None,
         };
-        let json = serde_json::to_string(&msg).unwrap();
+        let json = serde_json::to_string(&msg).expect("expected value");
         assert!(
             !json.contains("data"),
             "data: None should be omitted from JSON"

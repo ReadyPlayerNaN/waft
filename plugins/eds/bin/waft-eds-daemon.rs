@@ -1052,7 +1052,7 @@ async fn monitor_source_manager(
         let iface = msg
             .header()
             .interface()
-            .map(|i| i.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default();
         if iface != OBJECT_MANAGER_IFACE {
             continue;
@@ -1061,7 +1061,7 @@ async fn monitor_source_manager(
         let member = msg
             .header()
             .member()
-            .map(|m| m.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default();
         if member != "InterfacesAdded" {
             continue;
@@ -2038,6 +2038,69 @@ fn update_state_remove_events(state: &Arc<StdMutex<EdsState>>, uids: &[String]) 
     }
 }
 
+fn main() -> Result<()> {
+    PluginRunner::new(
+        "eds",
+        &[
+            entity::calendar::ENTITY_TYPE,
+            entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+        ],
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
+        let plugin = EdsPlugin::new(notifier.clone()).await?;
+
+        let shared_state = plugin.shared_state();
+        let conn = plugin.conn.clone();
+        let config = plugin.config.clone();
+        let session_locked = plugin.session_locked();
+        let unlock_notify = plugin.unlock_notify();
+
+        // Clone conn for the scheduler before the monitor spawn moves it
+        let scheduler_conn = conn.clone();
+
+        // Spawn D-Bus monitoring task
+        let monitor_state = shared_state.clone();
+        let monitor_notifier = notifier.clone();
+        let monitor_conn = conn.clone();
+        spawn_monitored("eds/calendar-monitor", async move {
+            monitor_eds_calendars(monitor_conn, monitor_state, monitor_notifier).await
+        });
+
+        // Watch SourceManager for calendars that appear after startup
+        // (GOA-backed accounts registering late, or user adding a new account).
+        let source_monitor_state = shared_state.clone();
+        let source_monitor_notifier = notifier.clone();
+        let source_monitor_conn = conn.clone();
+        spawn_monitored("eds/source-monitor", async move {
+            monitor_source_manager(
+                source_monitor_conn,
+                source_monitor_state,
+                source_monitor_notifier,
+            )
+            .await
+        });
+
+        // Spawn session monitor
+        tokio::spawn(spawn_session_monitor(
+            session_locked.clone(),
+            unlock_notify.clone(),
+        ));
+
+        // Spawn periodic refresh scheduler
+        tokio::spawn(spawn_refresh_scheduler(
+            scheduler_conn,
+            shared_state.clone(),
+            config,
+            session_locked,
+            unlock_notify,
+            notifier.clone(),
+        ));
+
+        Ok(plugin)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2095,16 +2158,16 @@ mod tests {
         // DTSTART;TZID=Europe/Prague:20260217T083000
         // Prague is UTC+1 in February → expected UTC timestamp is 07:30
         use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone as _};
-        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().expect("expected value");
 
         let start_naive = NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
-            NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 2, 17).expect("expected value"),
+            NaiveTime::from_hms_opt(8, 30, 0).expect("expected value"),
         );
         let expected_start = tz
             .from_local_datetime(&start_naive)
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         assert_eq!(
             event.start_time, expected_start,
@@ -2113,13 +2176,13 @@ mod tests {
 
         // DTEND;TZID=Europe/Prague:20260217T083500 → 5 min later
         let end_naive = NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
-            NaiveTime::from_hms_opt(8, 35, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 2, 17).expect("expected value"),
+            NaiveTime::from_hms_opt(8, 35, 0).expect("expected value"),
         );
         let expected_end = tz
             .from_local_datetime(&end_naive)
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         assert_eq!(
             event.end_time, expected_end,
@@ -2140,7 +2203,7 @@ mod tests {
             .find(|a| a.email == "pavel.zak@cookielab.io");
         assert!(pz.is_some(), "folded attendee email should be parsed");
         assert_eq!(
-            pz.unwrap().status,
+            pz.expect("expected value").status,
             entity::calendar::AttendeeStatus::Accepted,
             "PARTSTAT=ACCEPTED should map to Accepted"
         );
@@ -2207,22 +2270,22 @@ mod tests {
         let ical = labrulez_ical("20260203");
 
         // Query window: Feb 17 midnight → Feb 19 midnight (covers Feb 17 Tuesday).
-        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().expect("expected value");
         let range_start = tz
             .from_local_datetime(&NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
-                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 2, 17).expect("expected value"),
+                NaiveTime::from_hms_opt(0, 0, 0).expect("expected value"),
             ))
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         let range_end = tz
             .from_local_datetime(&NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(2026, 2, 19).unwrap(),
-                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 2, 19).expect("expected value"),
+                NaiveTime::from_hms_opt(0, 0, 0).expect("expected value"),
             ))
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
 
         let events = expand_vevent(
@@ -2246,11 +2309,11 @@ mod tests {
 
         let expected_start = tz
             .from_local_datetime(&NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
-                NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 2, 17).expect("expected value"),
+                NaiveTime::from_hms_opt(8, 30, 0).expect("expected value"),
             ))
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         assert_eq!(
             event.start_time, expected_start,
@@ -2265,24 +2328,24 @@ mod tests {
         use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone as _};
 
         let ical = labrulez_ical("20260203"); // Weekly TU
-        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().expect("expected value");
 
         // 3-week window: Feb 10 → Mar 3 (should have Feb 10, 17, 24)
         let range_start = tz
             .from_local_datetime(&NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(2026, 2, 10).unwrap(),
-                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 2, 10).expect("expected value"),
+                NaiveTime::from_hms_opt(0, 0, 0).expect("expected value"),
             ))
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         let range_end = tz
             .from_local_datetime(&NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
-                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 3, 3).expect("expected value"),
+                NaiveTime::from_hms_opt(0, 0, 0).expect("expected value"),
             ))
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
 
         let events = expand_vevent(
@@ -2306,7 +2369,7 @@ mod tests {
     fn expand_weekly_with_exdate() {
         use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone as _};
 
-        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().expect("expected value");
 
         // Add EXDATE for Feb 17 (skip that Tuesday).
         let ical = "BEGIN:VCALENDAR\r\n".to_string()
@@ -2323,19 +2386,19 @@ mod tests {
         // Range: Feb 10 → Mar 3 → would normally be 3 Tuesdays.
         let range_start = tz
             .from_local_datetime(&NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(2026, 2, 10).unwrap(),
-                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 2, 10).expect("expected value"),
+                NaiveTime::from_hms_opt(0, 0, 0).expect("expected value"),
             ))
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         let range_end = tz
             .from_local_datetime(&NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
-                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 3, 3).expect("expected value"),
+                NaiveTime::from_hms_opt(0, 0, 0).expect("expected value"),
             ))
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
 
         let events = expand_vevent(
@@ -2359,7 +2422,7 @@ mod tests {
             + &format!("DTSTART;TZID=Europe/Prague:{dtstart}\r\n")
             + &format!("DTEND;TZID=Europe/Prague:{dtend}\r\n")
             + &format!("RRULE:{rrule}\r\n")
-            + &format!("SUMMARY:Test event\r\n")
+            + "SUMMARY:Test event\r\n"
             + &format!("UID:{uid}\r\n")
             + "END:VEVENT\r\n"
             + "END:VCALENDAR\r\n"
@@ -2368,15 +2431,15 @@ mod tests {
     /// Helper: build a UTC range from Prague dates for brevity.
     fn prague_range(start: (i32, u32, u32), end: (i32, u32, u32)) -> TimeRange {
         use chrono::{NaiveDate, NaiveTime, TimeZone as _};
-        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().expect("expected value");
         let mk = |y, m, d| {
             tz.from_local_datetime(
                 &NaiveDate::from_ymd_opt(y, m, d)
-                    .unwrap()
-                    .and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()),
+                    .expect("expected value")
+                    .and_time(NaiveTime::from_hms_opt(0, 0, 0).expect("expected value")),
             )
             .single()
-            .unwrap()
+            .expect("expected value")
             .timestamp()
         };
         TimeRange {
@@ -2618,10 +2681,13 @@ mod tests {
             + "END:VEVENT\r\n"
             + "END:VCALENDAR\r\n";
 
-        let icals = vec![recurring, single];
+        let icals = [recurring, single];
         let range = prague_range((2026, 2, 10), (2026, 2, 13));
         let events = parse_ical_events(
-            &icals.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            &icals
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>(),
             range,
         );
         // Daily: Feb 10, 11, 12 = 3. Single: 1. Total: 4.
@@ -2632,7 +2698,7 @@ mod tests {
 
     #[test]
     fn parse_rrule_weekly_byday() {
-        let rule = parse_rrule("FREQ=WEEKLY;BYDAY=TU").unwrap();
+        let rule = parse_rrule("FREQ=WEEKLY;BYDAY=TU").expect("expected value");
         assert_eq!(rule.freq, Frequency::Weekly);
         assert_eq!(rule.interval, 1);
         assert_eq!(rule.by_day, vec![chrono::Weekday::Tue]);
@@ -2642,7 +2708,7 @@ mod tests {
 
     #[test]
     fn parse_rrule_daily_interval_count() {
-        let rule = parse_rrule("FREQ=DAILY;INTERVAL=3;COUNT=10").unwrap();
+        let rule = parse_rrule("FREQ=DAILY;INTERVAL=3;COUNT=10").expect("expected value");
         assert_eq!(rule.freq, Frequency::Daily);
         assert_eq!(rule.interval, 3);
         assert_eq!(rule.count, Some(10));
@@ -2650,28 +2716,28 @@ mod tests {
 
     #[test]
     fn parse_rrule_monthly() {
-        let rule = parse_rrule("FREQ=MONTHLY").unwrap();
+        let rule = parse_rrule("FREQ=MONTHLY").expect("expected value");
         assert_eq!(rule.freq, Frequency::Monthly);
         assert_eq!(rule.interval, 1);
     }
 
     #[test]
     fn parse_rrule_with_until() {
-        let rule = parse_rrule("FREQ=WEEKLY;UNTIL=20260301T000000Z").unwrap();
+        let rule = parse_rrule("FREQ=WEEKLY;UNTIL=20260301T000000Z").expect("expected value");
         assert!(rule.until.is_some());
         // UNTIL is a UTC timestamp for 2026-03-01 00:00:00Z.
         let expected = chrono::NaiveDate::from_ymd_opt(2026, 3, 1)
-            .unwrap()
+            .expect("expected value")
             .and_hms_opt(0, 0, 0)
-            .unwrap()
+            .expect("expected value")
             .and_utc()
             .timestamp();
-        assert_eq!(rule.until.unwrap(), expected);
+        assert_eq!(rule.until.expect("expected value"), expected);
     }
 
     #[test]
     fn parse_rrule_multiple_byday() {
-        let rule = parse_rrule("FREQ=WEEKLY;BYDAY=MO,WE,FR").unwrap();
+        let rule = parse_rrule("FREQ=WEEKLY;BYDAY=MO,WE,FR").expect("expected value");
         assert_eq!(
             rule.by_day,
             vec![
@@ -2691,47 +2757,65 @@ mod tests {
 
     #[test]
     fn advance_date_daily() {
-        let d = chrono::NaiveDate::from_ymd_opt(2026, 2, 28).unwrap();
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 2, 28).expect("expected value");
         let next = advance_date(d, Frequency::Daily, 1);
-        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap());
+        assert_eq!(
+            next,
+            chrono::NaiveDate::from_ymd_opt(2026, 3, 1).expect("expected value")
+        );
     }
 
     #[test]
     fn advance_date_weekly() {
-        let d = chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap();
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 2, 17).expect("expected value");
         let next = advance_date(d, Frequency::Weekly, 2);
-        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2026, 3, 3).unwrap());
+        assert_eq!(
+            next,
+            chrono::NaiveDate::from_ymd_opt(2026, 3, 3).expect("expected value")
+        );
     }
 
     #[test]
     fn advance_date_monthly_clamps() {
         // Jan 31 + 1 month → Feb 28 (2026 is not a leap year).
-        let d = chrono::NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 1, 31).expect("expected value");
         let next = advance_date(d, Frequency::Monthly, 1);
-        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2026, 2, 28).unwrap());
+        assert_eq!(
+            next,
+            chrono::NaiveDate::from_ymd_opt(2026, 2, 28).expect("expected value")
+        );
     }
 
     #[test]
     fn advance_date_monthly_leap_year() {
         // Jan 31 + 1 month in 2028 (leap year) → Feb 29.
-        let d = chrono::NaiveDate::from_ymd_opt(2028, 1, 31).unwrap();
+        let d = chrono::NaiveDate::from_ymd_opt(2028, 1, 31).expect("expected value");
         let next = advance_date(d, Frequency::Monthly, 1);
-        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2028, 2, 29).unwrap());
+        assert_eq!(
+            next,
+            chrono::NaiveDate::from_ymd_opt(2028, 2, 29).expect("expected value")
+        );
     }
 
     #[test]
     fn advance_date_yearly() {
-        let d = chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 6, 15).expect("expected value");
         let next = advance_date(d, Frequency::Yearly, 1);
-        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2027, 6, 15).unwrap());
+        assert_eq!(
+            next,
+            chrono::NaiveDate::from_ymd_opt(2027, 6, 15).expect("expected value")
+        );
     }
 
     #[test]
     fn advance_date_monthly_wraps_year() {
         // Nov + 2 months → Jan next year.
-        let d = chrono::NaiveDate::from_ymd_opt(2026, 11, 15).unwrap();
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 11, 15).expect("expected value");
         let next = advance_date(d, Frequency::Monthly, 2);
-        assert_eq!(next, chrono::NaiveDate::from_ymd_opt(2027, 1, 15).unwrap());
+        assert_eq!(
+            next,
+            chrono::NaiveDate::from_ymd_opt(2027, 1, 15).expect("expected value")
+        );
     }
 
     // ── days_in_month ────────────────────────────────────────────────────────
@@ -2757,34 +2841,37 @@ mod tests {
 
     #[test]
     fn parse_ical_naive_datetime_full() {
-        let dt = parse_ical_naive_datetime("20260217T083000").unwrap();
+        let dt = parse_ical_naive_datetime("20260217T083000").expect("expected value");
         assert_eq!(
             dt.date(),
-            chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap()
+            chrono::NaiveDate::from_ymd_opt(2026, 2, 17).expect("expected value")
         );
         assert_eq!(
             dt.time(),
-            chrono::NaiveTime::from_hms_opt(8, 30, 0).unwrap()
+            chrono::NaiveTime::from_hms_opt(8, 30, 0).expect("expected value")
         );
     }
 
     #[test]
     fn parse_ical_naive_datetime_strips_z() {
-        let dt = parse_ical_naive_datetime("20260217T083000Z").unwrap();
+        let dt = parse_ical_naive_datetime("20260217T083000Z").expect("expected value");
         assert_eq!(
             dt.date(),
-            chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap()
+            chrono::NaiveDate::from_ymd_opt(2026, 2, 17).expect("expected value")
         );
     }
 
     #[test]
     fn parse_ical_naive_datetime_date_only() {
-        let dt = parse_ical_naive_datetime("20260217").unwrap();
+        let dt = parse_ical_naive_datetime("20260217").expect("expected value");
         assert_eq!(
             dt.date(),
-            chrono::NaiveDate::from_ymd_opt(2026, 2, 17).unwrap()
+            chrono::NaiveDate::from_ymd_opt(2026, 2, 17).expect("expected value")
         );
-        assert_eq!(dt.time(), chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        assert_eq!(
+            dt.time(),
+            chrono::NaiveTime::from_hms_opt(0, 0, 0).expect("expected value")
+        );
     }
 
     #[test]
@@ -2798,13 +2885,16 @@ mod tests {
     #[test]
     fn extract_tzid_present() {
         let tz = extract_tzid(";TZID=Europe/Prague");
-        assert_eq!(tz, Some("Europe/Prague".parse().unwrap()));
+        assert_eq!(tz, Some("Europe/Prague".parse().expect("expected value")));
     }
 
     #[test]
     fn extract_tzid_with_extra_params() {
         let tz = extract_tzid(";VALUE=DATE-TIME;TZID=America/New_York;X-FOO=bar");
-        assert_eq!(tz, Some("America/New_York".parse().unwrap()));
+        assert_eq!(
+            tz,
+            Some("America/New_York".parse().expect("expected value"))
+        );
     }
 
     #[test]
@@ -2826,11 +2916,15 @@ mod tests {
         // Prague is UTC+1 in winter; 08:30 Prague = 07:30 UTC
         let ts = parse_ical_datetime("20260217T083000", ";TZID=Europe/Prague");
         let dt = NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2026, 2, 17).unwrap(),
-            NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 2, 17).expect("expected value"),
+            NaiveTime::from_hms_opt(8, 30, 0).expect("expected value"),
         );
-        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
-        let expected = tz.from_local_datetime(&dt).single().unwrap().timestamp();
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().expect("expected value");
+        let expected = tz
+            .from_local_datetime(&dt)
+            .single()
+            .expect("expected value")
+            .timestamp();
         assert_eq!(ts, Some(expected));
     }
 
@@ -2839,9 +2933,9 @@ mod tests {
         let ts = parse_ical_datetime("20260217T073000Z", "");
         // 2026-02-17 07:30:00 UTC
         let expected = chrono::NaiveDate::from_ymd_opt(2026, 2, 17)
-            .unwrap()
+            .expect("expected value")
             .and_hms_opt(7, 30, 0)
-            .unwrap()
+            .expect("expected value")
             .and_utc()
             .timestamp();
         assert_eq!(ts, Some(expected));
@@ -2853,12 +2947,12 @@ mod tests {
         assert!(ts.is_some(), "all-day date should parse");
         // The timestamp must represent local midnight, not UTC midnight.
         let local_start = chrono::NaiveDate::from_ymd_opt(2026, 2, 17)
-            .unwrap()
+            .expect("expected value")
             .and_hms_opt(0, 0, 0)
-            .unwrap()
+            .expect("expected value")
             .and_local_timezone(chrono::Local)
             .earliest()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         assert_eq!(ts, Some(local_start));
     }
@@ -2869,12 +2963,12 @@ mod tests {
         let ts = parse_ical_datetime("20260217T120000", "");
         assert!(ts.is_some());
         let expected = chrono::NaiveDate::from_ymd_opt(2026, 2, 17)
-            .unwrap()
+            .expect("expected value")
             .and_hms_opt(12, 0, 0)
-            .unwrap()
+            .expect("expected value")
             .and_local_timezone(chrono::Local)
             .earliest()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         assert_eq!(ts, Some(expected));
     }
@@ -3036,7 +3130,7 @@ mod tests {
         // Remove only uid_a.
         update_state_remove_events(&shared, &[uid_a.to_string()]);
 
-        let st = shared.lock().unwrap();
+        let st = shared.lock().expect("expected value");
         assert_eq!(
             st.events.len(),
             2,
@@ -3258,7 +3352,7 @@ mod tests {
 
         // 13:00 UTC on 2026-02-23.
         let expected_start = chrono::DateTime::parse_from_rfc3339("2026-02-23T13:00:00Z")
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         assert_eq!(
             events[0].start_time, expected_start,
@@ -3334,16 +3428,16 @@ mod tests {
             "DST-ambiguous TZID datetime must still parse (earliest offset chosen)"
         );
 
-        let tz: chrono_tz::Tz = "Europe/Prague".parse().unwrap();
+        let tz: chrono_tz::Tz = "Europe/Prague".parse().expect("expected value");
         let naive = NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2026, 10, 25).unwrap(),
-            NaiveTime::from_hms_opt(2, 30, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 10, 25).expect("expected value"),
+            NaiveTime::from_hms_opt(2, 30, 0).expect("expected value"),
         );
         // .earliest() picks CEST (UTC+2): 02:30 Prague CEST = 00:30 UTC.
         let expected = tz
             .from_local_datetime(&naive)
             .earliest()
-            .unwrap()
+            .expect("expected value")
             .timestamp();
         assert_eq!(
             ts,
@@ -3375,7 +3469,7 @@ mod tests {
             "event with missing SUMMARY must still parse (defaults to empty string)"
         );
         assert_eq!(
-            event.unwrap().summary,
+            event.expect("expected value").summary,
             "",
             "missing SUMMARY must default to empty string, not cause a parse failure"
         );
@@ -3442,7 +3536,10 @@ mod tests {
         // Range covers Feb 24 only — the new event AND a biweekly occurrence both land here.
         let range = prague_range((2026, 2, 24), (2026, 2, 25));
         let events = parse_ical_events(
-            &icals.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            &icals
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>(),
             range,
         );
 
@@ -3463,67 +3560,4 @@ mod tests {
             "recurring occurrence must appear"
         );
     }
-}
-
-fn main() -> Result<()> {
-    PluginRunner::new(
-        "eds",
-        &[
-            entity::calendar::ENTITY_TYPE,
-            entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
-        ],
-    )
-    .i18n(i18n(), "plugin-name", "plugin-description")
-    .run(|notifier| async move {
-        let plugin = EdsPlugin::new(notifier.clone()).await?;
-
-        let shared_state = plugin.shared_state();
-        let conn = plugin.conn.clone();
-        let config = plugin.config.clone();
-        let session_locked = plugin.session_locked();
-        let unlock_notify = plugin.unlock_notify();
-
-        // Clone conn for the scheduler before the monitor spawn moves it
-        let scheduler_conn = conn.clone();
-
-        // Spawn D-Bus monitoring task
-        let monitor_state = shared_state.clone();
-        let monitor_notifier = notifier.clone();
-        let monitor_conn = conn.clone();
-        spawn_monitored("eds/calendar-monitor", async move {
-            monitor_eds_calendars(monitor_conn, monitor_state, monitor_notifier).await
-        });
-
-        // Watch SourceManager for calendars that appear after startup
-        // (GOA-backed accounts registering late, or user adding a new account).
-        let source_monitor_state = shared_state.clone();
-        let source_monitor_notifier = notifier.clone();
-        let source_monitor_conn = conn.clone();
-        spawn_monitored("eds/source-monitor", async move {
-            monitor_source_manager(
-                source_monitor_conn,
-                source_monitor_state,
-                source_monitor_notifier,
-            )
-            .await
-        });
-
-        // Spawn session monitor
-        tokio::spawn(spawn_session_monitor(
-            session_locked.clone(),
-            unlock_notify.clone(),
-        ));
-
-        // Spawn periodic refresh scheduler
-        tokio::spawn(spawn_refresh_scheduler(
-            scheduler_conn,
-            shared_state.clone(),
-            config,
-            session_locked,
-            unlock_notify,
-            notifier.clone(),
-        ));
-
-        Ok(plugin)
-    })
 }

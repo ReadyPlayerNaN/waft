@@ -274,7 +274,7 @@ mod tests {
     fn make_entity(urn_str: &str, entity_type: &str, data: serde_json::Value) -> CollectedEntity {
         CollectedEntity {
             urn: Urn::new(
-                urn_str.split('/').next().unwrap(),
+                urn_str.split('/').next().expect("expected value"),
                 entity_type,
                 urn_str.split('/').nth(2).unwrap_or("default"),
             ),
@@ -318,9 +318,9 @@ mod tests {
             "clock",
             serde_json::json!({"time": "14:30", "date": "Thursday"}),
         )];
-        let json_str = serde_json::to_string_pretty(&entities).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        let arr = parsed.as_array().unwrap();
+        let json_str = serde_json::to_string_pretty(&entities).expect("expected value");
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("expected value");
+        let arr = parsed.as_array().expect("expected value");
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["entity_type"], "clock");
         // Urn serializes with its internal structure
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn json_format_empty() {
         let entities: Vec<CollectedEntity> = vec![];
-        let json_str = serde_json::to_string_pretty(&entities).unwrap();
+        let json_str = serde_json::to_string_pretty(&entities).expect("expected value");
         assert_eq!(json_str, "[]");
     }
 

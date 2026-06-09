@@ -60,22 +60,23 @@ mod tests {
     fn now_ms() -> i64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("expected value")
             .as_millis() as i64
     }
 
     fn write_credentials(dir: &std::path::Path, expires_at: i64) {
         let claude_dir = dir.join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::create_dir_all(&claude_dir).expect("expected value");
         let json = format!(
             r#"{{"claudeAiOauth":{{"accessToken":"test-token","refreshToken":"ref","expiresAt":{expires_at}}}}}"#
         );
-        std::fs::write(claude_dir.join(".credentials.json"), json).unwrap();
+        std::fs::write(claude_dir.join(".credentials.json"), json).expect("expected value");
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn expired_token_returns_err() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("expected value");
         write_credentials(tmp.path(), 1000); // Far in the past
         // Temporarily override HOME so load_access_token reads our test file.
         // SAFETY: tests that touch env vars must not run in parallel — use
@@ -88,7 +89,7 @@ mod tests {
             unsafe { std::env::set_var("HOME", h) };
         }
         assert!(result.is_err(), "expected Err for expired token, got Ok");
-        let msg = result.unwrap_err().to_string();
+        let msg = result.expect_err("expected error").to_string();
         assert!(
             msg.contains("expired"),
             "error should mention expired: {msg}"
@@ -96,8 +97,9 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn valid_token_returns_ok() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("expected value");
         write_credentials(tmp.path(), now_ms() + 3_600_000); // 1 hour from now
         let original_home = std::env::var("HOME").ok();
         // SAFETY: single-threaded unit test binary; no other threads read HOME concurrently.
@@ -110,6 +112,6 @@ mod tests {
             result.is_ok(),
             "expected Ok for valid token, got {result:?}"
         );
-        assert_eq!(result.unwrap(), "test-token");
+        assert_eq!(result.expect("expected value"), "test-token");
     }
 }

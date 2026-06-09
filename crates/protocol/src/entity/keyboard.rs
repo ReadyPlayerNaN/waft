@@ -44,8 +44,8 @@ mod tests {
             current: "us".to_string(),
             available: vec!["us".to_string(), "cz".to_string(), "de".to_string()],
         };
-        let json = serde_json::to_value(&layout).unwrap();
-        let decoded: KeyboardLayout = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&layout).expect("expected value");
+        let decoded: KeyboardLayout = serde_json::from_value(json).expect("expected value");
         assert_eq!(layout, decoded);
     }
 
@@ -64,8 +64,8 @@ mod tests {
             file_path: None,
             error_message: None,
         };
-        let json = serde_json::to_value(&config).unwrap();
-        let decoded: KeyboardLayoutConfig = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&config).expect("expected value");
+        let decoded: KeyboardLayoutConfig = serde_json::from_value(json).expect("expected value");
         assert_eq!(config, decoded);
     }
 
@@ -80,8 +80,8 @@ mod tests {
             file_path: Some("~/.config/keymap.xkb".to_string()),
             error_message: None,
         };
-        let json = serde_json::to_value(&config).unwrap();
-        let decoded: KeyboardLayoutConfig = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&config).expect("expected value");
+        let decoded: KeyboardLayoutConfig = serde_json::from_value(json).expect("expected value");
         assert_eq!(config, decoded);
     }
 
@@ -96,8 +96,8 @@ mod tests {
             file_path: None,
             error_message: Some("Config file has syntax errors".to_string()),
         };
-        let json = serde_json::to_value(&config).unwrap();
-        let decoded: KeyboardLayoutConfig = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&config).expect("expected value");
+        let decoded: KeyboardLayoutConfig = serde_json::from_value(json).expect("expected value");
         assert_eq!(config, decoded);
     }
 
@@ -112,7 +112,7 @@ mod tests {
             "file_path": null,
             "error_message": null
         });
-        let decoded: KeyboardLayoutConfig = serde_json::from_value(json).unwrap();
+        let decoded: KeyboardLayoutConfig = serde_json::from_value(json).expect("expected value");
         assert_eq!(decoded.layout_names, Vec::<String>::new());
     }
 }

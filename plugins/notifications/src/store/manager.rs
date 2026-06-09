@@ -657,7 +657,7 @@ mod tests {
             test_i18n(),
         );
 
-        let stored = state.notifications.get(&1).unwrap();
+        let stored = state.notifications.get(&1).expect("expected value");
         assert_eq!(stored.ttl, Some(5000));
     }
 
@@ -671,7 +671,7 @@ mod tests {
             test_i18n(),
         );
 
-        let stored = state.notifications.get(&1).unwrap();
+        let stored = state.notifications.get(&1).expect("expected value");
         assert_eq!(stored.ttl, None);
     }
 
@@ -727,7 +727,7 @@ mod tests {
     #[test]
     fn test_derive_app_ident_device_mapping() {
         let notif = make_notification_with_app(1, "Blueman", NotificationUrgency::Normal);
-        let app = derive_app_ident(&notif, test_i18n()).unwrap();
+        let app = derive_app_ident(&notif, test_i18n()).expect("expected value");
         assert_eq!(app.ident.as_ref(), "devices");
         assert_eq!(app.title.as_deref(), Some("Devices"));
     }
@@ -735,7 +735,7 @@ mod tests {
     #[test]
     fn test_derive_app_ident_non_device_preserves_original() {
         let notif = make_notification_with_app(1, "Firefox", NotificationUrgency::Normal);
-        let app = derive_app_ident(&notif, test_i18n()).unwrap();
+        let app = derive_app_ident(&notif, test_i18n()).expect("expected value");
         assert_eq!(app.ident.as_ref(), "firefox");
         assert_eq!(app.title.as_deref(), Some("Firefox"));
     }

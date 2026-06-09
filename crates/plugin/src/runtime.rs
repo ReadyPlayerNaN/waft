@@ -329,6 +329,27 @@ async fn write_loop(
     log::info!("[{name}] write loop exited");
 }
 
+/// Get the daemon socket path.
+///
+/// Default: `$XDG_RUNTIME_DIR/waft/daemon.sock`
+/// Override: `WAFT_DAEMON_SOCKET` environment variable
+pub fn daemon_socket_path() -> PathBuf {
+    if let Ok(custom) = std::env::var("WAFT_DAEMON_SOCKET") {
+        return PathBuf::from(custom);
+    }
+
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
+        #[allow(unsafe_code)]
+        let uid = unsafe { libc::getuid() };
+        format!("/run/user/{uid}")
+    });
+
+    let mut path = PathBuf::from(runtime_dir);
+    path.push("waft");
+    path.push("daemon.sock");
+    path
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -399,25 +420,4 @@ mod tests {
             "channel should be closed after the keepalive is dropped"
         );
     }
-}
-
-/// Get the daemon socket path.
-///
-/// Default: `$XDG_RUNTIME_DIR/waft/daemon.sock`
-/// Override: `WAFT_DAEMON_SOCKET` environment variable
-pub fn daemon_socket_path() -> PathBuf {
-    if let Ok(custom) = std::env::var("WAFT_DAEMON_SOCKET") {
-        return PathBuf::from(custom);
-    }
-
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
-        #[allow(unsafe_code)]
-        let uid = unsafe { libc::getuid() };
-        format!("/run/user/{uid}")
-    });
-
-    let mut path = PathBuf::from(runtime_dir);
-    path.push("waft");
-    path.push("daemon.sock");
-    path
 }

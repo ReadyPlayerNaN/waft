@@ -76,8 +76,8 @@ mod tests {
                 },
             ],
         };
-        let json = serde_json::to_value(&event).unwrap();
-        let decoded: CalendarEvent = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&event).expect("expected value");
+        let decoded: CalendarEvent = serde_json::from_value(json).expect("expected value");
         assert_eq!(event, decoded);
     }
 
@@ -93,8 +93,8 @@ mod tests {
             location: None,
             attendees: vec![],
         };
-        let json = serde_json::to_value(&event).unwrap();
-        let decoded: CalendarEvent = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&event).expect("expected value");
+        let decoded: CalendarEvent = serde_json::from_value(json).expect("expected value");
         assert_eq!(event, decoded);
     }
 
@@ -107,8 +107,8 @@ mod tests {
             AttendeeStatus::NeedsAction,
         ];
         for status in statuses {
-            let json = serde_json::to_value(status).unwrap();
-            let decoded: AttendeeStatus = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(status).expect("expected value");
+            let decoded: AttendeeStatus = serde_json::from_value(json).expect("expected value");
             assert_eq!(status, decoded);
         }
     }
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn calendar_sync_syncing_defaults_false_on_deserialize() {
         let json = serde_json::json!({ "last_refresh": null });
-        let sync: CalendarSync = serde_json::from_value(json).unwrap();
+        let sync: CalendarSync = serde_json::from_value(json).expect("expected value");
         assert!(
             !sync.syncing,
             "syncing must default to false when absent from JSON"
@@ -129,8 +129,8 @@ mod tests {
             last_refresh: Some(1_000_000),
             syncing: true,
         };
-        let json = serde_json::to_value(&sync).unwrap();
-        let decoded: CalendarSync = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&sync).expect("expected value");
+        let decoded: CalendarSync = serde_json::from_value(json).expect("expected value");
         assert!(decoded.syncing);
         assert_eq!(decoded.last_refresh, Some(1_000_000));
     }

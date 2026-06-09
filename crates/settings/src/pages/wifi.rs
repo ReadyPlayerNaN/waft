@@ -244,7 +244,7 @@ impl WiFiPage {
             .collect();
 
         // Sort available networks by strength descending
-        available.sort_by(|(_, a), (_, b)| b.strength.cmp(&a.strength));
+        available.sort_by_key(|(_, network)| std::cmp::Reverse(network.strength));
 
         let any_scanning = adapters
             .iter()

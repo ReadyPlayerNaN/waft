@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::prelude::*;
 
 use super::primitives::{
     VActionRow, VBox, VButton, VCustomButton, VEntryRow, VIcon, VLabel, VPreferencesGroup,
@@ -79,9 +78,9 @@ fn test_updates_widget_when_props_change() {
 
     let child = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Label>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(child.label(), "hello");
 
     r.reconcile([label_node("world").key("x")]);
@@ -97,11 +96,14 @@ fn test_preserves_widget_identity_when_props_unchanged() {
     };
 
     r.reconcile([VNode::new::<LabelComponent>(props.clone()).key("x")]);
-    let ptr_before = container.first_child().unwrap().as_ptr();
+    let ptr_before = container.first_child().expect("expected value").as_ptr();
 
     r.reconcile([VNode::new::<LabelComponent>(props).key("x")]);
     // No destroy-and-recreate: same pointer.
-    assert_eq!(container.first_child().unwrap().as_ptr(), ptr_before);
+    assert_eq!(
+        container.first_child().expect("expected value").as_ptr(),
+        ptr_before
+    );
 }
 
 fn test_removes_widget_when_key_absent() {
@@ -143,14 +145,17 @@ fn test_rebuilds_widget_when_component_type_changes() {
     let (container, mut r) = make_reconciler();
 
     r.reconcile([label_node("hello").key("x")]);
-    let old_ptr = container.first_child().unwrap().as_ptr();
+    let old_ptr = container.first_child().expect("expected value").as_ptr();
 
     r.reconcile([VNode::new::<ButtonComponent>(ButtonProps {
         label: "click".into(),
     })
     .key("x")]);
     // Type changed → old widget destroyed, new widget created.
-    assert_ne!(container.first_child().unwrap().as_ptr(), old_ptr);
+    assert_ne!(
+        container.first_child().expect("expected value").as_ptr(),
+        old_ptr
+    );
     assert_eq!(container.observe_children().n_items(), 1);
 }
 
@@ -174,9 +179,11 @@ fn test_wires_output_callback_at_build_time() {
         Clicked,
     }
 
+    type ClickOutputHandler = Box<dyn Fn(ClickOutput)>;
+
     struct ClickComponent {
         button: gtk::Button,
-        on_output: Rc<RefCell<Option<Box<dyn Fn(ClickOutput)>>>>,
+        on_output: Rc<RefCell<Option<ClickOutputHandler>>>,
     }
 
     impl Component for ClickComponent {
@@ -224,9 +231,9 @@ fn test_label_builds_gtk_label() {
     assert_eq!(container.observe_children().n_items(), 1);
     let child = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Label>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(child.label(), "hello");
 }
 
@@ -235,9 +242,9 @@ fn test_label_updates_text_on_reconcile() {
     r.reconcile([VNode::label(VLabel::new("hello")).key("l")]);
     let child = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Label>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(child.label(), "hello");
 
     r.reconcile([VNode::label(VLabel::new("world")).key("l")]);
@@ -250,9 +257,9 @@ fn test_label_applies_css_classes() {
     r.reconcile([VNode::label(VLabel::new("x").css_class("dim-label"))]);
     let child = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Label>()
-        .unwrap();
+        .expect("expected value");
     assert!(child.css_classes().iter().any(|c| c == "dim-label"));
 }
 
@@ -266,9 +273,9 @@ fn test_vbox_builds_with_children() {
     assert_eq!(container.observe_children().n_items(), 1);
     let inner = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Box>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(inner.observe_children().n_items(), 2);
 }
 
@@ -282,9 +289,9 @@ fn test_vbox_reconciles_child_list() {
     .key("box")]);
     let inner = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Box>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(inner.observe_children().n_items(), 2);
 
     // Remove one child.
@@ -312,9 +319,9 @@ fn test_switch_sets_active_state() {
     r.reconcile([VNode::switch(VSwitch::new(true)).key("sw")]);
     let child = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Switch>()
-        .unwrap();
+        .expect("expected value");
     assert!(child.is_active());
 
     r.reconcile([VNode::switch(VSwitch::new(false)).key("sw")]);
@@ -325,11 +332,11 @@ fn test_switch_sets_active_state() {
 fn test_primitive_rebuilds_when_kind_changes() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::label(VLabel::new("text")).key("x")]);
-    let old_ptr = container.first_child().unwrap().as_ptr();
+    let old_ptr = container.first_child().expect("expected value").as_ptr();
 
     // Replace label with a button at the same key → must destroy and rebuild.
     r.reconcile([VNode::button(VButton::new("click")).key("x")]);
-    let new_ptr = container.first_child().unwrap().as_ptr();
+    let new_ptr = container.first_child().expect("expected value").as_ptr();
     assert_ne!(old_ptr, new_ptr, "kind change must produce a new widget");
     assert_eq!(container.observe_children().n_items(), 1);
 }
@@ -360,9 +367,9 @@ fn test_render_component_builds_from_render_fn() {
     // Root widget is the rendered label directly — no gtk::Box wrapper.
     let label = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Label>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(label.label(), "hello");
 }
 
@@ -393,9 +400,9 @@ fn test_render_component_updates_on_props_change() {
     // Root widget is the rendered label directly — no gtk::Box wrapper.
     let label = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Label>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(label.label(), "before");
 
     r.reconcile([
@@ -455,9 +462,9 @@ fn test_spinner_builds_and_reflects_state() {
     assert_eq!(container.observe_children().n_items(), 1);
     let spinner = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Spinner>()
-        .unwrap();
+        .expect("expected value");
     assert!(spinner.is_spinning());
     assert!(spinner.is_visible());
 }
@@ -467,9 +474,9 @@ fn test_spinner_updates_state() {
     r.reconcile([VNode::spinner(VSpinner::new(true)).key("s")]);
     let spinner = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Spinner>()
-        .unwrap();
+        .expect("expected value");
     r.reconcile([VNode::spinner(VSpinner::new(false).visible(false)).key("s")]);
     assert!(!spinner.is_spinning());
     assert!(!spinner.is_visible());
@@ -488,7 +495,7 @@ fn test_icon_builds() {
 fn test_icon_hidden_when_invisible() {
     let (container, mut r) = make_reconciler();
     r.reconcile([VNode::icon(VIcon::new(vec![], 16).visible(false))]);
-    let child = container.first_child().unwrap();
+    let child = container.first_child().expect("expected value");
     assert!(!child.is_visible());
 }
 
@@ -497,9 +504,9 @@ fn test_vbox_valign_applied() {
     r.reconcile([VNode::vbox(VBox::horizontal(4).valign(gtk::Align::Center))]);
     let child = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Box>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(child.valign(), gtk::Align::Center);
 }
 
@@ -510,9 +517,9 @@ fn test_vswitch_css_classes_applied() {
     )]);
     let child = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Switch>()
-        .unwrap();
+        .expect("expected value");
     assert!(child.css_classes().iter().any(|c| c == "device-switch"));
 }
 
@@ -523,9 +530,9 @@ fn test_vlabel_ellipsize_applied() {
     )]);
     let child = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Label>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(child.ellipsize(), gtk::pango::EllipsizeMode::End);
 }
 
@@ -537,11 +544,15 @@ fn test_custom_button_builds_with_child_vnode() {
     assert_eq!(container.observe_children().n_items(), 1);
     let btn = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Button>()
-        .unwrap();
+        .expect("expected value");
     // Child is set directly on the button — no intermediate gtk::Box wrapper.
-    let label = btn.child().unwrap().downcast::<gtk::Label>().unwrap();
+    let label = btn
+        .child()
+        .expect("expected value")
+        .downcast::<gtk::Label>()
+        .expect("expected value");
     assert_eq!(label.label(), "inner");
 }
 
@@ -553,11 +564,15 @@ fn test_custom_button_updates_child_vnode() {
     .key("cb")]);
     let btn = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Button>()
-        .unwrap();
+        .expect("expected value");
     // Child is set directly on the button — no intermediate gtk::Box wrapper.
-    let label = btn.child().unwrap().downcast::<gtk::Label>().unwrap();
+    let label = btn
+        .child()
+        .expect("expected value")
+        .downcast::<gtk::Label>()
+        .expect("expected value");
     assert_eq!(label.label(), "before");
 
     r.reconcile([VNode::custom_button(VCustomButton::new(
@@ -575,9 +590,9 @@ fn test_custom_button_css_classes() {
     )]);
     let btn = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Button>()
-        .unwrap();
+        .expect("expected value");
     assert!(btn.css_classes().iter().any(|c| c == "flat"));
     assert!(btn.css_classes().iter().any(|c| c == "device-row"));
 }
@@ -592,9 +607,9 @@ fn test_preferences_group_builds_with_title() {
     assert_eq!(container.observe_children().n_items(), 1);
     let pg = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<adw::PreferencesGroup>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(pg.title(), "Devices");
 }
 
@@ -628,9 +643,9 @@ fn test_action_row_builds_with_title_and_subtitle() {
     assert_eq!(container.observe_children().n_items(), 1);
     let row = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<adw::ActionRow>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(row.title(), "My Row");
     assert_eq!(row.subtitle().as_deref(), Some("Details here"));
 }
@@ -640,9 +655,9 @@ fn test_action_row_updates_title() {
     r.reconcile([VNode::action_row(VActionRow::new("Before")).key("r")]);
     let row = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<adw::ActionRow>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(row.title(), "Before");
 
     r.reconcile([VNode::action_row(VActionRow::new("After")).key("r")]);
@@ -664,9 +679,9 @@ fn test_switch_row_builds_active() {
     assert_eq!(container.observe_children().n_items(), 1);
     let sw = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<adw::SwitchRow>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(sw.title(), "Toggle");
     assert!(sw.is_active());
 }
@@ -684,9 +699,9 @@ fn test_switch_row_updates_active_without_spurious_callback() {
     ]);
     let sw = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<adw::SwitchRow>()
-        .unwrap();
+        .expect("expected value");
     // Programmatic update must not fire the callback.
     r.reconcile([VNode::switch_row(VSwitchRow::new("T", true)).key("sw")]);
     assert!(sw.is_active());
@@ -703,9 +718,9 @@ fn test_entry_row_builds_with_text() {
     assert_eq!(container.observe_children().n_items(), 1);
     let er = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<adw::EntryRow>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(er.title(), "Name");
     assert_eq!(er.text().as_str(), "hello");
 }
@@ -723,9 +738,9 @@ fn test_entry_row_updates_text_without_spurious_callback() {
     ]);
     let er = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<adw::EntryRow>()
-        .unwrap();
+        .expect("expected value");
     r.reconcile([VNode::entry_row(VEntryRow::new("Label").text("b")).key("er")]);
     assert_eq!(er.text().as_str(), "b");
     assert_eq!(
@@ -746,9 +761,9 @@ fn test_switch_updates_active_without_spurious_callback() {
     .key("sw")]);
     let sw = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Switch>()
-        .unwrap();
+        .expect("expected value");
     // Programmatic update must not fire the callback.
     r.reconcile([VNode::switch(VSwitch::new(true)).key("sw")]);
     assert!(sw.is_active());
@@ -770,9 +785,9 @@ fn test_revealer_build_creates_widget() {
     assert_eq!(container.observe_children().n_items(), 1);
     let rev = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Revealer>()
-        .unwrap();
+        .expect("expected value");
     assert!(rev.reveals_child());
     assert_eq!(
         rev.transition_type(),
@@ -786,9 +801,9 @@ fn test_revealer_update_toggles_reveal() {
     r.reconcile([VNode::revealer(VRevealer::new(true, VNode::label(VLabel::new("c")))).key("rev")]);
     let rev = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Revealer>()
-        .unwrap();
+        .expect("expected value");
     assert!(rev.reveals_child());
 
     r.reconcile([
@@ -807,15 +822,19 @@ fn test_revealer_child_reconciled() {
     .key("rev")]);
     let rev = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Revealer>()
-        .unwrap();
-    let inner_box = rev.child().unwrap().downcast::<gtk::Box>().unwrap();
+        .expect("expected value");
+    let inner_box = rev
+        .child()
+        .expect("expected value")
+        .downcast::<gtk::Box>()
+        .expect("expected value");
     let label = inner_box
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Label>()
-        .unwrap();
+        .expect("expected value");
     assert_eq!(label.label(), "before");
 
     r.reconcile([VNode::revealer(VRevealer::new(
@@ -836,9 +855,9 @@ fn test_progress_bar_builds_widget() {
     assert_eq!(container.observe_children().n_items(), 1);
     let pb = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::ProgressBar>()
-        .unwrap();
+        .expect("expected value");
     assert!((pb.fraction() - 0.5).abs() < 0.001);
     assert!(
         pb.css_classes()
@@ -852,9 +871,9 @@ fn test_progress_bar_updates_fraction() {
     r.reconcile([VNode::progress_bar(VProgressBar::new(0.3)).key("pb")]);
     let pb = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::ProgressBar>()
-        .unwrap();
+        .expect("expected value");
     assert!((pb.fraction() - 0.3).abs() < 0.001);
 
     r.reconcile([VNode::progress_bar(VProgressBar::new(0.7)).key("pb")]);
@@ -871,14 +890,14 @@ fn test_scale_builds_widget() {
     // VScale renders as a gtk::Box wrapper containing the gtk::Scale.
     let wrapper = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Box>()
-        .unwrap();
+        .expect("expected value");
     let scale = wrapper
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Scale>()
-        .unwrap();
+        .expect("expected value");
     assert!(
         (scale.value() - 50.0).abs() < 0.1,
         "scale value should be 50.0, got {}",
@@ -892,14 +911,14 @@ fn test_scale_updates_value() {
     r.reconcile([VNode::scale(VScale::new(0.3)).key("sc")]);
     let wrapper = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Box>()
-        .unwrap();
+        .expect("expected value");
     let scale = wrapper
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .downcast::<gtk::Scale>()
-        .unwrap();
+        .expect("expected value");
     assert!((scale.value() - 30.0).abs() < 0.1);
 
     r.reconcile([VNode::scale(VScale::new(0.7)).key("sc")]);
@@ -951,12 +970,12 @@ fn test_reorder_preserves_widget_identity() {
         VNode::label(VLabel::new("a")).key("a"),
         VNode::label(VLabel::new("b")).key("b"),
     ]);
-    let ptr_a = container.first_child().unwrap().as_ptr();
+    let ptr_a = container.first_child().expect("expected value").as_ptr();
     let ptr_b = container
         .first_child()
-        .unwrap()
+        .expect("expected value")
         .next_sibling()
-        .unwrap()
+        .expect("expected value")
         .as_ptr();
 
     // Swap order.
@@ -965,8 +984,8 @@ fn test_reorder_preserves_widget_identity() {
         VNode::label(VLabel::new("a")).key("a"),
     ]);
     // Same widget instances, just reordered.
-    let new_first = container.first_child().unwrap();
-    let new_second = new_first.next_sibling().unwrap();
+    let new_first = container.first_child().expect("expected value");
+    let new_second = new_first.next_sibling().expect("expected value");
     assert_eq!(
         new_first.as_ptr(),
         ptr_b,
@@ -1003,7 +1022,7 @@ fn test_no_reorder_when_order_unchanged() {
         VNode::label(VLabel::new("a")).key("a"),
         VNode::label(VLabel::new("b")).key("b"),
     ]);
-    let ptr_a = container.first_child().unwrap().as_ptr();
+    let ptr_a = container.first_child().expect("expected value").as_ptr();
 
     // Same order, different props — should update in place, no reorder.
     r.reconcile([
@@ -1011,7 +1030,10 @@ fn test_no_reorder_when_order_unchanged() {
         VNode::label(VLabel::new("B")).key("b"),
     ]);
     assert_eq!(child_labels(&container), vec!["A", "B"]);
-    assert_eq!(container.first_child().unwrap().as_ptr(), ptr_a);
+    assert_eq!(
+        container.first_child().expect("expected value").as_ptr(),
+        ptr_a
+    );
 }
 
 // ── CountdownBarRender test ──────────────────────────────────────────────

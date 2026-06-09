@@ -26,8 +26,8 @@ mod tests {
             reference: "sounds/alert.ogg".to_string(),
             size: 12345,
         };
-        let json = serde_json::to_value(&sound).unwrap();
-        let decoded: NotificationSound = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&sound).expect("expected value");
+        let decoded: NotificationSound = serde_json::from_value(json).expect("expected value");
         assert_eq!(sound, decoded);
     }
 }

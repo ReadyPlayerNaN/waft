@@ -191,15 +191,15 @@ mod tests {
 
     #[test]
     fn exact_match_scores_highest() {
-        let score = fuzzy_score("firefox", "firefox").unwrap();
+        let score = fuzzy_score("firefox", "firefox").expect("expected value");
         // Exact match: all chars matched, all contiguous, prefix match
         assert!(score > 1.0, "exact match should score > 1.0, got {score}");
     }
 
     #[test]
     fn prefix_match_scores_higher_than_middle_match() {
-        let prefix = fuzzy_score("fir", "firefox").unwrap();
-        let middle = fuzzy_score("fox", "firefox").unwrap();
+        let prefix = fuzzy_score("fir", "firefox").expect("expected value");
+        let middle = fuzzy_score("fox", "firefox").expect("expected value");
         assert!(prefix > middle, "prefix match should score higher");
     }
 
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn empty_query_matches_everything_with_zero_score() {
-        let score = fuzzy_score("", "firefox").unwrap();
+        let score = fuzzy_score("", "firefox").expect("expected value");
         assert_eq!(score, 0.0);
     }
 
@@ -230,32 +230,32 @@ mod tests {
 
     #[test]
     fn positions_exact_match() {
-        let (score, positions) = fuzzy_match_positions("fire", "fire").unwrap();
+        let (score, positions) = fuzzy_match_positions("fire", "fire").expect("expected value");
         assert!(score > 1.0);
         assert_eq!(positions, vec![0, 1, 2, 3]);
     }
 
     #[test]
     fn positions_prefix() {
-        let (_, positions) = fuzzy_match_positions("fir", "firefox").unwrap();
+        let (_, positions) = fuzzy_match_positions("fir", "firefox").expect("expected value");
         assert_eq!(positions, vec![0, 1, 2]);
     }
 
     #[test]
     fn positions_non_contiguous() {
-        let (_, positions) = fuzzy_match_positions("fx", "firefox").unwrap();
+        let (_, positions) = fuzzy_match_positions("fx", "firefox").expect("expected value");
         assert_eq!(positions, vec![0, 6]);
     }
 
     #[test]
     fn positions_case_insensitive() {
-        let (_, positions) = fuzzy_match_positions("FF", "firefox").unwrap();
+        let (_, positions) = fuzzy_match_positions("FF", "firefox").expect("expected value");
         assert_eq!(positions, vec![0, 4]);
     }
 
     #[test]
     fn positions_empty_query() {
-        let (score, positions) = fuzzy_match_positions("", "firefox").unwrap();
+        let (score, positions) = fuzzy_match_positions("", "firefox").expect("expected value");
         assert_eq!(score, 0.0);
         assert!(positions.is_empty());
     }
@@ -357,7 +357,8 @@ mod tests {
         use crate::normalize::normalize_for_search;
         let q = normalize_for_search("pocasi");
         let t = normalize_for_search("Počasí");
-        let (_, positions) = fuzzy_match_positions_chars(&q.chars, &t.chars, &t.char_map).unwrap();
+        let (_, positions) =
+            fuzzy_match_positions_chars(&q.chars, &t.chars, &t.char_map).expect("expected value");
         // All 6 chars of "Počasí" should be highlighted
         assert_eq!(positions, vec![0, 1, 2, 3, 4, 5]);
     }
@@ -367,7 +368,8 @@ mod tests {
         use crate::normalize::normalize_for_search;
         let q = normalize_for_search("cafe");
         let t = normalize_for_search("Café Latte");
-        let (_, positions) = fuzzy_match_positions_chars(&q.chars, &t.chars, &t.char_map).unwrap();
+        let (_, positions) =
+            fuzzy_match_positions_chars(&q.chars, &t.chars, &t.char_map).expect("expected value");
         assert_eq!(positions, vec![0, 1, 2, 3]);
     }
 

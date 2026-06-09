@@ -193,7 +193,7 @@ usegeoclue: true
 dbusserver: true
 portal: true
 "#;
-        let config: DarkmanYamlConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: DarkmanYamlConfig = serde_yaml::from_str(yaml).expect("expected value");
         assert_eq!(config.lat, Some(50.08));
         assert_eq!(config.lng, Some(14.42));
         assert_eq!(config.usegeoclue, Some(true));
@@ -207,7 +207,7 @@ portal: true
 lat: 52.52
 lng: 13.40
 "#;
-        let config: DarkmanYamlConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: DarkmanYamlConfig = serde_yaml::from_str(yaml).expect("expected value");
         assert_eq!(config.lat, Some(52.52));
         assert_eq!(config.lng, Some(13.40));
         assert_eq!(config.usegeoclue, None);
@@ -240,7 +240,7 @@ lng: 13.40
         assert!(lat.available);
         assert_eq!(lat.state, FieldState::Editable);
         assert_eq!(lat.field_type, FieldType::Float { decimals: 2 });
-        let c = lat.constraints.as_ref().unwrap();
+        let c = lat.constraints.as_ref().expect("expected value");
         assert_eq!(c.min, Some(-90.0));
         assert_eq!(c.max, Some(90.0));
         assert_eq!(c.step, Some(0.01));

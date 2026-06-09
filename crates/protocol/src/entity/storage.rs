@@ -22,8 +22,8 @@ mod tests {
             enabled: true,
             icon: "syncthing-symbolic".to_string(),
         };
-        let json = serde_json::to_value(&method).unwrap();
-        let decoded: BackupMethod = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&method).expect("expected value");
+        let decoded: BackupMethod = serde_json::from_value(json).expect("expected value");
         assert_eq!(method, decoded);
     }
 
@@ -34,8 +34,8 @@ mod tests {
             enabled: false,
             icon: "drive-harddisk-symbolic".to_string(),
         };
-        let json = serde_json::to_value(&method).unwrap();
-        let decoded: BackupMethod = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&method).expect("expected value");
+        let decoded: BackupMethod = serde_json::from_value(json).expect("expected value");
         assert_eq!(method, decoded);
     }
 }

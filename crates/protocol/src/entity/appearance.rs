@@ -18,8 +18,8 @@ mod tests {
         let appearance = GtkAppearance {
             accent_color: "blue".to_string(),
         };
-        let json = serde_json::to_value(&appearance).unwrap();
-        let decoded: GtkAppearance = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&appearance).expect("expected value");
+        let decoded: GtkAppearance = serde_json::from_value(json).expect("expected value");
         assert_eq!(appearance, decoded);
     }
 }

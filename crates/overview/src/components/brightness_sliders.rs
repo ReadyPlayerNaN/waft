@@ -163,7 +163,7 @@ pub(crate) mod tests {
     }
 
     fn child_count(container: &gtk::Widget) -> u32 {
-        let bx: &gtk::Box = container.downcast_ref().unwrap();
+        let bx: &gtk::Box = container.downcast_ref().expect("expected value");
         let mut count = 0u32;
         let mut child = bx.first_child();
         while let Some(c) = child {
@@ -199,7 +199,7 @@ pub(crate) mod tests {
         let comp = BrightnessSlidersComponent::new(&store, &noop_action_callback());
 
         let urn = Urn::new("brightness", "display", "laptop");
-        let data = serde_json::to_value(make_display(0.75)).unwrap();
+        let data = serde_json::to_value(make_display(0.75)).expect("expected value");
         store.handle_notification(make_updated(urn, data));
 
         assert!(
@@ -217,11 +217,11 @@ pub(crate) mod tests {
         let urn2 = Urn::new("brightness", "display", "external");
         store.handle_notification(make_updated(
             urn1,
-            serde_json::to_value(make_display(0.75)).unwrap(),
+            serde_json::to_value(make_display(0.75)).expect("expected value"),
         ));
         store.handle_notification(make_updated(
             urn2,
-            serde_json::to_value(make_display(0.50)).unwrap(),
+            serde_json::to_value(make_display(0.50)).expect("expected value"),
         ));
 
         assert_eq!(child_count(comp.widget()), 2);
@@ -234,14 +234,14 @@ pub(crate) mod tests {
         let urn = Urn::new("brightness", "display", "laptop");
         store.handle_notification(make_updated(
             urn.clone(),
-            serde_json::to_value(make_display(0.75)).unwrap(),
+            serde_json::to_value(make_display(0.75)).expect("expected value"),
         ));
         assert_eq!(child_count(comp.widget()), 1);
 
         // Update with new brightness value
         store.handle_notification(make_updated(
             urn,
-            serde_json::to_value(make_display(0.30)).unwrap(),
+            serde_json::to_value(make_display(0.30)).expect("expected value"),
         ));
         assert_eq!(
             child_count(comp.widget()),
@@ -258,11 +258,11 @@ pub(crate) mod tests {
         let urn2 = Urn::new("brightness", "display", "external");
         store.handle_notification(make_updated(
             urn1.clone(),
-            serde_json::to_value(make_display(0.75)).unwrap(),
+            serde_json::to_value(make_display(0.75)).expect("expected value"),
         ));
         store.handle_notification(make_updated(
             urn2,
-            serde_json::to_value(make_display(0.50)).unwrap(),
+            serde_json::to_value(make_display(0.50)).expect("expected value"),
         ));
         assert_eq!(child_count(comp.widget()), 2);
 
@@ -278,7 +278,7 @@ pub(crate) mod tests {
         let urn = Urn::new("brightness", "display", "laptop");
         store.handle_notification(make_updated(
             urn.clone(),
-            serde_json::to_value(make_display(0.75)).unwrap(),
+            serde_json::to_value(make_display(0.75)).expect("expected value"),
         ));
         assert!(comp.widget().is_visible());
 
@@ -305,7 +305,7 @@ pub(crate) mod tests {
         let urn = Urn::new("brightness", "display", "laptop");
         store.handle_notification(make_updated(
             urn,
-            serde_json::to_value(make_display(0.75)).unwrap(),
+            serde_json::to_value(make_display(0.75)).expect("expected value"),
         ));
 
         // The action callback is wired to the slider's connect_output,

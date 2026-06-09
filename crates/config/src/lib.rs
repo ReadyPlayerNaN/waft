@@ -183,7 +183,7 @@ mod tests {
         let settings = config.get_plugin_settings("clock");
 
         assert!(settings.is_some());
-        let settings = settings.unwrap();
+        let settings = settings.expect("expected value");
         assert_eq!(settings.get("enabled"), Some(&toml::Value::Boolean(true)));
         assert_eq!(settings.get("interval"), Some(&toml::Value::Integer(30)));
     }
@@ -246,7 +246,11 @@ mod tests {
     #[test]
     fn test_plugin_use_daemon_defaults_to_none() {
         let config = create_test_config();
-        let clock = config.plugins.iter().find(|p| p.id == "clock").unwrap();
+        let clock = config
+            .plugins
+            .iter()
+            .find(|p| p.id == "clock")
+            .expect("expected value");
         assert_eq!(clock.use_daemon, None);
     }
 
@@ -271,13 +275,25 @@ id = "battery"
         let config: Config = toml::from_str(toml).expect("Failed to parse config");
         assert_eq!(config.system.daemon_mode, "opt-out");
 
-        let clock = config.plugins.iter().find(|p| p.id == "clock").unwrap();
+        let clock = config
+            .plugins
+            .iter()
+            .find(|p| p.id == "clock")
+            .expect("expected value");
         assert_eq!(clock.use_daemon, Some(true));
 
-        let weather = config.plugins.iter().find(|p| p.id == "weather").unwrap();
+        let weather = config
+            .plugins
+            .iter()
+            .find(|p| p.id == "weather")
+            .expect("expected value");
         assert_eq!(weather.use_daemon, Some(false));
 
-        let battery = config.plugins.iter().find(|p| p.id == "battery").unwrap();
+        let battery = config
+            .plugins
+            .iter()
+            .find(|p| p.id == "battery")
+            .expect("expected value");
         assert_eq!(battery.use_daemon, None);
     }
 
@@ -370,7 +386,7 @@ daemon_mode = "opt-in"
 
     #[test]
     fn launcher_config_defaults() {
-        let config: Config = toml::from_str("").unwrap();
+        let config: Config = toml::from_str("").expect("expected value");
         assert!(config.launcher.rank_by_usage);
         assert_eq!(config.launcher.max_results, 20);
     }
@@ -384,7 +400,7 @@ daemon_mode = "opt-in"
             max_results = 10
         "#,
         )
-        .unwrap();
+        .expect("expected value");
         assert!(!config.launcher.rank_by_usage);
         assert_eq!(config.launcher.max_results, 10);
     }

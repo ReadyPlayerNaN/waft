@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use adw::prelude::*;
-use glib::object::Cast as _;
 
 use crate::features::session::SessionEvent;
 use crate::menu_state::create_menu_store;

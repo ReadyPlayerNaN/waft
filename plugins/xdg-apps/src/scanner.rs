@@ -88,19 +88,19 @@ mod tests {
 
     #[test]
     fn scan_empty_dir() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let apps = scan_apps(&[dir.path().to_path_buf()]);
         assert!(apps.is_empty());
     }
 
     #[test]
     fn scan_finds_desktop_files() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         std::fs::write(
             dir.path().join("myapp.desktop"),
             "[Desktop Entry]\nType=Application\nName=MyApp\nIcon=myapp\nExec=myapp\n",
         )
-        .unwrap();
+        .expect("expected value");
         let apps = scan_apps(&[dir.path().to_path_buf()]);
         assert_eq!(apps.len(), 1);
         assert_eq!(apps[0].stem, "myapp");
@@ -109,19 +109,19 @@ mod tests {
 
     #[test]
     fn scan_deduplicates_by_stem_priority() {
-        let dir1 = tempfile::tempdir().unwrap();
-        let dir2 = tempfile::tempdir().unwrap();
+        let dir1 = tempfile::tempdir().expect("expected value");
+        let dir2 = tempfile::tempdir().expect("expected value");
         // Same stem in both dirs -- dir1 wins (higher priority)
         std::fs::write(
             dir1.path().join("app.desktop"),
             "[Desktop Entry]\nType=Application\nName=UserApp\nIcon=app\nExec=app\n",
         )
-        .unwrap();
+        .expect("expected value");
         std::fs::write(
             dir2.path().join("app.desktop"),
             "[Desktop Entry]\nType=Application\nName=SystemApp\nIcon=app\nExec=app\n",
         )
-        .unwrap();
+        .expect("expected value");
         let apps = scan_apps(&[dir1.path().to_path_buf(), dir2.path().to_path_buf()]);
         assert_eq!(apps.len(), 1);
         assert_eq!(apps[0].entry.name, "UserApp");
@@ -129,12 +129,12 @@ mod tests {
 
     #[test]
     fn scan_skips_nodisplay() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         std::fs::write(
             dir.path().join("hidden.desktop"),
             "[Desktop Entry]\nType=Application\nName=Hidden\nIcon=h\nExec=h\nNoDisplay=true\n",
         )
-        .unwrap();
+        .expect("expected value");
         let apps = scan_apps(&[dir.path().to_path_buf()]);
         assert!(apps.is_empty());
     }

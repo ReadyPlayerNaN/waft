@@ -262,7 +262,7 @@ mod tests {
             value: r"meeting\s+\d+".to_string(),
         };
 
-        let compiled = Regex::new(&pattern.value).unwrap();
+        let compiled = Regex::new(&pattern.value).expect("expected value");
 
         let notif = make_notification("App", "meeting 42", NotificationUrgency::Normal);
         assert!(matches_pattern(&pattern, &notif, Some(&compiled)));

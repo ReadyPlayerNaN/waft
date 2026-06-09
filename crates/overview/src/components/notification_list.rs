@@ -76,7 +76,7 @@ impl NotificationsComponent {
                 store_ref.get_entities_typed(entity::notification::NOTIFICATION_ENTITY_TYPE);
 
             // Sort by created_at_ms descending (newest first)
-            entities.sort_by(|a, b| b.1.created_at_ms.cmp(&a.1.created_at_ms));
+            entities.sort_by_key(|(_, notif)| std::cmp::Reverse(notif.created_at_ms));
 
             // Group by app_id
             let mut grouped: HashMap<String, Vec<(Urn, entity::notification::Notification)>> =

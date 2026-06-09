@@ -202,7 +202,7 @@ fn test_parse_sinks_all_devices_get_icon_name_and_active_port() {
         MULTI_SINK_OUTPUT,
         Some("alsa_output.pci-0000_00_1f.3.analog-stereo"),
     )
-    .unwrap();
+    .expect("expected value");
 
     assert_eq!(sinks.len(), 3);
 
@@ -235,7 +235,7 @@ fn test_non_default_sink_icons_computed_correctly() {
         MULTI_SINK_OUTPUT,
         Some("alsa_output.pci-0000_00_1f.3.analog-stereo"),
     )
-    .unwrap();
+    .expect("expected value");
 
     let card_ports = CardPortMap::new();
 
@@ -259,7 +259,8 @@ fn test_non_default_sink_icons_computed_correctly() {
 fn test_non_default_sink_icons_after_switching_default() {
     // After switching default to the bluetooth device, the old default should
     // still have correct icon_name parsed from pactl output
-    let sinks = parse_sinks(MULTI_SINK_OUTPUT, Some("bluez_output.AA_BB_CC_DD_EE_FF.1")).unwrap();
+    let sinks = parse_sinks(MULTI_SINK_OUTPUT, Some("bluez_output.AA_BB_CC_DD_EE_FF.1"))
+        .expect("expected value");
 
     let card_ports = CardPortMap::new();
 
@@ -329,7 +330,7 @@ fn test_parse_sources_all_devices_get_icon_name_and_active_port() {
         MULTI_SOURCE_OUTPUT,
         Some("alsa_input.pci-0000_00_1f.3.analog-stereo"),
     )
-    .unwrap();
+    .expect("expected value");
 
     assert_eq!(sources.len(), 3);
 
@@ -359,7 +360,7 @@ fn test_non_default_source_icons_computed_correctly() {
         MULTI_SOURCE_OUTPUT,
         Some("alsa_input.pci-0000_00_1f.3.analog-stereo"),
     )
-    .unwrap();
+    .expect("expected value");
 
     let card_ports = CardPortMap::new();
 
@@ -385,7 +386,7 @@ fn test_port_availability_parsed_for_all_sinks() {
         MULTI_SINK_OUTPUT,
         Some("alsa_output.pci-0000_00_1f.3.analog-stereo"),
     )
-    .unwrap();
+    .expect("expected value");
 
     // Default sink has active port "analog-output-speaker" which is "available"
     assert_eq!(sinks[0].active_port_available, Some(true));
@@ -403,7 +404,7 @@ fn test_sink_ports_parsed_as_structured_list() {
         MULTI_SINK_OUTPUT,
         Some("alsa_output.pci-0000_00_1f.3.analog-stereo"),
     )
-    .unwrap();
+    .expect("expected value");
 
     // First sink has two ports
     assert_eq!(sinks[0].ports.len(), 2);
@@ -427,7 +428,7 @@ fn test_source_ports_parsed_as_structured_list() {
         MULTI_SOURCE_OUTPUT,
         Some("alsa_input.pci-0000_00_1f.3.analog-stereo"),
     )
-    .unwrap();
+    .expect("expected value");
 
     // First source has one port
     assert_eq!(sources[0].ports.len(), 1);
@@ -537,7 +538,7 @@ Sink #0
 \tPorts:
 \tActive Port: (none)
 ";
-    let sinks = super::parse_sinks(input, None).unwrap();
+    let sinks = super::parse_sinks(input, None).expect("expected value");
     assert_eq!(sinks[0].form_factor, Some("headset".to_string()));
     assert_eq!(sinks[0].bus, Some("bluetooth".to_string()));
 }
@@ -545,21 +546,21 @@ Sink #0
 #[test]
 fn test_parse_port_line_extracts_port_type() {
     let line = "    analog-output-speaker: Speaker (type: Speaker, priority: 100, availability group: Legacy 1, available)";
-    let port = super::parse_port_line(line).unwrap();
+    let port = super::parse_port_line(line).expect("expected value");
     assert_eq!(port.port_type, Some("Speaker".to_string()));
 }
 
 #[test]
 fn test_parse_port_line_extracts_hdmi_type() {
     let line = "    [Out] HDMI1: HDMI / DisplayPort (type: HDMI, priority: 5900, availability group: HDMI Group 1, not available)";
-    let port = super::parse_port_line(line).unwrap();
+    let port = super::parse_port_line(line).expect("expected value");
     assert_eq!(port.port_type, Some("HDMI".to_string()));
 }
 
 #[test]
 fn test_parse_port_line_no_type_info() {
     let line = "    some-port: Some Port (priority: 100, available)";
-    let port = super::parse_port_line(line).unwrap();
+    let port = super::parse_port_line(line).expect("expected value");
     assert_eq!(port.port_type, None);
 }
 

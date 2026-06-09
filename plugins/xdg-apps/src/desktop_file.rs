@@ -170,7 +170,7 @@ Exec=firefox %u
 
     #[test]
     fn parses_full_entry() {
-        let entry = parse_desktop_entry(FIREFOX_DESKTOP).unwrap();
+        let entry = parse_desktop_entry(FIREFOX_DESKTOP).expect("expected value");
         assert_eq!(entry.name, "Firefox Web Browser");
         assert_eq!(entry.icon, "firefox");
         assert_eq!(entry.exec, "firefox %u");
@@ -193,7 +193,7 @@ Exec=firefox %u
 
     #[test]
     fn parses_minimal_entry() {
-        let entry = parse_desktop_entry(MINIMAL_DESKTOP).unwrap();
+        let entry = parse_desktop_entry(MINIMAL_DESKTOP).expect("expected value");
         assert_eq!(entry.name, "MinApp");
         assert_eq!(entry.description, None);
         assert!(entry.keywords.is_empty());
@@ -209,7 +209,7 @@ Exec=firefox %u
 
     #[test]
     fn collects_localized_names() {
-        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).expect("expected value");
         assert_eq!(entry.name, "Firefox Web Browser");
         assert_eq!(
             entry.localized_names.get("cs").map(String::as_str),
@@ -223,37 +223,37 @@ Exec=firefox %u
 
     #[test]
     fn localized_names_empty_for_unlocalized_entry() {
-        let entry = parse_desktop_entry(FIREFOX_DESKTOP).unwrap();
+        let entry = parse_desktop_entry(FIREFOX_DESKTOP).expect("expected value");
         assert!(entry.localized_names.is_empty());
     }
 
     #[test]
     fn resolve_name_exact_locale_match() {
-        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).expect("expected value");
         assert_eq!(entry.resolve_name("cs"), "Webový prohlížeč Firefox");
     }
 
     #[test]
     fn resolve_name_language_only_match() {
-        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).expect("expected value");
         assert_eq!(entry.resolve_name("cs_CZ"), "Webový prohlížeč Firefox");
     }
 
     #[test]
     fn resolve_name_bcp47_language_only_match() {
-        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).expect("expected value");
         assert_eq!(entry.resolve_name("cs-CZ"), "Webový prohlížeč Firefox");
     }
 
     #[test]
     fn resolve_name_falls_back_to_base_name() {
-        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).expect("expected value");
         assert_eq!(entry.resolve_name("ja"), "Firefox Web Browser");
     }
 
     #[test]
     fn resolve_name_empty_locale_falls_back() {
-        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).unwrap();
+        let entry = parse_desktop_entry(LOCALIZED_DESKTOP).expect("expected value");
         assert_eq!(entry.resolve_name(""), "Firefox Web Browser");
     }
 
@@ -266,7 +266,7 @@ Name[pt_BR]=Aplicativo
 Icon=app
 Exec=app
 "#;
-        let entry = parse_desktop_entry(content).unwrap();
+        let entry = parse_desktop_entry(content).expect("expected value");
         // BCP47 input "pt-BR" should match POSIX key "pt_BR"
         assert_eq!(entry.resolve_name("pt-BR"), "Aplicativo");
         // POSIX input "pt_BR" should also match

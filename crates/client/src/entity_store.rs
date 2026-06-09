@@ -286,7 +286,7 @@ mod tests {
             time: "14:30".to_string(),
             date: "Thursday".to_string(),
         })
-        .unwrap();
+        .expect("expected value");
 
         store.handle_notification(make_updated(urn, entity::clock::ENTITY_TYPE, data));
         assert_eq!(called.get(), 1);
@@ -307,7 +307,7 @@ mod tests {
             time: "14:30".to_string(),
             date: "Thursday".to_string(),
         })
-        .unwrap();
+        .expect("expected value");
 
         store.handle_notification(make_updated(
             urn.clone(),
@@ -330,7 +330,7 @@ mod tests {
             time: "14:30".to_string(),
             date: "Thursday".to_string(),
         };
-        let data = serde_json::to_value(&clock).unwrap();
+        let data = serde_json::to_value(&clock).expect("expected value");
 
         store.handle_notification(make_updated(urn, entity::clock::ENTITY_TYPE, data));
 
@@ -348,13 +348,13 @@ mod tests {
             time: "15:00".to_string(),
             date: "Friday".to_string(),
         })
-        .unwrap();
+        .expect("expected value");
 
         store.handle_notification(make_updated(urn.clone(), entity::clock::ENTITY_TYPE, data));
 
         let clock: Option<entity::clock::Clock> = store.get_entity_typed(&urn);
         assert!(clock.is_some());
-        assert_eq!(clock.unwrap().time, "15:00");
+        assert_eq!(clock.expect("expected value").time, "15:00");
     }
 
     #[test]
@@ -372,7 +372,7 @@ mod tests {
             time: "14:30".to_string(),
             date: "Thursday".to_string(),
         })
-        .unwrap();
+        .expect("expected value");
 
         store.handle_notification(make_updated(urn.clone(), entity::clock::ENTITY_TYPE, data));
         assert_eq!(called.get(), 1);
@@ -421,7 +421,7 @@ mod tests {
             time: "14:30".to_string(),
             date: "Thursday".to_string(),
         })
-        .unwrap();
+        .expect("expected value");
 
         store.handle_notification(make_updated(urn, entity::clock::ENTITY_TYPE, data));
         assert_eq!(clock_called.get(), 1);
@@ -440,7 +440,7 @@ mod tests {
             time: "14:30".to_string(),
             date: "Thursday".to_string(),
         })
-        .unwrap();
+        .expect("expected value");
 
         store.handle_notification(make_updated(urn.clone(), entity::clock::ENTITY_TYPE, data));
         assert_eq!(
@@ -537,7 +537,7 @@ mod tests {
             time: "14:30".to_string(),
             date: "Thursday".to_string(),
         })
-        .unwrap();
+        .expect("expected value");
 
         store.handle_notification(make_updated(urn.clone(), entity::clock::ENTITY_TYPE, data));
         assert_eq!(

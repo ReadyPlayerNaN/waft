@@ -71,20 +71,20 @@ mod tests {
 
     #[test]
     fn no_args_is_daemon_mode() {
-        let cli = Cli::try_parse_from(["waft"]).unwrap();
+        let cli = Cli::try_parse_from(["waft"]).expect("expected value");
         assert!(cli.command.is_none());
         assert!(!cli.json);
     }
 
     #[test]
     fn daemon_subcommand() {
-        let cli = Cli::try_parse_from(["waft", "daemon"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "daemon"]).expect("expected value");
         assert!(matches!(cli.command, Some(Command::Daemon)));
     }
 
     #[test]
     fn plugin_ls_subcommand() {
-        let cli = Cli::try_parse_from(["waft", "plugin", "ls"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "plugin", "ls"]).expect("expected value");
         assert!(matches!(
             cli.command,
             Some(Command::Plugin {
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn json_flag_long() {
-        let cli = Cli::try_parse_from(["waft", "--json", "plugin", "ls"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "--json", "plugin", "ls"]).expect("expected value");
         assert!(cli.json);
         assert!(matches!(
             cli.command,
@@ -107,13 +107,14 @@ mod tests {
 
     #[test]
     fn json_flag_short() {
-        let cli = Cli::try_parse_from(["waft", "-j", "plugin", "ls"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "-j", "plugin", "ls"]).expect("expected value");
         assert!(cli.json);
     }
 
     #[test]
     fn plugin_describe_subcommand() {
-        let cli = Cli::try_parse_from(["waft", "plugin", "describe", "clock"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["waft", "plugin", "describe", "clock"]).expect("expected value");
         match cli.command {
             Some(Command::Plugin {
                 command: PluginCommand::Describe { name },
@@ -126,7 +127,8 @@ mod tests {
 
     #[test]
     fn plugin_describe_with_json() {
-        let cli = Cli::try_parse_from(["waft", "-j", "plugin", "describe", "bluez"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "-j", "plugin", "describe", "bluez"])
+            .expect("expected value");
         assert!(cli.json);
         match cli.command {
             Some(Command::Plugin {
@@ -140,7 +142,7 @@ mod tests {
 
     #[test]
     fn protocol_subcommand_no_args() {
-        let cli = Cli::try_parse_from(["waft", "protocol"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "protocol"]).expect("expected value");
         assert!(matches!(
             cli.command,
             Some(Command::Protocol {
@@ -153,7 +155,8 @@ mod tests {
 
     #[test]
     fn protocol_subcommand_with_entity_type() {
-        let cli = Cli::try_parse_from(["waft", "protocol", "audio-device"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["waft", "protocol", "audio-device"]).expect("expected value");
         match cli.command {
             Some(Command::Protocol {
                 entity_type,
@@ -170,7 +173,8 @@ mod tests {
 
     #[test]
     fn protocol_subcommand_with_domain_filter() {
-        let cli = Cli::try_parse_from(["waft", "protocol", "--domain", "audio"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["waft", "protocol", "--domain", "audio"]).expect("expected value");
         match cli.command {
             Some(Command::Protocol {
                 entity_type,
@@ -187,7 +191,7 @@ mod tests {
 
     #[test]
     fn protocol_subcommand_verbose() {
-        let cli = Cli::try_parse_from(["waft", "protocol", "--verbose"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "protocol", "--verbose"]).expect("expected value");
         match cli.command {
             Some(Command::Protocol {
                 entity_type,
@@ -204,7 +208,7 @@ mod tests {
 
     #[test]
     fn protocol_subcommand_verbose_short() {
-        let cli = Cli::try_parse_from(["waft", "protocol", "-v"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "protocol", "-v"]).expect("expected value");
         match cli.command {
             Some(Command::Protocol { verbose, .. }) => assert!(verbose),
             _ => panic!("expected Protocol command"),
@@ -213,7 +217,8 @@ mod tests {
 
     #[test]
     fn protocol_subcommand_with_json() {
-        let cli = Cli::try_parse_from(["waft", "-j", "protocol", "audio-device"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "-j", "protocol", "audio-device"])
+            .expect("expected value");
         assert!(cli.json);
         match cli.command {
             Some(Command::Protocol { entity_type, .. }) => {
@@ -225,7 +230,7 @@ mod tests {
 
     #[test]
     fn commands_no_args() {
-        let cli = Cli::try_parse_from(["waft", "commands"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "commands"]).expect("expected value");
         match cli.command {
             Some(Command::Commands { filter, run }) => {
                 assert_eq!(filter, None);
@@ -237,7 +242,7 @@ mod tests {
 
     #[test]
     fn commands_with_filter() {
-        let cli = Cli::try_parse_from(["waft", "commands", "dark"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "commands", "dark"]).expect("expected value");
         match cli.command {
             Some(Command::Commands { filter, run }) => {
                 assert_eq!(filter.as_deref(), Some("dark"));
@@ -249,7 +254,8 @@ mod tests {
 
     #[test]
     fn commands_with_run_flag() {
-        let cli = Cli::try_parse_from(["waft", "commands", "--run", "lock"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["waft", "commands", "--run", "lock"]).expect("expected value");
         match cli.command {
             Some(Command::Commands { filter, run }) => {
                 assert_eq!(filter.as_deref(), Some("lock"));
@@ -261,7 +267,7 @@ mod tests {
 
     #[test]
     fn commands_with_run_short_flag() {
-        let cli = Cli::try_parse_from(["waft", "commands", "-r", "dark"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "commands", "-r", "dark"]).expect("expected value");
         match cli.command {
             Some(Command::Commands { filter, run }) => {
                 assert_eq!(filter.as_deref(), Some("dark"));
@@ -273,7 +279,7 @@ mod tests {
 
     #[test]
     fn commands_with_json() {
-        let cli = Cli::try_parse_from(["waft", "-j", "commands"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "-j", "commands"]).expect("expected value");
         assert!(cli.json);
         assert!(matches!(
             cli.command,
@@ -286,7 +292,7 @@ mod tests {
 
     #[test]
     fn commands_with_json_and_filter() {
-        let cli = Cli::try_parse_from(["waft", "-j", "commands", "dark"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "-j", "commands", "dark"]).expect("expected value");
         assert!(cli.json);
         match cli.command {
             Some(Command::Commands { filter, run }) => {
@@ -299,7 +305,7 @@ mod tests {
 
     #[test]
     fn query_no_args() {
-        let cli = Cli::try_parse_from(["waft", "query"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "query"]).expect("expected value");
         match cli.command {
             Some(Command::Query {
                 entity_type,
@@ -316,7 +322,7 @@ mod tests {
 
     #[test]
     fn query_with_entity_type() {
-        let cli = Cli::try_parse_from(["waft", "query", "battery"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "query", "battery"]).expect("expected value");
         match cli.command {
             Some(Command::Query {
                 entity_type,
@@ -333,7 +339,7 @@ mod tests {
 
     #[test]
     fn state_alias() {
-        let cli = Cli::try_parse_from(["waft", "state", "battery"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "state", "battery"]).expect("expected value");
         match cli.command {
             Some(Command::Query { entity_type, .. }) => {
                 assert_eq!(entity_type.as_deref(), Some("battery"));
@@ -344,7 +350,8 @@ mod tests {
 
     #[test]
     fn query_with_start_flag() {
-        let cli = Cli::try_parse_from(["waft", "query", "audio-device", "--start"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "query", "audio-device", "--start"])
+            .expect("expected value");
         match cli.command {
             Some(Command::Query {
                 entity_type,
@@ -361,7 +368,8 @@ mod tests {
 
     #[test]
     fn query_with_start_short_flag() {
-        let cli = Cli::try_parse_from(["waft", "query", "-s", "audio-device"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["waft", "query", "-s", "audio-device"]).expect("expected value");
         match cli.command {
             Some(Command::Query {
                 entity_type, start, ..
@@ -383,7 +391,7 @@ mod tests {
             "10000",
             "battery",
         ])
-        .unwrap();
+        .expect("expected value");
         match cli.command {
             Some(Command::Query {
                 entity_type,
@@ -400,7 +408,7 @@ mod tests {
 
     #[test]
     fn query_with_json_flag() {
-        let cli = Cli::try_parse_from(["waft", "-j", "query", "clock"]).unwrap();
+        let cli = Cli::try_parse_from(["waft", "-j", "query", "clock"]).expect("expected value");
         assert!(cli.json);
         match cli.command {
             Some(Command::Query { entity_type, .. }) => {

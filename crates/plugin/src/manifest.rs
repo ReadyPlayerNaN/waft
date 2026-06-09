@@ -226,8 +226,8 @@ mod tests {
             name: "Clock".to_string(),
             description: "Time display".to_string(),
         };
-        let json = serde_json::to_string(&manifest).unwrap();
-        let decoded: PluginManifest = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&manifest).expect("expected value");
+        let decoded: PluginManifest = serde_json::from_str(&json).expect("expected value");
         assert_eq!(decoded.entity_types, manifest.entity_types);
         assert_eq!(decoded.name, "Clock");
         assert_eq!(decoded.description, "Time display");
@@ -240,8 +240,8 @@ mod tests {
             name: "Sunsetr".to_string(),
             description: "Night light control via sunsetr".to_string(),
         };
-        let json = serde_json::to_string(&manifest).unwrap();
-        let decoded: PluginManifest = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&manifest).expect("expected value");
+        let decoded: PluginManifest = serde_json::from_str(&json).expect("expected value");
         assert_eq!(decoded.name, "Sunsetr");
         assert_eq!(decoded.description, "Night light control via sunsetr");
     }
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn manifest_backward_compat_missing_fields() {
         let json = r#"{"entity_types": ["clock"]}"#;
-        let decoded: PluginManifest = serde_json::from_str(json).unwrap();
+        let decoded: PluginManifest = serde_json::from_str(json).expect("expected value");
         assert_eq!(decoded.entity_types, vec!["clock".to_string()]);
         assert_eq!(decoded.name, "");
         assert_eq!(decoded.description, "");
@@ -277,10 +277,10 @@ mod tests {
             plugin: Some(desc.clone()),
         };
 
-        let json = serde_json::to_string(&manifest).unwrap();
-        let decoded: PluginManifestDescribed = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&manifest).expect("expected value");
+        let decoded: PluginManifestDescribed = serde_json::from_str(&json).expect("expected value");
         assert_eq!(decoded.entity_types, vec!["audio-device".to_string()]);
-        assert_eq!(decoded.plugin.unwrap().name, "audio");
+        assert_eq!(decoded.plugin.expect("expected value").name, "audio");
     }
 
     #[test]
@@ -292,11 +292,11 @@ mod tests {
             plugin: None,
         };
 
-        let json = serde_json::to_string(&manifest).unwrap();
+        let json = serde_json::to_string(&manifest).expect("expected value");
         // plugin field should be omitted entirely
         assert!(!json.contains("\"plugin\""));
 
-        let decoded: PluginManifestDescribed = serde_json::from_str(&json).unwrap();
+        let decoded: PluginManifestDescribed = serde_json::from_str(&json).expect("expected value");
         assert!(decoded.plugin.is_none());
     }
 
@@ -305,7 +305,7 @@ mod tests {
         // A basic PluginManifest JSON should deserialize into PluginManifestDescribed
         // with plugin = None (backward compatibility).
         let json = r#"{"entity_types": ["clock"], "name": "Clock"}"#;
-        let decoded: PluginManifestDescribed = serde_json::from_str(json).unwrap();
+        let decoded: PluginManifestDescribed = serde_json::from_str(json).expect("expected value");
         assert_eq!(decoded.entity_types, vec!["clock".to_string()]);
         assert_eq!(decoded.name, "Clock");
         assert!(decoded.plugin.is_none());

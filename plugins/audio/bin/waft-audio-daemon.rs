@@ -943,7 +943,7 @@ mod tests {
     }
 
     fn decode_audio_device(entity: &Entity) -> entity::audio::AudioDevice {
-        serde_json::from_value(entity.data.clone()).unwrap()
+        serde_json::from_value(entity.data.clone()).expect("expected value")
     }
 
     #[test]

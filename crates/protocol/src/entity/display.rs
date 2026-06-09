@@ -371,8 +371,8 @@ mod tests {
             kind: DisplayKind::Backlight,
             connector: None,
         };
-        let json = serde_json::to_value(&display).unwrap();
-        let decoded: Display = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&display).expect("expected value");
+        let decoded: Display = serde_json::from_value(json).expect("expected value");
         assert_eq!(display, decoded);
     }
 
@@ -384,8 +384,8 @@ mod tests {
             kind: DisplayKind::External,
             connector: Some("DP-3".to_string()),
         };
-        let json = serde_json::to_value(&display).unwrap();
-        let decoded: Display = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&display).expect("expected value");
+        let decoded: Display = serde_json::from_value(json).expect("expected value");
         assert_eq!(display, decoded);
     }
 
@@ -396,15 +396,15 @@ mod tests {
             "brightness": 0.8,
             "kind": "Backlight"
         });
-        let decoded: Display = serde_json::from_value(json).unwrap();
+        let decoded: Display = serde_json::from_value(json).expect("expected value");
         assert_eq!(decoded.connector, None);
     }
 
     #[test]
     fn dark_mode_serde_roundtrip() {
         let mode = DarkMode { active: true };
-        let json = serde_json::to_value(mode).unwrap();
-        let decoded: DarkMode = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(mode).expect("expected value");
+        let decoded: DarkMode = serde_json::from_value(json).expect("expected value");
         assert_eq!(mode, decoded);
     }
 
@@ -417,8 +417,8 @@ mod tests {
             presets: vec!["warm".to_string(), "cool".to_string()],
             active_preset: Some("warm".to_string()),
         };
-        let json = serde_json::to_value(&night_light).unwrap();
-        let decoded: NightLight = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&night_light).expect("expected value");
+        let decoded: NightLight = serde_json::from_value(json).expect("expected value");
         assert_eq!(night_light, decoded);
     }
 
@@ -431,8 +431,8 @@ mod tests {
             presets: vec![],
             active_preset: None,
         };
-        let json = serde_json::to_value(&night_light).unwrap();
-        let decoded: NightLight = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&night_light).expect("expected value");
+        let decoded: NightLight = serde_json::from_value(json).expect("expected value");
         assert_eq!(night_light, decoded);
     }
 
@@ -470,8 +470,8 @@ mod tests {
             physical_size: Some([1190, 340]),
             connection_type: "DisplayPort".to_string(),
         };
-        let json = serde_json::to_value(&output).unwrap();
-        let decoded: DisplayOutput = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&output).expect("expected value");
+        let decoded: DisplayOutput = serde_json::from_value(json).expect("expected value");
         assert_eq!(output, decoded);
     }
 
@@ -496,8 +496,8 @@ mod tests {
             physical_size: None,
             connection_type: "HDMI".to_string(),
         };
-        let json = serde_json::to_value(&output).unwrap();
-        let decoded: DisplayOutput = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&output).expect("expected value");
+        let decoded: DisplayOutput = serde_json::from_value(json).expect("expected value");
         assert_eq!(output, decoded);
     }
 
@@ -514,8 +514,8 @@ mod tests {
             DisplayTransform::FlippedRotate270,
         ];
         for variant in &variants {
-            let json = serde_json::to_value(variant).unwrap();
-            let decoded: DisplayTransform = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(variant).expect("expected value");
+            let decoded: DisplayTransform = serde_json::from_value(json).expect("expected value");
             assert_eq!(*variant, decoded);
         }
     }
@@ -534,7 +534,7 @@ mod tests {
         ];
         let serialized: Vec<String> = variants
             .iter()
-            .map(|v| serde_json::to_string(v).unwrap())
+            .map(|v| serde_json::to_string(v).expect("expected value"))
             .collect();
         let unique: std::collections::HashSet<&String> = serialized.iter().collect();
         assert_eq!(
@@ -571,8 +571,8 @@ mod tests {
             refresh_rate: 59.94,
             preferred: true,
         };
-        let json = serde_json::to_value(&mode).unwrap();
-        let decoded: DisplayMode = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&mode).expect("expected value");
+        let decoded: DisplayMode = serde_json::from_value(json).expect("expected value");
         assert_eq!(mode, decoded);
     }
 
@@ -603,16 +603,17 @@ mod tests {
             schema: ConfigSchema { fields },
         };
 
-        let json = serde_json::to_value(&config).unwrap();
-        let decoded: DarkModeAutomationConfig = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&config).expect("expected value");
+        let decoded: DarkModeAutomationConfig =
+            serde_json::from_value(json).expect("expected value");
         assert_eq!(config, decoded);
     }
 
     #[test]
     fn field_state_variants_serialize_distinctly() {
-        let editable = serde_json::to_string(&FieldState::Editable).unwrap();
-        let readonly = serde_json::to_string(&FieldState::ReadOnly).unwrap();
-        let disabled = serde_json::to_string(&FieldState::Disabled).unwrap();
+        let editable = serde_json::to_string(&FieldState::Editable).expect("expected value");
+        let readonly = serde_json::to_string(&FieldState::ReadOnly).expect("expected value");
+        let disabled = serde_json::to_string(&FieldState::Disabled).expect("expected value");
 
         assert_ne!(editable, readonly);
         assert_ne!(readonly, disabled);
@@ -621,8 +622,8 @@ mod tests {
     #[test]
     fn field_type_serde_roundtrip() {
         let float_type = FieldType::Float { decimals: 2 };
-        let json = serde_json::to_string(&float_type).unwrap();
-        let decoded: FieldType = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&float_type).expect("expected value");
+        let decoded: FieldType = serde_json::from_str(&json).expect("expected value");
         assert_eq!(decoded, float_type);
     }
 
@@ -655,8 +656,8 @@ mod tests {
             field_state,
         };
 
-        let json = serde_json::to_value(&config).unwrap();
-        let decoded: NightLightConfig = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&config).expect("expected value");
+        let decoded: NightLightConfig = serde_json::from_value(json).expect("expected value");
         assert_eq!(config, decoded);
     }
 
@@ -678,8 +679,8 @@ mod tests {
             current_segment: None,
             style_tracking_available: false,
         };
-        let json = serde_json::to_value(&manager).unwrap();
-        let decoded: WallpaperManager = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&manager).expect("expected value");
+        let decoded: WallpaperManager = serde_json::from_value(json).expect("expected value");
         assert_eq!(manager, decoded);
     }
 
@@ -701,8 +702,8 @@ mod tests {
             current_segment: Some(DaySegment::Afternoon),
             style_tracking_available: false,
         };
-        let json = serde_json::to_value(&manager).unwrap();
-        let decoded: WallpaperManager = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&manager).expect("expected value");
+        let decoded: WallpaperManager = serde_json::from_value(json).expect("expected value");
         assert_eq!(manager, decoded);
     }
 
@@ -722,7 +723,7 @@ mod tests {
             "wallpaper_dir": "~/wallpapers",
             "sync": true
         });
-        let decoded: WallpaperManager = serde_json::from_value(json).unwrap();
+        let decoded: WallpaperManager = serde_json::from_value(json).expect("expected value");
         assert_eq!(decoded.mode, WallpaperMode::Static);
         assert_eq!(decoded.current_segment, None);
         assert!(!decoded.style_tracking_available);
@@ -735,8 +736,8 @@ mod tests {
             WallpaperMode::StyleTracking,
             WallpaperMode::DayTracking,
         ] {
-            let json = serde_json::to_value(mode).unwrap();
-            let decoded: WallpaperMode = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(mode).expect("expected value");
+            let decoded: WallpaperMode = serde_json::from_value(json).expect("expected value");
             assert_eq!(mode, decoded);
         }
     }
@@ -749,8 +750,8 @@ mod tests {
     #[test]
     fn day_segment_serde_roundtrip() {
         for segment in DaySegment::all() {
-            let json = serde_json::to_value(segment).unwrap();
-            let decoded: DaySegment = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(segment).expect("expected value");
+            let decoded: DaySegment = serde_json::from_value(json).expect("expected value");
             assert_eq!(*segment, decoded);
         }
     }

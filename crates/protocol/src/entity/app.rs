@@ -28,8 +28,8 @@ mod tests {
             keywords: vec![],
             description: None,
         };
-        let json = serde_json::to_value(&app).unwrap();
-        let decoded: App = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&app).expect("expected value");
+        let decoded: App = serde_json::from_value(json).expect("expected value");
         assert_eq!(app, decoded);
     }
 
@@ -42,8 +42,8 @@ mod tests {
             keywords: vec![],
             description: None,
         };
-        let json = serde_json::to_value(&app).unwrap();
-        let decoded: App = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&app).expect("expected value");
+        let decoded: App = serde_json::from_value(json).expect("expected value");
         assert_eq!(app, decoded);
     }
 
@@ -56,8 +56,8 @@ mod tests {
             keywords: vec!["browser".to_string(), "web".to_string()],
             description: Some("Web browser".to_string()),
         };
-        let json = serde_json::to_value(&app).unwrap();
-        let decoded: App = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&app).expect("expected value");
+        let decoded: App = serde_json::from_value(json).expect("expected value");
         assert_eq!(app, decoded);
     }
 
@@ -69,7 +69,7 @@ mod tests {
             "icon": "preferences-system-symbolic",
             "available": true
         });
-        let app: App = serde_json::from_value(json).unwrap();
+        let app: App = serde_json::from_value(json).expect("expected value");
         assert_eq!(app.keywords, Vec::<String>::new());
         assert_eq!(app.description, None);
     }

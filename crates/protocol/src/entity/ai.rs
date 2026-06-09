@@ -28,8 +28,8 @@ mod tests {
             seven_day_utilization: 85.0,
             seven_day_reset_at: 2_000_000_000_000,
         };
-        let json = serde_json::to_value(&usage).unwrap();
-        let decoded: ClaudeUsage = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&usage).expect("expected value");
+        let decoded: ClaudeUsage = serde_json::from_value(json).expect("expected value");
         assert_eq!(usage, decoded);
     }
 }

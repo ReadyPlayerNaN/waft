@@ -101,8 +101,8 @@ mod tests {
             suppress_toast: false,
             ttl: None,
         };
-        let json = serde_json::to_value(&notification).unwrap();
-        let decoded: Notification = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&notification).expect("expected value");
+        let decoded: Notification = serde_json::from_value(json).expect("expected value");
         assert_eq!(notification, decoded);
     }
 
@@ -122,8 +122,8 @@ mod tests {
             suppress_toast: false,
             ttl: None,
         };
-        let json = serde_json::to_value(&notification).unwrap();
-        let decoded: Notification = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&notification).expect("expected value");
+        let decoded: Notification = serde_json::from_value(json).expect("expected value");
         assert_eq!(notification, decoded);
     }
 
@@ -141,7 +141,7 @@ mod tests {
             "created_at_ms": 1707753600000_i64,
             "resident": false
         });
-        let decoded: Notification = serde_json::from_value(json).unwrap();
+        let decoded: Notification = serde_json::from_value(json).expect("expected value");
         assert_eq!(decoded.workspace, None);
         assert!(!decoded.suppress_toast);
     }
@@ -162,8 +162,8 @@ mod tests {
             suppress_toast: false,
             ttl: None,
         };
-        let json = serde_json::to_value(&notification).unwrap();
-        let decoded: Notification = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&notification).expect("expected value");
+        let decoded: Notification = serde_json::from_value(json).expect("expected value");
         assert_eq!(notification, decoded);
     }
 
@@ -183,9 +183,9 @@ mod tests {
             suppress_toast: false,
             ttl: Some(5000),
         };
-        let json = serde_json::to_value(&notification).unwrap();
+        let json = serde_json::to_value(&notification).expect("expected value");
         assert_eq!(json["ttl"], 5000);
-        let decoded: Notification = serde_json::from_value(json).unwrap();
+        let decoded: Notification = serde_json::from_value(json).expect("expected value");
         assert_eq!(decoded.ttl, Some(5000));
     }
 
@@ -205,28 +205,33 @@ mod tests {
             suppress_toast: false,
             ttl: None,
         };
-        let json = serde_json::to_value(&notification).unwrap();
-        assert!(!json.as_object().unwrap().contains_key("ttl"));
+        let json = serde_json::to_value(&notification).expect("expected value");
+        assert!(
+            !json
+                .as_object()
+                .expect("expected value")
+                .contains_key("ttl")
+        );
     }
 
     #[test]
     fn dnd_serde_roundtrip() {
         let dnd = Dnd { active: true };
-        let json = serde_json::to_value(dnd).unwrap();
-        let decoded: Dnd = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(dnd).expect("expected value");
+        let decoded: Dnd = serde_json::from_value(json).expect("expected value");
         assert_eq!(dnd, decoded);
     }
 
     #[test]
     fn recording_serde_roundtrip() {
         let recording = Recording { active: true };
-        let json = serde_json::to_value(recording).unwrap();
-        let decoded: Recording = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(recording).expect("expected value");
+        let decoded: Recording = serde_json::from_value(json).expect("expected value");
         assert_eq!(recording, decoded);
 
         let recording_off = Recording { active: false };
-        let json = serde_json::to_value(recording_off).unwrap();
-        let decoded: Recording = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(recording_off).expect("expected value");
+        let decoded: Recording = serde_json::from_value(json).expect("expected value");
         assert_eq!(recording_off, decoded);
     }
 }

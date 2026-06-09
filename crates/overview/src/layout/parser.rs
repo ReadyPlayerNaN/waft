@@ -356,22 +356,20 @@ mod tests {
     #[test]
     fn parse_error_on_unknown_tag() {
         let xml = r#"<Overview><FooBar /></Overview>"#;
-        let err = parse_layout(xml).unwrap_err();
+        let err = parse_layout(xml).expect_err("expected error");
         assert!(
             err.to_string().contains("Unknown layout tag: FooBar"),
-            "error was: {}",
-            err
+            "error was: {err}"
         );
     }
 
     #[test]
     fn parse_error_on_widget_without_id() {
         let xml = r#"<Overview><Widget /></Overview>"#;
-        let err = parse_layout(xml).unwrap_err();
+        let err = parse_layout(xml).expect_err("expected error");
         assert!(
             err.to_string().contains("missing 'id' attribute"),
-            "error was: {}",
-            err
+            "error was: {err}"
         );
     }
 

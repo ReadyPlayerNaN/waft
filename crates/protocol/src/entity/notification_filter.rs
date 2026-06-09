@@ -134,8 +134,8 @@ mod tests {
             },
         };
 
-        let json = serde_json::to_string(&group).unwrap();
-        let deserialized: NotificationGroup = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&group).expect("expected value");
+        let deserialized: NotificationGroup = serde_json::from_str(&json).expect("expected value");
         assert_eq!(group, deserialized);
     }
 
@@ -160,8 +160,8 @@ mod tests {
             ],
         };
 
-        let json = serde_json::to_string(&combinator).unwrap();
-        let deserialized: RuleCombinator = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&combinator).expect("expected value");
+        let deserialized: RuleCombinator = serde_json::from_str(&json).expect("expected value");
         assert_eq!(combinator, deserialized);
     }
 
@@ -184,8 +184,9 @@ mod tests {
             rules,
         };
 
-        let json = serde_json::to_string(&profile).unwrap();
-        let deserialized: NotificationProfile = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&profile).expect("expected value");
+        let deserialized: NotificationProfile =
+            serde_json::from_str(&json).expect("expected value");
         assert_eq!(profile, deserialized);
     }
 
@@ -196,7 +197,7 @@ mod tests {
             "no_toast": "on",
             "no_sound": "default"
         });
-        let rule: GroupRule = serde_json::from_value(json).unwrap();
+        let rule: GroupRule = serde_json::from_value(json).expect("expected value");
         assert_eq!(rule.sound, None);
     }
 
@@ -208,8 +209,8 @@ mod tests {
             default_normal: "message-new-email".to_string(),
             default_critical: "dialog-warning".to_string(),
         };
-        let json = serde_json::to_value(&entity).unwrap();
-        let decoded: SoundConfigEntity = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&entity).expect("expected value");
+        let decoded: SoundConfigEntity = serde_json::from_value(json).expect("expected value");
         assert_eq!(entity, decoded);
     }
 }

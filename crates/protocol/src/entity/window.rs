@@ -25,8 +25,8 @@ mod tests {
             workspace_id: 1,
             focused: true,
         };
-        let json = serde_json::to_value(&window).unwrap();
-        let decoded: Window = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&window).expect("expected value");
+        let decoded: Window = serde_json::from_value(json).expect("expected value");
         assert_eq!(window, decoded);
     }
 
@@ -37,7 +37,7 @@ mod tests {
             "app_id": "firefox",
             "workspace_id": 2
         });
-        let window: Window = serde_json::from_value(json).unwrap();
+        let window: Window = serde_json::from_value(json).expect("expected value");
         assert!(!window.focused);
     }
 }

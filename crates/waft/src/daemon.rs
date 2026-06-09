@@ -714,8 +714,7 @@ impl WaftDaemon {
                 .await
             {
                 warn!(
-                    "failed to send initial SubscriberCountChanged({}, {}) to {}: {e}",
-                    entity_type, count, plugin_name
+                    "failed to send initial SubscriberCountChanged({entity_type}, {count}) to {plugin_name}: {e}"
                 );
             }
         }

@@ -178,7 +178,7 @@ pub async fn scan_wifi_networks(
     }
 
     let mut result: Vec<_> = by_ssid.into_values().collect();
-    result.sort_by(|a, b| b.strength.cmp(&a.strength));
+    result.sort_by_key(|ap| std::cmp::Reverse(ap.strength));
     Ok(result)
 }
 
@@ -189,9 +189,8 @@ async fn wifi_saved_connections(
     let mut result = HashMap::new();
 
     for conn in saved {
-        let ssid = match wifi_saved_ssid(&conn) {
-            Some(ssid) => ssid,
-            None => continue,
+        let Some(ssid) = wifi_saved_ssid(&conn) else {
+            continue;
         };
 
         let raw = match nm.get_saved_connection_raw(&conn.uuid).await {

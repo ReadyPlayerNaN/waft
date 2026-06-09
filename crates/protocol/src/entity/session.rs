@@ -89,8 +89,8 @@ mod tests {
             user_name: Some("alice".to_string()),
             screen_name: Some("Alice Smith".to_string()),
         };
-        let json = serde_json::to_value(&session).unwrap();
-        let decoded: Session = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&session).expect("expected value");
+        let decoded: Session = serde_json::from_value(json).expect("expected value");
         assert_eq!(session, decoded);
     }
 
@@ -100,8 +100,8 @@ mod tests {
             user_name: None,
             screen_name: None,
         };
-        let json = serde_json::to_value(&session).unwrap();
-        let decoded: Session = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&session).expect("expected value");
+        let decoded: Session = serde_json::from_value(json).expect("expected value");
         assert_eq!(session, decoded);
     }
 
@@ -114,8 +114,8 @@ mod tests {
             enabled: true,
             sub_state: "running".to_string(),
         };
-        let json = serde_json::to_value(&service).unwrap();
-        let decoded: UserService = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&service).expect("expected value");
+        let decoded: UserService = serde_json::from_value(json).expect("expected value");
         assert_eq!(service, decoded);
     }
 
@@ -128,16 +128,16 @@ mod tests {
             enabled: false,
             sub_state: "dead".to_string(),
         };
-        let json = serde_json::to_value(&service).unwrap();
-        let decoded: UserService = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&service).expect("expected value");
+        let decoded: UserService = serde_json::from_value(json).expect("expected value");
         assert_eq!(service, decoded);
     }
 
     #[test]
     fn sleep_inhibitor_serde_roundtrip() {
         let inhibitor = SleepInhibitor { active: true };
-        let json = serde_json::to_value(inhibitor).unwrap();
-        let decoded: SleepInhibitor = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(inhibitor).expect("expected value");
+        let decoded: SleepInhibitor = serde_json::from_value(json).expect("expected value");
         assert_eq!(inhibitor, decoded);
     }
 
@@ -148,15 +148,15 @@ mod tests {
             RestartPolicy::OnFailure,
             RestartPolicy::Always,
         ] {
-            let json = serde_json::to_value(policy).unwrap();
-            let decoded: RestartPolicy = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(policy).expect("expected value");
+            let decoded: RestartPolicy = serde_json::from_value(json).expect("expected value");
             assert_eq!(policy, decoded);
         }
     }
 
     #[test]
     fn restart_policy_kebab_case() {
-        let json = serde_json::to_value(RestartPolicy::OnFailure).unwrap();
+        let json = serde_json::to_value(RestartPolicy::OnFailure).expect("expected value");
         assert_eq!(json, serde_json::json!("on-failure"));
     }
 
@@ -166,8 +166,8 @@ mod tests {
             spec: "*-*-* 03:00:00".to_string(),
             persistent: true,
         };
-        let json = serde_json::to_value(&schedule).unwrap();
-        let decoded: ScheduleKind = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&schedule).expect("expected value");
+        let decoded: ScheduleKind = serde_json::from_value(json).expect("expected value");
         assert_eq!(schedule, decoded);
     }
 
@@ -178,8 +178,8 @@ mod tests {
             on_startup_sec: Some(60),
             on_unit_active_sec: Some(3600),
         };
-        let json = serde_json::to_value(&schedule).unwrap();
-        let decoded: ScheduleKind = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&schedule).expect("expected value");
+        let decoded: ScheduleKind = serde_json::from_value(json).expect("expected value");
         assert_eq!(schedule, decoded);
     }
 
@@ -190,8 +190,8 @@ mod tests {
             on_startup_sec: None,
             on_unit_active_sec: Some(1800),
         };
-        let json = serde_json::to_value(&schedule).unwrap();
-        let decoded: ScheduleKind = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&schedule).expect("expected value");
+        let decoded: ScheduleKind = serde_json::from_value(json).expect("expected value");
         assert_eq!(schedule, decoded);
     }
 
@@ -217,8 +217,8 @@ mod tests {
             cpu_quota: Some("50%".to_string()),
             memory_limit: Some("512M".to_string()),
         };
-        let json = serde_json::to_value(&timer).unwrap();
-        let decoded: UserTimer = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&timer).expect("expected value");
+        let decoded: UserTimer = serde_json::from_value(json).expect("expected value");
         assert_eq!(timer, decoded);
     }
 
@@ -245,8 +245,8 @@ mod tests {
             cpu_quota: None,
             memory_limit: None,
         };
-        let json = serde_json::to_value(&timer).unwrap();
-        let decoded: UserTimer = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&timer).expect("expected value");
+        let decoded: UserTimer = serde_json::from_value(json).expect("expected value");
         assert_eq!(timer, decoded);
     }
 }

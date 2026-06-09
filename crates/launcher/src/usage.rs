@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn load_missing_file_returns_empty_map() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("expected value");
         let path = dir.path().join("does-not-exist.json");
         let map = load_usage_from(&path);
         assert!(map.is_empty());
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn save_and_load_roundtrip() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("expected value");
         let path = dir.path().join("usage.json");
 
         let mut map = UsageMap::new();
@@ -83,7 +83,7 @@ mod tests {
             },
         );
 
-        save_usage_to(&path, &map).unwrap();
+        save_usage_to(&path, &map).expect("expected value");
         let loaded = load_usage_from(&path);
 
         assert_eq!(loaded["xdg-apps/app/firefox"].launches, 5);
@@ -101,10 +101,10 @@ mod tests {
 
     #[test]
     fn save_creates_parent_dirs() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("expected value");
         let path = dir.path().join("waft").join("nested").join("usage.json");
         let map = UsageMap::new();
-        save_usage_to(&path, &map).unwrap();
+        save_usage_to(&path, &map).expect("expected value");
         assert!(path.exists());
     }
 }

@@ -20,8 +20,8 @@ mod tests {
             time: "14:30".to_string(),
             date: "Thursday, 12 Feb 2026".to_string(),
         };
-        let json = serde_json::to_value(&clock).unwrap();
-        let decoded: Clock = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&clock).expect("expected value");
+        let decoded: Clock = serde_json::from_value(json).expect("expected value");
         assert_eq!(clock, decoded);
     }
 }

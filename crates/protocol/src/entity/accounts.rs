@@ -90,8 +90,8 @@ mod tests {
             ],
             locked: false,
         };
-        let json = serde_json::to_value(&account).unwrap();
-        let decoded: OnlineAccount = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&account).expect("expected value");
+        let decoded: OnlineAccount = serde_json::from_value(json).expect("expected value");
         assert_eq!(account, decoded);
     }
 
@@ -105,8 +105,8 @@ mod tests {
             services: vec![],
             locked: false,
         };
-        let json = serde_json::to_value(&account).unwrap();
-        let decoded: OnlineAccount = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&account).expect("expected value");
+        let decoded: OnlineAccount = serde_json::from_value(json).expect("expected value");
         assert_eq!(account, decoded);
     }
 
@@ -123,8 +123,8 @@ mod tests {
             }],
             locked: true,
         };
-        let json = serde_json::to_value(&account).unwrap();
-        let decoded: OnlineAccount = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&account).expect("expected value");
+        let decoded: OnlineAccount = serde_json::from_value(json).expect("expected value");
         assert_eq!(account, decoded);
     }
 
@@ -134,8 +134,8 @@ mod tests {
             name: "calendar".to_string(),
             enabled: true,
         };
-        let json = serde_json::to_value(&service).unwrap();
-        let decoded: ServiceInfo = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&service).expect("expected value");
+        let decoded: ServiceInfo = serde_json::from_value(json).expect("expected value");
         assert_eq!(service, decoded);
     }
 
@@ -146,8 +146,8 @@ mod tests {
             AccountStatus::CredentialsNeeded,
             AccountStatus::NeedsAttention,
         ] {
-            let json = serde_json::to_value(&status).unwrap();
-            let decoded: AccountStatus = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(&status).expect("expected value");
+            let decoded: AccountStatus = serde_json::from_value(json).expect("expected value");
             assert_eq!(status, decoded);
         }
     }
@@ -159,8 +159,8 @@ mod tests {
             provider_name: "Google".to_string(),
             icon_name: Some("goa-account-google".to_string()),
         };
-        let json = serde_json::to_value(&provider).unwrap();
-        let decoded: OnlineAccountProvider = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&provider).expect("expected value");
+        let decoded: OnlineAccountProvider = serde_json::from_value(json).expect("expected value");
         assert_eq!(provider, decoded);
     }
 
@@ -171,8 +171,8 @@ mod tests {
             provider_name: "ownCloud".to_string(),
             icon_name: None,
         };
-        let json = serde_json::to_value(&provider).unwrap();
-        let decoded: OnlineAccountProvider = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&provider).expect("expected value");
+        let decoded: OnlineAccountProvider = serde_json::from_value(json).expect("expected value");
         assert_eq!(provider, decoded);
     }
 }

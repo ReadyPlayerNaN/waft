@@ -118,20 +118,20 @@ mod tests {
 
     #[test]
     fn parse_reset_at_utc() {
-        let ts = parse_reset_at("2025-03-11T14:00:00Z").unwrap();
+        let ts = parse_reset_at("2025-03-11T14:00:00Z").expect("expected value");
         assert_eq!(ts, 1_741_701_600_000);
     }
 
     #[test]
     fn parse_reset_at_midnight() {
-        let ts = parse_reset_at("1970-01-01T00:00:00Z").unwrap();
+        let ts = parse_reset_at("1970-01-01T00:00:00Z").expect("expected value");
         assert_eq!(ts, 0);
     }
 
     #[test]
     fn parse_reset_at_with_offset_and_subseconds() {
         // Actual format returned by the API: sub-second precision + numeric offset
-        let ts = parse_reset_at("2025-03-11T14:00:00.224373+00:00").unwrap();
+        let ts = parse_reset_at("2025-03-11T14:00:00.224373+00:00").expect("expected value");
         assert_eq!(ts, 1_741_701_600_000);
     }
 
@@ -147,7 +147,7 @@ mod tests {
             "iguana_necktie":null,
             "extra_usage":{"is_enabled":true,"monthly_limit":4250,"used_credits":2850.0,"utilization":67.05882352941175}
         }"#;
-        let data: UsageResponse = serde_json::from_str(json).unwrap();
+        let data: UsageResponse = serde_json::from_str(json).expect("expected value");
         assert_eq!(data.five_hour.utilization, 0.0);
         assert!(data.five_hour.resets_at.is_none());
         assert_eq!(data.seven_day.utilization, 42.0);

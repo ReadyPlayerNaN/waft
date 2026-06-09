@@ -194,7 +194,8 @@ impl State {
 
         // Sort notifications within each group by creation time (newest first)
         for notifications in grouped.values_mut() {
-            notifications.sort_by(|a, b| b.0.created_at.cmp(&a.0.created_at));
+            notifications
+                .sort_by_key(|(notification, _)| std::cmp::Reverse(notification.created_at));
         }
 
         grouped

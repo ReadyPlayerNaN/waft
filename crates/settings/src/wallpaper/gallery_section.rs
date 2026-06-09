@@ -820,7 +820,14 @@ mod tests {
         let dir = std::env::temp_dir().join("waft-test-unique-dest");
         let _ = std::fs::create_dir_all(&dir);
         let result = unique_dest_path("image.png", &dir);
-        assert_eq!(result.file_name().unwrap().to_str().unwrap(), "image.png");
+        assert_eq!(
+            result
+                .file_name()
+                .expect("expected value")
+                .to_str()
+                .expect("expected value"),
+            "image.png"
+        );
         let _ = std::fs::remove_dir(&dir);
     }
 
@@ -831,7 +838,14 @@ mod tests {
         std::fs::write(dir.join("image.png"), b"test").expect("write file");
 
         let result = unique_dest_path("image.png", &dir);
-        assert_eq!(result.file_name().unwrap().to_str().unwrap(), "image_1.png");
+        assert_eq!(
+            result
+                .file_name()
+                .expect("expected value")
+                .to_str()
+                .expect("expected value"),
+            "image_1.png"
+        );
 
         // Cleanup
         let _ = std::fs::remove_file(dir.join("image.png"));

@@ -36,8 +36,8 @@ mod tests {
             condition: WeatherCondition::PartlyCloudy,
             day: true,
         };
-        let json = serde_json::to_value(&weather).unwrap();
-        let decoded: Weather = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&weather).expect("expected value");
+        let decoded: Weather = serde_json::from_value(json).expect("expected value");
         assert_eq!(weather, decoded);
     }
 
@@ -55,8 +55,8 @@ mod tests {
             WeatherCondition::Thunderstorm,
         ];
         for condition in conditions {
-            let json = serde_json::to_value(condition).unwrap();
-            let decoded: WeatherCondition = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(condition).expect("expected value");
+            let decoded: WeatherCondition = serde_json::from_value(json).expect("expected value");
             assert_eq!(condition, decoded);
         }
     }

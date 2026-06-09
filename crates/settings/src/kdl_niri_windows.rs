@@ -622,21 +622,21 @@ mod tests {
 
     fn write_config(dir: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
         let path = dir.path().join("config.kdl");
-        std::fs::write(&path, content).unwrap();
+        std::fs::write(&path, content).expect("expected value");
         path
     }
 
     #[test]
     fn load_empty_config_returns_defaults() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("nonexistent.kdl");
-        let config = load_layout_config(&path).unwrap();
+        let config = load_layout_config(&path).expect("expected value");
         assert_eq!(config, NiriLayoutConfig::default());
     }
 
     #[test]
     fn load_populated_config_parses_all_fields() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = write_config(
             &dir,
             r##"
@@ -688,7 +688,7 @@ layout {
 "##,
         );
 
-        let config = load_layout_config(&path).unwrap();
+        let config = load_layout_config(&path).expect("expected value");
         assert_eq!(config.gaps, 8);
 
         assert!(config.focus_ring.enabled);
@@ -731,7 +731,7 @@ layout {
 
     #[test]
     fn save_round_trips_through_reload() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
 
         let config = NiriLayoutConfig {
@@ -777,14 +777,14 @@ layout {
             },
         };
 
-        save_layout_config(&path, &config).unwrap();
-        let loaded = load_layout_config(&path).unwrap();
+        save_layout_config(&path, &config).expect("expected value");
+        let loaded = load_layout_config(&path).expect("expected value");
         assert_eq!(config, loaded);
     }
 
     #[test]
     fn save_preserves_unrelated_layout_nodes() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = write_config(
             &dir,
             r#"
@@ -809,9 +809,9 @@ binds {
         );
 
         let config = NiriLayoutConfig::default();
-        save_layout_config(&path, &config).unwrap();
+        save_layout_config(&path, &config).expect("expected value");
 
-        let content = std::fs::read_to_string(&path).unwrap();
+        let content = std::fs::read_to_string(&path).expect("expected value");
         assert!(
             content.contains("preset-column-widths"),
             "preset-column-widths lost"
@@ -829,62 +829,62 @@ binds {
 
     #[test]
     fn prefer_no_csd_round_trips() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
 
         // Initially absent
-        assert!(!load_prefer_no_csd(&path).unwrap());
+        assert!(!load_prefer_no_csd(&path).expect("expected value"));
 
         // Enable
-        save_prefer_no_csd(&path, true).unwrap();
-        assert!(load_prefer_no_csd(&path).unwrap());
+        save_prefer_no_csd(&path, true).expect("expected value");
+        assert!(load_prefer_no_csd(&path).expect("expected value"));
 
         // Disable
-        save_prefer_no_csd(&path, false).unwrap();
-        assert!(!load_prefer_no_csd(&path).unwrap());
+        save_prefer_no_csd(&path, false).expect("expected value");
+        assert!(!load_prefer_no_csd(&path).expect("expected value"));
     }
 
     #[test]
     fn prefer_no_csd_preserves_other_content() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = write_config(&dir, "binds {\n}\n");
 
-        save_prefer_no_csd(&path, true).unwrap();
-        let content = std::fs::read_to_string(&path).unwrap();
+        save_prefer_no_csd(&path, true).expect("expected value");
+        let content = std::fs::read_to_string(&path).expect("expected value");
         assert!(content.contains("binds"));
         assert!(content.contains("prefer-no-csd"));
     }
 
     #[test]
     fn background_color_set_and_remove() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = dir.path().join("config.kdl");
 
         // Initially absent
-        assert_eq!(load_background_color(&path).unwrap(), None);
+        assert_eq!(load_background_color(&path).expect("expected value"), None);
 
         // Set
-        save_background_color(&path, Some("#ff5500")).unwrap();
+        save_background_color(&path, Some("#ff5500")).expect("expected value");
         assert_eq!(
-            load_background_color(&path).unwrap(),
+            load_background_color(&path).expect("expected value"),
             Some("#ff5500".to_string())
         );
 
         // Update
-        save_background_color(&path, Some("#00ff00")).unwrap();
+        save_background_color(&path, Some("#00ff00")).expect("expected value");
         assert_eq!(
-            load_background_color(&path).unwrap(),
+            load_background_color(&path).expect("expected value"),
             Some("#00ff00".to_string())
         );
 
         // Remove
-        save_background_color(&path, None).unwrap();
-        assert_eq!(load_background_color(&path).unwrap(), None);
+        save_background_color(&path, None).expect("expected value");
+        assert_eq!(load_background_color(&path).expect("expected value"), None);
     }
 
     #[test]
     fn background_color_preserves_layout_siblings() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = write_config(
             &dir,
             r#"
@@ -894,15 +894,15 @@ layout {
 "#,
         );
 
-        save_background_color(&path, Some("#123456")).unwrap();
-        let content = std::fs::read_to_string(&path).unwrap();
+        save_background_color(&path, Some("#123456")).expect("expected value");
+        let content = std::fs::read_to_string(&path).expect("expected value");
         assert!(content.contains("gaps"), "gaps node lost");
         assert!(content.contains("#123456"));
     }
 
     #[test]
     fn load_defaults_for_missing_sections() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("expected value");
         let path = write_config(
             &dir,
             r#"
@@ -912,7 +912,7 @@ layout {
 "#,
         );
 
-        let config = load_layout_config(&path).unwrap();
+        let config = load_layout_config(&path).expect("expected value");
         assert_eq!(config.gaps, 32);
         // Everything else should be defaults
         assert_eq!(config.focus_ring, FocusRingConfig::default());

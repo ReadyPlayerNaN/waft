@@ -181,8 +181,8 @@ mod tests {
             public_ip: Some("203.0.113.42".to_string()),
             kind: AdapterKind::Wired,
         };
-        let json = serde_json::to_value(&adapter).unwrap();
-        let decoded: NetworkAdapter = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&adapter).expect("expected value");
+        let decoded: NetworkAdapter = serde_json::from_value(json).expect("expected value");
         assert_eq!(adapter, decoded);
     }
 
@@ -197,8 +197,8 @@ mod tests {
             public_ip: None,
             kind: AdapterKind::Wireless,
         };
-        let json = serde_json::to_value(&adapter).unwrap();
-        let decoded: NetworkAdapter = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&adapter).expect("expected value");
+        let decoded: NetworkAdapter = serde_json::from_value(json).expect("expected value");
         assert_eq!(adapter, decoded);
     }
 
@@ -217,8 +217,8 @@ mod tests {
             dns_servers: None,
             ip_method: None,
         };
-        let json = serde_json::to_value(&network).unwrap();
-        let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&network).expect("expected value");
+        let decoded: WiFiNetwork = serde_json::from_value(json).expect("expected value");
         assert_eq!(network, decoded);
     }
 
@@ -237,8 +237,8 @@ mod tests {
             dns_servers: Some(vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()]),
             ip_method: Some(IpMethod::Auto),
         };
-        let json = serde_json::to_value(&network).unwrap();
-        let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&network).expect("expected value");
+        let decoded: WiFiNetwork = serde_json::from_value(json).expect("expected value");
         assert_eq!(network, decoded);
     }
 
@@ -251,7 +251,7 @@ mod tests {
             "known": false,
             "connected": false
         });
-        let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
+        let decoded: WiFiNetwork = serde_json::from_value(json).expect("expected value");
         assert_eq!(decoded.security_type, SecurityType::Open);
         assert!(!decoded.connecting);
         assert_eq!(decoded.autoconnect, None);
@@ -271,8 +271,8 @@ mod tests {
             SecurityType::Enterprise,
         ];
         for st in types {
-            let json = serde_json::to_value(st).unwrap();
-            let decoded: SecurityType = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(st).expect("expected value");
+            let decoded: SecurityType = serde_json::from_value(json).expect("expected value");
             assert_eq!(st, decoded);
         }
     }
@@ -292,8 +292,8 @@ mod tests {
             dns_servers: None,
             ip_method: None,
         };
-        let json = serde_json::to_value(&network).unwrap();
-        let decoded: WiFiNetwork = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&network).expect("expected value");
+        let decoded: WiFiNetwork = serde_json::from_value(json).expect("expected value");
         assert_eq!(network, decoded);
         assert!(decoded.connecting);
     }
@@ -305,8 +305,8 @@ mod tests {
             uuid: "abc-123".to_string(),
             active: true,
         };
-        let json = serde_json::to_value(&connection).unwrap();
-        let decoded: EthernetConnection = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&connection).expect("expected value");
+        let decoded: EthernetConnection = serde_json::from_value(json).expect("expected value");
         assert_eq!(connection, decoded);
     }
 
@@ -317,8 +317,8 @@ mod tests {
             state: VpnState::Connected,
             vpn_type: VpnType::Vpn,
         };
-        let json = serde_json::to_value(&vpn).unwrap();
-        let decoded: Vpn = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&vpn).expect("expected value");
+        let decoded: Vpn = serde_json::from_value(json).expect("expected value");
         assert_eq!(vpn, decoded);
     }
 
@@ -329,8 +329,8 @@ mod tests {
             state: VpnState::Disconnected,
             vpn_type: VpnType::Wireguard,
         };
-        let json = serde_json::to_value(&vpn).unwrap();
-        let decoded: Vpn = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&vpn).expect("expected value");
+        let decoded: Vpn = serde_json::from_value(json).expect("expected value");
         assert_eq!(vpn, decoded);
     }
 
@@ -340,7 +340,7 @@ mod tests {
             "name": "Legacy VPN",
             "state": "Connected"
         });
-        let decoded: Vpn = serde_json::from_value(json).unwrap();
+        let decoded: Vpn = serde_json::from_value(json).expect("expected value");
         assert_eq!(decoded.vpn_type, VpnType::Vpn);
     }
 
@@ -355,8 +355,8 @@ mod tests {
             public_ip: None,
             kind: AdapterKind::Tethering,
         };
-        let json = serde_json::to_value(&adapter).unwrap();
-        let decoded: NetworkAdapter = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&adapter).expect("expected value");
+        let decoded: NetworkAdapter = serde_json::from_value(json).expect("expected value");
         assert_eq!(adapter, decoded);
     }
 
@@ -367,8 +367,8 @@ mod tests {
             uuid: "abc-123-def".to_string(),
             active: false,
         };
-        let json = serde_json::to_value(&conn).unwrap();
-        let decoded: TetheringConnection = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&conn).expect("expected value");
+        let decoded: TetheringConnection = serde_json::from_value(json).expect("expected value");
         assert_eq!(conn, decoded);
     }
 
@@ -381,8 +381,8 @@ mod tests {
             VpnState::Disconnecting,
         ];
         for state in states {
-            let json = serde_json::to_value(state).unwrap();
-            let decoded: VpnState = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(state).expect("expected value");
+            let decoded: VpnState = serde_json::from_value(json).expect("expected value");
             assert_eq!(state, decoded);
         }
     }
@@ -397,8 +397,8 @@ mod tests {
             MeteredState::GuessNo,
         ];
         for state in states {
-            let json = serde_json::to_value(state).unwrap();
-            let decoded: MeteredState = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(state).expect("expected value");
+            let decoded: MeteredState = serde_json::from_value(json).expect("expected value");
             assert_eq!(state, decoded);
         }
     }
@@ -412,8 +412,8 @@ mod tests {
             IpMethod::Disabled,
         ];
         for method in methods {
-            let json = serde_json::to_value(method).unwrap();
-            let decoded: IpMethod = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(method).expect("expected value");
+            let decoded: IpMethod = serde_json::from_value(json).expect("expected value");
             assert_eq!(method, decoded);
         }
     }

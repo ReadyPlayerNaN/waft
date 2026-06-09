@@ -56,8 +56,8 @@ mod tests {
             state: PluginState::Running,
             entity_types: vec!["clock".to_string()],
         };
-        let json = serde_json::to_value(&status).unwrap();
-        let decoded: PluginStatus = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&status).expect("expected value");
+        let decoded: PluginStatus = serde_json::from_value(json).expect("expected value");
         assert_eq!(status, decoded);
     }
 
@@ -70,8 +70,8 @@ mod tests {
             PluginState::Failed,
         ];
         for state in states {
-            let json = serde_json::to_value(&state).unwrap();
-            let decoded: PluginState = serde_json::from_value(json).unwrap();
+            let json = serde_json::to_value(&state).expect("expected value");
+            let decoded: PluginState = serde_json::from_value(json).expect("expected value");
             assert_eq!(state, decoded);
         }
     }
@@ -79,19 +79,19 @@ mod tests {
     #[test]
     fn state_serializes_kebab_case() {
         assert_eq!(
-            serde_json::to_value(PluginState::Available).unwrap(),
+            serde_json::to_value(PluginState::Available).expect("expected value"),
             serde_json::json!("available"),
         );
         assert_eq!(
-            serde_json::to_value(PluginState::Running).unwrap(),
+            serde_json::to_value(PluginState::Running).expect("expected value"),
             serde_json::json!("running"),
         );
         assert_eq!(
-            serde_json::to_value(PluginState::Stopped).unwrap(),
+            serde_json::to_value(PluginState::Stopped).expect("expected value"),
             serde_json::json!("stopped"),
         );
         assert_eq!(
-            serde_json::to_value(PluginState::Failed).unwrap(),
+            serde_json::to_value(PluginState::Failed).expect("expected value"),
             serde_json::json!("failed"),
         );
     }
@@ -114,8 +114,8 @@ mod tests {
                 "bluetooth-device".to_string(),
             ],
         };
-        let json = serde_json::to_value(&status).unwrap();
-        let decoded: PluginStatus = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&status).expect("expected value");
+        let decoded: PluginStatus = serde_json::from_value(json).expect("expected value");
         assert_eq!(status, decoded);
     }
 }

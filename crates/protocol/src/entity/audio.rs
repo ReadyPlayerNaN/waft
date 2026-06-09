@@ -147,8 +147,8 @@ mod tests {
             virtual_device: false,
             sink_name: None,
         };
-        let json = serde_json::to_value(&device).unwrap();
-        let decoded: AudioDevice = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&device).expect("expected value");
+        let decoded: AudioDevice = serde_json::from_value(json).expect("expected value");
         assert_eq!(device, decoded);
     }
 
@@ -165,8 +165,8 @@ mod tests {
             virtual_device: false,
             sink_name: None,
         };
-        let json = serde_json::to_value(&device).unwrap();
-        let decoded: AudioDevice = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&device).expect("expected value");
+        let decoded: AudioDevice = serde_json::from_value(json).expect("expected value");
         assert_eq!(device, decoded);
     }
 
@@ -227,8 +227,8 @@ mod tests {
                 }],
             }],
         };
-        let json = serde_json::to_value(&card).unwrap();
-        let decoded: AudioCard = serde_json::from_value(json).unwrap();
+        let json = serde_json::to_value(&card).expect("expected value");
+        let decoded: AudioCard = serde_json::from_value(json).expect("expected value");
         assert_eq!(card, decoded);
     }
 
@@ -241,7 +241,7 @@ mod tests {
             "sinks": [],
             "sources": []
         });
-        let card: AudioCard = serde_json::from_value(json).unwrap();
+        let card: AudioCard = serde_json::from_value(json).expect("expected value");
         assert_eq!(card.connection_type, None);
         assert!(card.sinks.is_empty());
         assert!(card.sources.is_empty());

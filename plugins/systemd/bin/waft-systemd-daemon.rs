@@ -1501,21 +1501,19 @@ async fn timer_path_relevant(
         return false;
     }
 
-    let unit_proxy = match zbus::Proxy::new(
+    let Ok(unit_proxy) = zbus::Proxy::new(
         conn,
         SYSTEMD1_DESTINATION,
         obj_path,
         "org.freedesktop.systemd1.Unit",
     )
     .await
-    {
-        Ok(p) => p,
-        Err(_) => return false,
+    else {
+        return false;
     };
 
-    let unit_name: String = match unit_proxy.get_property("Id").await {
-        Ok(id) => id,
-        Err(_) => return false,
+    let Ok(unit_name) = unit_proxy.get_property::<String>("Id").await else {
+        return false;
     };
 
     timer_unit_relevant(timers, &unit_name)
@@ -1995,6 +1993,22 @@ async fn handle_unit_new(
     true
 }
 
+fn main() -> Result<()> {
+    PluginRunner::new(
+        "systemd",
+        &[
+            entity::session::SESSION_ENTITY_TYPE,
+            entity::session::USER_SERVICE_ENTITY_TYPE,
+            entity::session::USER_TIMER_ENTITY_TYPE,
+        ],
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
+        let plugin = SystemdPlugin::new(notifier).await?;
+        Ok(plugin)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2040,12 +2054,12 @@ mod tests {
     ) -> (bool, bool) {
         let urn_id = unit_to_urn_id(unit_name);
         let mut changed = false;
-        if let Some(service) = services.get_mut(&urn_id) {
-            if service.active_state != "inactive" || service.sub_state != "dead" {
-                service.active_state = "inactive".to_string();
-                service.sub_state = "dead".to_string();
-                changed = true;
-            }
+        if let Some(service) = services.get_mut(&urn_id)
+            && (service.active_state != "inactive" || service.sub_state != "dead")
+        {
+            service.active_state = "inactive".to_string();
+            service.sub_state = "dead".to_string();
+            changed = true;
         }
         let still_present = services.contains_key(&urn_id);
         (changed, still_present)
@@ -2234,11 +2248,11 @@ mod tests {
     ) -> bool {
         let mut any_changed = false;
         for (urn_id, enabled) in updates {
-            if let Some(service) = services.get_mut(*urn_id) {
-                if service.enabled != *enabled {
-                    service.enabled = *enabled;
-                    any_changed = true;
-                }
+            if let Some(service) = services.get_mut(*urn_id)
+                && service.enabled != *enabled
+            {
+                service.enabled = *enabled;
+                any_changed = true;
             }
         }
         any_changed
@@ -2719,20 +2733,4 @@ OnUnitActiveSec=1h
         assert!(!content.contains("MemoryLimit"));
         assert!(!content.contains("After="));
     }
-}
-
-fn main() -> Result<()> {
-    PluginRunner::new(
-        "systemd",
-        &[
-            entity::session::SESSION_ENTITY_TYPE,
-            entity::session::USER_SERVICE_ENTITY_TYPE,
-            entity::session::USER_TIMER_ENTITY_TYPE,
-        ],
-    )
-    .i18n(i18n(), "plugin-name", "plugin-description")
-    .run(|notifier| async move {
-        let plugin = SystemdPlugin::new(notifier).await?;
-        Ok(plugin)
-    })
 }
