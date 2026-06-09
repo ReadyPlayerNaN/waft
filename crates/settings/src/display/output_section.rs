@@ -23,9 +23,7 @@ use adw::prelude::*;
 use crate::i18n::t;
 use crate::i18n::t_args;
 use waft_protocol::Urn;
-use waft_protocol::entity::display::{
-    DisplayMode, DisplayOutput, DisplayTransform,
-};
+use waft_protocol::entity::display::{DisplayMode, DisplayOutput, DisplayTransform};
 
 /// Pending (uncommitted) display output changes for one URN.
 #[derive(Default)]
@@ -180,9 +178,7 @@ pub(crate) fn update_output_group(
         widgets.enable_row.set_active(output.enabled);
     }
     // Desensitize if this is the last active output
-    let effective_enabled = pending
-        .and_then(|p| p.enabled)
-        .unwrap_or(output.enabled);
+    let effective_enabled = pending.and_then(|p| p.enabled).unwrap_or(output.enabled);
     widgets
         .enable_row
         .set_sensitive(!(effective_enabled && enabled_count <= 1));
@@ -211,9 +207,7 @@ pub(crate) fn update_output_group(
         // Find which resolution matches current mode
         let current_res_idx = resolutions
             .iter()
-            .position(|&(w, h)| {
-                w == output.current_mode.width && h == output.current_mode.height
-            })
+            .position(|&(w, h)| w == output.current_mode.width && h == output.current_mode.height)
             .unwrap_or(0);
 
         // Update resolution combo
@@ -221,12 +215,13 @@ pub(crate) fn update_output_group(
             .iter()
             .map(|&(w, h)| format_resolution(w, h))
             .collect();
-        let res_str_refs: Vec<&str> = res_strings.iter().map(std::string::String::as_str).collect();
+        let res_str_refs: Vec<&str> = res_strings
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let res_list = gtk::StringList::new(&res_str_refs);
         widgets.resolution_row.set_model(Some(&res_list));
-        widgets
-            .resolution_row
-            .set_selected(current_res_idx as u32);
+        widgets.resolution_row.set_selected(current_res_idx as u32);
 
         // Update refresh rate combo for current resolution
         if let Some(&(w, h)) = resolutions.get(current_res_idx) {
@@ -242,7 +237,10 @@ pub(crate) fn update_output_group(
                     format_refresh_rate(rate, preferred)
                 })
                 .collect();
-            let rate_str_refs: Vec<&str> = rate_strings.iter().map(std::string::String::as_str).collect();
+            let rate_str_refs: Vec<&str> = rate_strings
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             let rate_list = gtk::StringList::new(&rate_str_refs);
             widgets.refresh_rate_row.set_model(Some(&rate_list));
 
@@ -296,8 +294,7 @@ pub(crate) fn create_output_rows(
 
     let updating = Rc::new(Cell::new(false));
     let resolutions_rc: Rc<RefCell<Vec<(u32, u32)>>> = Rc::new(RefCell::new(Vec::new()));
-    let rate_mode_indices_rc: Rc<RefCell<Vec<Vec<usize>>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    let rate_mode_indices_rc: Rc<RefCell<Vec<Vec<usize>>>> = Rc::new(RefCell::new(Vec::new()));
 
     // --- Enable/Disable ---
     let enable_row = adw::SwitchRow::builder()
@@ -349,16 +346,17 @@ pub(crate) fn create_output_rows(
 
     let current_res_idx = resolutions
         .iter()
-        .position(|&(w, h)| {
-            w == output.current_mode.width && h == output.current_mode.height
-        })
+        .position(|&(w, h)| w == output.current_mode.width && h == output.current_mode.height)
         .unwrap_or(0);
 
     let res_strings: Vec<String> = resolutions
         .iter()
         .map(|&(w, h)| format_resolution(w, h))
         .collect();
-    let res_str_refs: Vec<&str> = res_strings.iter().map(std::string::String::as_str).collect();
+    let res_str_refs: Vec<&str> = res_strings
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
 
     let resolution_row = adw::ComboRow::builder()
         .title(t("display-resolution"))
@@ -386,7 +384,10 @@ pub(crate) fn create_output_rows(
                 format_refresh_rate(rate, preferred)
             })
             .collect();
-        let rate_str_refs: Vec<&str> = rate_strings.iter().map(std::string::String::as_str).collect();
+        let rate_str_refs: Vec<&str> = rate_strings
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         refresh_rate_row.set_model(Some(&gtk::StringList::new(&rate_str_refs)));
 
         let current_rate_idx = rates

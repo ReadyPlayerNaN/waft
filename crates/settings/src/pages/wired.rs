@@ -8,11 +8,11 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
-use waft_ui_gtk::vdom::{Reconciler, VNode};
 use waft_protocol::Urn;
 use waft_protocol::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, EthernetConnection, NetworkAdapter,
 };
+use waft_ui_gtk::vdom::{Reconciler, VNode};
 
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
@@ -33,7 +33,12 @@ impl WiredPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-wired");
-        idx.add_section_deferred("wired", &page_title, &t("wired-ip-address"), "wired-ip-address");
+        idx.add_section_deferred(
+            "wired",
+            &page_title,
+            &t("wired-ip-address"),
+            "wired-ip-address",
+        );
     }
 
     pub fn new(
@@ -96,9 +101,9 @@ impl WiredPage {
                 .iter()
                 .filter(|(_, a)| a.kind == AdapterKind::Wired)
                 .map(|(urn, adapter)| {
-                    let urn_key     = urn.as_str().to_string();
+                    let urn_key = urn.as_str().to_string();
                     let adapter_urn = urn.clone();
-                    let cb          = action_callback.clone();
+                    let cb = action_callback.clone();
 
                     // Collect connection profiles that belong to this adapter.
                     // Connection URN format:
@@ -113,35 +118,25 @@ impl WiredPage {
 
                     VNode::with_output::<WiredAdapterGroup>(
                         WiredAdapterGroupProps {
-                            name:        adapter.name.clone(),
-                            connected:   adapter.connected,
-                            ip:          adapter.ip.clone(),
-                            public_ip:   adapter.public_ip.clone(),
+                            name: adapter.name.clone(),
+                            connected: adapter.connected,
+                            ip: adapter.ip.clone(),
+                            public_ip: adapter.public_ip.clone(),
                             connections: adapter_connections,
                         },
-                        move |output| {
-                            match output {
-                                WiredAdapterGroupOutput::ToggleConnection => {
-                                    cb(
-                                        adapter_urn.clone(),
-                                        "activate".to_string(),
-                                        serde_json::Value::Null,
-                                    );
-                                }
-                                WiredAdapterGroupOutput::ActivateConnection(conn_urn) => {
-                                    cb(
-                                        conn_urn,
-                                        "activate".to_string(),
-                                        serde_json::Value::Null,
-                                    );
-                                }
-                                WiredAdapterGroupOutput::DeactivateConnection(conn_urn) => {
-                                    cb(
-                                        conn_urn,
-                                        "deactivate".to_string(),
-                                        serde_json::Value::Null,
-                                    );
-                                }
+                        move |output| match output {
+                            WiredAdapterGroupOutput::ToggleConnection => {
+                                cb(
+                                    adapter_urn.clone(),
+                                    "activate".to_string(),
+                                    serde_json::Value::Null,
+                                );
+                            }
+                            WiredAdapterGroupOutput::ActivateConnection(conn_urn) => {
+                                cb(conn_urn, "activate".to_string(), serde_json::Value::Null);
+                            }
+                            WiredAdapterGroupOutput::DeactivateConnection(conn_urn) => {
+                                cb(conn_urn, "deactivate".to_string(), serde_json::Value::Null);
                             }
                         },
                     )

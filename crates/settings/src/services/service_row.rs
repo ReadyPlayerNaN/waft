@@ -3,8 +3,8 @@
 //! Renders service name, description, active state, start/stop button,
 //! and enable/disable switch as an `adw::ActionRow` with suffix widgets.
 
-use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VActionRow, VBox, VButton, VLabel, VSwitch};
+use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
 
 use crate::i18n::t;
 
@@ -68,23 +68,21 @@ impl RenderFn for ServiceRowRender {
         // Enable/disable switch
         let enable_emit = emit.clone();
         let enabled = props.enabled;
-        let enable_switch = VSwitch::new(enabled)
-            .sensitive(controllable)
-            .on_toggle(move |new_state| {
-                if let Some(ref cb) = *enable_emit.borrow() {
-                    if new_state {
-                        cb(ServiceRowOutput::Enable);
-                    } else {
-                        cb(ServiceRowOutput::Disable);
+        let enable_switch =
+            VSwitch::new(enabled)
+                .sensitive(controllable)
+                .on_toggle(move |new_state| {
+                    if let Some(ref cb) = *enable_emit.borrow() {
+                        if new_state {
+                            cb(ServiceRowOutput::Enable);
+                        } else {
+                            cb(ServiceRowOutput::Disable);
+                        }
                     }
-                }
-            });
+                });
 
         // Strip .service suffix for cleaner display
-        let display_name = props
-            .unit
-            .strip_suffix(".service")
-            .unwrap_or(&props.unit);
+        let display_name = props.unit.strip_suffix(".service").unwrap_or(&props.unit);
 
         let subtitle = if props.description.is_empty() {
             props.active_state.clone()

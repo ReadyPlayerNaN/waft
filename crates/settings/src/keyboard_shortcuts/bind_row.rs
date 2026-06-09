@@ -4,10 +4,8 @@
 //! (subtitle), action type badge + icon buttons (right).
 
 use waft_ui_gtk::icons::Icon;
-use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VActionRow, VBox, VCustomButton, VIcon, VLabel};
-
-
+use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
 
 /// Input data for constructing or updating a bind row.
 #[derive(Clone, PartialEq)]
@@ -35,10 +33,7 @@ impl RenderFn for BindRowRender {
 
     fn render(props: &Self::Props, emit: &RenderCallback<BindRowOutput>) -> VNode {
         // Title: human-readable label (hotkey_overlay_title) or action label
-        let title = props
-            .title
-            .as_deref()
-            .unwrap_or(&props.action_label);
+        let title = props.title.as_deref().unwrap_or(&props.action_label);
 
         let edit_emit = emit.clone();
         let edit_btn = VCustomButton::new(VNode::icon(VIcon::new(

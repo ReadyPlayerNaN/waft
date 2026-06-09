@@ -44,33 +44,141 @@ impl NightLightConfigSection {
         // Colors group
         let colors_title = t("nlc-colors");
         idx.add_section_deferred("appearance", &page_title, &colors_title, "nlc-colors");
-        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-night-temp"), "nlc-night-temp");
-        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-night-gamma"), "nlc-night-gamma");
-        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-day-temp"), "nlc-day-temp");
-        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-day-gamma"), "nlc-day-gamma");
-        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-static-temp"), "nlc-static-temp");
-        idx.add_input_deferred("appearance", &page_title, &colors_title, &t("nlc-static-gamma"), "nlc-static-gamma");
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &colors_title,
+            &t("nlc-night-temp"),
+            "nlc-night-temp",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &colors_title,
+            &t("nlc-night-gamma"),
+            "nlc-night-gamma",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &colors_title,
+            &t("nlc-day-temp"),
+            "nlc-day-temp",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &colors_title,
+            &t("nlc-day-gamma"),
+            "nlc-day-gamma",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &colors_title,
+            &t("nlc-static-temp"),
+            "nlc-static-temp",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &colors_title,
+            &t("nlc-static-gamma"),
+            "nlc-static-gamma",
+        );
         // Timing group
         let timing_title = t("nlc-timing");
         idx.add_section_deferred("appearance", &page_title, &timing_title, "nlc-timing");
-        idx.add_input_deferred("appearance", &page_title, &timing_title, &t("nlc-transition-mode"), "nlc-transition-mode");
-        idx.add_input_deferred("appearance", &page_title, &timing_title, &t("nlc-sunrise"), "nlc-sunrise");
-        idx.add_input_deferred("appearance", &page_title, &timing_title, &t("nlc-sunset"), "nlc-sunset");
-        idx.add_input_deferred("appearance", &page_title, &timing_title, &t("nlc-transition-duration"), "nlc-transition-duration");
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &timing_title,
+            &t("nlc-transition-mode"),
+            "nlc-transition-mode",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &timing_title,
+            &t("nlc-sunrise"),
+            "nlc-sunrise",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &timing_title,
+            &t("nlc-sunset"),
+            "nlc-sunset",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &timing_title,
+            &t("nlc-transition-duration"),
+            "nlc-transition-duration",
+        );
         // Location group
         let location_title = t("nlc-location");
         idx.add_section_deferred("appearance", &page_title, &location_title, "nlc-location");
-        idx.add_input_deferred("appearance", &page_title, &location_title, &t("nlc-latitude"), "nlc-latitude");
-        idx.add_input_deferred("appearance", &page_title, &location_title, &t("nlc-longitude"), "nlc-longitude");
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &location_title,
+            &t("nlc-latitude"),
+            "nlc-latitude",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &location_title,
+            &t("nlc-longitude"),
+            "nlc-longitude",
+        );
         // Advanced group
         let advanced_title = t("nlc-advanced");
         idx.add_section_deferred("appearance", &page_title, &advanced_title, "nlc-advanced");
-        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-backend"), "nlc-backend");
-        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-smoothing"), "nlc-smoothing");
-        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-startup-duration"), "nlc-startup-duration");
-        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-shutdown-duration"), "nlc-shutdown-duration");
-        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-adaptive-interval"), "nlc-adaptive-interval");
-        idx.add_input_deferred("appearance", &page_title, &advanced_title, &t("nlc-update-interval"), "nlc-update-interval");
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &advanced_title,
+            &t("nlc-backend"),
+            "nlc-backend",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &advanced_title,
+            &t("nlc-smoothing"),
+            "nlc-smoothing",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &advanced_title,
+            &t("nlc-startup-duration"),
+            "nlc-startup-duration",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &advanced_title,
+            &t("nlc-shutdown-duration"),
+            "nlc-shutdown-duration",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &advanced_title,
+            &t("nlc-adaptive-interval"),
+            "nlc-adaptive-interval",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &advanced_title,
+            &t("nlc-update-interval"),
+            "nlc-update-interval",
+        );
     }
 
     pub fn new(
@@ -93,7 +201,9 @@ impl NightLightConfigSection {
         let night_temp_row = adw::SpinRow::builder()
             .title(t("nlc-night-temp"))
             .subtitle(t("nlc-night-temp-sub"))
-            .adjustment(&gtk::Adjustment::new(3500.0, 1000.0, 10000.0, 100.0, 500.0, 0.0))
+            .adjustment(&gtk::Adjustment::new(
+                3500.0, 1000.0, 10000.0, 100.0, 500.0, 0.0,
+            ))
             .digits(0)
             .build();
         colors_group.add(&night_temp_row);
@@ -109,7 +219,9 @@ impl NightLightConfigSection {
         let day_temp_row = adw::SpinRow::builder()
             .title(t("nlc-day-temp"))
             .subtitle(t("nlc-day-temp-sub"))
-            .adjustment(&gtk::Adjustment::new(6500.0, 1000.0, 10000.0, 100.0, 500.0, 0.0))
+            .adjustment(&gtk::Adjustment::new(
+                6500.0, 1000.0, 10000.0, 100.0, 500.0, 0.0,
+            ))
             .digits(0)
             .build();
         colors_group.add(&day_temp_row);
@@ -125,7 +237,9 @@ impl NightLightConfigSection {
         let static_temp_row = adw::SpinRow::builder()
             .title(t("nlc-static-temp"))
             .subtitle(t("nlc-static-temp-sub"))
-            .adjustment(&gtk::Adjustment::new(4500.0, 1000.0, 10000.0, 100.0, 500.0, 0.0))
+            .adjustment(&gtk::Adjustment::new(
+                4500.0, 1000.0, 10000.0, 100.0, 500.0, 0.0,
+            ))
             .digits(0)
             .build();
         colors_group.add(&static_temp_row);
@@ -144,7 +258,8 @@ impl NightLightConfigSection {
             .build();
         root.append(&timing_group);
 
-        let mode_model = gtk::StringList::new(&["geo", "static", "center", "finish_by", "start_at"]);
+        let mode_model =
+            gtk::StringList::new(&["geo", "static", "center", "finish_by", "start_at"]);
         let mode_row = adw::ComboRow::builder()
             .title(t("nlc-transition-mode"))
             .subtitle(t("nlc-transition-mode-sub"))
@@ -228,7 +343,9 @@ impl NightLightConfigSection {
         let adaptive_interval_row = adw::SpinRow::builder()
             .title(t("nlc-adaptive-interval"))
             .subtitle(t("nlc-adaptive-interval-sub"))
-            .adjustment(&gtk::Adjustment::new(100.0, 10.0, 10000.0, 10.0, 100.0, 0.0))
+            .adjustment(&gtk::Adjustment::new(
+                100.0, 10.0, 10000.0, 10.0, 100.0, 0.0,
+            ))
             .digits(0)
             .build();
         advanced_group.add(&adaptive_interval_row);
@@ -247,33 +364,123 @@ impl NightLightConfigSection {
             // Colors group
             let colors_title = t("nlc-colors");
             idx.backfill_widget("appearance", &colors_title, None, Some(&colors_group));
-            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-night-temp")), Some(&night_temp_row));
-            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-night-gamma")), Some(&night_gamma_row));
-            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-day-temp")), Some(&day_temp_row));
-            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-day-gamma")), Some(&day_gamma_row));
-            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-static-temp")), Some(&static_temp_row));
-            idx.backfill_widget("appearance", &colors_title, Some(&t("nlc-static-gamma")), Some(&static_gamma_row));
+            idx.backfill_widget(
+                "appearance",
+                &colors_title,
+                Some(&t("nlc-night-temp")),
+                Some(&night_temp_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &colors_title,
+                Some(&t("nlc-night-gamma")),
+                Some(&night_gamma_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &colors_title,
+                Some(&t("nlc-day-temp")),
+                Some(&day_temp_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &colors_title,
+                Some(&t("nlc-day-gamma")),
+                Some(&day_gamma_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &colors_title,
+                Some(&t("nlc-static-temp")),
+                Some(&static_temp_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &colors_title,
+                Some(&t("nlc-static-gamma")),
+                Some(&static_gamma_row),
+            );
             // Timing group
             let timing_title = t("nlc-timing");
             idx.backfill_widget("appearance", &timing_title, None, Some(&timing_group));
-            idx.backfill_widget("appearance", &timing_title, Some(&t("nlc-transition-mode")), Some(&mode_row));
-            idx.backfill_widget("appearance", &timing_title, Some(&t("nlc-sunrise")), Some(&sunrise_row));
-            idx.backfill_widget("appearance", &timing_title, Some(&t("nlc-sunset")), Some(&sunset_row));
-            idx.backfill_widget("appearance", &timing_title, Some(&t("nlc-transition-duration")), Some(&transition_duration_row));
+            idx.backfill_widget(
+                "appearance",
+                &timing_title,
+                Some(&t("nlc-transition-mode")),
+                Some(&mode_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &timing_title,
+                Some(&t("nlc-sunrise")),
+                Some(&sunrise_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &timing_title,
+                Some(&t("nlc-sunset")),
+                Some(&sunset_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &timing_title,
+                Some(&t("nlc-transition-duration")),
+                Some(&transition_duration_row),
+            );
             // Location group
             let location_title = t("nlc-location");
             idx.backfill_widget("appearance", &location_title, None, Some(&location_group));
-            idx.backfill_widget("appearance", &location_title, Some(&t("nlc-latitude")), Some(&latitude_row));
-            idx.backfill_widget("appearance", &location_title, Some(&t("nlc-longitude")), Some(&longitude_row));
+            idx.backfill_widget(
+                "appearance",
+                &location_title,
+                Some(&t("nlc-latitude")),
+                Some(&latitude_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &location_title,
+                Some(&t("nlc-longitude")),
+                Some(&longitude_row),
+            );
             // Advanced group
             let advanced_title = t("nlc-advanced");
             idx.backfill_widget("appearance", &advanced_title, None, Some(&advanced_group));
-            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-backend")), Some(&backend_row));
-            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-smoothing")), Some(&smoothing_row));
-            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-startup-duration")), Some(&startup_duration_row));
-            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-shutdown-duration")), Some(&shutdown_duration_row));
-            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-adaptive-interval")), Some(&adaptive_interval_row));
-            idx.backfill_widget("appearance", &advanced_title, Some(&t("nlc-update-interval")), Some(&update_interval_row));
+            idx.backfill_widget(
+                "appearance",
+                &advanced_title,
+                Some(&t("nlc-backend")),
+                Some(&backend_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &advanced_title,
+                Some(&t("nlc-smoothing")),
+                Some(&smoothing_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &advanced_title,
+                Some(&t("nlc-startup-duration")),
+                Some(&startup_duration_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &advanced_title,
+                Some(&t("nlc-shutdown-duration")),
+                Some(&shutdown_duration_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &advanced_title,
+                Some(&t("nlc-adaptive-interval")),
+                Some(&adaptive_interval_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &advanced_title,
+                Some(&t("nlc-update-interval")),
+                Some(&update_interval_row),
+            );
         }
 
         let updating = Rc::new(Cell::new(false));
@@ -467,9 +674,7 @@ impl NightLightConfigSection {
                     store_clone.get_entities_typed(NIGHT_LIGHT_CONFIG_ENTITY_TYPE);
 
                 if let Some((urn, config)) = configs.first() {
-                    log::debug!(
-                        "[night-light-config] Initial reconciliation with cached data"
-                    );
+                    log::debug!("[night-light-config] Initial reconciliation with cached data");
                     guard.set(true);
                     *urn_ref.borrow_mut() = Some(urn.clone());
                     root_ref.set_visible(true);
@@ -605,8 +810,7 @@ fn reconcile(config: &NightLightConfig, w: &NightLightWidgets) {
     apply_field_state(&w.backend_row, config.field_state.get("backend"));
 
     // Smoothing
-    w.smoothing_row
-        .set_active(config.smoothing == "true");
+    w.smoothing_row.set_active(config.smoothing == "true");
     apply_field_state(&w.smoothing_row, config.field_state.get("smoothing"));
 
     // Advanced durations

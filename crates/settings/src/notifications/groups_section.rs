@@ -8,9 +8,9 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use crate::search_index::SearchIndex;
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
-use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::notification_filter::{
     CombinatorOperator, MatchField, MatchOperator, NOTIFICATION_GROUP_ENTITY_TYPE,
@@ -46,7 +46,12 @@ impl GroupsSection {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-notifications");
-        idx.add_section_deferred("notifications", &page_title, &t("notif-groups"), "notif-groups");
+        idx.add_section_deferred(
+            "notifications",
+            &page_title,
+            &t("notif-groups"),
+            "notif-groups",
+        );
     }
 
     pub fn new(
@@ -171,9 +176,10 @@ impl GroupsSection {
             if let Some(existing) = st.groups.get_mut(&group.id) {
                 // Update existing expander title and subtitle
                 existing.expander.set_title(&group.name);
-                existing
-                    .expander
-                    .set_subtitle(&t_args("notif-group-order", &[("order", &group.order.to_string())]));
+                existing.expander.set_subtitle(&t_args(
+                    "notif-group-order",
+                    &[("order", &group.order.to_string())],
+                ));
 
                 // Remove old pattern rows and rebuild
                 for row in existing.rows.drain(..) {
@@ -185,8 +191,7 @@ impl GroupsSection {
                 }
                 existing.rows = new_rows;
             } else {
-                let widgets =
-                    Self::create_group_widgets(group, state, root, action_callback);
+                let widgets = Self::create_group_widgets(group, state, root, action_callback);
                 pref_group.add(&widgets.expander);
                 st.groups.insert(group.id.clone(), widgets);
             }
@@ -207,7 +212,8 @@ impl GroupsSection {
 
         // If the group being edited was deleted externally, remove the form
         if let Some(ref editing) = st.editing
-            && editing != NEW_MARKER && to_remove.contains(editing)
+            && editing != NEW_MARKER
+            && to_remove.contains(editing)
         {
             Self::remove_form(&mut st, root);
         }
@@ -226,7 +232,10 @@ impl GroupsSection {
     ) -> GroupWidgets {
         let expander = adw::ExpanderRow::builder()
             .title(&group.name)
-            .subtitle(t_args("notif-group-order", &[("order", &group.order.to_string())]))
+            .subtitle(t_args(
+                "notif-group-order",
+                &[("order", &group.order.to_string())],
+            ))
             .build();
 
         // Edit button suffix
@@ -250,13 +259,7 @@ impl GroupsSection {
             let cb = action_callback.clone();
             let expander_ref = expander.clone();
             edit_button.connect_clicked(move |_| {
-                Self::show_edit_form(
-                    &state_ref,
-                    &root_ref,
-                    &group_data,
-                    &expander_ref,
-                    &cb,
-                );
+                Self::show_edit_form(&state_ref, &root_ref, &group_data, &expander_ref, &cb);
             });
         }
 
@@ -287,17 +290,16 @@ impl GroupsSection {
                 GroupFormOutput::SaveRequested => {
                     let group = {
                         let st = state_ref.borrow();
-                        st.form.as_ref().and_then(super::group_form::GroupForm::get_group)
+                        st.form
+                            .as_ref()
+                            .and_then(super::group_form::GroupForm::get_group)
                     };
                     if let Some(group) = group {
-                        let urn =
-                            Urn::new("notifications", "notification-group", &group.id);
+                        let urn = Urn::new("notifications", "notification-group", &group.id);
                         let params = match serde_json::to_value(&group) {
                             Ok(v) => v,
                             Err(e) => {
-                                log::warn!(
-                                    "[groups-section] failed to serialize group: {e}"
-                                );
+                                log::warn!("[groups-section] failed to serialize group: {e}");
                                 return;
                             }
                         };
@@ -350,17 +352,16 @@ impl GroupsSection {
                 GroupFormOutput::SaveRequested => {
                     let group = {
                         let st = state_ref.borrow();
-                        st.form.as_ref().and_then(super::group_form::GroupForm::get_group)
+                        st.form
+                            .as_ref()
+                            .and_then(super::group_form::GroupForm::get_group)
                     };
                     if let Some(group) = group {
-                        let urn =
-                            Urn::new("notifications", "notification-group", &group.id);
+                        let urn = Urn::new("notifications", "notification-group", &group.id);
                         let params = match serde_json::to_value(&group) {
                             Ok(v) => v,
                             Err(e) => {
-                                log::warn!(
-                                    "[groups-section] failed to serialize group: {e}"
-                                );
+                                log::warn!("[groups-section] failed to serialize group: {e}");
                                 return;
                             }
                         };

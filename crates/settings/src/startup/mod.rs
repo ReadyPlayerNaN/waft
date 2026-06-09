@@ -153,7 +153,11 @@ mod tests {
             },
             StartupEntry {
                 command: "bash".to_string(),
-                args: vec!["-l".to_string(), "-c".to_string(), "notify-send test".to_string()],
+                args: vec![
+                    "-l".to_string(),
+                    "-c".to_string(),
+                    "notify-send test".to_string(),
+                ],
             },
         ];
         save_startup_entries(&path, &entries).unwrap();

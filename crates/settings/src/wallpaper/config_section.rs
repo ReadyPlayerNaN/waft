@@ -14,10 +14,7 @@ use crate::i18n::t;
 /// Output events from the config section.
 pub enum ConfigSectionOutput {
     /// Configuration changed.
-    ConfigChanged {
-        wallpaper_dir: String,
-        sync: bool,
-    },
+    ConfigChanged { wallpaper_dir: String, sync: bool },
 }
 
 type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(ConfigSectionOutput)>>>>;
@@ -112,11 +109,13 @@ impl ConfigSection {
         // Show subfolder hint based on mode
         match mode {
             WallpaperMode::StyleTracking => {
-                self.subfolder_hint.set_label(&t("wallpaper-subfolder-hint-style"));
+                self.subfolder_hint
+                    .set_label(&t("wallpaper-subfolder-hint-style"));
                 self.subfolder_hint.set_visible(true);
             }
             WallpaperMode::DayTracking => {
-                self.subfolder_hint.set_label(&t("wallpaper-subfolder-hint-day"));
+                self.subfolder_hint
+                    .set_label(&t("wallpaper-subfolder-hint-day"));
                 self.subfolder_hint.set_visible(true);
             }
             WallpaperMode::Static => {

@@ -49,7 +49,6 @@ pub enum BindAction {
     NiriAction { name: String, args: Vec<String> },
 }
 
-
 /// A single keyboard shortcut entry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BindEntry {
@@ -64,7 +63,11 @@ pub struct BindEntry {
 impl BindEntry {
     /// Format the key chord (e.g. "Mod+Shift+D").
     pub fn key_chord(&self) -> String {
-        let mut parts: Vec<String> = self.modifiers.iter().map(std::string::ToString::to_string).collect();
+        let mut parts: Vec<String> = self
+            .modifiers
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         parts.push(self.key.clone());
         parts.join("+")
     }
@@ -82,7 +85,11 @@ pub struct LoadedBinds {
 pub fn load_binds(config_path: &Path) -> Result<LoadedBinds, String> {
     let config = KdlConfigFile::load(config_path)?;
 
-    let binds_node = config.doc().nodes().iter().find(|n| n.name().value() == "binds");
+    let binds_node = config
+        .doc()
+        .nodes()
+        .iter()
+        .find(|n| n.name().value() == "binds");
     let binds_doc = match binds_node {
         Some(node) => match node.children() {
             Some(children) => children,
@@ -90,14 +97,14 @@ pub fn load_binds(config_path: &Path) -> Result<LoadedBinds, String> {
                 return Ok(LoadedBinds {
                     entries: Vec::new(),
                     raw: Vec::new(),
-                })
+                });
             }
         },
         None => {
             return Ok(LoadedBinds {
                 entries: Vec::new(),
                 raw: Vec::new(),
-            })
+            });
         }
     };
 
@@ -159,7 +166,10 @@ fn parse_bind_node(key_chord: &str, node: &kdl::KdlNode) -> Option<BindEntry> {
         if let Some(name) = entry.name() {
             match name.value() {
                 "hotkey-overlay-title" => {
-                    hotkey_overlay_title = entry.value().as_string().map(std::string::ToString::to_string);
+                    hotkey_overlay_title = entry
+                        .value()
+                        .as_string()
+                        .map(std::string::ToString::to_string);
                 }
                 "allow-when-locked" => {
                     if let Some(v) = entry.value().as_bool() {
@@ -201,7 +211,9 @@ fn parse_bind_node(key_chord: &str, node: &kdl::KdlNode) -> Option<BindEntry> {
             .filter_map(|e| {
                 if let Some(s) = e.value().as_string() {
                     Some(s.to_string())
-                } else { e.value().as_integer().map(|i| i.to_string()) }
+                } else {
+                    e.value().as_integer().map(|i| i.to_string())
+                }
             })
             .collect();
         BindAction::NiriAction {
@@ -243,7 +255,10 @@ pub fn save_binds(
 
         // Add optional properties
         if let Some(ref title) = entry.hotkey_overlay_title {
-            bind_node.push(kdl::KdlEntry::new_prop("hotkey-overlay-title", title.clone()));
+            bind_node.push(kdl::KdlEntry::new_prop(
+                "hotkey-overlay-title",
+                title.clone(),
+            ));
         }
         if entry.allow_when_locked {
             bind_node.push(kdl::KdlEntry::new_prop("allow-when-locked", true));
@@ -296,25 +311,97 @@ pub fn save_binds(
 /// Curated allowlist of XKB key names.
 pub const XKB_KEY_ALLOWLIST: &[&str] = &[
     // Function keys
-    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
     // Arrow keys
-    "Left", "Right", "Up", "Down",
+    "Left",
+    "Right",
+    "Up",
+    "Down",
     // Navigation
-    "Return", "Escape", "Tab", "BackSpace", "Delete", "Home", "End",
-    "Page_Up", "Page_Down", "Insert",
+    "Return",
+    "Escape",
+    "Tab",
+    "BackSpace",
+    "Delete",
+    "Home",
+    "End",
+    "Page_Up",
+    "Page_Down",
+    "Insert",
     // Common special
-    "Space", "Slash", "Comma", "Period", "Semicolon", "Minus", "Equal",
-    "BracketLeft", "BracketRight", "Backslash", "Apostrophe", "Grave",
+    "Space",
+    "Slash",
+    "Comma",
+    "Period",
+    "Semicolon",
+    "Minus",
+    "Equal",
+    "BracketLeft",
+    "BracketRight",
+    "Backslash",
+    "Apostrophe",
+    "Grave",
     // Letters
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-    "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
     // Digits
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
     // XF86 media keys
-    "XF86AudioRaiseVolume", "XF86AudioLowerVolume", "XF86AudioMute",
-    "XF86AudioMicMute", "XF86AudioPlay", "XF86AudioPause", "XF86AudioStop",
-    "XF86AudioNext", "XF86AudioPrev",
-    "XF86MonBrightnessUp", "XF86MonBrightnessDown",
+    "XF86AudioRaiseVolume",
+    "XF86AudioLowerVolume",
+    "XF86AudioMute",
+    "XF86AudioMicMute",
+    "XF86AudioPlay",
+    "XF86AudioPause",
+    "XF86AudioStop",
+    "XF86AudioNext",
+    "XF86AudioPrev",
+    "XF86MonBrightnessUp",
+    "XF86MonBrightnessDown",
     "Print",
 ];
 
@@ -400,7 +487,10 @@ pub const NIRI_ACTIONS: &[(&str, &[&str])] = &[
             "move-workspace-to-monitor-up",
         ],
     ),
-    ("Screenshot", &["screenshot", "screenshot-screen", "screenshot-window"]),
+    (
+        "Screenshot",
+        &["screenshot", "screenshot-screen", "screenshot-window"],
+    ),
 ];
 
 /// Return the category name for a bind action.

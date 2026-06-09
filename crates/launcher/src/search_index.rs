@@ -1,7 +1,7 @@
 use waft_client::EntityStore;
+use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_protocol::entity::app::App;
-use waft_protocol::Urn;
 
 use crate::normalize::{Normalized, normalize_for_search};
 

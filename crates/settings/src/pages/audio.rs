@@ -40,7 +40,12 @@ impl AudioPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-audio");
-        idx.add_section_deferred("audio", &page_title, &t("audio-output-devices"), "audio-output-devices");
+        idx.add_section_deferred(
+            "audio",
+            &page_title,
+            &t("audio-output-devices"),
+            "audio-output-devices",
+        );
     }
 
     pub fn new(
@@ -89,10 +94,7 @@ impl AudioPage {
             {
                 let state = state.clone();
                 move |cards| {
-                    log::debug!(
-                        "[audio-page] Reconciling: {} cards",
-                        cards.len()
-                    );
+                    log::debug!("[audio-page] Reconciling: {} cards", cards.len());
                     Self::reconcile(&state, &cards);
                 }
             },
@@ -189,11 +191,24 @@ impl AudioPage {
             let page_title = t("settings-audio");
             let section_title = t("audio-output-devices");
             idx.remove_entries("audio", &section_title);
-            idx.add_section("audio", &page_title, &section_title, "audio-output-devices", &state.cards_box);
+            idx.add_section(
+                "audio",
+                &page_title,
+                &section_title,
+                "audio-output-devices",
+                &state.cards_box,
+            );
             for (urn, card) in cards {
                 let urn_str = urn.as_str().to_string();
                 if let Some(widget) = state.cards.get(&urn_str) {
-                    idx.add_input("audio", &page_title, &section_title, &card.name, &card.name, &widget.root);
+                    idx.add_input(
+                        "audio",
+                        &page_title,
+                        &section_title,
+                        &card.name,
+                        &card.name,
+                        &widget.root,
+                    );
                 }
             }
         }

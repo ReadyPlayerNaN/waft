@@ -35,19 +35,13 @@ impl RenderFn for AttendeeRowRender {
 
         VNode::vbox(
             VBox::horizontal(4)
-                .child(
-                    VNode::icon(
-                        VIcon::new(vec![Icon::parse(icon_name)], 12)
-                    )
-                )
-                .child(
-                    VNode::label(
-                        VLabel::new(display_name)
-                            .xalign(0.0)
-                            .ellipsize(gtk::pango::EllipsizeMode::End)
-                            .css_class("dim-label")
-                    )
-                ),
+                .child(VNode::icon(VIcon::new(vec![Icon::parse(icon_name)], 12)))
+                .child(VNode::label(
+                    VLabel::new(display_name)
+                        .xalign(0.0)
+                        .ellipsize(gtk::pango::EllipsizeMode::End)
+                        .css_class("dim-label"),
+                )),
         )
     }
 }

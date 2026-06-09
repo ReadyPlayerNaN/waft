@@ -11,7 +11,9 @@ use gtk::prelude::*;
 
 use waft_protocol::Urn;
 use waft_protocol::entity;
-use waft_ui_gtk::widgets::status_cycle_button::{StatusCycleButtonWidget, StatusOption, StatusCycleButtonOutput};
+use waft_ui_gtk::widgets::status_cycle_button::{
+    StatusCycleButtonOutput, StatusCycleButtonWidget, StatusOption,
+};
 
 use waft_client::{EntityActionCallback, EntityStore};
 

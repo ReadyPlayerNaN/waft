@@ -19,8 +19,7 @@ pub fn subscribe_entities<E, F>(
     entity_store: &Rc<EntityStore>,
     entity_type: &'static str,
     callback: F,
-)
-where
+) where
     E: for<'de> serde::Deserialize<'de> + 'static,
     F: Fn(Vec<(Urn, E)>) + 'static + Clone,
 {
@@ -52,8 +51,7 @@ pub fn subscribe_dual_entities<E1, E2, F>(
     entity_type_1: &'static str,
     entity_type_2: &'static str,
     callback: F,
-)
-where
+) where
     E1: for<'de> serde::Deserialize<'de> + 'static,
     E2: for<'de> serde::Deserialize<'de> + 'static,
     F: Fn(Vec<(Urn, E1)>, Vec<(Urn, E2)>) + 'static + Clone,

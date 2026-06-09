@@ -3,16 +3,16 @@
 //! Dumb widget displaying adapter controls: power toggle, discoverable toggle,
 //! and device name entry.
 
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VEntryRow, VPreferencesGroup, VSwitchRow};
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
 use crate::i18n::t;
 
 /// Props for creating or updating an adapter group.
 #[derive(Clone, PartialEq)]
 pub struct AdapterGroupProps {
-    pub name:        String,
-    pub powered:     bool,
+    pub name: String,
+    pub powered: bool,
     pub discoverable: bool,
 }
 
@@ -29,7 +29,7 @@ pub enum AdapterGroupOutput {
 pub(crate) struct AdapterGroupRender;
 
 impl RenderFn for AdapterGroupRender {
-    type Props  = AdapterGroupProps;
+    type Props = AdapterGroupProps;
     type Output = AdapterGroupOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
@@ -40,15 +40,14 @@ impl RenderFn for AdapterGroupRender {
                 .title(&props.name)
                 .child(
                     VNode::switch_row(
-                        VSwitchRow::new(t("bt-adapter-enabled"), props.powered)
-                            .on_toggle({
-                                let emit = emit.clone();
-                                move |_active| {
-                                    if let Some(ref cb) = *emit.borrow() {
-                                        cb(AdapterGroupOutput::TogglePower);
-                                    }
+                        VSwitchRow::new(t("bt-adapter-enabled"), props.powered).on_toggle({
+                            let emit = emit.clone();
+                            move |_active| {
+                                if let Some(ref cb) = *emit.borrow() {
+                                    cb(AdapterGroupOutput::TogglePower);
                                 }
-                            }),
+                            }
+                        }),
                     )
                     .key("power"),
                 )
@@ -75,7 +74,9 @@ impl RenderFn for AdapterGroupRender {
                             .on_change({
                                 let emit = emit.clone();
                                 move |text| {
-                                    if !text.is_empty() && let Some(ref cb) = *emit.borrow() {
+                                    if !text.is_empty()
+                                        && let Some(ref cb) = *emit.borrow()
+                                    {
                                         cb(AdapterGroupOutput::SetAlias(text));
                                     }
                                 }

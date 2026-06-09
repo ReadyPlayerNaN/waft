@@ -18,8 +18,8 @@ use waft_protocol::Urn;
 use waft_protocol::entity;
 
 use crate::calendar_selection::CalendarSelectionStore;
-use crate::ui::agenda::agenda_card::{AgendaCard, AgendaCardOutput};
 use crate::menu_state::{MenuOp, MenuStore};
+use crate::ui::agenda::agenda_card::{AgendaCard, AgendaCardOutput};
 use waft_client::EntityStore;
 
 /// A held reference to a rebuild callback, used to break reference cycles.
@@ -251,8 +251,9 @@ impl AgendaComponent {
                 }
                 let holder_weak = rebuild_holder_weak.clone();
                 let ts = timer_source_ref.clone();
-                *timer =
-                    Some(gtk::glib::timeout_add_seconds_local(secs as u32, move || {
+                *timer = Some(gtk::glib::timeout_add_seconds_local(
+                    secs as u32,
+                    move || {
                         ts.borrow_mut().take(); // clear our own SourceId
                         if let Some(holder) = holder_weak.upgrade()
                             && let Some(rebuild_fn) = &*holder.borrow()
@@ -260,7 +261,8 @@ impl AgendaComponent {
                             rebuild_fn();
                         }
                         gtk::glib::ControlFlow::Break
-                    }));
+                    },
+                ));
             }) as Rc<dyn Fn()>
         };
 
@@ -371,10 +373,16 @@ impl AgendaComponent {
         log::info!(
             "[agenda] filter window: [{}, {}), {} total entities",
             chrono::DateTime::from_timestamp(filter_start, 0)
-                .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                .map(|dt| dt
+                    .with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string())
                 .unwrap_or_default(),
             chrono::DateTime::from_timestamp(filter_end, 0)
-                .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                .map(|dt| dt
+                    .with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string())
                 .unwrap_or_default(),
             entities.len()
         );
@@ -384,9 +392,17 @@ impl AgendaComponent {
                 let passes = event.start_time < filter_end && event.end_time > filter_start;
                 if !passes {
                     let start = chrono::DateTime::from_timestamp(event.start_time, 0)
-                        .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                        .map(|dt| {
+                            dt.with_timezone(&chrono::Local)
+                                .format("%Y-%m-%d %H:%M")
+                                .to_string()
+                        })
                         .unwrap_or_default();
-                    log::info!("[agenda] filtered out {:?} starting {}", event.summary, start);
+                    log::info!(
+                        "[agenda] filtered out {:?} starting {}",
+                        event.summary,
+                        start
+                    );
                 }
                 passes
             })

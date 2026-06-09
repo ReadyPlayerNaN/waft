@@ -1,8 +1,8 @@
 //! Search result ranking for apps, windows, and commands.
 
+use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_protocol::entity::app::App;
-use waft_protocol::Urn;
 
 use crate::command_index::CommandIndex;
 use crate::fuzzy::{fuzzy_match_positions_chars, fuzzy_score_chars};
@@ -45,9 +45,9 @@ impl RankedResult {
 
     pub fn score(&self) -> f64 {
         match self {
-            Self::App { score, .. }
-            | Self::Window { score, .. }
-            | Self::Command { score, .. } => *score,
+            Self::App { score, .. } | Self::Window { score, .. } | Self::Command { score, .. } => {
+                *score
+            }
         }
     }
 
@@ -114,8 +114,7 @@ pub fn rank_results(
             let kw_score = if entry.keywords_norm.chars.is_empty() {
                 None
             } else {
-                fuzzy_score_chars(&query_norm.chars, &entry.keywords_norm.chars)
-                    .map(|s| s * 0.5)
+                fuzzy_score_chars(&query_norm.chars, &entry.keywords_norm.chars).map(|s| s * 0.5)
             };
 
             let base = match (name_score, kw_score) {
@@ -231,8 +230,7 @@ pub fn rank_results(
                         &e.title_norm.chars,
                         &e.title_norm.char_map,
                     );
-                    let app_id_score =
-                        fuzzy_score_chars(&query_norm.chars, &e.app_id_norm.chars);
+                    let app_id_score = fuzzy_score_chars(&query_norm.chars, &e.app_id_norm.chars);
 
                     match (&title_positions, app_id_score) {
                         (Some((t, pos)), Some(a)) => {
@@ -362,7 +360,10 @@ mod tests {
             name: name.to_string(),
             icon: "test".to_string(),
             available: true,
-            keywords: keywords.iter().map(std::string::ToString::to_string).collect(),
+            keywords: keywords
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             description: None,
         }
     }
@@ -375,7 +376,12 @@ mod tests {
         Urn::new("niri", "window", id)
     }
 
-    fn make_window(title: &str, app_id: &str, focused: bool, workspace_id: u64) -> entity::window::Window {
+    fn make_window(
+        title: &str,
+        app_id: &str,
+        focused: bool,
+        workspace_id: u64,
+    ) -> entity::window::Window {
         entity::window::Window {
             title: title.to_string(),
             app_id: app_id.to_string(),
@@ -395,7 +401,13 @@ mod tests {
         }
     }
 
-    fn make_window_entry(id: &str, title: &str, app_id: &str, focused: bool, workspace_id: u64) -> WindowSearchEntry {
+    fn make_window_entry(
+        id: &str,
+        title: &str,
+        app_id: &str,
+        focused: bool,
+        workspace_id: u64,
+    ) -> WindowSearchEntry {
         let window = make_window(title, app_id, focused, workspace_id);
         WindowSearchEntry {
             urn: win_urn(id),
@@ -515,7 +527,9 @@ mod tests {
         );
         let results = rank_results(&index, "", &UsageMap::new(), false, MAX);
         assert_eq!(results.len(), 1);
-        assert!(matches!(&results[0], RankedResult::Window { window, .. } if window.title == "Background Window"));
+        assert!(
+            matches!(&results[0], RankedResult::Window { window, .. } if window.title == "Background Window")
+        );
     }
 
     #[test]
@@ -529,7 +543,9 @@ mod tests {
         );
         let results = rank_results(&index, "claude", &UsageMap::new(), false, MAX);
         assert_eq!(results.len(), 1);
-        assert!(matches!(&results[0], RankedResult::Window { window, .. } if window.title == "Claude Code"));
+        assert!(
+            matches!(&results[0], RankedResult::Window { window, .. } if window.title == "Claude Code")
+        );
     }
 
     #[test]
@@ -543,14 +559,22 @@ mod tests {
         );
         let results = rank_results(&index, "alac", &UsageMap::new(), false, MAX);
         assert_eq!(results.len(), 1);
-        assert!(matches!(&results[0], RankedResult::Window { window, .. } if window.app_id == "Alacritty"));
+        assert!(
+            matches!(&results[0], RankedResult::Window { window, .. } if window.app_id == "Alacritty")
+        );
     }
 
     #[test]
     fn mixed_apps_and_windows() {
         let index = index_from(
             vec![make_app_entry("firefox", "Firefox", &["browser"])],
-            vec![make_window_entry("1", "GitHub - Mozilla Firefox", "firefox", false, 1)],
+            vec![make_window_entry(
+                "1",
+                "GitHub - Mozilla Firefox",
+                "firefox",
+                false,
+                1,
+            )],
         );
         let results = rank_results(&index, "fire", &UsageMap::new(), false, MAX);
         assert_eq!(results.len(), 2);
@@ -558,10 +582,7 @@ mod tests {
 
     #[test]
     fn app_name_match_populates_highlight_positions() {
-        let index = index_from(
-            vec![make_app_entry("firefox", "Firefox", &[])],
-            vec![],
-        );
+        let index = index_from(vec![make_app_entry("firefox", "Firefox", &[])], vec![]);
         let results = rank_results(&index, "fox", &UsageMap::new(), false, MAX);
         assert_eq!(results.len(), 1);
         assert!(!results[0].highlight_positions().is_empty());
@@ -603,10 +624,7 @@ mod tests {
 
     #[test]
     fn empty_query_has_empty_positions() {
-        let index = index_from(
-            vec![make_app_entry("firefox", "Firefox", &[])],
-            vec![],
-        );
+        let index = index_from(vec![make_app_entry("firefox", "Firefox", &[])], vec![]);
         let results = rank_results(&index, "", &UsageMap::new(), false, MAX);
         assert_eq!(results.len(), 1);
         assert!(results[0].highlight_positions().is_empty());
@@ -624,9 +642,15 @@ mod tests {
         );
         let results = rank_results(&index, "", &UsageMap::new(), false, MAX);
         assert_eq!(results.len(), 3);
-        assert!(matches!(&results[0], RankedResult::Window { window, .. } if window.workspace_id == 1));
-        assert!(matches!(&results[1], RankedResult::Window { window, .. } if window.workspace_id == 2));
-        assert!(matches!(&results[2], RankedResult::Window { window, .. } if window.workspace_id == 3));
+        assert!(
+            matches!(&results[0], RankedResult::Window { window, .. } if window.workspace_id == 1)
+        );
+        assert!(
+            matches!(&results[1], RankedResult::Window { window, .. } if window.workspace_id == 2)
+        );
+        assert!(
+            matches!(&results[2], RankedResult::Window { window, .. } if window.workspace_id == 3)
+        );
     }
 
     #[test]
@@ -640,15 +664,14 @@ mod tests {
         );
         let results = rank_results(&index, "", &UsageMap::new(), false, MAX);
         assert_eq!(results.len(), 1);
-        assert!(matches!(&results[0], RankedResult::Window { window, .. } if window.title == "Terminal"));
+        assert!(
+            matches!(&results[0], RankedResult::Window { window, .. } if window.title == "Terminal")
+        );
     }
 
     #[test]
     fn accent_insensitive_search() {
-        let index = index_from(
-            vec![make_app_entry("weather", "Počasí", &[])],
-            vec![],
-        );
+        let index = index_from(vec![make_app_entry("weather", "Počasí", &[])], vec![]);
         let results = rank_results(&index, "pocasi", &UsageMap::new(), false, MAX);
         assert_eq!(results.len(), 1);
         assert!(matches!(&results[0], RankedResult::App { app, .. } if app.name == "Počasí"));
@@ -704,40 +727,90 @@ mod tests {
     #[test]
     fn command_empty_query_returns_all() {
         let idx = cmd_index_from(vec![
-            make_command_entry("darkman", "dark-mode", "default", "toggle", "Toggle Dark Mode", "icon", None),
-            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
+            make_command_entry(
+                "darkman",
+                "dark-mode",
+                "default",
+                "toggle",
+                "Toggle Dark Mode",
+                "icon",
+                None,
+            ),
+            make_command_entry(
+                "systemd",
+                "session",
+                "default",
+                "lock",
+                "Lock Screen",
+                "icon",
+                None,
+            ),
         ]);
         let results = rank_commands(&idx, "", MAX);
         assert_eq!(results.len(), 2);
         // All should be Command variants
-        assert!(results.iter().all(|r| matches!(r, RankedResult::Command { .. })));
+        assert!(
+            results
+                .iter()
+                .all(|r| matches!(r, RankedResult::Command { .. }))
+        );
     }
 
     #[test]
     fn command_query_filters_by_fuzzy_match() {
         let idx = cmd_index_from(vec![
-            make_command_entry("darkman", "dark-mode", "default", "toggle", "Toggle Dark Mode", "icon", None),
-            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
+            make_command_entry(
+                "darkman",
+                "dark-mode",
+                "default",
+                "toggle",
+                "Toggle Dark Mode",
+                "icon",
+                None,
+            ),
+            make_command_entry(
+                "systemd",
+                "session",
+                "default",
+                "lock",
+                "Lock Screen",
+                "icon",
+                None,
+            ),
         ]);
         let results = rank_commands(&idx, "dark", MAX);
         assert_eq!(results.len(), 1);
-        assert!(matches!(&results[0], RankedResult::Command { label, .. } if label == "Toggle Dark Mode"));
+        assert!(
+            matches!(&results[0], RankedResult::Command { label, .. } if label == "Toggle Dark Mode")
+        );
     }
 
     #[test]
     fn command_query_no_match_returns_empty() {
-        let idx = cmd_index_from(vec![
-            make_command_entry("darkman", "dark-mode", "default", "toggle", "Toggle Dark Mode", "icon", None),
-        ]);
+        let idx = cmd_index_from(vec![make_command_entry(
+            "darkman",
+            "dark-mode",
+            "default",
+            "toggle",
+            "Toggle Dark Mode",
+            "icon",
+            None,
+        )]);
         let results = rank_commands(&idx, "zzz", MAX);
         assert!(results.is_empty());
     }
 
     #[test]
     fn command_highlight_positions_populated() {
-        let idx = cmd_index_from(vec![
-            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
-        ]);
+        let idx = cmd_index_from(vec![make_command_entry(
+            "systemd",
+            "session",
+            "default",
+            "lock",
+            "Lock Screen",
+            "icon",
+            None,
+        )]);
         let results = rank_commands(&idx, "lock", MAX);
         assert_eq!(results.len(), 1);
         assert!(!results[0].highlight_positions().is_empty());
@@ -746,9 +819,15 @@ mod tests {
 
     #[test]
     fn command_empty_query_has_empty_positions() {
-        let idx = cmd_index_from(vec![
-            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
-        ]);
+        let idx = cmd_index_from(vec![make_command_entry(
+            "systemd",
+            "session",
+            "default",
+            "lock",
+            "Lock Screen",
+            "icon",
+            None,
+        )]);
         let results = rank_commands(&idx, "", MAX);
         assert_eq!(results.len(), 1);
         assert!(results[0].highlight_positions().is_empty());
@@ -756,12 +835,20 @@ mod tests {
 
     #[test]
     fn command_preserves_subtitle() {
-        let idx = cmd_index_from(vec![
-            make_command_entry("darkman", "dark-mode", "default", "toggle", "Toggle Dark Mode", "icon", Some("Active")),
-        ]);
+        let idx = cmd_index_from(vec![make_command_entry(
+            "darkman",
+            "dark-mode",
+            "default",
+            "toggle",
+            "Toggle Dark Mode",
+            "icon",
+            Some("Active"),
+        )]);
         let results = rank_commands(&idx, "", MAX);
         assert_eq!(results.len(), 1);
-        assert!(matches!(&results[0], RankedResult::Command { subtitle, .. } if subtitle.as_deref() == Some("Active")));
+        assert!(
+            matches!(&results[0], RankedResult::Command { subtitle, .. } if subtitle.as_deref() == Some("Active"))
+        );
     }
 
     #[test]
@@ -777,9 +864,15 @@ mod tests {
 
     #[test]
     fn command_preserves_urn_and_action() {
-        let idx = cmd_index_from(vec![
-            make_command_entry("systemd", "session", "default", "lock", "Lock Screen", "icon", None),
-        ]);
+        let idx = cmd_index_from(vec![make_command_entry(
+            "systemd",
+            "session",
+            "default",
+            "lock",
+            "Lock Screen",
+            "icon",
+            None,
+        )]);
         let results = rank_commands(&idx, "lock", MAX);
         assert_eq!(results.len(), 1);
         match &results[0] {

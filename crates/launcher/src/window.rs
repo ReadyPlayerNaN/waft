@@ -20,9 +20,7 @@ use crate::ranking::RankedResult;
 /// 3. The last segment of a reverse-domain name (e.g. `"org.gnome.Nautilus"` → `"nautilus"`)
 /// 4. Generic fallback `"application-x-executable"`
 fn icon_for_app_id(app_id: &str) -> String {
-    let theme = gtk::IconTheme::for_display(
-        &gtk::gdk::Display::default().expect("no display"),
-    );
+    let theme = gtk::IconTheme::for_display(&gtk::gdk::Display::default().expect("no display"));
     if theme.has_icon(app_id) {
         return app_id.to_string();
     }
@@ -271,7 +269,13 @@ impl LauncherWindow {
                 } else {
                     Some(build_highlight_markup(&name, positions))
                 };
-                AppResultRowProps { name, icon, kind, highlight_markup, subtitle }
+                AppResultRowProps {
+                    name,
+                    icon,
+                    kind,
+                    highlight_markup,
+                    subtitle,
+                }
             })
             .collect();
         *self.results.borrow_mut() = results;

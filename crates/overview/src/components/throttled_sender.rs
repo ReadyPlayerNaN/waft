@@ -87,7 +87,11 @@ mod tests {
         throttle(0.1);
         throttle(0.2);
         throttle(0.3);
-        assert_eq!(count.get(), 1, "only the first call should fire within interval");
+        assert_eq!(
+            count.get(),
+            1,
+            "only the first call should fire within interval"
+        );
     }
 
     #[test]
@@ -134,7 +138,10 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(20));
         throttle(0.2);
-        assert!(second_called.get(), "new callback should fire after replacement");
+        assert!(
+            second_called.get(),
+            "new callback should fire after replacement"
+        );
     }
 
     #[test]

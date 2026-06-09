@@ -2,17 +2,15 @@ use waft_ui_gtk::bluetooth::resolve_device_type_icon;
 use waft_ui_gtk::icons::Icon;
 use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
-use super::menu_button::{
-    FeatureToggleMenuButton, FeatureToggleMenuButtonProps,
-};
+use super::menu_button::{FeatureToggleMenuButton, FeatureToggleMenuButtonProps};
 
 /// Properties for a single Bluetooth device row.
 #[derive(Clone, PartialEq)]
 pub struct BluetoothDeviceRowProps {
-    pub device_type:   String,
-    pub name:          String,
-    pub connected:     bool,
-    pub power:         Option<u8>,
+    pub device_type: String,
+    pub name: String,
+    pub connected: bool,
+    pub power: Option<u8>,
     pub transitioning: bool,
 }
 
@@ -24,7 +22,7 @@ pub enum BluetoothDeviceRowOutput {
 pub(crate) struct BluetoothDeviceRowRender;
 
 impl RenderFn for BluetoothDeviceRowRender {
-    type Props  = BluetoothDeviceRowProps;
+    type Props = BluetoothDeviceRowProps;
     type Output = BluetoothDeviceRowOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
@@ -38,13 +36,13 @@ impl RenderFn for BluetoothDeviceRowRender {
 
         VNode::with_output::<FeatureToggleMenuButton>(
             FeatureToggleMenuButtonProps {
-                disabled:       false,
-                name:           props.name.clone(),
-                working:        props.transitioning,
-                primary_icon:   vec![Icon::parse(device_icon)],
+                disabled: false,
+                name: props.name.clone(),
+                working: props.transitioning,
+                primary_icon: vec![Icon::parse(device_icon)],
                 secondary_icon,
-                visible:        true,
-                switch_active:  Some(props.connected || props.transitioning),
+                visible: true,
+                switch_active: Some(props.connected || props.transitioning),
             },
             move |_click| {
                 if let Some(ref cb) = *emit_clone.borrow() {

@@ -145,7 +145,10 @@ impl NetworkDetailPage {
 
         // Metered dropdown
         let metered_labels = metered_labels();
-        let metered_str_refs: Vec<&str> = metered_labels.iter().map(std::string::String::as_str).collect();
+        let metered_str_refs: Vec<&str> = metered_labels
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let metered_row = adw::ComboRow::builder()
             .title(t("wifi-detail-metered"))
             .model(&gtk::StringList::new(&metered_str_refs))

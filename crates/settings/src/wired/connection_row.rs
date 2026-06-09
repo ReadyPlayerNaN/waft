@@ -4,15 +4,15 @@
 //! as an `AdwActionRow` with active indicator and action button.
 
 use waft_ui_gtk::icons::Icon;
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VActionRow, VCustomButton, VIcon, VLabel};
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
 use crate::i18n::t;
 
 /// Props for creating or updating a connection row.
 #[derive(Clone, PartialEq)]
 pub struct ConnectionRowProps {
-    pub name:   String,
+    pub name: String,
     pub active: bool,
 }
 
@@ -27,13 +27,21 @@ pub enum ConnectionRowOutput {
 pub(crate) struct ConnectionRowRender;
 
 impl RenderFn for ConnectionRowRender {
-    type Props  = ConnectionRowProps;
+    type Props = ConnectionRowProps;
     type Output = ConnectionRowOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
-        let subtitle  = if props.active { t("wired-active") } else { String::new() };
-        let btn_label = if props.active { t("wired-disconnect") } else { t("wired-connect") };
-        let active    = props.active;
+        let subtitle = if props.active {
+            t("wired-active")
+        } else {
+            String::new()
+        };
+        let btn_label = if props.active {
+            t("wired-disconnect")
+        } else {
+            t("wired-connect")
+        };
+        let active = props.active;
 
         VNode::action_row(
             VActionRow::new(&props.name)

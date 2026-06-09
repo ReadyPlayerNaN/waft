@@ -6,8 +6,8 @@
 
 use std::rc::Rc;
 
-use waft_protocol::{Urn, entity};
 use waft_client::{EntityActionCallback, EntityStore};
+use waft_protocol::{Urn, entity};
 
 use crate::ui::feature_toggles::simple_toggle::{SimpleToggle, SimpleToggleConfig, ToggleUpdate};
 

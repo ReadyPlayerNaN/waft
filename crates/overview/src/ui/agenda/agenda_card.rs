@@ -123,7 +123,9 @@ impl AgendaCard {
 
         // Expand chevron + revealer (only if event has details)
         if has_details(event) {
-            let menu_chevron = Rc::new(MenuChevronWidget::build(&MenuChevronProps { expanded: false }));
+            let menu_chevron = Rc::new(MenuChevronWidget::build(&MenuChevronProps {
+                expanded: false,
+            }));
             let expand_btn = gtk::Button::builder()
                 .css_classes(["flat", "circular", "agenda-expand-btn"])
                 .build();
@@ -165,7 +167,9 @@ impl AgendaCard {
             {
                 let state = menu_store.get_state();
                 let should_be_open = state.active_menu_id.as_deref() == Some(&menu_id);
-                menu_chevron.update(&MenuChevronProps { expanded: should_be_open });
+                menu_chevron.update(&MenuChevronProps {
+                    expanded: should_be_open,
+                });
                 revealer.set_reveal_child(should_be_open);
                 if is_past && should_be_open {
                     card.remove_css_class("agenda-event-past");

@@ -354,7 +354,9 @@ fn parse_spec(spec: &str) -> ParsedSpec {
     // Every N minutes: *:0/N:00
     if let Some(rest) = spec.strip_prefix("*:0/") {
         let n_str = rest.strip_suffix(":00").unwrap_or(rest);
-        if let Ok(n) = n_str.parse::<u32>() && (1..=59).contains(&n) {
+        if let Ok(n) = n_str.parse::<u32>()
+            && (1..=59).contains(&n)
+        {
             return ParsedSpec::EveryNMinutes(n);
         }
     }
@@ -386,7 +388,9 @@ fn parse_spec(spec: &str) -> ParsedSpec {
         if day_field == "*" {
             return ParsedSpec::Daily(h, m);
         }
-        if let Ok(d) = day_field.parse::<u32>() && (1..=31).contains(&d) {
+        if let Ok(d) = day_field.parse::<u32>()
+            && (1..=31).contains(&d)
+        {
             return ParsedSpec::Monthly(d, h, m);
         }
     }
@@ -418,5 +422,9 @@ fn parse_hhmm(time: &str) -> Option<(u32, u32)> {
     let mut parts = time.split(':');
     let h: u32 = parts.next()?.parse().ok()?;
     let m: u32 = parts.next()?.parse().ok()?;
-    if h <= 23 && m <= 59 { Some((h, m)) } else { None }
+    if h <= 23 && m <= 59 {
+        Some((h, m))
+    } else {
+        None
+    }
 }

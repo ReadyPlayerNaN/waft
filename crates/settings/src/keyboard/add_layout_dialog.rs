@@ -16,7 +16,10 @@ struct AvailableLayout {
 
 /// Show the add layout dialog. Calls `on_add` with the selected layout code
 /// and name if the user confirms selection.
-pub fn show_add_layout_dialog(parent: &impl IsA<gtk::Widget>, on_add: impl Fn(String, String) + 'static) {
+pub fn show_add_layout_dialog(
+    parent: &impl IsA<gtk::Widget>,
+    on_add: impl Fn(String, String) + 'static,
+) {
     let dialog = adw::AlertDialog::builder()
         .heading(t("kb-add-dialog-heading"))
         .close_response("cancel")

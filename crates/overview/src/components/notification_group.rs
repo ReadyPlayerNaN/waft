@@ -113,7 +113,9 @@ impl NotificationGroup {
             .build();
 
         // Expand/collapse button with menu chevron
-        let menu_chevron = Rc::new(MenuChevronWidget::build(&MenuChevronProps { expanded: false }));
+        let menu_chevron = Rc::new(MenuChevronWidget::build(&MenuChevronProps {
+            expanded: false,
+        }));
         let expand_btn = gtk::Button::builder()
             .css_classes(["flat", "circular", "notification-expand"])
             .visible(false)

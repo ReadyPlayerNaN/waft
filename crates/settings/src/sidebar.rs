@@ -194,14 +194,12 @@ fn categories() -> Vec<SidebarCategory> {
         },
         SidebarCategory {
             label: t("sidebar-automation"),
-            items: vec![
-                SidebarItem {
-                    page_id: "scheduled-tasks",
-                    title: t("settings-scheduled-tasks"),
-                    icon: "preferences-system-time-symbolic",
-                    visible: true,
-                },
-            ],
+            items: vec![SidebarItem {
+                page_id: "scheduled-tasks",
+                title: t("settings-scheduled-tasks"),
+                icon: "preferences-system-time-symbolic",
+                visible: true,
+            }],
         },
     ]
 }
@@ -345,22 +343,20 @@ impl Sidebar {
                 let results_for_keys = results_ref.clone();
                 let key_controller = gtk::EventControllerKey::new();
                 let search_bar_for_keys = search_bar.clone();
-                key_controller.connect_key_pressed(move |_, key, _, _| {
-                    match key {
-                        gtk::gdk::Key::Down => {
-                            results_for_keys.focus_first();
-                            glib::Propagation::Stop
-                        }
-                        gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter => {
-                            if search_bar_for_keys.is_search_mode() {
-                                results_for_keys.activate_selected();
-                                glib::Propagation::Stop
-                            } else {
-                                glib::Propagation::Proceed
-                            }
-                        }
-                        _ => glib::Propagation::Proceed,
+                key_controller.connect_key_pressed(move |_, key, _, _| match key {
+                    gtk::gdk::Key::Down => {
+                        results_for_keys.focus_first();
+                        glib::Propagation::Stop
                     }
+                    gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter => {
+                        if search_bar_for_keys.is_search_mode() {
+                            results_for_keys.activate_selected();
+                            glib::Propagation::Stop
+                        } else {
+                            glib::Propagation::Proceed
+                        }
+                    }
+                    _ => glib::Propagation::Proceed,
                 });
                 search_entry.add_controller(key_controller);
             }
@@ -417,7 +413,10 @@ impl Sidebar {
             let search_entry_ref = search_entry.clone();
             results_ref.connect_output(move |output| {
                 let SearchResultsOutput::Selected {
-                    page_id, page_title, section_title, input_title,
+                    page_id,
+                    page_title,
+                    section_title,
+                    input_title,
                 } = output;
 
                 // Clear search and dismiss
@@ -457,7 +456,9 @@ impl Sidebar {
     /// If hiding and WiFi is currently selected, auto-selects Bluetooth.
     pub fn set_wifi_visible(&self, visible: bool) {
         self.wifi_row.set_visible(visible);
-        self.search_index.borrow_mut().set_page_visible("wifi", visible);
+        self.search_index
+            .borrow_mut()
+            .set_page_visible("wifi", visible);
 
         if !visible
             && let Some(connectivity_box) = self.list_boxes.first()
@@ -475,7 +476,9 @@ impl Sidebar {
     /// If hiding and Wired is currently selected, auto-selects Bluetooth.
     pub fn set_wired_visible(&self, visible: bool) {
         self.wired_row.set_visible(visible);
-        self.search_index.borrow_mut().set_page_visible("wired", visible);
+        self.search_index
+            .borrow_mut()
+            .set_page_visible("wired", visible);
 
         if !visible
             && let Some(connectivity_box) = self.list_boxes.first()

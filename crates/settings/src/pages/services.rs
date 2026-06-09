@@ -34,7 +34,12 @@ impl ServicesPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-services");
-        idx.add_section_deferred("services", &page_title, &t("services-title"), "services-title");
+        idx.add_section_deferred(
+            "services",
+            &page_title,
+            &t("services-title"),
+            "services-title",
+        );
     }
 
     pub fn new(
@@ -55,7 +60,12 @@ impl ServicesPage {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            idx.backfill_widget("services", &t("services-title"), None, Some(&list_group.group));
+            idx.backfill_widget(
+                "services",
+                &t("services-title"),
+                None,
+                Some(&list_group.group),
+            );
         }
 
         let state = Rc::new(RefCell::new(ServicesPageState {
@@ -73,10 +83,7 @@ impl ServicesPage {
                 let state = state.clone();
                 let cb = action_callback.clone();
                 move |services| {
-                    log::debug!(
-                        "[services-page] Reconciling: {} services",
-                        services.len()
-                    );
+                    log::debug!("[services-page] Reconciling: {} services", services.len());
                     Self::reconcile(&state, &services, &cb);
                 }
             },
@@ -126,15 +133,13 @@ impl ServicesPage {
                         ServiceRowOutput::Enable => "enable",
                         ServiceRowOutput::Disable => "disable",
                     };
-                    cb(
-                        row_urn.clone(),
-                        action.to_string(),
-                        serde_json::Value::Null,
-                    );
+                    cb(row_urn.clone(), action.to_string(), serde_json::Value::Null);
                 });
 
                 // Insert in sorted position
-                state.list_group.insert_sorted(&row.widget(), &service.unit, &current_names);
+                state
+                    .list_group
+                    .insert_sorted(&row.widget(), &service.unit, &current_names);
                 state
                     .service_rows
                     .insert(service.unit.clone(), (row, urn.clone()));
@@ -156,7 +161,9 @@ impl ServicesPage {
         }
 
         state.sorted_names = current_names;
-        state.list_group.toggle_visibility(!state.service_rows.is_empty());
+        state
+            .list_group
+            .toggle_visibility(!state.service_rows.is_empty());
 
         // Update dynamic search entries
         {
@@ -164,10 +171,23 @@ impl ServicesPage {
             let page_title = t("settings-services");
             let section_title = t("services-title");
             idx.remove_entries("services", &section_title);
-            idx.add_section("services", &page_title, &section_title, "services-title", &state.list_group.group);
+            idx.add_section(
+                "services",
+                &page_title,
+                &section_title,
+                "services-title",
+                &state.list_group.group,
+            );
             for (_, service) in services {
                 if let Some((row, _)) = state.service_rows.get(&service.unit) {
-                    idx.add_input("services", &page_title, &section_title, &service.unit, &service.unit, &row.widget());
+                    idx.add_input(
+                        "services",
+                        &page_title,
+                        &section_title,
+                        &service.unit,
+                        &service.unit,
+                        &row.widget(),
+                    );
                 }
             }
         }

@@ -79,7 +79,9 @@ impl LocationSettingsGroup {
             Rc::new(RefCell::new(props.location_name.clone()));
 
         // -- Location group --
-        let location_group = adw::PreferencesGroup::builder().title(t("weather-location")).build();
+        let location_group = adw::PreferencesGroup::builder()
+            .title(t("weather-location"))
+            .build();
 
         let location_label = match &props.location_name {
             Some(name) => name.clone(),
@@ -91,7 +93,9 @@ impl LocationSettingsGroup {
             .build();
         location_group.add(&location_row);
 
-        let search_entry = adw::EntryRow::builder().title(t("weather-search-city")).build();
+        let search_entry = adw::EntryRow::builder()
+            .title(t("weather-search-city"))
+            .build();
         location_group.add(&search_entry);
 
         // Wire search on activate (Enter key)
@@ -117,11 +121,16 @@ impl LocationSettingsGroup {
         root.append(&results_group);
 
         // -- Settings group --
-        let settings_group = adw::PreferencesGroup::builder().title(t("weather-settings")).build();
+        let settings_group = adw::PreferencesGroup::builder()
+            .title(t("weather-settings"))
+            .build();
 
         // Units combo
         let units_labels = units_options();
-        let units_refs: Vec<&str> = units_labels.iter().map(std::string::String::as_str).collect();
+        let units_refs: Vec<&str> = units_labels
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let units_model = gtk::StringList::new(&units_refs);
         let units_row = adw::ComboRow::builder()
             .title(t("weather-temp-unit"))

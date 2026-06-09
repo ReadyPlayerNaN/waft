@@ -50,17 +50,15 @@ const ENTITY_TYPES: &[&str] = &[
     entity::app::ENTITY_TYPE,
 ];
 
-fn sync_overview_color_scheme(
-    style_manager: &adw::StyleManager,
-    entity_store: &EntityStore,
-) {
+fn sync_overview_color_scheme(style_manager: &adw::StyleManager, entity_store: &EntityStore) {
     if style_manager.system_supports_color_schemes() {
         style_manager.set_color_scheme(adw::ColorScheme::Default);
         return;
     }
 
     let dark_mode_urn = Urn::new("darkman", entity::display::DARK_MODE_ENTITY_TYPE, "default");
-    if let Some(dark_mode) = entity_store.get_entity_typed::<entity::display::DarkMode>(&dark_mode_urn)
+    if let Some(dark_mode) =
+        entity_store.get_entity_typed::<entity::display::DarkMode>(&dark_mode_urn)
     {
         style_manager.set_color_scheme(if dark_mode.active {
             adw::ColorScheme::ForceDark

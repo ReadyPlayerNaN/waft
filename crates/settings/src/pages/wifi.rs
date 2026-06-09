@@ -40,8 +40,18 @@ impl WiFiPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-wifi");
-        idx.add_section_deferred("wifi", &page_title, &t("wifi-known-networks"), "wifi-known-networks");
-        idx.add_section_deferred("wifi", &page_title, &t("wifi-available-networks"), "wifi-available-networks");
+        idx.add_section_deferred(
+            "wifi",
+            &page_title,
+            &t("wifi-known-networks"),
+            "wifi-known-networks",
+        );
+        idx.add_section_deferred(
+            "wifi",
+            &page_title,
+            &t("wifi-available-networks"),
+            "wifi-available-networks",
+        );
     }
 
     pub fn new(
@@ -67,8 +77,18 @@ impl WiFiPage {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            idx.backfill_widget("wifi", &t("wifi-known-networks"), None, Some(&known_group.root));
-            idx.backfill_widget("wifi", &t("wifi-available-networks"), None, Some(&available_group.root));
+            idx.backfill_widget(
+                "wifi",
+                &t("wifi-known-networks"),
+                None,
+                Some(&known_group.root),
+            );
+            idx.backfill_widget(
+                "wifi",
+                &t("wifi-available-networks"),
+                None,
+                Some(&available_group.root),
+            );
         }
 
         // Wire available networks group scan button output
@@ -77,49 +97,41 @@ impl WiFiPage {
             let cb = action_callback.clone();
             let connect_cb = action_callback.clone();
             let root_for_dialog = root.clone();
-            available_group.connect_output(move |output| {
-                match output {
-                    AvailableNetworksGroupOutput::Scan => {
-                        let adapters: Vec<(Urn, NetworkAdapter)> =
-                            store.get_entities_typed(ADAPTER_ENTITY_TYPE);
-                        for (urn, adapter) in &adapters {
-                            if adapter.kind == AdapterKind::Wireless && adapter.enabled {
-                                cb(
-                                    urn.clone(),
-                                    "scan".to_string(),
-                                    serde_json::Value::Null,
-                                );
-                            }
+            available_group.connect_output(move |output| match output {
+                AvailableNetworksGroupOutput::Scan => {
+                    let adapters: Vec<(Urn, NetworkAdapter)> =
+                        store.get_entities_typed(ADAPTER_ENTITY_TYPE);
+                    for (urn, adapter) in &adapters {
+                        if adapter.kind == AdapterKind::Wireless && adapter.enabled {
+                            cb(urn.clone(), "scan".to_string(), serde_json::Value::Null);
                         }
                     }
-                    AvailableNetworksGroupOutput::ConnectWithPassword { urn, ssid } => {
-                        let connect_cb = connect_cb.clone();
-                        let urn = urn.clone();
-                        show_password_dialog(&root_for_dialog, &ssid, move |password| {
-                            connect_cb(
-                                urn.clone(),
-                                "connect".to_string(),
-                                serde_json::json!({ "password": password }),
-                            );
-                        });
-                    }
+                }
+                AvailableNetworksGroupOutput::ConnectWithPassword { urn, ssid } => {
+                    let connect_cb = connect_cb.clone();
+                    let urn = urn.clone();
+                    show_password_dialog(&root_for_dialog, &ssid, move |password| {
+                        connect_cb(
+                            urn.clone(),
+                            "connect".to_string(),
+                            serde_json::json!({ "password": password }),
+                        );
+                    });
                 }
             });
         }
 
         // Handle action errors (e.g., wrong password, enterprise not supported)
         {
-            entity_store.on_action_error(move |_action_id, error| {
-                match error.as_str() {
-                    "password-required" => {
-                        log::warn!("[wifi-page] unexpected password-required from plugin");
-                    }
-                    "enterprise-not-supported" => {
-                        log::info!("[wifi-page] enterprise network not supported");
-                    }
-                    _ => {
-                        log::warn!("[wifi-page] action error: {error}");
-                    }
+            entity_store.on_action_error(move |_action_id, error| match error.as_str() {
+                "password-required" => {
+                    log::warn!("[wifi-page] unexpected password-required from plugin");
+                }
+                "enterprise-not-supported" => {
+                    log::info!("[wifi-page] enterprise network not supported");
+                }
+                _ => {
+                    log::warn!("[wifi-page] action error: {error}");
                 }
             });
         }
@@ -188,7 +200,8 @@ impl WiFiPage {
     ) {
         let mut st = state.borrow_mut();
         st.adapters_reconciler.reconcile(
-            adapters.iter()
+            adapters
+                .iter()
                 .filter(|(_, a)| a.kind == AdapterKind::Wireless)
                 .map(|(urn, adapter)| {
                     let urn_key = urn.as_str().to_string();
@@ -196,12 +209,12 @@ impl WiFiPage {
                     let cb = action_callback.clone();
                     VNode::with_output::<WifiAdapterGroup>(
                         WifiAdapterGroupProps {
-                            name:    adapter.name.clone(),
+                            name: adapter.name.clone(),
                             enabled: adapter.enabled,
                         },
                         move |output| {
                             let action = match output {
-                                WifiAdapterGroupOutput::Enable  => "activate",
+                                WifiAdapterGroupOutput::Enable => "activate",
                                 WifiAdapterGroupOutput::Disable => "deactivate",
                             };
                             cb(urn.clone(), action.to_string(), serde_json::Value::Null);
@@ -238,7 +251,9 @@ impl WiFiPage {
             .any(|(_, a)| a.kind == AdapterKind::Wireless && a.scanning);
 
         let pending_share = state.pending_share_ssid.clone();
-        state.known_group.reconcile(&known, action_callback, &nav_view, &pending_share);
+        state
+            .known_group
+            .reconcile(&known, action_callback, &nav_view, &pending_share);
         state
             .available_group
             .reconcile(&available, any_scanning, action_callback);
@@ -251,17 +266,43 @@ impl WiFiPage {
             // Known networks
             let known_section = t("wifi-known-networks");
             idx.remove_entries("wifi", &known_section);
-            idx.add_section("wifi", &page_title, &known_section, "wifi-known-networks", &state.known_group.root);
+            idx.add_section(
+                "wifi",
+                &page_title,
+                &known_section,
+                "wifi-known-networks",
+                &state.known_group.root,
+            );
             for (_, network) in known.iter() {
-                idx.add_input("wifi", &page_title, &known_section, &network.ssid, &network.ssid, &state.known_group.root);
+                idx.add_input(
+                    "wifi",
+                    &page_title,
+                    &known_section,
+                    &network.ssid,
+                    &network.ssid,
+                    &state.known_group.root,
+                );
             }
 
             // Available networks
             let available_section = t("wifi-available-networks");
             idx.remove_entries("wifi", &available_section);
-            idx.add_section("wifi", &page_title, &available_section, "wifi-available-networks", &state.available_group.root);
+            idx.add_section(
+                "wifi",
+                &page_title,
+                &available_section,
+                "wifi-available-networks",
+                &state.available_group.root,
+            );
             for (_, network) in available.iter() {
-                idx.add_input("wifi", &page_title, &available_section, &network.ssid, &network.ssid, &state.available_group.root);
+                idx.add_input(
+                    "wifi",
+                    &page_title,
+                    &available_section,
+                    &network.ssid,
+                    &network.ssid,
+                    &state.available_group.root,
+                );
             }
         }
     }

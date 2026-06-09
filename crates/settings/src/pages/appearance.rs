@@ -79,8 +79,7 @@ impl AppearancePage {
         root.append(&night_light.root);
 
         // -- Accent Colour section --
-        let accent_colour =
-            AccentColourSection::new(entity_store, action_callback, search_index);
+        let accent_colour = AccentColourSection::new(entity_store, action_callback, search_index);
         root.append(&accent_colour.root);
 
         Self { root }

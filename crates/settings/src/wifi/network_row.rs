@@ -8,19 +8,19 @@
 use std::rc::Rc;
 
 use waft_ui_gtk::icons::Icon;
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VActionRow, VCustomButton, VIcon, VLabel};
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
 use crate::i18n::t;
 
 /// Props for creating or updating a network row.
 #[derive(Clone)]
 pub struct NetworkRowProps {
-    pub ssid:        String,
-    pub strength:    u8,
-    pub secure:      bool,
-    pub connected:   bool,
-    pub connecting:  bool,
+    pub ssid: String,
+    pub strength: u8,
+    pub secure: bool,
+    pub connected: bool,
+    pub connecting: bool,
     pub on_navigate: Option<Rc<dyn Fn()>>,
 }
 
@@ -55,7 +55,7 @@ fn signal_icon_name(strength: u8) -> &'static str {
 pub(crate) struct NetworkRowRender;
 
 impl RenderFn for NetworkRowRender {
-    type Props  = NetworkRowProps;
+    type Props = NetworkRowProps;
     type Output = NetworkRowOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
@@ -82,7 +82,9 @@ impl RenderFn for NetworkRowRender {
 
         if props.secure {
             row = row.prefix(VNode::icon(VIcon::new(
-                vec![Icon::Themed("network-wireless-encrypted-symbolic".to_string())],
+                vec![Icon::Themed(
+                    "network-wireless-encrypted-symbolic".to_string(),
+                )],
                 16,
             )));
         }

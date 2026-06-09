@@ -88,12 +88,12 @@ impl KdlConfigFile {
 
         // Ensure parent directory exists
         if let Some(parent) = self.path.parent()
-            && let Err(e) = std::fs::create_dir_all(parent) {
-                return Err(format!("Failed to create config directory: {e}"));
-            }
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            return Err(format!("Failed to create config directory: {e}"));
+        }
 
-        std::fs::write(&self.path, output)
-            .map_err(|e| format!("Failed to write config: {e}"))?;
+        std::fs::write(&self.path, output).map_err(|e| format!("Failed to write config: {e}"))?;
 
         Ok(())
     }
@@ -136,7 +136,9 @@ mod tests {
         let path = dir.path().join("config.kdl");
         std::fs::write(&path, "{{{{ not valid kdl").unwrap();
 
-        let err = KdlConfigFile::load(&path).err().expect("should fail on invalid KDL");
+        let err = KdlConfigFile::load(&path)
+            .err()
+            .expect("should fail on invalid KDL");
         assert!(err.contains("KDL parse error"), "unexpected error: {err}");
     }
 
@@ -151,7 +153,13 @@ mod tests {
 
         config.remove_nodes_by_name("remove-me");
         assert_eq!(config.doc.nodes().len(), 2);
-        assert!(config.doc.nodes().iter().all(|n| n.name().value() != "remove-me"));
+        assert!(
+            config
+                .doc
+                .nodes()
+                .iter()
+                .all(|n| n.name().value() != "remove-me")
+        );
     }
 
     #[test]
@@ -175,7 +183,10 @@ mod tests {
         let path = dir.path().join("sub").join("dir").join("config.kdl");
 
         let mut config = KdlConfigFile::load(&path).unwrap();
-        config.doc_mut().nodes_mut().push(kdl::KdlNode::new("test-node"));
+        config
+            .doc_mut()
+            .nodes_mut()
+            .push(kdl::KdlNode::new("test-node"));
         config.save().unwrap();
 
         assert!(path.exists());

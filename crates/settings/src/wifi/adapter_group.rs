@@ -2,15 +2,15 @@
 //!
 //! Dumb widget displaying WiFi adapter controls: enable toggle.
 
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VPreferencesGroup, VSwitchRow};
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
 use crate::i18n::t;
 
 /// Props for creating or updating a WiFi adapter group.
 #[derive(Clone, PartialEq)]
 pub struct WifiAdapterGroupProps {
-    pub name:    String,
+    pub name: String,
     pub enabled: bool,
 }
 
@@ -23,32 +23,29 @@ pub enum WifiAdapterGroupOutput {
 pub(crate) struct WifiAdapterGroupRender;
 
 impl RenderFn for WifiAdapterGroupRender {
-    type Props  = WifiAdapterGroupProps;
+    type Props = WifiAdapterGroupProps;
     type Output = WifiAdapterGroupOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
         VNode::preferences_group(
-            VPreferencesGroup::new()
-                .title(&props.name)
-                .child(
-                    VNode::switch_row(
-                        VSwitchRow::new(t("wifi-adapter-enabled"), props.enabled)
-                            .on_toggle({
-                                let emit = emit.clone();
-                                move |active| {
-                                    if let Some(ref cb) = *emit.borrow() {
-                                        let ev = if active {
-                                            WifiAdapterGroupOutput::Enable
-                                        } else {
-                                            WifiAdapterGroupOutput::Disable
-                                        };
-                                        cb(ev);
-                                    }
-                                }
-                            }),
-                    )
-                    .key("enabled"),
-                ),
+            VPreferencesGroup::new().title(&props.name).child(
+                VNode::switch_row(
+                    VSwitchRow::new(t("wifi-adapter-enabled"), props.enabled).on_toggle({
+                        let emit = emit.clone();
+                        move |active| {
+                            if let Some(ref cb) = *emit.borrow() {
+                                let ev = if active {
+                                    WifiAdapterGroupOutput::Enable
+                                } else {
+                                    WifiAdapterGroupOutput::Disable
+                                };
+                                cb(ev);
+                            }
+                        }
+                    }),
+                )
+                .key("enabled"),
+            ),
         )
     }
 }

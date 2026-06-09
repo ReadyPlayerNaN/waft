@@ -26,9 +26,26 @@ impl DarkModeSection {
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-appearance");
         let section_title = t("display-appearance");
-        idx.add_section_deferred("appearance", &page_title, &section_title, "display-appearance");
-        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-dark-mode"), "display-dark-mode");
-        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-dark-mode-settings"), "display-dark-mode-settings");
+        idx.add_section_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            "display-appearance",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            &t("display-dark-mode"),
+            "display-dark-mode",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            &t("display-dark-mode-settings"),
+            "display-dark-mode-settings",
+        );
     }
 
     pub fn new(
@@ -42,7 +59,9 @@ impl DarkModeSection {
             .visible(false)
             .build();
 
-        let toggle_row = adw::SwitchRow::builder().title(t("display-dark-mode")).build();
+        let toggle_row = adw::SwitchRow::builder()
+            .title(t("display-dark-mode"))
+            .build();
         group.add(&toggle_row);
 
         // Navigation link row (only when on_navigate callback is provided)
@@ -87,9 +106,19 @@ impl DarkModeSection {
             let mut idx = search_index.borrow_mut();
             let section = t("display-appearance");
             idx.backfill_widget("appearance", &section, None, Some(&group));
-            idx.backfill_widget("appearance", &section, Some(&t("display-dark-mode")), Some(&toggle_row));
+            idx.backfill_widget(
+                "appearance",
+                &section,
+                Some(&t("display-dark-mode")),
+                Some(&toggle_row),
+            );
             if let Some(ref row) = nav_row {
-                idx.backfill_widget("appearance", &section, Some(&t("display-dark-mode-settings")), Some(row));
+                idx.backfill_widget(
+                    "appearance",
+                    &section,
+                    Some(&t("display-dark-mode-settings")),
+                    Some(row),
+                );
             }
         }
 

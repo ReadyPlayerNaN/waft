@@ -52,10 +52,7 @@ impl EntityListGroup {
     /// Insert `widget` into the list box at the position matching `key` in
     /// the pre-sorted `sorted_keys` slice.
     pub fn insert_sorted(&self, widget: &impl IsA<gtk::Widget>, key: &str, sorted_keys: &[String]) {
-        let pos = sorted_keys
-            .iter()
-            .position(|k| k == key)
-            .unwrap_or(0);
+        let pos = sorted_keys.iter().position(|k| k == key).unwrap_or(0);
         self.list_box.insert(widget, pos as i32);
     }
 

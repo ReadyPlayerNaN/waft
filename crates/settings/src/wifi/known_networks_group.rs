@@ -134,11 +134,7 @@ impl KnownNetworksGroup {
                             );
                         }
                         NetworkDetailOutput::UpdateSettings { settings } => {
-                            cb(
-                                row_urn.clone(),
-                                "update-settings".to_string(),
-                                settings,
-                            );
+                            cb(row_urn.clone(), "update-settings".to_string(), settings);
                         }
                     });
                 }
@@ -200,7 +196,8 @@ impl KnownNetworksGroup {
         }
 
         if self.entries.is_empty() {
-            self.root.set_description(Some(&t("wifi-no-known-networks")));
+            self.root
+                .set_description(Some(&t("wifi-no-known-networks")));
         } else {
             self.root.set_description(None::<&str>);
         }

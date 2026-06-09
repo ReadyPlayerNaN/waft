@@ -12,7 +12,7 @@ use log::debug;
 use crate::calendar_selection::create_calendar_selection_store;
 use crate::common::VoidCallback;
 use crate::layout::load_layout;
-use crate::layout::renderer::{RenderContext, render_header_area, render_body_area};
+use crate::layout::renderer::{RenderContext, render_body_area, render_header_area};
 use crate::menu_state::MenuStore;
 use waft_client::{EntityActionCallback, EntityStore};
 

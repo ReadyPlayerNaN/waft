@@ -7,12 +7,14 @@ use std::cell::Cell;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::search_index::SearchIndex;
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
-use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::notification_filter::{SOUND_CONFIG_ENTITY_TYPE, SoundConfigEntity};
-use waft_protocol::entity::notification_sound::{NOTIFICATION_SOUND_ENTITY_TYPE, NotificationSound};
+use waft_protocol::entity::notification_sound::{
+    NOTIFICATION_SOUND_ENTITY_TYPE, NotificationSound,
+};
 
 use crate::i18n::t;
 
@@ -46,8 +48,19 @@ impl DefaultsSection {
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-notifications");
         let section_title = t("sounds-defaults");
-        idx.add_section_deferred("notifications", &page_title, &section_title, "sounds-defaults");
-        idx.add_input_deferred("notifications", &page_title, &section_title, &t("sounds-enable"), "sounds-enable");
+        idx.add_section_deferred(
+            "notifications",
+            &page_title,
+            &section_title,
+            "sounds-defaults",
+        );
+        idx.add_input_deferred(
+            "notifications",
+            &page_title,
+            &section_title,
+            &t("sounds-enable"),
+            "sounds-enable",
+        );
     }
 
     pub fn new(
@@ -60,9 +73,7 @@ impl DefaultsSection {
             .visible(false)
             .build();
 
-        let enabled_row = adw::SwitchRow::builder()
-            .title(t("sounds-enable"))
-            .build();
+        let enabled_row = adw::SwitchRow::builder().title(t("sounds-enable")).build();
         group.add(&enabled_row);
 
         // Per-urgency rows with combo + custom entry
@@ -80,13 +91,17 @@ impl DefaultsSection {
             let mut idx = search_index.borrow_mut();
             let section = t("sounds-defaults");
             idx.backfill_widget("notifications", &section, None, Some(&group));
-            idx.backfill_widget("notifications", &section, Some(&t("sounds-enable")), Some(&enabled_row));
+            idx.backfill_widget(
+                "notifications",
+                &section,
+                Some(&t("sounds-enable")),
+                Some(&enabled_row),
+            );
         }
 
         let updating = Rc::new(Cell::new(false));
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
-        let gallery_sounds: Rc<RefCell<Vec<NotificationSound>>> =
-            Rc::new(RefCell::new(Vec::new()));
+        let gallery_sounds: Rc<RefCell<Vec<NotificationSound>>> = Rc::new(RefCell::new(Vec::new()));
 
         // Build the send_update closure
         let send_update: Rc<dyn Fn()> = {
@@ -200,7 +215,11 @@ impl DefaultsSection {
                         enabled_ref.set_active(cfg.enabled);
                         set_urgency_value(&low_ref, &cfg.default_low, &gallery_ref.borrow());
                         set_urgency_value(&normal_ref, &cfg.default_normal, &gallery_ref.borrow());
-                        set_urgency_value(&critical_ref, &cfg.default_critical, &gallery_ref.borrow());
+                        set_urgency_value(
+                            &critical_ref,
+                            &cfg.default_critical,
+                            &gallery_ref.borrow(),
+                        );
                         guard.set(false);
                     } else {
                         group_ref.set_visible(false);
@@ -280,10 +299,7 @@ impl DefaultsSection {
         // "Custom..." entry at the end
         model.append(&t("sounds-custom"));
 
-        let combo = adw::ComboRow::builder()
-            .title(title)
-            .model(&model)
-            .build();
+        let combo = adw::ComboRow::builder().title(title).model(&model).build();
 
         // Custom entry (hidden by default)
         let custom_entry = adw::EntryRow::builder()

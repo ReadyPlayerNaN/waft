@@ -132,7 +132,11 @@ mod tests {
             Find your local number: https://us06web.zoom.us/u/xyzxyz";
         let event = make_event(Some(desc), None);
         let links = extract_meeting_links(&event);
-        assert_eq!(links.len(), 1, "only the /j/ join URL should be extracted, not /u/");
+        assert_eq!(
+            links.len(),
+            1,
+            "only the /j/ join URL should be extracted, not /u/"
+        );
         assert_eq!(links[0].url, "https://us06web.zoom.us/j/12345678?pwd=abc");
     }
 
@@ -141,7 +145,11 @@ mod tests {
         let url = "https://zoom.us/j/99999?pwd=zzz";
         let event = make_event(Some(url), Some(url));
         let links = extract_meeting_links(&event);
-        assert_eq!(links.len(), 1, "same URL in both fields must be deduplicated");
+        assert_eq!(
+            links.len(),
+            1,
+            "same URL in both fields must be deduplicated"
+        );
     }
 
     #[test]
@@ -151,9 +159,16 @@ mod tests {
         let desc = r#"Join Zoom Meeting<br><a href="https://us06web.zoom.us/j/12345678?pwd=ABC&amp;usp=sf_link">https://us06web.zoom.us/j/12345678?pwd=ABC</a>"#;
         let event = make_event(Some(desc), None);
         let links = extract_meeting_links(&event);
-        assert_eq!(links.len(), 1, "HTML href with &amp; vs anchor text must be deduplicated");
+        assert_eq!(
+            links.len(),
+            1,
+            "HTML href with &amp; vs anchor text must be deduplicated"
+        );
         // The stored URL should have & decoded (not &amp;)
-        assert!(!links[0].url.contains("&amp;"), "URL must not contain raw &amp;");
+        assert!(
+            !links[0].url.contains("&amp;"),
+            "URL must not contain raw &amp;"
+        );
     }
 
     #[test]
@@ -163,7 +178,11 @@ mod tests {
         let loc = "https://zoom.us/j/99999?pwd=XYZ&usp=sf_link";
         let event = make_event(Some(desc), Some(loc));
         let links = extract_meeting_links(&event);
-        assert_eq!(links.len(), 1, "all URL variants of the same meeting must collapse to one link");
+        assert_eq!(
+            links.len(),
+            1,
+            "all URL variants of the same meeting must collapse to one link"
+        );
     }
 }
 

@@ -35,7 +35,12 @@ impl SchedulerPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-scheduled-tasks");
-        idx.add_section_deferred("scheduled-tasks", &page_title, &t("scheduler-title"), "scheduler-title");
+        idx.add_section_deferred(
+            "scheduled-tasks",
+            &page_title,
+            &t("scheduler-title"),
+            "scheduler-title",
+        );
     }
 
     pub fn new(
@@ -66,7 +71,12 @@ impl SchedulerPage {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            idx.backfill_widget("scheduled-tasks", &t("scheduler-title"), None, Some(&list_group.group));
+            idx.backfill_widget(
+                "scheduled-tasks",
+                &t("scheduler-title"),
+                None,
+                Some(&list_group.group),
+            );
         }
 
         let state = Rc::new(RefCell::new(SchedulerPageState {
@@ -115,10 +125,7 @@ impl SchedulerPage {
                 let cb = action_callback.clone();
                 let root_ref = root.clone();
                 move |timers| {
-                    log::debug!(
-                        "[scheduler-page] Reconciling: {} timers",
-                        timers.len()
-                    );
+                    log::debug!("[scheduler-page] Reconciling: {} timers", timers.len());
                     Self::reconcile(&state, &timers, &cb, &root_ref);
                 }
             },
@@ -167,72 +174,72 @@ impl SchedulerPage {
                 let root_ref = root.clone();
                 let cb_for_edit = action_callback.clone();
                 let urn_for_edit = urn.clone();
-                row.connect_output(move |output| {
-                    match output {
-                        TimerRowOutput::Enable => {
-                            cb(
-                                row_urn.clone(),
-                                "enable".to_string(),
-                                serde_json::Value::Null,
-                            );
-                        }
-                        TimerRowOutput::Disable => {
-                            cb(
-                                row_urn.clone(),
-                                "disable".to_string(),
-                                serde_json::Value::Null,
-                            );
-                        }
-                        TimerRowOutput::RunNow => {
-                            cb(
-                                row_urn.clone(),
-                                "start".to_string(),
-                                serde_json::Value::Null,
-                            );
-                        }
-                        TimerRowOutput::Edit => {
-                            let dialog = TimerDialog::new(Some(&row_timer));
-                            let cb_inner = cb_for_edit.clone();
-                            let urn_inner = urn_for_edit.clone();
-                            dialog.connect_confirmed(move |updated_timer| {
-                                let value = serde_json::to_value(&updated_timer)
-                                    .unwrap_or(serde_json::Value::Null);
-                                cb_inner(urn_inner.clone(), "update".to_string(), value);
-                            });
-                            dialog.present(&root_ref);
-                        }
-                        TimerRowOutput::Delete => {
-                            let cb_inner = cb.clone();
-                            let urn_inner = row_urn.clone();
-                            let root_inner = root_ref.clone();
-                            let confirm = adw::AlertDialog::builder()
-                                .heading(t("scheduler-delete-timer"))
-                                .body(&row_timer.name)
-                                .close_response("cancel")
-                                .default_response("cancel")
-                                .build();
-                            confirm.add_response("cancel", &t("notif-cancel"));
-                            confirm.add_response("delete", &t("scheduler-delete-timer"));
-                            confirm.set_response_appearance(
-                                "delete",
-                                adw::ResponseAppearance::Destructive,
-                            );
-                            confirm.connect_response(None, move |_, response| {
-                                if response == "delete" {
-                                    cb_inner(
-                                        urn_inner.clone(),
-                                        "delete".to_string(),
-                                        serde_json::Value::Null,
-                                    );
-                                }
-                            });
-                            confirm.present(Some(&root_inner));
-                        }
+                row.connect_output(move |output| match output {
+                    TimerRowOutput::Enable => {
+                        cb(
+                            row_urn.clone(),
+                            "enable".to_string(),
+                            serde_json::Value::Null,
+                        );
+                    }
+                    TimerRowOutput::Disable => {
+                        cb(
+                            row_urn.clone(),
+                            "disable".to_string(),
+                            serde_json::Value::Null,
+                        );
+                    }
+                    TimerRowOutput::RunNow => {
+                        cb(
+                            row_urn.clone(),
+                            "start".to_string(),
+                            serde_json::Value::Null,
+                        );
+                    }
+                    TimerRowOutput::Edit => {
+                        let dialog = TimerDialog::new(Some(&row_timer));
+                        let cb_inner = cb_for_edit.clone();
+                        let urn_inner = urn_for_edit.clone();
+                        dialog.connect_confirmed(move |updated_timer| {
+                            let value = serde_json::to_value(&updated_timer)
+                                .unwrap_or(serde_json::Value::Null);
+                            cb_inner(urn_inner.clone(), "update".to_string(), value);
+                        });
+                        dialog.present(&root_ref);
+                    }
+                    TimerRowOutput::Delete => {
+                        let cb_inner = cb.clone();
+                        let urn_inner = row_urn.clone();
+                        let root_inner = root_ref.clone();
+                        let confirm = adw::AlertDialog::builder()
+                            .heading(t("scheduler-delete-timer"))
+                            .body(&row_timer.name)
+                            .close_response("cancel")
+                            .default_response("cancel")
+                            .build();
+                        confirm.add_response("cancel", &t("notif-cancel"));
+                        confirm.add_response("delete", &t("scheduler-delete-timer"));
+                        confirm.set_response_appearance(
+                            "delete",
+                            adw::ResponseAppearance::Destructive,
+                        );
+                        confirm.connect_response(None, move |_, response| {
+                            if response == "delete" {
+                                cb_inner(
+                                    urn_inner.clone(),
+                                    "delete".to_string(),
+                                    serde_json::Value::Null,
+                                );
+                            }
+                        });
+                        confirm.present(Some(&root_inner));
                     }
                 });
 
                 // Insert in sorted position
-                state.list_group.insert_sorted(&row.widget(), &timer.name, &current_names);
+                state
+                    .list_group
+                    .insert_sorted(&row.widget(), &timer.name, &current_names);
                 state
                     .timer_rows
                     .insert(timer.name.clone(), (row, urn.clone(), timer.clone()));
@@ -254,6 +261,8 @@ impl SchedulerPage {
         }
 
         state.sorted_names = current_names;
-        state.list_group.toggle_visibility(!state.timer_rows.is_empty());
+        state
+            .list_group
+            .toggle_visibility(!state.timer_rows.is_empty());
     }
 }

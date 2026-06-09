@@ -33,15 +33,21 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
             children: parse_children(node)?,
         }),
         "Box" => Ok(LayoutNode::Box {
-            halign: node.attribute("halign").map(std::string::ToString::to_string),
+            halign: node
+                .attribute("halign")
+                .map(std::string::ToString::to_string),
             children: parse_children(node)?,
         }),
         "Row" => Ok(LayoutNode::Row {
-            halign: node.attribute("halign").map(std::string::ToString::to_string),
+            halign: node
+                .attribute("halign")
+                .map(std::string::ToString::to_string),
             children: parse_children(node)?,
         }),
         "Col" => Ok(LayoutNode::Col {
-            halign: node.attribute("halign").map(std::string::ToString::to_string),
+            halign: node
+                .attribute("halign")
+                .map(std::string::ToString::to_string),
             children: parse_children(node)?,
         }),
         "Divider" => Ok(LayoutNode::Divider),

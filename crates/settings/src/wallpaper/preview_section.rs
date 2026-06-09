@@ -63,9 +63,7 @@ impl PreviewSection {
             .css_classes(["suggested-action"])
             .build();
 
-        let random_button = gtk::Button::builder()
-            .label(t("wallpaper-random"))
-            .build();
+        let random_button = gtk::Button::builder().label(t("wallpaper-random")).build();
 
         button_box.append(&browse_button);
         button_box.append(&random_button);
@@ -98,16 +96,20 @@ impl PreviewSection {
 
                 // Get the window for modal parent
                 let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
-                dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |result| {
-                    if let Ok(file) = result
-                        && let Some(path) = file.path()
-                    {
-                        let path_str = path.to_string_lossy().to_string();
-                        if let Some(ref callback) = *cb_inner.borrow() {
-                            callback(PreviewSectionOutput::SetWallpaper(path_str));
+                dialog.open(
+                    window.as_ref(),
+                    gtk::gio::Cancellable::NONE,
+                    move |result| {
+                        if let Ok(file) = result
+                            && let Some(path) = file.path()
+                        {
+                            let path_str = path.to_string_lossy().to_string();
+                            if let Some(ref callback) = *cb_inner.borrow() {
+                                callback(PreviewSectionOutput::SetWallpaper(path_str));
+                            }
                         }
-                    }
-                });
+                    },
+                );
             });
         }
 

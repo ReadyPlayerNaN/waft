@@ -64,8 +64,8 @@ impl ClaudeComponent {
         let container_ref = container.clone();
 
         store.subscribe_type(entity::ai::ENTITY_TYPE, move || {
-            let entities = store_ref
-                .get_entities_typed::<entity::ai::ClaudeUsage>(entity::ai::ENTITY_TYPE);
+            let entities =
+                store_ref.get_entities_typed::<entity::ai::ClaudeUsage>(entity::ai::ENTITY_TYPE);
 
             match entities.first() {
                 Some((_urn, usage)) => {

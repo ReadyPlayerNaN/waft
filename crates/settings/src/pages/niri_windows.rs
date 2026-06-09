@@ -9,8 +9,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use waft_client::EntityStore;
-use waft_protocol::entity::appearance::{GtkAppearance, GTK_APPEARANCE_ENTITY_TYPE};
 use waft_protocol::Urn;
+use waft_protocol::entity::appearance::{GTK_APPEARANCE_ENTITY_TYPE, GtkAppearance};
 
 use crate::i18n::t;
 use crate::kdl_config;
@@ -34,14 +34,49 @@ impl NiriWindowsPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-windows");
-        idx.add_section_deferred("windows", &page_title, &t("windows-prefer-no-csd"), "windows-prefer-no-csd");
-        idx.add_section_deferred("windows", &page_title, &t("windows-derive-colors"), "windows-derive-colors");
-        idx.add_section_deferred("windows", &page_title, &t("windows-focus-ring"), "windows-focus-ring");
-        idx.add_section_deferred("windows", &page_title, &t("windows-border"), "windows-border");
-        idx.add_section_deferred("windows", &page_title, &t("windows-shadow"), "windows-shadow");
-        idx.add_section_deferred("windows", &page_title, &t("windows-tab-indicator"), "windows-tab-indicator");
+        idx.add_section_deferred(
+            "windows",
+            &page_title,
+            &t("windows-prefer-no-csd"),
+            "windows-prefer-no-csd",
+        );
+        idx.add_section_deferred(
+            "windows",
+            &page_title,
+            &t("windows-derive-colors"),
+            "windows-derive-colors",
+        );
+        idx.add_section_deferred(
+            "windows",
+            &page_title,
+            &t("windows-focus-ring"),
+            "windows-focus-ring",
+        );
+        idx.add_section_deferred(
+            "windows",
+            &page_title,
+            &t("windows-border"),
+            "windows-border",
+        );
+        idx.add_section_deferred(
+            "windows",
+            &page_title,
+            &t("windows-shadow"),
+            "windows-shadow",
+        );
+        idx.add_section_deferred(
+            "windows",
+            &page_title,
+            &t("windows-tab-indicator"),
+            "windows-tab-indicator",
+        );
         idx.add_section_deferred("windows", &page_title, &t("windows-gaps"), "windows-gaps");
-        idx.add_section_deferred("windows", &page_title, &t("windows-struts"), "windows-struts");
+        idx.add_section_deferred(
+            "windows",
+            &page_title,
+            &t("windows-struts"),
+            "windows-struts",
+        );
     }
 
     pub fn new(entity_store: &Rc<EntityStore>, search_index: &Rc<RefCell<SearchIndex>>) -> Self {
@@ -358,16 +393,17 @@ impl NiriWindowsPage {
                 if available {
                     let prefs = SettingsPrefs::load();
                     if prefs.derive_window_colors_from_gtk
-                        && let Some((_, appearance)) = entities.first() {
-                            apply_accent_palette(
-                                &mut state.borrow_mut(),
-                                &appearance.accent_color,
-                                &fr,
-                                &bd,
-                                &ti,
-                            );
-                            save();
-                        }
+                        && let Some((_, appearance)) = entities.first()
+                    {
+                        apply_accent_palette(
+                            &mut state.borrow_mut(),
+                            &appearance.accent_color,
+                            &fr,
+                            &bd,
+                            &ti,
+                        );
+                        save();
+                    }
                 }
             });
         }
@@ -391,16 +427,17 @@ impl NiriWindowsPage {
 
                     let prefs = SettingsPrefs::load();
                     if prefs.derive_window_colors_from_gtk
-                        && let Some((_, appearance)) = entities.first() {
-                            apply_accent_palette(
-                                &mut state.borrow_mut(),
-                                &appearance.accent_color,
-                                &fr,
-                                &bd,
-                                &ti,
-                            );
-                            save();
-                        }
+                        && let Some((_, appearance)) = entities.first()
+                    {
+                        apply_accent_palette(
+                            &mut state.borrow_mut(),
+                            &appearance.accent_color,
+                            &fr,
+                            &bd,
+                            &ti,
+                        );
+                        save();
+                    }
                 }
             });
         }
@@ -408,12 +445,32 @@ impl NiriWindowsPage {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            idx.backfill_widget("windows", &t("windows-prefer-no-csd"), None, Some(&no_csd_group));
-            idx.backfill_widget("windows", &t("windows-derive-colors"), None, Some(&derive.root));
-            idx.backfill_widget("windows", &t("windows-focus-ring"), None, Some(&focus_ring.root));
+            idx.backfill_widget(
+                "windows",
+                &t("windows-prefer-no-csd"),
+                None,
+                Some(&no_csd_group),
+            );
+            idx.backfill_widget(
+                "windows",
+                &t("windows-derive-colors"),
+                None,
+                Some(&derive.root),
+            );
+            idx.backfill_widget(
+                "windows",
+                &t("windows-focus-ring"),
+                None,
+                Some(&focus_ring.root),
+            );
             idx.backfill_widget("windows", &t("windows-border"), None, Some(&border.root));
             idx.backfill_widget("windows", &t("windows-shadow"), None, Some(&shadow.root));
-            idx.backfill_widget("windows", &t("windows-tab-indicator"), None, Some(&tab_indicator.root));
+            idx.backfill_widget(
+                "windows",
+                &t("windows-tab-indicator"),
+                None,
+                Some(&tab_indicator.root),
+            );
             idx.backfill_widget("windows", &t("windows-gaps"), None, Some(&gaps.root));
             idx.backfill_widget("windows", &t("windows-struts"), None, Some(&struts.root));
         }

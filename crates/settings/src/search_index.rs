@@ -438,7 +438,12 @@ mod tests {
         assert_eq!(index.entries.len(), 4); // page + 2 brightness + 1 output
         index.remove_entries("display", "Brightness");
         assert_eq!(index.entries.len(), 2); // page + output remain
-        assert!(index.entries.iter().all(|e| e.section_title.as_deref() != Some("Brightness")));
+        assert!(
+            index
+                .entries
+                .iter()
+                .all(|e| e.section_title.as_deref() != Some("Brightness"))
+        );
     }
 
     #[test]
@@ -497,7 +502,13 @@ mod tests {
     fn deferred_input_is_searchable() {
         let mut index = SearchIndex::new();
         index.add_page("display", "Display", "settings-display");
-        index.add_input_deferred("display", "Display", "Brightness", "Auto", "display-auto-brightness");
+        index.add_input_deferred(
+            "display",
+            "Display",
+            "Brightness",
+            "Auto",
+            "display-auto-brightness",
+        );
         let results = index.search("auto");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].input_title.as_deref(), Some("Auto"));

@@ -41,8 +41,7 @@ pub struct GroupForm {
 
 impl GroupForm {
     pub fn new(group: Option<&NotificationGroup>) -> Self {
-        let output_callback: OutputCallback =
-            Rc::new(RefCell::new(None));
+        let output_callback: OutputCallback = Rc::new(RefCell::new(None));
 
         let edit_mode = group.is_some();
         let existing_id = group.map(|g| g.id.clone());
@@ -98,7 +97,11 @@ impl GroupForm {
             .spacing(6)
             .build();
 
-        let save_label = if edit_mode { t("notif-save") } else { t("notif-create") };
+        let save_label = if edit_mode {
+            t("notif-save")
+        } else {
+            t("notif-create")
+        };
         let save_button = gtk::Button::builder()
             .label(&save_label)
             .css_classes(["pill", "suggested-action"])

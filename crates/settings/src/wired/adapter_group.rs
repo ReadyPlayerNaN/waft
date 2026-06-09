@@ -5,8 +5,8 @@
 
 use waft_protocol::Urn;
 use waft_protocol::entity::network::{EthernetConnection, IpInfo};
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VActionRow, VPreferencesGroup, VSwitchRow};
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
 use super::connection_row::{ConnectionRowOutput, ConnectionRowProps, WiredConnectionRow};
 use crate::i18n::t;
@@ -14,10 +14,10 @@ use crate::i18n::t;
 /// Props for creating or updating a wired adapter group.
 #[derive(Clone, PartialEq)]
 pub struct WiredAdapterGroupProps {
-    pub name:        String,
-    pub connected:   bool,
-    pub ip:          Option<IpInfo>,
-    pub public_ip:   Option<String>,
+    pub name: String,
+    pub connected: bool,
+    pub ip: Option<IpInfo>,
+    pub public_ip: Option<String>,
     pub connections: Vec<(Urn, EthernetConnection)>,
 }
 
@@ -35,26 +35,23 @@ pub enum WiredAdapterGroupOutput {
 pub(crate) struct WiredAdapterGroupRender;
 
 impl RenderFn for WiredAdapterGroupRender {
-    type Props  = WiredAdapterGroupProps;
+    type Props = WiredAdapterGroupProps;
     type Output = WiredAdapterGroupOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
-        let mut group = VPreferencesGroup::new()
-            .title(&props.name)
-            .child(
-                VNode::switch_row(
-                    VSwitchRow::new(t("wired-connected"), props.connected)
-                        .on_toggle({
-                            let emit = emit.clone();
-                            move |_active| {
-                                if let Some(ref cb) = *emit.borrow() {
-                                    cb(WiredAdapterGroupOutput::ToggleConnection);
-                                }
-                            }
-                        }),
-                )
-                .key("connected"),
-            );
+        let mut group = VPreferencesGroup::new().title(&props.name).child(
+            VNode::switch_row(
+                VSwitchRow::new(t("wired-connected"), props.connected).on_toggle({
+                    let emit = emit.clone();
+                    move |_active| {
+                        if let Some(ref cb) = *emit.borrow() {
+                            cb(WiredAdapterGroupOutput::ToggleConnection);
+                        }
+                    }
+                }),
+            )
+            .key("connected"),
+        );
 
         if let Some(ref ip) = props.ip {
             group = group.child(
@@ -67,10 +64,8 @@ impl RenderFn for WiredAdapterGroupRender {
 
             if let Some(ref gw) = ip.gateway {
                 group = group.child(
-                    VNode::action_row(
-                        VActionRow::new(t("wired-gateway")).subtitle(gw.as_str()),
-                    )
-                    .key("gateway"),
+                    VNode::action_row(VActionRow::new(t("wired-gateway")).subtitle(gw.as_str()))
+                        .key("gateway"),
                 );
             }
         }
@@ -86,29 +81,28 @@ impl RenderFn for WiredAdapterGroupRender {
 
         for (urn, connection) in &props.connections {
             let conn_props = ConnectionRowProps {
-                name:   connection.name.clone(),
+                name: connection.name.clone(),
                 active: connection.active,
             };
             let urn_key = urn.as_str().to_string();
-            let urn     = urn.clone();
+            let urn = urn.clone();
 
             group = group.child(
-                VNode::with_output::<WiredConnectionRow>(
-                    conn_props,
-                    {
-                        let emit = emit.clone();
-                        move |output| {
-                            if let Some(ref cb) = *emit.borrow() {
-                                match output {
-                                    ConnectionRowOutput::Activate =>
-                                        cb(WiredAdapterGroupOutput::ActivateConnection(urn.clone())),
-                                    ConnectionRowOutput::Deactivate =>
-                                        cb(WiredAdapterGroupOutput::DeactivateConnection(urn.clone())),
+                VNode::with_output::<WiredConnectionRow>(conn_props, {
+                    let emit = emit.clone();
+                    move |output| {
+                        if let Some(ref cb) = *emit.borrow() {
+                            match output {
+                                ConnectionRowOutput::Activate => {
+                                    cb(WiredAdapterGroupOutput::ActivateConnection(urn.clone()))
+                                }
+                                ConnectionRowOutput::Deactivate => {
+                                    cb(WiredAdapterGroupOutput::DeactivateConnection(urn.clone()))
                                 }
                             }
                         }
-                    },
-                )
+                    }
+                })
                 .key(urn_key),
             );
         }

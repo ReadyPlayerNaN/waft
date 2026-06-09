@@ -119,9 +119,7 @@ impl ModeSection {
         let show_segment = matches!(mode, WallpaperMode::DayTracking);
         self.segment_row.set_visible(show_segment);
 
-        if show_segment
-            && let Some(segment) = current_segment
-        {
+        if show_segment && let Some(segment) = current_segment {
             let label = segment_label(*segment);
             self.segment_row.set_subtitle(&label);
         }

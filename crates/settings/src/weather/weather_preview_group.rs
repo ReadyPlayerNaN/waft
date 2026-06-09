@@ -25,11 +25,15 @@ impl WeatherPreviewGroup {
 
         let icon = IconWidget::from_name("weather-clear-symbolic", 32);
 
-        let temperature_row = adw::ActionRow::builder().title(t("weather-temperature")).build();
+        let temperature_row = adw::ActionRow::builder()
+            .title(t("weather-temperature"))
+            .build();
         temperature_row.add_prefix(icon.widget());
         group.add(&temperature_row);
 
-        let condition_row = adw::ActionRow::builder().title(t("weather-condition")).build();
+        let condition_row = adw::ActionRow::builder()
+            .title(t("weather-condition"))
+            .build();
         group.add(&condition_row);
 
         Self {

@@ -25,8 +25,19 @@ impl RecordingSection {
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-notifications");
         let section_title = t("notif-recording");
-        idx.add_section_deferred("notifications", &page_title, &section_title, "notif-recording");
-        idx.add_input_deferred("notifications", &page_title, &section_title, &t("notif-recording"), "notif-recording");
+        idx.add_section_deferred(
+            "notifications",
+            &page_title,
+            &section_title,
+            "notif-recording",
+        );
+        idx.add_input_deferred(
+            "notifications",
+            &page_title,
+            &section_title,
+            &t("notif-recording"),
+            "notif-recording",
+        );
     }
 
     pub fn new(
@@ -50,7 +61,12 @@ impl RecordingSection {
             let mut idx = search_index.borrow_mut();
             let section = t("notif-recording");
             idx.backfill_widget("notifications", &section, None, Some(&group));
-            idx.backfill_widget("notifications", &section, Some(&t("notif-recording")), Some(&toggle_row));
+            idx.backfill_widget(
+                "notifications",
+                &section,
+                Some(&t("notif-recording")),
+                Some(&toggle_row),
+            );
         }
 
         let updating = Rc::new(Cell::new(false));

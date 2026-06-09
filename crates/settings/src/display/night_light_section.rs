@@ -25,9 +25,26 @@ impl NightLightSection {
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-appearance");
         let section_title = t("display-night-light");
-        idx.add_section_deferred("appearance", &page_title, &section_title, "display-night-light");
-        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-night-light-toggle"), "display-night-light-toggle");
-        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-color-preset"), "display-color-preset");
+        idx.add_section_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            "display-night-light",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            &t("display-night-light-toggle"),
+            "display-night-light-toggle",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            &t("display-color-preset"),
+            "display-color-preset",
+        );
     }
 
     pub fn new(
@@ -41,7 +58,9 @@ impl NightLightSection {
             .visible(false)
             .build();
 
-        let toggle_row = adw::SwitchRow::builder().title(t("display-night-light-toggle")).build();
+        let toggle_row = adw::SwitchRow::builder()
+            .title(t("display-night-light-toggle"))
+            .build();
         group.add(&toggle_row);
 
         let preset_model = gtk::StringList::new(&[]);
@@ -79,8 +98,18 @@ impl NightLightSection {
             let mut idx = search_index.borrow_mut();
             let section = t("display-night-light");
             idx.backfill_widget("appearance", &section, None, Some(&group));
-            idx.backfill_widget("appearance", &section, Some(&t("display-night-light-toggle")), Some(&toggle_row));
-            idx.backfill_widget("appearance", &section, Some(&t("display-color-preset")), Some(&preset_row));
+            idx.backfill_widget(
+                "appearance",
+                &section,
+                Some(&t("display-night-light-toggle")),
+                Some(&toggle_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &section,
+                Some(&t("display-color-preset")),
+                Some(&preset_row),
+            );
         }
 
         let updating = Rc::new(Cell::new(false));

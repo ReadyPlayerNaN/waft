@@ -12,11 +12,11 @@ use waft_protocol::urn::Urn;
 use waft_ui_gtk::widgets::search_pane::SearchPaneOutput;
 
 use crate::command_index::CommandIndex;
-use waft_protocol::commands::command_entity_types;
 use crate::ranking::{RankedResult, rank_commands, rank_results};
 use crate::search_index::SearchIndex;
 use crate::usage::{UsageMap, load_usage, record_launch_in, save_usage_to, usage_file_path};
 use crate::window::LauncherWindow;
+use waft_protocol::commands::command_entity_types;
 
 #[derive(Clone, Copy, PartialEq)]
 enum LauncherMode {
@@ -68,8 +68,7 @@ pub fn run() -> anyhow::Result<()> {
     });
 
     // Action writer thread (GTK -> daemon, bypasses tokio)
-    let (action_tx, action_rx) =
-        std::sync::mpsc::channel::<(Urn, String, serde_json::Value)>();
+    let (action_tx, action_rx) = std::sync::mpsc::channel::<(Urn, String, serde_json::Value)>();
     let client_for_writer = client_handle.clone();
     std::thread::spawn(move || {
         while let Ok((urn, action, params)) = action_rx.recv() {
@@ -121,8 +120,7 @@ pub fn run() -> anyhow::Result<()> {
     // connect_startup requires Fn (not FnOnce) but fires exactly once.
     let event_rx_slot: Rc<RefCell<Option<flume::Receiver<ClientEvent>>>> =
         Rc::new(RefCell::new(Some(event_rx)));
-    let action_tx_slot: ActionSender =
-        Rc::new(RefCell::new(Some(action_tx)));
+    let action_tx_slot: ActionSender = Rc::new(RefCell::new(Some(action_tx)));
 
     app.connect_startup(move |app| {
         let Some(event_rx) = event_rx_slot.borrow_mut().take() else {
@@ -173,7 +171,16 @@ pub fn run() -> anyhow::Result<()> {
                     if win_for_activate.is_animating_hide() {
                         // Mid hide-animation: reverse back to visible in requested mode.
                         win_for_activate.show();
-                        apply_launcher_mode(&win_for_activate, prefix, &query_for_activate, &index_for_activate, &cmd_index_for_activate, &usage_for_activate, rank_by_usage, max_results);
+                        apply_launcher_mode(
+                            &win_for_activate,
+                            prefix,
+                            &query_for_activate,
+                            &index_for_activate,
+                            &cmd_index_for_activate,
+                            &usage_for_activate,
+                            rank_by_usage,
+                            max_results,
+                        );
                         win_for_activate.grab_focus();
                     } else {
                         // Determine current mode from entry text prefix.
@@ -189,7 +196,16 @@ pub fn run() -> anyhow::Result<()> {
                             win_for_activate.hide();
                         } else {
                             // Different mode: switch without hiding.
-                            apply_launcher_mode(&win_for_activate, prefix, &query_for_activate, &index_for_activate, &cmd_index_for_activate, &usage_for_activate, rank_by_usage, max_results);
+                            apply_launcher_mode(
+                                &win_for_activate,
+                                prefix,
+                                &query_for_activate,
+                                &index_for_activate,
+                                &cmd_index_for_activate,
+                                &usage_for_activate,
+                                rank_by_usage,
+                                max_results,
+                            );
                             win_for_activate.grab_focus();
                         }
                     }
@@ -199,7 +215,16 @@ pub fn run() -> anyhow::Result<()> {
                 // Fully hidden: reset and open fresh in requested mode.
                 *query_for_activate.borrow_mut() = String::new();
                 win_for_activate.reset();
-                apply_launcher_mode(&win_for_activate, prefix, &query_for_activate, &index_for_activate, &cmd_index_for_activate, &usage_for_activate, rank_by_usage, max_results);
+                apply_launcher_mode(
+                    &win_for_activate,
+                    prefix,
+                    &query_for_activate,
+                    &index_for_activate,
+                    &cmd_index_for_activate,
+                    &usage_for_activate,
+                    rank_by_usage,
+                    max_results,
+                );
                 win_for_activate.show();
                 win_for_activate.grab_focus();
             });
@@ -251,7 +276,15 @@ pub fn run() -> anyhow::Result<()> {
             entity_store.subscribe_type(entity::app::ENTITY_TYPE, move || {
                 index_ref.borrow_mut().rebuild_apps(&store_ref);
                 let query = query_ref.borrow().clone();
-                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
+                update_results(
+                    &win_ref,
+                    &index_ref.borrow(),
+                    &cmd_index_ref.borrow(),
+                    &query,
+                    &usage_for_subscribe.borrow(),
+                    rank_by_usage,
+                    max_results,
+                );
             });
         }
         {
@@ -264,7 +297,15 @@ pub fn run() -> anyhow::Result<()> {
             entity_store.subscribe_type(entity::window::ENTITY_TYPE, move || {
                 index_ref.borrow_mut().rebuild_windows(&store_ref);
                 let query = query_ref.borrow().clone();
-                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
+                update_results(
+                    &win_ref,
+                    &index_ref.borrow(),
+                    &cmd_index_ref.borrow(),
+                    &query,
+                    &usage_for_subscribe.borrow(),
+                    rank_by_usage,
+                    max_results,
+                );
             });
         }
 
@@ -279,7 +320,15 @@ pub fn run() -> anyhow::Result<()> {
             entity_store.subscribe_type(entity_type, move || {
                 cmd_index_ref.borrow_mut().rebuild(&store_ref);
                 let query = query_ref.borrow().clone();
-                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), &query, &usage_for_subscribe.borrow(), rank_by_usage, max_results);
+                update_results(
+                    &win_ref,
+                    &index_ref.borrow(),
+                    &cmd_index_ref.borrow(),
+                    &query,
+                    &usage_for_subscribe.borrow(),
+                    rank_by_usage,
+                    max_results,
+                );
             });
         }
 
@@ -299,7 +348,15 @@ pub fn run() -> anyhow::Result<()> {
                 }
                 cmd_index_ref.borrow_mut().rebuild(&store_ref);
                 let query = query_for_init.borrow().clone();
-                update_results(&win_ref, &index_ref.borrow(), &cmd_index_ref.borrow(), &query, &usage_for_init.borrow(), rank_by_usage, max_results);
+                update_results(
+                    &win_ref,
+                    &index_ref.borrow(),
+                    &cmd_index_ref.borrow(),
+                    &query,
+                    &usage_for_init.borrow(),
+                    rank_by_usage,
+                    max_results,
+                );
             });
         }
 
@@ -363,7 +420,15 @@ fn apply_launcher_mode(
 ) {
     *query.borrow_mut() = prefix.to_string();
     win.search_pane().search_bar.set_text(prefix);
-    update_results(win, &index.borrow(), &cmd_index.borrow(), prefix, &usage.borrow(), rank_by_usage, max_results);
+    update_results(
+        win,
+        &index.borrow(),
+        &cmd_index.borrow(),
+        prefix,
+        &usage.borrow(),
+        rank_by_usage,
+        max_results,
+    );
 }
 
 fn activate_result(
@@ -412,10 +477,7 @@ fn launch_app(
     }
 }
 
-fn focus_window(
-    tx: &std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>,
-    urn: &Urn,
-) {
+fn focus_window(tx: &std::sync::mpsc::Sender<(Urn, String, serde_json::Value)>, urn: &Urn) {
     if let Err(e) = tx.send((urn.clone(), "focus".to_string(), serde_json::Value::Null)) {
         log::warn!("[launcher] failed to send focus action: {e}");
     }

@@ -12,11 +12,11 @@ use adw::prelude::*;
 use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::t;
+use crate::kdl_config;
 use crate::keyboard_shortcuts::bind_editor::BindEditor;
 use crate::keyboard_shortcuts::bind_row::{BindRow, BindRowOutput, BindRowProps};
 use crate::keyboard_shortcuts::{self, BindAction, BindEntry, action_category};
 use crate::search_index::SearchIndex;
-use crate::kdl_config;
 
 /// Ordered list of categories for display. Categories not in this list
 /// appear at the end sorted alphabetically.
@@ -86,7 +86,12 @@ impl KeyboardShortcutsPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-keyboard-shortcuts");
-        idx.add_section_deferred("keyboard-shortcuts", &page_title, &t("kb-shortcuts-custom"), "kb-shortcuts-custom");
+        idx.add_section_deferred(
+            "keyboard-shortcuts",
+            &page_title,
+            &t("kb-shortcuts-custom"),
+            "kb-shortcuts-custom",
+        );
     }
 
     pub fn new(search_index: &Rc<RefCell<SearchIndex>>) -> Self {
@@ -129,7 +134,12 @@ impl KeyboardShortcutsPage {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            idx.backfill_widget("keyboard-shortcuts", &t("kb-shortcuts-custom"), None, Some(&root));
+            idx.backfill_widget(
+                "keyboard-shortcuts",
+                &t("kb-shortcuts-custom"),
+                None,
+                Some(&root),
+            );
         }
 
         let config_path = kdl_config::niri_config_path();
@@ -242,9 +252,7 @@ impl KeyboardShortcutsPage {
         // Insert groups before the raw_group (which stays at the end before add button)
         for (cat_name, cat_entries) in &sorted_cats {
             let i18n_key = category_i18n_key(cat_name);
-            let group = adw::PreferencesGroup::builder()
-                .title(t(&i18n_key))
-                .build();
+            let group = adw::PreferencesGroup::builder().title(t(&i18n_key)).build();
             let list_box = gtk::ListBox::builder()
                 .selection_mode(gtk::SelectionMode::None)
                 .css_classes(["boxed-list"])
@@ -335,12 +343,14 @@ impl KeyboardShortcutsPage {
                 s.rows.push(row);
             }
 
-            s.category_groups.push((cat_name.clone(), CategoryGroup { group, list_box }));
+            s.category_groups
+                .push((cat_name.clone(), CategoryGroup { group, list_box }));
         }
 
         // Toggle empty state
         let has_entries = !entries.is_empty();
-        s.empty_state.set_visible(!has_entries && s.raw_nodes.is_empty());
+        s.empty_state
+            .set_visible(!has_entries && s.raw_nodes.is_empty());
         s.error_state.set_visible(false);
     }
 

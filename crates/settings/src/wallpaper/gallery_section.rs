@@ -77,7 +77,8 @@ impl GallerySection {
 
         *self.wallpaper_dir.borrow_mut() = wallpaper_dir.to_string();
         *self.current_mode.borrow_mut() = *mode;
-        *self.current_wallpaper.borrow_mut() = current_wallpaper.map(std::string::ToString::to_string);
+        *self.current_wallpaper.borrow_mut() =
+            current_wallpaper.map(std::string::ToString::to_string);
         *self.current_urn.borrow_mut() = Some(urn.clone());
 
         if dir_changed || mode_changed {
@@ -108,7 +109,9 @@ impl GallerySection {
             let folder_path = expanded_dir.join(folder_name);
             let gallery_group = self.create_gallery_group(label_key, folder_name, &folder_path);
             self.root.append(&gallery_group.group);
-            self.groups.borrow_mut().insert(folder_name.to_string(), gallery_group);
+            self.groups
+                .borrow_mut()
+                .insert(folder_name.to_string(), gallery_group);
         }
 
         self.update_selection();
@@ -155,29 +158,25 @@ impl GallerySection {
 /// Return the gallery folders for a given wallpaper mode.
 fn folders_for_mode(mode: &WallpaperMode) -> Vec<(&'static str, String)> {
     match mode {
-        WallpaperMode::Static => vec![
-            ("wallpaper-gallery-static", "static-mode".to_string()),
-        ],
+        WallpaperMode::Static => vec![("wallpaper-gallery-static", "static-mode".to_string())],
         WallpaperMode::StyleTracking => vec![
             ("wallpaper-gallery-dark", "dark".to_string()),
             ("wallpaper-gallery-light", "light".to_string()),
         ],
-        WallpaperMode::DayTracking => {
-            DaySegment::all()
-                .iter()
-                .map(|seg| {
-                    let label_key = match seg {
-                        DaySegment::EarlyMorning => "wallpaper-segment-early-morning",
-                        DaySegment::Morning => "wallpaper-segment-morning",
-                        DaySegment::Afternoon => "wallpaper-segment-afternoon",
-                        DaySegment::Evening => "wallpaper-segment-evening",
-                        DaySegment::Night => "wallpaper-segment-night",
-                        DaySegment::MidnightOil => "wallpaper-segment-midnight-oil",
-                    };
-                    (label_key, seg.folder_name().to_string())
-                })
-                .collect()
-        }
+        WallpaperMode::DayTracking => DaySegment::all()
+            .iter()
+            .map(|seg| {
+                let label_key = match seg {
+                    DaySegment::EarlyMorning => "wallpaper-segment-early-morning",
+                    DaySegment::Morning => "wallpaper-segment-morning",
+                    DaySegment::Afternoon => "wallpaper-segment-afternoon",
+                    DaySegment::Evening => "wallpaper-segment-evening",
+                    DaySegment::Night => "wallpaper-segment-night",
+                    DaySegment::MidnightOil => "wallpaper-segment-midnight-oil",
+                };
+                (label_key, seg.folder_name().to_string())
+            })
+            .collect(),
     }
 }
 
@@ -285,16 +284,15 @@ fn refresh_gallery_group(
         let groups_borrow = groups.borrow();
         let prev_folder = &folders[insert_idx - 1].1;
         if let Some(prev_group) = groups_borrow.get(prev_folder) {
-            root.insert_child_after(
-                &new_group.group,
-                Some(&prev_group.group),
-            );
+            root.insert_child_after(&new_group.group, Some(&prev_group.group));
         } else {
             root.append(&new_group.group);
         }
     }
 
-    groups.borrow_mut().insert(folder_name.to_string(), new_group);
+    groups
+        .borrow_mut()
+        .insert(folder_name.to_string(), new_group);
 }
 
 /// Load thumbnail widgets from a directory.
@@ -302,7 +300,10 @@ fn load_thumbnails(folder: &Path) -> Vec<ThumbnailWidget> {
     let entries = match std::fs::read_dir(folder) {
         Ok(e) => e,
         Err(e) => {
-            log::warn!("[wallpaper/gallery] failed to read directory {}: {e}", folder.display());
+            log::warn!(
+                "[wallpaper/gallery] failed to read directory {}: {e}",
+                folder.display()
+            );
             return Vec::new();
         }
     };
@@ -352,9 +353,10 @@ fn paths_match(a: &str, b: &str) -> bool {
 /// Expand `~` prefix to home directory.
 fn expand_tilde(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/")
-        && let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(rest);
-        }
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return PathBuf::from(home).join(rest);
+    }
     PathBuf::from(path)
 }
 
@@ -419,9 +421,7 @@ fn create_gallery_group_impl(
     current_mode: &Rc<RefCell<WallpaperMode>>,
     root: &gtk::Box,
 ) -> GalleryGroup {
-    let group = adw::PreferencesGroup::builder()
-        .title(t(label_key))
-        .build();
+    let group = adw::PreferencesGroup::builder().title(t(label_key)).build();
 
     // Add button in header
     let add_button = gtk::Button::builder()
@@ -475,37 +475,41 @@ fn create_gallery_group_impl(
             let root_inner = root_ref.clone();
             let folder_name_inner = folder_name_owned.clone();
 
-            dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |result| {
-                let file = match result {
-                    Ok(f) => f,
-                    Err(e) => {
-                        if !e.matches(gtk::gio::IOErrorEnum::Cancelled) {
-                            log::warn!("[wallpaper/gallery] file dialog error: {e}");
+            dialog.open(
+                window.as_ref(),
+                gtk::gio::Cancellable::NONE,
+                move |result| {
+                    let file = match result {
+                        Ok(f) => f,
+                        Err(e) => {
+                            if !e.matches(gtk::gio::IOErrorEnum::Cancelled) {
+                                log::warn!("[wallpaper/gallery] file dialog error: {e}");
+                            }
+                            return;
                         }
+                    };
+
+                    let Some(source_path) = file.path() else {
+                        log::warn!("[wallpaper/gallery] selected file has no path");
+                        return;
+                    };
+
+                    if copy_file_to_gallery_folder(&source_path, &folder_inner).is_none() {
                         return;
                     }
-                };
 
-                let Some(source_path) = file.path() else {
-                    log::warn!("[wallpaper/gallery] selected file has no path");
-                    return;
-                };
-
-                if copy_file_to_gallery_folder(&source_path, &folder_inner).is_none() {
-                    return;
-                }
-
-                refresh_gallery_group(
-                    &folder_name_inner,
-                    &groups_inner,
-                    &wallpaper_dir_inner,
-                    &current_mode_inner,
-                    &current_wallpaper_inner,
-                    &action_callback_inner,
-                    &current_urn_inner,
-                    &root_inner,
-                );
-            });
+                    refresh_gallery_group(
+                        &folder_name_inner,
+                        &groups_inner,
+                        &wallpaper_dir_inner,
+                        &current_mode_inner,
+                        &current_wallpaper_inner,
+                        &action_callback_inner,
+                        &current_urn_inner,
+                        &root_inner,
+                    );
+                },
+            );
         });
     }
 
@@ -539,13 +543,14 @@ fn create_gallery_group_impl(
         flow_box.connect_child_activated(move |_, child| {
             let idx = child.index() as usize;
             if let Some(path) = thumbs.get(idx)
-                && let Some(ref urn) = *urn_ref.borrow() {
-                    cb(
-                        urn.clone(),
-                        "set-wallpaper".to_string(),
-                        serde_json::json!({ "path": path }),
-                    );
-                }
+                && let Some(ref urn) = *urn_ref.borrow()
+            {
+                cb(
+                    urn.clone(),
+                    "set-wallpaper".to_string(),
+                    serde_json::json!({ "path": path }),
+                );
+            }
         });
     }
 
@@ -590,7 +595,10 @@ fn create_gallery_group_impl(
             for file in file_list.files() {
                 let Some(path) = file.path() else { continue };
                 if !is_image_extension(&path) {
-                    log::debug!("[wallpaper/gallery] skipping non-image file: {}", path.display());
+                    log::debug!(
+                        "[wallpaper/gallery] skipping non-image file: {}",
+                        path.display()
+                    );
                     continue;
                 }
                 if copy_file_to_gallery_folder(&path, &folder_for_drop).is_some() {
@@ -751,10 +759,7 @@ fn create_gallery_group_impl(
         group.add(&empty_label);
     }
 
-    GalleryGroup {
-        group,
-        thumbnails,
-    }
+    GalleryGroup { group, thumbnails }
 }
 
 #[cfg(test)]

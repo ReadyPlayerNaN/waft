@@ -167,7 +167,10 @@ pub(crate) mod tests {
 
     fn test_new_container_invisible_and_empty() {
         let base = EntityKeyedContainer::<TestEntry>::new(8);
-        assert!(!base.widget().is_visible(), "container should start invisible");
+        assert!(
+            !base.widget().is_visible(),
+            "container should start invisible"
+        );
         let (container, _) = base.refs();
         assert_eq!(child_count(&container), 0);
     }
@@ -268,7 +271,10 @@ pub(crate) mod tests {
             |_, _| {},
             |_| unreachable!("should not create"),
         );
-        assert!(!base.widget().is_visible(), "should be invisible when empty");
+        assert!(
+            !base.widget().is_visible(),
+            "should be invisible when empty"
+        );
         assert_eq!(child_count(&container), 0);
     }
 

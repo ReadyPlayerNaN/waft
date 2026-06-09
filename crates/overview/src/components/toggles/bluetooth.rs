@@ -16,7 +16,9 @@ use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::menu_state::{menu_id_for_widget, toggle_menu};
-use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
+use waft_ui_gtk::widgets::feature_toggle::{
+    FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget,
+};
 
 use crate::components::toggles::settings_app_tracker::SettingsAppTracker;
 use crate::i18n;
@@ -81,10 +83,12 @@ impl BluetoothToggles {
             let entries_borrowed = entries_for_tracker.borrow();
             for entry in entries_borrowed.iter() {
                 entry.settings_separator.set_visible(is_available);
-                entry.settings_button.update(&FeatureToggleMenuSettingsButtonProps {
-                    label: entry.settings_button_label.clone(),
-                    visible: is_available,
-                });
+                entry
+                    .settings_button
+                    .update(&FeatureToggleMenuSettingsButtonProps {
+                        label: entry.settings_button_label.clone(),
+                        visible: is_available,
+                    });
                 let has_devices = !entry.device_rows.borrow().is_empty();
                 entry.toggle.set_expandable(has_devices || is_available);
             }
@@ -172,18 +176,16 @@ impl BluetoothToggles {
                         let action_urn = urn.clone();
                         let menu_id_for_expand = menu_id.clone();
                         let menu_store_for_expand = menu_store_ref.clone();
-                        toggle.connect_output(move |output| {
-                            match output {
-                                FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
-                                    action_cb(
-                                        action_urn.clone(),
-                                        "toggle-power".to_string(),
-                                        serde_json::Value::Null,
-                                    );
-                                }
-                                FeatureToggleOutput::ExpandToggle(_) => {
-                                    toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
-                                }
+                        toggle.connect_output(move |output| match output {
+                            FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
+                                action_cb(
+                                    action_urn.clone(),
+                                    "toggle-power".to_string(),
+                                    serde_json::Value::Null,
+                                );
+                            }
+                            FeatureToggleOutput::ExpandToggle(_) => {
+                                toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
                             }
                         });
 

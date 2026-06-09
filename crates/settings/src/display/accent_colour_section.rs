@@ -38,9 +38,20 @@ impl AccentColourSection {
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-appearance");
         let section_title = t("display-accent-colour");
-        idx.add_section_deferred("appearance", &page_title, &section_title, "display-accent-colour");
+        idx.add_section_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            "display-accent-colour",
+        );
         for (_value, i18n_key, _hex) in ACCENT_COLOURS {
-            idx.add_input_deferred("appearance", &page_title, &section_title, &t(i18n_key), i18n_key);
+            idx.add_input_deferred(
+                "appearance",
+                &page_title,
+                &section_title,
+                &t(i18n_key),
+                i18n_key,
+            );
         }
     }
 

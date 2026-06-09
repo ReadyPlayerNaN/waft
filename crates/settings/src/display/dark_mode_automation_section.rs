@@ -101,12 +101,47 @@ impl DarkModeAutomationSection {
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-appearance");
         let section_title = t("display-dark-mode-automation");
-        idx.add_section_deferred("appearance", &page_title, &section_title, "display-dark-mode-automation");
-        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-latitude"), "display-latitude");
-        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-longitude"), "display-longitude");
-        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-auto-location"), "display-auto-location");
-        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-dbus-api"), "display-dbus-api");
-        idx.add_input_deferred("appearance", &page_title, &section_title, &t("display-xdg-portal"), "display-xdg-portal");
+        idx.add_section_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            "display-dark-mode-automation",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            &t("display-latitude"),
+            "display-latitude",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            &t("display-longitude"),
+            "display-longitude",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            &t("display-auto-location"),
+            "display-auto-location",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            &t("display-dbus-api"),
+            "display-dbus-api",
+        );
+        idx.add_input_deferred(
+            "appearance",
+            &page_title,
+            &section_title,
+            &t("display-xdg-portal"),
+            "display-xdg-portal",
+        );
     }
 
     pub fn new(
@@ -158,21 +193,43 @@ impl DarkModeAutomationSection {
             let mut idx = search_index.borrow_mut();
             let section = t("display-dark-mode-automation");
             idx.backfill_widget("appearance", &section, None, Some(&group));
-            idx.backfill_widget("appearance", &section, Some(&t("display-latitude")), Some(&latitude_row));
-            idx.backfill_widget("appearance", &section, Some(&t("display-longitude")), Some(&longitude_row));
-            idx.backfill_widget("appearance", &section, Some(&t("display-auto-location")), Some(&auto_location_row));
-            idx.backfill_widget("appearance", &section, Some(&t("display-dbus-api")), Some(&dbus_api_row));
-            idx.backfill_widget("appearance", &section, Some(&t("display-xdg-portal")), Some(&portal_api_row));
+            idx.backfill_widget(
+                "appearance",
+                &section,
+                Some(&t("display-latitude")),
+                Some(&latitude_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &section,
+                Some(&t("display-longitude")),
+                Some(&longitude_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &section,
+                Some(&t("display-auto-location")),
+                Some(&auto_location_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &section,
+                Some(&t("display-dbus-api")),
+                Some(&dbus_api_row),
+            );
+            idx.backfill_widget(
+                "appearance",
+                &section,
+                Some(&t("display-xdg-portal")),
+                Some(&portal_api_row),
+            );
         }
 
         let updating = Rc::new(Cell::new(false));
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
 
         // Wire spin row changes
-        for (row, field_name) in [
-            (&latitude_row, "latitude"),
-            (&longitude_row, "longitude"),
-        ] {
+        for (row, field_name) in [(&latitude_row, "latitude"), (&longitude_row, "longitude")] {
             let cb = action_callback.clone();
             let urn_ref = current_urn.clone();
             let guard = updating.clone();
@@ -260,9 +317,7 @@ impl DarkModeAutomationSection {
                     store_clone.get_entities_typed(DARK_MODE_AUTOMATION_CONFIG_ENTITY_TYPE);
 
                 if let Some((urn, config)) = configs.first() {
-                    log::debug!(
-                        "[dark-mode-automation] Initial reconciliation with cached data"
-                    );
+                    log::debug!("[dark-mode-automation] Initial reconciliation with cached data");
                     guard.set(true);
                     *urn_ref.borrow_mut() = Some(urn.clone());
                     group_ref.set_visible(true);

@@ -9,7 +9,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 
 use crate::i18n::t;
-use crate::keyboard_shortcuts::{all_action_names, validate_key, BindAction, BindEntry, Modifier};
+use crate::keyboard_shortcuts::{BindAction, BindEntry, Modifier, all_action_names, validate_key};
 
 type ConfirmedCallback = Rc<RefCell<Option<Box<dyn Fn(BindEntry)>>>>;
 
@@ -76,9 +76,7 @@ impl BindEditor {
 
         // -- Key name entry --
         let key_group = adw::PreferencesGroup::new();
-        let key_entry = adw::EntryRow::builder()
-            .title(t("kb-key"))
-            .build();
+        let key_entry = adw::EntryRow::builder().title(t("kb-key")).build();
         key_group.add(&key_entry);
         content.append(&key_group);
 
@@ -116,9 +114,7 @@ impl BindEditor {
 
         // -- Optional properties --
         let props_group = adw::PreferencesGroup::new();
-        let title_row = adw::EntryRow::builder()
-            .title(t("kb-hotkey-title"))
-            .build();
+        let title_row = adw::EntryRow::builder().title(t("kb-hotkey-title")).build();
         let locked_row = adw::SwitchRow::builder()
             .title(t("kb-allow-when-locked"))
             .build();

@@ -10,13 +10,13 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use crate::search_index::SearchIndex;
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
-use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
 use waft_protocol::entity::notification_filter::{
-    GroupRule, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE,
-    NotificationGroup, NotificationProfile, RuleValue,
+    GroupRule, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE, NotificationGroup,
+    NotificationProfile, RuleValue,
 };
 
 use crate::i18n::t;
@@ -41,7 +41,11 @@ struct CreateFormWidgets {
 }
 
 fn rule_options() -> Vec<String> {
-    vec![t("notif-rule-default"), t("notif-rule-on"), t("notif-rule-off")]
+    vec![
+        t("notif-rule-default"),
+        t("notif-rule-on"),
+        t("notif-rule-off"),
+    ]
 }
 
 fn rule_value_to_index(value: RuleValue) -> u32 {
@@ -79,7 +83,12 @@ impl ProfilesSection {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-notifications");
-        idx.add_section_deferred("notifications", &page_title, &t("notif-profiles"), "notif-profiles");
+        idx.add_section_deferred(
+            "notifications",
+            &page_title,
+            &t("notif-profiles"),
+            "notif-profiles",
+        );
     }
 
     pub fn new(
@@ -115,7 +124,12 @@ impl ProfilesSection {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            idx.backfill_widget("notifications", &t("notif-profiles"), None, Some(&pref_group));
+            idx.backfill_widget(
+                "notifications",
+                &t("notif-profiles"),
+                None,
+                Some(&pref_group),
+            );
         }
 
         // Wire "Add" button
@@ -199,11 +213,7 @@ impl ProfilesSection {
         }
 
         // Remove stale profiles
-        let to_remove: Vec<String> = map
-            .keys()
-            .filter(|k| !seen.contains(*k))
-            .cloned()
-            .collect();
+        let to_remove: Vec<String> = map.keys().filter(|k| !seen.contains(*k)).cloned().collect();
         for key in to_remove {
             if let Some(widgets) = map.remove(&key) {
                 pref_group.remove(&widgets.expander);
@@ -221,9 +231,7 @@ impl ProfilesSection {
         groups: &[&NotificationGroup],
         action_callback: &EntityActionCallback,
     ) -> ProfileWidgets {
-        let expander = adw::ExpanderRow::builder()
-            .title(&profile.name)
-            .build();
+        let expander = adw::ExpanderRow::builder().title(&profile.name).build();
 
         // Delete button suffix
         let delete_button = gtk::Button::builder()
@@ -353,7 +361,9 @@ impl ProfilesSection {
 
         let hide_dropdown = Self::create_rule_dropdown();
         hide_dropdown.set_selected(rule_value_to_index(rule.hide));
-        let hide_row = adw::ActionRow::builder().title(t("notif-rule-hide")).build();
+        let hide_row = adw::ActionRow::builder()
+            .title(t("notif-rule-hide"))
+            .build();
         hide_row.add_suffix(&hide_dropdown);
         sub_group.add(&hide_row);
 
@@ -590,15 +600,12 @@ impl ProfilesSection {
                 };
 
                 let mut current = prof.borrow().clone();
-                current
-                    .rules
-                    .entry(group_id)
-                    .or_insert_with(|| GroupRule {
-                        hide: RuleValue::Default,
-                        no_toast: RuleValue::Default,
-                        no_sound: RuleValue::Default,
-                        sound: None,
-                    });
+                current.rules.entry(group_id).or_insert_with(|| GroupRule {
+                    hide: RuleValue::Default,
+                    no_toast: RuleValue::Default,
+                    no_sound: RuleValue::Default,
+                    sound: None,
+                });
 
                 send_profile_update(&current, &cb, &urn);
                 *prof.borrow_mut() = current;

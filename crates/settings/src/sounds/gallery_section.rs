@@ -8,11 +8,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::search_index::SearchIndex;
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
-use crate::search_index::SearchIndex;
 use waft_protocol::Urn;
-use waft_protocol::entity::notification_sound::{NOTIFICATION_SOUND_ENTITY_TYPE, NotificationSound};
+use waft_protocol::entity::notification_sound::{
+    NOTIFICATION_SOUND_ENTITY_TYPE, NotificationSound,
+};
 
 use crate::i18n::t;
 
@@ -31,7 +33,13 @@ impl GallerySection {
         let page_title = t("settings-sounds");
         let section_title = t("sounds-gallery");
         idx.add_section_deferred("sounds", &page_title, &section_title, "sounds-gallery");
-        idx.add_input_deferred("sounds", &page_title, &section_title, &t("sounds-add-file"), "sounds-add-file");
+        idx.add_input_deferred(
+            "sounds",
+            &page_title,
+            &section_title,
+            &t("sounds-add-file"),
+            "sounds-add-file",
+        );
     }
 
     pub fn new(
@@ -58,7 +66,12 @@ impl GallerySection {
             let mut idx = search_index.borrow_mut();
             let section = t("sounds-gallery");
             idx.backfill_widget("sounds", &section, None, Some(&group));
-            idx.backfill_widget("sounds", &section, Some(&t("sounds-add-file")), Some(&add_button));
+            idx.backfill_widget(
+                "sounds",
+                &section,
+                Some(&t("sounds-add-file")),
+                Some(&add_button),
+            );
         }
 
         // Wire add button to open file dialog
@@ -89,69 +102,69 @@ impl GallerySection {
                 filters.append(&filter);
                 dialog.set_filters(Some(&filters));
 
-                let window = button
-                    .root()
-                    .and_then(|r| r.downcast::<gtk::Window>().ok());
+                let window = button.root().and_then(|r| r.downcast::<gtk::Window>().ok());
 
                 let cb_inner = cb.clone();
                 let group_inner = group_ref.clone();
-                dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |result: Result<gtk::gio::File, gtk::glib::Error>| {
-                    let file: gtk::gio::File = match result {
-                        Ok(f) => f,
-                        Err(e) => {
-                            // User cancelled or error
-                            if !e.matches(gtk::gio::IOErrorEnum::Cancelled) {
-                                log::warn!("[sounds/gallery] file dialog error: {e}");
+                dialog.open(
+                    window.as_ref(),
+                    gtk::gio::Cancellable::NONE,
+                    move |result: Result<gtk::gio::File, gtk::glib::Error>| {
+                        let file: gtk::gio::File = match result {
+                            Ok(f) => f,
+                            Err(e) => {
+                                // User cancelled or error
+                                if !e.matches(gtk::gio::IOErrorEnum::Cancelled) {
+                                    log::warn!("[sounds/gallery] file dialog error: {e}");
+                                }
+                                return;
                             }
+                        };
+
+                        let Some(path) = file.path() else {
+                            log::warn!("[sounds/gallery] selected file has no path");
+                            return;
+                        };
+
+                        let filename = path
+                            .file_name()
+                            .and_then(|n: &std::ffi::OsStr| n.to_str())
+                            .unwrap_or("unknown.ogg")
+                            .to_string();
+
+                        // Read file
+                        let data = match std::fs::read(&path) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                log::warn!("[sounds/gallery] failed to read file: {e}");
+                                show_toast(&group_inner, &format!("Failed to read file: {e}"));
+                                return;
+                            }
+                        };
+
+                        // Check size limit (5 MB)
+                        if data.len() > 5 * 1024 * 1024 {
+                            show_toast(&group_inner, "File exceeds 5 MB size limit");
                             return;
                         }
-                    };
 
-                    let Some(path) = file.path() else {
-                        log::warn!("[sounds/gallery] selected file has no path");
-                        return;
-                    };
+                        // Base64 encode
+                        use base64::Engine;
+                        let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
 
-                    let filename = path
-                        .file_name()
-                        .and_then(|n: &std::ffi::OsStr| n.to_str())
-                        .unwrap_or("unknown.ogg")
-                        .to_string();
-
-                    // Read file
-                    let data = match std::fs::read(&path) {
-                        Ok(d) => d,
-                        Err(e) => {
-                            log::warn!("[sounds/gallery] failed to read file: {e}");
-                            show_toast(&group_inner, &format!("Failed to read file: {e}"));
-                            return;
-                        }
-                    };
-
-                    // Check size limit (5 MB)
-                    if data.len() > 5 * 1024 * 1024 {
-                        show_toast(
-                            &group_inner,
-                            "File exceeds 5 MB size limit",
+                        // Send add-sound action
+                        let urn =
+                            Urn::new("notifications", NOTIFICATION_SOUND_ENTITY_TYPE, &filename);
+                        cb_inner(
+                            urn,
+                            "add-sound".to_string(),
+                            serde_json::json!({
+                                "filename": filename,
+                                "data": encoded,
+                            }),
                         );
-                        return;
-                    }
-
-                    // Base64 encode
-                    use base64::Engine;
-                    let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
-
-                    // Send add-sound action
-                    let urn = Urn::new("notifications", NOTIFICATION_SOUND_ENTITY_TYPE, &filename);
-                    cb_inner(
-                        urn,
-                        "add-sound".to_string(),
-                        serde_json::json!({
-                            "filename": filename,
-                            "data": encoded,
-                        }),
-                    );
-                });
+                    },
+                );
             });
         }
 
@@ -245,11 +258,7 @@ impl GallerySection {
                 let cb = action_callback.clone();
                 let reference = sound.reference.clone();
                 preview_btn.connect_clicked(move |_| {
-                    let urn = Urn::new(
-                        "notifications",
-                        "sound-config",
-                        "default",
-                    );
+                    let urn = Urn::new("notifications", "sound-config", "default");
                     cb(
                         urn,
                         "preview-sound".to_string(),
@@ -270,16 +279,8 @@ impl GallerySection {
                 let cb = action_callback.clone();
                 let filename = sound.filename.clone();
                 remove_btn.connect_clicked(move |_| {
-                    let urn = Urn::new(
-                        "notifications",
-                        NOTIFICATION_SOUND_ENTITY_TYPE,
-                        &filename,
-                    );
-                    cb(
-                        urn,
-                        "remove-sound".to_string(),
-                        serde_json::Value::Null,
-                    );
+                    let urn = Urn::new("notifications", NOTIFICATION_SOUND_ENTITY_TYPE, &filename);
+                    cb(urn, "remove-sound".to_string(), serde_json::Value::Null);
                 });
             }
 
@@ -287,10 +288,7 @@ impl GallerySection {
             row.add_suffix(&remove_btn);
             group.add(&row);
 
-            rows_map.insert(
-                sound.filename.clone(),
-                SoundRow { row },
-            );
+            rows_map.insert(sound.filename.clone(), SoundRow { row });
         }
     }
 }

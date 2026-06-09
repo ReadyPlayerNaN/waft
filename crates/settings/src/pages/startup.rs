@@ -10,10 +10,10 @@ use adw::prelude::*;
 use waft_ui_gtk::vdom::Component;
 
 use crate::i18n::t;
+use crate::kdl_config;
 use crate::search_index::SearchIndex;
 use crate::startup::entry_dialog::EntryDialog;
 use crate::startup::startup_row::{StartupRow, StartupRowOutput, StartupRowProps};
-use crate::kdl_config;
 use crate::startup::{self, StartupEntry};
 
 /// Smart container for the Startup settings page.
@@ -35,7 +35,12 @@ impl StartupPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-startup");
-        idx.add_section_deferred("startup", &page_title, &t("startup-entries"), "startup-entries");
+        idx.add_section_deferred(
+            "startup",
+            &page_title,
+            &t("startup-entries"),
+            "startup-entries",
+        );
     }
 
     pub fn new(search_index: &Rc<RefCell<SearchIndex>>) -> Self {
@@ -190,12 +195,7 @@ impl StartupPage {
                     }
                     let entries = s.entries.clone();
                     drop(s);
-                    Self::save_and_reconcile(
-                        &state_for_output,
-                        &entries,
-                        &config_path,
-                        &root_ref,
-                    );
+                    Self::save_and_reconcile(&state_for_output, &entries, &config_path, &root_ref);
                 }
             });
 

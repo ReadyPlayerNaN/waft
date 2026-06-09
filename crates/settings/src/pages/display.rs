@@ -14,8 +14,8 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 
 use crate::display::output_section::{
-    OutputGroupWidgets, PendingOutputChanges,
-    any_dirty, create_output_rows, display_title, update_output_group,
+    OutputGroupWidgets, PendingOutputChanges, any_dirty, create_output_rows, display_title,
+    update_output_group,
 };
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
@@ -131,13 +131,18 @@ impl DisplayPage {
                 pending_ref.borrow_mut().clear();
                 apply_btn.set_sensitive(false);
                 reset_btn.set_sensitive(false);
-                let displays: Vec<(Urn, Display)> =
-                    store.get_entities_typed(DISPLAY_ENTITY_TYPE);
+                let displays: Vec<(Urn, Display)> = store.get_entities_typed(DISPLAY_ENTITY_TYPE);
                 let outputs: Vec<(Urn, DisplayOutput)> =
                     store.get_entities_typed(DISPLAY_OUTPUT_ENTITY_TYPE);
                 Self::reconcile(
-                    &groups_ref, &content_ref, &displays, &outputs,
-                    &pending_ref, &apply_btn, &reset_btn, &cb,
+                    &groups_ref,
+                    &content_ref,
+                    &displays,
+                    &outputs,
+                    &pending_ref,
+                    &apply_btn,
+                    &reset_btn,
+                    &cb,
                 );
                 Self::register_search_entries(&idx_ref, &groups_ref);
                 root_ref.set_visible(!displays.is_empty() || !outputs.is_empty());
@@ -167,8 +172,14 @@ impl DisplayPage {
                         outputs.len()
                     );
                     Self::reconcile(
-                        &groups_ref, &content_ref, &displays, &outputs,
-                        &pending_ref, &apply_btn, &reset_btn, &cb,
+                        &groups_ref,
+                        &content_ref,
+                        &displays,
+                        &outputs,
+                        &pending_ref,
+                        &apply_btn,
+                        &reset_btn,
+                        &cb,
                     );
                     Self::register_search_entries(&idx_ref, &groups_ref);
                     let is_dirty = any_dirty(&pending_ref.borrow());
@@ -197,8 +208,9 @@ impl DisplayPage {
 
         let displays: Vec<(Urn, Display)> =
             self.entity_store.get_entities_typed(DISPLAY_ENTITY_TYPE);
-        let outputs: Vec<(Urn, DisplayOutput)> =
-            self.entity_store.get_entities_typed(DISPLAY_OUTPUT_ENTITY_TYPE);
+        let outputs: Vec<(Urn, DisplayOutput)> = self
+            .entity_store
+            .get_entities_typed(DISPLAY_OUTPUT_ENTITY_TYPE);
 
         // We cannot borrow action_callback here, but reset just needs to
         // re-reconcile widgets from entity store state. The EntityActionCallback
@@ -235,9 +247,7 @@ impl DisplayPage {
 
             // Find matching output and update widgets
             if let Some(ow) = &group.output
-                && let Some((urn, output)) = outputs
-                    .iter()
-                    .find(|(_, o)| o.name == *key)
+                && let Some((urn, output)) = outputs.iter().find(|(_, o)| o.name == *key)
             {
                 let urn_str = urn.as_str().to_string();
                 let output_pending = pending_map.get(&urn_str);
@@ -317,14 +327,17 @@ impl DisplayPage {
 
                 // Add brightness row if matching display exists
                 let brightness = matching_display.map(|(display_urn, display)| {
-                    Self::create_brightness_row(
-                        &group, display_urn, display, action_callback,
-                    )
+                    Self::create_brightness_row(&group, display_urn, display, action_callback)
                 });
 
                 // Add output control rows
                 let output_widgets = create_output_rows(
-                    &group, output_urn, output, pending, apply_button, reset_button,
+                    &group,
+                    output_urn,
+                    output,
+                    pending,
+                    apply_button,
+                    reset_button,
                 );
 
                 // Set enable switch sensitivity
@@ -333,11 +346,14 @@ impl DisplayPage {
                 }
 
                 content_box.append(&group);
-                map.insert(key, UnifiedDisplayGroup {
-                    group,
-                    brightness,
-                    output: Some(output_widgets),
-                });
+                map.insert(
+                    key,
+                    UnifiedDisplayGroup {
+                        group,
+                        brightness,
+                        output: Some(output_widgets),
+                    },
+                );
             }
         }
 
@@ -372,25 +388,23 @@ impl DisplayPage {
                     .description(subtitle)
                     .build();
 
-                let brightness = Self::create_brightness_row(
-                    &group, display_urn, display, action_callback,
-                );
+                let brightness =
+                    Self::create_brightness_row(&group, display_urn, display, action_callback);
 
                 content_box.append(&group);
-                map.insert(key, UnifiedDisplayGroup {
-                    group,
-                    brightness: Some(brightness),
-                    output: None,
-                });
+                map.insert(
+                    key,
+                    UnifiedDisplayGroup {
+                        group,
+                        brightness: Some(brightness),
+                        output: None,
+                    },
+                );
             }
         }
 
         // Remove stale groups
-        let to_remove: Vec<String> = map
-            .keys()
-            .filter(|k| !seen.contains(*k))
-            .cloned()
-            .collect();
+        let to_remove: Vec<String> = map.keys().filter(|k| !seen.contains(*k)).cloned().collect();
         for key in to_remove {
             if let Some(group) = map.remove(&key) {
                 content_box.remove(&group.group);
@@ -414,7 +428,9 @@ impl DisplayPage {
         scale.set_increments(0.05, 0.1);
         scale.set_value(display.brightness);
 
-        let row = adw::ActionRow::builder().title(t("display-brightness")).build();
+        let row = adw::ActionRow::builder()
+            .title(t("display-brightness"))
+            .build();
         row.add_suffix(&scale);
         group.add(&row);
 
@@ -461,20 +477,71 @@ impl DisplayPage {
 
             if group.brightness.is_some() {
                 idx.add_input(
-                    "display", &page_title, &title,
-                    &t("display-brightness"), "display-brightness",
+                    "display",
+                    &page_title,
+                    &title,
+                    &t("display-brightness"),
+                    "display-brightness",
                     &group.group,
                 );
             }
 
             if let Some(ow) = &group.output {
-                idx.add_section("display", &page_title, &title, "display-output", &group.group);
-                idx.add_input("display", &page_title, &title, &t("display-resolution"), "display-resolution", &ow.resolution_row);
-                idx.add_input("display", &page_title, &title, &t("display-refresh-rate"), "display-refresh-rate", &ow.refresh_rate_row);
-                idx.add_input("display", &page_title, &title, &t("display-scale"), "display-scale", &ow.scale_row);
-                idx.add_input("display", &page_title, &title, &t("display-rotation"), "display-rotation", &ow.rotation_row);
-                idx.add_input("display", &page_title, &title, &t("display-flip"), "display-flip", &ow.flip_row);
-                idx.add_input("display", &page_title, &title, &t("display-vrr"), "display-vrr", &ow.vrr_row);
+                idx.add_section(
+                    "display",
+                    &page_title,
+                    &title,
+                    "display-output",
+                    &group.group,
+                );
+                idx.add_input(
+                    "display",
+                    &page_title,
+                    &title,
+                    &t("display-resolution"),
+                    "display-resolution",
+                    &ow.resolution_row,
+                );
+                idx.add_input(
+                    "display",
+                    &page_title,
+                    &title,
+                    &t("display-refresh-rate"),
+                    "display-refresh-rate",
+                    &ow.refresh_rate_row,
+                );
+                idx.add_input(
+                    "display",
+                    &page_title,
+                    &title,
+                    &t("display-scale"),
+                    "display-scale",
+                    &ow.scale_row,
+                );
+                idx.add_input(
+                    "display",
+                    &page_title,
+                    &title,
+                    &t("display-rotation"),
+                    "display-rotation",
+                    &ow.rotation_row,
+                );
+                idx.add_input(
+                    "display",
+                    &page_title,
+                    &title,
+                    &t("display-flip"),
+                    "display-flip",
+                    &ow.flip_row,
+                );
+                idx.add_input(
+                    "display",
+                    &page_title,
+                    &title,
+                    &t("display-vrr"),
+                    "display-vrr",
+                    &ow.vrr_row,
+                );
             }
         }
     }
@@ -593,10 +660,7 @@ mod tests {
             kind: DisplayKind::External,
             connector: None,
         };
-        assert_eq!(
-            group_key_for_display(&display),
-            "brightness:LG DDC Monitor"
-        );
+        assert_eq!(group_key_for_display(&display), "brightness:LG DDC Monitor");
     }
 
     #[test]

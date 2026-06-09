@@ -41,9 +41,8 @@ fn schedule_interaction_end(
     let handler_id = handler_id.clone();
     let debounce_inner = debounce_source.clone();
 
-    let source_id = glib::timeout_add_local_once(
-        std::time::Duration::from_millis(delay_ms),
-        move || {
+    let source_id =
+        glib::timeout_add_local_once(std::time::Duration::from_millis(delay_ms), move || {
             *debounce_inner.borrow_mut() = None;
             *interacting.borrow_mut() = false;
 
@@ -52,8 +51,7 @@ fn schedule_interaction_end(
                 scale.set_value(v);
                 scale.unblock_signal(&handler_id);
             }
-        },
-    );
+        });
 
     *debounce_source.borrow_mut() = Some(source_id);
 }
@@ -135,10 +133,7 @@ impl VirtualDevicesSection {
             let cb = action_callback.clone();
             create_button.connect_clicked(move |btn| {
                 let cb = cb.clone();
-                show_create_dialog(
-                    btn.root().and_downcast_ref::<gtk::Window>(),
-                    &cb,
-                );
+                show_create_dialog(btn.root().and_downcast_ref::<gtk::Window>(), &cb);
             });
         }
 
@@ -147,10 +142,7 @@ impl VirtualDevicesSection {
 
     /// Reconcile virtual device rows from entity data.
     pub fn reconcile(&self, devices: &[(Urn, AudioDevice)]) {
-        let virtual_devices: Vec<_> = devices
-            .iter()
-            .filter(|(_, d)| d.virtual_device)
-            .collect();
+        let virtual_devices: Vec<_> = devices.iter().filter(|(_, d)| d.virtual_device).collect();
 
         let mut state = self.state.borrow_mut();
         let mut seen = std::collections::HashSet::new();
@@ -227,10 +219,7 @@ impl VirtualDevicesSection {
             .spacing(0)
             .build();
 
-        let icon = IconWidget::from_name(
-            audio_device_icon("virtual", device.kind),
-            16,
-        );
+        let icon = IconWidget::from_name(audio_device_icon("virtual", device.kind), 16);
 
         // Info row with icon, name, mute button, delete button
         let info_row = adw::ActionRow::builder()
@@ -469,10 +458,7 @@ impl VirtualDevicesSection {
 }
 
 /// Show a dialog to create a virtual device with type selector.
-fn show_create_dialog(
-    parent: Option<&gtk::Window>,
-    action_callback: &EntityActionCallback,
-) {
+fn show_create_dialog(parent: Option<&gtk::Window>, action_callback: &EntityActionCallback) {
     let dialog = adw::AlertDialog::builder()
         .heading(t("audio-create-device-title"))
         .close_response("cancel")

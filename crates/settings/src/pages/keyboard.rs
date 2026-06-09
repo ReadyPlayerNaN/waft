@@ -58,8 +58,19 @@ impl KeyboardPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-keyboard");
-        idx.add_section_deferred("keyboard", &page_title, &t("kb-layouts-title"), "kb-layouts-title");
-        idx.add_input_deferred("keyboard", &page_title, &t("kb-layouts-title"), &t("kb-add-layout"), "kb-add-layout");
+        idx.add_section_deferred(
+            "keyboard",
+            &page_title,
+            &t("kb-layouts-title"),
+            "kb-layouts-title",
+        );
+        idx.add_input_deferred(
+            "keyboard",
+            &page_title,
+            &t("kb-layouts-title"),
+            &t("kb-add-layout"),
+            "kb-add-layout",
+        );
     }
 
     pub fn new(
@@ -100,7 +111,12 @@ impl KeyboardPage {
         {
             let mut idx = search_index.borrow_mut();
             idx.backfill_widget("keyboard", &t("kb-layouts-title"), None, Some(&list_group));
-            idx.backfill_widget("keyboard", &t("kb-layouts-title"), Some(&t("kb-add-layout")), Some(&list_group));
+            idx.backfill_widget(
+                "keyboard",
+                &t("kb-layouts-title"),
+                Some(&t("kb-add-layout")),
+                Some(&list_group),
+            );
         }
 
         // Add layout button
@@ -256,8 +272,7 @@ impl KeyboardPage {
                 s.add_button.set_sensitive(false);
             }
             "system-default" => {
-                s.mode_banner
-                    .set_title(&t("kb-mode-system-default"));
+                s.mode_banner.set_title(&t("kb-mode-system-default"));
                 s.mode_banner.set_revealed(true);
                 s.add_button.set_sensitive(true);
             }
@@ -354,9 +369,7 @@ impl KeyboardPage {
                             s.layout_urn.clone()
                         };
                         if let Some(urn) = layout_urn {
-                            log::debug!(
-                                "[keyboard-page] Switching to layout index {index}"
-                            );
+                            log::debug!("[keyboard-page] Switching to layout index {index}");
                             let params = serde_json::json!({ "index": index });
                             cb_clone(urn, "set-active".to_string(), params);
                         }
@@ -463,9 +476,7 @@ impl KeyboardPage {
                         &list_widget,
                         &current_name,
                         move |new_name| {
-                            log::debug!(
-                                "[keyboard-page] Renaming layout '{code}' to '{new_name}'"
-                            );
+                            log::debug!("[keyboard-page] Renaming layout '{code}' to '{new_name}'");
                             let params = serde_json::json!({ "layout": code, "name": new_name });
                             cb(urn.clone(), "rename".to_string(), params);
                         },
@@ -573,7 +584,8 @@ impl KeyboardPage {
 fn parse_variant_slots(variant: &Option<String>, layout_count: usize) -> Vec<String> {
     match variant {
         Some(v) if !v.is_empty() => {
-            let mut slots: Vec<String> = v.split(',').map(std::string::ToString::to_string).collect();
+            let mut slots: Vec<String> =
+                v.split(',').map(std::string::ToString::to_string).collect();
             // Pad with empty strings if needed
             while slots.len() < layout_count {
                 slots.push(String::new());

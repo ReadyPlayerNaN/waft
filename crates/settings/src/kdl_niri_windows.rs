@@ -132,15 +132,13 @@ impl Default for TabIndicatorConfig {
 }
 
 /// Struts (reserved screen edges) configuration.
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct StrutsConfig {
     pub left: u32,
     pub right: u32,
     pub top: u32,
     pub bottom: u32,
 }
-
 
 // ── KDL reading helpers ──
 
@@ -181,7 +179,8 @@ fn parse_enabled(parent: &kdl::KdlNode) -> Option<bool> {
 
 /// Parse a color value from a named child node (e.g. `active-color "#7fc8ff"`).
 fn parse_color_child(parent: &kdl::KdlNode, child_name: &str) -> Option<String> {
-    find_child(parent, child_name).and_then(|n| node_str_arg(n).map(std::string::ToString::to_string))
+    find_child(parent, child_name)
+        .and_then(|n| node_str_arg(n).map(std::string::ToString::to_string))
 }
 
 /// Parse an integer from a named child node.
@@ -215,8 +214,7 @@ fn parse_focus_ring(node: &kdl::KdlNode) -> FocusRingConfig {
         width: parse_int_child(node, "width")
             .map(|v| v as u32)
             .unwrap_or(defaults.width),
-        active_color: parse_color_child(node, "active-color")
-            .unwrap_or(defaults.active_color),
+        active_color: parse_color_child(node, "active-color").unwrap_or(defaults.active_color),
         inactive_color: parse_color_child(node, "inactive-color")
             .unwrap_or(defaults.inactive_color),
         urgent_color: parse_color_child(node, "urgent-color"),
@@ -231,8 +229,7 @@ fn parse_border(node: &kdl::KdlNode) -> BorderConfig {
         width: parse_int_child(node, "width")
             .map(|v| v as u32)
             .unwrap_or(defaults.width),
-        active_color: parse_color_child(node, "active-color")
-            .unwrap_or(defaults.active_color),
+        active_color: parse_color_child(node, "active-color").unwrap_or(defaults.active_color),
         inactive_color: parse_color_child(node, "inactive-color")
             .unwrap_or(defaults.inactive_color),
         urgent_color: parse_color_child(node, "urgent-color"),
@@ -253,8 +250,7 @@ fn parse_shadow(node: &kdl::KdlNode) -> ShadowConfig {
             .unwrap_or(defaults.spread),
         offset_x,
         offset_y,
-        color: parse_color_child(node, "color")
-            .unwrap_or(defaults.color),
+        color: parse_color_child(node, "color").unwrap_or(defaults.color),
         inactive_color: parse_color_child(node, "inactive-color"),
     }
 }
@@ -264,8 +260,7 @@ fn parse_tab_indicator(node: &kdl::KdlNode) -> TabIndicatorConfig {
     let defaults = TabIndicatorConfig::default();
     TabIndicatorConfig {
         enabled: parse_enabled(node).unwrap_or(defaults.enabled),
-        position: parse_color_child(node, "position")
-            .unwrap_or(defaults.position),
+        position: parse_color_child(node, "position").unwrap_or(defaults.position),
         gap: parse_int_child(node, "gap")
             .map(|v| v as u32)
             .unwrap_or(defaults.gap),
@@ -275,8 +270,7 @@ fn parse_tab_indicator(node: &kdl::KdlNode) -> TabIndicatorConfig {
         corner_radius: parse_int_child(node, "corner-radius")
             .map(|v| v as u32)
             .unwrap_or(defaults.corner_radius),
-        active_color: parse_color_child(node, "active-color")
-            .unwrap_or(defaults.active_color),
+        active_color: parse_color_child(node, "active-color").unwrap_or(defaults.active_color),
         inactive_color: parse_color_child(node, "inactive-color")
             .unwrap_or(defaults.inactive_color),
         urgent_color: parse_color_child(node, "urgent-color"),
@@ -287,9 +281,13 @@ fn parse_tab_indicator(node: &kdl::KdlNode) -> TabIndicatorConfig {
 fn parse_struts(node: &kdl::KdlNode) -> StrutsConfig {
     StrutsConfig {
         left: parse_int_child(node, "left").map(|v| v as u32).unwrap_or(0),
-        right: parse_int_child(node, "right").map(|v| v as u32).unwrap_or(0),
+        right: parse_int_child(node, "right")
+            .map(|v| v as u32)
+            .unwrap_or(0),
         top: parse_int_child(node, "top").map(|v| v as u32).unwrap_or(0),
-        bottom: parse_int_child(node, "bottom").map(|v| v as u32).unwrap_or(0),
+        bottom: parse_int_child(node, "bottom")
+            .map(|v| v as u32)
+            .unwrap_or(0),
     }
 }
 
@@ -610,7 +608,9 @@ pub fn save_background_color(path: &Path, color: Option<&str>) -> Result<(), Str
 
     // Add new one if color is provided
     if let Some(color) = color {
-        children.nodes_mut().push(str_node("background-color", color));
+        children
+            .nodes_mut()
+            .push(str_node("background-color", color));
     }
 
     kdl_config.save()
@@ -812,9 +812,18 @@ binds {
         save_layout_config(&path, &config).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains("preset-column-widths"), "preset-column-widths lost");
-        assert!(content.contains("default-column-width"), "default-column-width lost");
-        assert!(content.contains("center-focused-column"), "center-focused-column lost");
+        assert!(
+            content.contains("preset-column-widths"),
+            "preset-column-widths lost"
+        );
+        assert!(
+            content.contains("default-column-width"),
+            "default-column-width lost"
+        );
+        assert!(
+            content.contains("center-focused-column"),
+            "center-focused-column lost"
+        );
         assert!(content.contains("binds"), "binds lost");
     }
 

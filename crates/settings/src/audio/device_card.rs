@@ -57,9 +57,8 @@ fn schedule_interaction_end(
     let handler_id = handler_id.clone();
     let debounce_inner = debounce_source.clone();
 
-    let source_id = glib::timeout_add_local_once(
-        std::time::Duration::from_millis(delay_ms),
-        move || {
+    let source_id =
+        glib::timeout_add_local_once(std::time::Duration::from_millis(delay_ms), move || {
             *debounce_inner.borrow_mut() = None;
             *interacting.borrow_mut() = false;
 
@@ -68,8 +67,7 @@ fn schedule_interaction_end(
                 scale.set_value(v);
                 scale.unblock_signal(&handler_id);
             }
-        },
-    );
+        });
 
     *debounce_source.borrow_mut() = Some(source_id);
 }
@@ -176,9 +174,7 @@ impl PortRow {
     where
         F: Fn(String) -> AudioDeviceCardOutput + 'static,
     {
-        let row = adw::ActionRow::builder()
-            .title(&port.description)
-            .build();
+        let row = adw::ActionRow::builder().title(&port.description).build();
 
         let status_icon = IconWidget::from_name("audio-card-symbolic", 16);
         row.add_suffix(status_icon.widget());
@@ -253,9 +249,7 @@ pub struct AudioDeviceCard {
 
 impl AudioDeviceCard {
     pub fn new(card: &AudioCard) -> Self {
-        let root = adw::PreferencesGroup::builder()
-            .title(&card.name)
-            .build();
+        let root = adw::PreferencesGroup::builder().title(&card.name).build();
 
         // Device-type icon in the group header (right side via header_suffix).
         {
@@ -321,9 +315,7 @@ impl AudioDeviceCard {
                 if let Some(profile_name) = names_ref.get(idx)
                     && let Some(ref callback) = *cb.borrow()
                 {
-                    callback(AudioDeviceCardOutput::SetProfile(
-                        profile_name.clone(),
-                    ));
+                    callback(AudioDeviceCardOutput::SetProfile(profile_name.clone()));
                 }
             });
         }
@@ -355,11 +347,8 @@ impl AudioDeviceCard {
 
         // Update profiles
         {
-            let available_profiles: Vec<&_> = card
-                .profiles
-                .iter()
-                .filter(|p| p.available)
-                .collect();
+            let available_profiles: Vec<&_> =
+                card.profiles.iter().filter(|p| p.available).collect();
 
             self.profile_model.splice(
                 0,
@@ -454,20 +443,24 @@ impl AudioDeviceCard {
                     for pr in &existing.port_rows {
                         existing.root.remove(pr.root.upcast_ref::<gtk::Widget>());
                     }
-                    existing.port_rows = sink.ports.iter().map(|port| {
-                        let sink_name = existing.sink_name.clone();
-                        let pr = PortRow::new(
-                            port,
-                            sink.active_port.as_deref(),
-                            move |port_name| AudioDeviceCardOutput::SetSinkPort {
-                                sink: sink_name.clone(),
-                                port: port_name,
-                            },
-                            &self.output_cb,
-                        );
-                        existing.root.append(pr.root.upcast_ref::<gtk::Widget>());
-                        pr
-                    }).collect();
+                    existing.port_rows = sink
+                        .ports
+                        .iter()
+                        .map(|port| {
+                            let sink_name = existing.sink_name.clone();
+                            let pr = PortRow::new(
+                                port,
+                                sink.active_port.as_deref(),
+                                move |port_name| AudioDeviceCardOutput::SetSinkPort {
+                                    sink: sink_name.clone(),
+                                    port: port_name,
+                                },
+                                &self.output_cb,
+                            );
+                            existing.root.append(pr.root.upcast_ref::<gtk::Widget>());
+                            pr
+                        })
+                        .collect();
                 }
             } else {
                 let row = self.build_sink_row(sink);
@@ -496,7 +489,10 @@ impl AudioDeviceCard {
 
         // Update existing rows in place, create new rows for new sources
         for source in sources {
-            if let Some(existing) = rows.iter_mut().find(|r| r.source_name == source.source_name) {
+            if let Some(existing) = rows
+                .iter_mut()
+                .find(|r| r.source_name == source.source_name)
+            {
                 existing.set_volume(source.volume);
 
                 let mute_icon = if source.muted {
@@ -532,20 +528,24 @@ impl AudioDeviceCard {
                     for pr in &existing.port_rows {
                         existing.root.remove(pr.root.upcast_ref::<gtk::Widget>());
                     }
-                    existing.port_rows = source.ports.iter().map(|port| {
-                        let source_name = existing.source_name.clone();
-                        let pr = PortRow::new(
-                            port,
-                            source.active_port.as_deref(),
-                            move |port_name| AudioDeviceCardOutput::SetSourcePort {
-                                source: source_name.clone(),
-                                port: port_name,
-                            },
-                            &self.output_cb,
-                        );
-                        existing.root.append(pr.root.upcast_ref::<gtk::Widget>());
-                        pr
-                    }).collect();
+                    existing.port_rows = source
+                        .ports
+                        .iter()
+                        .map(|port| {
+                            let source_name = existing.source_name.clone();
+                            let pr = PortRow::new(
+                                port,
+                                source.active_port.as_deref(),
+                                move |port_name| AudioDeviceCardOutput::SetSourcePort {
+                                    source: source_name.clone(),
+                                    port: port_name,
+                                },
+                                &self.output_cb,
+                            );
+                            existing.root.append(pr.root.upcast_ref::<gtk::Widget>());
+                            pr
+                        })
+                        .collect();
                 }
             } else {
                 let row = self.build_source_row(source);
@@ -558,9 +558,7 @@ impl AudioDeviceCard {
     }
 
     fn build_sink_row(&self, sink: &AudioCardSink) -> SinkRow {
-        let frame = gtk::Frame::builder()
-            .css_classes(["card"])
-            .build();
+        let frame = gtk::Frame::builder().css_classes(["card"]).build();
 
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -569,7 +567,10 @@ impl AudioDeviceCard {
 
         frame.set_child(Some(&root));
 
-        let icon = IconWidget::from_name(audio_device_icon(&sink.device_type, AudioDeviceKind::Output), 16);
+        let icon = IconWidget::from_name(
+            audio_device_icon(&sink.device_type, AudioDeviceKind::Output),
+            16,
+        );
 
         // Info row with icon, name, mute button, default button
         let info_row = adw::ActionRow::builder()
@@ -583,7 +584,10 @@ impl AudioDeviceCard {
             .label(t("audio-set-default"))
             .valign(gtk::Align::Center)
             .css_classes(["flat"])
-            .tooltip_text(t_args("audio-card-set-default-tooltip", &[("name", &sink.name)]))
+            .tooltip_text(t_args(
+                "audio-card-set-default-tooltip",
+                &[("name", &sink.name)],
+            ))
             .build();
         info_row.add_suffix(&default_button);
 
@@ -638,20 +642,24 @@ impl AudioDeviceCard {
         root.append(&slider_row);
 
         // Port rows — one adw::ActionRow per port, always visible.
-        let port_rows: Vec<PortRow> = sink.ports.iter().map(|port| {
-            let sink_name = sink.sink_name.clone();
-            let pr = PortRow::new(
-                port,
-                sink.active_port.as_deref(),
-                move |port_name| AudioDeviceCardOutput::SetSinkPort {
-                    sink: sink_name.clone(),
-                    port: port_name,
-                },
-                &self.output_cb,
-            );
-            root.append(pr.root.upcast_ref::<gtk::Widget>());
-            pr
-        }).collect();
+        let port_rows: Vec<PortRow> = sink
+            .ports
+            .iter()
+            .map(|port| {
+                let sink_name = sink.sink_name.clone();
+                let pr = PortRow::new(
+                    port,
+                    sink.active_port.as_deref(),
+                    move |port_name| AudioDeviceCardOutput::SetSinkPort {
+                        sink: sink_name.clone(),
+                        port: port_name,
+                    },
+                    &self.output_cb,
+                );
+                root.append(pr.root.upcast_ref::<gtk::Widget>());
+                pr
+            })
+            .collect();
 
         // Default indicator
         if sink.default {
@@ -705,7 +713,9 @@ impl AudioDeviceCard {
                         *debounce_inner.borrow_mut() = None;
                         *interacting_d.borrow_mut() = false;
                         // Apply any backend value that arrived during interaction.
-                        if let Some(v) = pending_d.borrow_mut().take() && let Some(ref hid) = *holder_d.borrow() {
+                        if let Some(v) = pending_d.borrow_mut().take()
+                            && let Some(ref hid) = *holder_d.borrow()
+                        {
                             slider_d.block_signal(hid);
                             slider_d.set_value(v);
                             slider_d.unblock_signal(hid);
@@ -795,9 +805,7 @@ impl AudioDeviceCard {
             let name = sink_name.clone();
             mute_button.connect_clicked(move |_| {
                 if let Some(ref callback) = *cb.borrow() {
-                    callback(AudioDeviceCardOutput::ToggleSinkMute {
-                        sink: name.clone(),
-                    });
+                    callback(AudioDeviceCardOutput::ToggleSinkMute { sink: name.clone() });
                 }
             });
         }
@@ -808,9 +816,7 @@ impl AudioDeviceCard {
             let name = sink_name.clone();
             default_button.connect_clicked(move |_| {
                 if let Some(ref callback) = *cb.borrow() {
-                    callback(AudioDeviceCardOutput::SetSinkDefault {
-                        sink: name.clone(),
-                    });
+                    callback(AudioDeviceCardOutput::SetSinkDefault { sink: name.clone() });
                 }
             });
         }
@@ -833,9 +839,7 @@ impl AudioDeviceCard {
     }
 
     fn build_source_row(&self, source: &AudioCardSource) -> SourceRow {
-        let frame = gtk::Frame::builder()
-            .css_classes(["card"])
-            .build();
+        let frame = gtk::Frame::builder().css_classes(["card"]).build();
 
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -844,7 +848,10 @@ impl AudioDeviceCard {
 
         frame.set_child(Some(&root));
 
-        let icon = IconWidget::from_name(audio_device_icon(&source.device_type, AudioDeviceKind::Input), 16);
+        let icon = IconWidget::from_name(
+            audio_device_icon(&source.device_type, AudioDeviceKind::Input),
+            16,
+        );
 
         let info_row = adw::ActionRow::builder()
             .title(&source.name)
@@ -857,7 +864,10 @@ impl AudioDeviceCard {
             .label(t("audio-set-default"))
             .valign(gtk::Align::Center)
             .css_classes(["flat"])
-            .tooltip_text(t_args("audio-card-set-default-tooltip", &[("name", &source.name)]))
+            .tooltip_text(t_args(
+                "audio-card-set-default-tooltip",
+                &[("name", &source.name)],
+            ))
             .build();
         info_row.add_suffix(&default_button);
 
@@ -909,20 +919,24 @@ impl AudioDeviceCard {
         root.append(&slider_row);
 
         // Port rows — one adw::ActionRow per port, always visible.
-        let port_rows: Vec<PortRow> = source.ports.iter().map(|port| {
-            let source_name = source.source_name.clone();
-            let pr = PortRow::new(
-                port,
-                source.active_port.as_deref(),
-                move |port_name| AudioDeviceCardOutput::SetSourcePort {
-                    source: source_name.clone(),
-                    port: port_name,
-                },
-                &self.output_cb,
-            );
-            root.append(pr.root.upcast_ref::<gtk::Widget>());
-            pr
-        }).collect();
+        let port_rows: Vec<PortRow> = source
+            .ports
+            .iter()
+            .map(|port| {
+                let source_name = source.source_name.clone();
+                let pr = PortRow::new(
+                    port,
+                    source.active_port.as_deref(),
+                    move |port_name| AudioDeviceCardOutput::SetSourcePort {
+                        source: source_name.clone(),
+                        port: port_name,
+                    },
+                    &self.output_cb,
+                );
+                root.append(pr.root.upcast_ref::<gtk::Widget>());
+                pr
+            })
+            .collect();
 
         // Default indicator
         if source.default {
@@ -971,7 +985,9 @@ impl AudioDeviceCard {
                     move || {
                         *debounce_inner.borrow_mut() = None;
                         *interacting_d.borrow_mut() = false;
-                        if let Some(v) = pending_d.borrow_mut().take() && let Some(ref hid) = *holder_d.borrow() {
+                        if let Some(v) = pending_d.borrow_mut().take()
+                            && let Some(ref hid) = *holder_d.borrow()
+                        {
                             slider_d.block_signal(hid);
                             slider_d.set_value(v);
                             slider_d.unblock_signal(hid);

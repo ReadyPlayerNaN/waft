@@ -14,7 +14,9 @@ use waft_ui_gtk::vdom::Component;
 use waft_ui_gtk::widgets::connection_row::{
     ConnectionRow, ConnectionRowOutput, ConnectionRowProps,
 };
-use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
+use waft_ui_gtk::widgets::feature_toggle::{
+    FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget,
+};
 
 use super::{NetworkRow, ToggleEntry};
 use crate::layout::types::WidgetFeatureToggle;
@@ -98,9 +100,7 @@ impl VpnToggles {
                     .find(|(_, vpn)| vpn.state == entity::network::VpnState::Connected)
                     .map(|(_, vpn)| vpn.name.clone());
 
-                if let Some(entry) =
-                    entries_mut.iter().find(|e| e.urn_str == "vpn-consolidated")
-                {
+                if let Some(entry) = entries_mut.iter().find(|e| e.urn_str == "vpn-consolidated") {
                     // Update existing consolidated toggle
                     entry.toggle.set_active(any_active);
                     entry.toggle.set_busy(any_busy);
@@ -134,27 +134,25 @@ impl VpnToggles {
                     let vpn_states_for_click = vpn_states.clone();
                     let menu_id_for_expand = menu_id.clone();
                     let menu_store_for_expand = menu_store_ref.clone();
-                    toggle.connect_output(move |output| {
-                        match output {
-                            FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
-                                let states = vpn_states_for_click.borrow();
-                                for (urn, state) in states.iter() {
-                                    if matches!(
-                                        state,
-                                        entity::network::VpnState::Connected
-                                            | entity::network::VpnState::Connecting
-                                    ) {
-                                        action_cb(
-                                            urn.clone(),
-                                            "disconnect".to_string(),
-                                            serde_json::Value::Null,
-                                        );
-                                    }
+                    toggle.connect_output(move |output| match output {
+                        FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
+                            let states = vpn_states_for_click.borrow();
+                            for (urn, state) in states.iter() {
+                                if matches!(
+                                    state,
+                                    entity::network::VpnState::Connected
+                                        | entity::network::VpnState::Connecting
+                                ) {
+                                    action_cb(
+                                        urn.clone(),
+                                        "disconnect".to_string(),
+                                        serde_json::Value::Null,
+                                    );
                                 }
                             }
-                            FeatureToggleOutput::ExpandToggle(_) => {
-                                toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
-                            }
+                        }
+                        FeatureToggleOutput::ExpandToggle(_) => {
+                            toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
                         }
                     });
 

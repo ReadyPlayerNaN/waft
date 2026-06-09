@@ -126,20 +126,40 @@ impl SettingsWindow {
             idx.add_page("bluetooth", &t("settings-bluetooth"), "settings-bluetooth");
             idx.add_page("wifi", &t("settings-wifi"), "settings-wifi");
             idx.add_page("wired", &t("settings-wired"), "settings-wired");
-            idx.add_page("online-accounts", &t("settings-online-accounts"), "settings-online-accounts");
+            idx.add_page(
+                "online-accounts",
+                &t("settings-online-accounts"),
+                "settings-online-accounts",
+            );
             idx.add_page("weather", &t("settings-weather"), "settings-weather");
-            idx.add_page("appearance", &t("settings-appearance"), "settings-appearance");
+            idx.add_page(
+                "appearance",
+                &t("settings-appearance"),
+                "settings-appearance",
+            );
             idx.add_page("display", &t("settings-display"), "settings-display");
             idx.add_page("wallpaper", &t("settings-wallpaper"), "settings-wallpaper");
             idx.add_page("windows", &t("settings-windows"), "settings-windows");
             idx.add_page("keyboard", &t("settings-keyboard"), "settings-keyboard");
-            idx.add_page("notifications", &t("settings-notifications"), "settings-notifications");
+            idx.add_page(
+                "notifications",
+                &t("settings-notifications"),
+                "settings-notifications",
+            );
             idx.add_page("sounds", &t("settings-sounds"), "settings-sounds");
             idx.add_page("plugins", &t("settings-plugins"), "settings-plugins");
             idx.add_page("services", &t("settings-services"), "settings-services");
             idx.add_page("startup", &t("settings-startup"), "settings-startup");
-            idx.add_page("keyboard-shortcuts", &t("settings-keyboard-shortcuts"), "settings-keyboard-shortcuts");
-            idx.add_page("scheduled-tasks", &t("settings-scheduled-tasks"), "settings-scheduled-tasks");
+            idx.add_page(
+                "keyboard-shortcuts",
+                &t("settings-keyboard-shortcuts"),
+                "settings-keyboard-shortcuts",
+            );
+            idx.add_page(
+                "scheduled-tasks",
+                &t("settings-scheduled-tasks"),
+                "settings-scheduled-tasks",
+            );
         }
 
         // Phase 1: Register section/input-level search entries (strings only, no widgets).
@@ -188,9 +208,10 @@ impl SettingsWindow {
                     let es = entity_store.clone();
                     let ac = action_callback.clone();
                     let si = search_index.clone();
-                    $f.insert($id.into(), Box::new(move || {
-                        clamped(&$Page::new(&es, &ac, &si).root)
-                    }));
+                    $f.insert(
+                        $id.into(),
+                        Box::new(move || clamped(&$Page::new(&es, &ac, &si).root)),
+                    );
                 }};
             }
 
@@ -209,16 +230,18 @@ impl SettingsWindow {
             {
                 let es = entity_store.clone();
                 let si = search_index.clone();
-                f.insert("windows".into(), Box::new(move || {
-                    clamped(&NiriWindowsPage::new(&es, &si).root)
-                }));
+                f.insert(
+                    "windows".into(),
+                    Box::new(move || clamped(&NiriWindowsPage::new(&es, &si).root)),
+                );
             }
             {
                 let es = entity_store.clone();
                 let si = search_index.clone();
-                f.insert("plugins".into(), Box::new(move || {
-                    clamped(&PluginsPage::new(&es, &si).root)
-                }));
+                f.insert(
+                    "plugins".into(),
+                    Box::new(move || clamped(&PluginsPage::new(&es, &si).root)),
+                );
             }
 
             // Pages that also need navigation_view:
@@ -227,27 +250,30 @@ impl SettingsWindow {
                 let ac = action_callback.clone();
                 let si = search_index.clone();
                 let nv = navigation_view.clone();
-                f.insert("appearance".into(), Box::new(move || {
-                    clamped(&AppearancePage::new(&es, &ac, &si, &nv).root)
-                }));
+                f.insert(
+                    "appearance".into(),
+                    Box::new(move || clamped(&AppearancePage::new(&es, &ac, &si, &nv).root)),
+                );
             }
             {
                 let es = entity_store.clone();
                 let ac = action_callback.clone();
                 let si = search_index.clone();
                 let nv = navigation_view.clone();
-                f.insert("online-accounts".into(), Box::new(move || {
-                    clamped(&OnlineAccountsPage::new(&es, &ac, &si, &nv).root)
-                }));
+                f.insert(
+                    "online-accounts".into(),
+                    Box::new(move || clamped(&OnlineAccountsPage::new(&es, &ac, &si, &nv).root)),
+                );
             }
             {
                 let es = entity_store.clone();
                 let ac = action_callback.clone();
                 let si = search_index.clone();
                 let nv = navigation_view.clone();
-                f.insert("wifi".into(), Box::new(move || {
-                    clamped(&WiFiPage::new(&es, &ac, &si, &nv).root)
-                }));
+                f.insert(
+                    "wifi".into(),
+                    Box::new(move || clamped(&WiFiPage::new(&es, &ac, &si, &nv).root)),
+                );
             }
 
             // Display page — stored in Rc<RefCell> for reset() access:
@@ -256,26 +282,31 @@ impl SettingsWindow {
                 let ac = action_callback.clone();
                 let si = search_index.clone();
                 let dp_ref = display_page_ref.clone();
-                f.insert("display".into(), Box::new(move || {
-                    let page = DisplayPage::new(&es, &ac, &si);
-                    let widget = clamped(&page.root);
-                    *dp_ref.borrow_mut() = Some(page);
-                    widget
-                }));
+                f.insert(
+                    "display".into(),
+                    Box::new(move || {
+                        let page = DisplayPage::new(&es, &ac, &si);
+                        let widget = clamped(&page.root);
+                        *dp_ref.borrow_mut() = Some(page);
+                        widget
+                    }),
+                );
             }
 
             // File-I/O-only pages:
             {
                 let si = search_index.clone();
-                f.insert("keyboard-shortcuts".into(), Box::new(move || {
-                    clamped(&KeyboardShortcutsPage::new(&si).root)
-                }));
+                f.insert(
+                    "keyboard-shortcuts".into(),
+                    Box::new(move || clamped(&KeyboardShortcutsPage::new(&si).root)),
+                );
             }
             {
                 let si = search_index.clone();
-                f.insert("startup".into(), Box::new(move || {
-                    clamped(&StartupPage::new(&si).root)
-                }));
+                f.insert(
+                    "startup".into(),
+                    Box::new(move || clamped(&StartupPage::new(&si).root)),
+                );
             }
         }
 
@@ -349,7 +380,10 @@ impl SettingsWindow {
         let nav_view_ref = navigation_view.clone();
         let root_nav_page_ref = root_nav_page.clone();
         let current_page: Rc<RefCell<String>> = Rc::new(RefCell::new(
-            stack.visible_child_name().map(|s| s.to_string()).unwrap_or_else(|| "bluetooth".to_string()),
+            stack
+                .visible_child_name()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "bluetooth".to_string()),
         ));
         let current_page_ref = current_page.clone();
         let factories_ref = factories.clone();
@@ -403,7 +437,8 @@ impl SettingsWindow {
 
             // Reset display page when leaving it
             let prev = current_page_ref.borrow().clone();
-            if prev == "display" && new_page_id != "display"
+            if prev == "display"
+                && new_page_id != "display"
                 && let Some(ref dp) = *display_page_for_cb.borrow()
             {
                 dp.reset();
@@ -437,10 +472,8 @@ impl SettingsWindow {
         // When waft-settings is already running, a second invocation forwards --page
         // to connect_command_line in the primary instance, which activates this action.
         {
-            let nav_action = gtk::gio::SimpleAction::new(
-                "navigate-to",
-                Some(gtk::glib::VariantTy::STRING),
-            );
+            let nav_action =
+                gtk::gio::SimpleAction::new("navigate-to", Some(gtk::glib::VariantTy::STRING));
             let sidebar_for_action = sidebar_ref.clone();
             nav_action.connect_activate(move |_, param| {
                 if let Some(page_id) = param.and_then(|p| p.str()) {
@@ -464,15 +497,12 @@ impl SettingsWindow {
                     .any(|(_, a)| a.kind == AdapterKind::Wireless);
                 sidebar_for_sub.set_wifi_visible(has_wireless);
 
-                let has_wired = adapters
-                    .iter()
-                    .any(|(_, a)| a.kind == AdapterKind::Wired);
+                let has_wired = adapters.iter().any(|(_, a)| a.kind == AdapterKind::Wired);
                 sidebar_for_sub.set_wired_visible(has_wired);
 
                 // If active page was hidden, switch to Bluetooth
                 if let Some(name) = stack_for_wifi.visible_child_name()
-                    && ((!has_wireless && name == "wifi")
-                        || (!has_wired && name == "wired"))
+                    && ((!has_wireless && name == "wifi") || (!has_wired && name == "wired"))
                 {
                     stack_for_wifi.set_visible_child_name("bluetooth");
                 }
@@ -489,9 +519,7 @@ impl SettingsWindow {
                         .iter()
                         .any(|(_, a)| a.kind == AdapterKind::Wireless);
                     sidebar_for_init.set_wifi_visible(has_wireless);
-                    let has_wired = adapters
-                        .iter()
-                        .any(|(_, a)| a.kind == AdapterKind::Wired);
+                    let has_wired = adapters.iter().any(|(_, a)| a.kind == AdapterKind::Wired);
                     sidebar_for_init.set_wired_visible(has_wired);
                 });
             }
@@ -507,9 +535,7 @@ impl SettingsWindow {
             .build();
 
         // Set search bar key capture widget to window for type-to-search
-        sidebar_ref
-            .search_bar
-            .set_key_capture_widget(Some(&window));
+        sidebar_ref.search_bar.set_key_capture_widget(Some(&window));
 
         // Prevent sidebar from being dropped
         std::mem::forget(sidebar_ref);
@@ -538,4 +564,3 @@ fn scroll_to_and_highlight(scrolled: &gtk::ScrolledWindow, widget: &gtk::Widget)
         }
     });
 }
-

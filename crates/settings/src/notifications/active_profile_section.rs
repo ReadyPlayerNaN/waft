@@ -6,11 +6,11 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use crate::i18n::t;
+use crate::search_index::SearchIndex;
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
-use crate::i18n::t;
-use crate::search_index::SearchIndex;
 use waft_protocol::entity::notification_filter::{
     ACTIVE_PROFILE_ENTITY_TYPE, ActiveProfile, NOTIFICATION_PROFILE_ENTITY_TYPE,
     NotificationProfile,
@@ -26,8 +26,19 @@ impl ActiveProfileSection {
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-notifications");
         let section_title = t("notif-active-profile");
-        idx.add_section_deferred("notifications", &page_title, &section_title, "notif-active-profile");
-        idx.add_input_deferred("notifications", &page_title, &section_title, &t("notif-profile"), "notif-profile");
+        idx.add_section_deferred(
+            "notifications",
+            &page_title,
+            &section_title,
+            "notif-active-profile",
+        );
+        idx.add_input_deferred(
+            "notifications",
+            &page_title,
+            &section_title,
+            &t("notif-profile"),
+            "notif-profile",
+        );
     }
 
     pub fn new(
@@ -52,12 +63,16 @@ impl ActiveProfileSection {
             let mut idx = search_index.borrow_mut();
             let section = t("notif-active-profile");
             idx.backfill_widget("notifications", &section, None, Some(&group));
-            idx.backfill_widget("notifications", &section, Some(&t("notif-profile")), Some(&combo_row));
+            idx.backfill_widget(
+                "notifications",
+                &section,
+                Some(&t("notif-profile")),
+                Some(&combo_row),
+            );
         }
 
         let updating = Rc::new(Cell::new(false));
-        let profile_ids: Rc<RefCell<Vec<String>>> =
-            Rc::new(RefCell::new(Vec::new()));
+        let profile_ids: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
 
         // Wire combo selection -> action
         {
@@ -102,8 +117,7 @@ impl ActiveProfileSection {
 
                 guard.set(true);
 
-                let mut sorted_profiles: Vec<_> =
-                    profiles.iter().map(|(_, p)| p).collect();
+                let mut sorted_profiles: Vec<_> = profiles.iter().map(|(_, p)| p).collect();
                 sorted_profiles.sort_by(|a, b| a.name.cmp(&b.name));
 
                 let string_list = gtk::StringList::new(&[]);

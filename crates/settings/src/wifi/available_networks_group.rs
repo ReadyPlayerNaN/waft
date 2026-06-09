@@ -121,26 +121,24 @@ impl AvailableNetworksGroup {
                 let output_cb = self.output_cb.clone();
                 let is_secure = network.secure;
                 let ssid_for_cb = network.ssid.clone();
-                row.connect_output(move |output| {
-                    match output {
-                        NetworkRowOutput::Connect => {
-                            if is_secure {
-                                if let Some(ref callback) = *output_cb.borrow() {
-                                    callback(AvailableNetworksGroupOutput::ConnectWithPassword {
-                                        urn: urn_clone.clone(),
-                                        ssid: ssid_for_cb.clone(),
-                                    });
-                                }
-                            } else {
-                                cb(
-                                    urn_clone.clone(),
-                                    "connect".to_string(),
-                                    serde_json::Value::Null,
-                                );
+                row.connect_output(move |output| match output {
+                    NetworkRowOutput::Connect => {
+                        if is_secure {
+                            if let Some(ref callback) = *output_cb.borrow() {
+                                callback(AvailableNetworksGroupOutput::ConnectWithPassword {
+                                    urn: urn_clone.clone(),
+                                    ssid: ssid_for_cb.clone(),
+                                });
                             }
+                        } else {
+                            cb(
+                                urn_clone.clone(),
+                                "connect".to_string(),
+                                serde_json::Value::Null,
+                            );
                         }
-                        NetworkRowOutput::Disconnect => {}
                     }
+                    NetworkRowOutput::Disconnect => {}
                 });
                 self.root.add(&row.widget());
                 self.rows.insert(urn_str, row);

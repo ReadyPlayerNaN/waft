@@ -35,8 +35,7 @@ pub struct CombinatorEditor {
 
 impl CombinatorEditor {
     pub fn new(combinator: &RuleCombinator, depth: usize) -> Self {
-        let output_callback: OutputCallback =
-            Rc::new(RefCell::new(None));
+        let output_callback: OutputCallback = Rc::new(RefCell::new(None));
 
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -179,9 +178,7 @@ impl CombinatorEditor {
             .iter()
             .map(|child| match child {
                 ChildEntry::Pattern(row) => RuleNode::Pattern(row.get_pattern()),
-                ChildEntry::Combinator(editor) => {
-                    RuleNode::Combinator(editor.get_combinator())
-                }
+                ChildEntry::Combinator(editor) => RuleNode::Combinator(editor.get_combinator()),
             })
             .collect();
 

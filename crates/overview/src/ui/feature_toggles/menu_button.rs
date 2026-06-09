@@ -1,17 +1,17 @@
 use waft_ui_gtk::icons::Icon;
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VBox, VCustomButton, VIcon, VLabel, VSpinner, VSwitch};
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
 #[derive(Clone, PartialEq)]
 pub struct FeatureToggleMenuButtonProps {
-    pub disabled:       bool,
-    pub name:           String,
-    pub working:        bool,
-    pub primary_icon:   Vec<Icon>,
+    pub disabled: bool,
+    pub name: String,
+    pub working: bool,
+    pub primary_icon: Vec<Icon>,
     pub secondary_icon: Vec<Icon>,
-    pub visible:        bool,
+    pub visible: bool,
     /// When `Some`, renders a non-interactive display-only switch in the right slot.
-    pub switch_active:  Option<bool>,
+    pub switch_active: Option<bool>,
 }
 
 pub enum FeatureToggleMenuButtonOutput {
@@ -21,7 +21,7 @@ pub enum FeatureToggleMenuButtonOutput {
 pub(crate) struct FeatureToggleMenuButtonRender;
 
 impl RenderFn for FeatureToggleMenuButtonRender {
-    type Props  = FeatureToggleMenuButtonProps;
+    type Props = FeatureToggleMenuButtonProps;
     type Output = FeatureToggleMenuButtonOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
@@ -30,8 +30,7 @@ impl RenderFn for FeatureToggleMenuButtonRender {
         let icon_box = VBox::horizontal(4)
             .valign(gtk::Align::Center)
             .child(VNode::icon(
-                VIcon::new(props.primary_icon.clone(), 16)
-                    .visible(!props.primary_icon.is_empty()),
+                VIcon::new(props.primary_icon.clone(), 16).visible(!props.primary_icon.is_empty()),
             ))
             .child(VNode::icon(
                 VIcon::new(props.secondary_icon.clone(), 16)

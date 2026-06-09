@@ -29,20 +29,17 @@ impl RenderFn for AgendaDetailsRender {
         if let Some(ref location) = props.location {
             root = root.child(VNode::vbox(
                 VBox::horizontal(8)
-                    .child(
-                        VNode::icon(
-                            VIcon::new(vec![Icon::parse("mark-location-symbolic")], 16)
-                        )
-                    )
-                    .child(
-                        VNode::label(
-                            VLabel::new(location)
-                                .xalign(0.0)
-                                .wrap(true)
-                                .wrap_mode(gtk::pango::WrapMode::WordChar)
-                                .css_class("dim-label")
-                        )
-                    ),
+                    .child(VNode::icon(VIcon::new(
+                        vec![Icon::parse("mark-location-symbolic")],
+                        16,
+                    )))
+                    .child(VNode::label(
+                        VLabel::new(location)
+                            .xalign(0.0)
+                            .wrap(true)
+                            .wrap_mode(gtk::pango::WrapMode::WordChar)
+                            .css_class("dim-label"),
+                    )),
             ));
         }
 
@@ -54,7 +51,9 @@ impl RenderFn for AgendaDetailsRender {
         }
 
         // Description - strip HTML if present
-        if let Some(ref desc) = props.description && !desc.trim().is_empty() {
+        if let Some(ref desc) = props.description
+            && !desc.trim().is_empty()
+        {
             let display_text = if desc.contains('<') && desc.contains('>') {
                 strip_html_tags(desc)
             } else {
@@ -74,20 +73,17 @@ impl RenderFn for AgendaDetailsRender {
 
             root = root.child(VNode::vbox(
                 VBox::horizontal(8)
-                    .child(
-                        VNode::icon(
-                            VIcon::new(vec![Icon::parse("text-x-generic-symbolic")], 16)
-                        )
-                    )
-                    .child(
-                        VNode::label(
-                            VLabel::new(&truncated)
-                                .xalign(0.0)
-                                .wrap(true)
-                                .wrap_mode(gtk::pango::WrapMode::WordChar)
-                                .css_class("dim-label")
-                        )
-                    ),
+                    .child(VNode::icon(VIcon::new(
+                        vec![Icon::parse("text-x-generic-symbolic")],
+                        16,
+                    )))
+                    .child(VNode::label(
+                        VLabel::new(&truncated)
+                            .xalign(0.0)
+                            .wrap(true)
+                            .wrap_mode(gtk::pango::WrapMode::WordChar)
+                            .css_class("dim-label"),
+                    )),
             ));
         }
 

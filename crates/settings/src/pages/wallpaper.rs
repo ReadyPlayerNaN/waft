@@ -11,7 +11,7 @@ use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{
-    WallpaperManager, WallpaperMode, WALLPAPER_MANAGER_ENTITY_TYPE,
+    WALLPAPER_MANAGER_ENTITY_TYPE, WallpaperManager, WallpaperMode,
 };
 
 use crate::i18n::t;
@@ -33,11 +33,36 @@ impl WallpaperPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-wallpaper");
-        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-mode"), "wallpaper-mode");
-        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-current"), "wallpaper-current");
-        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-transition"), "wallpaper-transition");
-        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-config"), "wallpaper-config");
-        idx.add_section_deferred("wallpaper", &page_title, &t("wallpaper-background-color"), "wallpaper-background-color");
+        idx.add_section_deferred(
+            "wallpaper",
+            &page_title,
+            &t("wallpaper-mode"),
+            "wallpaper-mode",
+        );
+        idx.add_section_deferred(
+            "wallpaper",
+            &page_title,
+            &t("wallpaper-current"),
+            "wallpaper-current",
+        );
+        idx.add_section_deferred(
+            "wallpaper",
+            &page_title,
+            &t("wallpaper-transition"),
+            "wallpaper-transition",
+        );
+        idx.add_section_deferred(
+            "wallpaper",
+            &page_title,
+            &t("wallpaper-config"),
+            "wallpaper-config",
+        );
+        idx.add_section_deferred(
+            "wallpaper",
+            &page_title,
+            &t("wallpaper-background-color"),
+            "wallpaper-background-color",
+        );
     }
 
     pub fn new(
@@ -70,10 +95,30 @@ impl WallpaperPage {
         {
             let mut idx = search_index.borrow_mut();
             idx.backfill_widget("wallpaper", &t("wallpaper-mode"), None, Some(&mode.root));
-            idx.backfill_widget("wallpaper", &t("wallpaper-current"), None, Some(&preview.root));
-            idx.backfill_widget("wallpaper", &t("wallpaper-transition"), None, Some(&transition.root));
-            idx.backfill_widget("wallpaper", &t("wallpaper-config"), None, Some(&config.root));
-            idx.backfill_widget("wallpaper", &t("wallpaper-background-color"), None, Some(&bg_color.root));
+            idx.backfill_widget(
+                "wallpaper",
+                &t("wallpaper-current"),
+                None,
+                Some(&preview.root),
+            );
+            idx.backfill_widget(
+                "wallpaper",
+                &t("wallpaper-transition"),
+                None,
+                Some(&transition.root),
+            );
+            idx.backfill_widget(
+                "wallpaper",
+                &t("wallpaper-config"),
+                None,
+                Some(&config.root),
+            );
+            idx.backfill_widget(
+                "wallpaper",
+                &t("wallpaper-background-color"),
+                None,
+                Some(&bg_color.root),
+            );
         }
 
         // Current URN for the "all" entity (or first output)
@@ -112,11 +157,7 @@ impl WallpaperPage {
                             );
                         }
                         PreviewSectionOutput::Random => {
-                            cb(
-                                urn.clone(),
-                                "random".to_string(),
-                                serde_json::json!({}),
-                            );
+                            cb(urn.clone(), "random".to_string(), serde_json::json!({}));
                         }
                     }
                 }
@@ -155,7 +196,10 @@ impl WallpaperPage {
             let urn_ref = current_urn.clone();
             config.connect_output(move |output| {
                 if let Some(ref urn) = *urn_ref.borrow() {
-                    let ConfigSectionOutput::ConfigChanged { wallpaper_dir, sync } = output;
+                    let ConfigSectionOutput::ConfigChanged {
+                        wallpaper_dir,
+                        sync,
+                    } = output;
                     cb(
                         urn.clone(),
                         "update-config".to_string(),
@@ -192,10 +236,7 @@ impl WallpaperPage {
                     manager.current_segment.as_ref(),
                     manager.style_tracking_available,
                 );
-                preview.apply_props(
-                    manager.current_wallpaper.as_deref(),
-                    manager.available,
-                );
+                preview.apply_props(manager.current_wallpaper.as_deref(), manager.available);
                 preview.set_browse_visible(matches!(manager.mode, WallpaperMode::Static));
                 transition.apply_props(
                     &manager.transition.transition_type,
@@ -228,7 +269,15 @@ impl WallpaperPage {
             entity_store.subscribe_type(WALLPAPER_MANAGER_ENTITY_TYPE, move || {
                 let entities: Vec<(Urn, WallpaperManager)> =
                     store.get_entities_typed(WALLPAPER_MANAGER_ENTITY_TYPE);
-                reconcile(&entities, &urn_ref, &mode_ref, &preview_ref, &transition_ref, &config_ref, &gallery_ref);
+                reconcile(
+                    &entities,
+                    &urn_ref,
+                    &mode_ref,
+                    &preview_ref,
+                    &transition_ref,
+                    &config_ref,
+                    &gallery_ref,
+                );
             });
         }
 
@@ -250,7 +299,15 @@ impl WallpaperPage {
                         "[wallpaper-page] Initial reconciliation: {} entities",
                         entities.len()
                     );
-                    reconcile(&entities, &urn_ref, &mode_ref, &preview_ref, &transition_ref, &config_ref, &gallery_ref);
+                    reconcile(
+                        &entities,
+                        &urn_ref,
+                        &mode_ref,
+                        &preview_ref,
+                        &transition_ref,
+                        &config_ref,
+                        &gallery_ref,
+                    );
                 }
             });
         }

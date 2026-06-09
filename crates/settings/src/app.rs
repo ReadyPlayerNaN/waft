@@ -11,6 +11,7 @@ use gtk::prelude::*;
 use waft_client::{
     ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
 };
+use waft_protocol::entity::accounts::ONLINE_ACCOUNT_ENTITY_TYPE;
 use waft_protocol::entity::appearance::GTK_APPEARANCE_ENTITY_TYPE;
 use waft_protocol::entity::audio;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
@@ -20,8 +21,7 @@ use waft_protocol::entity::display::{
     WALLPAPER_MANAGER_ENTITY_TYPE,
 };
 use waft_protocol::entity::keyboard::{
-    CONFIG_ENTITY_TYPE as KEYBOARD_CONFIG_ENTITY_TYPE,
-    ENTITY_TYPE as KEYBOARD_ENTITY_TYPE,
+    CONFIG_ENTITY_TYPE as KEYBOARD_CONFIG_ENTITY_TYPE, ENTITY_TYPE as KEYBOARD_ENTITY_TYPE,
 };
 use waft_protocol::entity::network::{ADAPTER_ENTITY_TYPE, EthernetConnection, WiFiNetwork};
 use waft_protocol::entity::notification::{DND_ENTITY_TYPE, RECORDING_ENTITY_TYPE};
@@ -30,7 +30,6 @@ use waft_protocol::entity::notification_filter::{
     SOUND_CONFIG_ENTITY_TYPE,
 };
 use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
-use waft_protocol::entity::accounts::ONLINE_ACCOUNT_ENTITY_TYPE;
 use waft_protocol::entity::plugin::ENTITY_TYPE as PLUGIN_STATUS_ENTITY_TYPE;
 use waft_protocol::entity::session;
 use waft_protocol::entity::weather;

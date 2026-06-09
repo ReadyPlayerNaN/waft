@@ -42,7 +42,9 @@ pub fn fuzzy_match_positions(query: &str, target: &str) -> Option<(f64, Vec<usiz
                 first_match = Some(ti);
             }
             // Contiguous bonus
-            if let Some(last) = last_match && last + 1 == ti {
+            if let Some(last) = last_match
+                && last + 1 == ti
+            {
                 contiguous_bonus += 0.1;
             }
             last_match = Some(ti);
@@ -82,7 +84,9 @@ pub fn fuzzy_score_chars(query: &[char], target: &[char]) -> Option<f64> {
             if first_match.is_none() {
                 first_match = Some(ti);
             }
-            if let Some(last) = last_match && last + 1 == ti {
+            if let Some(last) = last_match
+                && last + 1 == ti
+            {
                 contiguous_bonus += 0.1;
             }
             last_match = Some(ti);
@@ -125,7 +129,9 @@ pub fn fuzzy_match_positions_chars(
             if first_match.is_none() {
                 first_match = Some(ti);
             }
-            if let Some(last) = last_match && last + 1 == ti {
+            if let Some(last) = last_match
+                && last + 1 == ti
+            {
                 contiguous_bonus += 0.1;
             }
             last_match = Some(ti);
@@ -351,8 +357,7 @@ mod tests {
         use crate::normalize::normalize_for_search;
         let q = normalize_for_search("pocasi");
         let t = normalize_for_search("Počasí");
-        let (_, positions) =
-            fuzzy_match_positions_chars(&q.chars, &t.chars, &t.char_map).unwrap();
+        let (_, positions) = fuzzy_match_positions_chars(&q.chars, &t.chars, &t.char_map).unwrap();
         // All 6 chars of "Počasí" should be highlighted
         assert_eq!(positions, vec![0, 1, 2, 3, 4, 5]);
     }
@@ -362,8 +367,7 @@ mod tests {
         use crate::normalize::normalize_for_search;
         let q = normalize_for_search("cafe");
         let t = normalize_for_search("Café Latte");
-        let (_, positions) =
-            fuzzy_match_positions_chars(&q.chars, &t.chars, &t.char_map).unwrap();
+        let (_, positions) = fuzzy_match_positions_chars(&q.chars, &t.chars, &t.char_map).unwrap();
         assert_eq!(positions, vec![0, 1, 2, 3]);
     }
 

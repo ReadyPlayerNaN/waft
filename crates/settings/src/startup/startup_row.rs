@@ -3,8 +3,8 @@
 //! Renders command and arguments as an `adw::ActionRow` with edit and delete
 //! suffix buttons.
 
-use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VActionRow, VBox, VButton};
+use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
 
 use crate::i18n::t;
 

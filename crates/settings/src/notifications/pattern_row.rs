@@ -77,8 +77,7 @@ pub struct PatternRow {
 
 impl PatternRow {
     pub fn new(pattern: &Pattern) -> Self {
-        let output_callback: OutputCallback =
-            Rc::new(RefCell::new(None));
+        let output_callback: OutputCallback = Rc::new(RefCell::new(None));
 
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -167,15 +166,9 @@ impl PatternRow {
 }
 
 fn field_to_index(field: MatchField) -> u32 {
-    FIELD_VALUES
-        .iter()
-        .position(|f| *f == field)
-        .unwrap_or(0) as u32
+    FIELD_VALUES.iter().position(|f| *f == field).unwrap_or(0) as u32
 }
 
 fn operator_to_index(op: MatchOperator) -> u32 {
-    OPERATOR_VALUES
-        .iter()
-        .position(|o| *o == op)
-        .unwrap_or(0) as u32
+    OPERATOR_VALUES.iter().position(|o| *o == op).unwrap_or(0) as u32
 }

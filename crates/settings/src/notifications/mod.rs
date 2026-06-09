@@ -1,6 +1,6 @@
 pub mod active_profile_section;
-pub mod dnd_section;
 pub mod combinator_editor;
+pub mod dnd_section;
 pub mod group_form;
 pub mod groups_section;
 pub mod pattern_row;
@@ -12,7 +12,13 @@ pub fn id_from_name(name: &str) -> String {
     let lowered = name.to_lowercase();
     let filtered: String = lowered
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     filtered
         .split('-')

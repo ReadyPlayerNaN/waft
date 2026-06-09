@@ -5,8 +5,8 @@
 use waft_client::EntityStore;
 use waft_protocol::Urn;
 
-use waft_protocol::commands::COMMAND_DEFS;
 use crate::normalize::{Normalized, normalize_for_search};
+use waft_protocol::commands::COMMAND_DEFS;
 
 /// A single searchable command entry derived from a live entity + action.
 pub struct CommandSearchEntry {

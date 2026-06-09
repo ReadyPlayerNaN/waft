@@ -109,7 +109,10 @@ impl BrightnessSlidersComponent {
                         SliderRenderOutput::IconClick | SliderRenderOutput::ExpandClick => {}
                     });
 
-                    Some(SliderEntry { widget: slider, throttle })
+                    Some(SliderEntry {
+                        widget: slider,
+                        throttle,
+                    })
                 },
             );
         });
@@ -125,9 +128,9 @@ impl BrightnessSlidersComponent {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use std::cell::Cell;
     use gtk::prelude::Cast;
     use gtk::prelude::WidgetExt;
+    use std::cell::Cell;
     use waft_protocol::Urn;
     use waft_protocol::message::AppNotification;
 
@@ -184,7 +187,10 @@ pub(crate) mod tests {
     fn test_container_starts_invisible() {
         let store = Rc::new(EntityStore::new());
         let comp = BrightnessSlidersComponent::new(&store, &noop_action_callback());
-        assert!(!comp.widget().is_visible(), "container should start invisible");
+        assert!(
+            !comp.widget().is_visible(),
+            "container should start invisible"
+        );
         assert_eq!(child_count(comp.widget()), 0);
     }
 
@@ -196,7 +202,10 @@ pub(crate) mod tests {
         let data = serde_json::to_value(make_display(0.75)).unwrap();
         store.handle_notification(make_updated(urn, data));
 
-        assert!(comp.widget().is_visible(), "container should be visible after adding entity");
+        assert!(
+            comp.widget().is_visible(),
+            "container should be visible after adding entity"
+        );
         assert_eq!(child_count(comp.widget()), 1);
     }
 
@@ -234,7 +243,11 @@ pub(crate) mod tests {
             urn,
             serde_json::to_value(make_display(0.30)).unwrap(),
         ));
-        assert_eq!(child_count(comp.widget()), 1, "update should not create new widget");
+        assert_eq!(
+            child_count(comp.widget()),
+            1,
+            "update should not create new widget"
+        );
     }
 
     fn test_remove_entity_reduces_children() {
@@ -270,7 +283,10 @@ pub(crate) mod tests {
         assert!(comp.widget().is_visible());
 
         store.handle_notification(make_removed(urn));
-        assert!(!comp.widget().is_visible(), "container should be invisible when empty");
+        assert!(
+            !comp.widget().is_visible(),
+            "container should be invisible when empty"
+        );
         assert_eq!(child_count(comp.widget()), 0);
     }
 
@@ -296,6 +312,9 @@ pub(crate) mod tests {
         // which is triggered by user interaction (not entity updates).
         // We verify the component was constructed without panics and
         // the callback infrastructure is in place.
-        assert!(!action_called.get(), "action should not fire on entity update alone");
+        assert!(
+            !action_called.get(),
+            "action should not fire on entity update alone"
+        );
     }
 }

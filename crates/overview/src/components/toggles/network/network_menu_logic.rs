@@ -35,8 +35,7 @@ mod tests {
     use waft_protocol::urn::Urn;
 
     fn make_urn(ssid: &str) -> Urn {
-        Urn::new("networkmanager", "network-adapter", "wlan0")
-            .child("wifi-network", ssid)
+        Urn::new("networkmanager", "network-adapter", "wlan0").child("wifi-network", ssid)
     }
 
     fn make_network(ssid: &str, connected: bool, known: bool) -> WiFiNetwork {
@@ -90,9 +89,7 @@ mod tests {
 
     #[test]
     fn details_shows_connected_ssid() {
-        let networks = vec![
-            (make_urn("HomeNet"), make_network("HomeNet", true, true)),
-        ];
+        let networks = vec![(make_urn("HomeNet"), make_network("HomeNet", true, true))];
         assert_eq!(details_text(&networks), Some("HomeNet".to_string()));
     }
 
@@ -117,9 +114,7 @@ mod tests {
 
     #[test]
     fn details_shows_count_for_single_unconnected_network() {
-        let networks = vec![
-            (make_urn("SomeNet"), make_network("SomeNet", false, false)),
-        ];
+        let networks = vec![(make_urn("SomeNet"), make_network("SomeNet", false, false))];
         assert_eq!(details_text(&networks), Some("1 networks".to_string()));
     }
 }

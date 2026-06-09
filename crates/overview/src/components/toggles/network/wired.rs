@@ -12,7 +12,9 @@ use waft_protocol::Urn;
 use waft_protocol::entity;
 use waft_ui_gtk::menu_state::{menu_id_for_widget, toggle_menu};
 use waft_ui_gtk::vdom::Component;
-use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget};
+use waft_ui_gtk::widgets::feature_toggle::{
+    FeatureToggleOutput, FeatureToggleProps, FeatureToggleWidget,
+};
 
 use super::{NetworkRow, ToggleEntry, adapter_icon, adapter_title};
 use crate::components::toggles::settings_app_tracker::SettingsAppTracker;
@@ -149,18 +151,16 @@ impl WiredToggles {
                         let action_urn = urn.clone();
                         let menu_id_for_expand = menu_id.clone();
                         let menu_store_for_expand = menu_store_ref.clone();
-                        toggle.connect_output(move |output| {
-                            match output {
-                                FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
-                                    action_cb(
-                                        action_urn.clone(),
-                                        "activate".to_string(),
-                                        serde_json::Value::Null,
-                                    );
-                                }
-                                FeatureToggleOutput::ExpandToggle(_) => {
-                                    toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
-                                }
+                        toggle.connect_output(move |output| match output {
+                            FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
+                                action_cb(
+                                    action_urn.clone(),
+                                    "activate".to_string(),
+                                    serde_json::Value::Null,
+                                );
+                            }
+                            FeatureToggleOutput::ExpandToggle(_) => {
+                                toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
                             }
                         });
 
@@ -211,12 +211,7 @@ impl WiredToggles {
             store.subscribe_type(
                 entity::network::ETHERNET_CONNECTION_ENTITY_TYPE,
                 move || {
-                    update_ethernet_menus(
-                        &entries_ref,
-                        &store_ref,
-                        &cb,
-                        &settings_available_ref,
-                    );
+                    update_ethernet_menus(&entries_ref, &store_ref, &cb, &settings_available_ref);
                 },
             );
         }

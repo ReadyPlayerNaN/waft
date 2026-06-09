@@ -52,7 +52,10 @@ impl SearchResults {
         root.connect_row_activated(move |_, row| {
             let page_id = row.widget_name().to_string();
             if let Some(action_row) = row.downcast_ref::<adw::ActionRow>() {
-                let page_title = action_row.subtitle().map(|s| s.to_string()).unwrap_or_default();
+                let page_title = action_row
+                    .subtitle()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
                 let (section_title, input_title) = meta_ref
                     .borrow()
                     .get(&row.index())
@@ -69,7 +72,11 @@ impl SearchResults {
             }
         });
 
-        Self { root, output_cb, row_meta }
+        Self {
+            root,
+            output_cb,
+            row_meta,
+        }
     }
 
     /// Update the results list with new search entries.
@@ -89,7 +96,10 @@ impl SearchResults {
                 .build();
             row.set_widget_name(entry.page_id);
             self.root.append(&row);
-            meta.insert(i as i32, (entry.section_title.clone(), entry.input_title.clone()));
+            meta.insert(
+                i as i32,
+                (entry.section_title.clone(), entry.input_title.clone()),
+            );
         }
 
         // Select first row if present

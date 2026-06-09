@@ -8,8 +8,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::glib;
-use waft_protocol::{Urn, entity};
 use waft_client::{EntityActionCallback, EntityStore};
+use waft_protocol::{Urn, entity};
 
 use waft_ui_gtk::vdom::Component;
 
@@ -78,10 +78,11 @@ impl SettingsAppTracker {
         label: String,
         visible: bool,
     ) -> FeatureToggleMenuSettingsButton {
-        let button = FeatureToggleMenuSettingsButton::build(&FeatureToggleMenuSettingsButtonProps {
-            label,
-            visible,
-        });
+        let button =
+            FeatureToggleMenuSettingsButton::build(&FeatureToggleMenuSettingsButtonProps {
+                label,
+                visible,
+            });
 
         let urn_ref = self.urn.clone();
         let cb = action_callback.clone();

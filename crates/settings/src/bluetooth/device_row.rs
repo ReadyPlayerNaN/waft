@@ -6,20 +6,20 @@
 use waft_protocol::entity::bluetooth::ConnectionState;
 use waft_ui_gtk::bluetooth::resolve_device_type_icon;
 use waft_ui_gtk::icons::Icon;
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VActionRow, VCustomButton, VIcon, VLabel};
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
 use crate::i18n::{t, t_args};
 
 /// Props for creating or updating a device row.
 #[derive(Clone, PartialEq)]
 pub struct DeviceRowProps {
-    pub name:               String,
-    pub device_type:        String,
-    pub connection_state:   ConnectionState,
-    pub paired:             bool,
+    pub name: String,
+    pub device_type: String,
+    pub connection_state: ConnectionState,
+    pub paired: bool,
     pub battery_percentage: Option<u8>,
-    pub rssi:               Option<i16>,
+    pub rssi: Option<i16>,
 }
 
 /// Output events from a device row.
@@ -35,12 +35,12 @@ pub enum DeviceRowOutput {
 pub(crate) struct DeviceRowRender;
 
 impl RenderFn for DeviceRowRender {
-    type Props  = DeviceRowProps;
+    type Props = DeviceRowProps;
     type Output = DeviceRowOutput;
 
     fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
         let device_icon = resolve_device_type_icon(&props.device_type);
-        let connected   = matches!(props.connection_state, ConnectionState::Connected);
+        let connected = matches!(props.connection_state, ConnectionState::Connected);
 
         // Build subtitle and button label based on connection state and paired status
         let (subtitle, action_label, sensitive) = if props.paired {
@@ -53,17 +53,17 @@ impl RenderFn for DeviceRowRender {
                     };
                     (text, t("bt-disconnect"), true)
                 }
-                ConnectionState::Connecting    => (t("bt-connecting"),    t("bt-cancel"), false),
-                ConnectionState::Disconnecting => (t("bt-disconnecting"), t("bt-wait"),   false),
-                ConnectionState::Disconnected  => (t("bt-disconnected"),  t("bt-connect"), true),
+                ConnectionState::Connecting => (t("bt-connecting"), t("bt-cancel"), false),
+                ConnectionState::Disconnecting => (t("bt-disconnecting"), t("bt-wait"), false),
+                ConnectionState::Disconnected => (t("bt-disconnected"), t("bt-connect"), true),
             }
         } else {
             let sub = match props.rssi {
                 Some(rssi) if rssi > -50 => t("bt-signal-excellent"),
                 Some(rssi) if rssi > -70 => t("bt-signal-good"),
                 Some(rssi) if rssi > -85 => t("bt-signal-fair"),
-                Some(_)                  => t("bt-signal-weak"),
-                None                     => String::new(),
+                Some(_) => t("bt-signal-weak"),
+                None => String::new(),
             };
             (sub, t("bt-pair"), true)
         };
@@ -76,7 +76,9 @@ impl RenderFn for DeviceRowRender {
             )));
 
         // Battery icon (only when connected with battery info)
-        if let Some(pct) = props.battery_percentage && connected {
+        if let Some(pct) = props.battery_percentage
+            && connected
+        {
             let batt_icon = resolve_battery_icon_name(pct);
             row = row.suffix(VNode::icon(VIcon::new(
                 vec![Icon::Themed(batt_icon.to_string())],

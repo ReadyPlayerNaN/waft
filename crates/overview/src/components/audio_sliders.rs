@@ -295,9 +295,7 @@ fn build_device_entries(devices: &[&(Urn, entity::audio::AudioDevice)]) -> Vec<A
 /// `"{name} ({TYPE} {n})"` where `TYPE` is `connection_type` uppercased
 /// (or `"DEVICE"` when absent) and `n` is a 1-based counter within that name
 /// group.
-fn deduplicate_device_names(
-    devices: &[(Urn, entity::audio::AudioDevice)],
-) -> Vec<(Urn, String)> {
+fn deduplicate_device_names(devices: &[(Urn, entity::audio::AudioDevice)]) -> Vec<(Urn, String)> {
     // Count how many devices share each name.
     let mut name_counts: HashMap<&str, usize> = HashMap::new();
     for (_, device) in devices {
@@ -353,8 +351,14 @@ pub(crate) mod tests {
     #[test]
     fn unique_names_unchanged() {
         let devices = vec![
-            (make_urn("audio/audio-device/speakers"), make_device("Speakers", Some("jack"))),
-            (make_urn("audio/audio-device/headset"), make_device("Headset", Some("bluetooth"))),
+            (
+                make_urn("audio/audio-device/speakers"),
+                make_device("Speakers", Some("jack")),
+            ),
+            (
+                make_urn("audio/audio-device/headset"),
+                make_device("Headset", Some("bluetooth")),
+            ),
         ];
         let result = deduplicate_device_names(&devices);
         assert_eq!(result[0].1, "Speakers");
@@ -364,8 +368,14 @@ pub(crate) mod tests {
     #[test]
     fn duplicates_with_connection_type() {
         let devices = vec![
-            (make_urn("audio/audio-device/builtin1"), make_device("Built-in Audio", Some("jack"))),
-            (make_urn("audio/audio-device/builtin2"), make_device("Built-in Audio", Some("hdmi"))),
+            (
+                make_urn("audio/audio-device/builtin1"),
+                make_device("Built-in Audio", Some("jack")),
+            ),
+            (
+                make_urn("audio/audio-device/builtin2"),
+                make_device("Built-in Audio", Some("hdmi")),
+            ),
         ];
         let result = deduplicate_device_names(&devices);
         assert_eq!(result[0].1, "Built-in Audio (JACK 1)");
@@ -375,8 +385,14 @@ pub(crate) mod tests {
     #[test]
     fn duplicates_without_connection_type() {
         let devices = vec![
-            (make_urn("audio/audio-device/dev1"), make_device("Monitor", None)),
-            (make_urn("audio/audio-device/dev2"), make_device("Monitor", None)),
+            (
+                make_urn("audio/audio-device/dev1"),
+                make_device("Monitor", None),
+            ),
+            (
+                make_urn("audio/audio-device/dev2"),
+                make_device("Monitor", None),
+            ),
         ];
         let result = deduplicate_device_names(&devices);
         assert_eq!(result[0].1, "Monitor (DEVICE 1)");
@@ -537,7 +553,10 @@ pub(crate) mod tests {
         let store = Rc::new(EntityStore::new());
         let menu_store = Rc::new(waft_core::menu_state::create_menu_store());
         let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
-        assert!(!comp.widget().is_visible(), "container should start invisible");
+        assert!(
+            !comp.widget().is_visible(),
+            "container should start invisible"
+        );
         assert_eq!(child_count(comp.widget()), 0);
     }
 
@@ -547,10 +566,14 @@ pub(crate) mod tests {
         let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
 
         let urn = Urn::new("audio", "audio-device", "speakers");
-        let data = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        let data =
+            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
         store.handle_notification(make_audio_updated(urn, data));
 
-        assert!(comp.widget().is_visible(), "container should be visible with default output");
+        assert!(
+            comp.widget().is_visible(),
+            "container should be visible with default output"
+        );
         assert_eq!(child_count(comp.widget()), 1);
     }
 
@@ -561,15 +584,21 @@ pub(crate) mod tests {
 
         // Add default output
         let urn_out = Urn::new("audio", "audio-device", "speakers");
-        let data_out = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        let data_out =
+            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
         store.handle_notification(make_audio_updated(urn_out, data_out));
 
         // Add default input
         let urn_in = Urn::new("audio", "audio-device", "mic");
-        let data_in = serde_json::to_value(make_audio_entity(AudioDeviceKind::Input, 0.50, true)).unwrap();
+        let data_in =
+            serde_json::to_value(make_audio_entity(AudioDeviceKind::Input, 0.50, true)).unwrap();
         store.handle_notification(make_audio_updated(urn_in, data_in));
 
-        assert_eq!(child_count(comp.widget()), 2, "should have output + input sliders");
+        assert_eq!(
+            child_count(comp.widget()),
+            2,
+            "should have output + input sliders"
+        );
     }
 
     fn test_update_default_device_preserves_child_count() {
@@ -578,14 +607,20 @@ pub(crate) mod tests {
         let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
 
         let urn = Urn::new("audio", "audio-device", "speakers");
-        let data1 = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        let data1 =
+            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
         store.handle_notification(make_audio_updated(urn.clone(), data1));
         assert_eq!(child_count(comp.widget()), 1);
 
         // Update volume
-        let data2 = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.30, true)).unwrap();
+        let data2 =
+            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.30, true)).unwrap();
         store.handle_notification(make_audio_updated(urn, data2));
-        assert_eq!(child_count(comp.widget()), 1, "update should not create new widget");
+        assert_eq!(
+            child_count(comp.widget()),
+            1,
+            "update should not create new widget"
+        );
     }
 
     fn test_remove_all_makes_invisible() {
@@ -594,12 +629,16 @@ pub(crate) mod tests {
         let comp = AudioSlidersComponent::new(&store, &noop_action_callback(), &menu_store);
 
         let urn = Urn::new("audio", "audio-device", "speakers");
-        let data = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
+        let data =
+            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.75, true)).unwrap();
         store.handle_notification(make_audio_updated(urn.clone(), data));
         assert!(comp.widget().is_visible());
 
         store.handle_notification(make_audio_removed(urn));
-        assert!(!comp.widget().is_visible(), "container should be invisible when empty");
+        assert!(
+            !comp.widget().is_visible(),
+            "container should be invisible when empty"
+        );
         assert_eq!(child_count(comp.widget()), 0);
     }
 
@@ -610,11 +649,16 @@ pub(crate) mod tests {
 
         // Add a non-default output device
         let urn = Urn::new("audio", "audio-device", "headphones");
-        let data = serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.60, false)).unwrap();
+        let data =
+            serde_json::to_value(make_audio_entity(AudioDeviceKind::Output, 0.60, false)).unwrap();
         store.handle_notification(make_audio_updated(urn, data));
 
         // Audio sliders only render for default devices
-        assert_eq!(child_count(comp.widget()), 0, "non-default device should not create slider");
+        assert_eq!(
+            child_count(comp.widget()),
+            0,
+            "non-default device should not create slider"
+        );
         assert!(!comp.widget().is_visible());
     }
 }

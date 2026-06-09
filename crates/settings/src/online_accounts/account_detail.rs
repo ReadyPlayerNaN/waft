@@ -128,7 +128,8 @@ impl AccountDetailPage {
     pub fn update(&self, props: &AccountDetailProps) {
         let controllable = props.status == AccountStatus::Active && !props.locked;
         self.group.set_title(&props.provider_name);
-        self.group.set_description(Some(&props.presentation_identity));
+        self.group
+            .set_description(Some(&props.presentation_identity));
         for (svc_name, row, handler_id) in &self.switch_rows {
             if let Some(svc) = props.services.iter().find(|s| &s.name == svc_name) {
                 // Block the signal to prevent spurious EnableService/DisableService

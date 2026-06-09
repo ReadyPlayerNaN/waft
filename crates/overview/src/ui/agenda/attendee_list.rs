@@ -35,11 +35,10 @@ impl RenderFn for AttendeeListRender {
 
         VNode::vbox(
             VBox::horizontal(8)
-                .child(
-                    VNode::icon(
-                        VIcon::new(vec![Icon::parse("system-users-symbolic")], 16)
-                    )
-                )
+                .child(VNode::icon(VIcon::new(
+                    vec![Icon::parse("system-users-symbolic")],
+                    16,
+                )))
                 .child(VNode::vbox(list)),
         )
     }

@@ -48,7 +48,12 @@ impl OnlineAccountsPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-online-accounts");
-        idx.add_section_deferred("online-accounts", &page_title, &t("online-accounts-title"), "online-accounts-title");
+        idx.add_section_deferred(
+            "online-accounts",
+            &page_title,
+            &t("online-accounts-title"),
+            "online-accounts-title",
+        );
     }
 
     pub fn new(
@@ -85,7 +90,12 @@ impl OnlineAccountsPage {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            idx.backfill_widget("online-accounts", &t("online-accounts-title"), None, Some(&list_group.group));
+            idx.backfill_widget(
+                "online-accounts",
+                &t("online-accounts-title"),
+                None,
+                Some(&list_group.group),
+            );
         }
 
         let state = Rc::new(RefCell::new(OnlineAccountsPageState {
@@ -200,10 +210,8 @@ impl OnlineAccountsPage {
                 // Create the detail page and sub-page wrapper first
                 let detail_page = AccountDetailPage::new(&detail_props);
 
-                let sub_page = SettingsSubPage::new(
-                    &account.presentation_identity,
-                    &detail_page.root,
-                );
+                let sub_page =
+                    SettingsSubPage::new(&account.presentation_identity, &detail_page.root);
                 let nav_page = sub_page.root.clone();
 
                 // Wire detail output events to actions
@@ -237,10 +245,7 @@ impl OnlineAccountsPage {
                                 .default_response("cancel")
                                 .build();
                             confirm.add_response("cancel", &t("notif-cancel"));
-                            confirm.add_response(
-                                "remove",
-                                &t("online-accounts-remove-account"),
-                            );
+                            confirm.add_response("remove", &t("online-accounts-remove-account"));
                             confirm.set_response_appearance(
                                 "remove",
                                 adw::ResponseAppearance::Destructive,
@@ -279,11 +284,15 @@ impl OnlineAccountsPage {
                 let row = AccountRow::build(&props);
 
                 // Insert in sorted position
-                state.list_group.insert_sorted(&row.widget(), &account.id, &current_ids);
+                state
+                    .list_group
+                    .insert_sorted(&row.widget(), &account.id, &current_ids);
                 state
                     .account_rows
                     .insert(account.id.clone(), (row, urn.clone(), nav_fn));
-                state.account_details.insert(account.id.clone(), detail_page);
+                state
+                    .account_details
+                    .insert(account.id.clone(), detail_page);
             }
         }
 
@@ -303,7 +312,9 @@ impl OnlineAccountsPage {
         }
 
         state.sorted_ids = current_ids;
-        state.list_group.toggle_visibility(!state.account_rows.is_empty());
+        state
+            .list_group
+            .toggle_visibility(!state.account_rows.is_empty());
 
         // Update dynamic search entries
         {
@@ -311,10 +322,23 @@ impl OnlineAccountsPage {
             let page_title = t("settings-online-accounts");
             let section_title = t("online-accounts-title");
             idx.remove_entries("online-accounts", &section_title);
-            idx.add_section("online-accounts", &page_title, &section_title, "online-accounts-title", &state.list_group.group);
+            idx.add_section(
+                "online-accounts",
+                &page_title,
+                &section_title,
+                "online-accounts-title",
+                &state.list_group.group,
+            );
             for (_, account) in accounts {
                 if let Some((row, _, _)) = state.account_rows.get(&account.id) {
-                    idx.add_input("online-accounts", &page_title, &section_title, &account.presentation_identity, &account.presentation_identity, &row.widget());
+                    idx.add_input(
+                        "online-accounts",
+                        &page_title,
+                        &section_title,
+                        &account.presentation_identity,
+                        &account.presentation_identity,
+                        &row.widget(),
+                    );
                 }
             }
         }

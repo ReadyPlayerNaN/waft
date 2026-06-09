@@ -6,14 +6,12 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Preferences for the waft-settings application.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct SettingsPrefs {
     /// Whether to derive window appearance colours from the GTK accent colour.
     #[serde(default)]
     pub derive_window_colors_from_gtk: bool,
 }
-
 
 fn prefs_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());

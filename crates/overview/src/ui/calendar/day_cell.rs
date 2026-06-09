@@ -4,7 +4,9 @@
 //! Shows the day number, up to 3 event dots, and visual states for
 //! today, selected, and other-month days.
 
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VBox, VCustomButton, VLabel, VNode};
+use waft_ui_gtk::vdom::{
+    RenderCallback, RenderComponent, RenderFn, VBox, VCustomButton, VLabel, VNode,
+};
 
 /// Input properties for a day cell.
 #[derive(Clone, PartialEq)]
@@ -48,14 +50,11 @@ impl RenderFn for DayCellRender {
         let content = VBox::vertical(2)
             .halign(gtk::Align::Center)
             .valign(gtk::Align::Center)
-            .child(VNode::label(
-                VLabel::new(props.day.to_string()).xalign(0.5),
-            ))
+            .child(VNode::label(VLabel::new(props.day.to_string()).xalign(0.5)))
             .child(VNode::vbox(dots));
 
         // CSS classes
-        let mut button = VCustomButton::new(VNode::vbox(content))
-            .css_class("calendar-day-cell");
+        let mut button = VCustomButton::new(VNode::vbox(content)).css_class("calendar-day-cell");
 
         if props.today {
             button = button.css_class("today");

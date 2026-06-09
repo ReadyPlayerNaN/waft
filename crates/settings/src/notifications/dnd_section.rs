@@ -26,7 +26,13 @@ impl DndSection {
         let page_title = t("settings-notifications");
         let section_title = t("notif-dnd");
         idx.add_section_deferred("notifications", &page_title, &section_title, "notif-dnd");
-        idx.add_input_deferred("notifications", &page_title, &section_title, "Do Not Disturb", "notif-dnd");
+        idx.add_input_deferred(
+            "notifications",
+            &page_title,
+            &section_title,
+            "Do Not Disturb",
+            "notif-dnd",
+        );
     }
 
     pub fn new(
@@ -47,7 +53,12 @@ impl DndSection {
             let mut idx = search_index.borrow_mut();
             let section = t("notif-dnd");
             idx.backfill_widget("notifications", &section, None, Some(&group));
-            idx.backfill_widget("notifications", &section, Some("Do Not Disturb"), Some(&toggle_row));
+            idx.backfill_widget(
+                "notifications",
+                &section,
+                Some("Do Not Disturb"),
+                Some(&toggle_row),
+            );
         }
 
         let updating = Rc::new(Cell::new(false));

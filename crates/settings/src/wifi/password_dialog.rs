@@ -24,9 +24,7 @@ pub fn show_password_dialog(
     dialog.set_response_appearance("connect", adw::ResponseAppearance::Suggested);
     dialog.set_default_response(Some("connect"));
 
-    let entry = gtk::PasswordEntry::builder()
-        .show_peek_icon(true)
-        .build();
+    let entry = gtk::PasswordEntry::builder().show_peek_icon(true).build();
 
     dialog.set_extra_child(Some(&entry));
 

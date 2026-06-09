@@ -59,9 +59,7 @@ impl RenderFn for AccountRowRender {
             AccountStatus::CredentialsNeeded => {
                 (t("online-accounts-status-credentials-needed"), "warning")
             }
-            AccountStatus::NeedsAttention => {
-                (t("online-accounts-status-needs-attention"), "error")
-            }
+            AccountStatus::NeedsAttention => (t("online-accounts-status-needs-attention"), "error"),
         };
 
         let icon_name = provider_icon(&props.provider_name);

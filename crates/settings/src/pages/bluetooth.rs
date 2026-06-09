@@ -40,8 +40,18 @@ impl BluetoothPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-bluetooth");
-        idx.add_section_deferred("bluetooth", &page_title, &t("bt-paired-devices"), "bt-paired-devices");
-        idx.add_section_deferred("bluetooth", &page_title, &t("bt-available-devices"), "bt-available-devices");
+        idx.add_section_deferred(
+            "bluetooth",
+            &page_title,
+            &t("bt-paired-devices"),
+            "bt-paired-devices",
+        );
+        idx.add_section_deferred(
+            "bluetooth",
+            &page_title,
+            &t("bt-available-devices"),
+            "bt-available-devices",
+        );
     }
 
     pub fn new(
@@ -70,8 +80,18 @@ impl BluetoothPage {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            idx.backfill_widget("bluetooth", &t("bt-paired-devices"), None, Some(&paired_group.root));
-            idx.backfill_widget("bluetooth", &t("bt-available-devices"), None, Some(&discovered_group.root));
+            idx.backfill_widget(
+                "bluetooth",
+                &t("bt-paired-devices"),
+                None,
+                Some(&paired_group.root),
+            );
+            idx.backfill_widget(
+                "bluetooth",
+                &t("bt-available-devices"),
+                None,
+                Some(&discovered_group.root),
+            );
         }
 
         // Wire discovered group search button output
@@ -146,30 +166,34 @@ impl BluetoothPage {
         action_callback: &EntityActionCallback,
     ) {
         let mut st = state.borrow_mut();
-        st.adapters_reconciler.reconcile(adapters.iter().map(|(urn, adapter)| {
-            let key = urn.as_str().to_string();
-            let urn = urn.clone();
-            let cb = action_callback.clone();
-            VNode::with_output::<AdapterGroup>(
-                AdapterGroupProps {
-                    name:         adapter.name.clone(),
-                    powered:      adapter.powered,
-                    discoverable: adapter.discoverable,
-                },
-                move |output| {
-                    let (action, params) = match output {
-                        AdapterGroupOutput::TogglePower =>
-                            ("toggle-power", serde_json::Value::Null),
-                        AdapterGroupOutput::ToggleDiscoverable =>
-                            ("toggle-discoverable", serde_json::Value::Null),
-                        AdapterGroupOutput::SetAlias(alias) =>
-                            ("set-alias", serde_json::json!({ "alias": alias })),
-                    };
-                    cb(urn.clone(), action.to_string(), params);
-                },
-            )
-            .key(key)
-        }));
+        st.adapters_reconciler
+            .reconcile(adapters.iter().map(|(urn, adapter)| {
+                let key = urn.as_str().to_string();
+                let urn = urn.clone();
+                let cb = action_callback.clone();
+                VNode::with_output::<AdapterGroup>(
+                    AdapterGroupProps {
+                        name: adapter.name.clone(),
+                        powered: adapter.powered,
+                        discoverable: adapter.discoverable,
+                    },
+                    move |output| {
+                        let (action, params) = match output {
+                            AdapterGroupOutput::TogglePower => {
+                                ("toggle-power", serde_json::Value::Null)
+                            }
+                            AdapterGroupOutput::ToggleDiscoverable => {
+                                ("toggle-discoverable", serde_json::Value::Null)
+                            }
+                            AdapterGroupOutput::SetAlias(alias) => {
+                                ("set-alias", serde_json::json!({ "alias": alias }))
+                            }
+                        };
+                        cb(urn.clone(), action.to_string(), params);
+                    },
+                )
+                .key(key)
+            }));
     }
 
     /// Reconcile device lists with current device data.
@@ -200,9 +224,12 @@ impl BluetoothPage {
         );
 
         state.paired_group.reconcile(&paired, action_callback);
-        state
-            .discovered_group
-            .reconcile(&discovered, any_discovering, any_powered, action_callback);
+        state.discovered_group.reconcile(
+            &discovered,
+            any_discovering,
+            any_powered,
+            action_callback,
+        );
 
         // Update dynamic search entries for devices
         {
@@ -212,17 +239,43 @@ impl BluetoothPage {
             // Paired devices
             let paired_section = t("bt-paired-devices");
             idx.remove_entries("bluetooth", &paired_section);
-            idx.add_section("bluetooth", &page_title, &paired_section, "bt-paired-devices", &state.paired_group.root);
+            idx.add_section(
+                "bluetooth",
+                &page_title,
+                &paired_section,
+                "bt-paired-devices",
+                &state.paired_group.root,
+            );
             for (_, device) in paired.iter() {
-                idx.add_input("bluetooth", &page_title, &paired_section, &device.name, &device.name, &state.paired_group.root);
+                idx.add_input(
+                    "bluetooth",
+                    &page_title,
+                    &paired_section,
+                    &device.name,
+                    &device.name,
+                    &state.paired_group.root,
+                );
             }
 
             // Discovered devices
             let discovered_section = t("bt-available-devices");
             idx.remove_entries("bluetooth", &discovered_section);
-            idx.add_section("bluetooth", &page_title, &discovered_section, "bt-available-devices", &state.discovered_group.root);
+            idx.add_section(
+                "bluetooth",
+                &page_title,
+                &discovered_section,
+                "bt-available-devices",
+                &state.discovered_group.root,
+            );
             for (_, device) in discovered.iter() {
-                idx.add_input("bluetooth", &page_title, &discovered_section, &device.name, &device.name, &state.discovered_group.root);
+                idx.add_input(
+                    "bluetooth",
+                    &page_title,
+                    &discovered_section,
+                    &device.name,
+                    &device.name,
+                    &state.discovered_group.root,
+                );
             }
         }
     }

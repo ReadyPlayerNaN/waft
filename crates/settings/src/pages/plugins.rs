@@ -8,9 +8,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use waft_client::EntityStore;
-use waft_ui_gtk::vdom::Component;
 use waft_protocol::Urn;
 use waft_protocol::entity::plugin::{self, PluginStatus};
+use waft_ui_gtk::vdom::Component;
 
 use crate::entity_list_group::EntityListGroup;
 use crate::i18n::t;
@@ -52,7 +52,12 @@ impl PluginsPage {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
-            idx.backfill_widget("plugins", &t("plugins-title"), None, Some(&list_group.group));
+            idx.backfill_widget(
+                "plugins",
+                &t("plugins-title"),
+                None,
+                Some(&list_group.group),
+            );
         }
 
         let state = Rc::new(RefCell::new(PluginsPageState {
@@ -69,10 +74,7 @@ impl PluginsPage {
             {
                 let state = state.clone();
                 move |plugins| {
-                    log::debug!(
-                        "[plugins-page] Reconciling: {} plugins",
-                        plugins.len()
-                    );
+                    log::debug!("[plugins-page] Reconciling: {} plugins", plugins.len());
                     Self::reconcile(&state, &plugins);
                 }
             },
@@ -105,7 +107,9 @@ impl PluginsPage {
                 existing.update(&props);
             } else {
                 let row = PluginRow::build(&props);
-                state.list_group.insert_sorted(&row.widget(), &plugin.name, &current_names);
+                state
+                    .list_group
+                    .insert_sorted(&row.widget(), &plugin.name, &current_names);
                 state.plugin_rows.insert(plugin.name.clone(), row);
             }
         }
@@ -125,7 +129,9 @@ impl PluginsPage {
         }
 
         state.sorted_names = current_names;
-        state.list_group.toggle_visibility(!state.plugin_rows.is_empty());
+        state
+            .list_group
+            .toggle_visibility(!state.plugin_rows.is_empty());
 
         // Update dynamic search entries
         {
@@ -133,10 +139,23 @@ impl PluginsPage {
             let page_title = t("settings-plugins");
             let section_title = t("plugins-title");
             idx.remove_entries("plugins", &section_title);
-            idx.add_section("plugins", &page_title, &section_title, "plugins-title", &state.list_group.group);
+            idx.add_section(
+                "plugins",
+                &page_title,
+                &section_title,
+                "plugins-title",
+                &state.list_group.group,
+            );
             for (_, plugin) in plugins {
                 if let Some(row) = state.plugin_rows.get(&plugin.name) {
-                    idx.add_input("plugins", &page_title, &section_title, &plugin.name, &plugin.name, &row.widget());
+                    idx.add_input(
+                        "plugins",
+                        &page_title,
+                        &section_title,
+                        &plugin.name,
+                        &plugin.name,
+                        &row.widget(),
+                    );
                 }
             }
         }

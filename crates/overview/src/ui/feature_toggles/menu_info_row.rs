@@ -1,5 +1,5 @@
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 use waft_ui_gtk::vdom::primitives::{VBox, VLabel};
+use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
 #[derive(Clone, PartialEq)]
 pub struct FeatureToggleMenuInfoRowProps {
@@ -12,7 +12,7 @@ pub struct FeatureToggleMenuInfoRowProps {
 pub(crate) struct InfoRowRender;
 
 impl RenderFn for InfoRowRender {
-    type Props  = FeatureToggleMenuInfoRowProps;
+    type Props = FeatureToggleMenuInfoRowProps;
     type Output = ();
 
     fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
@@ -23,18 +23,14 @@ impl RenderFn for InfoRowRender {
                     VBox::horizontal(12)
                         .css_class("menu-row")
                         .child(VNode::label(
-                            VLabel::new(&props.label)
-                                .css_class("dim-label")
-                                .xalign(0.0),
+                            VLabel::new(&props.label).css_class("dim-label").xalign(0.0),
                         )),
                 ))
                 .child(VNode::vbox(
                     VBox::horizontal(12)
                         .css_class("menu-row")
                         .child(VNode::label(
-                            VLabel::new(&props.value)
-                                .hexpand(true)
-                                .xalign(1.0),
+                            VLabel::new(&props.value).hexpand(true).xalign(1.0),
                         )),
                 )),
         )

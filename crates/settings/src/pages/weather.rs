@@ -29,10 +29,32 @@ impl WeatherPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-weather");
-        idx.add_section_deferred("weather", &page_title, &t("weather-current"), "weather-current");
-        idx.add_section_deferred("weather", &page_title, &t("weather-settings"), "weather-settings");
-        idx.add_input_deferred("weather", &page_title, &t("weather-settings"), &t("weather-temp-unit"), "weather-temp-unit");
-        idx.add_input_deferred("weather", &page_title, &t("weather-settings"), &t("weather-update-interval"), "weather-update-interval");
+        idx.add_section_deferred(
+            "weather",
+            &page_title,
+            &t("weather-current"),
+            "weather-current",
+        );
+        idx.add_section_deferred(
+            "weather",
+            &page_title,
+            &t("weather-settings"),
+            "weather-settings",
+        );
+        idx.add_input_deferred(
+            "weather",
+            &page_title,
+            &t("weather-settings"),
+            &t("weather-temp-unit"),
+            "weather-temp-unit",
+        );
+        idx.add_input_deferred(
+            "weather",
+            &page_title,
+            &t("weather-settings"),
+            &t("weather-update-interval"),
+            "weather-update-interval",
+        );
     }
 
     pub fn new(
@@ -61,9 +83,24 @@ impl WeatherPage {
         {
             let mut idx = search_index.borrow_mut();
             idx.backfill_widget("weather", &t("weather-current"), None, Some(&preview.root));
-            idx.backfill_widget("weather", &t("weather-settings"), None, Some(&location_group.root));
-            idx.backfill_widget("weather", &t("weather-settings"), Some(&t("weather-temp-unit")), Some(&location_group.root));
-            idx.backfill_widget("weather", &t("weather-settings"), Some(&t("weather-update-interval")), Some(&location_group.root));
+            idx.backfill_widget(
+                "weather",
+                &t("weather-settings"),
+                None,
+                Some(&location_group.root),
+            );
+            idx.backfill_widget(
+                "weather",
+                &t("weather-settings"),
+                Some(&t("weather-temp-unit")),
+                Some(&location_group.root),
+            );
+            idx.backfill_widget(
+                "weather",
+                &t("weather-settings"),
+                Some(&t("weather-update-interval")),
+                Some(&location_group.root),
+            );
         }
 
         // Wrap in Rc for sharing between closures

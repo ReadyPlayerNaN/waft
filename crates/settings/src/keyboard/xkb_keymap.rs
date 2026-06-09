@@ -22,13 +22,12 @@ pub struct KeymapGrid {
 
 /// Standard key codes for the four main rows on a QWERTY keyboard.
 const NUMBER_ROW_KEYS: &[&str] = &[
-    "AE00", "AE01", "AE02", "AE03", "AE04", "AE05", "AE06",
-    "AE07", "AE08", "AE09", "AE10", "AE11", "AE12",
+    "AE00", "AE01", "AE02", "AE03", "AE04", "AE05", "AE06", "AE07", "AE08", "AE09", "AE10", "AE11",
+    "AE12",
 ];
 
 const TOP_ROW_KEYS: &[&str] = &[
-    "AD01", "AD02", "AD03", "AD04", "AD05", "AD06", "AD07", "AD08", "AD09", "AD10", "AD11",
-    "AD12",
+    "AD01", "AD02", "AD03", "AD04", "AD05", "AD06", "AD07", "AD08", "AD09", "AD10", "AD11", "AD12",
 ];
 
 const HOME_ROW_KEYS: &[&str] = &[
@@ -53,7 +52,9 @@ pub fn keysym_to_char(keysym: &str) -> Option<char> {
     }
 
     // XKB uses Unicode code points prefixed with U or 0x for some keysyms
-    if let Some(hex) = keysym.strip_prefix("U+").or_else(|| keysym.strip_prefix("U"))
+    if let Some(hex) = keysym
+        .strip_prefix("U+")
+        .or_else(|| keysym.strip_prefix("U"))
         && let Ok(code) = u32::from_str_radix(hex, 16)
     {
         return char::from_u32(code);
@@ -96,10 +97,7 @@ pub fn parse_symbols_block(content: &str, variant: &str) -> HashMap<String, Stri
                     && let Some(bracket_end) = rest.find(']')
                 {
                     let symbols_str = &rest[bracket_start + 1..bracket_end];
-                    let first_keysym = symbols_str
-                        .split(',')
-                        .next()
-                        .map(|s| s.trim().to_string());
+                    let first_keysym = symbols_str.split(',').next().map(|s| s.trim().to_string());
 
                     if let Some(ks) = first_keysym
                         && !ks.is_empty()
@@ -146,8 +144,7 @@ pub fn resolve_includes(
 
                 let inc_path = base_dir.join(&inc_layout);
                 if let Ok(inc_content) = std::fs::read_to_string(&inc_path) {
-                    let inc_map =
-                        resolve_includes(&inc_content, &inc_variant, depth - 1, base_dir);
+                    let inc_map = resolve_includes(&inc_content, &inc_variant, depth - 1, base_dir);
                     result.extend(inc_map);
                 } else {
                     log::debug!(
@@ -295,8 +292,7 @@ static KEYSYM_TABLE: std::sync::LazyLock<HashMap<&'static str, char>> =
 
         // Digits
         for (i, ch) in ('0'..='9').enumerate() {
-            let name: &'static str =
-                ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"][i];
+            let name: &'static str = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"][i];
             m.insert(name, ch);
         }
 
@@ -840,13 +836,13 @@ xkb_symbols "qwerty" {
         let map = parse_symbols_block(content, "qwerty");
         let grid = build_grid(&map);
 
-        assert_eq!(grid.top_row[2], "é");  // eacute
-        assert_eq!(grid.top_row[3], "ř");  // rcaron
-        assert_eq!(grid.top_row[4], "ť");  // tcaron
-        assert_eq!(grid.top_row[5], "ž");  // zcaron
-        assert_eq!(grid.home_row[1], "š");  // scaron
-        assert_eq!(grid.home_row[2], "ď");  // dcaron
-        assert_eq!(grid.home_row[9], "ů");  // uring
+        assert_eq!(grid.top_row[2], "é"); // eacute
+        assert_eq!(grid.top_row[3], "ř"); // rcaron
+        assert_eq!(grid.top_row[4], "ť"); // tcaron
+        assert_eq!(grid.top_row[5], "ž"); // zcaron
+        assert_eq!(grid.home_row[1], "š"); // scaron
+        assert_eq!(grid.home_row[2], "ď"); // dcaron
+        assert_eq!(grid.home_row[9], "ů"); // uring
         assert_eq!(grid.bottom_row[0], "ý"); // yacute
         assert_eq!(grid.bottom_row[2], "č"); // ccaron
         assert_eq!(grid.bottom_row[5], "ň"); // ncaron

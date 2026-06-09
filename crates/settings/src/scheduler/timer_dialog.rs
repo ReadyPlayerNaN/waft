@@ -38,9 +38,7 @@ impl TimerDialog {
             .build();
 
         // Header bar with Cancel and Save buttons
-        let cancel_btn = gtk::Button::builder()
-            .label(t("notif-cancel"))
-            .build();
+        let cancel_btn = gtk::Button::builder().label(t("notif-cancel")).build();
         let save_btn = gtk::Button::builder()
             .label(t("startup-save"))
             .css_classes(["suggested-action"])
@@ -64,9 +62,7 @@ impl TimerDialog {
             .title(t("scheduler-tab-schedule"))
             .build();
 
-        let name_row = adw::EntryRow::builder()
-            .title(t("scheduler-name"))
-            .build();
+        let name_row = adw::EntryRow::builder().title(t("scheduler-name")).build();
 
         let description_row = adw::EntryRow::builder()
             .title(t("scheduler-description"))
@@ -96,13 +92,14 @@ impl TimerDialog {
         // Calendar fields – structured schedule picker
         let (cal_spec_str, initial_persistent) = initial
             .map(|tmr| match &tmr.schedule {
-                ScheduleKind::Calendar { spec, persistent } => {
-                    (Some(spec.clone()), *persistent)
-                }
+                ScheduleKind::Calendar { spec, persistent } => (Some(spec.clone()), *persistent),
                 _ => (None, false),
             })
             .unwrap_or((None, false));
-        let picker = Rc::new(SchedulePicker::new(cal_spec_str.as_deref(), initial_persistent));
+        let picker = Rc::new(SchedulePicker::new(
+            cal_spec_str.as_deref(),
+            initial_persistent,
+        ));
 
         let calendar_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -173,9 +170,7 @@ impl TimerDialog {
             .title(t("scheduler-environment"))
             .build();
 
-        let after_row = adw::EntryRow::builder()
-            .title(t("scheduler-after"))
-            .build();
+        let after_row = adw::EntryRow::builder().title(t("scheduler-after")).build();
 
         // Restart policy dropdown
         let restart_row = adw::ComboRow::builder()
@@ -306,8 +301,7 @@ impl TimerDialog {
                 set_row_error(&cpu_ref, !cpu_ok);
 
                 let mem_text = mem_ref.text();
-                let mem_ok =
-                    mem_text.trim().is_empty() || is_valid_memory_size(mem_text.trim());
+                let mem_ok = mem_text.trim().is_empty() || is_valid_memory_size(mem_text.trim());
                 set_row_error(&mem_ref, !mem_ok);
 
                 let env_text = env_ref.text();

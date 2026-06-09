@@ -14,18 +14,18 @@ type RebuildSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 use crate::calendar_selection::CalendarSelectionStore;
 use crate::components::agenda::AgendaComponent;
-use crate::components::right_column_stack::RightColumnStackComponent;
 use crate::components::audio_sliders::AudioSlidersComponent;
 use crate::components::battery::BatteryComponent;
-use crate::components::claude::ClaudeComponent;
 use crate::components::brightness_sliders::BrightnessSlidersComponent;
 use crate::components::calendar::CalendarComponent;
+use crate::components::claude::ClaudeComponent;
 use crate::components::clock::ClockComponent;
 use crate::components::events::EventsComponent;
 use crate::components::keyboard_layout::KeyboardLayoutComponent;
-use crate::components::settings_button::SettingsButtonComponent;
 use crate::components::notification_list::NotificationsComponent;
+use crate::components::right_column_stack::RightColumnStackComponent;
 use crate::components::session_actions::SessionActionsComponent;
+use crate::components::settings_button::SettingsButtonComponent;
 use crate::components::system_actions::SystemActionsComponent;
 use crate::components::toggles::backup::BackupToggle;
 use crate::components::toggles::bluetooth::BluetoothToggles;
@@ -36,11 +36,11 @@ use crate::components::toggles::network::{
     TetheringToggles, VpnToggles, WifiToggles, WiredToggles,
 };
 use crate::components::toggles::night_light::night_light_toggle;
-use crate::ui::feature_toggles::simple_toggle::SimpleToggle;
 use crate::components::weather::WeatherComponent;
 use crate::layout::model::LayoutNode;
 use crate::layout::types::WidgetFeatureToggle;
 use crate::menu_state::MenuStore;
+use crate::ui::feature_toggles::simple_toggle::SimpleToggle;
 use crate::ui::main_window::trigger_window_resize;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_ui_gtk::widgets::feature_grid::{FeatureGridItem, FeatureGridWidget};
@@ -300,19 +300,13 @@ fn render_node(
             widget
         }
 
-        LayoutNode::ControlsTabButton => {
-            ctx.controls_tab_btn.clone().upcast()
-        }
+        LayoutNode::ControlsTabButton => ctx.controls_tab_btn.clone().upcast(),
 
-        LayoutNode::ExitTabButton => {
-            ctx.exit_tab_btn.clone().upcast()
-        }
+        LayoutNode::ExitTabButton => ctx.exit_tab_btn.clone().upcast(),
 
         // Legacy Widget and Unmatched nodes are no longer supported
         LayoutNode::Widget { id } => {
-            warn!(
-                "[renderer] Legacy <Widget id=\"{id}\"> elements are no longer supported"
-            );
+            warn!("[renderer] Legacy <Widget id=\"{id}\"> elements are no longer supported");
             gtk::Box::new(gtk::Orientation::Vertical, 0).upcast()
         }
 

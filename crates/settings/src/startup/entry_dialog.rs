@@ -160,12 +160,18 @@ mod tests {
 
     #[test]
     fn split_simple_args() {
-        assert_eq!(shell_words_split("arg1 arg2 arg3"), vec!["arg1", "arg2", "arg3"]);
+        assert_eq!(
+            shell_words_split("arg1 arg2 arg3"),
+            vec!["arg1", "arg2", "arg3"]
+        );
     }
 
     #[test]
     fn split_quoted_args() {
-        assert_eq!(shell_words_split(r#"-c "echo hello""#), vec!["-c", "echo hello"]);
+        assert_eq!(
+            shell_words_split(r#"-c "echo hello""#),
+            vec!["-c", "echo hello"]
+        );
     }
 
     #[test]
