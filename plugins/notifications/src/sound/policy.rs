@@ -64,12 +64,16 @@ impl SoundPolicy {
         }
 
         // 4. Explicit sound-file hint
-        if let Some(sound_file) = ctx.sound_file && !sound_file.is_empty() {
+        if let Some(sound_file) = ctx.sound_file
+            && !sound_file.is_empty()
+        {
             return SoundDecision::Play(sound_file.to_string());
         }
 
         // 5. Explicit sound-name hint
-        if let Some(sound_name) = ctx.sound_name && !sound_name.is_empty() {
+        if let Some(sound_name) = ctx.sound_name
+            && !sound_name.is_empty()
+        {
             return SoundDecision::Play(sound_name.to_string());
         }
 

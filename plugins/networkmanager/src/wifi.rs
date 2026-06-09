@@ -38,13 +38,8 @@ pub async fn get_connections_for_ssid(conn: &Connection, ssid: &str) -> Result<V
     for settings_path in settings_paths {
         let path_str = settings_path.as_str();
 
-        let conn_proxy = zbus::Proxy::new(
-            conn,
-            NM_SERVICE,
-            path_str,
-            NM_SETTINGS_CONNECTION_INTERFACE,
-        )
-        .await?;
+        let conn_proxy =
+            zbus::Proxy::new(conn, NM_SERVICE, path_str, NM_SETTINGS_CONNECTION_INTERFACE).await?;
 
         let (settings,): (HashMap<String, HashMap<String, OwnedValue>>,) =
             conn_proxy.call("GetSettings", &()).await?;
@@ -144,8 +139,8 @@ pub async fn add_and_activate_connection(
 
     let device_obj = ObjectPath::try_from(device_path)
         .with_context(|| format!("Invalid device path: {device_path}"))?;
-    let ap_obj = ObjectPath::try_from(ap_path)
-        .with_context(|| format!("Invalid AP path: {ap_path}"))?;
+    let ap_obj =
+        ObjectPath::try_from(ap_path).with_context(|| format!("Invalid AP path: {ap_path}"))?;
 
     let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
         .await
@@ -212,9 +207,7 @@ pub async fn connect_wired_dbus(conn: &Connection, device_path: &str) -> Result<
         )
         .await
         .with_context(|| {
-            format!(
-                "Failed to activate wired connection {connection_path} on {device_path}"
-            )
+            format!("Failed to activate wired connection {connection_path} on {device_path}")
         })?;
 
     Ok(())
@@ -248,11 +241,7 @@ pub async fn get_wifi_psk(conn: &Connection, connection_path: &str) -> Result<Op
 }
 
 /// Build a WiFi QR code string in the `WIFI:` URI format.
-pub fn build_wifi_qr_string(
-    ssid: &str,
-    password: Option<&str>,
-    security: SecurityType,
-) -> String {
+pub fn build_wifi_qr_string(ssid: &str, password: Option<&str>, security: SecurityType) -> String {
     let auth_type = match security {
         SecurityType::Open => "nopass",
         SecurityType::Wep => "WEP",

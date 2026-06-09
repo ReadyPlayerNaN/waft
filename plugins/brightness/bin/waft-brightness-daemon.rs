@@ -10,7 +10,7 @@
 //! ```
 
 use std::path::Path;
-use std::sync::{Arc, Mutex as StdMutex, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
@@ -19,12 +19,16 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::process::Stdio;
 use waft_plugin::*;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/brightness.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/brightness.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/brightness.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/brightness.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 // ---------------------------------------------------------------------------
 // Display types
@@ -309,7 +313,10 @@ fn resolve_backlight_connector(device_name: &str) -> Option<String> {
     let pci_path = match std::fs::canonicalize(&device_link) {
         Ok(p) => p,
         Err(e) => {
-            debug!("[brightness] Could not resolve {}: {e}", device_link.display());
+            debug!(
+                "[brightness] Could not resolve {}: {e}",
+                device_link.display()
+            );
             return None;
         }
     };
@@ -450,11 +457,7 @@ fn read_sysfs_brightness(device_name: &str) -> Option<f64> {
     let max = std::fs::read_to_string(base.join("max_brightness")).ok()?;
     let actual: f64 = actual.trim().parse().ok()?;
     let max: f64 = max.trim().parse().ok()?;
-    if max > 0.0 {
-        Some(actual / max)
-    } else {
-        None
-    }
+    if max > 0.0 { Some(actual / max) } else { None }
 }
 
 /// Watch sysfs backlight files for external brightness changes.
@@ -511,10 +514,8 @@ async fn watch_backlight_brightness(
                             if display.display_type != DisplayType::Backlight {
                                 continue;
                             }
-                            let device_name = display
-                                .id
-                                .strip_prefix("backlight:")
-                                .unwrap_or(&display.id);
+                            let device_name =
+                                display.id.strip_prefix("backlight:").unwrap_or(&display.id);
                             if let Some(brightness) = read_sysfs_brightness(device_name)
                                 && (display.brightness - brightness).abs() > 0.001
                             {
@@ -621,10 +622,7 @@ impl BrightnessPlugin {
         for display in &mut displays {
             display.connector = match display.display_type {
                 DisplayType::Backlight => {
-                    let device_name = display
-                        .id
-                        .strip_prefix("backlight:")
-                        .unwrap_or(&display.id);
+                    let device_name = display.id.strip_prefix("backlight:").unwrap_or(&display.id);
                     resolve_backlight_connector(device_name)
                 }
                 DisplayType::External => {
@@ -696,9 +694,7 @@ impl Plugin for BrightnessPlugin {
             let device_id = urn.id().to_string();
 
             if let Err(e) = set_brightness(&device_id, new_brightness).await {
-                log::error!(
-                    "[brightness] Failed to set brightness for {device_id}: {e}"
-                );
+                log::error!("[brightness] Failed to set brightness for {device_id}: {e}");
                 return Err(e);
             }
 
@@ -734,11 +730,7 @@ fn main() -> Result<()> {
                 displays
                     .iter()
                     .filter(|d| d.display_type == DisplayType::Backlight)
-                    .map(|d| {
-                        d.id.strip_prefix("backlight:")
-                            .unwrap_or(&d.id)
-                            .to_string()
-                    })
+                    .map(|d| d.id.strip_prefix("backlight:").unwrap_or(&d.id).to_string())
                     .collect()
             };
 

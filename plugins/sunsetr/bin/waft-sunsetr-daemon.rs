@@ -21,12 +21,16 @@ use std::collections::HashMap;
 use std::io::BufRead;
 use std::process::Stdio;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/sunsetr.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/sunsetr.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/sunsetr.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/sunsetr.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
@@ -225,8 +229,7 @@ async fn set_preset(preset_name: &str) -> Result<()> {
 
 /// Query all config fields from sunsetr via `sunsetr get --json all`.
 async fn query_config(target: &str) -> Result<HashMap<String, String>> {
-    let (code, stdout, stderr) =
-        run_sunsetr(&["get", "--target", target, "--json", "all"]).await?;
+    let (code, stdout, stderr) = run_sunsetr(&["get", "--target", target, "--json", "all"]).await?;
 
     if code != 0 {
         anyhow::bail!("sunsetr get --json all failed (code {code}): {stderr}");
@@ -523,8 +526,7 @@ impl Plugin for SunsetrPlugin {
 
                 debug!("[sunsetr] Creating preset: {name}");
 
-                let (code, _stdout, stderr) =
-                    run_sunsetr(&["preset", &name]).await?;
+                let (code, _stdout, stderr) = run_sunsetr(&["preset", &name]).await?;
 
                 if code != 0 {
                     anyhow::bail!("Failed to create preset (code {code}): {stderr}");

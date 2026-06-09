@@ -504,10 +504,7 @@ fn test_parse_cards_extracts_profiles() {
     // Built-in audio has 4 profiles
     assert_eq!(cards[0].profiles.len(), 4);
     assert_eq!(cards[0].profiles[0].name, "output:analog-stereo");
-    assert_eq!(
-        cards[0].profiles[0].description,
-        "Analog Stereo Output"
-    );
+    assert_eq!(cards[0].profiles[0].description, "Analog Stereo Output");
     assert!(cards[0].profiles[0].available);
 
     assert_eq!(cards[0].profiles[3].name, "off");
@@ -568,77 +565,143 @@ fn test_parse_port_line_no_type_info() {
 
 #[test]
 fn test_compute_device_type_headset_from_form_factor() {
-    assert_eq!(super::compute_device_type(Some("headset"), None, None, false), "headset");
-    assert_eq!(super::compute_device_type(Some("headset"), None, None, true), "headset");
+    assert_eq!(
+        super::compute_device_type(Some("headset"), None, None, false),
+        "headset"
+    );
+    assert_eq!(
+        super::compute_device_type(Some("headset"), None, None, true),
+        "headset"
+    );
 }
 
 #[test]
 fn test_compute_device_type_headphone_from_form_factor() {
-    assert_eq!(super::compute_device_type(Some("headphone"), None, None, false), "headphone");
+    assert_eq!(
+        super::compute_device_type(Some("headphone"), None, None, false),
+        "headphone"
+    );
 }
 
 #[test]
 fn test_compute_device_type_webcam_from_form_factor() {
-    assert_eq!(super::compute_device_type(Some("webcam"), None, None, true), "webcam");
+    assert_eq!(
+        super::compute_device_type(Some("webcam"), None, None, true),
+        "webcam"
+    );
 }
 
 #[test]
 fn test_compute_device_type_display_from_hdmi_port() {
-    assert_eq!(super::compute_device_type(None, None, Some("HDMI"), false), "display");
-    assert_eq!(super::compute_device_type(None, None, Some("DisplayPort"), false), "display");
+    assert_eq!(
+        super::compute_device_type(None, None, Some("HDMI"), false),
+        "display"
+    );
+    assert_eq!(
+        super::compute_device_type(None, None, Some("DisplayPort"), false),
+        "display"
+    );
 }
 
 #[test]
 fn test_compute_device_type_display_from_icon_name() {
-    assert_eq!(super::compute_device_type(None, Some("video-display"), None, false), "display");
-    assert_eq!(super::compute_device_type(None, Some("video-display-pci"), None, false), "display");
+    assert_eq!(
+        super::compute_device_type(None, Some("video-display"), None, false),
+        "display"
+    );
+    assert_eq!(
+        super::compute_device_type(None, Some("video-display-pci"), None, false),
+        "display"
+    );
 }
 
 #[test]
 fn test_compute_device_type_microphone_for_input() {
-    assert_eq!(super::compute_device_type(None, None, None, true), "microphone");
-    assert_eq!(super::compute_device_type(None, Some("audio-card"), None, true), "microphone");
+    assert_eq!(
+        super::compute_device_type(None, None, None, true),
+        "microphone"
+    );
+    assert_eq!(
+        super::compute_device_type(None, Some("audio-card"), None, true),
+        "microphone"
+    );
 }
 
 #[test]
 fn test_compute_device_type_card_for_generic_output() {
     assert_eq!(super::compute_device_type(None, None, None, false), "card");
-    assert_eq!(super::compute_device_type(None, Some("audio-card-pci"), None, false), "card");
+    assert_eq!(
+        super::compute_device_type(None, Some("audio-card-pci"), None, false),
+        "card"
+    );
 }
 
 #[test]
 fn test_compute_connection_type_bluetooth() {
-    assert_eq!(super::compute_connection_type(Some("bluetooth"), None), Some("bluetooth".to_string()));
+    assert_eq!(
+        super::compute_connection_type(Some("bluetooth"), None),
+        Some("bluetooth".to_string())
+    );
 }
 
 #[test]
 fn test_compute_connection_type_usb() {
-    assert_eq!(super::compute_connection_type(Some("usb"), None), Some("usb".to_string()));
+    assert_eq!(
+        super::compute_connection_type(Some("usb"), None),
+        Some("usb".to_string())
+    );
 }
 
 #[test]
 fn test_compute_connection_type_virtual() {
-    assert_eq!(super::compute_connection_type(Some("virtual"), None), Some("virtual".to_string()));
-    assert_eq!(super::compute_connection_type(Some("network"), None), Some("virtual".to_string()));
+    assert_eq!(
+        super::compute_connection_type(Some("virtual"), None),
+        Some("virtual".to_string())
+    );
+    assert_eq!(
+        super::compute_connection_type(Some("network"), None),
+        Some("virtual".to_string())
+    );
 }
 
 #[test]
 fn test_compute_connection_type_pci_hdmi_port() {
-    assert_eq!(super::compute_connection_type(Some("pci"), Some("HDMI")), Some("hdmi".to_string()));
-    assert_eq!(super::compute_connection_type(Some("pci"), Some("DisplayPort")), Some("hdmi".to_string()));
+    assert_eq!(
+        super::compute_connection_type(Some("pci"), Some("HDMI")),
+        Some("hdmi".to_string())
+    );
+    assert_eq!(
+        super::compute_connection_type(Some("pci"), Some("DisplayPort")),
+        Some("hdmi".to_string())
+    );
 }
 
 #[test]
 fn test_compute_connection_type_pci_jack_port() {
-    assert_eq!(super::compute_connection_type(Some("pci"), Some("Speaker")), Some("jack".to_string()));
-    assert_eq!(super::compute_connection_type(Some("pci"), Some("Headphones")), Some("jack".to_string()));
-    assert_eq!(super::compute_connection_type(Some("pci"), Some("Line")), Some("jack".to_string()));
-    assert_eq!(super::compute_connection_type(Some("pci"), Some("Microphone")), Some("jack".to_string()));
+    assert_eq!(
+        super::compute_connection_type(Some("pci"), Some("Speaker")),
+        Some("jack".to_string())
+    );
+    assert_eq!(
+        super::compute_connection_type(Some("pci"), Some("Headphones")),
+        Some("jack".to_string())
+    );
+    assert_eq!(
+        super::compute_connection_type(Some("pci"), Some("Line")),
+        Some("jack".to_string())
+    );
+    assert_eq!(
+        super::compute_connection_type(Some("pci"), Some("Microphone")),
+        Some("jack".to_string())
+    );
 }
 
 #[test]
 fn test_compute_connection_type_pci_no_port() {
-    assert_eq!(super::compute_connection_type(Some("pci"), None), Some("pci".to_string()));
+    assert_eq!(
+        super::compute_connection_type(Some("pci"), None),
+        Some("pci".to_string())
+    );
 }
 
 #[test]
@@ -658,16 +721,24 @@ fn test_parse_modules_short() {
     let modules = super::parse_modules_short(output);
     assert_eq!(modules.len(), 5);
 
-    assert_eq!(modules[0], super::ModuleInfo {
-        index: 0,
-        name: "module-device-restore".to_string(),
-        arguments: "".to_string(),
-    });
-    assert_eq!(modules[3], super::ModuleInfo {
-        index: 23,
-        name: "module-null-sink".to_string(),
-        arguments: "sink_name=waft_virtual_mic sink_properties=device.description=\"Virtual Mic\"".to_string(),
-    });
+    assert_eq!(
+        modules[0],
+        super::ModuleInfo {
+            index: 0,
+            name: "module-device-restore".to_string(),
+            arguments: "".to_string(),
+        }
+    );
+    assert_eq!(
+        modules[3],
+        super::ModuleInfo {
+            index: 23,
+            name: "module-null-sink".to_string(),
+            arguments:
+                "sink_name=waft_virtual_mic sink_properties=device.description=\"Virtual Mic\""
+                    .to_string(),
+        }
+    );
     assert_eq!(modules[4], super::ModuleInfo {
         index: 24,
         name: "module-null-source".to_string(),

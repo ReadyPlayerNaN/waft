@@ -18,12 +18,16 @@ use chrono::{Local, Locale, Timelike};
 use serde::Deserialize;
 use waft_plugin::*;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/clock.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/clock.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/clock.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/clock.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 /// Clock configuration from config file.
 #[derive(Debug, Clone, Deserialize, Default)]

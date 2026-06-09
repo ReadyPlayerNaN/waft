@@ -99,7 +99,8 @@ fn read_config() -> anyhow::Result<(toml::Table, PathBuf)> {
 
     let root: toml::Table = if path.exists() {
         let content = std::fs::read_to_string(&path)?;
-        toml::from_str(&content).map_err(|e| anyhow::anyhow!("failed to parse existing config: {e}"))?
+        toml::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("failed to parse existing config: {e}"))?
     } else {
         toml::Table::new()
     };
@@ -109,9 +110,7 @@ fn read_config() -> anyhow::Result<(toml::Table, PathBuf)> {
 
 /// Get a mutable reference to the audio plugin table within the root TOML,
 /// creating it if it doesn't exist.
-fn get_audio_table(
-    root: &mut toml::Table,
-) -> anyhow::Result<&mut toml::Table> {
+fn get_audio_table(root: &mut toml::Table) -> anyhow::Result<&mut toml::Table> {
     let plugins = root
         .entry("plugins")
         .or_insert_with(|| toml::Value::Array(Vec::new()));
@@ -145,12 +144,9 @@ fn get_audio_table(
 }
 
 /// Serialize and write the root TOML table atomically.
-fn write_config(
-    root: &toml::Table,
-    path: &std::path::Path,
-) -> anyhow::Result<()> {
-    let toml_str =
-        toml::to_string_pretty(root).map_err(|e| anyhow::anyhow!("failed to serialize config: {e}"))?;
+fn write_config(root: &toml::Table, path: &std::path::Path) -> anyhow::Result<()> {
+    let toml_str = toml::to_string_pretty(root)
+        .map_err(|e| anyhow::anyhow!("failed to serialize config: {e}"))?;
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -167,9 +163,7 @@ fn write_config(
 ///
 /// Reads the existing config file as raw TOML, updates the audio plugin
 /// section with the new virtual_devices array, and writes back atomically.
-pub fn save_virtual_devices(
-    devices: &[VirtualDeviceConfig],
-) -> anyhow::Result<()> {
+pub fn save_virtual_devices(devices: &[VirtualDeviceConfig]) -> anyhow::Result<()> {
     let (mut root, path) = read_config()?;
     let audio_table = get_audio_table(&mut root)?;
 
@@ -183,7 +177,10 @@ pub fn save_virtual_devices(
 
     write_config(&root, &path)?;
 
-    log::debug!("[audio/config] wrote {} virtual devices to config", devices.len());
+    log::debug!(
+        "[audio/config] wrote {} virtual devices to config",
+        devices.len()
+    );
     Ok(())
 }
 
@@ -197,9 +194,7 @@ fn default_pa_path() -> Option<PathBuf> {
 /// Removes all lines ending with `# waft-managed` and appends new load-module
 /// lines for each configured device. If the file does not exist, creates it
 /// with `.include /etc/pulse/default.pa` as the first line.
-pub fn sync_default_pa(
-    devices: &[VirtualDeviceConfig],
-) -> anyhow::Result<()> {
+pub fn sync_default_pa(devices: &[VirtualDeviceConfig]) -> anyhow::Result<()> {
     let pa_path = default_pa_path()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "config dir not found"))?;
 
@@ -237,7 +232,9 @@ pub fn sync_default_pa(
                 device.sink_name, device.label
             ),
             other => {
-                log::warn!("[audio/config] unknown module_type '{other}', skipping default.pa entry");
+                log::warn!(
+                    "[audio/config] unknown module_type '{other}', skipping default.pa entry"
+                );
                 continue;
             }
         };
@@ -253,7 +250,10 @@ pub fn sync_default_pa(
     std::fs::write(&tmp_path, &output)?;
     std::fs::rename(&tmp_path, &pa_path)?;
 
-    log::debug!("[audio/config] synced {} entries to default.pa", devices.len());
+    log::debug!(
+        "[audio/config] synced {} entries to default.pa",
+        devices.len()
+    );
     Ok(())
 }
 
@@ -276,10 +276,7 @@ mod tests {
 
     #[test]
     fn sanitize_collapses_underscores() {
-        assert_eq!(
-            sanitize_sink_name("a   b---c"),
-            "waft_a_b_c"
-        );
+        assert_eq!(sanitize_sink_name("a   b---c"), "waft_a_b_c");
     }
 
     #[test]
@@ -299,25 +296,21 @@ mod tests {
 
     #[test]
     fn unique_name_no_conflict() {
-        let existing = vec![
-            VirtualDeviceConfig {
-                module_type: "null-sink".to_string(),
-                sink_name: "waft_other".to_string(),
-                label: "Other".to_string(),
-            },
-        ];
+        let existing = vec![VirtualDeviceConfig {
+            module_type: "null-sink".to_string(),
+            sink_name: "waft_other".to_string(),
+            label: "Other".to_string(),
+        }];
         assert_eq!(ensure_unique_sink_name("waft_test", &existing), "waft_test");
     }
 
     #[test]
     fn unique_name_with_conflict() {
-        let existing = vec![
-            VirtualDeviceConfig {
-                module_type: "null-sink".to_string(),
-                sink_name: "waft_test".to_string(),
-                label: "Test".to_string(),
-            },
-        ];
+        let existing = vec![VirtualDeviceConfig {
+            module_type: "null-sink".to_string(),
+            sink_name: "waft_test".to_string(),
+            label: "Test".to_string(),
+        }];
         assert_eq!(
             ensure_unique_sink_name("waft_test", &existing),
             "waft_test_2"

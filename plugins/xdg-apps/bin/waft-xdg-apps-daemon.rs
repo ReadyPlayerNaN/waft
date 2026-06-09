@@ -11,7 +11,7 @@ use waft_i18n::system_locale;
 use waft_plugin::*;
 use waft_protocol::description::*;
 use waft_xdg_apps::desktop_file::strip_exec_field_codes;
-use waft_xdg_apps::scanner::{scan_apps, xdg_app_dirs, DiscoveredApp};
+use waft_xdg_apps::scanner::{DiscoveredApp, scan_apps, xdg_app_dirs};
 
 fn describe_xdg_apps() -> Option<PluginDescription> {
     XdgAppsPlugin {
@@ -215,7 +215,9 @@ async fn watch_dirs(
         .context("failed to create file watcher")?;
 
     for dir in &dirs {
-        if dir.exists() && let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive) {
+        if dir.exists()
+            && let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive)
+        {
             log::warn!("[xdg-apps] could not watch {dir:?}: {e}");
         }
     }
@@ -232,9 +234,7 @@ async fn watch_dirs(
                     // create a feedback loop that saturates the CPU.
                     let is_structural = matches!(
                         event.kind,
-                        EventKind::Create(_)
-                            | EventKind::Remove(_)
-                            | EventKind::Modify(_)
+                        EventKind::Create(_) | EventKind::Remove(_) | EventKind::Modify(_)
                     ) && !matches!(event.kind, EventKind::Access(_));
 
                     if !is_structural {

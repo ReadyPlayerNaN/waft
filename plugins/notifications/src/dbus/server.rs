@@ -223,7 +223,11 @@ impl NotificationsService {
     ) -> fdo::Result<u32> {
         let dbus_sender = header.sender().map(std::string::ToString::to_string);
         if let Some(ref sender) = dbus_sender {
-            let mut guard = self.inner._last_sender.lock().expect("_last_sender mutex poisoned");
+            let mut guard = self
+                .inner
+                ._last_sender
+                .lock()
+                .expect("_last_sender mutex poisoned");
             *guard = Some(sender.clone());
         }
 

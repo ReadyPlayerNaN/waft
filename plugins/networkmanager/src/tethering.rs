@@ -12,7 +12,9 @@ use crate::dbus_property::{NM_INTERFACE, NM_PATH, NM_SERVICE};
 use crate::state::{NmState, TetheringConnectionState, TetheringProfileInfo};
 
 /// List all saved bluetooth connection profiles from NetworkManager.
-pub async fn get_tethering_profiles(nm: &nmrs::NetworkManager) -> Result<Vec<TetheringProfileInfo>> {
+pub async fn get_tethering_profiles(
+    nm: &nmrs::NetworkManager,
+) -> Result<Vec<TetheringProfileInfo>> {
     let saved = nm.list_saved_connections().await?;
     let mut profiles = Vec::new();
 
@@ -79,7 +81,9 @@ pub async fn refresh_tethering_states(
     state: &Arc<StdMutex<NmState>>,
 ) -> Result<()> {
     let profiles = get_tethering_profiles(nm).await?;
-    let active = get_active_tethering_connections(nm).await.unwrap_or_default();
+    let active = get_active_tethering_connections(nm)
+        .await
+        .unwrap_or_default();
 
     let new_connections: Vec<TetheringConnectionState> = profiles
         .into_iter()

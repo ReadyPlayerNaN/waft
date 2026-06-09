@@ -47,7 +47,9 @@ pub fn load_access_token() -> Result<String> {
 
 fn credentials_path() -> Result<PathBuf> {
     let home = std::env::var("HOME").context("HOME env var not set")?;
-    Ok(PathBuf::from(home).join(".claude").join(".credentials.json"))
+    Ok(PathBuf::from(home)
+        .join(".claude")
+        .join(".credentials.json"))
 }
 
 #[cfg(test)]
@@ -87,7 +89,10 @@ mod tests {
         }
         assert!(result.is_err(), "expected Err for expired token, got Ok");
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("expired"), "error should mention expired: {msg}");
+        assert!(
+            msg.contains("expired"),
+            "error should mention expired: {msg}"
+        );
     }
 
     #[test]
@@ -101,7 +106,10 @@ mod tests {
         if let Some(h) = original_home {
             unsafe { std::env::set_var("HOME", h) };
         }
-        assert!(result.is_ok(), "expected Ok for valid token, got {result:?}");
+        assert!(
+            result.is_ok(),
+            "expected Ok for valid token, got {result:?}"
+        );
         assert_eq!(result.unwrap(), "test-token");
     }
 }

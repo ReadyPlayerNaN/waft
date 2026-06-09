@@ -246,9 +246,7 @@ impl KeyboardLayoutBackend for HyprlandBackend {
                     .strip_prefix("activelayout>>")
                     .and_then(|data| data.split_once(','))
                 {
-                    debug!(
-                        "[keyboard-layout:hyprland] Layout changed to: {layout_name}"
-                    );
+                    debug!("[keyboard-layout:hyprland] Layout changed to: {layout_name}");
 
                     let available: Vec<String> = if !layout_names.is_empty() {
                         layout_names

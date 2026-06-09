@@ -20,12 +20,16 @@ use waft_plugin::*;
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, Value};
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/caffeine.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/caffeine.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/caffeine.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/caffeine.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 const PORTAL_DESTINATION: &str = "org.freedesktop.portal.Desktop";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
@@ -219,7 +223,5 @@ impl Plugin for CaffeinePlugin {
 fn main() -> Result<()> {
     PluginRunner::new("caffeine", &[entity::session::SLEEP_INHIBITOR_ENTITY_TYPE])
         .i18n(i18n(), "plugin-name", "plugin-description")
-        .run(|_notifier| async {
-            CaffeinePlugin::new().await
-        })
+        .run(|_notifier| async { CaffeinePlugin::new().await })
 }

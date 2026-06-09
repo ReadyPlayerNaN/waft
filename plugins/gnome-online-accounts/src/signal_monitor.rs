@@ -119,9 +119,7 @@ fn handle_account_properties_changed(
     let account_id = match st.id_for_path(obj_path) {
         Some(id) => id.to_string(),
         None => {
-            debug!(
-                "[goa] PropertiesChanged for unknown path {obj_path}, ignoring"
-            );
+            debug!("[goa] PropertiesChanged for unknown path {obj_path}, ignoring");
             return false;
         }
     };
@@ -167,9 +165,7 @@ fn handle_account_properties_changed(
             if let Some(svc) = account.services.iter_mut().find(|s| s.name == *service_id)
                 && svc.enabled != enabled
             {
-                info!(
-                    "[goa] Account {account_id} service {service_id} enabled: {enabled}"
-                );
+                info!("[goa] Account {account_id} service {service_id} enabled: {enabled}");
                 svc.enabled = enabled;
                 changed = true;
             }
@@ -223,9 +219,7 @@ fn handle_interfaces_added(state: &Arc<StdMutex<GoaState>>, msg: &zbus::Message)
     let path_str = path.to_string();
 
     let Some((id, account)) = dbus::parse_account(account_props) else {
-        warn!(
-            "[goa] InterfacesAdded for {path_str} but missing Id property"
-        );
+        warn!("[goa] InterfacesAdded for {path_str} but missing Id property");
         return false;
     };
 
@@ -260,9 +254,7 @@ fn handle_interfaces_removed(state: &Arc<StdMutex<GoaState>>, msg: &zbus::Messag
         info!("[goa] Account removed: {id} at {path_str}");
         true
     } else {
-        debug!(
-            "[goa] InterfacesRemoved for unknown path {path_str}, ignoring"
-        );
+        debug!("[goa] InterfacesRemoved for unknown path {path_str}, ignoring");
         false
     }
 }

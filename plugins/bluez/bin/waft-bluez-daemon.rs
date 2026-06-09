@@ -28,12 +28,16 @@ use waft_plugin_bluetooth::state::State;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice, ConnectionState};
 use zbus::Connection;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/bluez.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/bluez.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/bluez.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/bluez.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 /// Extract a stable adapter ID from the D-Bus object path.
 ///
@@ -472,9 +476,7 @@ impl Plugin for BluezPlugin {
                 }
             }
         } else {
-            debug!(
-                "[bluetooth] Unknown entity type: {entity_type} (action: {action})"
-            );
+            debug!("[bluetooth] Unknown entity type: {entity_type} (action: {action})");
         }
 
         Ok(serde_json::Value::Null)

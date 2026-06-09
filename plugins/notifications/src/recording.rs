@@ -25,8 +25,7 @@ impl NotificationRecorder {
     /// Resolves the log path from `$XDG_RUNTIME_DIR/waft/notifications-recording.jsonl`.
     /// Creates the `waft/` subdirectory if needed.
     pub fn new(active: bool) -> Self {
-        let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-            .unwrap_or_else(|_| "/tmp".to_string());
+        let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
         let waft_dir = PathBuf::from(&runtime_dir).join("waft");
 
         if let Err(e) = fs::create_dir_all(&waft_dir) {
@@ -74,7 +73,10 @@ impl NotificationRecorder {
             }
         };
 
-        record.insert("urn".to_string(), serde_json::Value::String(urn.to_string()));
+        record.insert(
+            "urn".to_string(),
+            serde_json::Value::String(urn.to_string()),
+        );
         record.insert(
             "recorded_at_ms".to_string(),
             serde_json::Value::Number(serde_json::Number::from(recorded_at_ms)),
@@ -104,10 +106,12 @@ impl NotificationRecorder {
         *guard = new_active;
 
         // Truncate log file when transitioning from inactive to active
-        if !was_active && new_active
-            && let Err(e) = fs::write(&self.log_path, b"") {
-                warn!("[notifications/recording] failed to truncate log file: {e}");
-            }
+        if !was_active
+            && new_active
+            && let Err(e) = fs::write(&self.log_path, b"")
+        {
+            warn!("[notifications/recording] failed to truncate log file: {e}");
+        }
     }
 
     /// Returns whether recording is currently active.

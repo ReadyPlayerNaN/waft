@@ -19,12 +19,16 @@ use log::{debug, info, warn};
 use serde::Deserialize;
 use waft_plugin::*;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/eds.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/eds.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/eds.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/eds.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 use zbus::{Connection, MessageStream};
 use zvariant::OwnedValue;
@@ -211,9 +215,7 @@ impl Plugin for EdsPlugin {
             return Ok(serde_json::Value::Null);
         }
 
-        log::warn!(
-            "EDS plugin does not support action '{action}' (urn={urn})"
-        );
+        log::warn!("EDS plugin does not support action '{action}' (urn={urn})");
         Ok(serde_json::Value::Null)
     }
 
@@ -226,13 +228,14 @@ impl Plugin for EdsPlugin {
         const REFRESH_GRACE_SECS: u64 = 120;
         let st = self.state.lock_or_recover();
         if let Some(instant) = st.last_refresh_instant
-            && instant.elapsed() < std::time::Duration::from_secs(REFRESH_GRACE_SECS) {
-                log::debug!(
-                    "[eds] can_stop: false — refresh grace period active ({}s remaining)",
-                    REFRESH_GRACE_SECS - instant.elapsed().as_secs()
-                );
-                return false;
-            }
+            && instant.elapsed() < std::time::Duration::from_secs(REFRESH_GRACE_SECS)
+        {
+            log::debug!(
+                "[eds] can_stop: false — refresh grace period active ({}s remaining)",
+                REFRESH_GRACE_SECS - instant.elapsed().as_secs()
+            );
+            return false;
+        }
         true
     }
 }
@@ -615,7 +618,10 @@ async fn discover_calendar_sources(conn: &Connection) -> Result<Vec<CalendarSour
 
     info!("[eds] Discovered {} calendar sources", sources.len());
     for src in &sources {
-        info!("[eds]   source uid={:?} display_name={:?}", src.uid, src.display_name);
+        info!(
+            "[eds]   source uid={:?} display_name={:?}",
+            src.uid, src.display_name
+        );
     }
     Ok(sources)
 }
@@ -636,9 +642,7 @@ async fn open_calendar(conn: &Connection, source_uid: &str) -> Result<(String, S
         .await
         .context("Failed to open calendar")?;
 
-    debug!(
-        "[eds] Opened calendar '{source_uid}': path={object_path}, bus={bus_name}"
-    );
+    debug!("[eds] Opened calendar '{source_uid}': path={object_path}, bus={bus_name}");
     Ok((object_path, bus_name))
 }
 
@@ -809,7 +813,10 @@ async fn setup_source(
         Err(e) => {
             warn!("[eds] Failed to open calendar {}: {e}", source.uid);
             // Roll back dedupe entry so a later retry can succeed.
-            state.lock_or_recover().known_source_uids.remove(&source.uid);
+            state
+                .lock_or_recover()
+                .known_source_uids
+                .remove(&source.uid);
             return;
         }
     };
@@ -1239,9 +1246,14 @@ async fn spawn_view_monitor(
                                 events
                                     .iter()
                                     .map(|e| {
-                                        let start = chrono::DateTime::from_timestamp(e.start_time, 0)
-                                            .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
-                                            .unwrap_or_else(|| format!("ts:{}", e.start_time));
+                                        let start =
+                                            chrono::DateTime::from_timestamp(e.start_time, 0)
+                                                .map(|dt| {
+                                                    dt.with_timezone(&chrono::Local)
+                                                        .format("%Y-%m-%d %H:%M")
+                                                        .to_string()
+                                                })
+                                                .unwrap_or_else(|| format!("ts:{}", e.start_time));
                                         format!("{:?}@{}", e.summary, start)
                                     })
                                     .collect::<Vec<_>>()
@@ -1251,7 +1263,9 @@ async fn spawn_view_monitor(
                             notifier.notify();
                         }
                     } else {
-                        warn!("[eds] view={view_path} Failed to deserialize ObjectsAdded signal body");
+                        warn!(
+                            "[eds] view={view_path} Failed to deserialize ObjectsAdded signal body"
+                        );
                     }
                 }
                 "ObjectsModified" => {
@@ -1271,9 +1285,14 @@ async fn spawn_view_monitor(
                                 events
                                     .iter()
                                     .map(|e| {
-                                        let start = chrono::DateTime::from_timestamp(e.start_time, 0)
-                                            .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
-                                            .unwrap_or_else(|| format!("ts:{}", e.start_time));
+                                        let start =
+                                            chrono::DateTime::from_timestamp(e.start_time, 0)
+                                                .map(|dt| {
+                                                    dt.with_timezone(&chrono::Local)
+                                                        .format("%Y-%m-%d %H:%M")
+                                                        .to_string()
+                                                })
+                                                .unwrap_or_else(|| format!("ts:{}", e.start_time));
                                         format!("{:?}@{}", e.summary, start)
                                     })
                                     .collect::<Vec<_>>()
@@ -1286,7 +1305,9 @@ async fn spawn_view_monitor(
                             notifier.notify();
                         }
                     } else {
-                        warn!("[eds] view={view_path} Failed to deserialize ObjectsModified signal body");
+                        warn!(
+                            "[eds] view={view_path} Failed to deserialize ObjectsModified signal body"
+                        );
                     }
                 }
                 "ObjectsRemoved" => {
@@ -1821,7 +1842,9 @@ fn days_in_month(year: i32, month: u32) -> u32 {
         if month == 12 { 1 } else { month + 1 },
         1,
     )
-    .map(|d| (d - chrono::NaiveDate::from_ymd_opt(year, month, 1).expect("valid date")).num_days() as u32)
+    .map(|d| {
+        (d - chrono::NaiveDate::from_ymd_opt(year, month, 1).expect("valid date")).num_days() as u32
+    })
     .unwrap_or(30)
 }
 
@@ -2011,9 +2034,7 @@ fn update_state_remove_events(state: &Arc<StdMutex<EdsState>>, uids: &[String]) 
             uids.len()
         );
     } else {
-        warn!(
-            "[eds] remove_events: no matching occurrences found for UIDs: {uids:?}"
-        );
+        warn!("[eds] remove_events: no matching occurrences found for UIDs: {uids:?}");
     }
 }
 
@@ -3122,13 +3143,21 @@ mod tests {
             + "END:VCALENDAR\r\n";
 
         let events_30 = expand_vevent(&ical, range_30);
-        assert_eq!(events_30.len(), 1, "non-recurring always passes through regardless of range");
+        assert_eq!(
+            events_30.len(),
+            1,
+            "non-recurring always passes through regardless of range"
+        );
         // However, the EDS S-expression query would NOT return it with a 30-day window.
         // This test documents that expand_vevent itself doesn't filter non-recurring events —
         // the filtering happens at the EDS query level (occur-in-time-range?).
 
         let events_60 = expand_vevent(&ical, range_60);
-        assert_eq!(events_60.len(), 1, "45-day-out event visible in 60-day window");
+        assert_eq!(
+            events_60.len(),
+            1,
+            "45-day-out event visible in 60-day window"
+        );
         assert_eq!(events_60[0].summary, "FE interview");
     }
 
@@ -3269,8 +3298,14 @@ mod tests {
             "both VEVENTs from a multi-VEVENT VCALENDAR must be returned"
         );
         let summaries: Vec<&str> = events.iter().map(|e| e.summary.as_str()).collect();
-        assert!(summaries.contains(&"FE interview"), "standalone event must be present");
-        assert!(summaries.contains(&"Daily standup"), "recurring occurrence must be present");
+        assert!(
+            summaries.contains(&"FE interview"),
+            "standalone event must be present"
+        );
+        assert!(
+            summaries.contains(&"Daily standup"),
+            "recurring occurrence must be present"
+        );
     }
 
     // ── parse_ical_datetime: DST ambiguity ───────────────────────────────────
@@ -3305,7 +3340,11 @@ mod tests {
             NaiveTime::from_hms_opt(2, 30, 0).unwrap(),
         );
         // .earliest() picks CEST (UTC+2): 02:30 Prague CEST = 00:30 UTC.
-        let expected = tz.from_local_datetime(&naive).earliest().unwrap().timestamp();
+        let expected = tz
+            .from_local_datetime(&naive)
+            .earliest()
+            .unwrap()
+            .timestamp();
         assert_eq!(
             ts,
             Some(expected),
@@ -3461,8 +3500,12 @@ fn main() -> Result<()> {
         let source_monitor_notifier = notifier.clone();
         let source_monitor_conn = conn.clone();
         spawn_monitored("eds/source-monitor", async move {
-            monitor_source_manager(source_monitor_conn, source_monitor_state, source_monitor_notifier)
-                .await
+            monitor_source_manager(
+                source_monitor_conn,
+                source_monitor_state,
+                source_monitor_notifier,
+            )
+            .await
         });
 
         // Spawn session monitor

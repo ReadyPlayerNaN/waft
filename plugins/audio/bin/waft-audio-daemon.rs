@@ -22,12 +22,16 @@ use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
 use waft_plugin::*;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/audio.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/audio.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/audio.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/audio.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 use waft_plugin_audio::pactl::{self, AudioEvent, CardInfo, CardPortMap, SinkInfo, SourceInfo};
 use waft_plugin_audio::virtual_device_config::{self, VirtualDeviceConfig};
@@ -108,7 +112,6 @@ impl AudioPlugin {
         lock_or_recover(&self.state).clone()
     }
 }
-
 
 /// Reload all audio state from pactl into the shared state.
 async fn reload_all(state: &Arc<StdMutex<AudioState>>) -> Result<()> {
@@ -208,7 +211,10 @@ async fn reconcile_virtual_devices(state: &Arc<StdMutex<AudioState>>) {
                 "null-sink" => pactl::load_null_sink(&config.sink_name, &config.label).await,
                 "null-source" => pactl::load_null_source(&config.sink_name, &config.label).await,
                 other => {
-                    warn!("[audio] Unknown module_type '{}' for virtual device '{}'", other, config.sink_name);
+                    warn!(
+                        "[audio] Unknown module_type '{}' for virtual device '{}'",
+                        other, config.sink_name
+                    );
                     continue;
                 }
             };
@@ -415,11 +421,13 @@ impl Plugin for AudioPlugin {
                 }
             }
             "create-sink" => {
-                self.handle_create_virtual_device("null-sink", &params).await?;
+                self.handle_create_virtual_device("null-sink", &params)
+                    .await?;
                 return Ok(serde_json::Value::Null);
             }
             "create-source" => {
-                self.handle_create_virtual_device("null-source", &params).await?;
+                self.handle_create_virtual_device("null-source", &params)
+                    .await?;
                 return Ok(serde_json::Value::Null);
             }
             "remove-sink" => {
@@ -467,7 +475,8 @@ impl AudioPlugin {
             .map(|vd| vd.config.clone())
             .collect();
 
-        let sink_name = virtual_device_config::ensure_unique_sink_name(&base_name, &existing_configs);
+        let sink_name =
+            virtual_device_config::ensure_unique_sink_name(&base_name, &existing_configs);
 
         let module_index = match module_type {
             "null-sink" => pactl::load_null_sink(&sink_name, label).await?,
@@ -503,10 +512,7 @@ impl AudioPlugin {
     }
 
     /// Remove a virtual audio device by sink/source name.
-    async fn handle_remove_virtual_device(
-        &self,
-        name: &str,
-    ) -> anyhow::Result<()> {
+    async fn handle_remove_virtual_device(&self, name: &str) -> anyhow::Result<()> {
         let module_index = {
             let state = lock_or_recover(&self.state);
             state
@@ -878,27 +884,30 @@ async fn monitor_events(
 }
 
 fn main() -> Result<()> {
-    PluginRunner::new("audio", &[entity::audio::ENTITY_TYPE, entity::audio::CARD_ENTITY_TYPE])
-        .i18n(i18n(), "plugin-name", "plugin-description")
-        .run(|notifier| async move {
-            let (plugin, shared_state) = AudioPlugin::new().await?;
-            let is_available = lock_or_recover(&shared_state).available;
+    PluginRunner::new(
+        "audio",
+        &[entity::audio::ENTITY_TYPE, entity::audio::CARD_ENTITY_TYPE],
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
+        let (plugin, shared_state) = AudioPlugin::new().await?;
+        let is_available = lock_or_recover(&shared_state).available;
 
-            if is_available {
-                match pactl::subscribe_events() {
-                    Ok(rx) => {
-                        debug!("[audio] Started event subscription");
-                        spawn_monitored("audio-monitor", async move {
-                            monitor_events(rx, shared_state, notifier).await;
-                            Ok(())
-                        });
-                    }
-                    Err(e) => warn!("[audio] Failed to start event subscription: {e}"),
+        if is_available {
+            match pactl::subscribe_events() {
+                Ok(rx) => {
+                    debug!("[audio] Started event subscription");
+                    spawn_monitored("audio-monitor", async move {
+                        monitor_events(rx, shared_state, notifier).await;
+                        Ok(())
+                    });
                 }
+                Err(e) => warn!("[audio] Failed to start event subscription: {e}"),
             }
+        }
 
-            Ok(plugin)
-        })
+        Ok(plugin)
+    })
 }
 
 #[cfg(test)]
@@ -952,13 +961,23 @@ mod tests {
             .filter(|e| e.entity_type == entity::audio::ENTITY_TYPE)
             .collect();
 
-        assert_eq!(audio_entities.len(), 1, "should emit exactly one entity for the virtual device");
+        assert_eq!(
+            audio_entities.len(),
+            1,
+            "should emit exactly one entity for the virtual device"
+        );
 
         let data = decode_audio_device(audio_entities[0]);
         assert!(data.virtual_device, "virtual_device flag should be true");
         assert_eq!(data.sink_name, Some("waft_my_sink".to_string()));
-        assert!((data.volume - 0.42).abs() < 0.001, "volume should be real value from pactl, not hardcoded 1.0");
-        assert!(data.muted, "muted should be real value from pactl, not hardcoded false");
+        assert!(
+            (data.volume - 0.42).abs() < 0.001,
+            "volume should be real value from pactl, not hardcoded 1.0"
+        );
+        assert!(
+            data.muted,
+            "muted should be real value from pactl, not hardcoded false"
+        );
     }
 
     #[test]
@@ -1004,8 +1023,14 @@ mod tests {
         assert_eq!(audio_entities.len(), 1);
 
         let data = decode_audio_device(audio_entities[0]);
-        assert!(!data.virtual_device, "regular device should not be marked virtual");
-        assert_eq!(data.sink_name, None, "regular device should have no sink_name");
+        assert!(
+            !data.virtual_device,
+            "regular device should not be marked virtual"
+        );
+        assert_eq!(
+            data.sink_name, None,
+            "regular device should have no sink_name"
+        );
     }
 
     #[test]
@@ -1031,7 +1056,11 @@ mod tests {
 
         let urns: Vec<_> = audio_entities.iter().map(|e| e.urn.to_string()).collect();
         let unique_urns: std::collections::HashSet<_> = urns.iter().collect();
-        assert_eq!(urns.len(), unique_urns.len(), "all URNs should be unique (no duplicates)");
+        assert_eq!(
+            urns.len(),
+            unique_urns.len(),
+            "all URNs should be unique (no duplicates)"
+        );
     }
 
     #[test]

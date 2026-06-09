@@ -36,7 +36,8 @@ fn read_config() -> anyhow::Result<(toml::Table, std::path::PathBuf)> {
 
     let root: toml::Table = if path.exists() {
         let content = std::fs::read_to_string(&path)?;
-        toml::from_str(&content).map_err(|e| anyhow::anyhow!("failed to parse existing config: {e}"))?
+        toml::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("failed to parse existing config: {e}"))?
     } else {
         toml::Table::new()
     };
@@ -46,9 +47,7 @@ fn read_config() -> anyhow::Result<(toml::Table, std::path::PathBuf)> {
 
 /// Get a mutable reference to the notifications plugin table within the root TOML,
 /// creating it if it doesn't exist.
-fn get_notifications_table(
-    root: &mut toml::Table,
-) -> anyhow::Result<&mut toml::Table> {
+fn get_notifications_table(root: &mut toml::Table) -> anyhow::Result<&mut toml::Table> {
     let plugins = root
         .entry("plugins")
         .or_insert_with(|| toml::Value::Array(Vec::new()));
@@ -85,12 +84,9 @@ fn get_notifications_table(
 }
 
 /// Serialize and write the root TOML table atomically.
-fn write_config(
-    root: &toml::Table,
-    path: &std::path::Path,
-) -> anyhow::Result<()> {
-    let toml_str =
-        toml::to_string_pretty(root).map_err(|e| anyhow::anyhow!("failed to serialize config: {e}"))?;
+fn write_config(root: &toml::Table, path: &std::path::Path) -> anyhow::Result<()> {
+    let toml_str = toml::to_string_pretty(root)
+        .map_err(|e| anyhow::anyhow!("failed to serialize config: {e}"))?;
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -144,9 +140,7 @@ pub fn write_filter_config(
 }
 
 /// Write sound config to the waft config file, preserving other settings.
-pub fn write_sound_config(
-    sound_config: &SoundConfig,
-) -> anyhow::Result<()> {
+pub fn write_sound_config(sound_config: &SoundConfig) -> anyhow::Result<()> {
     let (mut root, path) = read_config()?;
     let notif_table = get_notifications_table(&mut root)?;
 

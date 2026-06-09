@@ -12,20 +12,24 @@
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
-use std::sync::{Arc, Mutex as StdMutex};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal_async};
 use waft_plugin::*;
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/battery.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/battery.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/battery.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/battery.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 const UPOWER_DEST: &str = "org.freedesktop.UPower";
 const DISPLAY_DEVICE_PATH: &str = "/org/freedesktop/UPower/devices/DisplayDevice";
@@ -258,9 +262,9 @@ async fn monitor_battery_signals(
 
     monitor_signal_async(conn, config, info, notifier, move |msg, _state| {
         // Deserialize the full PropertiesChanged body (sa{sv}as) before entering the async block
-        let body_check =
-            msg.body()
-                .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>();
+        let body_check = msg
+            .body()
+            .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>();
 
         let conn = conn_for_handler.clone();
         Box::pin(async move {
@@ -299,7 +303,10 @@ fn main() -> Result<()> {
             let monitor_conn = plugin.conn.clone();
 
             // Listen for D-Bus PropertiesChanged signals (instant, no polling)
-            spawn_monitored("battery", monitor_battery_signals(monitor_conn, shared_info, notifier));
+            spawn_monitored(
+                "battery",
+                monitor_battery_signals(monitor_conn, shared_info, notifier),
+            );
 
             Ok(plugin)
         })

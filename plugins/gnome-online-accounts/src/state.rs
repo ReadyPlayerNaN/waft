@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
+use waft_plugin::{Entity, Urn};
 use waft_protocol::entity::accounts::{
     ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE, OnlineAccount,
     OnlineAccountProvider,
 };
-use waft_plugin::{Entity, Urn};
 
 /// Internal state tracking all GOA accounts.
 #[derive(Debug, Default)]
@@ -67,8 +67,7 @@ impl GoaState {
             .accounts
             .iter()
             .map(|(id, account)| {
-                let urn =
-                    Urn::new("gnome-online-accounts", ONLINE_ACCOUNT_ENTITY_TYPE, id);
+                let urn = Urn::new("gnome-online-accounts", ONLINE_ACCOUNT_ENTITY_TYPE, id);
                 Entity::new(urn, ONLINE_ACCOUNT_ENTITY_TYPE, account)
             })
             .collect();
@@ -116,7 +115,11 @@ mod tests {
     fn update_and_get_account() {
         let mut state = GoaState::default();
         let account = test_account("acc1", "Google");
-        state.update_account("acc1".into(), "/org/gnome/OnlineAccounts/Accounts/acc1".into(), account.clone());
+        state.update_account(
+            "acc1".into(),
+            "/org/gnome/OnlineAccounts/Accounts/acc1".into(),
+            account.clone(),
+        );
 
         assert_eq!(state.accounts.get("acc1"), Some(&account));
         assert_eq!(
@@ -128,8 +131,16 @@ mod tests {
     #[test]
     fn remove_account_by_id() {
         let mut state = GoaState::default();
-        state.update_account("acc1".into(), "/path/acc1".into(), test_account("acc1", "Google"));
-        state.update_account("acc2".into(), "/path/acc2".into(), test_account("acc2", "Microsoft"));
+        state.update_account(
+            "acc1".into(),
+            "/path/acc1".into(),
+            test_account("acc1", "Google"),
+        );
+        state.update_account(
+            "acc2".into(),
+            "/path/acc2".into(),
+            test_account("acc2", "Microsoft"),
+        );
 
         state.remove_account("acc1");
         assert!(state.accounts.get("acc1").is_none());
@@ -140,7 +151,11 @@ mod tests {
     #[test]
     fn remove_by_path_returns_id() {
         let mut state = GoaState::default();
-        state.update_account("acc1".into(), "/path/acc1".into(), test_account("acc1", "Google"));
+        state.update_account(
+            "acc1".into(),
+            "/path/acc1".into(),
+            test_account("acc1", "Google"),
+        );
 
         let removed = state.remove_by_path("/path/acc1");
         assert_eq!(removed, Some("acc1".to_string()));
@@ -151,7 +166,11 @@ mod tests {
     #[test]
     fn remove_by_path_unknown_returns_none() {
         let mut state = GoaState::default();
-        state.update_account("acc1".into(), "/path/acc1".into(), test_account("acc1", "Google"));
+        state.update_account(
+            "acc1".into(),
+            "/path/acc1".into(),
+            test_account("acc1", "Google"),
+        );
 
         let removed = state.remove_by_path("/path/nonexistent");
         assert_eq!(removed, None);
@@ -161,7 +180,11 @@ mod tests {
     #[test]
     fn id_for_path_lookup() {
         let mut state = GoaState::default();
-        state.update_account("acc1".into(), "/path/acc1".into(), test_account("acc1", "Google"));
+        state.update_account(
+            "acc1".into(),
+            "/path/acc1".into(),
+            test_account("acc1", "Google"),
+        );
 
         assert_eq!(state.id_for_path("/path/acc1"), Some("acc1"));
         assert_eq!(state.id_for_path("/path/unknown"), None);
@@ -170,7 +193,11 @@ mod tests {
     #[test]
     fn get_entities_includes_accounts_and_providers() {
         let mut state = GoaState::default();
-        state.update_account("acc1".into(), "/path/acc1".into(), test_account("acc1", "Google"));
+        state.update_account(
+            "acc1".into(),
+            "/path/acc1".into(),
+            test_account("acc1", "Google"),
+        );
         state.providers = vec![OnlineAccountProvider {
             provider_type: "google".to_string(),
             provider_name: "Google".to_string(),
@@ -195,7 +222,11 @@ mod tests {
     #[test]
     fn update_account_overwrites_existing() {
         let mut state = GoaState::default();
-        state.update_account("acc1".into(), "/path/acc1".into(), test_account("acc1", "Google"));
+        state.update_account(
+            "acc1".into(),
+            "/path/acc1".into(),
+            test_account("acc1", "Google"),
+        );
 
         let updated = OnlineAccount {
             id: "acc1".to_string(),

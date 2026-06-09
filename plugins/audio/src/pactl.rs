@@ -250,12 +250,7 @@ pub async fn get_source_volume(source_name: &str) -> Result<(f64, bool)> {
 pub async fn set_sink_volume(sink_name: &str, volume: f64) -> Result<()> {
     let volume_percent = (volume.clamp(0.0, 1.0) * 100.0).round() as u32;
 
-    let output = run_pactl(&[
-        "set-sink-volume",
-        sink_name,
-        &format!("{volume_percent}%"),
-    ])
-    .await?;
+    let output = run_pactl(&["set-sink-volume", sink_name, &format!("{volume_percent}%")]).await?;
 
     if !output.status.success() {
         return Err(anyhow!(
@@ -611,7 +606,10 @@ pub fn parse_sinks(output: &str, default_sink: Option<&str>) -> Result<Vec<SinkI
                      active_port: Option<String>,
                      ports_lines: &[String],
                      sinks: &mut Vec<SinkInfo>| {
-        let port_refs: Vec<&str> = ports_lines.iter().map(std::string::String::as_str).collect();
+        let port_refs: Vec<&str> = ports_lines
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
         let ports = parse_ports_structured(ports_lines);
         let is_default = default_sink.is_some_and(|d| d == name);
@@ -767,7 +765,10 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
         if name.contains(".monitor") {
             return;
         }
-        let port_refs: Vec<&str> = ports_lines.iter().map(std::string::String::as_str).collect();
+        let port_refs: Vec<&str> = ports_lines
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let active_port_available = parse_port_availability(&port_refs, active_port.as_deref());
         let ports = parse_ports_structured(ports_lines);
         let is_default = default_source.is_some_and(|d| d == name);
@@ -916,7 +917,9 @@ pub fn parse_card_ports(output: &str) -> CardPortMap {
                     },
                 );
             }
-            current_card_id = trimmed.strip_prefix("Card #").map(std::string::ToString::to_string);
+            current_card_id = trimmed
+                .strip_prefix("Card #")
+                .map(std::string::ToString::to_string);
             in_ports = false;
             in_port_properties = false;
             current_port_name = None;
@@ -1208,11 +1211,14 @@ pub fn compute_connection_type(bus: Option<&str>, port_type: Option<&str>) -> Op
         Some("bluetooth") => Some("bluetooth".to_string()),
         Some("usb") => Some("usb".to_string()),
         Some("virtual") | Some("network") => Some("virtual".to_string()),
-        Some("pci") => Some(match port_type {
-            Some("HDMI") | Some("DisplayPort") => "hdmi",
-            Some("Headphones") | Some("Speaker") | Some("Line") | Some("Microphone") => "jack",
-            _ => "pci",
-        }.to_string()),
+        Some("pci") => Some(
+            match port_type {
+                Some("HDMI") | Some("DisplayPort") => "hdmi",
+                Some("Headphones") | Some("Speaker") | Some("Line") | Some("Microphone") => "jack",
+                _ => "pci",
+            }
+            .to_string(),
+        ),
         _ => None,
     }
 }
@@ -1286,7 +1292,9 @@ impl AudioDevice {
             &sink.bus,
             card_ports,
         );
-        let active_port_type = sink.ports.iter()
+        let active_port_type = sink
+            .ports
+            .iter()
             .find(|p| Some(&p.name) == sink.active_port.as_ref())
             .and_then(|p| p.port_type.as_deref());
         let device_type = compute_device_type(
@@ -1318,7 +1326,9 @@ impl AudioDevice {
             &source.bus,
             card_ports,
         );
-        let active_port_type = source.ports.iter()
+        let active_port_type = source
+            .ports
+            .iter()
             .find(|p| Some(&p.name) == source.active_port.as_ref())
             .and_then(|p| p.port_type.as_deref());
         let device_type = compute_device_type(
@@ -1402,9 +1412,8 @@ pub async fn list_modules_short() -> Result<Vec<ModuleInfo>> {
 
 /// Load a null-sink module. Returns the module index.
 pub async fn load_null_sink(sink_name: &str, description: &str) -> Result<u32> {
-    let args = format!(
-        "sink_name={sink_name} sink_properties=device.description=\"{description}\""
-    );
+    let args =
+        format!("sink_name={sink_name} sink_properties=device.description=\"{description}\"");
     let output = run_pactl(&["load-module", "module-null-sink", &args]).await?;
 
     if !output.status.success() {
@@ -1422,9 +1431,8 @@ pub async fn load_null_sink(sink_name: &str, description: &str) -> Result<u32> {
 
 /// Load a null-source module. Returns the module index.
 pub async fn load_null_source(source_name: &str, description: &str) -> Result<u32> {
-    let args = format!(
-        "source_name={source_name} source_properties=device.description=\"{description}\""
-    );
+    let args =
+        format!("source_name={source_name} source_properties=device.description=\"{description}\"");
     let output = run_pactl(&["load-module", "module-null-source", &args]).await?;
 
     if !output.status.success() {

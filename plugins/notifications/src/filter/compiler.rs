@@ -77,9 +77,7 @@ fn collect_regexes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use waft_protocol::entity::notification_filter::{
-        CombinatorOperator, MatchField, Pattern,
-    };
+    use waft_protocol::entity::notification_filter::{CombinatorOperator, MatchField, Pattern};
 
     #[test]
     fn compile_group_simple_no_regex() {

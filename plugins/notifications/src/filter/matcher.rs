@@ -363,18 +363,10 @@ mod tests {
         assert!(matches_combinator(&combinator, &notif2, &HashMap::new()));
 
         let notif3 = make_notification("slack", "Test", NotificationUrgency::Normal);
-        assert!(!matches_combinator(
-            &combinator,
-            &notif3,
-            &HashMap::new()
-        ));
+        assert!(!matches_combinator(&combinator, &notif3, &HashMap::new()));
 
         let notif4 = make_notification("firefox", "Meeting", NotificationUrgency::Normal);
-        assert!(!matches_combinator(
-            &combinator,
-            &notif4,
-            &HashMap::new()
-        ));
+        assert!(!matches_combinator(&combinator, &notif4, &HashMap::new()));
     }
 
     #[test]

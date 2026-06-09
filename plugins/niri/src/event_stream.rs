@@ -156,7 +156,12 @@ pub fn spawn_event_stream() -> flume::Receiver<NiriEvent> {
                 }
             } else if let Some(payload) = raw.windows_changed {
                 log::debug!("[niri] WindowsChanged: {} windows", payload.windows.len());
-                if tx.send(NiriEvent::WindowsChanged { windows: payload.windows }).is_err() {
+                if tx
+                    .send(NiriEvent::WindowsChanged {
+                        windows: payload.windows,
+                    })
+                    .is_err()
+                {
                     break;
                 }
             }

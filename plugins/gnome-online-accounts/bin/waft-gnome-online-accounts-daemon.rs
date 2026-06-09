@@ -48,11 +48,7 @@ impl GoaPlugin {
     }
 
     /// Handle actions on `online-account-provider` entities.
-    async fn handle_provider_action(
-        &self,
-        urn: Urn,
-        action: String,
-    ) -> anyhow::Result<()> {
+    async fn handle_provider_action(&self, urn: Urn, action: String) -> anyhow::Result<()> {
         let provider_type = urn.id().to_string();
 
         match action.as_str() {
@@ -133,9 +129,7 @@ impl Plugin for GoaPlugin {
                     }
                 };
 
-                debug!(
-                    "[goa] Enable service '{service_name}' on account {account_id}"
-                );
+                debug!("[goa] Enable service '{service_name}' on account {account_id}");
 
                 let account_path = {
                     let state = self.lock_state();
@@ -152,9 +146,7 @@ impl Plugin for GoaPlugin {
                     dbus::set_service_disabled(&self.conn, &account_path, &service_name, false)
                         .await
                 {
-                    error!(
-                        "[goa] Failed to enable service '{service_name}' on {account_id}: {e}"
-                    );
+                    error!("[goa] Failed to enable service '{service_name}' on {account_id}: {e}");
                     return Err(e);
                 }
 
@@ -179,9 +171,7 @@ impl Plugin for GoaPlugin {
                     }
                 };
 
-                debug!(
-                    "[goa] Disable service '{service_name}' on account {account_id}"
-                );
+                debug!("[goa] Disable service '{service_name}' on account {account_id}");
 
                 let account_path = {
                     let state = self.lock_state();
@@ -195,12 +185,9 @@ impl Plugin for GoaPlugin {
                 };
 
                 if let Err(e) =
-                    dbus::set_service_disabled(&self.conn, &account_path, &service_name, true)
-                        .await
+                    dbus::set_service_disabled(&self.conn, &account_path, &service_name, true).await
                 {
-                    error!(
-                        "[goa] Failed to disable service '{service_name}' on {account_id}: {e}"
-                    );
+                    error!("[goa] Failed to disable service '{service_name}' on {account_id}: {e}");
                     return Err(e);
                 }
 
@@ -236,8 +223,7 @@ impl Plugin for GoaPlugin {
                 if locked {
                     anyhow::bail!("account {account_id} is locked");
                 }
-                dbus::remove_account(&self.conn, &account_path)
-                    .await?;
+                dbus::remove_account(&self.conn, &account_path).await?;
             }
 
             _ => {
@@ -256,9 +242,7 @@ impl Plugin for GoaPlugin {
 /// add-account flow. The daemon's existing D-Bus signal monitor detects the
 /// new account via `InterfacesAdded` automatically.
 fn run_add_account(provider_type: &str) -> Result<()> {
-    info!(
-        "[goa] add-account helper invoked for provider: {provider_type}"
-    );
+    info!("[goa] add-account helper invoked for provider: {provider_type}");
 
     // Use gnome-control-center to trigger the native add-account flow.
     // GOA's own dialog handles OAuth, WebKit, form-based flows etc.
@@ -301,7 +285,10 @@ fn main() -> Result<()> {
 
     PluginRunner::new(
         "gnome-online-accounts",
-        &[ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE],
+        &[
+            ONLINE_ACCOUNT_ENTITY_TYPE,
+            ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
+        ],
     )
     .i18n(i18n(), "plugin-name", "plugin-description")
     .run(|notifier| async move {
@@ -327,9 +314,7 @@ fn main() -> Result<()> {
                 }
             }
             Err(e) => {
-                warn!(
-                    "[goa] Failed to discover accounts (goa-daemon may not be running): {e}"
-                );
+                warn!("[goa] Failed to discover accounts (goa-daemon may not be running): {e}");
             }
         }
 

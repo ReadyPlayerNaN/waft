@@ -87,10 +87,7 @@ pub fn compute_field_states(transition_mode: &str) -> HashMap<String, FieldState
 }
 
 /// Build a NightLightConfig entity from a map of sunsetr JSON key-value pairs.
-pub fn build_config_entity(
-    target: &str,
-    values: &HashMap<String, String>,
-) -> NightLightConfig {
+pub fn build_config_entity(target: &str, values: &HashMap<String, String>) -> NightLightConfig {
     let transition_mode = values
         .get("transition_mode")
         .cloned()
@@ -116,22 +113,10 @@ pub fn build_config_entity(
         latitude: values.get("latitude").cloned().unwrap_or_default(),
         longitude: values.get("longitude").cloned().unwrap_or_default(),
         smoothing: values.get("smoothing").cloned().unwrap_or_default(),
-        startup_duration: values
-            .get("startup_duration")
-            .cloned()
-            .unwrap_or_default(),
-        shutdown_duration: values
-            .get("shutdown_duration")
-            .cloned()
-            .unwrap_or_default(),
-        adaptive_interval: values
-            .get("adaptive_interval")
-            .cloned()
-            .unwrap_or_default(),
-        update_interval: values
-            .get("update_interval")
-            .cloned()
-            .unwrap_or_default(),
+        startup_duration: values.get("startup_duration").cloned().unwrap_or_default(),
+        shutdown_duration: values.get("shutdown_duration").cloned().unwrap_or_default(),
+        adaptive_interval: values.get("adaptive_interval").cloned().unwrap_or_default(),
+        update_interval: values.get("update_interval").cloned().unwrap_or_default(),
         field_state,
     }
 }

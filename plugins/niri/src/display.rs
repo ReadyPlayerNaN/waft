@@ -135,10 +135,7 @@ pub fn connection_type_from_name(name: &str) -> String {
         "DVI".to_string()
     } else {
         // Extract connector prefix (everything before the dash-number suffix)
-        name.split('-')
-            .next()
-            .unwrap_or(name)
-            .to_string()
+        name.split('-').next().unwrap_or(name).to_string()
     }
 }
 
@@ -509,9 +506,18 @@ mod tests {
         assert_eq!(parse_niri_transform("180"), DisplayTransform::Rotate180);
         assert_eq!(parse_niri_transform("270"), DisplayTransform::Rotate270);
         assert_eq!(parse_niri_transform("Flipped"), DisplayTransform::Flipped);
-        assert_eq!(parse_niri_transform("Flipped90"), DisplayTransform::FlippedRotate90);
-        assert_eq!(parse_niri_transform("Flipped180"), DisplayTransform::FlippedRotate180);
-        assert_eq!(parse_niri_transform("Flipped270"), DisplayTransform::FlippedRotate270);
+        assert_eq!(
+            parse_niri_transform("Flipped90"),
+            DisplayTransform::FlippedRotate90
+        );
+        assert_eq!(
+            parse_niri_transform("Flipped180"),
+            DisplayTransform::FlippedRotate180
+        );
+        assert_eq!(
+            parse_niri_transform("Flipped270"),
+            DisplayTransform::FlippedRotate270
+        );
     }
 
     #[test]
@@ -528,7 +534,11 @@ mod tests {
         ];
         for variant in &variants {
             let cli_str = transform_to_niri_cli(*variant);
-            assert!(!cli_str.is_empty(), "CLI string should not be empty for {:?}", variant);
+            assert!(
+                !cli_str.is_empty(),
+                "CLI string should not be empty for {:?}",
+                variant
+            );
         }
     }
 

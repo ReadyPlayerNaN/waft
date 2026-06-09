@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::desktop_file::{parse_desktop_entry, DesktopEntry};
+use crate::desktop_file::{DesktopEntry, parse_desktop_entry};
 
 /// A discovered application: its desktop stem and parsed entry.
 #[derive(Debug, Clone)]
@@ -73,7 +73,9 @@ fn scan_dir(dir: &Path) -> std::io::Result<Vec<DiscoveredApp>> {
         if stem.is_empty() {
             continue;
         }
-        if let Ok(content) = std::fs::read_to_string(&path) && let Some(entry) = parse_desktop_entry(&content) {
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && let Some(entry) = parse_desktop_entry(&content)
+        {
             apps.push(DiscoveredApp { stem, path, entry });
         }
     }

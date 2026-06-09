@@ -165,10 +165,7 @@ fn parse_xkb_include_full(include: &str) -> XkbInclude {
 
     match (first_layout, last_layout) {
         (Some(first), Some(last)) => {
-            let prefix = classified[..first]
-                .iter()
-                .map(|c| c.base.clone())
-                .collect();
+            let prefix = classified[..first].iter().map(|c| c.base.clone()).collect();
             let suffix = classified[last + 1..]
                 .iter()
                 .map(|c| c.base.clone())
@@ -274,28 +271,30 @@ fn parse_xkb_content(content: &str) -> Option<XkbParsedContent> {
         if in_symbols {
             if layouts.is_none()
                 && let Some(rest) = trimmed.strip_prefix("include \"")
-                    && let Some(include_str) = rest.strip_suffix('"') {
-                        let (l, v) = parse_xkb_include(include_str);
-                        if !l.is_empty() {
-                            layouts = Some((l, v));
-                        }
-                    }
+                && let Some(include_str) = rest.strip_suffix('"')
+            {
+                let (l, v) = parse_xkb_include(include_str);
+                if !l.is_empty() {
+                    layouts = Some((l, v));
+                }
+            }
 
             // Parse name[groupN]="...";
             if let Some(rest) = trimmed.strip_prefix("name[group")
                 && let Some(bracket_pos) = rest.find(']')
-                    && let Ok(group_num) = rest[..bracket_pos].parse::<usize>() {
-                        // Extract the quoted name between `="` and `";`
-                        let after_bracket = &rest[bracket_pos + 1..];
-                        if let Some(eq_quote) = after_bracket.find("=\"") {
-                            let name_start = eq_quote + 2;
-                            if let Some(quote_end) = after_bracket[name_start..].find('"') {
-                                let name = &after_bracket[name_start..name_start + quote_end];
-                                // group numbers are 1-based, convert to 0-based
-                                name_map.insert(group_num.saturating_sub(1), name.to_string());
-                            }
-                        }
+                && let Ok(group_num) = rest[..bracket_pos].parse::<usize>()
+            {
+                // Extract the quoted name between `="` and `";`
+                let after_bracket = &rest[bracket_pos + 1..];
+                if let Some(eq_quote) = after_bracket.find("=\"") {
+                    let name_start = eq_quote + 2;
+                    if let Some(quote_end) = after_bracket[name_start..].find('"') {
+                        let name = &after_bracket[name_start..name_start + quote_end];
+                        // group numbers are 1-based, convert to 0-based
+                        name_map.insert(group_num.saturating_sub(1), name.to_string());
                     }
+                }
+            }
 
             // Stop at closing brace of xkb_symbols
             if trimmed == "};" || trimmed == "}" {
@@ -321,9 +320,10 @@ fn parse_xkb_content(content: &str) -> Option<XkbParsedContent> {
 /// Expand `~` to home directory in a file path.
 fn expand_tilde(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/")
-        && let Ok(home) = std::env::var("HOME") {
-            return format!("{home}/{rest}");
-        }
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return format!("{home}/{rest}");
+    }
     path.to_string()
 }
 
@@ -348,61 +348,61 @@ fn extract_keyboard_config(doc: &KdlDocument) -> KeyboardConfig {
 
     // Check for "file" option first (ExternalFile mode)
     if let Some(file_value) = xkb_children.get_arg("file")
-        && let Some(file_path) = file_value.as_string() {
-            let expanded = expand_tilde(file_path);
-            let (layouts, variant, layout_names) = match std::fs::read_to_string(&expanded) {
-                Ok(content) => match parse_xkb_content(&content) {
-                    Some(parsed) => (parsed.layouts, parsed.variant, parsed.names),
-                    None => {
-                        log::warn!(
-                            "[niri] Could not extract layouts from XKB file: {file_path}"
-                        );
-                        (vec![], None, vec![])
-                    }
-                },
-                Err(e) => {
-                    log::warn!("[niri] Failed to read XKB file '{file_path}': {e}");
+        && let Some(file_path) = file_value.as_string()
+    {
+        let expanded = expand_tilde(file_path);
+        let (layouts, variant, layout_names) = match std::fs::read_to_string(&expanded) {
+            Ok(content) => match parse_xkb_content(&content) {
+                Some(parsed) => (parsed.layouts, parsed.variant, parsed.names),
+                None => {
+                    log::warn!("[niri] Could not extract layouts from XKB file: {file_path}");
                     (vec![], None, vec![])
                 }
-            };
+            },
+            Err(e) => {
+                log::warn!("[niri] Failed to read XKB file '{file_path}': {e}");
+                (vec![], None, vec![])
+            }
+        };
 
-            return KeyboardConfig {
-                mode: KeyboardConfigMode::ExternalFile,
-                file_path: Some(file_path.to_string()),
-                layouts,
-                layout_names,
-                variant,
-                ..Default::default()
-            };
-        }
+        return KeyboardConfig {
+            mode: KeyboardConfigMode::ExternalFile,
+            file_path: Some(file_path.to_string()),
+            layouts,
+            layout_names,
+            variant,
+            ..Default::default()
+        };
+    }
 
     // Check for "layout" option (LayoutList mode)
     if let Some(layout_value) = xkb_children.get_arg("layout")
-        && let Some(layout_str) = layout_value.as_string() {
-            let layouts: Vec<String> = layout_str
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
+        && let Some(layout_str) = layout_value.as_string()
+    {
+        let layouts: Vec<String> = layout_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
 
-            let options = xkb_children
-                .get_arg("options")
-                .and_then(|v| v.as_string())
-                .map(std::string::ToString::to_string);
+        let options = xkb_children
+            .get_arg("options")
+            .and_then(|v| v.as_string())
+            .map(std::string::ToString::to_string);
 
-            let variant = xkb_children
-                .get_arg("variant")
-                .and_then(|v| v.as_string())
-                .map(std::string::ToString::to_string);
+        let variant = xkb_children
+            .get_arg("variant")
+            .and_then(|v| v.as_string())
+            .map(std::string::ToString::to_string);
 
-            return KeyboardConfig {
-                mode: KeyboardConfigMode::LayoutList,
-                layouts,
-                variant,
-                options,
-                ..Default::default()
-            };
-        }
+        return KeyboardConfig {
+            mode: KeyboardConfigMode::LayoutList,
+            layouts,
+            variant,
+            options,
+            ..Default::default()
+        };
+    }
 
     // Empty xkb section = SystemDefault
     KeyboardConfig::default()
@@ -482,11 +482,10 @@ pub fn write_niri_config_with_backup(config_path: &Path, doc: &KdlDocument) -> R
         Err(e) => {
             // Attempt to restore from backup
             if backup_path.exists()
-                && let Err(restore_err) = std::fs::copy(&backup_path, config_path) {
-                    log::error!(
-                        "[niri] Failed to restore backup after write failure: {restore_err}"
-                    );
-                }
+                && let Err(restore_err) = std::fs::copy(&backup_path, config_path)
+            {
+                log::error!("[niri] Failed to restore backup after write failure: {restore_err}");
+            }
             Err(e).context("Failed to write config file")
         }
     }
@@ -514,9 +513,7 @@ pub fn write_keyboard_layouts(layouts: &[String]) -> Result<()> {
 /// is empty (all layouts have no variant).
 pub fn modify_keyboard_variant(mut doc: KdlDocument, variant: &str) -> Result<KdlDocument> {
     // Navigate to input.keyboard.xkb, bail if missing (layout must exist first)
-    let input_node = doc
-        .get_mut("input")
-        .context("No 'input' node in config")?;
+    let input_node = doc.get_mut("input").context("No 'input' node in config")?;
     let input_children = input_node.ensure_children();
 
     let keyboard_node = input_children
@@ -593,7 +590,9 @@ pub fn modify_xkb_content_variant(
                 // Find the layout and update its variant
                 let layout_found = parsed.layouts.iter_mut().any(|l| {
                     if l.code == layout {
-                        l.variant = variant.filter(|v| !v.is_empty()).map(std::string::ToString::to_string);
+                        l.variant = variant
+                            .filter(|v| !v.is_empty())
+                            .map(std::string::ToString::to_string);
                         true
                     } else {
                         false
@@ -684,37 +683,33 @@ pub fn modify_xkb_content(
 
             if !found
                 && let Some(rest) = trimmed.strip_prefix("include \"")
-                    && let Some(include_str) = rest.strip_suffix('"') {
-                        let mut parsed = parse_xkb_include_full(include_str);
+                && let Some(include_str) = rest.strip_suffix('"')
+            {
+                let mut parsed = parse_xkb_include_full(include_str);
 
-                        let old_layouts = std::mem::take(&mut parsed.layouts);
-                        let mut new_layout_structs = Vec::new();
-                        for code in new_layouts {
-                            let existing = old_layouts.iter().find(|l| l.code == *code);
-                            new_layout_structs.push(XkbLayout {
-                                code: code.clone(),
-                                variant: existing.and_then(|l| l.variant.clone()),
-                            });
-                        }
-                        parsed.layouts = new_layout_structs;
+                let old_layouts = std::mem::take(&mut parsed.layouts);
+                let mut new_layout_structs = Vec::new();
+                for code in new_layouts {
+                    let existing = old_layouts.iter().find(|l| l.code == *code);
+                    new_layout_structs.push(XkbLayout {
+                        code: code.clone(),
+                        variant: existing.and_then(|l| l.variant.clone()),
+                    });
+                }
+                parsed.layouts = new_layout_structs;
 
-                        let new_include = build_xkb_include(&parsed);
-                        indent = line[..line.len() - trimmed.len()].to_string();
-                        lines.push(format!("{indent}include \"{new_include}\""));
-                        found = true;
-                        continue;
-                    }
+                let new_include = build_xkb_include(&parsed);
+                indent = line[..line.len() - trimmed.len()].to_string();
+                lines.push(format!("{indent}include \"{new_include}\""));
+                found = true;
+                continue;
+            }
 
             // Insert new name lines before the closing brace
             if trimmed == "};" || trimmed == "}" {
                 for (i, name) in new_names.iter().enumerate() {
                     if !name.is_empty() {
-                        lines.push(format!(
-                            "{}name[group{}]=\"{}\";",
-                            indent,
-                            i + 1,
-                            name
-                        ));
+                        lines.push(format!("{}name[group{}]=\"{}\";", indent, i + 1, name));
                     }
                 }
                 in_symbols = false;
@@ -741,7 +736,11 @@ pub fn modify_xkb_content(
 /// Reads the file, modifies the `include` directive and `name[groupN]` lines
 /// in the `xkb_symbols` section, creates a `.backup` copy, and writes the
 /// modified content back.
-pub fn write_xkb_layouts(file_path: &str, new_layouts: &[String], new_names: &[String]) -> Result<()> {
+pub fn write_xkb_layouts(
+    file_path: &str,
+    new_layouts: &[String],
+    new_names: &[String],
+) -> Result<()> {
     let expanded = expand_tilde(file_path);
     let path = Path::new(&expanded);
 
@@ -944,8 +943,7 @@ output "DP-1" {
 "#;
 
         let doc: KdlDocument = kdl.parse().unwrap();
-        let modified =
-            modify_keyboard_layouts(doc, &vec!["fr".into(), "de".into()]).unwrap();
+        let modified = modify_keyboard_layouts(doc, &vec!["fr".into(), "de".into()]).unwrap();
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.layouts, vec!["fr", "de"]);
@@ -976,8 +974,7 @@ output "DP-1" {
 "#;
 
         let doc: KdlDocument = kdl.parse().unwrap();
-        let modified =
-            modify_keyboard_layouts(doc, &vec!["us".into(), "de".into()]).unwrap();
+        let modified = modify_keyboard_layouts(doc, &vec!["us".into(), "de".into()]).unwrap();
         let config = extract_keyboard_config(&modified);
 
         assert_eq!(config.mode, KeyboardConfigMode::LayoutList);
@@ -1035,8 +1032,7 @@ output "DP-1" {
 "#;
 
         let doc: KdlDocument = kdl.parse().unwrap();
-        let modified =
-            modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into()]).unwrap();
+        let modified = modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into()]).unwrap();
         let output = modified.to_string();
         eprintln!("=== v2 config output ===\n{}", output);
 
@@ -1073,8 +1069,7 @@ window-rule {
 "##;
 
         let doc: KdlDocument = kdl.parse().unwrap();
-        let modified =
-            modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into()]).unwrap();
+        let modified = modify_keyboard_layouts(doc, &vec!["cz".into(), "us".into()]).unwrap();
         let output = modified.to_string();
         eprintln!("=== v1 config output ===\n{}", output);
 
@@ -1331,7 +1326,11 @@ xkb_keymap {
         let modified = modify_xkb_content(
             xkb,
             &["us".into(), "cz".into(), "de".into()],
-            &["English (US)".into(), "Czech (QWERTY)".into(), "German".into()],
+            &[
+                "English (US)".into(),
+                "Czech (QWERTY)".into(),
+                "German".into(),
+            ],
         )
         .unwrap();
         assert!(modified.contains(r#"include "pc+us+cz(qwerty):2+de:3+inet(evdev)""#));
@@ -1354,12 +1353,7 @@ xkb_keymap {
 };
 "#;
 
-        let modified = modify_xkb_content(
-            xkb,
-            &["us".into()],
-            &["English (US)".into()],
-        )
-        .unwrap();
+        let modified = modify_xkb_content(xkb, &["us".into()], &["English (US)".into()]).unwrap();
         assert!(modified.contains(r#"include "pc+us+inet(evdev)""#));
         assert!(modified.contains(r#"name[group1]="English (US)";"#));
         assert!(!modified.contains("name[group2]"));
@@ -1426,7 +1420,11 @@ xkb_keymap {
         write_xkb_layouts(
             xkb_path.to_str().unwrap(),
             &["us".into(), "cz".into(), "de".into()],
-            &["English (US)".into(), "Czech (QWERTY)".into(), "German".into()],
+            &[
+                "English (US)".into(),
+                "Czech (QWERTY)".into(),
+                "German".into(),
+            ],
         )
         .unwrap();
 

@@ -296,9 +296,7 @@ impl KeyboardLayoutBackend for LocaledBackend {
                     && let Some(value) = changed.get("X11Layout")
                     && let Ok(layout_str) = <String>::try_from(value.clone())
                 {
-                    debug!(
-                        "[keyboard-layout:localed] Configuration changed: {layout_str}"
-                    );
+                    debug!("[keyboard-layout:localed] Configuration changed: {layout_str}");
                     let available = Self::parse_xkb_layouts(&layout_str);
                     if !available.is_empty() {
                         let current = available[0].clone();

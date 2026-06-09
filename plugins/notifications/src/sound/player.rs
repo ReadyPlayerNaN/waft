@@ -71,15 +71,11 @@ impl SoundPlayer {
                     match child.wait().await {
                         Ok(status) => {
                             if !status.success() {
-                                log::debug!(
-                                    "[notifications/sound] {binary} exited with {status}"
-                                );
+                                log::debug!("[notifications/sound] {binary} exited with {status}");
                             }
                         }
                         Err(e) => {
-                            log::warn!(
-                                "[notifications/sound] failed to wait on {binary}: {e}"
-                            );
+                            log::warn!("[notifications/sound] failed to wait on {binary}: {e}");
                         }
                     }
                 });

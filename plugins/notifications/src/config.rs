@@ -74,7 +74,6 @@ pub struct RecordingConfig {
     pub recording: bool,
 }
 
-
 /// Load recording configuration from waft config.
 ///
 /// Reads the `recording` boolean from `plugin::notifications` settings.
@@ -121,9 +120,7 @@ pub fn load_sound_config() -> SoundConfig {
             sound_config
         }
         Err(e) => {
-            log::warn!(
-                "[notifications/config] failed to parse sounds config, using defaults: {e}"
-            );
+            log::warn!("[notifications/config] failed to parse sounds config, using defaults: {e}");
             SoundConfig::default()
         }
     }
@@ -200,12 +197,10 @@ impl From<TomlNode> for RuleNode {
                 operator,
                 value,
             }),
-            TomlNode::Combinator { operator, children } => {
-                RuleNode::Combinator(RuleCombinator {
-                    operator,
-                    children: children.into_iter().map(Into::into).collect(),
-                })
-            }
+            TomlNode::Combinator { operator, children } => RuleNode::Combinator(RuleCombinator {
+                operator,
+                children: children.into_iter().map(Into::into).collect(),
+            }),
         }
     }
 }
@@ -221,7 +216,9 @@ impl From<TomlProfile> for NotificationProfile {
 }
 
 /// Load notification groups and profiles from a given config.
-fn load_filter_config_from(config: &waft_config::Config) -> (Vec<NotificationGroup>, Vec<NotificationProfile>) {
+fn load_filter_config_from(
+    config: &waft_config::Config,
+) -> (Vec<NotificationGroup>, Vec<NotificationProfile>) {
     let Some(settings) = config.get_plugin_settings("plugin::notifications") else {
         log::debug!("[notifications/config] no plugin config found, using empty groups/profiles");
         return (Vec::new(), Vec::new());
@@ -317,10 +314,7 @@ mod tests {
 
         assert_eq!(config.rules[1].app_name, "Firefox");
         assert_eq!(config.rules[1].sound, "message-new-instant");
-        assert_eq!(
-            config.rules[1].category.as_deref(),
-            Some("im.received")
-        );
+        assert_eq!(config.rules[1].category.as_deref(), Some("im.received"));
 
         assert_eq!(config.rules[2].app_name, "Signal");
         assert_eq!(config.rules[2].sound, "phone-incoming-call");

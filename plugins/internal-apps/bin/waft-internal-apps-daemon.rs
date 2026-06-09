@@ -19,9 +19,7 @@ struct InternalAppsPlugin {
 impl InternalAppsPlugin {
     async fn new() -> Self {
         let settings_path = Self::resolve_binary("waft-settings").await;
-        log::info!(
-            "[internal-apps] waft-settings path: {settings_path:?}"
-        );
+        log::info!("[internal-apps] waft-settings path: {settings_path:?}");
         Self { settings_path }
     }
 
@@ -71,10 +69,7 @@ impl InternalAppsPlugin {
     }
 
     /// Spawn waft-settings with optional arguments, reaping the child process.
-    fn spawn_settings(
-        path: &PathBuf,
-        args: &[&str],
-    ) -> anyhow::Result<()> {
+    fn spawn_settings(path: &PathBuf, args: &[&str]) -> anyhow::Result<()> {
         let mut cmd = Command::new(path);
         for arg in args {
             cmd.arg(arg);
@@ -217,7 +212,10 @@ impl Plugin for InternalAppsPlugin {
 }
 
 fn describe_internal_apps() -> Option<PluginDescription> {
-    InternalAppsPlugin { settings_path: None }.describe()
+    InternalAppsPlugin {
+        settings_path: None,
+    }
+    .describe()
 }
 
 fn main() -> Result<()> {
@@ -227,7 +225,5 @@ fn main() -> Result<()> {
             "Provides launchable application entities for internal waft apps",
         )
         .describe(describe_internal_apps)
-        .run(|_notifier| async move {
-            Ok(InternalAppsPlugin::new().await)
-        })
+        .run(|_notifier| async move { Ok(InternalAppsPlugin::new().await) })
 }

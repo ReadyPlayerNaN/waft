@@ -36,11 +36,7 @@ impl SoundGallery {
     /// The filename stem is sanitized to kebab-case and deduplicated against
     /// existing sounds. Returns an error if the file exceeds the size limit,
     /// has an unsupported extension, or cannot be written to disk.
-    pub fn add_sound(
-        &mut self,
-        filename: &str,
-        data: &[u8],
-    ) -> anyhow::Result<NotificationSound> {
+    pub fn add_sound(&mut self, filename: &str, data: &[u8]) -> anyhow::Result<NotificationSound> {
         // Validate size
         if data.len() as u64 > MAX_FILE_SIZE {
             anyhow::bail!(
@@ -105,10 +101,7 @@ impl SoundGallery {
     }
 
     /// Remove a sound file from the gallery.
-    pub fn remove_sound(
-        &mut self,
-        filename: &str,
-    ) -> anyhow::Result<()> {
+    pub fn remove_sound(&mut self, filename: &str) -> anyhow::Result<()> {
         let file_path = self.sounds_dir.join(filename);
         if file_path.exists() {
             std::fs::remove_file(&file_path)?;
@@ -147,7 +140,13 @@ fn sanitize_sound_name(stem: &str) -> String {
     let lowered = stem.to_lowercase();
     let replaced: String = lowered
         .chars()
-        .map(|c| if c.is_ascii_lowercase() || c.is_ascii_digit() { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_lowercase() || c.is_ascii_digit() {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
 
     let mut collapsed = String::with_capacity(replaced.len());
@@ -223,7 +222,11 @@ fn scan_directory(dir: &PathBuf) -> Vec<NotificationSound> {
             continue;
         }
 
-        let Some(filename) = path.file_name().and_then(|n| n.to_str()).map(str::to_string) else {
+        let Some(filename) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
+        else {
             continue;
         };
 
@@ -308,7 +311,11 @@ mod tests {
         gallery.add_sound("alpha.wav", b"data").unwrap();
         gallery.add_sound("middle.flac", b"data").unwrap();
 
-        let names: Vec<&str> = gallery.sounds().iter().map(|s| s.filename.as_str()).collect();
+        let names: Vec<&str> = gallery
+            .sounds()
+            .iter()
+            .map(|s| s.filename.as_str())
+            .collect();
         assert_eq!(names, vec!["alpha.wav", "middle.flac", "zebra.ogg"]);
     }
 

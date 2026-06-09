@@ -108,7 +108,10 @@ fn process_ttl_expiry(state: &mut State, ids: Vec<u64>) -> bool {
 
 /// Remove all traces of a notification from state.
 fn remove_notification(state: &mut State, id: u64) {
-    let group_id = state.notifications.get(&id).map(super::types::Notification::app_ident);
+    let group_id = state
+        .notifications
+        .get(&id)
+        .map(super::types::Notification::app_ident);
 
     state.notifications.remove(&id);
     state.panel_notifications.shift_remove(&id);
@@ -301,9 +304,7 @@ pub fn derive_icon_hints(notification: &IngressedNotification) -> Vec<Notificati
     if let Some(app_name) = &notification.app_name {
         let trimmed = app_name.trim();
         if !trimmed.is_empty() {
-            out.push(NotificationIcon::Themed(
-                normalize_icon_name(app_name),
-            ));
+            out.push(NotificationIcon::Themed(normalize_icon_name(app_name)));
         }
     }
 
@@ -390,7 +391,11 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(notif)),
+            test_i18n(),
+        );
 
         assert!(state.notifications.contains_key(&1));
     }
@@ -400,7 +405,11 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(notif)),
+            test_i18n(),
+        );
 
         assert!(state.panel_notifications.contains_key(&1));
     }
@@ -410,8 +419,16 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
-        process_op(&mut state, NotificationOp::NotificationDismiss(1), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(notif)),
+            test_i18n(),
+        );
+        process_op(
+            &mut state,
+            NotificationOp::NotificationDismiss(1),
+            test_i18n(),
+        );
 
         assert!(!state.notifications.contains_key(&1));
         assert!(!state.panel_notifications.contains_key(&1));
@@ -422,8 +439,16 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
-        process_op(&mut state, NotificationOp::NotificationRetract(1), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(notif)),
+            test_i18n(),
+        );
+        process_op(
+            &mut state,
+            NotificationOp::NotificationRetract(1),
+            test_i18n(),
+        );
 
         assert!(!state.notifications.contains_key(&1));
         assert!(!state.panel_notifications.contains_key(&1));
@@ -504,7 +529,11 @@ mod tests {
 
         assert_eq!(state.notifications.len(), 3);
 
-        process_op(&mut state, NotificationOp::TtlExpiry(vec![1, 3]), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::TtlExpiry(vec![1, 3]),
+            test_i18n(),
+        );
 
         assert!(!state.notifications.contains_key(&1));
         assert!(state.notifications.contains_key(&2));
@@ -515,14 +544,22 @@ mod tests {
     #[test]
     fn test_ttl_expiry_nonexistent_id_is_noop() {
         let mut state = State::new();
-        let changed = process_op(&mut state, NotificationOp::TtlExpiry(vec![999]), test_i18n());
+        let changed = process_op(
+            &mut state,
+            NotificationOp::TtlExpiry(vec![999]),
+            test_i18n(),
+        );
         assert!(!changed);
     }
 
     #[test]
     fn test_dismiss_nonexistent_id_is_noop() {
         let mut state = State::new();
-        let changed = process_op(&mut state, NotificationOp::NotificationDismiss(999), test_i18n());
+        let changed = process_op(
+            &mut state,
+            NotificationOp::NotificationDismiss(999),
+            test_i18n(),
+        );
         assert!(!changed);
     }
 
@@ -541,7 +578,11 @@ mod tests {
 
         let mut replacement = make_notification(2, NotificationUrgency::Normal, false);
         replacement.replaces_id = Some(1);
-        process_op(&mut state, NotificationOp::Ingress(Box::new(replacement)), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(replacement)),
+            test_i18n(),
+        );
 
         assert!(!state.notifications.contains_key(&1));
         assert!(state.notifications.contains_key(&2));
@@ -563,7 +604,11 @@ mod tests {
 
         assert!(!state.groups.is_empty());
 
-        process_op(&mut state, NotificationOp::NotificationDismiss(1), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::NotificationDismiss(1),
+            test_i18n(),
+        );
 
         assert!(state.groups.is_empty());
     }
@@ -590,7 +635,11 @@ mod tests {
             test_i18n(),
         );
 
-        process_op(&mut state, NotificationOp::NotificationDismiss(1), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::NotificationDismiss(1),
+            test_i18n(),
+        );
 
         assert!(!state.groups.is_empty());
         assert!(state.notifications.contains_key(&2));
@@ -602,7 +651,11 @@ mod tests {
         notif.ttl = Some(5000);
 
         let mut state = State::new();
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(notif)),
+            test_i18n(),
+        );
 
         let stored = state.notifications.get(&1).unwrap();
         assert_eq!(stored.ttl, Some(5000));
@@ -612,7 +665,11 @@ mod tests {
     fn test_panel_ttl_none_for_default() {
         let mut state = State::new();
         let notif = make_notification(1, NotificationUrgency::Normal, false);
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(notif)),
+            test_i18n(),
+        );
 
         let stored = state.notifications.get(&1).unwrap();
         assert_eq!(stored.ttl, None);
@@ -642,7 +699,11 @@ mod tests {
         let mut state = State::new();
         let notif = make_notification_with_app(1, "firefox", NotificationUrgency::Normal);
 
-        process_op(&mut state, NotificationOp::Ingress(Box::new(notif)), test_i18n());
+        process_op(
+            &mut state,
+            NotificationOp::Ingress(Box::new(notif)),
+            test_i18n(),
+        );
 
         assert!(state.notifications.contains_key(&1));
         assert!(state.panel_notifications.contains_key(&1));

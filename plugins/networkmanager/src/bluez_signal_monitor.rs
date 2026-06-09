@@ -98,9 +98,7 @@ pub async fn monitor_bluez_signals(
                         .get("Connected")
                         .and_then(|v| bool::try_from(v.clone()).ok())
                         .unwrap_or(false);
-                    info!(
-                        "[nm] BlueZ device paired: {obj_path} connected={connected}"
-                    );
+                    info!("[nm] BlueZ device paired: {obj_path} connected={connected}");
                     st.bluez_paired_devices.push(BluezPairedDevice {
                         path: obj_path.clone(),
                         connected,

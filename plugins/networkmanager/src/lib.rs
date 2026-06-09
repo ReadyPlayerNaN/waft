@@ -375,6 +375,9 @@ mod tests {
     #[test]
     fn test_detect_security_enterprise_takes_priority() {
         // Both SAE and 802.1X — Enterprise wins
-        assert_eq!(detect_security_type(0, 0x200, 0x400), SecurityType::Enterprise);
+        assert_eq!(
+            detect_security_type(0, 0x200, 0x400),
+            SecurityType::Enterprise
+        );
     }
 }

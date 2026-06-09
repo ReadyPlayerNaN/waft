@@ -49,11 +49,7 @@ pub type ManagedObjects =
 // Property extraction
 // ---------------------------------------------------------------------------
 
-fn extract_string(
-    props: &HashMap<String, OwnedValue>,
-    key: &str,
-    default: &str,
-) -> String {
+fn extract_string(props: &HashMap<String, OwnedValue>, key: &str, default: &str) -> String {
     props
         .get(key)
         .and_then(|v| String::try_from(v.clone()).ok())
@@ -145,9 +141,7 @@ pub fn parse_account(props: &HashMap<String, OwnedValue>) -> Option<(String, Onl
 /// Call `GetManagedObjects` on GOA and return all accounts.
 ///
 /// Returns a vec of `(account_id, object_path, OnlineAccount)`.
-pub async fn discover_accounts(
-    conn: &Connection,
-) -> Result<Vec<(String, String, OnlineAccount)>> {
+pub async fn discover_accounts(conn: &Connection) -> Result<Vec<(String, String, OnlineAccount)>> {
     let proxy = zbus::Proxy::new(conn, GOA_BUS_NAME, GOA_OBJECT_PATH, IFACE_OBJECT_MANAGER)
         .await
         .context("Failed to create GOA ObjectManager proxy")?;
@@ -168,7 +162,10 @@ pub async fn discover_accounts(
 
         match parse_account(account_props) {
             Some((id, account)) => {
-                debug!("[goa] Discovered account: {} ({})", id, account.provider_name);
+                debug!(
+                    "[goa] Discovered account: {} ({})",
+                    id, account.provider_name
+                );
                 accounts.push((id, path_str, account));
             }
             None => {
@@ -201,13 +198,9 @@ pub async fn set_service_disabled(
     let _: () = proxy
         .call("Set", &(GOA_ACCOUNT_IFACE, &prop_name, v))
         .await
-        .context(format!(
-            "Failed to set {prop_name} on {account_path}"
-        ))?;
+        .context(format!("Failed to set {prop_name} on {account_path}"))?;
 
-    debug!(
-        "[goa] Set {prop_name} = {disabled} on {account_path}"
-    );
+    debug!("[goa] Set {prop_name} = {disabled} on {account_path}");
 
     Ok(())
 }
@@ -239,15 +232,18 @@ const KNOWN_PROVIDERS: &[(&str, &str, &str)] = &[
     ("owncloud", "Nextcloud", "goa-account-owncloud"),
     ("imap_smtp", "IMAP and SMTP", "goa-account-imap-smtp"),
     ("exchange", "Microsoft Exchange", "goa-account-exchange"),
-    ("kerberos", "Enterprise Login (Kerberos)", "goa-account-kerberos"),
+    (
+        "kerberos",
+        "Enterprise Login (Kerberos)",
+        "goa-account-kerberos",
+    ),
     ("fedora", "Fedora", "goa-account-fedora"),
     ("webdav", "WebDAV", "goa-account-webdav"),
 ];
 
 /// Check if a GOA provider type is supported via `Manager.IsSupportedProvider`.
 async fn is_supported_provider(conn: &Connection, provider_type: &str) -> bool {
-    let Ok(proxy) = zbus::Proxy::new(conn, GOA_BUS_NAME, GOA_MANAGER_PATH, GOA_MANAGER_IFACE)
-        .await
+    let Ok(proxy) = zbus::Proxy::new(conn, GOA_BUS_NAME, GOA_MANAGER_PATH, GOA_MANAGER_IFACE).await
     else {
         return false;
     };
@@ -258,9 +254,7 @@ async fn is_supported_provider(conn: &Connection, provider_type: &str) -> bool {
     {
         Ok((supported,)) => supported,
         Err(e) => {
-            debug!(
-                "[goa] IsSupportedProvider({provider_type}) failed: {e}"
-            );
+            debug!("[goa] IsSupportedProvider({provider_type}) failed: {e}");
             false
         }
     }

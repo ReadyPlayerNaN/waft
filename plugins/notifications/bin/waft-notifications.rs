@@ -12,12 +12,16 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use waft_plugin::{PluginRunner, StateLocker};
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/notifications.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/notifications.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/notifications.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/notifications.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 use waft_plugin_notifications::NotificationsPlugin;
 use waft_plugin_notifications::config;
@@ -28,7 +32,9 @@ use waft_plugin_notifications::sound::player::SoundPlayer;
 use waft_plugin_notifications::sound::policy::{NotificationContext, SoundDecision};
 use waft_plugin_notifications::store::{NotificationOp, State, process_op};
 use waft_plugin_notifications::ttl;
-use waft_protocol::entity::notification::{DND_ENTITY_TYPE, NOTIFICATION_ENTITY_TYPE, RECORDING_ENTITY_TYPE};
+use waft_protocol::entity::notification::{
+    DND_ENTITY_TYPE, NOTIFICATION_ENTITY_TYPE, RECORDING_ENTITY_TYPE,
+};
 use waft_protocol::entity::notification_filter::{
     ACTIVE_PROFILE_ENTITY_TYPE, NOTIFICATION_GROUP_ENTITY_TYPE, NOTIFICATION_PROFILE_ENTITY_TYPE,
     SOUND_CONFIG_ENTITY_TYPE,

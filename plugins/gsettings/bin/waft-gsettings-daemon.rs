@@ -12,12 +12,16 @@ use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal_async};
 use waft_plugin::*;
 use zbus::Connection;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/gsettings.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/gsettings.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/gsettings.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/gsettings.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 /// Valid accent colour values accepted by GTK.
 const VALID_ACCENT_COLORS: &[&str] = &[
@@ -61,12 +65,7 @@ async fn read_accent_color() -> Option<String> {
 /// Write accent colour via `gsettings set`.
 async fn write_accent_color(color: &str) -> Result<(), String> {
     let output = tokio::process::Command::new("gsettings")
-        .args([
-            "set",
-            "org.gnome.desktop.interface",
-            "accent-color",
-            color,
-        ])
+        .args(["set", "org.gnome.desktop.interface", "accent-color", color])
         .output()
         .await
         .map_err(|e| format!("Failed to spawn gsettings: {e}"))?;
@@ -203,9 +202,7 @@ async fn monitor_portal_settings(
                     }))
                 }
                 None => {
-                    log::debug!(
-                        "[gsettings] Could not read accent colour after portal signal"
-                    );
+                    log::debug!("[gsettings] Could not read accent colour after portal signal");
                     Ok(None)
                 }
             }
@@ -215,22 +212,25 @@ async fn monitor_portal_settings(
 }
 
 fn main() -> Result<()> {
-    PluginRunner::new("gsettings", &[entity::appearance::GTK_APPEARANCE_ENTITY_TYPE])
-        .i18n(i18n(), "plugin-name", "plugin-description")
-        .run(|notifier| async move {
-            let plugin = GsettingsPlugin::new().await;
-            let shared_state = plugin.state.clone();
+    PluginRunner::new(
+        "gsettings",
+        &[entity::appearance::GTK_APPEARANCE_ENTITY_TYPE],
+    )
+    .i18n(i18n(), "plugin-name", "plugin-description")
+    .run(|notifier| async move {
+        let plugin = GsettingsPlugin::new().await;
+        let shared_state = plugin.state.clone();
 
-            let conn = Connection::session()
-                .await
-                .context("failed to connect to session bus")?;
+        let conn = Connection::session()
+            .await
+            .context("failed to connect to session bus")?;
 
-            // Monitor portal for external accent colour changes
-            spawn_monitored(
-                "gsettings",
-                monitor_portal_settings(conn, shared_state, notifier),
-            );
+        // Monitor portal for external accent colour changes
+        spawn_monitored(
+            "gsettings",
+            monitor_portal_settings(conn, shared_state, notifier),
+        );
 
-            Ok(plugin)
-        })
+        Ok(plugin)
+    })
 }

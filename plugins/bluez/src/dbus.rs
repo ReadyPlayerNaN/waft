@@ -169,9 +169,7 @@ pub async fn set_powered(conn: &Connection, adapter_path: &str, powered: bool) -
         .await
         .context("Failed to set Powered property")?;
 
-    info!(
-        "[bluetooth] Set adapter {adapter_path} powered: {powered}"
-    );
+    info!("[bluetooth] Set adapter {adapter_path} powered: {powered}");
 
     Ok(())
 }
@@ -191,9 +189,7 @@ pub async fn set_discoverable(
         .await
         .context("Failed to set Discoverable property")?;
 
-    info!(
-        "[bluetooth] Set adapter {adapter_path} discoverable: {discoverable}"
-    );
+    info!("[bluetooth] Set adapter {adapter_path} discoverable: {discoverable}");
 
     Ok(())
 }
@@ -271,9 +267,7 @@ pub async fn remove_device(conn: &Connection, adapter_path: &str, device_path: &
         .await
         .context("Failed to remove device")?;
 
-    info!(
-        "[bluetooth] Removed device {device_path} from adapter {adapter_path}"
-    );
+    info!("[bluetooth] Removed device {device_path} from adapter {adapter_path}");
 
     Ok(())
 }

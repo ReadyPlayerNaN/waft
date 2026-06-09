@@ -14,9 +14,9 @@ use crate::dbus_property::{
     NM_DEVICE_INTERFACE, NM_INTERFACE, NM_PATH, NM_SERVICE, NM_VPN_CONNECTION_INTERFACE,
     NM_WIRELESS_INTERFACE, get_property,
 };
-use crate::nmrs_adapter;
 use crate::ethernet::refresh_ethernet_state;
 use crate::ip_config::{fetch_public_ip, get_device_ip4_config};
+use crate::nmrs_adapter;
 use crate::state::{
     BluetoothDeviceInfo, CachedIpConfig, EthernetAdapterState, NmState, WiFiAdapterState,
 };
@@ -93,7 +93,10 @@ pub async fn monitor_nm_signals(
         let member = header.member().map(|m| m.as_str()).unwrap_or("");
         #[allow(clippy::redundant_closure_for_method_calls)]
         let iface = header.interface().map(|i| i.as_str()).unwrap_or("");
-        let obj_path = header.path().map(std::string::ToString::to_string).unwrap_or_default();
+        let obj_path = header
+            .path()
+            .map(std::string::ToString::to_string)
+            .unwrap_or_default();
 
         match (iface, member) {
             ("org.freedesktop.DBus.Properties", "PropertiesChanged") => {
@@ -126,17 +129,13 @@ pub async fn monitor_nm_signals(
                     };
 
                     if is_vpn_type(&conn_type) {
-                        debug!(
-                            "[nm] VPN state changed: path={obj_path}, state={state_code}"
-                        );
+                        debug!("[nm] VPN state changed: path={obj_path}, state={state_code}");
                         if let Err(e) = refresh_vpn_states(&conn, &nm, &state).await {
                             error!("[nm] Failed to refresh VPN states: {e}");
                         }
                         changed = true;
                     } else if conn_type == "bluetooth" {
-                        debug!(
-                            "[nm] Tethering state changed: path={obj_path}, state={state_code}"
-                        );
+                        debug!("[nm] Tethering state changed: path={obj_path}, state={state_code}");
                         if let Err(e) = refresh_tethering_states(&conn, &nm, &state).await {
                             error!("[nm] Failed to refresh tethering states: {e}");
                         }
@@ -162,28 +161,30 @@ pub async fn monitor_nm_signals(
                 // ActiveAccessPoint set to "/" (no active AP). This acts as a
                 // reliable secondary trigger alongside the StateChanged signal.
                 if prop_iface == NM_WIRELESS_INTERFACE
-                    && let Some(ap_val) = props.get("ActiveAccessPoint") {
-                        let ap_path = String::try_from(ap_val.clone()).unwrap_or_default();
-                        if ap_path == "/" {
-                            let mut st = match state.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    warn!("[nm] Mutex poisoned, recovering: {e}");
-                                    e.into_inner()
-                                }
-                            };
-                            if let Some(adapter) =
-                                st.wifi_adapters.iter_mut().find(|a| a.path == obj_path)
-                                && adapter.active_ssid.is_some() {
-                                    debug!(
-                                        "[nm] WiFi {} ActiveAccessPoint cleared (disconnect)",
-                                        adapter.interface_name
-                                    );
-                                    adapter.active_ssid = None;
-                                    changed = true;
-                                }
+                    && let Some(ap_val) = props.get("ActiveAccessPoint")
+                {
+                    let ap_path = String::try_from(ap_val.clone()).unwrap_or_default();
+                    if ap_path == "/" {
+                        let mut st = match state.lock() {
+                            Ok(g) => g,
+                            Err(e) => {
+                                warn!("[nm] Mutex poisoned, recovering: {e}");
+                                e.into_inner()
+                            }
+                        };
+                        if let Some(adapter) =
+                            st.wifi_adapters.iter_mut().find(|a| a.path == obj_path)
+                            && adapter.active_ssid.is_some()
+                        {
+                            debug!(
+                                "[nm] WiFi {} ActiveAccessPoint cleared (disconnect)",
+                                adapter.interface_name
+                            );
+                            adapter.active_ssid = None;
+                            changed = true;
                         }
                     }
+                }
 
                 if changed {
                     notifier.notify();
@@ -203,7 +204,8 @@ pub async fn monitor_nm_signals(
 
                     match device_type {
                         DEVICE_TYPE_ETHERNET | DEVICE_TYPE_WIFI => {
-                            if let Ok(Some(info)) = nmrs_adapter::get_device_info_by_path(&nm, &device_path).await
+                            if let Ok(Some(info)) =
+                                nmrs_adapter::get_device_info_by_path(&nm, &device_path).await
                             {
                                 let mut st = match state.lock() {
                                     Ok(g) => g,
@@ -248,9 +250,7 @@ pub async fn monitor_nm_signals(
                                 get_property(&conn, &device_path, NM_DEVICE_INTERFACE, "State")
                                     .await
                                     .unwrap_or(0);
-                            info!(
-                                "[nm] Bluetooth device added: {device_path} state={bt_state}"
-                            );
+                            info!("[nm] Bluetooth device added: {device_path} state={bt_state}");
                             {
                                 let mut st = match state.lock() {
                                     Ok(g) => g,
@@ -315,15 +315,9 @@ pub async fn monitor_nm_signals(
                             }
                         };
 
-                        let path_known = st
-                            .ethernet_adapters
-                            .iter()
-                            .any(|a| a.path == obj_path)
+                        let path_known = st.ethernet_adapters.iter().any(|a| a.path == obj_path)
                             || st.wifi_adapters.iter().any(|a| a.path == obj_path)
-                            || st
-                                .bluetooth_devices
-                                .iter()
-                                .any(|d| d.path == obj_path);
+                            || st.bluetooth_devices.iter().any(|d| d.path == obj_path);
 
                         if !path_known {
                             warn!(
@@ -442,7 +436,9 @@ pub async fn monitor_nm_signals(
                                     e.into_inner()
                                 }
                             };
-                            st.ethernet_adapters.iter().any(super::state::EthernetAdapterState::is_connected)
+                            st.ethernet_adapters
+                                .iter()
+                                .any(super::state::EthernetAdapterState::is_connected)
                                 || st.wifi_adapters.iter().any(|a| a.active_ssid.is_some())
                         };
                         if !any_connected {
@@ -475,7 +471,8 @@ pub async fn monitor_nm_signals(
                         };
                         if let Some(interface_name) = interface_name
                             && let Ok(Some(ap_info)) =
-                                crate::nmrs_adapter::get_active_access_point(&nm, &interface_name).await
+                                crate::nmrs_adapter::get_active_access_point(&nm, &interface_name)
+                                    .await
                         {
                             let mut st = match state.lock() {
                                 Ok(g) => g,
@@ -490,7 +487,11 @@ pub async fn monitor_nm_signals(
                                 adapter.active_ssid = Some(ap_info.ssid.clone());
                                 // Add to access_points if not already present so it appears
                                 // in the entity list without requiring a manual scan
-                                if !adapter.access_points.iter().any(|ap| ap.ssid == ap_info.ssid) {
+                                if !adapter
+                                    .access_points
+                                    .iter()
+                                    .any(|ap| ap.ssid == ap_info.ssid)
+                                {
                                     adapter.access_points.push(ap_info);
                                 }
                             }

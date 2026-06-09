@@ -39,16 +39,19 @@ use waft_plugin::*;
 use zbus::Connection;
 
 use waft_protocol::entity::display::{
-    DaySegment, WallpaperManager, WallpaperMode, WallpaperTransition,
-    WALLPAPER_MANAGER_ENTITY_TYPE,
+    DaySegment, WALLPAPER_MANAGER_ENTITY_TYPE, WallpaperManager, WallpaperMode, WallpaperTransition,
 };
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/awww.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/awww.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        ("en-US", include_str!("../locales/en-US/awww.ftl")),
+        ("cs-CZ", include_str!("../locales/cs-CZ/awww.ftl")),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 const DARKMAN_DESTINATION: &str = "nl.whynothugo.darkman";
 const DARKMAN_PATH: &str = "/nl/whynothugo/darkman";
@@ -383,14 +386,24 @@ impl Plugin for AwwwPlugin {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("missing 'path' parameter"))?;
 
-                let (backend, transition, sync, targets): (String, TransitionConfig, bool, Option<String>) = {
+                let (backend, transition, sync, targets): (
+                    String,
+                    TransitionConfig,
+                    bool,
+                    Option<String>,
+                ) = {
                     let state = self.lock_state();
                     let targets = if sync_applies(&output_id, state.sync) {
                         None
                     } else {
                         Some(output_id.clone())
                     };
-                    (state.backend.clone(), state.transition.clone(), state.sync, targets)
+                    (
+                        state.backend.clone(),
+                        state.transition.clone(),
+                        state.sync,
+                        targets,
+                    )
                 };
 
                 run_img(&backend, path, targets.as_deref(), &transition).await?;
@@ -459,7 +472,8 @@ impl Plugin for AwwwPlugin {
                             }
                         };
                         if let Some(dir) = dir
-                            && let Err(e) = self.wp_tx.try_send(WallpaperCommand::ApplyFromDir { dir })
+                            && let Err(e) =
+                                self.wp_tx.try_send(WallpaperCommand::ApplyFromDir { dir })
                         {
                             log::warn!("[awww] failed to queue style-tracking wallpaper: {e}");
                         }
@@ -469,7 +483,8 @@ impl Plugin for AwwwPlugin {
                             let state = self.lock_state();
                             Self::active_wallpaper_dir(&state)
                         };
-                        if let Err(e) = self.wp_tx.try_send(WallpaperCommand::ApplyFromDir { dir }) {
+                        if let Err(e) = self.wp_tx.try_send(WallpaperCommand::ApplyFromDir { dir })
+                        {
                             log::warn!("[awww] failed to queue day-tracking wallpaper: {e}");
                         }
                     }
@@ -484,13 +499,22 @@ impl Plugin for AwwwPlugin {
                     if let Some(t) = params.get("transition_type").and_then(|v| v.as_str()) {
                         state.transition.transition_type = t.to_string();
                     }
-                    if let Some(fps) = params.get("fps").and_then(waft_plugin::serde_json::Value::as_u64) {
+                    if let Some(fps) = params
+                        .get("fps")
+                        .and_then(waft_plugin::serde_json::Value::as_u64)
+                    {
                         state.transition.fps = fps as u32;
                     }
-                    if let Some(angle) = params.get("angle").and_then(waft_plugin::serde_json::Value::as_u64) {
+                    if let Some(angle) = params
+                        .get("angle")
+                        .and_then(waft_plugin::serde_json::Value::as_u64)
+                    {
                         state.transition.angle = angle as u32;
                     }
-                    if let Some(duration) = params.get("duration").and_then(waft_plugin::serde_json::Value::as_f64) {
+                    if let Some(duration) = params
+                        .get("duration")
+                        .and_then(waft_plugin::serde_json::Value::as_f64)
+                    {
                         state.transition.duration = duration;
                     }
                 }
@@ -503,7 +527,10 @@ impl Plugin for AwwwPlugin {
                     if let Some(dir) = params.get("wallpaper_dir").and_then(|v| v.as_str()) {
                         state.wallpaper_dir = dir.to_string();
                     }
-                    if let Some(sync) = params.get("sync").and_then(waft_plugin::serde_json::Value::as_bool) {
+                    if let Some(sync) = params
+                        .get("sync")
+                        .and_then(waft_plugin::serde_json::Value::as_bool)
+                    {
                         state.sync = sync;
                     }
                 }
@@ -610,7 +637,9 @@ async fn run_img(
         &transition.duration.to_string(),
     ]);
 
-    let result = cmd.output().await
+    let result = cmd
+        .output()
+        .await
         .map_err(|e| anyhow::anyhow!("failed to run {backend} img: {e}"))?;
 
     if !result.status.success() {
@@ -845,8 +874,7 @@ async fn day_segment_timer(
     loop {
         let now = Local::now();
         let current = DaySegment::from_time(now.hour(), now.minute());
-        let secs_to_next =
-            DaySegment::seconds_to_next(now.hour(), now.minute(), now.second());
+        let secs_to_next = DaySegment::seconds_to_next(now.hour(), now.minute(), now.second());
 
         // Update current segment in state
         {
@@ -858,9 +886,8 @@ async fn day_segment_timer(
             if s.mode == WallpaperMode::DayTracking && prev_segment != Some(current) {
                 let dir = AwwwPlugin::expand_tilde(&s.wallpaper_dir);
                 let segment_dir = format!("{}/{}", dir, current.folder_name());
-                if let Err(e) = wp_tx.try_send(WallpaperCommand::ApplyFromDir {
-                    dir: segment_dir,
-                }) {
+                if let Err(e) = wp_tx.try_send(WallpaperCommand::ApplyFromDir { dir: segment_dir })
+                {
                     log::warn!("[awww] failed to queue day-segment wallpaper: {e}");
                 }
             }
@@ -941,7 +968,11 @@ fn main() -> Result<()> {
 
             // Day-segment timer (day-tracking)
             let notifier_day = notifier.clone();
-            tokio::spawn(day_segment_timer(state_for_timer, wp_tx_timer, notifier_day));
+            tokio::spawn(day_segment_timer(
+                state_for_timer,
+                wp_tx_timer,
+                notifier_day,
+            ));
 
             // Wallpaper applicator
             let notifier_applicator = notifier.clone();

@@ -13,7 +13,7 @@ use waft_plugin::*;
 use waft_protocol::entity::notification as proto;
 use waft_protocol::entity::notification_filter::{
     self as filter_proto, ActiveProfile, NotificationGroup, NotificationProfile,
-    SoundConfigEntity, SOUND_CONFIG_ENTITY_TYPE,
+    SOUND_CONFIG_ENTITY_TYPE, SoundConfigEntity,
 };
 use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
 
@@ -177,13 +177,21 @@ impl NotificationsPlugin {
     /// Called from the ingress monitor task when a `Notify` D-Bus call arrives.
     pub fn process_ingress(&self, notification: IngressedNotification) {
         let mut guard = self.state.lock_or_recover();
-        process_op(&mut guard, NotificationOp::Ingress(Box::new(notification)), self.i18n);
+        process_op(
+            &mut guard,
+            NotificationOp::Ingress(Box::new(notification)),
+            self.i18n,
+        );
     }
 
     /// Process a CloseNotification D-Bus call.
     pub fn process_close(&self, id: u32) {
         let mut guard = self.state.lock_or_recover();
-        process_op(&mut guard, NotificationOp::NotificationRetract(id as u64), self.i18n);
+        process_op(
+            &mut guard,
+            NotificationOp::NotificationRetract(id as u64),
+            self.i18n,
+        );
         // Emit the close signal on the D-Bus side
         if self
             .outbound_tx
@@ -303,7 +311,10 @@ impl Plugin for NotificationsPlugin {
                     .map(|d| d.as_millis() as i64)
                     .unwrap_or(0),
                 resident: notif.resident,
-                workspace: notif.workspace.as_ref().map(std::string::ToString::to_string),
+                workspace: notif
+                    .workspace
+                    .as_ref()
+                    .map(std::string::ToString::to_string),
                 suppress_toast: notif.suppress_toast,
                 ttl: notif.ttl,
             };
@@ -435,13 +446,17 @@ impl Plugin for NotificationsPlugin {
             }
 
             ("notification", "dismiss") => {
-                let id: u64 = entity_id.parse().map_err(|e| {
-                    anyhow::anyhow!("invalid notification id: {e}")
-                })?;
+                let id: u64 = entity_id
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("invalid notification id: {e}"))?;
 
                 {
                     let mut guard = self.state.lock_or_recover();
-                    process_op(&mut guard, NotificationOp::NotificationDismiss(id), self.i18n);
+                    process_op(
+                        &mut guard,
+                        NotificationOp::NotificationDismiss(id),
+                        self.i18n,
+                    );
                 }
 
                 if self
@@ -457,9 +472,9 @@ impl Plugin for NotificationsPlugin {
             }
 
             ("notification", "expire") => {
-                let id: u64 = entity_id.parse().map_err(|e| {
-                    anyhow::anyhow!("invalid notification id: {e}")
-                })?;
+                let id: u64 = entity_id
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("invalid notification id: {e}"))?;
 
                 // Check if notification still exists before initiating claim
                 {
@@ -477,16 +492,18 @@ impl Plugin for NotificationsPlugin {
 
                 if let Some(ref sender) = claim_sender {
                     let _claim_id = sender.request(urn.clone()).await;
-                    info!(
-                        "[notifications] expire: initiated claim check for notification {id}"
-                    );
+                    info!("[notifications] expire: initiated claim check for notification {id}");
                 } else {
                     // No claim sender (runtime not attached), fall back to dismiss
                     warn!(
                         "[notifications] expire: no claim sender, falling back to dismiss for {id}"
                     );
                     let mut guard = self.state.lock_or_recover();
-                    process_op(&mut guard, NotificationOp::NotificationDismiss(id), self.i18n);
+                    process_op(
+                        &mut guard,
+                        NotificationOp::NotificationDismiss(id),
+                        self.i18n,
+                    );
                     if self
                         .outbound_tx
                         .send(OutboundEvent::NotificationClosed {
@@ -501,9 +518,9 @@ impl Plugin for NotificationsPlugin {
             }
 
             ("notification", "invoke-action") => {
-                let id: u64 = entity_id.parse().map_err(|e| {
-                    anyhow::anyhow!("invalid notification id: {e}")
-                })?;
+                let id: u64 = entity_id
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("invalid notification id: {e}"))?;
 
                 let action_key = params
                     .get("key")
@@ -514,7 +531,11 @@ impl Plugin for NotificationsPlugin {
                 // Remove notification from store
                 {
                     let mut guard = self.state.lock_or_recover();
-                    process_op(&mut guard, NotificationOp::NotificationDismiss(id), self.i18n);
+                    process_op(
+                        &mut guard,
+                        NotificationOp::NotificationDismiss(id),
+                        self.i18n,
+                    );
                 }
 
                 // Emit ActionInvoked + NotificationClosed signals
@@ -541,7 +562,6 @@ impl Plugin for NotificationsPlugin {
             }
 
             // --- Sound config actions ---
-
             ("sound-config", "update-sound-config") => {
                 let entity: SoundConfigEntity = serde_json::from_value(params)?;
 
@@ -578,7 +598,6 @@ impl Plugin for NotificationsPlugin {
             }
 
             // --- Filter config actions ---
-
             ("active-profile", "set-profile") => {
                 let profile_id = params
                     .get("profile_id")
@@ -683,9 +702,7 @@ impl Plugin for NotificationsPlugin {
                 {
                     let mut profiles_guard = self.profiles.lock_or_recover();
 
-                    if let Some(existing) =
-                        profiles_guard.iter_mut().find(|p| p.id == entity_id)
-                    {
+                    if let Some(existing) = profiles_guard.iter_mut().find(|p| p.id == entity_id) {
                         *existing = profile.clone();
                     } else {
                         anyhow::bail!("profile not found");
@@ -713,7 +730,6 @@ impl Plugin for NotificationsPlugin {
             }
 
             // --- Sound gallery actions ---
-
             ("notification-sound", "add-sound") => {
                 let filename = params
                     .get("filename")
@@ -763,9 +779,7 @@ impl Plugin for NotificationsPlugin {
             }
 
             _ => {
-                debug!(
-                    "[notifications] Unknown action '{action}' on entity type '{entity_type}'"
-                );
+                debug!("[notifications] Unknown action '{action}' on entity type '{entity_type}'");
             }
         }
 
@@ -781,12 +795,7 @@ impl Plugin for NotificationsPlugin {
         *self.claim_sender.lock_or_recover() = Some(sender);
     }
 
-    async fn handle_claim_result(
-        &self,
-        urn: Urn,
-        _claim_id: uuid::Uuid,
-        claimed: bool,
-    ) {
+    async fn handle_claim_result(&self, urn: Urn, _claim_id: uuid::Uuid, claimed: bool) {
         if claimed {
             debug!("[notifications] ClaimResult: {urn} claimed by a subscriber, keeping");
             return;
@@ -797,9 +806,7 @@ impl Plugin for NotificationsPlugin {
         let id: u64 = match parts.get(2).and_then(|s| s.parse().ok()) {
             Some(id) => id,
             None => {
-                warn!(
-                    "[notifications] ClaimResult: cannot parse notification id from {urn}"
-                );
+                warn!("[notifications] ClaimResult: cannot parse notification id from {urn}");
                 return;
             }
         };
@@ -808,7 +815,11 @@ impl Plugin for NotificationsPlugin {
 
         {
             let mut guard = self.state.lock_or_recover();
-            process_op(&mut guard, NotificationOp::NotificationDismiss(id), self.i18n);
+            process_op(
+                &mut guard,
+                NotificationOp::NotificationDismiss(id),
+                self.i18n,
+            );
         }
 
         // Emit D-Bus NotificationClosed(EXPIRED) -- reason code 1
@@ -858,8 +869,20 @@ mod tests {
         &TEST_I18N
     }
 
-    fn make_plugin(state: Arc<StdMutex<State>>, tx: flume::Sender<OutboundEvent>) -> NotificationsPlugin {
-        NotificationsPlugin::new(state, tx, Vec::new(), Vec::new(), String::new(), config::SoundConfig::default(), false, test_i18n())
+    fn make_plugin(
+        state: Arc<StdMutex<State>>,
+        tx: flume::Sender<OutboundEvent>,
+    ) -> NotificationsPlugin {
+        NotificationsPlugin::new(
+            state,
+            tx,
+            Vec::new(),
+            Vec::new(),
+            String::new(),
+            config::SoundConfig::default(),
+            false,
+            test_i18n(),
+        )
     }
 
     #[test]

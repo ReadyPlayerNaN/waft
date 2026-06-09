@@ -19,12 +19,22 @@ use waft_plugin::*;
 use waft_plugin_keyboard_layout::backends::{KeyboardLayoutBackend, LayoutEvent, detect_backend};
 use zbus::Connection;
 
-static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| waft_i18n::I18n::new(&[
-    ("en-US", include_str!("../locales/en-US/keyboard-layout.ftl")),
-    ("cs-CZ", include_str!("../locales/cs-CZ/keyboard-layout.ftl")),
-]));
+static I18N: LazyLock<waft_i18n::I18n> = LazyLock::new(|| {
+    waft_i18n::I18n::new(&[
+        (
+            "en-US",
+            include_str!("../locales/en-US/keyboard-layout.ftl"),
+        ),
+        (
+            "cs-CZ",
+            include_str!("../locales/cs-CZ/keyboard-layout.ftl"),
+        ),
+    ])
+});
 
-fn i18n() -> &'static waft_i18n::I18n { &I18N }
+fn i18n() -> &'static waft_i18n::I18n {
+    &I18N
+}
 
 /// Shared layout state.
 struct LayoutState {

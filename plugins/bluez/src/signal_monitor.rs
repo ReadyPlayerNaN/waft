@@ -133,9 +133,7 @@ fn handle_adapter_properties_changed(
         && let Ok(discoverable) = <bool>::try_from(discoverable_val.clone())
         && adapter.discoverable != discoverable
     {
-        info!(
-            "[bluetooth] Adapter {obj_path} discoverable: {discoverable}"
-        );
+        info!("[bluetooth] Adapter {obj_path} discoverable: {discoverable}");
         adapter.discoverable = discoverable;
         changed = true;
     }
@@ -144,9 +142,7 @@ fn handle_adapter_properties_changed(
         && let Ok(discovering) = <bool>::try_from(discovering_val.clone())
         && adapter.discovering != discovering
     {
-        info!(
-            "[bluetooth] Adapter {obj_path} discovering: {discovering}"
-        );
+        info!("[bluetooth] Adapter {obj_path} discovering: {discovering}");
         adapter.discovering = discovering;
         changed = true;
     }
@@ -191,9 +187,7 @@ fn handle_device_properties_changed(
                 ConnectionState::Disconnected
             };
             if device.connection_state != new_state {
-                info!(
-                    "[bluetooth] Device {obj_path} connection_state: {new_state:?}"
-                );
+                info!("[bluetooth] Device {obj_path} connection_state: {new_state:?}");
                 device.connection_state = new_state;
                 changed = true;
             }
@@ -272,9 +266,7 @@ fn handle_interfaces_added(state: &Arc<StdMutex<State>>, msg: &zbus::Message) ->
         .find(|a| path_str.starts_with(&a.path));
 
     let Some(adapter) = adapter else {
-        debug!(
-            "[bluetooth] InterfacesAdded for device {path_str} but no matching adapter found"
-        );
+        debug!("[bluetooth] InterfacesAdded for device {path_str} but no matching adapter found");
         return false;
     };
 

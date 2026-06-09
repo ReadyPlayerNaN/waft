@@ -3,15 +3,15 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
+use nmrs::NetworkManager;
 use nmrs::models::{
     AccessPoint, DeviceState as NmDeviceState, DeviceType, SavedConnection, SettingsSummary,
 };
-use nmrs::NetworkManager;
 use waft_plugin::entity::network::SecurityType;
 use zbus::zvariant::OwnedValue;
 
-use crate::is_virtual_interface;
 use crate::device_discovery::DeviceInfo;
+use crate::is_virtual_interface;
 use crate::state::{AccessPointInfo, BluetoothDeviceInfo, CachedConnectionSettings};
 
 pub fn nm_device_state_code(state: &NmDeviceState) -> u32 {
@@ -101,7 +101,9 @@ pub async fn get_device_info_by_path(
     device_path: &str,
 ) -> Result<Option<DeviceInfo>> {
     let devices = discover_devices(nm).await?;
-    Ok(devices.into_iter().find(|device| device.path == device_path))
+    Ok(devices
+        .into_iter()
+        .find(|device| device.path == device_path))
 }
 
 pub async fn get_active_access_point(
@@ -195,7 +197,10 @@ async fn wifi_saved_connections(
         let raw = match nm.get_saved_connection_raw(&conn.uuid).await {
             Ok(raw) => raw,
             Err(err) => {
-                log::debug!("[nm] Failed to load saved connection raw settings for {}: {err}", conn.uuid);
+                log::debug!(
+                    "[nm] Failed to load saved connection raw settings for {}: {err}",
+                    conn.uuid
+                );
                 continue;
             }
         };
@@ -268,14 +273,20 @@ mod tests {
     fn security_type_maps_enterprise() {
         let mut sec = SecurityFeatures::default();
         sec.eap = true;
-        assert_eq!(security_type_from_security_features(&sec), SecurityType::Enterprise);
+        assert_eq!(
+            security_type_from_security_features(&sec),
+            SecurityType::Enterprise
+        );
     }
 
     #[test]
     fn security_type_maps_wpa3() {
         let mut sec = SecurityFeatures::default();
         sec.sae = true;
-        assert_eq!(security_type_from_security_features(&sec), SecurityType::Wpa3);
+        assert_eq!(
+            security_type_from_security_features(&sec),
+            SecurityType::Wpa3
+        );
     }
 
     #[test]
@@ -283,21 +294,30 @@ mod tests {
         let mut sec = SecurityFeatures::default();
         sec.psk = true;
         sec.ccmp = true;
-        assert_eq!(security_type_from_security_features(&sec), SecurityType::Wpa2);
+        assert_eq!(
+            security_type_from_security_features(&sec),
+            SecurityType::Wpa2
+        );
     }
 
     #[test]
     fn security_type_maps_wpa() {
         let mut sec = SecurityFeatures::default();
         sec.psk = true;
-        assert_eq!(security_type_from_security_features(&sec), SecurityType::Wpa);
+        assert_eq!(
+            security_type_from_security_features(&sec),
+            SecurityType::Wpa
+        );
     }
 
     #[test]
     fn security_type_maps_wep() {
         let mut sec = SecurityFeatures::default();
         sec.privacy = true;
-        assert_eq!(security_type_from_security_features(&sec), SecurityType::Wep);
+        assert_eq!(
+            security_type_from_security_features(&sec),
+            SecurityType::Wep
+        );
     }
 
     #[test]
