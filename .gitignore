@@ -8,3 +8,5 @@ pkg/
 .SRCINFO
 /*-git
 ralp-loop.local.md
+docs/plans
+.pi
