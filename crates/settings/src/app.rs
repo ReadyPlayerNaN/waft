@@ -11,7 +11,9 @@ use gtk::prelude::*;
 use waft_client::{
     ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
 };
-use waft_protocol::entity::accounts::ONLINE_ACCOUNT_ENTITY_TYPE;
+use waft_protocol::entity::accounts::{
+    ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
+};
 use waft_protocol::entity::appearance::GTK_APPEARANCE_ENTITY_TYPE;
 use waft_protocol::entity::audio;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
@@ -67,7 +69,22 @@ const ENTITY_TYPES: &[&str] = &[
     session::USER_TIMER_ENTITY_TYPE,
     PLUGIN_STATUS_ENTITY_TYPE,
     ONLINE_ACCOUNT_ENTITY_TYPE,
+    ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::ENTITY_TYPES;
+    use waft_protocol::entity::accounts::{
+        ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
+    };
+
+    #[test]
+    fn entity_types_include_online_accounts_and_providers() {
+        assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_ENTITY_TYPE));
+        assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE));
+    }
+}
 
 pub async fn setup(
     initial_page: Option<String>,
