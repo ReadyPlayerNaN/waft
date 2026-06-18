@@ -72,20 +72,6 @@ const ENTITY_TYPES: &[&str] = &[
     ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
 ];
 
-#[cfg(test)]
-mod tests {
-    use super::ENTITY_TYPES;
-    use waft_protocol::entity::accounts::{
-        ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
-    };
-
-    #[test]
-    fn entity_types_include_online_accounts_and_providers() {
-        assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_ENTITY_TYPE));
-        assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE));
-    }
-}
-
 pub async fn setup(
     initial_page: Option<String>,
 ) -> Result<adw::Application, Box<dyn std::error::Error>> {
@@ -348,5 +334,19 @@ fn load_css() {
         log::info!("[settings] CSS loaded successfully");
     } else {
         log::warn!("[settings] Failed to load CSS: no display found");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ENTITY_TYPES;
+    use waft_protocol::entity::accounts::{
+        ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
+    };
+
+    #[test]
+    fn entity_types_include_online_accounts_and_providers() {
+        assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_ENTITY_TYPE));
+        assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE));
     }
 }
