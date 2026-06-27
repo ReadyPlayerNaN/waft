@@ -28,6 +28,9 @@ id = "plugin::notifications"
 toast_limit = 3
 disable_toasts = false
 
+[toasts]
+clear_on_overview_open = true
+
 [[plugins]]
 id = "plugin::weather"
 latitude = 50.0755

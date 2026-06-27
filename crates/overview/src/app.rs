@@ -164,6 +164,8 @@ pub async fn setup() -> Result<adw::Application> {
     // Initialize i18n system
     crate::i18n::init();
 
+    let config = Rc::new(waft_config::Config::load());
+
     // Create menu store for coordinating expandable menus
     let menu_store = Rc::new(create_menu_store());
 
@@ -217,6 +219,7 @@ pub async fn setup() -> Result<adw::Application> {
     let waft_client_for_startup = waft_client_handle.clone();
     let menu_store_for_startup = menu_store.clone();
     let session_event_rx_for_startup = session_event_rx;
+    let config_for_startup = config.clone();
 
     app.connect_startup(move |app| {
         debug!("Started gtk app");
@@ -226,6 +229,7 @@ pub async fn setup() -> Result<adw::Application> {
         let daemon_event_rx_slot = daemon_event_rx_for_startup.clone();
         let waft_client_slot = waft_client_for_startup.clone();
         let session_event_rx = session_event_rx_for_startup.clone();
+        let config = config_for_startup.clone();
         let app = app.clone();
 
         // Block the startup signal until async work completes
@@ -235,7 +239,8 @@ pub async fn setup() -> Result<adw::Application> {
 
             // Create entity store for daemon notification distribution
             let entity_store = Rc::new(EntityStore::new());
-            let toast_position = waft_config::Config::default().toasts.position;
+            let toast_position = config.toasts.position;
+            let toast_clear_on_overview_open = config.toasts.clear_on_overview_open;
             let toast_window = Rc::new(ToastWindow::new(&app, toast_position));
             let toast_resize = {
                 let toast_window = toast_window.clone();
@@ -292,7 +297,9 @@ pub async fn setup() -> Result<adw::Application> {
                 toast_resize,
                 toast_visibility,
                 toast_position,
+                toast_clear_on_overview_open,
             ));
+            let toast_manager_for_visibility = toast_manager.clone();
 
             // Create the main window
             let main_window = MainWindowWidget::new(
@@ -360,6 +367,7 @@ pub async fn setup() -> Result<adw::Application> {
                             match input {
                                 MainWindowInput::ShowOverlay => {
                                     animating_hide.set(false);
+                                    toast_manager_for_visibility.set_overview_visible(true);
                                     window.set_visible(true);
                                     window.present();
                                     animation.set_value_from(progress.get());
@@ -384,6 +392,7 @@ pub async fn setup() -> Result<adw::Application> {
                                 }
                                 MainWindowInput::HideOverlay => {
                                     if window.is_visible() && !animating_hide.get() {
+                                        toast_manager_for_visibility.set_overview_visible(false);
                                         animating_hide.set(true);
                                         animation.set_value_from(progress.get());
                                         animation.set_value_to(0.0);
@@ -393,6 +402,7 @@ pub async fn setup() -> Result<adw::Application> {
                                 }
                                 MainWindowInput::ToggleOverlay => {
                                     if window.is_visible() && !animating_hide.get() {
+                                        toast_manager_for_visibility.set_overview_visible(false);
                                         animating_hide.set(true);
                                         animation.set_value_from(progress.get());
                                         animation.set_value_to(0.0);
@@ -400,6 +410,7 @@ pub async fn setup() -> Result<adw::Application> {
                                         animation.play();
                                     } else {
                                         animating_hide.set(false);
+                                        toast_manager_for_visibility.set_overview_visible(true);
                                         window.set_visible(true);
                                         window.present();
                                         animation.set_value_from(progress.get());
@@ -430,6 +441,7 @@ pub async fn setup() -> Result<adw::Application> {
                                 }
                                 MainWindowInput::RequestHide => {
                                     if window.is_visible() && !animating_hide.get() {
+                                        toast_manager_for_visibility.set_overview_visible(false);
                                         animating_hide.set(true);
                                         animation.set_value_from(progress.get());
                                         animation.set_value_to(0.0);
@@ -449,6 +461,7 @@ pub async fn setup() -> Result<adw::Application> {
                 let animation_for_session = main_window.animation.clone();
                 let progress_for_session = main_window.animation_progress.clone();
                 let animating_hide_for_session = main_window.animating_hide.clone();
+                let toast_manager_for_session = toast_manager.clone();
 
                 glib::spawn_future_local(async move {
                     while let Ok(event) = session_event_rx.recv().await {
@@ -457,6 +470,7 @@ pub async fn setup() -> Result<adw::Application> {
                                 debug!("[app] Session lock detected");
                                 animation_for_session.pause();
                                 animating_hide_for_session.set(false);
+                                toast_manager_for_session.set_overview_visible(false);
                                 window_for_session.set_visible(false);
                             }
                             SessionEvent::Unlock => {

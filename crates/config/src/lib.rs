@@ -40,10 +40,20 @@ impl ToastPosition {
 }
 
 /// Toast overlay configuration.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct ToastsConfig {
     pub position: ToastPosition,
+    pub clear_on_overview_open: bool,
+}
+
+impl Default for ToastsConfig {
+    fn default() -> Self {
+        Self {
+            position: ToastPosition::default(),
+            clear_on_overview_open: true,
+        }
+    }
 }
 
 /// System-wide daemon configuration.
@@ -298,9 +308,10 @@ id = "battery"
     }
 
     #[test]
-    fn test_toast_position_defaults_to_top_center() {
+    fn test_toast_config_defaults() {
         let config = Config::default();
         assert_eq!(config.toasts.position, ToastPosition::TopCenter);
+        assert!(config.toasts.clear_on_overview_open);
     }
 
     #[test]
@@ -347,6 +358,7 @@ daemon_mode = "opt-in"
 "#;
         let config: Config = toml::from_str(toml).expect("Failed to parse");
         assert_eq!(config.toasts.position, ToastPosition::TopCenter);
+        assert!(config.toasts.clear_on_overview_open);
     }
 
     #[test]
@@ -382,6 +394,25 @@ daemon_mode = "opt-in"
         assert!(!ToastPosition::BottomLeft.newest_on_top());
         assert!(!ToastPosition::BottomCenter.newest_on_top());
         assert!(!ToastPosition::BottomRight.newest_on_top());
+    }
+
+    #[test]
+    fn test_parse_toast_clear_on_overview_open_defaults_true() {
+        let config: Config =
+            toml::from_str("[toasts]\nposition = \"top-center\"\n").expect("expected value");
+        assert!(config.toasts.clear_on_overview_open);
+    }
+
+    #[test]
+    fn test_parse_toast_clear_on_overview_open_false() {
+        let config: Config = toml::from_str(
+            r#"
+            [toasts]
+            clear_on_overview_open = false
+        "#,
+        )
+        .expect("expected value");
+        assert!(!config.toasts.clear_on_overview_open);
     }
 
     #[test]

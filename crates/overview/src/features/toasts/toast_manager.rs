@@ -22,7 +22,10 @@ const DEFAULT_TOAST_TTL_MS: u64 = 5000;
 
 impl ToastItem {
     fn from_notification(urn: Urn, notification: Notification) -> Self {
-        Self { urn, entity: notification }
+        Self {
+            urn,
+            entity: notification,
+        }
     }
 }
 
@@ -56,6 +59,8 @@ pub struct ToastManager {
     widgets: RefCell<HashMap<Urn, Rc<NotificationCard>>>,
     action_callback: EntityActionCallback,
     dnd_active: Cell<bool>,
+    suppressed_by_overview: Cell<bool>,
+    clear_on_overview_open: bool,
     window_resize_callback: Rc<dyn Fn()>,
     window_visibility_callback: Rc<dyn Fn(bool)>,
 }
@@ -67,6 +72,7 @@ impl ToastManager {
         window_resize_callback: Rc<dyn Fn()>,
         window_visibility_callback: Rc<dyn Fn(bool)>,
         position: ToastPosition,
+        clear_on_overview_open: bool,
     ) -> Self {
         Self {
             container,
@@ -76,13 +82,26 @@ impl ToastManager {
             widgets: RefCell::new(HashMap::new()),
             action_callback,
             dnd_active: Cell::new(false),
+            suppressed_by_overview: Cell::new(false),
+            clear_on_overview_open,
             window_resize_callback,
             window_visibility_callback,
         }
     }
 
+    pub fn set_overview_visible(self: &Rc<Self>, visible: bool) {
+        self.suppressed_by_overview.set(visible);
+        if visible && self.clear_on_overview_open {
+            self.clear_local_toasts();
+        } else {
+            self.update_window_visibility();
+        }
+    }
+
     pub fn handle_notification(self: &Rc<Self>, urn: Urn, notification: Notification) {
-        if !should_show_toast(&notification, self.dnd_active.get()) {
+        if self.suppressed_by_overview.get()
+            || !should_show_toast(&notification, self.dnd_active.get())
+        {
             return;
         }
 
@@ -114,7 +133,9 @@ impl ToastManager {
 
     pub fn handle_entity_removed(self: &Rc<Self>, urn: &Urn) {
         self.dismiss_toast(urn);
-        self.pending_queue.borrow_mut().retain(|item| &item.urn != urn);
+        self.pending_queue
+            .borrow_mut()
+            .retain(|item| &item.urn != urn);
         self.show_next_pending();
     }
 
@@ -168,27 +189,53 @@ impl ToastManager {
 
         self.widgets.borrow_mut().insert(item.urn.clone(), card);
         self.active_toasts.borrow_mut().push(item);
-        (self.window_visibility_callback)(true);
+        self.update_window_visibility();
     }
 
     fn dismiss_toast(&self, urn: &Urn) {
         if let Some(card) = self.widgets.borrow_mut().remove(urn) {
-            self.active_toasts.borrow_mut().retain(|item| &item.urn != urn);
+            self.active_toasts
+                .borrow_mut()
+                .retain(|item| &item.urn != urn);
             let container = self.container.clone();
-            let visibility_cb = self.window_visibility_callback.clone();
             let active_toasts = self.active_toasts.clone();
+            let suppression = self.suppressed_by_overview.clone();
+            let visibility_cb = self.window_visibility_callback.clone();
             let card_root = card.widget().clone();
             let handled = Rc::new(Cell::new(false));
             card.revealer().connect_child_revealed_notify(move |rev| {
                 if !rev.is_child_revealed() && !handled.get() {
                     handled.set(true);
                     container.remove(&card_root);
-                    let has_toasts = !active_toasts.borrow().is_empty();
-                    (visibility_cb)(has_toasts);
+                    visibility_cb(!suppression.get() && !active_toasts.borrow().is_empty());
                 }
             });
             card.hide_and_remove();
+            self.update_window_visibility();
         }
+    }
+
+    fn clear_local_toasts(&self) {
+        let cards: Vec<_> = self
+            .widgets
+            .borrow_mut()
+            .drain()
+            .map(|(_, card)| card)
+            .collect();
+        self.active_toasts.borrow_mut().clear();
+        self.pending_queue.borrow_mut().clear();
+        for card in cards {
+            self.container.remove(card.widget());
+        }
+        self.update_window_visibility();
+    }
+
+    fn update_window_visibility(&self) {
+        update_window_visibility_with(
+            &self.active_toasts,
+            &self.suppressed_by_overview,
+            self.window_visibility_callback.as_ref(),
+        );
     }
 
     fn bump_oldest_non_critical(self: &Rc<Self>, critical_item: ToastItem) {
@@ -208,6 +255,9 @@ impl ToastManager {
     }
 
     fn show_next_pending(self: &Rc<Self>) {
+        if self.suppressed_by_overview.get() {
+            return;
+        }
         if self.active_toasts.borrow().len() < 3
             && let Some(item) = self.pending_queue.borrow_mut().pop_front()
         {
@@ -224,4 +274,25 @@ fn should_show_toast(notification: &Notification, dnd_active: bool) -> bool {
         return true;
     }
     notification.urgency == NotificationUrgency::Critical
+}
+
+fn update_window_visibility_with(
+    active_toasts: &Rc<RefCell<Vec<ToastItem>>>,
+    suppressed_by_overview: &Cell<bool>,
+    visibility_cb: &dyn Fn(bool),
+) {
+    visibility_cb(!suppressed_by_overview.get() && !active_toasts.borrow().is_empty());
+}
+
+#[cfg(test)]
+impl ToastManager {
+    pub(crate) fn test_state(&self) -> (usize, usize, usize, bool, bool) {
+        (
+            self.active_toasts.borrow().len(),
+            self.pending_queue.borrow().len(),
+            self.widgets.borrow().len(),
+            self.suppressed_by_overview.get(),
+            self.clear_on_overview_open,
+        )
+    }
 }

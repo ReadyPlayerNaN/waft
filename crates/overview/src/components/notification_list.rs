@@ -17,6 +17,36 @@ use crate::i18n;
 use crate::menu_state::MenuStore;
 use waft_client::{EntityActionCallback, EntityStore};
 
+fn group_notifications(
+    entities: &[(Urn, entity::notification::Notification)],
+) -> HashMap<String, Vec<(Urn, entity::notification::Notification)>> {
+    let mut grouped: HashMap<String, Vec<(Urn, entity::notification::Notification)>> =
+        HashMap::new();
+    for (urn, notif) in entities {
+        let group_key = notif.app_id.as_deref().unwrap_or("unknown").to_string();
+        grouped
+            .entry(group_key)
+            .or_default()
+            .push((urn.clone(), notif.clone()));
+    }
+    grouped
+}
+
+fn remove_stale_groups(
+    groups: &Rc<RefCell<HashMap<String, NotificationGroup>>>,
+    groups_container: &gtk::Box,
+    grouped: &HashMap<String, Vec<(Urn, entity::notification::Notification)>>,
+) {
+    let current_group_keys: Vec<String> = groups.borrow().keys().cloned().collect();
+    for key in &current_group_keys {
+        if !grouped.contains_key(key)
+            && let Some(group) = groups.borrow_mut().remove(key)
+        {
+            groups_container.remove(group.widget());
+        }
+    }
+}
+
 /// Displays grouped desktop notifications sorted newest first.
 ///
 /// Notifications are grouped by `app_id`. Each group shows the newest
@@ -71,93 +101,89 @@ impl NotificationsComponent {
         let empty_placeholder_ref = empty_placeholder.clone();
         let menu_store_ref = menu_store.clone();
 
-        store.subscribe_type(entity::notification::NOTIFICATION_ENTITY_TYPE, move || {
-            let mut entities: Vec<(Urn, entity::notification::Notification)> =
-                store_ref.get_entities_typed(entity::notification::NOTIFICATION_ENTITY_TYPE);
+        let reconcile = {
+            let store_ref = store_ref.clone();
+            let entity_cb = entity_cb.clone();
+            let groups_ref = groups_ref.clone();
+            let groups_container_ref = groups_container_ref.clone();
+            let empty_placeholder_ref = empty_placeholder_ref.clone();
+            let menu_store_ref = menu_store_ref.clone();
+            move || {
+                let mut entities: Vec<(Urn, entity::notification::Notification)> =
+                    store_ref.get_entities_typed(entity::notification::NOTIFICATION_ENTITY_TYPE);
 
-            // Sort by created_at_ms descending (newest first)
-            entities.sort_by_key(|(_, notif)| std::cmp::Reverse(notif.created_at_ms));
+                entities.sort_by_key(|(_, notif)| std::cmp::Reverse(notif.created_at_ms));
+                let grouped = group_notifications(&entities);
 
-            // Group by app_id
-            let mut grouped: HashMap<String, Vec<(Urn, entity::notification::Notification)>> =
-                HashMap::new();
-            for (urn, notif) in &entities {
-                let group_key = notif.app_id.as_deref().unwrap_or("unknown").to_string();
-                grouped
-                    .entry(group_key)
-                    .or_default()
-                    .push((urn.clone(), notif.clone()));
-            }
+                remove_stale_groups(&groups_ref, &groups_container_ref, &grouped);
 
-            // Remove groups no longer present
-            let current_group_keys: Vec<String> = groups_ref.borrow().keys().cloned().collect();
-            for key in &current_group_keys {
-                if !grouped.contains_key(key)
-                    && let Some(group) = groups_ref.borrow_mut().remove(key)
-                {
-                    groups_container_ref.remove(group.widget());
-                }
-            }
+                for (group_key, notifs) in &grouped {
+                    let data: Vec<NotificationData> = notifs
+                        .iter()
+                        .map(|(urn, notif)| NotificationData {
+                            urn: urn.clone(),
+                            title: notif.title.clone(),
+                            description: notif.description.clone(),
+                            icon_hints: notif.icon_hints.clone(),
+                            actions: notif.actions.clone(),
+                        })
+                        .collect();
 
-            // Create or update groups
-            for (group_key, notifs) in &grouped {
-                let data: Vec<NotificationData> = notifs
-                    .iter()
-                    .map(|(urn, notif)| NotificationData {
-                        urn: urn.clone(),
-                        title: notif.title.clone(),
-                        description: notif.description.clone(),
-                        icon_hints: notif.icon_hints.clone(),
-                        actions: notif.actions.clone(),
-                    })
-                    .collect();
+                    let mut groups_map = groups_ref.borrow_mut();
 
-                let mut groups_map = groups_ref.borrow_mut();
+                    if let Some(existing) = groups_map.get(group_key) {
+                        existing.update(&data);
+                    } else {
+                        let first = &notifs[0].1;
+                        let app_title = first.app_name.as_deref().unwrap_or(group_key);
 
-                if let Some(existing) = groups_map.get(group_key) {
-                    existing.update(&data);
-                } else {
-                    // Determine app title and icon from first notification
-                    let first = &notifs[0].1;
-                    let app_title = first.app_name.as_deref().unwrap_or(group_key);
+                        let group = NotificationGroup::new(
+                            group_key,
+                            app_title,
+                            &first.icon_hints,
+                            &menu_store_ref,
+                        );
 
-                    let group = NotificationGroup::new(
-                        group_key,
-                        app_title,
-                        &first.icon_hints,
-                        &menu_store_ref,
-                    );
-
-                    // Wire output to entity callbacks
-                    let entity_cb_ref = entity_cb.clone();
-                    group.connect_output(move |event| match event {
-                        NotificationGroupOutput::ActionClick(urn, key) => {
-                            entity_cb_ref(
-                                urn,
-                                "invoke-action".to_string(),
-                                serde_json::json!({ "key": key }),
-                            );
-                        }
-                        NotificationGroupOutput::Close(urn) => {
-                            entity_cb_ref(urn, "dismiss".to_string(), serde_json::Value::Null);
-                        }
-                        NotificationGroupOutput::ClearAll(urns) => {
-                            for urn in urns {
+                        let entity_cb_ref = entity_cb.clone();
+                        group.connect_output(move |event| match event {
+                            NotificationGroupOutput::ActionClick(urn, key) => {
+                                entity_cb_ref(
+                                    urn,
+                                    "invoke-action".to_string(),
+                                    serde_json::json!({ "key": key }),
+                                );
+                            }
+                            NotificationGroupOutput::Close(urn) => {
                                 entity_cb_ref(urn, "dismiss".to_string(), serde_json::Value::Null);
                             }
-                        }
-                    });
+                            NotificationGroupOutput::ClearAll(urns) => {
+                                for urn in urns {
+                                    entity_cb_ref(
+                                        urn,
+                                        "dismiss".to_string(),
+                                        serde_json::Value::Null,
+                                    );
+                                }
+                            }
+                        });
 
-                    group.update(&data);
-                    groups_container_ref.append(group.widget());
-                    groups_map.insert(group_key.clone(), group);
+                        group.update(&data);
+                        groups_container_ref.append(group.widget());
+                        groups_map.insert(group_key.clone(), group);
+                    }
                 }
-            }
 
-            // Toggle empty placeholder
-            empty_placeholder_ref.set_visible(entities.is_empty());
-            groups_container_ref.set_visible(!entities.is_empty());
-        });
+                remove_stale_groups(&groups_ref, &groups_container_ref, &grouped);
+                empty_placeholder_ref.set_visible(entities.is_empty());
+                groups_container_ref.set_visible(!entities.is_empty());
+            }
+        };
+
+        store.subscribe_type(
+            entity::notification::NOTIFICATION_ENTITY_TYPE,
+            reconcile.clone(),
+        );
+        glib::idle_add_local_once(reconcile);
 
         Self {
             container,

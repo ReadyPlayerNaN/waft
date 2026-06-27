@@ -59,10 +59,13 @@ impl ToastWindow {
     pub fn update_visibility(&self, has_toasts: bool) {
         if has_toasts {
             self.trigger_resize();
+            self.window.set_default_size(400, -1);
+            self.window.present();
             self.window.set_visible(true);
         } else {
             self.window.set_default_size(400, 0);
             self.window.set_visible(false);
+            self.window.hide();
         }
     }
 }
