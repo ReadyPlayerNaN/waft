@@ -119,6 +119,15 @@ mod gtk_component_tests {
         assert_eq!(groups_container.observe_children().n_items(), 1);
 
         store.handle_notification(AppNotification::EntityRemoved {
+            urn: urn2.clone(),
+            entity_type: "notification".to_string(),
+        });
+
+        assert_eq!(groups_container.observe_children().n_items(), 0);
+        assert!(!groups_container.is_visible());
+        assert!(placeholder.is_visible());
+
+        store.handle_notification(AppNotification::EntityRemoved {
             urn: urn2,
             entity_type: "notification".to_string(),
         });

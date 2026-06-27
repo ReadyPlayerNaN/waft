@@ -13,6 +13,7 @@ use std::rc::Rc;
 use uuid::Uuid;
 
 use waft_protocol::Urn;
+use waft_protocol::entity::notification::NOTIFICATION_ENTITY_TYPE;
 use waft_protocol::message::AppNotification;
 
 /// Callback for entity actions routed back to the daemon.
@@ -222,7 +223,8 @@ impl EntityStore {
 
     fn handle_entity_removed(&self, urn: &Urn, entity_type: &str) {
         let urn_str = urn.as_str().to_string();
-        if self.cache.borrow_mut().remove(&urn_str).is_some() {
+        let removed = self.cache.borrow_mut().remove(&urn_str).is_some();
+        if removed || entity_type == NOTIFICATION_ENTITY_TYPE {
             self.notify_type(entity_type);
         }
     }
@@ -391,6 +393,28 @@ mod tests {
         let urn = Urn::new("clock", "clock", "default");
         store.handle_notification(make_removed(urn, entity::clock::ENTITY_TYPE));
         assert_eq!(called.get(), 0);
+    }
+
+    #[test]
+    fn notification_remove_still_notifies_after_cache_is_empty() {
+        let store = EntityStore::new();
+        let called = Rc::new(Cell::new(0u32));
+        let called_clone = called.clone();
+
+        store.subscribe_type(entity::notification::NOTIFICATION_ENTITY_TYPE, move || {
+            called_clone.set(called_clone.get() + 1);
+        });
+
+        let urn = Urn::new("notifications", "notification", "1");
+
+        store.handle_notification(make_removed(
+            urn.clone(),
+            entity::notification::NOTIFICATION_ENTITY_TYPE,
+        ));
+        assert_eq!(called.get(), 1);
+
+        store.handle_notification(make_removed(urn, entity::notification::NOTIFICATION_ENTITY_TYPE));
+        assert_eq!(called.get(), 2);
     }
 
     #[test]
