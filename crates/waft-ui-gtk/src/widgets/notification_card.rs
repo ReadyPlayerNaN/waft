@@ -11,7 +11,6 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
 
 use gtk::prelude::*;
 
@@ -261,22 +260,14 @@ impl NotificationCard {
 
         // Hover detection: pause/resume countdown on mouse enter/leave
         if let Some(ref bar) = countdown_bar {
-            let running = bar.running_handle();
-            let bar_root = bar.root();
-
-            let running_enter = running.clone();
-            let bar_root_enter = bar_root.clone();
-            let running_leave = running;
-            let bar_root_leave = bar_root;
-
+            let bar_enter = bar.clone();
+            let bar_leave = bar.clone();
             let motion = gtk::EventControllerMotion::new();
             motion.connect_enter(move |_, _, _| {
-                running_enter.store(false, Ordering::SeqCst);
-                bar_root_enter.add_css_class("paused");
+                bar_enter.pause();
             });
             motion.connect_leave(move |_| {
-                running_leave.store(true, Ordering::SeqCst);
-                bar_root_leave.remove_css_class("paused");
+                bar_leave.resume();
             });
             root.add_controller(motion);
         }

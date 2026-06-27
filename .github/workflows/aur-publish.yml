@@ -32,7 +32,6 @@ on:
           - waft-git
           - waft-overview-git
           - waft-settings-git
-          - waft-toasts-git
           - waft-launcher-git
 
 jobs:
@@ -49,7 +48,6 @@ jobs:
           - waft-git
           - waft-overview-git
           - waft-settings-git
-          - waft-toasts-git
           - waft-launcher-git
     steps:
       - name: Skip non-matching package on manual dispatch

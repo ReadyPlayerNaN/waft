@@ -1,5 +1,4 @@
 mod action_tracker;
-mod claim_tracker;
 mod connection;
 mod crash_tracker;
 mod daemon;

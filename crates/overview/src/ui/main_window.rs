@@ -960,6 +960,16 @@ impl MainWindowWidget {
                 gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
             );
         }
+
+        let toast_provider = gtk::CssProvider::new();
+        toast_provider.load_from_data(include_str!("toast_style.css"));
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &toast_provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
     }
 
     fn build_content(

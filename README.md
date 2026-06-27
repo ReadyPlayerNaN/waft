@@ -23,9 +23,7 @@ Pop up overview panel, that gives summary status of about everything to quickly 
 * Wired network
 * ...and more
 
-### `waft-toasts`
-
-This renders notification toasts. Expired toasts are still accessible in the `waft-overview`.
+This app also renders transient notification toasts.
 
 ### `waft-settings`
 
@@ -93,7 +91,7 @@ All plugins are standalone daemon binaries implementing the `Plugin` trait from 
 | audio | waft-audio-daemon | `audio-device` | Volume sliders and device selection via pactl |
 | networkmanager | waft-networkmanager-daemon | `network-adapter`, `wifi-network`, `ethernet-connection`, `vpn` | WiFi/Ethernet/VPN via NetworkManager |
 | weather | waft-weather-daemon | `weather` | Weather info via Open-Meteo API |
-| notifications | waft-notifications-daemon | `notification`, `dnd` | D-Bus notification server with toasts and DND |
+| notifications | waft-notifications-daemon | `notification`, `dnd` | D-Bus notification server; overview renders toasts and history |
 | eds | waft-eds-daemon | `calendar-event` | Calendar integration via Evolution Data Server |
 | sunsetr | waft-sunsetr-daemon | `night-light` | Night light control via sunsetr CLI |
 | syncthing | waft-syncthing-daemon | `backup-method` | Syncthing service toggle |

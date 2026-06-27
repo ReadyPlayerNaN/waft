@@ -9,7 +9,6 @@ members = [
     "crates/core",
     "crates/plugin",
     "crates/protocol",
-    "crates/toasts",
     "crates/settings",
     "crates/launcher",
     "crates/waft",

@@ -18,10 +18,7 @@ impl ToastWindow {
             .default_height(0)
             .build();
 
-        // CRITICAL: set_visible(false) BEFORE layer-shell init
         window.set_visible(false);
-
-        // Make window background transparent
         window.add_css_class("transparent-window");
 
         Self::configure_layer_shell(&window, position);
@@ -42,7 +39,7 @@ impl ToastWindow {
         window.set_modal(false);
 
         window.init_layer_shell();
-        window.set_layer(Layer::Top); // Below main overlay (which uses Layer::Overlay)
+        window.set_layer(Layer::Top);
         window.set_keyboard_mode(KeyboardMode::None);
 
         let (top, bottom, left, right) = position.anchors();
@@ -61,11 +58,9 @@ impl ToastWindow {
 
     pub fn update_visibility(&self, has_toasts: bool) {
         if has_toasts {
-            // Reset size before showing to avoid stale height from previous content
             self.trigger_resize();
             self.window.set_visible(true);
         } else {
-            // Reset to 0 height when hiding
             self.window.set_default_size(400, 0);
             self.window.set_visible(false);
         }

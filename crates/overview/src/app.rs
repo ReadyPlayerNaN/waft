@@ -12,6 +12,7 @@ use std::thread;
 use adw::prelude::*;
 
 use crate::features::session::SessionEvent;
+use crate::features::toasts::{ToastManager, ToastWindow};
 use crate::menu_state::create_menu_store;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
 use waft_client::{
@@ -234,6 +235,16 @@ pub async fn setup() -> Result<adw::Application> {
 
             // Create entity store for daemon notification distribution
             let entity_store = Rc::new(EntityStore::new());
+            let toast_position = waft_config::Config::default().toasts.position;
+            let toast_window = Rc::new(ToastWindow::new(&app, toast_position));
+            let toast_resize = {
+                let toast_window = toast_window.clone();
+                Rc::new(move || toast_window.trigger_resize())
+            };
+            let toast_visibility = {
+                let toast_window = toast_window.clone();
+                Rc::new(move |has_toasts: bool| toast_window.update_visibility(has_toasts))
+            };
 
             // Libadwaita's default behavior is to follow the system color-scheme
             // preference via AdwStyleManager. When the session does not expose
@@ -274,6 +285,14 @@ pub async fn setup() -> Result<adw::Application> {
                         warn!("[entity] WaftClient not available for entity action");
                     }
                 });
+
+            let toast_manager = Rc::new(ToastManager::new(
+                toast_window.container.clone(),
+                entity_action_callback.clone(),
+                toast_resize,
+                toast_visibility,
+                toast_position,
+            ));
 
             // Create the main window
             let main_window = MainWindowWidget::new(
@@ -457,8 +476,8 @@ pub async fn setup() -> Result<adw::Application> {
             if let Ok(mut rx_slot) = daemon_event_rx_slot.lock()
                 && let Some(event_rx) = rx_slot.take() {
                     let store_for_events = entity_store.clone();
+                    let toast_manager = toast_manager.clone();
                     let clip_for_events = main_window.clip.clone();
-                    let waft_client_for_claims = waft_client_slot.clone();
                     // Start with UI disabled — the connection task will send Connected
                     // once the daemon is reachable.
                     clip_for_events.set_sensitive(false);
@@ -466,25 +485,30 @@ pub async fn setup() -> Result<adw::Application> {
                         while let Ok(event) = event_rx.recv_async().await {
                             match event {
                                 ClientEvent::Notification(ref notification) => {
-                                    // Intercept ClaimCheck to respond via WaftClient
-                                    if let waft_protocol::AppNotification::ClaimCheck {
-                                        urn,
-                                        claim_id,
-                                    } = notification
-                                    {
-                                        let claimed = store_for_events.has_entity(urn);
-                                        let guard = match waft_client_for_claims.lock() {
-                                            Ok(g) => g,
-                                            Err(e) => {
-                                                warn!(
-                                                    "[app] WaftClient mutex poisoned in claim response: {e}"
-                                                );
-                                                e.into_inner()
+                                    match notification {
+                                        waft_protocol::AppNotification::EntityUpdated { urn, entity_type, data } => {
+                                            if entity_type == "notification"
+                                                && let Ok(notification) = serde_json::from_value::<waft_protocol::entity::notification::Notification>(data.clone())
+                                            {
+                                                toast_manager.handle_notification(urn.clone(), notification);
+                                            } else if entity_type == "dnd"
+                                                && let Ok(dnd) = serde_json::from_value::<waft_protocol::entity::notification::Dnd>(data.clone())
+                                            {
+                                                toast_manager.handle_dnd(&dnd);
                                             }
-                                        };
-                                        if let Some(ref client) = *guard {
-                                            client.send_claim_response(*claim_id, claimed);
                                         }
+                                        waft_protocol::AppNotification::EntityRemoved { urn, entity_type } => {
+                                            if entity_type == "notification" {
+                                                toast_manager.handle_entity_removed(urn);
+                                            }
+                                        }
+                                        waft_protocol::AppNotification::EntityStale { urn, entity_type }
+                                        | waft_protocol::AppNotification::EntityOutdated { urn, entity_type }
+                                            if entity_type == "notification" =>
+                                        {
+                                            toast_manager.handle_entity_removed(urn);
+                                        }
+                                        _ => {}
                                     }
                                     store_for_events.handle_notification(notification.clone());
                                 }
@@ -502,8 +526,10 @@ pub async fn setup() -> Result<adw::Application> {
                     });
                 }
 
-            // Keep the main window alive by leaking it
+            // Keep the main window and toast window alive by leaking them
             std::mem::forget(main_window);
+            std::mem::forget(toast_window);
+            std::mem::forget(toast_manager);
         });
     });
 

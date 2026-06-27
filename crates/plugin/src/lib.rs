@@ -38,7 +38,6 @@
 //! }
 //! ```
 
-pub mod claim;
 pub mod config;
 pub mod dbus_monitor;
 pub mod dbus_proxy;
@@ -51,7 +50,6 @@ pub mod runtime;
 pub mod state_locker;
 pub mod transport;
 
-pub use claim::ClaimSender;
 pub use notifier::EntityNotifier;
 pub use plugin::{Entity, Plugin};
 pub use poison_recovery::lock_or_recover;

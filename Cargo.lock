@@ -3926,26 +3926,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "waft-toasts"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "flume",
- "gtk4",
- "gtk4-layer-shell",
- "libadwaita",
- "log",
- "serde",
- "serde_json",
- "tokio",
- "uuid",
- "waft-client",
- "waft-config",
- "waft-protocol",
- "waft-ui-gtk",
-]
-
-[[package]]
 name = "waft-ui-gtk"
 version = "0.1.0"
 dependencies = [

@@ -108,7 +108,6 @@ pub struct NotificationsPlugin {
     sound_policy: Arc<StdMutex<sound::policy::SoundPolicy>>,
     sound_gallery: Arc<StdMutex<sound::gallery::SoundGallery>>,
     sound_player: Arc<sound::player::SoundPlayer>,
-    claim_sender: Arc<StdMutex<Option<waft_plugin::ClaimSender>>>,
     recorder: Arc<recording::NotificationRecorder>,
     i18n: &'static waft_i18n::I18n,
 }
@@ -141,7 +140,6 @@ impl NotificationsPlugin {
             sound_policy: Arc::new(StdMutex::new(policy)),
             sound_gallery: Arc::new(StdMutex::new(gallery)),
             sound_player: Arc::new(sound::player::SoundPlayer::new()),
-            claim_sender: Arc::new(StdMutex::new(None)),
             recorder: Arc::new(recording::NotificationRecorder::new(recording)),
             i18n,
         }
@@ -476,44 +474,27 @@ impl Plugin for NotificationsPlugin {
                     .parse()
                     .map_err(|e| anyhow::anyhow!("invalid notification id: {e}"))?;
 
-                // Check if notification still exists before initiating claim
-                {
-                    let guard = self.state.lock_or_recover();
-                    if guard.get_notification(&id).is_none() {
-                        debug!(
-                            "[notifications] expire: notification {id} already gone, skip claim"
-                        );
-                        return Ok(serde_json::Value::Null);
-                    }
+                let mut guard = self.state.lock_or_recover();
+                if guard.get_notification(&id).is_none() {
+                    debug!("[notifications] expire: notification {id} already gone, skip");
+                    return Ok(serde_json::Value::Null);
                 }
 
-                // Request claim check -- daemon will ask other subscribers if they still want it
-                let claim_sender = self.claim_sender.lock_or_recover().clone();
+                process_op(
+                    &mut guard,
+                    NotificationOp::NotificationDismiss(id),
+                    self.i18n,
+                );
 
-                if let Some(ref sender) = claim_sender {
-                    let _claim_id = sender.request(urn.clone()).await;
-                    info!("[notifications] expire: initiated claim check for notification {id}");
-                } else {
-                    // No claim sender (runtime not attached), fall back to dismiss
-                    warn!(
-                        "[notifications] expire: no claim sender, falling back to dismiss for {id}"
-                    );
-                    let mut guard = self.state.lock_or_recover();
-                    process_op(
-                        &mut guard,
-                        NotificationOp::NotificationDismiss(id),
-                        self.i18n,
-                    );
-                    if self
-                        .outbound_tx
-                        .send(OutboundEvent::NotificationClosed {
-                            id: id as u32,
-                            reason: close_reasons::EXPIRED,
-                        })
-                        .is_err()
-                    {
-                        warn!("[notifications] outbound channel closed in expire fallback");
-                    }
+                if self
+                    .outbound_tx
+                    .send(OutboundEvent::NotificationClosed {
+                        id: id as u32,
+                        reason: close_reasons::EXPIRED,
+                    })
+                    .is_err()
+                {
+                    warn!("[notifications] outbound channel closed on expire");
                 }
             }
 
@@ -791,49 +772,6 @@ impl Plugin for NotificationsPlugin {
         false
     }
 
-    fn set_claim_sender(&self, sender: waft_plugin::ClaimSender) {
-        *self.claim_sender.lock_or_recover() = Some(sender);
-    }
-
-    async fn handle_claim_result(&self, urn: Urn, _claim_id: uuid::Uuid, claimed: bool) {
-        if claimed {
-            debug!("[notifications] ClaimResult: {urn} claimed by a subscriber, keeping");
-            return;
-        }
-
-        // Parse notification ID from URN (format: notifications/notification/{id})
-        let parts: Vec<&str> = urn.as_str().split('/').collect();
-        let id: u64 = match parts.get(2).and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => {
-                warn!("[notifications] ClaimResult: cannot parse notification id from {urn}");
-                return;
-            }
-        };
-
-        info!("[notifications] ClaimResult: {urn} not claimed, removing");
-
-        {
-            let mut guard = self.state.lock_or_recover();
-            process_op(
-                &mut guard,
-                NotificationOp::NotificationDismiss(id),
-                self.i18n,
-            );
-        }
-
-        // Emit D-Bus NotificationClosed(EXPIRED) -- reason code 1
-        if self
-            .outbound_tx
-            .send(OutboundEvent::NotificationClosed {
-                id: id as u32,
-                reason: close_reasons::EXPIRED,
-            })
-            .is_err()
-        {
-            warn!("[notifications] outbound channel closed in handle_claim_result");
-        }
-    }
 }
 
 #[cfg(test)]

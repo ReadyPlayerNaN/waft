@@ -99,13 +99,6 @@ impl EntityStore {
                 // Description responses are handled by CLI/settings, not the entity store.
                 log::debug!("[entity-store] received DescribeResponse (ignored by entity store)");
             }
-            AppNotification::ClaimCheck { .. } => {
-                // ClaimCheck is handled at the app level, not the entity store.
-                // The app must respond via WaftClient::send_claim_response().
-                log::debug!(
-                    "[entity-store] received ClaimCheck (handled by app, not entity store)"
-                );
-            }
         }
     }
 
