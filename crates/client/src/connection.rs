@@ -211,7 +211,6 @@ impl WaftClient {
         }
         action_id
     }
-
 }
 
 /// Resolve the daemon socket path from `$XDG_RUNTIME_DIR/waft/daemon.sock`.

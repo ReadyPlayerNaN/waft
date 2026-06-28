@@ -311,4 +311,3 @@ pub fn daemon_socket_path() -> PathBuf {
     path.push("daemon.sock");
     path
 }
-

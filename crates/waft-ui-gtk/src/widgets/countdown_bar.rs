@@ -91,7 +91,10 @@ impl CountdownState {
 
     fn elapsed(&self) -> Duration {
         self.elapsed_before_run
-            + self.run_started_at.map(|started_at| started_at.elapsed()).unwrap_or(Duration::ZERO)
+            + self
+                .run_started_at
+                .map(|started_at| started_at.elapsed())
+                .unwrap_or(Duration::ZERO)
     }
 
     fn remaining(&self, ttl: Duration) -> Duration {
@@ -148,7 +151,10 @@ impl CountdownBarWidget {
     pub fn start(&self) {
         self.stop_timer();
         self.state.borrow_mut().start();
-        self.inner.update(&CountdownBarProps { fraction: 1.0, paused: false });
+        self.inner.update(&CountdownBarProps {
+            fraction: 1.0,
+            paused: false,
+        });
         self.start_timer();
     }
 
@@ -160,7 +166,10 @@ impl CountdownBarWidget {
     pub fn pause(&self) {
         self.stop_timer();
         let fraction = self.state.borrow_mut().pause(self.ttl);
-        self.inner.update(&CountdownBarProps { fraction: fraction.as_secs_f64() / self.ttl.as_secs_f64(), paused: true });
+        self.inner.update(&CountdownBarProps {
+            fraction: fraction.as_secs_f64() / self.ttl.as_secs_f64(),
+            paused: true,
+        });
     }
 
     pub fn resume(&self) {
@@ -172,7 +181,10 @@ impl CountdownBarWidget {
             state.resume(self.ttl);
             state.fraction(self.ttl)
         };
-        self.inner.update(&CountdownBarProps { fraction, paused: false });
+        self.inner.update(&CountdownBarProps {
+            fraction,
+            paused: false,
+        });
         self.start_timer();
     }
 
@@ -187,34 +199,41 @@ impl CountdownBarWidget {
         let timer_source = self.timer_source.clone();
         let inner = Rc::clone(&self.inner);
 
-        let source_id = gtk::glib::timeout_add_local(Duration::from_millis(TICK_INTERVAL_MS), move || {
-            let (finished, fraction) = {
-                let mut state = state.borrow_mut();
-                if state.finished {
+        let source_id =
+            gtk::glib::timeout_add_local(Duration::from_millis(TICK_INTERVAL_MS), move || {
+                let (finished, fraction) = {
+                    let mut state = state.borrow_mut();
+                    if state.finished {
+                        return gtk::glib::ControlFlow::Break;
+                    }
+
+                    let remaining = state.remaining(ttl);
+                    let fraction = state.fraction(ttl);
+                    let finished = remaining.is_zero();
+                    if finished {
+                        state.mark_elapsed(ttl);
+                    }
+                    (finished, fraction)
+                };
+
+                if finished {
+                    inner.update(&CountdownBarProps {
+                        fraction: 0.0,
+                        paused: false,
+                    });
+                    *timer_source.borrow_mut() = None;
+                    if let Some(ref cb) = *on_output.borrow() {
+                        cb(CountdownBarOutput::Elapsed);
+                    }
                     return gtk::glib::ControlFlow::Break;
                 }
 
-                let remaining = state.remaining(ttl);
-                let fraction = state.fraction(ttl);
-                let finished = remaining.is_zero();
-                if finished {
-                    state.mark_elapsed(ttl);
-                }
-                (finished, fraction)
-            };
-
-            if finished {
-                inner.update(&CountdownBarProps { fraction: 0.0, paused: false });
-                *timer_source.borrow_mut() = None;
-                if let Some(ref cb) = *on_output.borrow() {
-                    cb(CountdownBarOutput::Elapsed);
-                }
-                return gtk::glib::ControlFlow::Break;
-            }
-
-            inner.update(&CountdownBarProps { fraction, paused: false });
-            gtk::glib::ControlFlow::Continue
-        });
+                inner.update(&CountdownBarProps {
+                    fraction,
+                    paused: false,
+                });
+                gtk::glib::ControlFlow::Continue
+            });
 
         *self.timer_source.borrow_mut() = Some(source_id);
     }

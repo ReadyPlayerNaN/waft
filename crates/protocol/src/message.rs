@@ -39,7 +39,6 @@ pub enum AppMessage {
         /// If set, describe only this plugin. If None, describe all.
         plugin_name: Option<String>,
     },
-
 }
 
 /// Messages sent from a plugin to the waft daemon.
@@ -68,7 +67,6 @@ pub enum PluginMessage {
 
     /// Response to a CanStop command.
     StopResponse { can_stop: bool },
-
 }
 
 /// Notifications sent from the waft daemon to an app.
@@ -103,7 +101,6 @@ pub enum AppNotification {
 
     /// Response to a Describe request.
     DescribeResponse { plugins: Vec<PluginDescription> },
-
 }
 
 /// Commands sent from the waft daemon to a plugin.
@@ -120,7 +117,6 @@ pub enum PluginCommand {
         action_id: Uuid,
         params: serde_json::Value,
     },
-
 
     /// Current subscriber count for an entity type changed.
     SubscriberCountChanged { entity_type: String, count: usize },
@@ -349,7 +345,6 @@ mod tests {
     fn app_notification_describe_response_empty() {
         roundtrip_json(&AppNotification::DescribeResponse { plugins: vec![] });
     }
-
 
     #[test]
     fn plugin_action_success_backward_compat_no_data_field() {

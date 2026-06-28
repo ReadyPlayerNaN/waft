@@ -771,7 +771,6 @@ impl Plugin for NotificationsPlugin {
         // Must keep running to receive D-Bus notifications
         false
     }
-
 }
 
 #[cfg(test)]

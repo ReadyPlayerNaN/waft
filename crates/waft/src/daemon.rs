@@ -355,7 +355,6 @@ impl WaftDaemon {
                 }
             }
 
-
             PluginMessage::StopResponse { can_stop } => {
                 let plugin_name = self.connections.get(&conn_id).and_then(|c| match &c.kind {
                     ClientKind::Plugin { name } => Some(name.clone()),
@@ -502,7 +501,6 @@ impl WaftDaemon {
                 }
             }
 
-
             AppMessage::Describe { plugin_name } => {
                 let plugins: Vec<_> = if let Some(ref name) = plugin_name {
                     self.plugin_spawner
@@ -553,7 +551,6 @@ impl WaftDaemon {
                     .await;
             }
         }
-
     }
 
     /// Retry CanStop for plugins whose retry timer has expired.

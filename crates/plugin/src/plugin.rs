@@ -8,7 +8,6 @@ use serde::Serialize;
 use waft_protocol::PluginDescription;
 use waft_protocol::urn::Urn;
 
-
 /// A domain entity produced by a plugin.
 ///
 /// Each entity has a URN (unique identifier), an entity type string,
