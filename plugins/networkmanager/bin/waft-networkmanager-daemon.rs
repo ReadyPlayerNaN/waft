@@ -197,7 +197,7 @@ impl NetworkManagerPlugin {
             Ok(profiles) => {
                 info!("[nm] Found {} VPN profiles", profiles.len());
 
-                let active_vpns = get_active_vpn_connections(&nm).await.unwrap_or_default();
+                let active_vpns = get_active_vpn_connections(&conn).await.unwrap_or_default();
 
                 for profile in profiles {
                     let vpn_state = active_vpns

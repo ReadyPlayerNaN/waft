@@ -28,6 +28,7 @@ const ENTITY_TYPES: &[&str] = &[
     entity::display::DARK_MODE_ENTITY_TYPE,
     entity::display::DISPLAY_ENTITY_TYPE,
     entity::display::NIGHT_LIGHT_ENTITY_TYPE,
+    entity::display::WALLPAPER_MANAGER_ENTITY_TYPE,
     entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
     entity::power::ENTITY_TYPE,
     entity::keyboard::ENTITY_TYPE,

@@ -11,6 +11,16 @@ Whenever an email with meeting invite is received, present it as calendar notifi
 Consider having the SNI tray in the waft overview.
 (Status Notifier Items)
 
+# Feature toggle feedback
+
+The feature toggles do give feedback in case of failure
+
+# Live regression triage
+
+- waft-overview missing wallpaper toggle despite wallpaper-manager support being wired in.
+- waft-overview missing audio sliders/controls on PipeWire-only setups where `pactl` is unusable.
+- VPN toggle state can still render active WireGuard connections as disabled.
+
 ---
 
 # `waft-settings` Wireless

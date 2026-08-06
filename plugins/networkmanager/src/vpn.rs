@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::Result;
+#[cfg(test)]
 use nmrs::models::DeviceState as NmDeviceState;
 use zbus::Connection;
+use zbus::zvariant::OwnedObjectPath;
 
 use crate::state::{NmState, VpnConnectionInfo, VpnState};
 
@@ -39,6 +41,7 @@ pub async fn get_vpn_profiles(nm: &nmrs::NetworkManager) -> Result<Vec<VpnProfil
         .collect())
 }
 
+#[cfg(test)]
 fn nmrs_vpn_state_to_plugin_state(state: NmDeviceState, active: bool) -> VpnState {
     match state {
         NmDeviceState::Prepare
@@ -60,28 +63,58 @@ fn nmrs_vpn_state_to_plugin_state(state: NmDeviceState, active: bool) -> VpnStat
 }
 
 /// Get active VPN states from NetworkManager keyed by UUID.
-pub async fn get_active_vpn_connections(
-    nm: &nmrs::NetworkManager,
-) -> Result<HashMap<String, VpnState>> {
-    Ok(nm
-        .list_vpn_connections()
-        .await?
-        .into_iter()
-        .map(|vpn| {
-            let state = nmrs_vpn_state_to_plugin_state(vpn.state, vpn.active);
-            (vpn.uuid, state)
-        })
-        .collect())
+pub async fn get_active_vpn_connections(conn: &Connection) -> Result<HashMap<String, VpnState>> {
+    let nm = zbus::Proxy::new(
+        conn,
+        "org.freedesktop.NetworkManager",
+        "/org/freedesktop/NetworkManager",
+        "org.freedesktop.NetworkManager",
+    )
+    .await?;
+
+    let active_paths: Vec<OwnedObjectPath> = nm.get_property("ActiveConnections").await?;
+    let mut states = HashMap::new();
+
+    for path in active_paths {
+        let active = match zbus::Proxy::new(
+            conn,
+            "org.freedesktop.NetworkManager",
+            path,
+            "org.freedesktop.NetworkManager.Connection.Active",
+        )
+        .await
+        {
+            Ok(proxy) => proxy,
+            Err(_) => continue,
+        };
+
+        let conn_type: String = match active.get_property("Type").await {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if !is_vpn_type(&conn_type) {
+            continue;
+        }
+
+        let uuid: String = match active.get_property("Uuid").await {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let state_code: u32 = active.get_property("State").await.unwrap_or(0);
+        states.insert(uuid, VpnState::from_active_state(state_code));
+    }
+
+    Ok(states)
 }
 
 /// Refresh VPN connection states from NetworkManager.
 pub async fn refresh_vpn_states(
-    _conn: &Connection,
+    conn: &Connection,
     nm: &nmrs::NetworkManager,
     state: &Arc<StdMutex<NmState>>,
 ) -> Result<()> {
     let profiles = get_vpn_profiles(nm).await?;
-    let active_vpns = get_active_vpn_connections(nm).await.unwrap_or_default();
+    let active_vpns = get_active_vpn_connections(conn).await.unwrap_or_default();
 
     let mut new_connections = Vec::new();
 

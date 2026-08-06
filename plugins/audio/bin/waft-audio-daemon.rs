@@ -35,6 +35,7 @@ fn i18n() -> &'static waft_i18n::I18n {
 
 use waft_plugin_audio::pactl::{self, AudioEvent, CardInfo, CardPortMap, SinkInfo, SourceInfo};
 use waft_plugin_audio::virtual_device_config::{self, VirtualDeviceConfig, VirtualDeviceKind};
+use waft_plugin_audio::wpctl;
 
 /// Runtime state for a waft-managed virtual audio device.
 #[derive(Clone)]
@@ -44,6 +45,13 @@ struct VirtualDeviceState {
 }
 
 /// Shared audio state, accessible from both the plugin and the event monitor.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum AudioBackend {
+    #[default]
+    Pactl,
+    Wpctl,
+}
+
 #[derive(Clone, Default)]
 struct AudioState {
     output_devices: Vec<pactl::AudioDevice>,
@@ -51,6 +59,7 @@ struct AudioState {
     input_devices: Vec<pactl::AudioDevice>,
     default_input: Option<String>,
     available: bool,
+    backend: AudioBackend,
     /// Raw sink info for building card entities.
     sinks: Vec<SinkInfo>,
     /// Raw source info for building card entities.
@@ -75,22 +84,28 @@ impl AudioPlugin {
     async fn new() -> Result<(Self, Arc<StdMutex<AudioState>>)> {
         let state = Arc::new(StdMutex::new(AudioState::default()));
 
-        // Check if audio system is available
-        if !pactl::is_available().await {
-            warn!("[audio] PulseAudio/PipeWire not available");
+        // Prefer pactl for full card + virtual-device support, but fall back to
+        // wpctl when PipeWire is available without a working PulseAudio compat socket.
+        let backend = if pactl::is_available().await {
+            AudioBackend::Pactl
+        } else if wpctl::is_available().await {
+            AudioBackend::Wpctl
+        } else {
+            warn!("[audio] no working pactl/wpctl audio backend available");
             return Ok((
                 Self {
                     state: state.clone(),
                 },
                 state,
             ));
-        }
+        };
 
         {
             let mut s = lock_or_recover(&state);
             s.available = true;
+            s.backend = backend;
         }
-        info!("[audio] Audio system is available");
+        info!("[audio] audio backend is available via {:?}", backend);
 
         // Reconcile persisted virtual devices first so source filtering can
         // selectively expose waft-managed monitor sources on the first reload.
@@ -100,6 +115,7 @@ impl AudioPlugin {
         if let Err(e) = reload_all(&state).await {
             warn!("[audio] Failed to load initial state: {e}");
         }
+        info!("[audio] initial audio state loaded");
 
         Ok((
             Self {
@@ -116,18 +132,62 @@ impl AudioPlugin {
 
 /// Reload all audio state from pactl into the shared state.
 async fn reload_all(state: &Arc<StdMutex<AudioState>>) -> Result<()> {
-    let card_ports = pactl::get_card_port_info().await.unwrap_or_default();
-    lock_or_recover(state).card_ports = card_ports.clone();
+    let backend = lock_or_recover(state).backend;
+    match backend {
+        AudioBackend::Pactl => {
+            let card_ports = pactl::get_card_port_info().await.unwrap_or_default();
+            lock_or_recover(state).card_ports = card_ports.clone();
 
-    reload_sinks(state, &card_ports).await;
-    reload_sources(state, &card_ports).await;
-    reload_cards(state).await;
+            reload_sinks(state, &card_ports).await;
+            reload_sources(state, &card_ports).await;
+            reload_cards(state).await;
+        }
+        AudioBackend::Wpctl => {
+            let snapshot = wpctl::snapshot().await?;
+            let mut s = lock_or_recover(state);
+            s.card_ports.clear();
+            s.cards.clear();
+            s.sinks.clear();
+            s.sources.clear();
+            s.default_output = snapshot.default_sink.clone();
+            s.default_input = snapshot.default_source.clone();
+            s.output_devices = snapshot
+                .sinks
+                .into_iter()
+                .map(|device| pactl::AudioDevice {
+                    id: device.id,
+                    name: device.name,
+                    device_type: device.device_type,
+                    connection_type: device.connection_type,
+                    volume: device.volume,
+                    muted: device.muted,
+                })
+                .collect();
+            s.input_devices = snapshot
+                .sources
+                .into_iter()
+                .map(|device| pactl::AudioDevice {
+                    id: device.id,
+                    name: device.name,
+                    device_type: device.device_type,
+                    connection_type: device.connection_type,
+                    volume: device.volume,
+                    muted: device.muted,
+                })
+                .collect();
+        }
+    }
 
     Ok(())
 }
 
 /// Reload sink (output) state.
 async fn reload_sinks(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPortMap) {
+    let backend = lock_or_recover(state).backend;
+    if backend != AudioBackend::Pactl {
+        return;
+    }
+
     if let Ok(default) = pactl::get_default_sink().await {
         lock_or_recover(state).default_output = Some(default);
     }
@@ -159,6 +219,11 @@ fn source_allowed_in_waft(source: &SourceInfo, virtual_devices: &[VirtualDeviceS
 
 /// Reload source (input) state.
 async fn reload_sources(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPortMap) {
+    let backend = lock_or_recover(state).backend;
+    if backend != AudioBackend::Pactl {
+        return;
+    }
+
     if let Ok(default) = pactl::get_default_source().await {
         lock_or_recover(state).default_input = Some(default);
     }
@@ -181,6 +246,11 @@ async fn reload_sources(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPort
 
 /// Reload card state.
 async fn reload_cards(state: &Arc<StdMutex<AudioState>>) {
+    let backend = lock_or_recover(state).backend;
+    if backend != AudioBackend::Pactl {
+        return;
+    }
+
     match pactl::get_cards().await {
         Ok(cards) => {
             lock_or_recover(state).cards = cards;
@@ -193,6 +263,10 @@ async fn reload_cards(state: &Arc<StdMutex<AudioState>>) {
 
 /// Reconcile virtual devices from config: load missing modules, track indices.
 async fn reconcile_virtual_devices(state: &Arc<StdMutex<AudioState>>) {
+    if lock_or_recover(state).backend != AudioBackend::Pactl {
+        return;
+    }
+
     let configs = virtual_device_config::read_virtual_devices();
     if configs.is_empty() {
         return;
@@ -344,11 +418,11 @@ impl Plugin for AudioPlugin {
         let device_id = urn.id().to_string();
 
         // Determine if the target is an output or input device
-        let (is_output, is_input) = {
+        let (backend, is_output, is_input) = {
             let state = lock_or_recover(&self.state);
             let is_output = state.output_devices.iter().any(|d| d.id == device_id);
             let is_input = state.input_devices.iter().any(|d| d.id == device_id);
-            (is_output, is_input)
+            (state.backend, is_output, is_input)
         };
 
         match action.as_str() {
@@ -360,12 +434,20 @@ impl Plugin for AudioPlugin {
                     .clamp(0.0, 1.0);
 
                 if is_output {
-                    if let Err(e) = pactl::set_sink_volume(&device_id, volume).await {
+                    let result = match backend {
+                        AudioBackend::Pactl => pactl::set_sink_volume(&device_id, volume).await,
+                        AudioBackend::Wpctl => wpctl::set_volume(&device_id, volume).await,
+                    };
+                    if let Err(e) = result {
                         error!("[audio] Failed to set sink volume: {e}");
                         return Err(e);
                     }
                 } else if is_input {
-                    if let Err(e) = pactl::set_source_volume(&device_id, volume).await {
+                    let result = match backend {
+                        AudioBackend::Pactl => pactl::set_source_volume(&device_id, volume).await,
+                        AudioBackend::Wpctl => wpctl::set_volume(&device_id, volume).await,
+                    };
+                    if let Err(e) = result {
                         error!("[audio] Failed to set source volume: {e}");
                         return Err(e);
                     }
@@ -382,7 +464,11 @@ impl Plugin for AudioPlugin {
                         .map(|d| d.muted)
                         .unwrap_or(false);
                     let new_muted = !current_muted;
-                    if let Err(e) = pactl::set_sink_mute(&device_id, new_muted).await {
+                    let result = match backend {
+                        AudioBackend::Pactl => pactl::set_sink_mute(&device_id, new_muted).await,
+                        AudioBackend::Wpctl => wpctl::set_mute(&device_id, new_muted).await,
+                    };
+                    if let Err(e) = result {
                         error!("[audio] Failed to toggle sink mute: {e}");
                         return Err(e);
                     }
@@ -394,7 +480,11 @@ impl Plugin for AudioPlugin {
                         .map(|d| d.muted)
                         .unwrap_or(false);
                     let new_muted = !current_muted;
-                    if let Err(e) = pactl::set_source_mute(&device_id, new_muted).await {
+                    let result = match backend {
+                        AudioBackend::Pactl => pactl::set_source_mute(&device_id, new_muted).await,
+                        AudioBackend::Wpctl => wpctl::set_mute(&device_id, new_muted).await,
+                    };
+                    if let Err(e) = result {
                         error!("[audio] Failed to toggle source mute: {e}");
                         return Err(e);
                     }
@@ -404,13 +494,21 @@ impl Plugin for AudioPlugin {
             }
             "set-default" => {
                 if is_output {
-                    if let Err(e) = pactl::set_default_sink(&device_id).await {
+                    let result = match backend {
+                        AudioBackend::Pactl => pactl::set_default_sink(&device_id).await,
+                        AudioBackend::Wpctl => wpctl::set_default(&device_id).await,
+                    };
+                    if let Err(e) = result {
                         error!("[audio] Failed to set default sink: {e}");
                         return Err(e);
                     }
                     lock_or_recover(&self.state).default_output = Some(device_id.clone());
                 } else if is_input {
-                    if let Err(e) = pactl::set_default_source(&device_id).await {
+                    let result = match backend {
+                        AudioBackend::Pactl => pactl::set_default_source(&device_id).await,
+                        AudioBackend::Wpctl => wpctl::set_default(&device_id).await,
+                    };
+                    if let Err(e) = result {
                         error!("[audio] Failed to set default source: {e}");
                         return Err(e);
                     }
@@ -893,18 +991,26 @@ fn main() -> Result<()> {
     .i18n(i18n(), "plugin-name", "plugin-description")
     .run(|notifier| async move {
         let (plugin, shared_state) = AudioPlugin::new().await?;
-        let is_available = lock_or_recover(&shared_state).available;
+        let (is_available, backend) = {
+            let state = lock_or_recover(&shared_state);
+            (state.available, state.backend)
+        };
 
         if is_available {
-            match pactl::subscribe_events() {
-                Ok(rx) => {
-                    debug!("[audio] Started event subscription");
-                    spawn_monitored("audio-monitor", async move {
-                        monitor_events(rx, shared_state, notifier).await;
-                        Ok(())
-                    });
+            match backend {
+                AudioBackend::Pactl => match pactl::subscribe_events() {
+                    Ok(rx) => {
+                        debug!("[audio] Started event subscription");
+                        spawn_monitored("audio-monitor", async move {
+                            monitor_events(rx, shared_state, notifier).await;
+                            Ok(())
+                        });
+                    }
+                    Err(e) => warn!("[audio] Failed to start event subscription: {e}"),
+                },
+                AudioBackend::Wpctl => {
+                    warn!("[audio] wpctl backend active: live event subscription unavailable");
                 }
-                Err(e) => warn!("[audio] Failed to start event subscription: {e}"),
             }
         }
 
