@@ -32,37 +32,6 @@ waft protocol --entity-type clock  # Show single entity type (verbose)
 
 ---
 
-## OpenSpec & Project Specifications
-
-**This project uses OpenSpec for specification-driven development.** All changes are documented with structured specifications in the `openspec/` directory. Each change includes:
-
-- **proposal.md** - Rationale: why this change is needed
-- **design.md** - Implementation details and technical decisions
-- **tasks.md** - Work breakdown and step-by-step tasks
-- **specs/** - Detailed capability specifications
-
-**Active OpenSpec Changes (10+ archived specs):**
-
-- Display brightness plugin control with brightnessctl/ddcutil backends
-- VPN network support and toggle
-- WiFi and Ethernet network management
-- Menu UI consistency across Bluetooth, WiFi, VPN
-- NetworkManager library migration (custom D-Bus -> nmrs crate)
-- Dynamic plugin widget registration at runtime
-- Session lock awareness (pause animations when locked)
-- Icon resolution and theme support
-- DBus signal testing and error handling
-- Notification store reducer pattern
-
-When implementing features:
-
-1. Check `openspec/` for existing specifications
-2. Review related `proposal.md` and `design.md` for context
-3. Follow tasks outlined in `tasks.md`
-4. Keep specifications up-to-date with implementation
-
----
-
 ## Architecture Overview
 
 **Waft** (formerly sacrebleui) is a Wayland-only overlay UI application using Rust, GTK4, and libadwaita. A central daemon (`waft`) discovers, spawns, and supervises plugin daemons, routing entity data and actions between plugins and apps via Unix sockets. The overview app (`waft-overview`) subscribes to entity types and renders UI.
