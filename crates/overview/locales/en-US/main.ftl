@@ -26,6 +26,7 @@ nightlight-night-until = Night light until { $time }
 
 # Sunsetr
 sunsetr-no-presets = No presets configured
+feature-toggle-action-failed = Action failed
 
 # Agenda
 agenda-title = Agenda

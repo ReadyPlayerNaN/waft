@@ -91,6 +91,7 @@ pub async fn setup(
         if let Err(e) = action_tx.send((urn, action_name, params)) {
             log::warn!("[settings] failed to send action: {e}");
         }
+        None
     });
 
     // Wrap one-shot values in slots so they can be taken inside connect_startup.

@@ -17,8 +17,8 @@ use waft_protocol::entity::notification::NOTIFICATION_ENTITY_TYPE;
 use waft_protocol::message::AppNotification;
 
 /// Callback for entity actions routed back to the daemon.
-/// Parameters: (urn, action_name, params)
-pub type EntityActionCallback = Rc<dyn Fn(Urn, String, serde_json::Value)>;
+/// Parameters: (urn, action_name, params) -> action id if dispatched.
+pub type EntityActionCallback = Rc<dyn Fn(Urn, String, serde_json::Value) -> Option<Uuid>>;
 
 /// Type alias for subscriber map to reduce complexity.
 type SubscriberMap = RefCell<HashMap<String, Vec<Rc<dyn Fn()>>>>;

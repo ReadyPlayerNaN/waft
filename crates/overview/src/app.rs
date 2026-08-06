@@ -285,9 +285,10 @@ pub async fn setup() -> Result<adw::Application> {
                         }
                     };
                     if let Some(ref client) = *guard {
-                        client.trigger_action(urn, &action_name, params);
+                        Some(client.trigger_action(urn, &action_name, params))
                     } else {
                         warn!("[entity] WaftClient not available for entity action");
+                        None
                     }
                 });
 

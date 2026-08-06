@@ -159,7 +159,7 @@ pub(crate) mod tests {
     }
 
     fn noop_action_callback() -> EntityActionCallback {
-        Rc::new(|_urn, _action, _params| {})
+        Rc::new(|_urn, _action, _params| None)
     }
 
     fn child_count(container: &gtk::Widget) -> u32 {
@@ -298,6 +298,7 @@ pub(crate) mod tests {
             if action == "set-brightness" {
                 action_called_ref.set(true);
             }
+            None
         });
 
         let _comp = BrightnessSlidersComponent::new(&store, &cb);

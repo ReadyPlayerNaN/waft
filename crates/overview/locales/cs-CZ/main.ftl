@@ -26,6 +26,7 @@ nightlight-night-until = Noc do { $time }
 
 # Sunsetr
 sunsetr-no-presets = Nejsou nakonfigurovány žádné předvolby
+feature-toggle-action-failed = Akce selhala
 
 # Agenda
 agenda-title = Kalendář

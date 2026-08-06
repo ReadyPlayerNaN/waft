@@ -38,6 +38,7 @@ use sunsetr::config as sunsetr_config;
 use waft_plugin::*;
 
 const ERR_NO_PROCESS: &str = "no sunsetr process is running";
+const ERR_ALREADY_RUNNING: &str = "sunsetr is already running";
 
 // ---------------------------------------------------------------------------
 // State
@@ -91,8 +92,22 @@ async fn run_ipc_variants(variants: &[&[&str]]) -> Result<()> {
     anyhow::bail!("sunsetr command failed: {}", errors.join(" | "))
 }
 
+fn is_already_running_error(s: &str) -> bool {
+    s.to_lowercase().contains(ERR_ALREADY_RUNNING)
+}
+
 async fn ipc_start() -> Result<()> {
-    run_ipc_variants(&[&["-b"], &["start"]]).await
+    let (code, stdout, stderr) = run_sunsetr(&["-b"]).await?;
+    if code == 0 {
+        return Ok(());
+    }
+
+    let combined = format!("{stdout}\n{stderr}");
+    if is_already_running_error(&combined) {
+        return Ok(());
+    }
+
+    anyhow::bail!("sunsetr command failed: args={:?} code={} stderr={}", ["-b"], code, stderr)
 }
 
 async fn ipc_stop() -> Result<()> {
@@ -157,6 +172,51 @@ fn parse_status_event(ev: &SunsetrJsonEvent) -> (Option<String>, Option<String>)
     (period, next_transition)
 }
 
+fn normalized_active_preset(active_preset: &Option<String>) -> Option<String> {
+    active_preset.as_ref().and_then(|p| {
+        if p == "default" {
+            None
+        } else {
+            Some(p.clone())
+        }
+    })
+}
+
+fn apply_follow_event(state: &mut SunsetrState, ev: &SunsetrJsonEvent) -> bool {
+    let (period, next_transition) = parse_status_event(ev);
+    let active_preset = normalized_active_preset(&ev.active_preset);
+
+    let changed = !state.active
+        || state.period != period
+        || state.next_transition != next_transition
+        || state.active_preset != active_preset;
+
+    if changed {
+        state.active = true;
+        state.period = period;
+        state.next_transition = next_transition;
+        state.active_preset = active_preset;
+    }
+
+    changed
+}
+
+fn apply_follow_exit(state: &mut SunsetrState) -> bool {
+    let changed = state.active
+        || state.period.is_some()
+        || state.next_transition.is_some()
+        || state.active_preset.is_some();
+
+    if changed {
+        state.active = false;
+        state.period = None;
+        state.next_transition = None;
+        state.active_preset = None;
+    }
+
+    changed
+}
+
 async fn ipc_status_raw() -> Result<Option<SunsetrJsonEvent>> {
     let (code, stdout, stderr) = run_sunsetr(&["S", "--json"]).await?;
 
@@ -187,13 +247,7 @@ async fn ipc_status() -> Result<(bool, Option<String>, Option<String>, Option<St
     match ipc_status_raw().await? {
         Some(ev) => {
             let (period, next_transition) = parse_status_event(&ev);
-            let active_preset = ev.active_preset.as_ref().and_then(|p| {
-                if p == "default" {
-                    None
-                } else {
-                    Some(p.clone())
-                }
-            });
+            let active_preset = normalized_active_preset(&ev.active_preset);
             Ok((true, period, next_transition, active_preset))
         }
         None => Ok((false, None, None, None)),
@@ -313,6 +367,8 @@ struct SunsetrPlugin {
     state: Arc<StdMutex<SunsetrState>>,
     config_values: Arc<StdMutex<Option<HashMap<String, String>>>>,
     current_target: Arc<StdMutex<String>>,
+    follow_running: Arc<StdMutex<bool>>,
+    notifier: Arc<StdMutex<Option<EntityNotifier>>>,
 }
 
 impl SunsetrPlugin {
@@ -320,12 +376,25 @@ impl SunsetrPlugin {
         state: Arc<StdMutex<SunsetrState>>,
         config_values: Arc<StdMutex<Option<HashMap<String, String>>>>,
         current_target: Arc<StdMutex<String>>,
+        follow_running: Arc<StdMutex<bool>>,
+        notifier: Arc<StdMutex<Option<EntityNotifier>>>,
     ) -> Self {
         Self {
             state,
             config_values,
             current_target,
+            follow_running,
+            notifier,
         }
+    }
+
+    fn ensure_follow_task(&self) {
+        let Some(notifier) = self.notifier.lock_or_recover().clone() else {
+            warn!("[sunsetr] notifier unavailable; cannot start follow task yet");
+            return;
+        };
+
+        spawn_follow_task(self.state.clone(), notifier, self.follow_running.clone());
     }
 
     fn get_state(&self) -> SunsetrState {
@@ -391,7 +460,20 @@ impl Plugin for SunsetrPlugin {
     ) -> anyhow::Result<serde_json::Value> {
         match action.as_str() {
             "toggle" => {
-                let currently_active = self.get_state().active;
+                let currently_active = match ipc_status().await {
+                    Ok((active, period, next_transition, active_preset)) => {
+                        let mut state = self.state.lock_or_recover();
+                        state.active = active;
+                        state.period = period;
+                        state.next_transition = next_transition;
+                        state.active_preset = active_preset;
+                        active
+                    }
+                    Err(e) => {
+                        warn!("[sunsetr] Failed to refresh status before toggle: {e}");
+                        self.get_state().active
+                    }
+                };
 
                 let result = if currently_active {
                     // Stop sunsetr
@@ -429,9 +511,12 @@ impl Plugin for SunsetrPlugin {
                 };
 
                 // Refresh presets when becoming active (lock dropped above)
-                if became_active && let Ok(presets) = query_presets().await {
-                    let mut state = self.state.lock_or_recover();
-                    state.presets = presets;
+                if became_active {
+                    self.ensure_follow_task();
+                    if let Ok(presets) = query_presets().await {
+                        let mut state = self.state.lock_or_recover();
+                        state.presets = presets;
+                    }
                 }
             }
             "select_preset" => {
@@ -590,7 +675,19 @@ impl Plugin for SunsetrPlugin {
 // Follow task -- live event stream from sunsetr
 // ---------------------------------------------------------------------------
 
-fn spawn_follow_task(state: Arc<StdMutex<SunsetrState>>, notifier: EntityNotifier) {
+fn spawn_follow_task(
+    state: Arc<StdMutex<SunsetrState>>,
+    notifier: EntityNotifier,
+    follow_running: Arc<StdMutex<bool>>,
+) {
+    {
+        let mut running = follow_running.lock_or_recover();
+        if *running {
+            return;
+        }
+        *running = true;
+    }
+
     std::thread::spawn(move || {
         let mut child = match std::process::Command::new("sunsetr")
             .args(["S", "--json", "--follow"])
@@ -601,12 +698,14 @@ fn spawn_follow_task(state: Arc<StdMutex<SunsetrState>>, notifier: EntityNotifie
         {
             Ok(c) => c,
             Err(e) => {
+                *follow_running.lock_or_recover() = false;
                 warn!("[sunsetr] follow spawn failed: {e}");
                 return;
             }
         };
 
         let Some(stdout) = child.stdout.take() else {
+            *follow_running.lock_or_recover() = false;
             warn!("[sunsetr] follow stdout missing");
             let _ = child.wait();
             return;
@@ -630,31 +729,22 @@ fn spawn_follow_task(state: Arc<StdMutex<SunsetrState>>, notifier: EntityNotifie
                 }
             };
 
-            let (period, next_transition) = parse_status_event(&ev);
-
             let mut state_guard = state.lock_or_recover();
-
-            let changed = state_guard.period != period
-                || state_guard.next_transition != next_transition
-                || state_guard.active_preset != ev.active_preset;
-
-            if changed {
-                state_guard.period = period;
-                state_guard.next_transition = next_transition;
-                if let Some(preset) = &ev.active_preset {
-                    if preset != "default" {
-                        state_guard.active_preset = Some(preset.clone());
-                    } else {
-                        state_guard.active_preset = None;
-                    }
-                }
-
+            if apply_follow_event(&mut state_guard, &ev) {
                 drop(state_guard);
                 notifier.notify();
             }
         }
 
         let _ = child.wait();
+        *follow_running.lock_or_recover() = false;
+
+        let mut state_guard = state.lock_or_recover();
+        if apply_follow_exit(&mut state_guard) {
+            drop(state_guard);
+            notifier.notify();
+        }
+
         debug!("[sunsetr] follow task stopped");
     });
 }
@@ -737,15 +827,24 @@ fn main() -> Result<()> {
 
         let config_values = Arc::new(StdMutex::new(config_values));
         let current_target = Arc::new(StdMutex::new("default".to_string()));
+        let follow_running = Arc::new(StdMutex::new(false));
+        let notifier_slot = Arc::new(StdMutex::new(None));
 
-        let plugin = SunsetrPlugin::new(state.clone(), config_values, current_target);
+        let plugin = SunsetrPlugin::new(
+            state.clone(),
+            config_values,
+            current_target,
+            follow_running.clone(),
+            notifier_slot.clone(),
+        );
         let (runtime, notifier) = PluginRuntime::new("sunsetr", plugin);
+        *notifier_slot.lock_or_recover() = Some(notifier.clone());
 
         // Spawn follow task to monitor sunsetr events.
         // Clone the notifier: the follow task's clone will be dropped when sunsetr
         // stops, but the original keeps the watch channel open so the runtime
         // doesn't interpret a closed channel as a shutdown signal.
-        spawn_follow_task(state, notifier.clone());
+        spawn_follow_task(state, notifier.clone(), follow_running);
 
         // Keep `notifier` alive for the duration of the runtime. When the user
         // toggles sunsetr off, the follow subprocess exits and drops its clone,
@@ -756,4 +855,50 @@ fn main() -> Result<()> {
         runtime.run().await?;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn already_running_error_is_detected() {
+        assert!(is_already_running_error("sunsetr is already running (PID: 123)"));
+        assert!(!is_already_running_error("some other failure"));
+    }
+
+    #[test]
+    fn follow_event_marks_state_active_and_normalizes_default_preset() {
+        let mut state = SunsetrState::default();
+        let ev = SunsetrJsonEvent {
+            period: Some("day".to_string()),
+            next_period: Some("2026-08-06T19:35:18.000817370+02:00".to_string()),
+            to_period: None,
+            active_preset: Some("default".to_string()),
+        };
+
+        assert!(apply_follow_event(&mut state, &ev));
+        assert!(state.active);
+        assert_eq!(state.period.as_deref(), Some("day"));
+        assert_eq!(state.next_transition.as_deref(), Some("19:35"));
+        assert_eq!(state.active_preset, None);
+    }
+
+    #[test]
+    fn follow_exit_clears_runtime_state() {
+        let mut state = SunsetrState {
+            active: true,
+            period: Some("night".to_string()),
+            next_transition: Some("06:00".to_string()),
+            presets: vec!["warm".to_string()],
+            active_preset: Some("warm".to_string()),
+        };
+
+        assert!(apply_follow_exit(&mut state));
+        assert!(!state.active);
+        assert_eq!(state.period, None);
+        assert_eq!(state.next_transition, None);
+        assert_eq!(state.active_preset, None);
+        assert_eq!(state.presets, vec!["warm".to_string()]);
+    }
 }

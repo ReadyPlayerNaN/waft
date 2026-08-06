@@ -4,9 +4,10 @@
 //! exactly one entity type, a "toggle" action, and no expandable menu.
 //! Hidden until entity data arrives from the daemon.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use uuid::Uuid;
 use waft_protocol::Urn;
 use waft_ui_gtk::widgets::feature_toggle::{FeatureToggleProps, FeatureToggleWidget};
 
@@ -80,9 +81,19 @@ impl SimpleToggle {
 
         let cb = action_callback.clone();
         let urn = config.urn;
+        let pending_action_id: Rc<RefCell<Option<Uuid>>> = Rc::new(RefCell::new(None));
+        let failure_details = crate::i18n::t("feature-toggle-action-failed");
+        let toggle_for_click = toggle.clone();
+        let pending_action_for_click = pending_action_id.clone();
         // SimpleToggle has exactly one output variant; all clicks dispatch "toggle".
         toggle.connect_output(move |_output| {
-            cb(urn.clone(), "toggle".to_string(), serde_json::Value::Null);
+            toggle_for_click.set_busy(true);
+            let action_id = cb(urn.clone(), "toggle".to_string(), serde_json::Value::Null);
+            *pending_action_for_click.borrow_mut() = action_id;
+            if action_id.is_none() {
+                toggle_for_click.set_busy(false);
+                toggle_for_click.set_details(Some(failure_details.clone()));
+            }
         });
 
         let store_ref = store.clone();
@@ -96,6 +107,7 @@ impl SimpleToggle {
             let toggle_ref_sub = toggle_ref.clone();
             let available_ref_sub = available_ref.clone();
             let rebuild_callback_sub = rebuild_callback.clone();
+            let pending_action_id_sub = pending_action_id.clone();
             store.subscribe_type(entity_type, move || {
                 let entities: Vec<(Urn, E)> = store_ref_sub.get_entities_typed(entity_type);
 
@@ -105,6 +117,8 @@ impl SimpleToggle {
                 if let Some((_urn, entity)) = entities.first() {
                     let update = on_update(entity);
                     toggle_ref_sub.set_active(update.active);
+                    toggle_ref_sub.set_busy(false);
+                    *pending_action_id_sub.borrow_mut() = None;
                     toggle_ref_sub.set_details(update.details);
                     if let Some(icon) = update.icon {
                         toggle_ref_sub.set_icon(icon);
@@ -120,6 +134,7 @@ impl SimpleToggle {
 
         // Initial reconciliation: catch entities already cached before subscription was registered.
         {
+            let pending_action_id_initial = pending_action_id.clone();
             gtk::glib::idle_add_local_once(move || {
                 let entities: Vec<(Urn, E)> = store_ref.get_entities_typed(entity_type);
                 let now_available = !entities.is_empty();
@@ -127,6 +142,8 @@ impl SimpleToggle {
                     if let Some((_urn, entity)) = entities.first() {
                         let update = on_update(entity);
                         toggle_ref.set_active(update.active);
+                        toggle_ref.set_busy(false);
+                        *pending_action_id_initial.borrow_mut() = None;
                         toggle_ref.set_details(update.details);
                         if let Some(icon) = update.icon {
                             toggle_ref.set_icon(icon);
@@ -134,6 +151,29 @@ impl SimpleToggle {
                     }
                     available_ref.set(true);
                     rebuild_callback();
+                }
+            });
+        }
+
+        {
+            let pending_action_id = pending_action_id.clone();
+            let toggle = toggle.clone();
+            store.on_action_success(move |action_id, _data| {
+                if *pending_action_id.borrow() == Some(action_id) {
+                    toggle.set_busy(false);
+                    *pending_action_id.borrow_mut() = None;
+                }
+            });
+        }
+
+        {
+            let pending_action_id = pending_action_id.clone();
+            let toggle = toggle.clone();
+            store.on_action_error(move |action_id, _error| {
+                if *pending_action_id.borrow() == Some(action_id) {
+                    toggle.set_busy(false);
+                    toggle.set_details(Some(crate::i18n::t("feature-toggle-action-failed")));
+                    *pending_action_id.borrow_mut() = None;
                 }
             });
         }

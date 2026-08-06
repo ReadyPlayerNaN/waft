@@ -59,7 +59,7 @@ mod gtk_component_tests {
 
     fn notification_list_removes_empty_group_shells() {
         let store = Rc::new(EntityStore::new());
-        let action_callback: waft_client::EntityActionCallback = Rc::new(|_, _, _| {});
+        let action_callback: waft_client::EntityActionCallback = Rc::new(|_, _, _| None);
         let menu_store = Rc::new(crate::menu_state::create_menu_store());
         let component = super::notification_list::NotificationsComponent::new(
             &store,
@@ -142,7 +142,7 @@ mod gtk_component_tests {
         let visibility = Rc::new(std::cell::Cell::new(true));
         let mgr = Rc::new(ToastManager::new(
             container,
-            Rc::new(|_, _, _| {}),
+            Rc::new(|_, _, _| None),
             Rc::new(|| {}),
             {
                 let visibility = visibility.clone();
@@ -192,7 +192,7 @@ mod gtk_component_tests {
         let visibility = Rc::new(std::cell::Cell::new(true));
         let mgr = Rc::new(ToastManager::new(
             container,
-            Rc::new(|_, _, _| {}),
+            Rc::new(|_, _, _| None),
             Rc::new(|| {}),
             {
                 let visibility = visibility.clone();
