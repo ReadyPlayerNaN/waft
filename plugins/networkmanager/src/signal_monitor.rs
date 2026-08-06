@@ -20,9 +20,99 @@ use crate::nmrs_adapter;
 use crate::state::{
     BluetoothDeviceInfo, CachedIpConfig, EthernetAdapterState, NmState, WiFiAdapterState,
 };
+use waft_plugin::lock_or_recover;
 use crate::tethering::refresh_tethering_states;
 use crate::vpn::{is_vpn_type, refresh_vpn_states};
 use waft_plugin::EntityNotifier;
+
+fn is_nm_active_connections_change(
+    obj_path: &str,
+    prop_iface: &str,
+    props: &HashMap<String, OwnedValue>,
+) -> bool {
+    obj_path == NM_PATH && prop_iface == NM_INTERFACE && props.contains_key("ActiveConnections")
+}
+
+fn is_wifi_active_access_point_change(
+    prop_iface: &str,
+    props: &HashMap<String, OwnedValue>,
+) -> bool {
+    prop_iface == NM_WIRELESS_INTERFACE && props.contains_key("ActiveAccessPoint")
+}
+
+async fn refresh_wifi_active_access_point(
+    nm: &nmrs::NetworkManager,
+    state: &Arc<StdMutex<NmState>>,
+    device_path: &str,
+) -> Result<bool> {
+    let interface_name = {
+        let st = lock_or_recover(state);
+        st.wifi_adapters
+            .iter()
+            .find(|a| a.path == device_path)
+            .map(|a| a.interface_name.clone())
+    };
+
+    let Some(interface_name) = interface_name else {
+        return Ok(false);
+    };
+
+    let active_ap = crate::nmrs_adapter::get_active_access_point(nm, &interface_name).await?;
+
+    let mut st = lock_or_recover(state);
+    let Some(adapter) = st.wifi_adapters.iter_mut().find(|a| a.path == device_path) else {
+        return Ok(false);
+    };
+
+    match active_ap {
+        Some(ap_info) => {
+            let mut changed = adapter.active_ssid.as_deref() != Some(&ap_info.ssid);
+            adapter.active_ssid = Some(ap_info.ssid.clone());
+
+            if let Some(existing) = adapter
+                .access_points
+                .iter_mut()
+                .find(|ap| ap.ssid == ap_info.ssid)
+            {
+                if existing.strength != ap_info.strength
+                    || existing.secure != ap_info.secure
+                    || existing.known != ap_info.known
+                    || existing.ap_path != ap_info.ap_path
+                    || existing.security_type != ap_info.security_type
+                {
+                    *existing = ap_info;
+                    changed = true;
+                }
+            } else {
+                adapter.access_points.push(ap_info);
+                changed = true;
+            }
+
+            Ok(changed)
+        }
+        None => {
+            let changed = adapter.active_ssid.take().is_some();
+            Ok(changed)
+        }
+    }
+}
+
+async fn refresh_all_wifi_active_access_points(
+    nm: &nmrs::NetworkManager,
+    state: &Arc<StdMutex<NmState>>,
+) -> Result<bool> {
+    let device_paths: Vec<String> = {
+        let st = lock_or_recover(state);
+        st.wifi_adapters.iter().map(|a| a.path.clone()).collect()
+    };
+
+    let mut changed = false;
+    for device_path in device_paths {
+        changed |= refresh_wifi_active_access_point(nm, state, &device_path).await?;
+    }
+
+    Ok(changed)
+}
 
 /// Monitor NM D-Bus signals and update shared state accordingly.
 pub async fn monitor_nm_signals(
@@ -155,34 +245,26 @@ pub async fn monitor_nm_signals(
                     changed = true;
                 }
 
-                // Handle WiFi disconnect via ActiveAccessPoint property change.
-                // When NM disconnects WiFi it sends a PropertiesChanged on
-                // org.freedesktop.NetworkManager.Device.Wireless with
-                // ActiveAccessPoint set to "/" (no active AP). This acts as a
-                // reliable secondary trigger alongside the StateChanged signal.
-                if prop_iface == NM_WIRELESS_INTERFACE
-                    && let Some(ap_val) = props.get("ActiveAccessPoint")
-                {
-                    let ap_path = String::try_from(ap_val.clone()).unwrap_or_default();
-                    if ap_path == "/" {
-                        let mut st = match state.lock() {
-                            Ok(g) => g,
-                            Err(e) => {
-                                warn!("[nm] Mutex poisoned, recovering: {e}");
-                                e.into_inner()
-                            }
-                        };
-                        if let Some(adapter) =
-                            st.wifi_adapters.iter_mut().find(|a| a.path == obj_path)
-                            && adapter.active_ssid.is_some()
-                        {
-                            debug!(
-                                "[nm] WiFi {} ActiveAccessPoint cleared (disconnect)",
-                                adapter.interface_name
-                            );
-                            adapter.active_ssid = None;
-                            changed = true;
-                        }
+                // Self-heal on global NM connection graph changes. This covers cases
+                // where the per-device signal ordering leaves Waft behind real state.
+                if is_nm_active_connections_change(&obj_path, &prop_iface, &props) {
+                    debug!("[nm] ActiveConnections changed; refreshing VPN and WiFi state");
+                    if let Err(e) = refresh_vpn_states(&conn, &nm, &state).await {
+                        error!("[nm] Failed to refresh VPN states: {e}");
+                    }
+                    if let Err(e) = refresh_all_wifi_active_access_points(&nm, &state).await {
+                        error!("[nm] Failed to refresh WiFi active APs: {e}");
+                    }
+                    changed = true;
+                }
+
+                // Handle WiFi ActiveAccessPoint changes in both directions.
+                // The previous logic only handled disconnect ("/"). Refreshing from NM
+                // here makes connect transitions self-healing too.
+                if is_wifi_active_access_point_change(&prop_iface, &props) {
+                    match refresh_wifi_active_access_point(&nm, &state, &obj_path).await {
+                        Ok(wifi_changed) => changed |= wifi_changed,
+                        Err(e) => error!("[nm] Failed to refresh WiFi active AP: {e}"),
                     }
                 }
 
@@ -456,49 +538,17 @@ pub async fn monitor_nm_signals(
                         }
                     }
 
-                    // Populate active_ssid and access_points when WiFi device reaches activated state
+                    // Populate active_ssid and access_points when WiFi device reaches
+                    // activated state. Keep the small delay, but use the shared refresh
+                    // helper so later ActiveAccessPoint changes can self-heal too.
                     if let Some(device_path) = refresh_ssid_for {
                         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                        let interface_name = {
-                            let st = match state.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    warn!("[nm] Mutex poisoned, recovering: {e}");
-                                    e.into_inner()
-                                }
-                            };
-                            st.wifi_adapters
-                                .iter()
-                                .find(|a| a.path == device_path)
-                                .map(|a| a.interface_name.clone())
-                        };
-                        if let Some(interface_name) = interface_name
-                            && let Ok(Some(ap_info)) =
-                                crate::nmrs_adapter::get_active_access_point(&nm, &interface_name)
-                                    .await
-                        {
-                            let mut st = match state.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    warn!("[nm] Mutex poisoned, recovering: {e}");
-                                    e.into_inner()
-                                }
-                            };
-                            if let Some(adapter) =
-                                st.wifi_adapters.iter_mut().find(|a| a.path == device_path)
-                            {
-                                adapter.active_ssid = Some(ap_info.ssid.clone());
-                                // Add to access_points if not already present so it appears
-                                // in the entity list without requiring a manual scan
-                                if !adapter
-                                    .access_points
-                                    .iter()
-                                    .any(|ap| ap.ssid == ap_info.ssid)
-                                {
-                                    adapter.access_points.push(ap_info);
-                                }
+                        match refresh_wifi_active_access_point(&nm, &state, &device_path).await {
+                            Ok(true) => {
+                                notifier.notify();
                             }
-                            notifier.notify();
+                            Ok(false) => {}
+                            Err(e) => error!("[nm] Failed to refresh WiFi active AP: {e}"),
                         }
                     }
 
@@ -513,4 +563,37 @@ pub async fn monitor_nm_signals(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn owned_props(entries: &[(&str, OwnedValue)]) -> HashMap<String, OwnedValue> {
+        entries
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), v.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn detects_nm_active_connections_refresh_trigger() {
+        let props = owned_props(&[("ActiveConnections", zbus::zvariant::Value::from(Vec::<String>::new()).try_into().expect("valid value"))]);
+        assert!(is_nm_active_connections_change(NM_PATH, NM_INTERFACE, &props));
+        assert!(!is_nm_active_connections_change(
+            "/org/freedesktop/NetworkManager/Devices/1",
+            NM_INTERFACE,
+            &props
+        ));
+    }
+
+    #[test]
+    fn detects_wifi_active_access_point_refresh_trigger() {
+        let props = owned_props(&[("ActiveAccessPoint", zbus::zvariant::Value::from("/").try_into().expect("valid value"))]);
+        assert!(is_wifi_active_access_point_change(
+            NM_WIRELESS_INTERFACE,
+            &props
+        ));
+        assert!(!is_wifi_active_access_point_change(NM_DEVICE_INTERFACE, &props));
+    }
 }
