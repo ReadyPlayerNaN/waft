@@ -24,6 +24,8 @@ pub struct ToggleUpdate {
     pub icon: Option<&'static str>,
 }
 
+pub type ToggleActionSelector<E> = fn(&E, currently_active: bool) -> &'static str;
+
 /// Configuration for a `SimpleToggle`.
 pub struct SimpleToggleConfig<E> {
     /// Entity type constant (e.g. `entity::session::SLEEP_INHIBITOR_ENTITY_TYPE`).
@@ -40,6 +42,8 @@ pub struct SimpleToggleConfig<E> {
     pub weight: i32,
     /// Maps a received entity to widget state updates.
     pub on_update: fn(&E) -> ToggleUpdate,
+    /// Selects the action to dispatch for a click based on current entity state.
+    pub action_for_click: ToggleActionSelector<E>,
 }
 
 /// A single-entity, no-menu feature toggle.
@@ -82,13 +86,19 @@ impl SimpleToggle {
         let cb = action_callback.clone();
         let urn = config.urn;
         let pending_action_id: Rc<RefCell<Option<Uuid>>> = Rc::new(RefCell::new(None));
+        let action_name: Rc<RefCell<&'static str>> = Rc::new(RefCell::new("toggle"));
         let failure_details = crate::i18n::t("feature-toggle-action-failed");
         let toggle_for_click = toggle.clone();
         let pending_action_for_click = pending_action_id.clone();
+        let action_name_for_click = action_name.clone();
         // SimpleToggle has exactly one output variant; all clicks dispatch "toggle".
         toggle.connect_output(move |_output| {
             toggle_for_click.set_busy(true);
-            let action_id = cb(urn.clone(), "toggle".to_string(), serde_json::Value::Null);
+            let action_id = cb(
+                urn.clone(),
+                (*action_name_for_click.borrow()).to_string(),
+                serde_json::Value::Null,
+            );
             *pending_action_for_click.borrow_mut() = action_id;
             if action_id.is_none() {
                 toggle_for_click.set_busy(false);
@@ -101,6 +111,7 @@ impl SimpleToggle {
         let available_ref = available.clone();
         let entity_type = config.entity_type;
         let on_update = config.on_update;
+        let action_for_click = config.action_for_click;
 
         {
             let store_ref_sub = store_ref.clone();
@@ -108,6 +119,7 @@ impl SimpleToggle {
             let available_ref_sub = available_ref.clone();
             let rebuild_callback_sub = rebuild_callback.clone();
             let pending_action_id_sub = pending_action_id.clone();
+            let action_name_sub = action_name.clone();
             store.subscribe_type(entity_type, move || {
                 let entities: Vec<(Urn, E)> = store_ref_sub.get_entities_typed(entity_type);
 
@@ -116,6 +128,7 @@ impl SimpleToggle {
 
                 if let Some((_urn, entity)) = entities.first() {
                     let update = on_update(entity);
+                    *action_name_sub.borrow_mut() = action_for_click(entity, update.active);
                     toggle_ref_sub.set_active(update.active);
                     toggle_ref_sub.set_busy(false);
                     *pending_action_id_sub.borrow_mut() = None;
@@ -135,12 +148,14 @@ impl SimpleToggle {
         // Initial reconciliation: catch entities already cached before subscription was registered.
         {
             let pending_action_id_initial = pending_action_id.clone();
+            let action_name_initial = action_name.clone();
             gtk::glib::idle_add_local_once(move || {
                 let entities: Vec<(Urn, E)> = store_ref.get_entities_typed(entity_type);
                 let now_available = !entities.is_empty();
                 if now_available && !available_ref.get() {
                     if let Some((_urn, entity)) = entities.first() {
                         let update = on_update(entity);
+                        *action_name_initial.borrow_mut() = action_for_click(entity, update.active);
                         toggle_ref.set_active(update.active);
                         toggle_ref.set_busy(false);
                         *pending_action_id_initial.borrow_mut() = None;

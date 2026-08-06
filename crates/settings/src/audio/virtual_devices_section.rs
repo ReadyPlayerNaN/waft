@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk::glib;
-use waft_client::EntityActionCallback;
+use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::audio::{AudioDevice, AudioDeviceKind};
 use waft_ui_gtk::audio::icon::audio_device_icon;
@@ -18,11 +18,15 @@ use waft_ui_gtk::icons::IconWidget;
 
 use crate::i18n::t;
 
+fn action_name_for_create_kind(selected: u32) -> (&'static str, String) {
+    match selected {
+        1 => ("create-source", t("audio-create-virtual-source")),
+        2 => ("create-duplex", t("audio-create-virtual-duplex")),
+        _ => ("create-sink", t("audio-create-virtual-sink")),
+    }
+}
+
 /// Cancel any pending debounce and schedule a new one-shot timer.
-///
-/// When the timer fires, `interacting` is cleared and any stashed
-/// `pending_value` is applied to the scale (blocking the signal handler to
-/// prevent a spurious `value-changed` event).
 fn schedule_interaction_end(
     debounce_source: &Rc<RefCell<Option<glib::SourceId>>>,
     interacting: &Rc<RefCell<bool>>,
@@ -85,7 +89,6 @@ struct VirtualDeviceRow {
 }
 
 impl VirtualDeviceRow {
-    /// Set the slider volume, respecting active interaction state.
     fn set_volume(&self, v: f64) {
         if *self.interacting.borrow() {
             *self.pending_value.borrow_mut() = Some(v);
@@ -98,7 +101,7 @@ impl VirtualDeviceRow {
 }
 
 impl VirtualDevicesSection {
-    pub fn new(action_callback: &EntityActionCallback) -> Self {
+    pub fn new(entity_store: &Rc<EntityStore>, action_callback: &EntityActionCallback) -> Self {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .build();
@@ -107,7 +110,6 @@ impl VirtualDevicesSection {
             .title(t("audio-virtual-devices"))
             .build();
 
-        // Single create button
         let create_button = gtk::Button::builder()
             .label(t("audio-add-virtual-device"))
             .icon_name("list-add-symbolic")
@@ -116,10 +118,7 @@ impl VirtualDevicesSection {
             .build();
 
         group.set_header_suffix(Some(&create_button));
-
-        // Set description as empty state hint (shown when no virtual devices exist)
         group.set_description(Some(&t("audio-virtual-devices-empty-desc")));
-
         root.append(&group);
 
         let state = Rc::new(RefCell::new(VirtualDevicesSectionState {
@@ -128,19 +127,22 @@ impl VirtualDevicesSection {
             action_callback: action_callback.clone(),
         }));
 
-        // Wire create button
         {
             let cb = action_callback.clone();
+            let entity_store = entity_store.clone();
             create_button.connect_clicked(move |btn| {
                 let cb = cb.clone();
-                show_create_dialog(btn.root().and_downcast_ref::<gtk::Window>(), &cb);
+                show_create_dialog(
+                    btn.root().and_downcast_ref::<gtk::Window>(),
+                    &entity_store,
+                    &cb,
+                );
             });
         }
 
         Self { root, state }
     }
 
-    /// Reconcile virtual device rows from entity data.
     pub fn reconcile(&self, devices: &[(Urn, AudioDevice)]) {
         let virtual_devices: Vec<_> = devices.iter().filter(|(_, d)| d.virtual_device).collect();
 
@@ -152,10 +154,8 @@ impl VirtualDevicesSection {
             seen.insert(urn_str.clone());
 
             if let Some(existing) = state.rows.get(&urn_str) {
-                // Update volume (respecting interaction guard)
                 existing.set_volume(device.volume);
 
-                // Update mute button icon/tooltip
                 let mute_icon = if device.muted {
                     "audio-volume-muted-symbolic"
                 } else {
@@ -169,7 +169,6 @@ impl VirtualDevicesSection {
                 existing.mute_button.set_icon_name(mute_icon);
                 existing.mute_button.set_tooltip_text(Some(&mute_label));
 
-                // Update kind subtitle
                 let kind_label = match device.kind {
                     AudioDeviceKind::Output => t("audio-output-devices"),
                     AudioDeviceKind::Input => t("audio-input-devices"),
@@ -184,7 +183,6 @@ impl VirtualDevicesSection {
             state.rows.insert(urn_str, row);
         }
 
-        // Remove rows no longer present
         let to_remove: Vec<String> = state
             .rows
             .keys()
@@ -198,7 +196,6 @@ impl VirtualDevicesSection {
             }
         }
 
-        // Show/hide empty state description
         if virtual_devices.is_empty() {
             state
                 .group
@@ -220,22 +217,18 @@ impl VirtualDevicesSection {
             .build();
 
         let icon = IconWidget::from_name(audio_device_icon("virtual", device.kind), 16);
-
-        // Info row with icon, name, mute button, delete button
         let info_row = adw::ActionRow::builder()
             .title(&device.name)
             .activatable(false)
             .build();
         info_row.add_prefix(icon.widget());
 
-        // Kind indicator subtitle
         let kind_label = match device.kind {
             AudioDeviceKind::Output => t("audio-output-devices"),
             AudioDeviceKind::Input => t("audio-input-devices"),
         };
         info_row.set_subtitle(&kind_label);
 
-        // Delete button
         let delete_button = gtk::Button::builder()
             .icon_name("user-trash-symbolic")
             .tooltip_text(t("audio-remove-virtual-device"))
@@ -268,7 +261,6 @@ impl VirtualDevicesSection {
             });
         }
 
-        // Mute button
         let mute_icon = if device.muted {
             "audio-volume-muted-symbolic"
         } else {
@@ -302,7 +294,6 @@ impl VirtualDevicesSection {
         info_row.add_suffix(&mute_button);
         root.append(&info_row);
 
-        // Volume slider
         let slider_row = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
@@ -320,7 +311,6 @@ impl VirtualDevicesSection {
         slider.set_value(device.volume);
         slider.set_draw_value(false);
 
-        // Wrap for gesture tracking
         let scale_wrapper = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         scale_wrapper.set_hexpand(true);
         scale_wrapper.append(&slider);
@@ -328,13 +318,11 @@ impl VirtualDevicesSection {
         slider_row.append(&scale_wrapper);
         root.append(&slider_row);
 
-        // Interaction tracking state
         let interacting: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
         let pointer_down: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
         let pending_value: Rc<RefCell<Option<f64>>> = Rc::new(RefCell::new(None));
         let debounce_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
 
-        // Wire value_changed
         let cb = action_callback.clone();
         let device_urn = urn.clone();
         let interacting_vc = interacting.clone();
@@ -348,7 +336,6 @@ impl VirtualDevicesSection {
         let handler_id_holder_vc = handler_id_holder.clone();
 
         let raw_handler_id = slider.connect_value_changed(move |scale| {
-            // Keyboard/scroll interaction path
             if !*pointer_down_vc.borrow() {
                 *interacting_vc.borrow_mut() = true;
                 if let Some(src) = debounce_source_vc.borrow_mut().take() {
@@ -391,7 +378,6 @@ impl VirtualDevicesSection {
                 .expect("handler_id must be stored"),
         );
 
-        // GestureClick on the wrapper box
         let gesture = gtk::GestureClick::new();
 
         let interacting_pressed = interacting.clone();
@@ -458,39 +444,39 @@ impl VirtualDevicesSection {
 }
 
 /// Show a dialog to create a virtual device with type selector.
-fn show_create_dialog(parent: Option<&gtk::Window>, action_callback: &EntityActionCallback) {
-    let dialog = adw::AlertDialog::builder()
-        .heading(t("audio-create-device-title"))
-        .close_response("cancel")
-        .default_response("create")
+fn show_create_dialog(
+    parent: Option<&gtk::Window>,
+    entity_store: &Rc<EntityStore>,
+    action_callback: &EntityActionCallback,
+) {
+    let dialog = gtk::Dialog::builder()
+        .modal(true)
+        .title(t("audio-create-device-title"))
+        .default_width(420)
         .build();
+    if let Some(parent) = parent {
+        dialog.set_transient_for(Some(parent));
+    }
 
-    dialog.add_response("cancel", "Cancel");
-    dialog.add_response("create", &t("audio-create-virtual-sink"));
-    dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
+    dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+    let create_button: gtk::Button = dialog
+        .add_button(&t("audio-create-virtual-sink"), gtk::ResponseType::Accept)
+        .downcast()
+        .expect("accept button");
+    create_button.add_css_class("suggested-action");
 
-    // Type selector combo row
+    let content = dialog.content_area();
+    content.set_spacing(12);
+
     let type_model = gtk::StringList::new(&[
         &t("audio-virtual-type-sink"),
         &t("audio-virtual-type-source"),
+        &t("audio-virtual-type-duplex"),
     ]);
     let type_combo = adw::ComboRow::builder()
         .title(t("audio-virtual-device-type"))
         .model(&type_model)
         .build();
-
-    // Update create button label when type selection changes
-    {
-        let dialog_ref = dialog.clone();
-        type_combo.connect_selected_notify(move |combo| {
-            let label = if combo.selected() == 0 {
-                t("audio-create-virtual-sink")
-            } else {
-                t("audio-create-virtual-source")
-            };
-            dialog_ref.set_response_label("create", &label);
-        });
-    }
 
     let entry = adw::EntryRow::builder()
         .title(t("audio-create-device-label"))
@@ -498,45 +484,135 @@ fn show_create_dialog(parent: Option<&gtk::Window>, action_callback: &EntityActi
     entry.set_text(&t("audio-create-device-label-placeholder"));
     entry.select_region(0, -1);
 
+    let error_label = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["error"])
+        .visible(false)
+        .build();
+
     let list_box = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .css_classes(["boxed-list"])
         .build();
     list_box.append(&type_combo);
     list_box.append(&entry);
+    content.append(&list_box);
+    content.append(&error_label);
 
-    dialog.set_extra_child(Some(&list_box));
+    create_button.set_sensitive(!entry.text().is_empty());
 
-    // Disable create when entry is empty
-    dialog.set_response_enabled("create", !entry.text().is_empty());
     {
-        let dialog_ref = dialog.clone();
-        entry.connect_changed(move |e| {
-            dialog_ref.set_response_enabled("create", !e.text().is_empty());
+        let create_button = create_button.clone();
+        let type_combo_ref = type_combo.clone();
+        type_combo.connect_selected_notify(move |_| {
+            let (_, label) = action_name_for_create_kind(type_combo_ref.selected());
+            create_button.set_label(&label);
         });
     }
 
-    let cb = action_callback.clone();
-    let entry_clone = entry.clone();
-    let type_combo_clone = type_combo.clone();
-    dialog.connect_response(None, move |_, response| {
-        if response != "create" {
-            return;
-        }
-        let label = entry_clone.text().to_string();
-        if label.is_empty() {
-            return;
-        }
+    {
+        let create_button = create_button.clone();
+        entry.connect_changed(move |e| {
+            create_button.set_sensitive(!e.text().is_empty());
+        });
+    }
 
-        let synthetic_urn = Urn::new("audio", "audio-device", "virtual");
-        let action = if type_combo_clone.selected() == 0 {
-            "create-sink"
-        } else {
-            "create-source"
-        };
-        let params = serde_json::json!({ "label": label });
-        cb(synthetic_urn, action.to_string(), params);
-    });
+    let pending_action_id = Rc::new(RefCell::new(None));
+    let dialog_closed = Rc::new(std::cell::Cell::new(false));
 
-    dialog.present(parent);
+    {
+        let pending_action_id = pending_action_id.clone();
+        let error_label = error_label.clone();
+        let dialog = dialog.clone();
+        let dialog_closed = dialog_closed.clone();
+        entity_store.on_action_success(move |action_id, _data| {
+            if dialog_closed.get() {
+                return;
+            }
+            if *pending_action_id.borrow() == Some(action_id) {
+                *pending_action_id.borrow_mut() = None;
+                error_label.set_visible(false);
+                dialog.close();
+            }
+        });
+    }
+
+    {
+        let pending_action_id = pending_action_id.clone();
+        let error_label = error_label.clone();
+        let dialog = dialog.clone();
+        let dialog_closed = dialog_closed.clone();
+        entity_store.on_action_error(move |action_id, error| {
+            if dialog_closed.get() {
+                return;
+            }
+            if *pending_action_id.borrow() == Some(action_id) {
+                *pending_action_id.borrow_mut() = None;
+                error_label.set_label(&error);
+                error_label.set_visible(true);
+                dialog.set_sensitive(true);
+            }
+        });
+    }
+
+    {
+        let dialog_closed = dialog_closed.clone();
+        dialog.connect_close_request(move |_| {
+            dialog_closed.set(true);
+            false.into()
+        });
+    }
+
+    {
+        let cb = action_callback.clone();
+        let entry_clone = entry.clone();
+        let type_combo_clone = type_combo.clone();
+        let error_label = error_label.clone();
+        let dialog_ref = dialog.clone();
+        let pending_action_id = pending_action_id.clone();
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk::ResponseType::Cancel {
+                dialog.close();
+                return;
+            }
+            if response != gtk::ResponseType::Accept {
+                return;
+            }
+
+            let label = entry_clone.text().to_string();
+            if label.is_empty() {
+                return;
+            }
+
+            error_label.set_visible(false);
+            let synthetic_urn = Urn::new("audio", "audio-device", "virtual");
+            let (action, _button_label) = action_name_for_create_kind(type_combo_clone.selected());
+            let params = serde_json::json!({ "label": label });
+            let action_id = cb(synthetic_urn, action.to_string(), params);
+            *pending_action_id.borrow_mut() = action_id;
+
+            match action_id {
+                Some(_) => dialog_ref.set_sensitive(false),
+                None => {
+                    error_label.set_label(&t("audio-virtual-action-failed"));
+                    error_label.set_visible(true);
+                }
+            }
+        });
+    }
+
+    dialog.present();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_kind_maps_to_actions() {
+        assert_eq!(action_name_for_create_kind(0).0, "create-sink");
+        assert_eq!(action_name_for_create_kind(1).0, "create-source");
+        assert_eq!(action_name_for_create_kind(2).0, "create-duplex");
+    }
 }

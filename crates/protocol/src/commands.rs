@@ -1,5 +1,9 @@
 //! Static registry mapping (entity_type, action) to display metadata for the command palette.
 
+use std::collections::HashMap;
+
+use serde::Serialize;
+
 use crate::entity::{
     bluetooth::BluetoothDevice,
     display::{DARK_MODE_ENTITY_TYPE, NIGHT_LIGHT_ENTITY_TYPE},
@@ -19,6 +23,17 @@ pub struct CommandDef {
     /// URN to use when no live entities exist for this entity type.
     /// `None` means the command only appears when entities are present.
     pub static_urn: Option<&'static str>,
+}
+
+/// A resolved command ready for display or execution.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ResolvedCommand {
+    pub label: String,
+    pub subtitle: Option<String>,
+    pub urn: crate::Urn,
+    pub action: String,
+    pub icon: String,
+    pub entity_type: &'static str,
 }
 
 fn no_subtitle(_v: &serde_json::Value) -> Option<String> {
@@ -176,6 +191,56 @@ pub static COMMAND_DEFS: &[CommandDef] = &[
 ];
 
 /// Returns the unique set of entity types needed for command palette subscriptions.
+pub fn resolve_commands(
+    entity_map: &HashMap<String, Vec<(crate::Urn, serde_json::Value)>>,
+) -> Vec<ResolvedCommand> {
+    let mut commands = Vec::new();
+
+    for def in COMMAND_DEFS {
+        let maybe_entities = entity_map.get(def.entity_type);
+
+        if maybe_entities.is_none_or(Vec::is_empty) {
+            if let Some(raw_urn) = def.static_urn
+                && let Ok(urn) = crate::Urn::parse(raw_urn)
+            {
+                commands.push(ResolvedCommand {
+                    label: def.label.to_string(),
+                    subtitle: None,
+                    urn,
+                    action: def.action.to_string(),
+                    icon: def.icon.to_string(),
+                    entity_type: def.entity_type,
+                });
+            }
+            continue;
+        }
+
+        let entities = maybe_entities.expect("checked above");
+        for (urn, data) in entities {
+            let subtitle = (def.subtitle_fn)(data);
+            let label = if entities.len() > 1 {
+                match subtitle.as_deref() {
+                    Some(name) => format!("{} {}", def.label, name),
+                    None => def.label.to_string(),
+                }
+            } else {
+                def.label.to_string()
+            };
+
+            commands.push(ResolvedCommand {
+                label,
+                subtitle,
+                urn: urn.clone(),
+                action: def.action.to_string(),
+                icon: def.icon.to_string(),
+                entity_type: def.entity_type,
+            });
+        }
+    }
+
+    commands
+}
+
 pub fn command_entity_types() -> &'static [&'static str] {
     &[
         SESSION_ENTITY_TYPE,
@@ -188,4 +253,33 @@ pub fn command_entity_types() -> &'static [&'static str] {
         VPN_ENTITY_TYPE,
         BACKUP_METHOD_ENTITY_TYPE,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_commands_uses_static_urn_when_no_entities_exist() {
+        let entity_map = HashMap::new();
+        let commands = resolve_commands(&entity_map);
+        assert!(commands.iter().any(|c| c.label == "Toggle Night Light"));
+        assert!(commands.iter().any(|c| c.urn.as_str() == "sunsetr/night-light/default"));
+    }
+
+    #[test]
+    fn resolve_commands_prefers_live_entities_for_multi_instance_types() {
+        let mut entity_map = HashMap::new();
+        entity_map.insert(
+            VPN_ENTITY_TYPE.to_string(),
+            vec![(
+                crate::Urn::new("networkmanager", VPN_ENTITY_TYPE, "work"),
+                serde_json::json!({"name": "Work VPN"}),
+            )],
+        );
+
+        let commands = resolve_commands(&entity_map);
+        assert!(commands.iter().any(|c| c.label == "Connect VPN"));
+        assert!(commands.iter().any(|c| c.label == "Disconnect VPN"));
+    }
 }

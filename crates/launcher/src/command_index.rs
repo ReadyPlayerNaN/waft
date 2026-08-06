@@ -2,11 +2,13 @@
 //!
 //! Rebuilt from entity store state whenever command-related entities change.
 
+use std::collections::HashMap;
+
 use waft_client::EntityStore;
 use waft_protocol::Urn;
 
 use crate::normalize::{Normalized, normalize_for_search};
-use waft_protocol::commands::COMMAND_DEFS;
+use waft_protocol::commands::resolve_commands;
 
 /// A single searchable command entry derived from a live entity + action.
 pub struct CommandSearchEntry {
@@ -43,56 +45,25 @@ impl CommandIndex {
     /// Iterates all command definitions, looks up matching entities in the store,
     /// and generates one `CommandSearchEntry` per (entity, action) pair.
     pub fn rebuild(&mut self, store: &EntityStore) {
-        let mut commands = Vec::new();
-
-        for def in COMMAND_DEFS {
-            let entities = store.get_entities_raw(def.entity_type);
-
-            if entities.is_empty() {
-                if let Some(raw_urn) = def.static_urn
-                    && let Ok(urn) = Urn::parse(raw_urn)
-                {
-                    let label = def.label.to_string();
-                    let label_norm = normalize_for_search(&label);
-                    commands.push(CommandSearchEntry {
-                        urn,
-                        action: def.action.to_string(),
-                        label,
-                        icon: def.icon.to_string(),
-                        subtitle: None,
-                        label_norm,
-                    });
-                }
-                continue;
-            }
-
-            for (urn, value) in &entities {
-                let subtitle = (def.subtitle_fn)(value);
-
-                // For multi-instance types, prepend the entity name to the label
-                let label = if entities.len() > 1 {
-                    match subtitle.as_deref() {
-                        Some(name) => format!("{} {}", def.label, name),
-                        None => def.label.to_string(),
-                    }
-                } else {
-                    def.label.to_string()
-                };
-
-                let label_norm = normalize_for_search(&label);
-
-                commands.push(CommandSearchEntry {
-                    urn: urn.clone(),
-                    action: def.action.to_string(),
-                    label,
-                    icon: def.icon.to_string(),
-                    subtitle,
-                    label_norm,
-                });
-            }
+        let mut entity_map: HashMap<String, Vec<(Urn, serde_json::Value)>> = HashMap::new();
+        for entity_type in waft_protocol::commands::command_entity_types() {
+            entity_map.insert((*entity_type).to_string(), store.get_entities_raw(entity_type));
         }
 
-        self.commands = commands;
+        self.commands = resolve_commands(&entity_map)
+            .into_iter()
+            .map(|cmd| {
+                let label_norm = normalize_for_search(&cmd.label);
+                CommandSearchEntry {
+                    urn: cmd.urn,
+                    action: cmd.action,
+                    label: cmd.label,
+                    icon: cmd.icon,
+                    subtitle: cmd.subtitle,
+                    label_norm,
+                }
+            })
+            .collect();
     }
 
     /// Returns true if no commands are available.

@@ -90,6 +90,7 @@ daemon.shutdown().await;
 let mut app = TestApp::connect(&daemon.socket_path).await;
 app.subscribe("entity-type").await;          // Subscribe to an entity type
 app.send(&AppMessage::Status { .. }).await;  // Send any AppMessage
+// Status queries now end with AppNotification::StatusComplete { entity_type }
 let msg = app.recv_timeout(Duration::from_secs(2)).await;  // None on timeout
 ```
 

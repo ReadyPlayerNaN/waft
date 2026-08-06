@@ -3906,6 +3906,7 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "urlencoding",
+ "uuid",
  "waft-client",
  "waft-i18n",
  "waft-protocol",

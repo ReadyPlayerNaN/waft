@@ -36,6 +36,7 @@ pub fn dnd_toggle(
                     "preferences-system-notifications-symbolic"
                 }),
             },
+            action_for_click: |_d, _active| "toggle",
         },
     )
 }

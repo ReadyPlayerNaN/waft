@@ -6,3 +6,4 @@ pub mod dnd;
 pub mod network;
 pub mod night_light;
 pub mod settings_app_tracker;
+pub mod wallpaper;

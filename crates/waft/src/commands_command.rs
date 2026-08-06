@@ -1,27 +1,16 @@
 //! Implementation of `waft commands` — list and run command palette actions.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use serde::Serialize;
-use waft_protocol::commands::{COMMAND_DEFS, command_entity_types};
+use waft_protocol::commands::{ResolvedCommand, command_entity_types, resolve_commands};
 use waft_protocol::message::{AppMessage, AppNotification};
 use waft_protocol::urn::Urn;
 
 use crate::socket_io::{connect_daemon, read_message, send_message};
 
-/// A resolved command ready for display or execution.
-#[derive(Debug, Clone, Serialize)]
-struct ResolvedCommand {
-    label: String,
-    subtitle: Option<String>,
-    urn: Urn,
-    action: String,
-    icon: String,
-}
-
 /// Entry point for `waft commands`.
-pub fn run(json: bool, filter: Option<&str>, run: bool) {
+pub fn run(json: bool, filter: Option<&str>, run: bool, refresh: bool) {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(e) => {
@@ -30,7 +19,7 @@ pub fn run(json: bool, filter: Option<&str>, run: bool) {
         }
     };
 
-    let result = rt.block_on(async { run_commands(filter, run).await });
+    let result = rt.block_on(async { run_commands(filter, run, refresh).await });
 
     match result {
         Ok(commands) => {
@@ -63,128 +52,56 @@ pub fn run(json: bool, filter: Option<&str>, run: bool) {
 }
 
 /// Connect to daemon, subscribe to command entity types, collect entities, resolve commands.
-async fn run_commands(filter: Option<&str>, run: bool) -> Result<Vec<ResolvedCommand>, String> {
+async fn run_commands(
+    filter: Option<&str>,
+    run: bool,
+    refresh: bool,
+) -> Result<Vec<ResolvedCommand>, String> {
     let mut stream = connect_daemon().await?;
-
-    // Subscribe to all command entity types to trigger plugin spawning
     let entity_types = command_entity_types();
-    for &et in entity_types {
-        send_message(
-            &mut stream,
-            &AppMessage::Subscribe {
-                entity_type: et.to_string(),
-            },
-        )
-        .await
-        .map_err(|e| format!("Failed to send Subscribe: {e}"))?;
-    }
 
-    // Wait for entity updates with timeout
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(3000);
-    let mut entity_map: HashMap<String, Vec<(Urn, serde_json::Value)>> = HashMap::new();
-
-    loop {
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() {
-            break;
+    if refresh {
+        for &et in entity_types {
+            send_message(
+                &mut stream,
+                &AppMessage::Subscribe {
+                    entity_type: et.to_string(),
+                },
+            )
+            .await
+            .map_err(|e| format!("Failed to send Subscribe: {e}"))?;
         }
 
-        match tokio::time::timeout(remaining, read_message(&mut stream)).await {
-            Ok(Ok(Some(notification))) => {
-                if let AppNotification::EntityUpdated {
-                    urn,
-                    entity_type,
-                    data,
-                } = notification
-                {
-                    entity_map.entry(entity_type).or_default().push((urn, data));
-                }
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(3000);
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
             }
-            Ok(Ok(None)) => break,
-            Ok(Err(e)) => return Err(format!("Failed to read from daemon: {e}")),
-            Err(_) => break,
-        }
-    }
-
-    // Also request cached Status for each type
-    for &et in entity_types {
-        send_message(
-            &mut stream,
-            &AppMessage::Status {
-                entity_type: et.to_string(),
-            },
-        )
-        .await
-        .map_err(|e| format!("Failed to send Status: {e}"))?;
-    }
-
-    // Collect status responses
-    let read_timeout = Duration::from_millis(500);
-    loop {
-        match tokio::time::timeout(read_timeout, read_message(&mut stream)).await {
-            Ok(Ok(Some(notification))) => {
-                if let AppNotification::EntityUpdated {
-                    urn,
-                    entity_type,
-                    data,
-                } = notification
-                {
-                    entity_map.entry(entity_type).or_default().push((urn, data));
-                }
+            match tokio::time::timeout(remaining, read_message(&mut stream)).await {
+                Ok(Ok(Some(_))) => {}
+                Ok(Ok(None)) => break,
+                Ok(Err(e)) => return Err(format!("Failed to read from daemon: {e}")),
+                Err(_) => break,
             }
-            Ok(Ok(None)) => break,
-            Ok(Err(e)) => return Err(format!("Failed to read from daemon: {e}")),
-            Err(_) => break,
         }
     }
 
-    // Unsubscribe
-    for &et in entity_types {
-        let _ = send_message(
-            &mut stream,
-            &AppMessage::Unsubscribe {
-                entity_type: et.to_string(),
-            },
-        )
-        .await;
-    }
+    let entity_map = collect_status_snapshot(&mut stream, entity_types).await?;
 
-    // Deduplicate entities by URN (keep last)
-    for entities in entity_map.values_mut() {
-        let mut seen = std::collections::HashSet::new();
-        entities.reverse();
-        entities.retain(|(urn, _)| seen.insert(urn.to_string()));
-        entities.reverse();
-    }
-
-    // Build command list from definitions + collected entities
-    let mut commands = Vec::new();
-    for def in COMMAND_DEFS {
-        let Some(entities) = entity_map.get(def.entity_type) else {
-            continue;
-        };
-
-        for (urn, data) in entities {
-            let subtitle = (def.subtitle_fn)(data);
-
-            let label = if entities.len() > 1 {
-                match subtitle.as_deref() {
-                    Some(name) => format!("{} {}", def.label, name),
-                    None => def.label.to_string(),
-                }
-            } else {
-                def.label.to_string()
-            };
-
-            commands.push(ResolvedCommand {
-                label,
-                subtitle,
-                urn: urn.clone(),
-                action: def.action.to_string(),
-                icon: def.icon.to_string(),
-            });
+    if refresh {
+        for &et in entity_types {
+            let _ = send_message(
+                &mut stream,
+                &AppMessage::Unsubscribe {
+                    entity_type: et.to_string(),
+                },
+            )
+            .await;
         }
     }
+
+    let mut commands = resolve_commands(&entity_map);
 
     // Filter by label if requested
     if let Some(filter) = filter {
@@ -202,6 +119,20 @@ async fn run_commands(filter: Option<&str>, run: bool) -> Result<Vec<ResolvedCom
         }
 
         let best = &commands[0];
+
+        // Explicitly activate the owning plugin before TriggerAction. The daemon
+        // does not auto-spawn plugins on actions, so command execution must do it.
+        send_message(
+            &mut stream,
+            &AppMessage::Subscribe {
+                entity_type: best.entity_type.to_string(),
+            },
+        )
+        .await
+        .map_err(|e| format!("Failed to send Subscribe: {e}"))?;
+        wait_for_live_activation(&mut stream, best.entity_type, Duration::from_millis(3000)).await?;
+        let _ = collect_status_snapshot(&mut stream, &[best.entity_type]).await?;
+
         let action_id = uuid::Uuid::new_v4();
 
         send_message(
@@ -232,10 +163,90 @@ async fn run_commands(filter: Option<&str>, run: bool) -> Result<Vec<ResolvedCom
             }
         }
 
+        let _ = send_message(
+            &mut stream,
+            &AppMessage::Unsubscribe {
+                entity_type: best.entity_type.to_string(),
+            },
+        )
+        .await;
+
         return Ok(Vec::new());
     }
 
     Ok(commands)
+}
+
+async fn wait_for_live_activation(
+    stream: &mut tokio::net::UnixStream,
+    entity_type: &str,
+    timeout: Duration,
+) -> Result<(), String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match tokio::time::timeout(remaining, read_message(stream)).await {
+            Ok(Ok(Some(AppNotification::EntityUpdated { entity_type: updated, .. })))
+                if updated == entity_type =>
+            {
+                return Ok(());
+            }
+            Ok(Ok(Some(_))) => continue,
+            Ok(Ok(None)) => break,
+            Ok(Err(e)) => return Err(format!("Failed to read from daemon: {e}")),
+            Err(_) => break,
+        }
+    }
+    Ok(())
+}
+
+async fn collect_status_snapshot(
+    stream: &mut tokio::net::UnixStream,
+    entity_types: &[&str],
+) -> Result<HashMap<String, Vec<(Urn, serde_json::Value)>>, String> {
+    for &et in entity_types {
+        send_message(
+            stream,
+            &AppMessage::Status {
+                entity_type: et.to_string(),
+            },
+        )
+        .await
+        .map_err(|e| format!("Failed to send Status: {e}"))?;
+    }
+
+    let mut entity_map: HashMap<String, Vec<(Urn, serde_json::Value)>> = HashMap::new();
+    let mut pending: HashSet<String> = entity_types.iter().map(|s| (*s).to_string()).collect();
+
+    while !pending.is_empty() {
+        match read_message(stream).await {
+            Ok(Some(AppNotification::EntityUpdated {
+                urn,
+                entity_type,
+                data,
+            })) => {
+                entity_map.entry(entity_type).or_default().push((urn, data));
+            }
+            Ok(Some(AppNotification::StatusComplete { entity_type })) => {
+                pending.remove(&entity_type);
+            }
+            Ok(Some(_)) => continue,
+            Ok(None) => return Err("daemon disconnected".to_string()),
+            Err(e) => return Err(format!("Failed to read from daemon: {e}")),
+        }
+    }
+
+    for entities in entity_map.values_mut() {
+        let mut seen = HashSet::new();
+        entities.reverse();
+        entities.retain(|(urn, _)| seen.insert(urn.to_string()));
+        entities.reverse();
+    }
+
+    Ok(entity_map)
 }
 
 /// Wait for ActionSuccess or ActionError for a specific action_id.

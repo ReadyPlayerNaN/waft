@@ -28,6 +28,11 @@ nightlight-night-until = Night light until { $time }
 sunsetr-no-presets = No presets configured
 feature-toggle-action-failed = Action failed
 
+# Wallpaper
+wallpaper-title = Wallpaper
+wallpaper-active = Active
+wallpaper-inactive = Inactive
+
 # Agenda
 agenda-title = Agenda
 agenda-empty = No upcoming events

@@ -32,6 +32,7 @@ pub fn dark_mode_toggle(
                 details: None,
                 icon: None,
             },
+            action_for_click: |_d, _active| "toggle",
         },
     )
 }

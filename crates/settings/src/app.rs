@@ -77,8 +77,12 @@ pub async fn setup(
 ) -> Result<adw::Application, Box<dyn std::error::Error>> {
     // 1. Create channels
     let (event_tx, event_rx) = flume::unbounded::<ClientEvent>();
-    let (action_tx, action_rx) =
-        std::sync::mpsc::channel::<(waft_protocol::Urn, String, serde_json::Value)>();
+    let (action_tx, action_rx) = std::sync::mpsc::channel::<(
+        uuid::Uuid,
+        waft_protocol::Urn,
+        String,
+        serde_json::Value,
+    )>();
 
     // 2. Create client handle for write path
     let client_handle: Arc<Mutex<Option<WaftClient>>> = Arc::new(Mutex::new(None));
@@ -88,10 +92,12 @@ pub async fn setup(
 
     // 4. Create entity action callback (routes UI actions to the writer thread).
     let entity_action_callback: EntityActionCallback = Rc::new(move |urn, action_name, params| {
-        if let Err(e) = action_tx.send((urn, action_name, params)) {
+        let action_id = uuid::Uuid::new_v4();
+        if let Err(e) = action_tx.send((action_id, urn, action_name, params)) {
             log::warn!("[settings] failed to send action: {e}");
+            return None;
         }
-        None
+        Some(action_id)
     });
 
     // Wrap one-shot values in slots so they can be taken inside connect_startup.
@@ -165,17 +171,17 @@ pub async fn setup(
         // Spawn action writer thread (OS thread for GTK->daemon write path).
         let client_for_writer = Arc::clone(&client_handle);
         std::thread::spawn(move || {
-            while let Ok((urn, action, params)) = action_rx.recv() {
+            while let Ok((action_id, urn, action, params)) = action_rx.recv() {
                 match client_for_writer.lock() {
                     Ok(guard) => {
                         if let Some(ref client) = *guard {
-                            client.trigger_action(urn, &action, params);
+                            client.trigger_action_with_id(urn, &action, params, action_id);
                         }
                     }
                     Err(e) => {
                         log::warn!("[settings] client handle poisoned during action: {e}");
                         if let Some(ref client) = *e.into_inner() {
-                            client.trigger_action(urn, &action, params);
+                            client.trigger_action_with_id(urn, &action, params, action_id);
                         }
                     }
                 }

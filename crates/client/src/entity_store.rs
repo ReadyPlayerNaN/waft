@@ -100,6 +100,9 @@ impl EntityStore {
                 // Description responses are handled by CLI/settings, not the entity store.
                 log::debug!("[entity-store] received DescribeResponse (ignored by entity store)");
             }
+            AppNotification::StatusComplete { entity_type } => {
+                log::debug!("[entity-store] received StatusComplete for {entity_type} (ignored)");
+            }
         }
     }
 

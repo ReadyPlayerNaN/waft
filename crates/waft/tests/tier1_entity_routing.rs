@@ -151,6 +151,17 @@ async fn cached_entity_returned_on_status() {
         other => panic!("expected EntityUpdated from cache, got: {other:?}"),
     }
 
+    let completion = app
+        .recv_timeout(TIMEOUT)
+        .await
+        .expect("app should receive StatusComplete");
+    match completion {
+        AppNotification::StatusComplete { entity_type } => {
+            assert_eq!(entity_type, "test-entity");
+        }
+        other => panic!("expected StatusComplete, got: {other:?}"),
+    }
+
     daemon.shutdown().await;
 }
 

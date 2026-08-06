@@ -34,7 +34,7 @@ fn i18n() -> &'static waft_i18n::I18n {
 }
 
 use waft_plugin_audio::pactl::{self, AudioEvent, CardInfo, CardPortMap, SinkInfo, SourceInfo};
-use waft_plugin_audio::virtual_device_config::{self, VirtualDeviceConfig};
+use waft_plugin_audio::virtual_device_config::{self, VirtualDeviceConfig, VirtualDeviceKind};
 
 /// Runtime state for a waft-managed virtual audio device.
 #[derive(Clone)]
@@ -92,13 +92,14 @@ impl AudioPlugin {
         }
         info!("[audio] Audio system is available");
 
+        // Reconcile persisted virtual devices first so source filtering can
+        // selectively expose waft-managed monitor sources on the first reload.
+        reconcile_virtual_devices(&state).await;
+
         // Load initial state
         if let Err(e) = reload_all(&state).await {
             warn!("[audio] Failed to load initial state: {e}");
         }
-
-        // Reconcile virtual devices from config
-        reconcile_virtual_devices(&state).await;
 
         Ok((
             Self {
@@ -142,6 +143,20 @@ async fn reload_sinks(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPortMa
     }
 }
 
+fn monitor_source_name(base_sink_name: &str) -> String {
+    format!("{base_sink_name}.monitor")
+}
+
+fn source_allowed_in_waft(source: &SourceInfo, virtual_devices: &[VirtualDeviceState]) -> bool {
+    if !source.name.contains(".monitor") {
+        return true;
+    }
+
+    virtual_devices.iter().any(|vd| {
+        vd.config.kind.exposes_input() && monitor_source_name(&vd.config.sink_name) == source.name
+    })
+}
+
 /// Reload source (input) state.
 async fn reload_sources(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPortMap) {
     if let Ok(default) = pactl::get_default_source().await {
@@ -149,13 +164,18 @@ async fn reload_sources(state: &Arc<StdMutex<AudioState>>, card_ports: &CardPort
     }
 
     if let Ok(sources) = pactl::get_sources().await {
-        let devices: Vec<pactl::AudioDevice> = sources
+        let virtual_devices = lock_or_recover(state).virtual_devices.clone();
+        let filtered_sources: Vec<SourceInfo> = sources
+            .into_iter()
+            .filter(|source| source_allowed_in_waft(source, &virtual_devices))
+            .collect();
+        let devices: Vec<pactl::AudioDevice> = filtered_sources
             .iter()
             .map(|s| pactl::AudioDevice::from_source(s, card_ports))
             .collect();
         let mut s = lock_or_recover(state);
         s.input_devices = devices;
-        s.sources = sources;
+        s.sources = filtered_sources;
     }
 }
 
@@ -190,14 +210,9 @@ async fn reconcile_virtual_devices(state: &Arc<StdMutex<AudioState>>) {
 
     for config in configs {
         // Check if the module is already loaded by scanning arguments for sink_name
-        let existing = loaded_modules.iter().find(|m| {
-            let expected_module = match config.module_type.as_str() {
-                "null-sink" => "module-null-sink",
-                "null-source" => "module-null-source",
-                _ => return false,
-            };
-            m.name == expected_module && m.arguments.contains(&config.sink_name)
-        });
+        let existing = loaded_modules
+            .iter()
+            .find(|m| m.name == "module-null-sink" && m.arguments.contains(&config.sink_name));
 
         let module_index = if let Some(m) = existing {
             debug!(
@@ -207,17 +222,7 @@ async fn reconcile_virtual_devices(state: &Arc<StdMutex<AudioState>>) {
             Some(m.index)
         } else {
             // Load the missing module
-            let result = match config.module_type.as_str() {
-                "null-sink" => pactl::load_null_sink(&config.sink_name, &config.label).await,
-                "null-source" => pactl::load_null_source(&config.sink_name, &config.label).await,
-                other => {
-                    warn!(
-                        "[audio] Unknown module_type '{}' for virtual device '{}'",
-                        other, config.sink_name
-                    );
-                    continue;
-                }
-            };
+            let result = pactl::load_null_sink(&config.sink_name, &config.label).await;
             match result {
                 Ok(idx) => {
                     info!(
@@ -259,10 +264,11 @@ impl Plugin for AudioPlugin {
         // Output devices (audio-device entities for overview)
         for device in &state.output_devices {
             let is_default = state.default_output.as_deref() == Some(&device.id);
-            let is_virtual = state
+            let virtual_match = state
                 .virtual_devices
                 .iter()
-                .any(|vd| vd.config.sink_name == device.id);
+                .find(|vd| vd.config.kind.exposes_output() && vd.config.sink_name == device.id);
+            let is_virtual = virtual_match.is_some();
 
             let audio_device = entity::audio::AudioDevice {
                 name: device.name.clone(),
@@ -273,11 +279,7 @@ impl Plugin for AudioPlugin {
                 device_type: device.device_type.clone(),
                 connection_type: device.connection_type.clone(),
                 virtual_device: is_virtual,
-                sink_name: if is_virtual {
-                    Some(device.id.clone())
-                } else {
-                    None
-                },
+                sink_name: virtual_match.map(|vd| vd.config.sink_name.clone()),
             };
             entities.push(Entity::new(
                 Urn::new("audio", entity::audio::ENTITY_TYPE, &device.id),
@@ -289,10 +291,11 @@ impl Plugin for AudioPlugin {
         // Input devices (audio-device entities for overview)
         for device in &state.input_devices {
             let is_default = state.default_input.as_deref() == Some(&device.id);
-            let is_virtual = state
-                .virtual_devices
-                .iter()
-                .any(|vd| vd.config.sink_name == device.id);
+            let virtual_match = state.virtual_devices.iter().find(|vd| {
+                vd.config.kind.exposes_input()
+                    && monitor_source_name(&vd.config.sink_name) == device.id
+            });
+            let is_virtual = virtual_match.is_some();
 
             let audio_device = entity::audio::AudioDevice {
                 name: device.name.clone(),
@@ -303,11 +306,7 @@ impl Plugin for AudioPlugin {
                 device_type: device.device_type.clone(),
                 connection_type: device.connection_type.clone(),
                 virtual_device: is_virtual,
-                sink_name: if is_virtual {
-                    Some(device.id.clone())
-                } else {
-                    None
-                },
+                sink_name: virtual_match.map(|vd| vd.config.sink_name.clone()),
             };
             entities.push(Entity::new(
                 Urn::new("audio", entity::audio::ENTITY_TYPE, &device.id),
@@ -421,12 +420,17 @@ impl Plugin for AudioPlugin {
                 }
             }
             "create-sink" => {
-                self.handle_create_virtual_device("null-sink", &params)
+                self.handle_create_virtual_device(VirtualDeviceKind::Output, &params)
                     .await?;
                 return Ok(serde_json::Value::Null);
             }
             "create-source" => {
-                self.handle_create_virtual_device("null-source", &params)
+                self.handle_create_virtual_device(VirtualDeviceKind::Input, &params)
+                    .await?;
+                return Ok(serde_json::Value::Null);
+            }
+            "create-duplex" => {
+                self.handle_create_virtual_device(VirtualDeviceKind::Duplex, &params)
                     .await?;
                 return Ok(serde_json::Value::Null);
             }
@@ -456,10 +460,10 @@ impl Plugin for AudioPlugin {
 }
 
 impl AudioPlugin {
-    /// Create a virtual audio device (null-sink or null-source).
+    /// Create a virtual audio device backed by a null sink.
     async fn handle_create_virtual_device(
         &self,
-        module_type: &str,
+        kind: VirtualDeviceKind,
         params: &serde_json::Value,
     ) -> anyhow::Result<()> {
         let label = params
@@ -478,14 +482,10 @@ impl AudioPlugin {
         let sink_name =
             virtual_device_config::ensure_unique_sink_name(&base_name, &existing_configs);
 
-        let module_index = match module_type {
-            "null-sink" => pactl::load_null_sink(&sink_name, label).await?,
-            "null-source" => pactl::load_null_source(&sink_name, label).await?,
-            other => anyhow::bail!("unsupported module_type: {other}"),
-        };
+        let module_index = pactl::load_null_sink(&sink_name, label).await?;
 
         let config = VirtualDeviceConfig {
-            module_type: module_type.to_string(),
+            kind,
             sink_name: sink_name.clone(),
             label: label.to_string(),
         };
@@ -518,7 +518,9 @@ impl AudioPlugin {
             state
                 .virtual_devices
                 .iter()
-                .find(|vd| vd.config.sink_name == name)
+                .find(|vd| {
+                    vd.config.sink_name == name || monitor_source_name(&vd.config.sink_name) == name
+                })
                 .and_then(|vd| vd.module_index)
         };
 
@@ -533,9 +535,9 @@ impl AudioPlugin {
         // Remove from state
         {
             let mut state = lock_or_recover(&self.state);
-            state
-                .virtual_devices
-                .retain(|vd| vd.config.sink_name != name);
+            state.virtual_devices.retain(|vd| {
+                vd.config.sink_name != name && monitor_source_name(&vd.config.sink_name) != name
+            });
         }
 
         // Persist
@@ -925,10 +927,10 @@ mod tests {
         }
     }
 
-    fn make_virtual_state(sink_name: &str, module_type: &str) -> VirtualDeviceState {
+    fn make_virtual_state(sink_name: &str, kind: VirtualDeviceKind) -> VirtualDeviceState {
         VirtualDeviceState {
             config: VirtualDeviceConfig {
-                module_type: module_type.to_string(),
+                kind,
                 sink_name: sink_name.to_string(),
                 label: format!("Virtual {sink_name}"),
             },
@@ -951,7 +953,7 @@ mod tests {
         let plugin = make_plugin(AudioState {
             available: true,
             output_devices: vec![make_device("waft_my_sink", 0.42, true)],
-            virtual_devices: vec![make_virtual_state("waft_my_sink", "null-sink")],
+            virtual_devices: vec![make_virtual_state("waft_my_sink", VirtualDeviceKind::Output)],
             ..Default::default()
         });
 
@@ -984,8 +986,8 @@ mod tests {
     fn virtual_input_device_gets_real_volume_and_flags() {
         let plugin = make_plugin(AudioState {
             available: true,
-            input_devices: vec![make_device("waft_my_source", 0.65, false)],
-            virtual_devices: vec![make_virtual_state("waft_my_source", "null-source")],
+            input_devices: vec![make_device("waft_my_source.monitor", 0.65, false)],
+            virtual_devices: vec![make_virtual_state("waft_my_source", VirtualDeviceKind::Input)],
             ..Default::default()
         });
 
@@ -1010,7 +1012,7 @@ mod tests {
         let plugin = make_plugin(AudioState {
             available: true,
             output_devices: vec![make_device("alsa_output.pci-0000", 0.8, false)],
-            virtual_devices: vec![make_virtual_state("waft_unrelated", "null-sink")],
+            virtual_devices: vec![make_virtual_state("waft_unrelated", VirtualDeviceKind::Output)],
             ..Default::default()
         });
 
@@ -1041,7 +1043,7 @@ mod tests {
                 make_device("alsa_output.pci-0000", 0.5, false),
                 make_device("waft_my_sink", 0.7, true),
             ],
-            virtual_devices: vec![make_virtual_state("waft_my_sink", "null-sink")],
+            virtual_devices: vec![make_virtual_state("waft_my_sink", VirtualDeviceKind::Output)],
             ..Default::default()
         });
 
@@ -1073,11 +1075,11 @@ mod tests {
             ],
             input_devices: vec![
                 make_device("alsa_input.pci-0000", 0.9, false),
-                make_device("waft_virtual_in", 0.1, true),
+                make_device("waft_virtual_in.monitor", 0.1, true),
             ],
             virtual_devices: vec![
-                make_virtual_state("waft_virtual_out", "null-sink"),
-                make_virtual_state("waft_virtual_in", "null-source"),
+                make_virtual_state("waft_virtual_out", VirtualDeviceKind::Output),
+                make_virtual_state("waft_virtual_in", VirtualDeviceKind::Input),
             ],
             ..Default::default()
         });
@@ -1104,11 +1106,73 @@ mod tests {
     }
 
     #[test]
+    fn duplex_virtual_device_emits_both_halves() {
+        let plugin = make_plugin(AudioState {
+            available: true,
+            output_devices: vec![make_device("waft_duplex", 0.4, false)],
+            input_devices: vec![make_device("waft_duplex.monitor", 0.6, true)],
+            virtual_devices: vec![make_virtual_state("waft_duplex", VirtualDeviceKind::Duplex)],
+            ..Default::default()
+        });
+
+        let entities = plugin.get_entities();
+        let audio_entities: Vec<_> = entities
+            .iter()
+            .filter(|e| e.entity_type == entity::audio::ENTITY_TYPE)
+            .collect();
+        assert_eq!(audio_entities.len(), 2);
+        assert!(audio_entities.iter().all(|e| decode_audio_device(e).virtual_device));
+    }
+
+    #[test]
+    fn source_filter_hides_unmanaged_monitor_sources() {
+        let source = SourceInfo {
+            name: "alsa_output.pci-0000.monitor".to_string(),
+            description: "Monitor".to_string(),
+            volume_percent: 0.5,
+            muted: false,
+            is_default: false,
+            icon_name: None,
+            bus: None,
+            node_nick: None,
+            device_id: None,
+            form_factor: None,
+            active_port: None,
+            active_port_available: None,
+            ports: vec![],
+        };
+        assert!(!source_allowed_in_waft(&source, &[]));
+    }
+
+    #[test]
+    fn source_filter_keeps_managed_monitor_sources_for_input_and_duplex() {
+        let source = SourceInfo {
+            name: "waft_virtual.monitor".to_string(),
+            description: "Monitor".to_string(),
+            volume_percent: 0.5,
+            muted: false,
+            is_default: false,
+            icon_name: None,
+            bus: None,
+            node_nick: None,
+            device_id: None,
+            form_factor: None,
+            active_port: None,
+            active_port_available: None,
+            ports: vec![],
+        };
+        let input_devices = vec![make_virtual_state("waft_virtual", VirtualDeviceKind::Input)];
+        let duplex_devices = vec![make_virtual_state("waft_virtual", VirtualDeviceKind::Duplex)];
+        assert!(source_allowed_in_waft(&source, &input_devices));
+        assert!(source_allowed_in_waft(&source, &duplex_devices));
+    }
+
+    #[test]
     fn unavailable_audio_returns_empty() {
         let plugin = make_plugin(AudioState {
             available: false,
             output_devices: vec![make_device("waft_sink", 0.5, false)],
-            virtual_devices: vec![make_virtual_state("waft_sink", "null-sink")],
+            virtual_devices: vec![make_virtual_state("waft_sink", VirtualDeviceKind::Output)],
             ..Default::default()
         });
 

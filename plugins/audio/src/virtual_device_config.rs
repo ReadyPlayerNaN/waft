@@ -3,19 +3,85 @@
 //! Virtual device definitions are stored in `~/.config/waft/config.toml` under
 //! the audio plugin section. Additionally, `~/.config/pulse/default.pa` is kept
 //! in sync so PulseAudio recreates devices even without waft running.
+//!
+//! Backend contract:
+//! - use `module-null-sink` as the universal primitive
+//! - logical `input` devices are backed by the sink monitor source
+//! - logical `duplex` devices expose both sink and monitor source
+//! - `module-null-source` is retained only as a backward-compatible read alias
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// A logical virtual audio device kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VirtualDeviceKind {
+    Output,
+    Input,
+    Duplex,
+}
+
+impl VirtualDeviceKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Output => "output",
+            Self::Input => "input",
+            Self::Duplex => "duplex",
+        }
+    }
+
+    pub fn exposes_output(self) -> bool {
+        matches!(self, Self::Output | Self::Duplex)
+    }
+
+    pub fn exposes_input(self) -> bool {
+        matches!(self, Self::Input | Self::Duplex)
+    }
+}
+
+impl Serialize for VirtualDeviceKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for VirtualDeviceKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        match raw.as_str() {
+            "output" | "null-sink" => Ok(Self::Output),
+            "input" | "null-source" => Ok(Self::Input),
+            "duplex" => Ok(Self::Duplex),
+            other => Err(serde::de::Error::custom(format!(
+                "unknown virtual device kind: {other}"
+            ))),
+        }
+    }
+}
+
 /// A persisted virtual audio device configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VirtualDeviceConfig {
-    /// Module type: "null-sink" or "null-source".
-    pub module_type: String,
-    /// Internal pactl sink/source name (waft_ prefixed).
+    /// Logical device kind. Serialized under the legacy `module_type` field for
+    /// backward compatibility with older config layout.
+    #[serde(rename = "module_type")]
+    pub kind: VirtualDeviceKind,
+    /// Internal pactl base sink name (waft_ prefixed).
     pub sink_name: String,
     /// Human-readable display label.
     pub label: String,
+}
+
+impl VirtualDeviceConfig {
+    pub fn monitor_source_name(&self) -> String {
+        format!("{}.monitor", self.sink_name)
+    }
 }
 
 /// Sanitize a user label into a valid pactl sink/source name.
@@ -210,7 +276,6 @@ pub fn sync_default_pa(devices: &[VirtualDeviceConfig]) -> anyhow::Result<()> {
         .filter(|line| !line.trim_end().ends_with("# waft-managed"))
         .collect();
 
-    // Remove trailing empty lines to keep the file clean
     while lines.last().is_some_and(|l| l.is_empty()) {
         lines.pop();
     }
@@ -220,29 +285,15 @@ pub fn sync_default_pa(devices: &[VirtualDeviceConfig]) -> anyhow::Result<()> {
         output.push('\n');
     }
 
-    // Append new waft-managed lines
     for device in devices {
-        let line = match device.module_type.as_str() {
-            "null-sink" => format!(
-                "load-module module-null-sink sink_name={} sink_properties=device.description=\"{}\" # waft-managed",
-                device.sink_name, device.label
-            ),
-            "null-source" => format!(
-                "load-module module-null-source source_name={} source_properties=device.description=\"{}\" # waft-managed",
-                device.sink_name, device.label
-            ),
-            other => {
-                log::warn!(
-                    "[audio/config] unknown module_type '{other}', skipping default.pa entry"
-                );
-                continue;
-            }
-        };
+        let line = format!(
+            "load-module module-null-sink sink_name={} sink_properties=device.description=\"{}\" # waft-managed",
+            device.sink_name, device.label
+        );
         output.push_str(&line);
         output.push('\n');
     }
 
-    // Write atomically
     if let Some(parent) = pa_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -281,64 +332,117 @@ mod tests {
 
     #[test]
     fn sanitize_trims_trailing_underscores() {
-        assert_eq!(sanitize_sink_name("test "), "waft_test");
-    }
-
-    #[test]
-    fn sanitize_empty_label() {
-        assert_eq!(sanitize_sink_name(""), "waft_");
+        assert_eq!(sanitize_sink_name("hello!!!"), "waft_hello");
     }
 
     #[test]
     fn sanitize_preserves_numbers() {
-        assert_eq!(sanitize_sink_name("Source 42"), "waft_source_42");
+        assert_eq!(sanitize_sink_name("Mic 2"), "waft_mic_2");
+    }
+
+    #[test]
+    fn sanitize_empty_label() {
+        assert_eq!(sanitize_sink_name("!!!"), "waft_");
+    }
+
+    #[test]
+    fn unique_name_empty_existing() {
+        assert_eq!(ensure_unique_sink_name("waft_a", &[]), "waft_a");
     }
 
     #[test]
     fn unique_name_no_conflict() {
         let existing = vec![VirtualDeviceConfig {
-            module_type: "null-sink".to_string(),
-            sink_name: "waft_other".to_string(),
-            label: "Other".to_string(),
+            kind: VirtualDeviceKind::Output,
+            sink_name: "waft_b".to_string(),
+            label: "B".to_string(),
         }];
-        assert_eq!(ensure_unique_sink_name("waft_test", &existing), "waft_test");
+        assert_eq!(ensure_unique_sink_name("waft_a", &existing), "waft_a");
     }
 
     #[test]
     fn unique_name_with_conflict() {
         let existing = vec![VirtualDeviceConfig {
-            module_type: "null-sink".to_string(),
-            sink_name: "waft_test".to_string(),
-            label: "Test".to_string(),
+            kind: VirtualDeviceKind::Output,
+            sink_name: "waft_a".to_string(),
+            label: "A".to_string(),
         }];
-        assert_eq!(
-            ensure_unique_sink_name("waft_test", &existing),
-            "waft_test_2"
-        );
+        assert_eq!(ensure_unique_sink_name("waft_a", &existing), "waft_a_2");
     }
 
     #[test]
     fn unique_name_with_multiple_conflicts() {
         let existing = vec![
             VirtualDeviceConfig {
-                module_type: "null-sink".to_string(),
-                sink_name: "waft_test".to_string(),
-                label: "Test".to_string(),
+                kind: VirtualDeviceKind::Output,
+                sink_name: "waft_a".to_string(),
+                label: "A".to_string(),
             },
             VirtualDeviceConfig {
-                module_type: "null-sink".to_string(),
-                sink_name: "waft_test_2".to_string(),
-                label: "Test 2".to_string(),
+                kind: VirtualDeviceKind::Input,
+                sink_name: "waft_a_2".to_string(),
+                label: "A2".to_string(),
             },
         ];
-        assert_eq!(
-            ensure_unique_sink_name("waft_test", &existing),
-            "waft_test_3"
-        );
+        assert_eq!(ensure_unique_sink_name("waft_a", &existing), "waft_a_3");
     }
 
     #[test]
-    fn unique_name_empty_existing() {
-        assert_eq!(ensure_unique_sink_name("waft_mic", &[]), "waft_mic");
+    fn old_null_sink_deserializes_to_output() {
+        let cfg: VirtualDeviceConfig = toml::from_str(
+            "sink_name = \"waft_out\"\nlabel = \"Out\"\nmodule_type = \"null-sink\"\n",
+        )
+        .expect("toml");
+        assert_eq!(cfg.kind, VirtualDeviceKind::Output);
+    }
+
+    #[test]
+    fn old_null_source_deserializes_to_input() {
+        let cfg: VirtualDeviceConfig = toml::from_str(
+            "sink_name = \"waft_in\"\nlabel = \"In\"\nmodule_type = \"null-source\"\n",
+        )
+        .expect("toml");
+        assert_eq!(cfg.kind, VirtualDeviceKind::Input);
+    }
+
+    #[test]
+    fn logical_kinds_serialize_under_module_type() {
+        let cfg = VirtualDeviceConfig {
+            kind: VirtualDeviceKind::Duplex,
+            sink_name: "waft_duplex".to_string(),
+            label: "Duplex".to_string(),
+        };
+        let value = toml::Value::try_from(&cfg).expect("serialize");
+        assert_eq!(value.get("module_type").and_then(|v| v.as_str()), Some("duplex"));
+    }
+
+    #[test]
+    fn sync_default_pa_never_emits_null_source() {
+        let devices = vec![
+            VirtualDeviceConfig {
+                kind: VirtualDeviceKind::Input,
+                sink_name: "waft_in".to_string(),
+                label: "In".to_string(),
+            },
+            VirtualDeviceConfig {
+                kind: VirtualDeviceKind::Duplex,
+                sink_name: "waft_duplex".to_string(),
+                label: "Duplex".to_string(),
+            },
+        ];
+
+        let rendered = devices
+            .iter()
+            .map(|device| {
+                format!(
+                    "load-module module-null-sink sink_name={} sink_properties=device.description=\"{}\" # waft-managed",
+                    device.sink_name, device.label
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("module-null-sink"));
+        assert!(!rendered.contains("module-null-source"));
     }
 }

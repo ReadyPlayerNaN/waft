@@ -29,6 +29,7 @@
             <CaffeineToggle />
             <DarkModeToggle />
             <NightLightToggle />
+            <WallpaperToggle />
             <BluetoothToggles />
             <WifiToggles />
             <WiredToggles />

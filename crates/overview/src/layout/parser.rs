@@ -78,9 +78,9 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
         tag @ ("Clock" | "Battery" | "Weather" | "KeyboardLayout" | "SettingsButton"
         | "SessionActions" | "SystemActions" | "Calendar" | "Agenda" | "Events"
         | "NotificationList" | "AudioSliders" | "BrightnessSliders" | "DndToggle"
-        | "CaffeineToggle" | "DarkModeToggle" | "NightLightToggle" | "BluetoothToggles"
-        | "WifiToggles" | "WiredToggles" | "VpnToggles" | "TetheringToggles"
-        | "BackupToggle" | "ClaudeUsage") => Ok(LayoutNode::Component {
+        | "CaffeineToggle" | "DarkModeToggle" | "NightLightToggle" | "WallpaperToggle"
+        | "BluetoothToggles" | "WifiToggles" | "WiredToggles" | "VpnToggles"
+        | "TetheringToggles" | "BackupToggle" | "ClaudeUsage") => Ok(LayoutNode::Component {
             name: tag.to_string(),
         }),
         tag => Err(anyhow!("Unknown layout tag: {tag}")),
@@ -221,24 +221,27 @@ mod tests {
                                 children: toggle_children,
                             } = &controls[2]
                             {
-                                assert_eq!(toggle_children.len(), 10);
+                                assert_eq!(toggle_children.len(), 11);
                                 assert!(
                                     matches!(&toggle_children[0], LayoutNode::Component { name } if name == "DndToggle")
                                 );
                                 assert!(
-                                    matches!(&toggle_children[5], LayoutNode::Component { name } if name == "WifiToggles")
+                                    matches!(&toggle_children[4], LayoutNode::Component { name } if name == "WallpaperToggle")
                                 );
                                 assert!(
-                                    matches!(&toggle_children[6], LayoutNode::Component { name } if name == "WiredToggles")
+                                    matches!(&toggle_children[6], LayoutNode::Component { name } if name == "WifiToggles")
                                 );
                                 assert!(
-                                    matches!(&toggle_children[7], LayoutNode::Component { name } if name == "VpnToggles")
+                                    matches!(&toggle_children[7], LayoutNode::Component { name } if name == "WiredToggles")
                                 );
                                 assert!(
-                                    matches!(&toggle_children[8], LayoutNode::Component { name } if name == "TetheringToggles")
+                                    matches!(&toggle_children[8], LayoutNode::Component { name } if name == "VpnToggles")
                                 );
                                 assert!(
-                                    matches!(&toggle_children[9], LayoutNode::Component { name } if name == "BackupToggle")
+                                    matches!(&toggle_children[9], LayoutNode::Component { name } if name == "TetheringToggles")
+                                );
+                                assert!(
+                                    matches!(&toggle_children[10], LayoutNode::Component { name } if name == "BackupToggle")
                                 );
                             }
 

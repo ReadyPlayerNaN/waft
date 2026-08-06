@@ -120,8 +120,10 @@ struct AwwwState {
     wallpaper_dir: String,
     /// Sync mode.
     sync: bool,
-    /// Whether the backend is available.
+    /// Whether the backend binary is available.
     available: bool,
+    /// Whether the backend daemon is currently active.
+    active: bool,
     /// Active wallpaper mode.
     mode: WallpaperMode,
     /// Current day segment (tracked even when not in DayTracking mode).
@@ -139,16 +141,32 @@ fn lock_state(state: &StdMutex<AwwwState>) -> std::sync::MutexGuard<'_, AwwwStat
 /// Detect which wallpaper CLI backend is available. Prefers `awww`, falls back to `swww`.
 fn detect_backend() -> String {
     for candidate in ["awww", "swww"] {
-        // A successful spawn (even if the command fails) means the binary exists.
-        if std::process::Command::new(candidate)
-            .arg("--version")
-            .output()
-            .is_ok()
-        {
+        if backend_binary_available(candidate) {
             return candidate.to_string();
         }
     }
     "awww".to_string()
+}
+
+fn backend_binary_available(backend: &str) -> bool {
+    std::process::Command::new(backend)
+        .arg("--version")
+        .output()
+        .is_ok()
+}
+
+fn backend_daemon_binary(backend: &str) -> &'static str {
+    match backend {
+        "swww" => "swww-daemon",
+        _ => "awww-daemon",
+    }
+}
+
+fn backend_stop_args(backend: &str) -> Vec<&'static str> {
+    match backend {
+        "swww" => vec!["kill"],
+        _ => vec!["kill"],
+    }
 }
 
 /// Parse a mode string into WallpaperMode.
@@ -184,17 +202,13 @@ impl AwwwPlugin {
 
         let mode = parse_mode(&config.mode);
         let backend = detect_backend();
+        let available = backend_binary_available(&backend);
 
-        // Attempt init best-effort
-        if let Err(e) = run_init(&backend).await {
-            log::debug!("[awww] {backend} init failed (best-effort): {e}");
-        }
-
-        // Query current state
-        let (available, outputs) = match run_query(&backend).await {
+        // Query current state; this is the active-state oracle.
+        let (active, outputs) = match run_query(&backend).await {
             Ok(outputs) => (true, outputs),
             Err(e) => {
-                log::warn!("[awww] {backend} query failed, marking unavailable: {e}");
+                log::warn!("[awww] {backend} query failed, marking inactive: {e}");
                 (false, HashMap::new())
             }
         };
@@ -204,7 +218,7 @@ impl AwwwPlugin {
         let current_segment = Some(DaySegment::from_time(now.hour(), now.minute()));
 
         log::info!(
-            "[awww] Plugin started: backend={backend}, available={available}, outputs={}, mode={:?}",
+            "[awww] Plugin started: backend={backend}, available={available}, active={active}, outputs={}, mode={:?}",
             outputs.len(),
             mode,
         );
@@ -217,6 +231,7 @@ impl AwwwPlugin {
                 wallpaper_dir: config.wallpaper_dir,
                 sync: config.sync,
                 available,
+                active,
                 mode,
                 current_segment,
                 style_tracking_available: false,
@@ -256,17 +271,28 @@ impl AwwwPlugin {
 
     /// Refresh outputs by re-running query.
     async fn refresh_state(&self) {
-        let backend = self.lock_state().backend.clone();
+        let (backend, available) = {
+            let state = self.lock_state();
+            (state.backend.clone(), state.available)
+        };
+        if !available {
+            let mut state = self.lock_state();
+            state.active = false;
+            state.outputs.clear();
+            return;
+        }
+
         match run_query(&backend).await {
             Ok(outputs) => {
                 let mut state = self.lock_state();
                 state.outputs = outputs;
-                state.available = true;
+                state.active = true;
             }
             Err(e) => {
                 log::warn!("[awww] refresh query failed: {e}");
                 let mut state = self.lock_state();
-                state.available = false;
+                state.active = false;
+                state.outputs.clear();
             }
         }
     }
@@ -330,6 +356,7 @@ impl Plugin for AwwwPlugin {
                 output: output.clone(),
                 current_wallpaper: wallpaper.clone(),
                 available: state.available,
+                active: state.active,
                 transition: transition.clone(),
                 wallpaper_dir: state.wallpaper_dir.clone(),
                 sync: state.sync,
@@ -355,6 +382,7 @@ impl Plugin for AwwwPlugin {
             output: "all".to_string(),
             current_wallpaper: all_wallpaper,
             available: state.available,
+            active: state.active,
             transition: transition.clone(),
             wallpaper_dir: state.wallpaper_dir.clone(),
             sync: state.sync,
@@ -380,6 +408,22 @@ impl Plugin for AwwwPlugin {
         let output_id = urn.id().to_string();
 
         match action.as_str() {
+            "start" => {
+                let backend = self.lock_state().backend.clone();
+                let outputs = start_backend_daemon(&backend).await?;
+                let mut state = self.lock_state();
+                state.active = true;
+                state.outputs = outputs;
+            }
+
+            "stop" => {
+                let backend = self.lock_state().backend.clone();
+                stop_backend_daemon(&backend).await?;
+                let mut state = self.lock_state();
+                state.active = false;
+                state.outputs.clear();
+            }
+
             "set-wallpaper" => {
                 let path = params
                     .get("path")
@@ -555,21 +599,56 @@ fn sync_applies(output_id: &str, sync: bool) -> bool {
     output_id == "all" || sync
 }
 
-/// Run `<backend> init` best-effort to ensure the daemon is started.
-async fn run_init(backend: &str) -> Result<()> {
-    let output = tokio::process::Command::new(backend)
-        .arg("init")
-        .output()
-        .await
-        .with_context(|| format!("failed to run {backend} init"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // "already running" is not an error
-        if !stderr.contains("already running") {
-            anyhow::bail!("{backend} init failed: {stderr}");
+async fn verify_backend_state(backend: &str, want_active: bool) -> Result<HashMap<String, Option<String>>> {
+    for _ in 0..10 {
+        match run_query(backend).await {
+            Ok(outputs) if want_active => return Ok(outputs),
+            Err(_) if !want_active => return Ok(HashMap::new()),
+            _ => tokio::time::sleep(Duration::from_millis(100)).await,
         }
     }
+
+    if want_active {
+        anyhow::bail!("{backend} daemon did not become ready in time")
+    } else {
+        anyhow::bail!("{backend} daemon did not stop in time")
+    }
+}
+
+async fn start_backend_daemon(backend: &str) -> Result<HashMap<String, Option<String>>> {
+    if run_query(backend).await.is_ok() {
+        return run_query(backend).await;
+    }
+
+    let daemon_bin = backend_daemon_binary(backend);
+    tokio::process::Command::new(daemon_bin)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .with_context(|| format!("failed to spawn {daemon_bin}"))?;
+
+    verify_backend_state(backend, true).await
+}
+
+async fn stop_backend_daemon(backend: &str) -> Result<()> {
+    if run_query(backend).await.is_err() {
+        return Ok(());
+    }
+
+    let args = backend_stop_args(backend);
+    let output = tokio::process::Command::new(backend)
+        .args(&args)
+        .output()
+        .await
+        .with_context(|| format!("failed to run {backend} {args:?}"))?;
+
+    if !output.status.success() && run_query(backend).await.is_ok() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("{backend} kill failed: {stderr}");
+    }
+
+    let _ = verify_backend_state(backend, false).await?;
     Ok(())
 }
 
@@ -942,6 +1021,23 @@ async fn wallpaper_applicator(
         }
     }
     log::warn!("[awww] wallpaper applicator exited");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daemon_binary_matches_backend() {
+        assert_eq!(backend_daemon_binary("awww"), "awww-daemon");
+        assert_eq!(backend_daemon_binary("swww"), "swww-daemon");
+    }
+
+    #[test]
+    fn stop_args_use_kill() {
+        assert_eq!(backend_stop_args("awww"), vec!["kill"]);
+        assert_eq!(backend_stop_args("swww"), vec!["kill"]);
+    }
 }
 
 fn main() -> Result<()> {

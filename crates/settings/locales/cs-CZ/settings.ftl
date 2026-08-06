@@ -46,7 +46,9 @@ audio-port-disconnected = Odpojeno
 audio-virtual-devices = Virtuální zařízení
 audio-create-virtual-sink = Vytvořit výstup
 audio-create-virtual-source = Vytvořit vstup
+audio-create-virtual-duplex = Vytvořit duplex
 audio-remove-virtual-device = Odebrat
+audio-virtual-action-failed = Akce selhala
 audio-virtual-devices-empty = Žádná virtuální zařízení
 audio-virtual-devices-empty-desc = Vytvořte virtuální zvukové výstupy a vstupy pro směrování nebo nahrávání
 audio-create-device-title = Vytvořit virtuální zařízení
@@ -56,6 +58,7 @@ audio-add-virtual-device = Přidat
 audio-virtual-device-type = Typ zařízení
 audio-virtual-type-sink = Výstup
 audio-virtual-type-source = Vstup
+audio-virtual-type-duplex = Duplexní zařízení
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Zapnuto
@@ -390,6 +393,8 @@ sounds-size-mb = { $size } MB
 
 # Tapeta
 settings-wallpaper = Tapeta
+wallpaper-service = Služba
+wallpaper-service-toggle = Služba tapet
 wallpaper-current = Aktuální tapeta
 wallpaper-current-path = Tapeta
 wallpaper-none = Žádná tapeta nastavena

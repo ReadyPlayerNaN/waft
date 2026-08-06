@@ -36,6 +36,7 @@ use crate::components::toggles::network::{
     TetheringToggles, VpnToggles, WifiToggles, WiredToggles,
 };
 use crate::components::toggles::night_light::night_light_toggle;
+use crate::components::toggles::wallpaper::wallpaper_toggle;
 use crate::components::weather::WeatherComponent;
 use crate::layout::model::LayoutNode;
 use crate::layout::types::WidgetFeatureToggle;
@@ -477,6 +478,15 @@ fn render_feature_toggle_grid(
                     }
                     "NightLightToggle" => {
                         let t = Rc::new(night_light_toggle(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
+                        keep.push(Box::new(t));
+                    }
+                    "WallpaperToggle" => {
+                        let t = Rc::new(wallpaper_toggle(
                             &ctx.store,
                             &ctx.action_callback,
                             dynamic_rebuild.clone(),

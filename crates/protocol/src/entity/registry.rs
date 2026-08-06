@@ -656,7 +656,8 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                     "string",
                     "Absolute path to current wallpaper image",
                 ),
-                prop("available", "bool", "Whether swww-daemon is running"),
+                prop("available", "bool", "Whether the wallpaper backend binary is available"),
+                prop("active", "bool", "Whether the wallpaper backend daemon is active"),
                 prop("transition", "object", "Transition animation parameters"),
                 prop("wallpaper_dir", "string", "Configured wallpaper directory"),
                 prop("sync", "bool", "Whether all outputs are synchronized"),
@@ -693,6 +694,8 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                         param("sync", "bool", "Synchronize all outputs"),
                     ],
                 ),
+                action("start", "Start the wallpaper backend daemon"),
+                action("stop", "Stop the wallpaper backend daemon"),
             ],
         },
         // ── keyboard ──

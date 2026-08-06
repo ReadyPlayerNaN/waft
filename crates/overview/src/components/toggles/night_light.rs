@@ -32,6 +32,7 @@ pub fn night_light_toggle(
                 details: n.period.clone(),
                 icon: None,
             },
+            action_for_click: |_n, _active| "toggle",
         },
     )
 }

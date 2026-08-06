@@ -437,6 +437,17 @@ impl WaftDaemon {
             AppMessage::Status { entity_type } => {
                 debug!("app {conn_id} requested status for {entity_type}");
 
+                let has_cached = self.entity_cache.values().any(|c| c.entity_type == entity_type);
+                if !has_cached {
+                    self.plugin_spawner.ensure_plugin_for_entity_type(&entity_type);
+                    for _ in 0..20 {
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        if self.entity_cache.values().any(|c| c.entity_type == entity_type) {
+                            break;
+                        }
+                    }
+                }
+
                 if let Some(conn) = self.connections.get(&conn_id) {
                     for cached in self.entity_cache.values() {
                         if cached.entity_type == entity_type {
@@ -451,6 +462,15 @@ impl WaftDaemon {
                             }
                         }
                     }
+
+                    if let Err(e) = conn
+                        .send(&AppNotification::StatusComplete {
+                            entity_type: entity_type.clone(),
+                        })
+                        .await
+                    {
+                        warn!("failed to send StatusComplete to {conn_id}: {e}");
+                    }
                 }
             }
 
@@ -461,7 +481,21 @@ impl WaftDaemon {
                 params,
                 timeout_ms,
             } => {
-                if let Some(plugin_conn_id) = self.plugin_registry.connection_for_urn(&urn) {
+                let mut plugin_conn_id = self.plugin_registry.connection_for_urn(&urn);
+
+                if plugin_conn_id.is_none() {
+                    let entity_type = urn.root_entity_type().to_string();
+                    self.plugin_spawner.ensure_plugin_for_entity_type(&entity_type);
+                    for _ in 0..20 {
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        plugin_conn_id = self.plugin_registry.connection_for_urn(&urn);
+                        if plugin_conn_id.is_some() {
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(plugin_conn_id) = plugin_conn_id {
                     self.action_tracker
                         .track(action_id, conn_id, plugin_conn_id, timeout_ms);
 
@@ -476,7 +510,6 @@ impl WaftDaemon {
                         && let Err(e) = plugin_conn.send(&cmd).await
                     {
                         warn!("failed to forward TriggerAction to plugin: {e}");
-                        // Resolve the action as failed
                         if let Some(action) = self.action_tracker.resolve(action_id)
                             && let Some(app_conn) = self.connections.get(&action.app_conn_id)
                         {
@@ -488,16 +521,13 @@ impl WaftDaemon {
                                 .await;
                         }
                     }
-                } else {
-                    // No plugin found for this URN
-                    if let Some(conn) = self.connections.get(&conn_id) {
-                        let _ = conn
-                            .send(&AppNotification::ActionError {
-                                action_id,
-                                error: format!("no plugin found for URN: {urn}"),
-                            })
-                            .await;
-                    }
+                } else if let Some(conn) = self.connections.get(&conn_id) {
+                    let _ = conn
+                        .send(&AppNotification::ActionError {
+                            action_id,
+                            error: format!("no plugin found for URN: {urn}"),
+                        })
+                        .await;
                 }
             }
 

@@ -62,7 +62,7 @@ impl AudioPage {
         root.append(&cards_box);
 
         // Virtual devices section
-        let virtual_section = VirtualDevicesSection::new(action_callback);
+        let virtual_section = VirtualDevicesSection::new(entity_store, action_callback);
         root.append(&virtual_section.root);
 
         // Empty state

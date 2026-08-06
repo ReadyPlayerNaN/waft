@@ -762,9 +762,10 @@ pub fn parse_sources(output: &str, default_source: Option<&str>) -> Result<Vec<S
                        active_port: Option<String>,
                        ports_lines: &[String],
                        sources: &mut Vec<SourceInfo>| {
-        if name.contains(".monitor") {
-            return;
-        }
+        // Keep monitor sources in the parsed result. Higher layers decide which
+        // monitors are exposed to Waft so managed virtual input/duplex devices can
+        // surface their sink-backed monitor source while ordinary monitor sources
+        // remain hidden.
         let port_refs: Vec<&str> = ports_lines
             .iter()
             .map(std::string::String::as_str)

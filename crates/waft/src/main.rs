@@ -38,8 +38,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 plugin_discovery::print_plugin_description(&name, cli.json);
             }
         },
-        Some(Command::Commands { filter, run }) => {
-            commands_command::run(cli.json, filter.as_deref(), run);
+        Some(Command::Commands {
+            filter,
+            run,
+            refresh,
+        }) => {
+            commands_command::run(cli.json, filter.as_deref(), run, refresh);
         }
         Some(Command::Protocol {
             entity_type,

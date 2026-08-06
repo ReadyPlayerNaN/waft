@@ -1,12 +1,13 @@
 //! Wallpaper settings page -- smart container.
 //!
 //! Subscribes to `EntityStore` for `wallpaper-manager` entity type.
-//! Composes mode, preview, transition, and configuration sections.
+//! Composes service, mode, preview, transition, and configuration sections.
 //! Routes entity data down and user actions up.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use adw::prelude::*;
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
@@ -33,6 +34,12 @@ impl WallpaperPage {
     /// Phase 1: Register static search entries without constructing widgets.
     pub fn register_search(idx: &mut SearchIndex) {
         let page_title = t("settings-wallpaper");
+        idx.add_section_deferred(
+            "wallpaper",
+            &page_title,
+            &t("wallpaper-service"),
+            "wallpaper-service",
+        );
         idx.add_section_deferred(
             "wallpaper",
             &page_title,
@@ -72,6 +79,15 @@ impl WallpaperPage {
     ) -> Self {
         let root = crate::page_layout::page_root();
 
+        let service_group = adw::PreferencesGroup::builder()
+            .title(t("wallpaper-service"))
+            .build();
+        let service_toggle = adw::SwitchRow::builder()
+            .title(t("wallpaper-service-toggle"))
+            .build();
+        service_group.add(&service_toggle);
+        root.append(&service_group);
+
         let mode = Rc::new(ModeSection::new());
         root.append(&mode.root);
 
@@ -94,6 +110,12 @@ impl WallpaperPage {
         // Backfill search entry widgets
         {
             let mut idx = search_index.borrow_mut();
+            idx.backfill_widget(
+                "wallpaper",
+                &t("wallpaper-service"),
+                Some(&t("wallpaper-service-toggle")),
+                Some(&service_toggle),
+            );
             idx.backfill_widget("wallpaper", &t("wallpaper-mode"), None, Some(&mode.root));
             idx.backfill_widget(
                 "wallpaper",
@@ -123,6 +145,23 @@ impl WallpaperPage {
 
         // Current URN for the "all" entity (or first output)
         let current_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
+        let service_updating = Rc::new(Cell::new(false));
+
+        // Wire service output
+        {
+            let cb = action_callback.clone();
+            let urn_ref = current_urn.clone();
+            let service_updating = service_updating.clone();
+            service_toggle.connect_active_notify(move |row| {
+                if service_updating.get() {
+                    return;
+                }
+                if let Some(ref urn) = *urn_ref.borrow() {
+                    let action = if row.is_active() { "start" } else { "stop" };
+                    cb(urn.clone(), action.to_string(), serde_json::Value::Null);
+                }
+            });
+        }
 
         // Wire mode output
         {
@@ -216,6 +255,8 @@ impl WallpaperPage {
         fn reconcile(
             entities: &[(Urn, WallpaperManager)],
             urn_ref: &Rc<RefCell<Option<Urn>>>,
+            service_toggle: &adw::SwitchRow,
+            service_updating: &Rc<Cell<bool>>,
             mode: &Rc<ModeSection>,
             preview: &Rc<PreviewSection>,
             transition: &Rc<TransitionSection>,
@@ -230,6 +271,10 @@ impl WallpaperPage {
 
             if let Some((urn, manager)) = target {
                 *urn_ref.borrow_mut() = Some(urn.clone());
+
+                service_updating.set(true);
+                service_toggle.set_active(manager.active);
+                service_updating.set(false);
 
                 mode.apply_props(
                     &manager.mode,
@@ -260,6 +305,8 @@ impl WallpaperPage {
         {
             let store = entity_store.clone();
             let urn_ref = current_urn.clone();
+            let service_toggle_ref = service_toggle.clone();
+            let service_updating_ref = service_updating.clone();
             let mode_ref = mode.clone();
             let preview_ref = preview.clone();
             let transition_ref = transition.clone();
@@ -272,6 +319,8 @@ impl WallpaperPage {
                 reconcile(
                     &entities,
                     &urn_ref,
+                    &service_toggle_ref,
+                    &service_updating_ref,
                     &mode_ref,
                     &preview_ref,
                     &transition_ref,
@@ -285,6 +334,8 @@ impl WallpaperPage {
         {
             let store = entity_store.clone();
             let urn_ref = current_urn;
+            let service_toggle_ref = service_toggle.clone();
+            let service_updating_ref = service_updating.clone();
             let mode_ref = mode.clone();
             let preview_ref = preview.clone();
             let transition_ref = transition.clone();
@@ -302,6 +353,8 @@ impl WallpaperPage {
                     reconcile(
                         &entities,
                         &urn_ref,
+                        &service_toggle_ref,
+                        &service_updating_ref,
                         &mode_ref,
                         &preview_ref,
                         &transition_ref,

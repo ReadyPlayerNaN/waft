@@ -28,6 +28,11 @@ nightlight-night-until = Noc do { $time }
 sunsetr-no-presets = Nejsou nakonfigurovány žádné předvolby
 feature-toggle-action-failed = Akce selhala
 
+# Wallpaper
+wallpaper-title = Tapeta
+wallpaper-active = Aktivní
+wallpaper-inactive = Neaktivní
+
 # Agenda
 agenda-title = Kalendář
 agenda-empty = Žádné nadcházející události

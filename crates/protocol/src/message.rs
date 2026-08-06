@@ -101,6 +101,9 @@ pub enum AppNotification {
 
     /// Response to a Describe request.
     DescribeResponse { plugins: Vec<PluginDescription> },
+
+    /// Marks completion of one Status query for a specific entity type.
+    StatusComplete { entity_type: String },
 }
 
 /// Commands sent from the waft daemon to a plugin.
@@ -344,6 +347,13 @@ mod tests {
     #[test]
     fn app_notification_describe_response_empty() {
         roundtrip_json(&AppNotification::DescribeResponse { plugins: vec![] });
+    }
+
+    #[test]
+    fn app_notification_status_complete() {
+        roundtrip_json(&AppNotification::StatusComplete {
+            entity_type: "clock".to_string(),
+        });
     }
 
     #[test]

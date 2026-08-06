@@ -32,6 +32,7 @@ pub fn caffeine_toggle(
                 details: i.active.then(|| crate::i18n::t("caffeine-active")),
                 icon: None,
             },
+            action_for_click: |_i, _active| "toggle",
         },
     )
 }

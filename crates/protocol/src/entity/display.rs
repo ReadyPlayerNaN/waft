@@ -327,8 +327,11 @@ pub struct WallpaperManager {
     pub output: String,
     /// Absolute path to the currently active wallpaper image, if known.
     pub current_wallpaper: Option<String>,
-    /// Whether swww-daemon is running and responsive.
+    /// Whether the wallpaper backend binary is available.
     pub available: bool,
+    /// Whether the wallpaper backend daemon is currently active.
+    #[serde(default)]
+    pub active: bool,
     /// Transition configuration currently in effect.
     pub transition: WallpaperTransition,
     /// Configured wallpaper directory.
@@ -667,6 +670,7 @@ mod tests {
             output: "DP-3".to_string(),
             current_wallpaper: Some("/home/user/wallpaper.png".to_string()),
             available: true,
+            active: true,
             transition: WallpaperTransition {
                 transition_type: "fade".to_string(),
                 fps: 60,
@@ -690,6 +694,7 @@ mod tests {
             output: "all".to_string(),
             current_wallpaper: None,
             available: false,
+            active: false,
             transition: WallpaperTransition {
                 transition_type: "none".to_string(),
                 fps: 30,
@@ -727,6 +732,7 @@ mod tests {
         assert_eq!(decoded.mode, WallpaperMode::Static);
         assert_eq!(decoded.current_segment, None);
         assert!(!decoded.style_tracking_available);
+        assert!(!decoded.active);
     }
 
     #[test]

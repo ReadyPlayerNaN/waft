@@ -125,8 +125,8 @@ async fn query_daemon(
             .await
             .map_err(|e| format!("Failed to send Status: {e}"))?;
 
-            // Collect Status responses with a short read timeout
-            collect_responses(&mut stream, &mut entities).await?;
+            // Collect bounded Status responses until the daemon marks completion.
+            collect_responses(&mut stream, &mut entities, &[et.to_string()]).await?;
 
             // Unsubscribe before disconnecting
             send_message(
@@ -148,7 +148,7 @@ async fn query_daemon(
             .await
             .map_err(|e| format!("Failed to send Status: {e}"))?;
 
-            collect_responses(&mut stream, &mut entities).await?;
+            collect_responses(&mut stream, &mut entities, &[et.to_string()]).await?;
         }
     } else {
         // Query all entity types from the static registry
@@ -164,7 +164,8 @@ async fn query_daemon(
             .map_err(|e| format!("Failed to send Status: {e}"))?;
         }
 
-        collect_responses(&mut stream, &mut entities).await?;
+        let expected: Vec<String> = all.iter().map(|info| info.entity_type.to_string()).collect();
+        collect_responses(&mut stream, &mut entities, &expected).await?;
     }
 
     // Deduplicate by URN (--start may produce duplicates from subscription + status)
@@ -173,20 +174,25 @@ async fn query_daemon(
     Ok(entities)
 }
 
-/// Read responses from the daemon with a short read timeout (500ms after last message).
+/// Read responses from the daemon until all requested Status queries complete.
 async fn collect_responses(
     stream: &mut UnixStream,
     entities: &mut Vec<CollectedEntity>,
+    expected_entity_types: &[String],
 ) -> Result<(), String> {
-    let read_timeout = Duration::from_millis(500);
-    loop {
-        match tokio::time::timeout(read_timeout, read_message(stream)).await {
-            Ok(Ok(Some(notification))) => {
-                collect_notification(entities, notification);
-            }
-            Ok(Ok(None)) => break, // clean disconnect
-            Ok(Err(e)) => return Err(format!("Failed to read from daemon: {e}")),
-            Err(_) => break, // timeout — no more messages
+    let mut pending: std::collections::HashSet<String> =
+        expected_entity_types.iter().cloned().collect();
+
+    while !pending.is_empty() {
+        match read_message(stream).await {
+            Ok(Some(notification)) => match notification {
+                AppNotification::StatusComplete { entity_type } => {
+                    pending.remove(&entity_type);
+                }
+                other => collect_notification(entities, other),
+            },
+            Ok(None) => break,
+            Err(e) => return Err(format!("Failed to read from daemon: {e}")),
         }
     }
     Ok(())

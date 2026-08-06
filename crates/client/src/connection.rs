@@ -199,6 +199,17 @@ impl WaftClient {
         params: serde_json::Value,
     ) -> Uuid {
         let action_id = Uuid::new_v4();
+        self.trigger_action_with_id(urn, action, params, action_id)
+    }
+
+    /// Trigger an action using a caller-provided action id.
+    pub fn trigger_action_with_id(
+        &self,
+        urn: waft_protocol::Urn,
+        action: &str,
+        params: serde_json::Value,
+        action_id: Uuid,
+    ) -> Uuid {
         let msg = AppMessage::TriggerAction {
             urn,
             action: action.to_string(),

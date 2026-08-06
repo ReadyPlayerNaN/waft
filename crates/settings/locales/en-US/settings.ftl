@@ -46,7 +46,9 @@ audio-port-disconnected = Disconnected
 audio-virtual-devices = Virtual Devices
 audio-create-virtual-sink = Create Sink
 audio-create-virtual-source = Create Source
+audio-create-virtual-duplex = Create Duplex
 audio-remove-virtual-device = Remove
+audio-virtual-action-failed = Action failed
 audio-virtual-devices-empty = No Virtual Devices
 audio-virtual-devices-empty-desc = Create virtual audio sinks and sources for routing or recording
 audio-create-device-title = Create Virtual Device
@@ -56,6 +58,7 @@ audio-add-virtual-device = Add
 audio-virtual-device-type = Device Type
 audio-virtual-type-sink = Output Sink
 audio-virtual-type-source = Input Source
+audio-virtual-type-duplex = Duplex Device
 
 # Bluetooth -- Adapter
 bt-adapter-enabled = Enabled
@@ -390,6 +393,8 @@ sounds-size-mb = { $size } MB
 
 # Wallpaper
 settings-wallpaper = Wallpaper
+wallpaper-service = Service
+wallpaper-service-toggle = Wallpaper Service
 wallpaper-current = Current Wallpaper
 wallpaper-current-path = Wallpaper
 wallpaper-none = No wallpaper set
