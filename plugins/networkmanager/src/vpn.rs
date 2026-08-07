@@ -3,11 +3,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 #[cfg(test)]
 use nmrs::models::DeviceState as NmDeviceState;
 use zbus::Connection;
-use zbus::zvariant::OwnedObjectPath;
+use zbus::zvariant::{ObjectPath, OwnedObjectPath};
+
+use crate::dbus_property::{NM_INTERFACE, NM_PATH, NM_SERVICE};
 
 use crate::state::{NmState, VpnConnectionInfo, VpnState};
 
@@ -63,9 +65,12 @@ fn nmrs_vpn_state_to_plugin_state(state: NmDeviceState, active: bool) -> VpnStat
 }
 
 /// Get active VPN states from NetworkManager keyed by UUID.
-pub async fn get_active_vpn_connections(conn: &Connection) -> Result<HashMap<String, VpnState>> {
+pub async fn get_active_vpn_connections(_conn: &Connection) -> Result<HashMap<String, VpnState>> {
+    // Use a fresh system-bus connection here. Reusing the long-lived plugin
+    // connection has proven too stale around rapid VPN transitions.
+    let conn = Connection::system().await?;
     let nm = zbus::Proxy::new(
-        conn,
+        &conn,
         "org.freedesktop.NetworkManager",
         "/org/freedesktop/NetworkManager",
         "org.freedesktop.NetworkManager",
@@ -77,7 +82,7 @@ pub async fn get_active_vpn_connections(conn: &Connection) -> Result<HashMap<Str
 
     for path in active_paths {
         let active = match zbus::Proxy::new(
-            conn,
+            &conn,
             "org.freedesktop.NetworkManager",
             path,
             "org.freedesktop.NetworkManager.Connection.Active",
@@ -105,6 +110,78 @@ pub async fn get_active_vpn_connections(conn: &Connection) -> Result<HashMap<Str
     }
 
     Ok(states)
+}
+
+pub async fn activate_vpn_by_uuid(conn: &Connection, uuid: &str) -> Result<()> {
+    let settings = zbus::Proxy::new(
+        conn,
+        NM_SERVICE,
+        "/org/freedesktop/NetworkManager/Settings",
+        "org.freedesktop.NetworkManager.Settings",
+    )
+    .await
+    .context("Failed to create NM settings proxy")?;
+
+    let (conn_path,): (OwnedObjectPath,) = settings
+        .call("GetConnectionByUuid", &(uuid,))
+        .await
+        .with_context(|| format!("failed to look up VPN connection {uuid}"))?;
+
+    let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
+        .await
+        .context("Failed to create NM proxy")?;
+
+    let conn_obj = ObjectPath::try_from(conn_path.as_str())?;
+    let no_device = ObjectPath::from_static_str_unchecked("/");
+    let no_specific = ObjectPath::from_static_str_unchecked("/");
+    let _: (OwnedObjectPath,) = proxy
+        .call("ActivateConnection", &(&conn_obj, &no_device, &no_specific))
+        .await
+        .context("Failed to activate VPN connection")?;
+
+    Ok(())
+}
+
+pub async fn deactivate_vpn_by_uuid(conn: &Connection, uuid: &str) -> Result<()> {
+    let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
+        .await
+        .context("Failed to create NM proxy")?;
+
+    let active_paths: Vec<OwnedObjectPath> = proxy
+        .get_property("ActiveConnections")
+        .await
+        .context("Failed to read ActiveConnections")?;
+
+    for path in active_paths {
+        let active = match zbus::Proxy::new(
+            conn,
+            NM_SERVICE,
+            path.clone(),
+            "org.freedesktop.NetworkManager.Connection.Active",
+        )
+        .await
+        {
+            Ok(proxy) => proxy,
+            Err(_) => continue,
+        };
+
+        let active_uuid: String = match active.get_property("Uuid").await {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if active_uuid != uuid {
+            continue;
+        }
+
+        let active_obj = ObjectPath::try_from(path.as_str())?;
+        let _: () = proxy
+            .call("DeactivateConnection", &(active_obj,))
+            .await
+            .context("Failed to deactivate VPN connection")?;
+        return Ok(());
+    }
+
+    Ok(())
 }
 
 /// Refresh VPN connection states from NetworkManager.

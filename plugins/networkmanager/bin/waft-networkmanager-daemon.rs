@@ -46,7 +46,10 @@ use waft_plugin_networkmanager::state::{
 use waft_plugin_networkmanager::tethering::{
     deactivate_tethering, get_active_tethering_connections, get_tethering_profiles,
 };
-use waft_plugin_networkmanager::vpn::{get_active_vpn_connections, get_vpn_profiles};
+use waft_plugin_networkmanager::vpn::{
+    activate_vpn_by_uuid, deactivate_vpn_by_uuid, get_active_vpn_connections, get_vpn_profiles,
+    refresh_vpn_states,
+};
 use waft_plugin_networkmanager::wifi::{
     activate_connection, add_and_activate_connection, build_wifi_qr_string, connect_wired_dbus,
     get_connections_for_ssid, get_wifi_psk,
@@ -61,12 +64,13 @@ struct NetworkManagerPlugin {
     conn: Connection,
     nm: nmrs::NetworkManager,
     state: Arc<StdMutex<NmState>>,
+    notifier: EntityNotifier,
     /// Channel to request WiFi scan from background task.
     scan_tx: tokio::sync::mpsc::Sender<()>,
 }
 
 impl NetworkManagerPlugin {
-    async fn new(scan_tx: tokio::sync::mpsc::Sender<()>) -> Result<Self> {
+    async fn new(scan_tx: tokio::sync::mpsc::Sender<()>, notifier: EntityNotifier) -> Result<Self> {
         let conn = Connection::system()
             .await
             .context("Failed to connect to system bus")?;
@@ -300,6 +304,7 @@ impl NetworkManagerPlugin {
             conn,
             nm,
             state: Arc::new(StdMutex::new(state)),
+            notifier,
             scan_tx,
         };
 
@@ -312,6 +317,36 @@ impl NetworkManagerPlugin {
 
     fn lock_state(&self) -> std::sync::MutexGuard<'_, NmState> {
         lock_or_recover(&self.state)
+    }
+
+    fn spawn_vpn_reconcile(&self) {
+        let conn = self.conn.clone();
+        let nm = self.nm.clone();
+        let state = self.state.clone();
+        let notifier = self.notifier.clone();
+        tokio::spawn(async move {
+            for _ in 0..30 {
+                match refresh_vpn_states(&conn, &nm, &state).await {
+                    Ok(()) => notifier.notify(),
+                    Err(e) => {
+                        warn!("[nm] Failed to refresh VPN states after action: {e}");
+                        break;
+                    }
+                };
+
+                let any_transitioning = {
+                    let state = lock_or_recover(&state);
+                    state.vpn_connections.iter().any(|vpn| {
+                        matches!(vpn.state, VpnState::Connecting | VpnState::Disconnecting)
+                    })
+                };
+                if !any_transitioning {
+                    break;
+                }
+
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+        });
     }
 }
 
@@ -1333,7 +1368,7 @@ impl NetworkManagerPlugin {
             }
         }
 
-        if let Err(e) = self.nm.connect_vpn_by_uuid(uuid).await {
+        if let Err(e) = activate_vpn_by_uuid(&self.conn, uuid).await {
             error!("[nm] Failed to connect {conn_type} VPN {name} ({uuid}): {e}");
             let mut state = self.lock_state();
             if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
@@ -1341,6 +1376,8 @@ impl NetworkManagerPlugin {
             }
             return Err(e.into());
         }
+
+        self.spawn_vpn_reconcile();
 
         Ok(())
     }
@@ -1355,7 +1392,7 @@ impl NetworkManagerPlugin {
             }
         }
 
-        if let Err(e) = self.nm.disconnect_vpn_by_uuid(uuid).await {
+        if let Err(e) = deactivate_vpn_by_uuid(&self.conn, uuid).await {
             error!("[nm] Failed to disconnect VPN {name} ({uuid}): {e}");
             let mut state = self.lock_state();
             if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
@@ -1363,6 +1400,8 @@ impl NetworkManagerPlugin {
             }
             return Err(e.into());
         }
+
+        self.spawn_vpn_reconcile();
 
         Ok(())
     }
@@ -1556,7 +1595,7 @@ fn main() -> Result<()> {
     .run(|notifier| async move {
         let (scan_tx, scan_rx) = tokio::sync::mpsc::channel::<()>(4);
 
-        let plugin = NetworkManagerPlugin::new(scan_tx).await?;
+        let plugin = NetworkManagerPlugin::new(scan_tx, notifier.clone()).await?;
 
         let shared_state = plugin.shared_state();
         let monitor_conn = plugin.conn.clone();

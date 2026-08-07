@@ -4,6 +4,7 @@
 //! with expandable menu showing individual VPN connections.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use waft_client::{EntityActionCallback, EntityStore};
@@ -33,6 +34,51 @@ pub struct VpnToggles {
     menu_store: Rc<waft_core::menu_state::MenuStore>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VpnSummary {
+    active: bool,
+    busy: bool,
+    details: Option<String>,
+}
+
+fn vpn_action_for_state(state: entity::network::VpnState) -> Option<&'static str> {
+    match state {
+        entity::network::VpnState::Connected => Some("disconnect"),
+        entity::network::VpnState::Disconnected => Some("connect"),
+        entity::network::VpnState::Connecting | entity::network::VpnState::Disconnecting => None,
+    }
+}
+
+fn summarize_vpns(vpns: &[(Urn, entity::network::Vpn)]) -> VpnSummary {
+    let any_connected = vpns
+        .iter()
+        .any(|(_, vpn)| vpn.state == entity::network::VpnState::Connected);
+    let any_connecting = vpns
+        .iter()
+        .any(|(_, vpn)| vpn.state == entity::network::VpnState::Connecting);
+    let details = vpns
+        .iter()
+        .find(|(_, vpn)| vpn.state == entity::network::VpnState::Disconnecting)
+        .map(|(_, vpn)| format!("{} — {}", vpn.name, crate::i18n::t("vpn-disconnecting")))
+        .or_else(|| {
+            vpns.iter()
+                .find(|(_, vpn)| vpn.state == entity::network::VpnState::Connecting)
+                .map(|(_, vpn)| format!("{} — {}", vpn.name, crate::i18n::t("vpn-connecting")))
+        })
+        .or_else(|| {
+            vpns.iter()
+                .find(|(_, vpn)| vpn.state == entity::network::VpnState::Connected)
+                .map(|(_, vpn)| vpn.name.clone())
+        })
+        .or_else(|| Some(crate::i18n::t("vpn-disconnected")));
+
+    VpnSummary {
+        active: any_connected || any_connecting,
+        busy: false,
+        details,
+    }
+}
+
 impl VpnToggles {
     pub fn new(
         store: &Rc<EntityStore>,
@@ -50,9 +96,9 @@ impl VpnToggles {
             let rebuild = rebuild_callback.clone();
             let menu_store_ref = menu_store.clone();
 
-            // Track VPN URNs + states for the click handler
-            let vpn_states: Rc<RefCell<Vec<(Urn, entity::network::VpnState)>>> =
-                Rc::new(RefCell::new(Vec::new()));
+            // Track VPN URNs + current states for click handlers.
+            let vpn_states: Rc<RefCell<HashMap<String, entity::network::VpnState>>> =
+                Rc::new(RefCell::new(HashMap::new()));
 
             store.subscribe_type(entity::network::VPN_ENTITY_TYPE, move || {
                 let vpns: Vec<(Urn, entity::network::Vpn)> =
@@ -63,7 +109,7 @@ impl VpnToggles {
                     let mut states = vpn_states.borrow_mut();
                     states.clear();
                     for (urn, vpn) in &vpns {
-                        states.push((urn.clone(), vpn.state));
+                        states.insert(urn.as_str().to_string(), vpn.state);
                     }
                 }
 
@@ -80,35 +126,17 @@ impl VpnToggles {
                     return;
                 }
 
-                // Compute consolidated state
-                let any_active = vpns.iter().any(|(_urn, vpn)| {
-                    matches!(
-                        vpn.state,
-                        entity::network::VpnState::Connected
-                            | entity::network::VpnState::Connecting
-                    )
-                });
-                let any_busy = vpns.iter().any(|(_urn, vpn)| {
-                    matches!(
-                        vpn.state,
-                        entity::network::VpnState::Connecting
-                            | entity::network::VpnState::Disconnecting
-                    )
-                });
-                let details = vpns
-                    .iter()
-                    .find(|(_, vpn)| vpn.state == entity::network::VpnState::Connected)
-                    .map(|(_, vpn)| vpn.name.clone());
+                let summary = summarize_vpns(&vpns);
 
                 if let Some(entry) = entries_mut.iter().find(|e| e.urn_str == "vpn-consolidated") {
                     // Update existing consolidated toggle
-                    entry.toggle.set_active(any_active);
-                    entry.toggle.set_busy(any_busy);
-                    entry.toggle.set_details(details.clone());
+                    entry.toggle.set_active(summary.active);
+                    entry.toggle.set_busy(summary.busy);
+                    entry.toggle.set_details(summary.details.clone());
                     entry.toggle.set_expandable(!vpns.is_empty());
 
                     // Update VPN menu rows
-                    update_vpn_menu_rows(entry, &vpns, &cb);
+                    update_vpn_menu_rows(entry, &vpns, &cb, &vpn_states);
                 } else {
                     // Create consolidated VPN toggle
                     let widget_id = "vpn-toggle-consolidated";
@@ -117,9 +145,9 @@ impl VpnToggles {
                     let menu = FeatureToggleMenuWidget::new();
                     let toggle = Rc::new(FeatureToggleWidget::new(
                         FeatureToggleProps {
-                            active: any_active,
-                            busy: any_busy,
-                            details,
+                            active: summary.active,
+                            busy: summary.busy,
+                            details: summary.details.clone(),
                             expandable: !vpns.is_empty(),
                             icon: "network-vpn-symbolic".to_string(),
                             title: "VPN".to_string(),
@@ -136,19 +164,21 @@ impl VpnToggles {
                     let menu_store_for_expand = menu_store_ref.clone();
                     toggle.connect_output(move |output| match output {
                         FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
-                            let states = vpn_states_for_click.borrow();
-                            for (urn, state) in states.iter() {
-                                if matches!(
-                                    state,
-                                    entity::network::VpnState::Connected
-                                        | entity::network::VpnState::Connecting
-                                ) {
-                                    action_cb(
-                                        urn.clone(),
-                                        "disconnect".to_string(),
-                                        serde_json::Value::Null,
-                                    );
-                                }
+                            let actionable_urns: Vec<Urn> = vpn_states_for_click
+                                .borrow()
+                                .iter()
+                                .filter_map(|(urn, state)| {
+                                    (*state == entity::network::VpnState::Connected)
+                                        .then(|| Urn::parse(urn).ok())
+                                        .flatten()
+                                })
+                                .collect();
+                            for urn in actionable_urns {
+                                action_cb(
+                                    urn,
+                                    "disconnect".to_string(),
+                                    serde_json::Value::Null,
+                                );
                             }
                         }
                         FeatureToggleOutput::ExpandToggle(_) => {
@@ -163,13 +193,13 @@ impl VpnToggles {
                         network_rows: RefCell::new(Vec::new()),
                         info_rows: RefCell::new(Vec::new()),
                         weight: 160,
-                        connected: Rc::new(Cell::new(any_active)),
+                        connected: Rc::new(Cell::new(summary.active)),
                         settings_button: None,
                         settings_button_label: None,
                     };
 
                     // Populate VPN menu rows
-                    update_vpn_menu_rows(&entry, &vpns, &cb);
+                    update_vpn_menu_rows(&entry, &vpns, &cb, &vpn_states);
 
                     entries_mut.push(entry);
                     drop(entries_mut);
@@ -211,6 +241,7 @@ fn update_vpn_menu_rows(
     entry: &ToggleEntry,
     vpns: &[(Urn, entity::network::Vpn)],
     action_callback: &EntityActionCallback,
+    vpn_states: &Rc<RefCell<HashMap<String, entity::network::VpnState>>>,
 ) {
     let mut network_rows = entry.network_rows.borrow_mut();
 
@@ -258,13 +289,15 @@ fn update_vpn_menu_rows(
 
             let action_cb = action_callback.clone();
             let urn_for_click = vpn_urn.clone();
-            let vpn_state = vpn.state;
+            let vpn_states_for_click = vpn_states.clone();
             conn_row.connect_output(move |ConnectionRowOutput::Toggle| {
-                let action = match vpn_state {
-                    entity::network::VpnState::Connected => "disconnect",
-                    entity::network::VpnState::Disconnected => "connect",
-                    // Don't send actions during transitions
-                    _ => return,
+                let current_state = vpn_states_for_click
+                    .borrow()
+                    .get(urn_for_click.as_str())
+                    .copied()
+                    .unwrap_or(entity::network::VpnState::Disconnected);
+                let Some(action) = vpn_action_for_state(current_state) else {
+                    return;
                 };
                 action_cb(
                     urn_for_click.clone(),
@@ -288,5 +321,57 @@ fn vpn_icon_name(vpn_type: &entity::network::VpnType) -> String {
     match vpn_type {
         entity::network::VpnType::Wireguard => "network-vpn-symbolic".to_string(),
         entity::network::VpnType::Vpn => "network-vpn-symbolic".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_vpn(name: &str, state: entity::network::VpnState) -> (Urn, entity::network::Vpn) {
+        (
+            Urn::new("networkmanager", entity::network::VPN_ENTITY_TYPE, name),
+            entity::network::Vpn {
+                name: name.to_string(),
+                state,
+                vpn_type: entity::network::VpnType::Wireguard,
+            },
+        )
+    }
+
+    #[test]
+    fn aggregate_summary_prefers_transition_details_without_global_busy() {
+        let vpns = vec![
+            make_vpn("kiwi", entity::network::VpnState::Disconnecting),
+            make_vpn("office", entity::network::VpnState::Connected),
+        ];
+
+        let summary = summarize_vpns(&vpns);
+
+        assert!(summary.active);
+        assert!(!summary.busy, "one transitioning VPN must not globally busy-lock the tile");
+        assert_eq!(
+            summary.details,
+            Some(format!("kiwi — {}", crate::i18n::t("vpn-disconnecting")))
+        );
+    }
+
+    #[test]
+    fn aggregate_summary_marks_connecting_as_active() {
+        let vpns = vec![make_vpn("kiwi", entity::network::VpnState::Connecting)];
+        let summary = summarize_vpns(&vpns);
+        assert!(summary.active);
+        assert_eq!(
+            summary.details,
+            Some(format!("kiwi — {}", crate::i18n::t("vpn-connecting")))
+        );
+    }
+
+    #[test]
+    fn action_selection_is_per_vpn_state() {
+        assert_eq!(vpn_action_for_state(entity::network::VpnState::Disconnected), Some("connect"));
+        assert_eq!(vpn_action_for_state(entity::network::VpnState::Connected), Some("disconnect"));
+        assert_eq!(vpn_action_for_state(entity::network::VpnState::Connecting), None);
+        assert_eq!(vpn_action_for_state(entity::network::VpnState::Disconnecting), None);
     }
 }
