@@ -8,7 +8,6 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::display::{
@@ -251,17 +250,22 @@ impl WallpaperPage {
             });
         }
 
+        #[derive(Clone)]
+        struct ReconcileWidgets {
+            service_toggle: adw::SwitchRow,
+            service_updating: Rc<Cell<bool>>,
+            mode: Rc<ModeSection>,
+            preview: Rc<PreviewSection>,
+            transition: Rc<TransitionSection>,
+            config: Rc<ConfigSection>,
+            gallery: Rc<GallerySection>,
+        }
+
         // Reconciliation helper
         fn reconcile(
             entities: &[(Urn, WallpaperManager)],
             urn_ref: &Rc<RefCell<Option<Urn>>>,
-            service_toggle: &adw::SwitchRow,
-            service_updating: &Rc<Cell<bool>>,
-            mode: &Rc<ModeSection>,
-            preview: &Rc<PreviewSection>,
-            transition: &Rc<TransitionSection>,
-            config: &Rc<ConfigSection>,
-            gallery: &Rc<GallerySection>,
+            widgets: &ReconcileWidgets,
         ) {
             // Prefer the "all" entity for display
             let target = entities
@@ -272,27 +276,33 @@ impl WallpaperPage {
             if let Some((urn, manager)) = target {
                 *urn_ref.borrow_mut() = Some(urn.clone());
 
-                service_updating.set(true);
-                service_toggle.set_active(manager.active);
-                service_updating.set(false);
+                widgets.service_updating.set(true);
+                widgets.service_toggle.set_active(manager.active);
+                widgets.service_updating.set(false);
 
-                mode.apply_props(
+                widgets.mode.apply_props(
                     &manager.mode,
                     manager.current_segment.as_ref(),
                     manager.style_tracking_available,
                 );
-                preview.apply_props(manager.current_wallpaper.as_deref(), manager.available);
-                preview.set_browse_visible(matches!(manager.mode, WallpaperMode::Static));
-                transition.apply_props(
+                widgets
+                    .preview
+                    .apply_props(manager.current_wallpaper.as_deref(), manager.available);
+                widgets
+                    .preview
+                    .set_browse_visible(matches!(manager.mode, WallpaperMode::Static));
+                widgets.transition.apply_props(
                     &manager.transition.transition_type,
                     manager.transition.fps,
                     manager.transition.angle,
                     manager.transition.duration,
                 );
-                transition.set_sensitive(manager.available);
-                config.apply_props(&manager.wallpaper_dir, manager.sync, &manager.mode);
-                config.set_sensitive(manager.available);
-                gallery.apply_props(
+                widgets.transition.set_sensitive(manager.available);
+                widgets
+                    .config
+                    .apply_props(&manager.wallpaper_dir, manager.sync, &manager.mode);
+                widgets.config.set_sensitive(manager.available);
+                widgets.gallery.apply_props(
                     &manager.wallpaper_dir,
                     &manager.mode,
                     manager.current_wallpaper.as_deref(),
@@ -301,32 +311,26 @@ impl WallpaperPage {
             }
         }
 
+        let reconcile_widgets = ReconcileWidgets {
+            service_toggle: service_toggle.clone(),
+            service_updating: service_updating.clone(),
+            mode: mode.clone(),
+            preview: preview.clone(),
+            transition: transition.clone(),
+            config: config.clone(),
+            gallery: gallery.clone(),
+        };
+
         // Subscribe to wallpaper-manager entities
         {
             let store = entity_store.clone();
             let urn_ref = current_urn.clone();
-            let service_toggle_ref = service_toggle.clone();
-            let service_updating_ref = service_updating.clone();
-            let mode_ref = mode.clone();
-            let preview_ref = preview.clone();
-            let transition_ref = transition.clone();
-            let config_ref = config.clone();
-            let gallery_ref = gallery.clone();
+            let widgets = reconcile_widgets.clone();
 
             entity_store.subscribe_type(WALLPAPER_MANAGER_ENTITY_TYPE, move || {
                 let entities: Vec<(Urn, WallpaperManager)> =
                     store.get_entities_typed(WALLPAPER_MANAGER_ENTITY_TYPE);
-                reconcile(
-                    &entities,
-                    &urn_ref,
-                    &service_toggle_ref,
-                    &service_updating_ref,
-                    &mode_ref,
-                    &preview_ref,
-                    &transition_ref,
-                    &config_ref,
-                    &gallery_ref,
-                );
+                reconcile(&entities, &urn_ref, &widgets);
             });
         }
 
@@ -334,13 +338,7 @@ impl WallpaperPage {
         {
             let store = entity_store.clone();
             let urn_ref = current_urn;
-            let service_toggle_ref = service_toggle.clone();
-            let service_updating_ref = service_updating.clone();
-            let mode_ref = mode.clone();
-            let preview_ref = preview.clone();
-            let transition_ref = transition.clone();
-            let config_ref = config.clone();
-            let gallery_ref = gallery.clone();
+            let widgets = reconcile_widgets;
 
             gtk::glib::idle_add_local_once(move || {
                 let entities: Vec<(Urn, WallpaperManager)> =
@@ -350,17 +348,7 @@ impl WallpaperPage {
                         "[wallpaper-page] Initial reconciliation: {} entities",
                         entities.len()
                     );
-                    reconcile(
-                        &entities,
-                        &urn_ref,
-                        &service_toggle_ref,
-                        &service_updating_ref,
-                        &mode_ref,
-                        &preview_ref,
-                        &transition_ref,
-                        &config_ref,
-                        &gallery_ref,
-                    );
+                    reconcile(&entities, &urn_ref, &widgets);
                 }
             });
         }

@@ -1374,7 +1374,7 @@ impl NetworkManagerPlugin {
             if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
                 vpn.state = VpnState::Disconnected;
             }
-            return Err(e.into());
+            return Err(e);
         }
 
         self.spawn_vpn_reconcile();
@@ -1398,7 +1398,7 @@ impl NetworkManagerPlugin {
             if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
                 vpn.state = VpnState::Connected;
             }
-            return Err(e.into());
+            return Err(e);
         }
 
         self.spawn_vpn_reconcile();

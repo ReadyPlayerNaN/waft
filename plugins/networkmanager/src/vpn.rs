@@ -44,7 +44,7 @@ pub async fn get_vpn_profiles(nm: &nmrs::NetworkManager) -> Result<Vec<VpnProfil
 }
 
 #[cfg(test)]
-fn nmrs_vpn_state_to_plugin_state(state: NmDeviceState, active: bool) -> VpnState {
+fn nmrs_vpn_state_to_plugin_state(state: &NmDeviceState, active: bool) -> VpnState {
     match state {
         NmDeviceState::Prepare
         | NmDeviceState::Config
@@ -58,7 +58,7 @@ fn nmrs_vpn_state_to_plugin_state(state: NmDeviceState, active: bool) -> VpnStat
         // for VPNs, so active connections often arrive as Other(1..=4) instead of the
         // usual device-state domain. Interpret those codes using the plugin's
         // ActiveConnection-state mapping to avoid getting stuck at Disconnected.
-        NmDeviceState::Other(code) => VpnState::from_active_state(code),
+        NmDeviceState::Other(code) => VpnState::from_active_state(*code),
         _ if active => VpnState::Connected,
         _ => VpnState::Disconnected,
     }
@@ -81,16 +81,15 @@ pub async fn get_active_vpn_connections(_conn: &Connection) -> Result<HashMap<St
     let mut states = HashMap::new();
 
     for path in active_paths {
-        let active = match zbus::Proxy::new(
+        let Ok(active) = zbus::Proxy::new(
             &conn,
             "org.freedesktop.NetworkManager",
             path,
             "org.freedesktop.NetworkManager.Connection.Active",
         )
         .await
-        {
-            Ok(proxy) => proxy,
-            Err(_) => continue,
+        else {
+            continue;
         };
 
         let conn_type: String = match active.get_property("Type").await {
@@ -153,16 +152,15 @@ pub async fn deactivate_vpn_by_uuid(conn: &Connection, uuid: &str) -> Result<()>
         .context("Failed to read ActiveConnections")?;
 
     for path in active_paths {
-        let active = match zbus::Proxy::new(
+        let Ok(active) = zbus::Proxy::new(
             conn,
             NM_SERVICE,
             path.clone(),
             "org.freedesktop.NetworkManager.Connection.Active",
         )
         .await
-        {
-            Ok(proxy) => proxy,
-            Err(_) => continue,
+        else {
+            continue;
         };
 
         let active_uuid: String = match active.get_property("Uuid").await {
@@ -230,7 +228,7 @@ mod tests {
     #[test]
     fn maps_nm_device_activated_to_connected() {
         assert_eq!(
-            nmrs_vpn_state_to_plugin_state(NmDeviceState::Activated, true),
+            nmrs_vpn_state_to_plugin_state(&NmDeviceState::Activated, true),
             VpnState::Connected
         );
     }
@@ -238,19 +236,19 @@ mod tests {
     #[test]
     fn maps_nmrs_active_connection_other_codes() {
         assert_eq!(
-            nmrs_vpn_state_to_plugin_state(NmDeviceState::Other(1), true),
+            nmrs_vpn_state_to_plugin_state(&NmDeviceState::Other(1), true),
             VpnState::Connecting
         );
         assert_eq!(
-            nmrs_vpn_state_to_plugin_state(NmDeviceState::Other(2), true),
+            nmrs_vpn_state_to_plugin_state(&NmDeviceState::Other(2), true),
             VpnState::Connected
         );
         assert_eq!(
-            nmrs_vpn_state_to_plugin_state(NmDeviceState::Other(3), true),
+            nmrs_vpn_state_to_plugin_state(&NmDeviceState::Other(3), true),
             VpnState::Disconnecting
         );
         assert_eq!(
-            nmrs_vpn_state_to_plugin_state(NmDeviceState::Other(4), false),
+            nmrs_vpn_state_to_plugin_state(&NmDeviceState::Other(4), false),
             VpnState::Disconnected
         );
     }
@@ -258,7 +256,7 @@ mod tests {
     #[test]
     fn active_flag_keeps_state_connected_when_nmrs_state_is_unhelpful() {
         assert_eq!(
-            nmrs_vpn_state_to_plugin_state(NmDeviceState::Disconnected, true),
+            nmrs_vpn_state_to_plugin_state(&NmDeviceState::Disconnected, true),
             VpnState::Connected
         );
     }

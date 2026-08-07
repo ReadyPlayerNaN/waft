@@ -105,7 +105,7 @@ impl AudioPlugin {
             s.available = true;
             s.backend = backend;
         }
-        info!("[audio] audio backend is available via {:?}", backend);
+        info!("[audio] audio backend is available via {backend:?}");
 
         // Reconcile persisted virtual devices first so source filtering can
         // selectively expose waft-managed monitor sources on the first reload.

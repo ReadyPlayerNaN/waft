@@ -213,7 +213,10 @@ fn extract_quoted(text: &str, needle: &str) -> Option<String> {
     text.lines().find_map(|line| {
         let idx = line.find(needle)?;
         let value = line[idx + needle.len()..].trim();
-        value.strip_prefix('"')?.strip_suffix('"').map(|s| s.to_string())
+        value
+            .strip_prefix('"')?
+            .strip_suffix('"')
+            .map(std::string::ToString::to_string)
     })
 }
 

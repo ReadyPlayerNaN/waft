@@ -449,24 +449,21 @@ fn show_create_dialog(
     entity_store: &Rc<EntityStore>,
     action_callback: &EntityActionCallback,
 ) {
-    let dialog = gtk::Dialog::builder()
-        .modal(true)
-        .title(t("audio-create-device-title"))
-        .default_width(420)
+    let dialog = adw::AlertDialog::builder()
+        .heading(t("audio-create-device-title"))
+        .close_response("cancel")
+        .default_response("create")
         .build();
-    if let Some(parent) = parent {
-        dialog.set_transient_for(Some(parent));
-    }
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("create", &t("audio-create-virtual-sink"));
+    dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
 
-    dialog.add_button("Cancel", gtk::ResponseType::Cancel);
-    let create_button: gtk::Button = dialog
-        .add_button(&t("audio-create-virtual-sink"), gtk::ResponseType::Accept)
-        .downcast()
-        .expect("accept button");
-    create_button.add_css_class("suggested-action");
-
-    let content = dialog.content_area();
-    content.set_spacing(12);
+    let content = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(12)
+        .margin_top(12)
+        .margin_bottom(12)
+        .build();
 
     let type_model = gtk::StringList::new(&[
         &t("audio-virtual-type-sink"),
@@ -491,30 +488,28 @@ fn show_create_dialog(
         .visible(false)
         .build();
 
-    let list_box = gtk::ListBox::builder()
-        .selection_mode(gtk::SelectionMode::None)
-        .css_classes(["boxed-list"])
-        .build();
-    list_box.append(&type_combo);
-    list_box.append(&entry);
-    content.append(&list_box);
+    let group = adw::PreferencesGroup::new();
+    group.add(&type_combo);
+    group.add(&entry);
+    content.append(&group);
     content.append(&error_label);
+    dialog.set_extra_child(Some(&content));
 
-    create_button.set_sensitive(!entry.text().is_empty());
+    dialog.set_response_enabled("create", !entry.text().is_empty());
 
     {
-        let create_button = create_button.clone();
+        let dialog = dialog.clone();
         let type_combo_ref = type_combo.clone();
         type_combo.connect_selected_notify(move |_| {
             let (_, label) = action_name_for_create_kind(type_combo_ref.selected());
-            create_button.set_label(&label);
+            dialog.set_response_label("create", &label);
         });
     }
 
     {
-        let create_button = create_button.clone();
+        let dialog = dialog.clone();
         entry.connect_changed(move |e| {
-            create_button.set_sensitive(!e.text().is_empty());
+            dialog.set_response_enabled("create", !e.text().is_empty());
         });
     }
 
@@ -558,9 +553,8 @@ fn show_create_dialog(
 
     {
         let dialog_closed = dialog_closed.clone();
-        dialog.connect_close_request(move |_| {
+        dialog.connect_closed(move |_| {
             dialog_closed.set(true);
-            false.into()
         });
     }
 
@@ -571,12 +565,8 @@ fn show_create_dialog(
         let error_label = error_label.clone();
         let dialog_ref = dialog.clone();
         let pending_action_id = pending_action_id.clone();
-        dialog.connect_response(move |dialog, response| {
-            if response == gtk::ResponseType::Cancel {
-                dialog.close();
-                return;
-            }
-            if response != gtk::ResponseType::Accept {
+        dialog.connect_response(None, move |dialog, response| {
+            if response != "create" {
                 return;
             }
 
@@ -597,12 +587,14 @@ fn show_create_dialog(
                 None => {
                     error_label.set_label(&t("audio-virtual-action-failed"));
                     error_label.set_visible(true);
+                    dialog.set_sensitive(true);
                 }
             }
         });
     }
 
-    dialog.present();
+    let parent_widget: Option<&gtk::Widget> = parent.map(gtk::prelude::Cast::upcast_ref);
+    dialog.present(parent_widget);
 }
 
 #[cfg(test)]

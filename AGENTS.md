@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other AI agents 
 
 ## Agent Rule
 
-Before implementing changes, ask for clarification on DBus ownership, threading boundaries, and API changes. Do not start coding until key behavioral decisions are confirmed.
+Before implementing changes, ask for clarification on DBus ownership, threading boundaries, and API changes only when the requested work is likely to affect those areas. Do not interrupt routine documentation-only, warning-only, refactor-only, or otherwise non-behavioral changes with unnecessary questions. If a change would alter DBus ownership behavior, cross established threading boundaries, or modify APIs, confirm those decisions before coding.
 
 ## Build & Test Commands
 

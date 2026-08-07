@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn sync_default_pa_never_emits_null_source() {
-        let devices = vec![
+        let devices = [
             VirtualDeviceConfig {
                 kind: VirtualDeviceKind::Input,
                 sink_name: "waft_in".to_string(),

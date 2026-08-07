@@ -65,7 +65,6 @@ impl ToastWindow {
         } else {
             self.window.set_default_size(400, 0);
             self.window.set_visible(false);
-            self.window.hide();
         }
     }
 }

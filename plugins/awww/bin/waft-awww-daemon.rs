@@ -1023,23 +1023,6 @@ async fn wallpaper_applicator(
     log::warn!("[awww] wallpaper applicator exited");
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn daemon_binary_matches_backend() {
-        assert_eq!(backend_daemon_binary("awww"), "awww-daemon");
-        assert_eq!(backend_daemon_binary("swww"), "swww-daemon");
-    }
-
-    #[test]
-    fn stop_args_use_kill() {
-        assert_eq!(backend_stop_args("awww"), vec!["kill"]);
-        assert_eq!(backend_stop_args("swww"), vec!["kill"]);
-    }
-}
-
 fn main() -> Result<()> {
     PluginRunner::new("awww", &[WALLPAPER_MANAGER_ENTITY_TYPE])
         .i18n(i18n(), "plugin-name", "plugin-description")
@@ -1080,4 +1063,21 @@ fn main() -> Result<()> {
 
             Ok(plugin)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daemon_binary_matches_backend() {
+        assert_eq!(backend_daemon_binary("awww"), "awww-daemon");
+        assert_eq!(backend_daemon_binary("swww"), "swww-daemon");
+    }
+
+    #[test]
+    fn stop_args_use_kill() {
+        assert_eq!(backend_stop_args("awww"), vec!["kill"]);
+        assert_eq!(backend_stop_args("swww"), vec!["kill"]);
+    }
 }
