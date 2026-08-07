@@ -165,6 +165,33 @@ async fn cached_entity_returned_on_status() {
     daemon.shutdown().await;
 }
 
+/// Status on a cache miss should complete immediately instead of blocking the daemon.
+#[tokio::test]
+#[serial]
+async fn status_cache_miss_completes_quickly() {
+    let daemon = TestDaemon::start().await;
+
+    let mut app = TestApp::connect(&daemon.socket_path).await;
+    app.send(&waft_protocol::AppMessage::Status {
+        entity_type: "test-entity".to_string(),
+    })
+    .await;
+
+    let completion = app
+        .recv_timeout(Duration::from_millis(300))
+        .await
+        .expect("status cache miss should complete quickly");
+
+    match completion {
+        AppNotification::StatusComplete { entity_type } => {
+            assert_eq!(entity_type, "test-entity");
+        }
+        other => panic!("expected StatusComplete, got: {other:?}"),
+    }
+
+    daemon.shutdown().await;
+}
+
 /// Plugin sends EntityRemoved, subscribed app receives it.
 #[tokio::test]
 #[serial]

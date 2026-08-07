@@ -437,40 +437,63 @@ impl WaftDaemon {
             AppMessage::Status { entity_type } => {
                 debug!("app {conn_id} requested status for {entity_type}");
 
-                let has_cached = self.entity_cache.values().any(|c| c.entity_type == entity_type);
-                if !has_cached {
+                if !self.entity_cache.values().any(|c| c.entity_type == entity_type) {
                     self.plugin_spawner.ensure_plugin_for_entity_type(&entity_type);
-                    for _ in 0..20 {
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        if self.entity_cache.values().any(|c| c.entity_type == entity_type) {
-                            break;
+                }
+
+                let notifications: Vec<AppNotification> = self
+                    .entity_cache
+                    .values()
+                    .filter(|cached| cached.entity_type == entity_type)
+                    .map(|cached| AppNotification::EntityUpdated {
+                        urn: cached.urn.clone(),
+                        entity_type: cached.entity_type.clone(),
+                        data: cached.data.clone(),
+                    })
+                    .collect();
+
+                for notification in notifications {
+                    let send_result = match self.connections.get(&conn_id) {
+                        Some(conn) => conn.send(&notification).await,
+                        None => return Ok(()),
+                    };
+
+                    if let Err(e) = send_result {
+                        match e {
+                            ConnectionError::Closed => {
+                                debug!(
+                                    "app {conn_id} disconnected during Status reply for {entity_type}"
+                                );
+                            }
+                            other => {
+                                warn!("failed to send cached entity to {conn_id}: {other}");
+                            }
                         }
+                        self.remove_connection(conn_id).await;
+                        return Ok(());
                     }
                 }
 
-                if let Some(conn) = self.connections.get(&conn_id) {
-                    for cached in self.entity_cache.values() {
-                        if cached.entity_type == entity_type {
-                            let notification = AppNotification::EntityUpdated {
-                                urn: cached.urn.clone(),
-                                entity_type: cached.entity_type.clone(),
-                                data: cached.data.clone(),
-                            };
-                            if let Err(e) = conn.send(&notification).await {
-                                warn!("failed to send cached entity to {conn_id}: {e}");
-                                break;
-                            }
+                let completion = AppNotification::StatusComplete {
+                    entity_type: entity_type.clone(),
+                };
+                let send_result = match self.connections.get(&conn_id) {
+                    Some(conn) => conn.send(&completion).await,
+                    None => return Ok(()),
+                };
+
+                if let Err(e) = send_result {
+                    match e {
+                        ConnectionError::Closed => {
+                            debug!(
+                                "app {conn_id} disconnected before StatusComplete for {entity_type}"
+                            );
+                        }
+                        other => {
+                            warn!("failed to send StatusComplete to {conn_id}: {other}");
                         }
                     }
-
-                    if let Err(e) = conn
-                        .send(&AppNotification::StatusComplete {
-                            entity_type: entity_type.clone(),
-                        })
-                        .await
-                    {
-                        warn!("failed to send StatusComplete to {conn_id}: {e}");
-                    }
+                    self.remove_connection(conn_id).await;
                 }
             }
 
