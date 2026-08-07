@@ -1,4 +1,6 @@
+use serde::Serialize;
 use waft_protocol::entity::registry::{self, EntityTypeInfo};
+use waft_protocol::JsonSchema;
 
 /// Run the `waft protocol` command, printing entity type information to stdout.
 pub fn run(
@@ -43,8 +45,52 @@ pub fn run(
     }
 }
 
+#[derive(Serialize)]
+struct JsonEntityTypeInfo<'a> {
+    entity_type: &'a str,
+    domain: &'a str,
+    description: &'a str,
+    urn_pattern: &'a str,
+    properties: &'a [waft_protocol::entity::registry::PropertyInfo],
+    actions: Vec<JsonActionInfo<'a>>,
+    data_schema: JsonSchema,
+}
+
+#[derive(Serialize)]
+struct JsonActionInfo<'a> {
+    name: &'a str,
+    description: &'a str,
+    params: &'a [waft_protocol::entity::registry::ParamInfo],
+    params_schema: JsonSchema,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result_schema: Option<JsonSchema>,
+}
+
 fn print_json(entries: &[&EntityTypeInfo]) {
-    match serde_json::to_string_pretty(&entries) {
+    let output: Vec<JsonEntityTypeInfo<'_>> = entries
+        .iter()
+        .map(|entry| JsonEntityTypeInfo {
+            entity_type: entry.entity_type,
+            domain: entry.domain,
+            description: entry.description,
+            urn_pattern: entry.urn_pattern,
+            properties: entry.properties,
+            actions: entry
+                .actions
+                .iter()
+                .map(|action| JsonActionInfo {
+                    name: action.name,
+                    description: action.description,
+                    params: action.params,
+                    params_schema: action.params_schema(),
+                    result_schema: action.result_schema(),
+                })
+                .collect(),
+            data_schema: entry.data_schema(),
+        })
+        .collect();
+
+    match serde_json::to_string_pretty(&output) {
         Ok(json) => println!("{json}"),
         Err(e) => {
             eprintln!("[waft] failed to serialize protocol registry: {e}");

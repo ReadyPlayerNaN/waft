@@ -267,6 +267,7 @@ mod tests {
                 description: "An audio device".to_string(),
                 properties: vec![],
                 actions: vec![],
+                data_schema: None,
             }],
         };
 

@@ -22,9 +22,13 @@ use std::sync::Once;
 ///     // ... test code using GTK widgets
 /// }
 /// ```
-pub fn init_gtk_for_tests() {
+pub fn init_gtk_for_tests() -> bool {
     static GTK_INIT: Once = Once::new();
+    static GTK_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     GTK_INIT.call_once(|| {
-        gtk::init().expect("Failed to initialize GTK");
+        if gtk::init().is_ok() {
+            GTK_READY.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
     });
+    GTK_READY.load(std::sync::atomic::Ordering::Relaxed)
 }

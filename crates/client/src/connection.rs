@@ -10,12 +10,16 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::timeout;
 use uuid::Uuid;
 use waft_protocol::transport::write_framed;
-use waft_protocol::{AppMessage, AppNotification, TransportError};
+use waft_protocol::{
+    AppMessage, AppNotification, CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA,
+    CAP_STATUS_COMPLETE, CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, HelloAck, TransportError,
+    PROTOCOL_VERSION,
+};
 
 /// Default timeout for a single connection attempt (5 seconds).
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -92,6 +96,9 @@ impl WaftClient {
             .await
             .map_err(|_| WaftClientError::Timeout)?
             .map_err(WaftClientError::ConnectionFailed)?;
+
+        let mut stream = stream;
+        perform_handshake(&mut stream, "waft-client").await?;
 
         // Convert to std for splitting into independent read/write handles
         let std_stream = stream
@@ -283,6 +290,80 @@ fn write_with_poll(stream: &mut std::os::unix::net::UnixStream, buf: &[u8]) -> s
         }
     }
     stream.flush()
+}
+
+async fn perform_handshake(
+    stream: &mut UnixStream,
+    implementation: &str,
+) -> Result<HelloAck, WaftClientError> {
+    let hello = HandshakeMessage::Hello(Hello::app(
+        implementation.to_string(),
+        PROTOCOL_VERSION,
+        vec![
+            CAP_HANDSHAKE.to_string(),
+            CAP_STRUCTURED_ERRORS.to_string(),
+            CAP_DERIVED_ENTITY_TYPE.to_string(),
+            CAP_STATUS_COMPLETE.to_string(),
+            CAP_SCHEMA_METADATA.to_string(),
+        ],
+    ));
+    let payload = serde_json::to_vec(&hello)
+        .map_err(|e| WaftClientError::Transport(TransportError::Serialization(e)))?;
+    let len = payload.len() as u32;
+    stream
+        .write_all(&len.to_be_bytes())
+        .await
+        .map_err(WaftClientError::ConnectionFailed)?;
+    stream
+        .write_all(&payload)
+        .await
+        .map_err(WaftClientError::ConnectionFailed)?;
+
+    let msg = read_handshake(stream).await?;
+    match msg {
+        HandshakeMessage::HelloAck(ack) => Ok(ack),
+        HandshakeMessage::HelloError(err) => Err(WaftClientError::Transport(
+            TransportError::Io(std::io::Error::other(format!(
+                "daemon handshake rejected client: {}",
+                err.error.message
+            ))),
+        )),
+        other => Err(WaftClientError::Transport(TransportError::Io(std::io::Error::other(
+            format!("unexpected handshake response: {other:?}"),
+        )))),
+    }
+}
+
+async fn read_handshake(
+    reader: &mut (impl AsyncReadExt + Unpin),
+) -> Result<HandshakeMessage, WaftClientError> {
+    let mut len_bytes = [0u8; 4];
+    match reader.read_exact(&mut len_bytes).await {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+            return Err(WaftClientError::Disconnected);
+        }
+        Err(e) => return Err(WaftClientError::ConnectionFailed(e)),
+    }
+
+    let len = u32::from_be_bytes(len_bytes) as usize;
+    if len > MAX_FRAME_SIZE {
+        return Err(WaftClientError::Transport(TransportError::FrameTooLarge(
+            len,
+        )));
+    }
+
+    let mut payload = vec![0u8; len];
+    reader.read_exact(&mut payload).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            WaftClientError::Disconnected
+        } else {
+            WaftClientError::ConnectionFailed(e)
+        }
+    })?;
+
+    serde_json::from_slice(&payload)
+        .map_err(|e| WaftClientError::Transport(TransportError::Serialization(e)))
 }
 
 /// Read a framed `AppNotification` from the async reader.

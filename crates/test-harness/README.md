@@ -12,6 +12,10 @@ The test harness provides three structs that start a real `WaftDaemon` on a temp
 
 No GTK, glib, or D-Bus dependencies. The harness uses raw length-prefixed JSON framing over Unix sockets, matching the daemon's transport protocol.
 
+The harness supports both:
+- legacy first-message peers
+- explicit `Hello` handshake peers via `TestApp::handshake()` / `TestPlugin::handshake()`
+
 ## Usage
 
 Add as a dev-dependency in the crate you want to test:
@@ -88,8 +92,9 @@ daemon.shutdown().await;
 
 ```rust
 let mut app = TestApp::connect(&daemon.socket_path).await;
+let hello = app.handshake("test-app").await; // Optional explicit handshake
 app.subscribe("entity-type").await;          // Subscribe to an entity type
-app.send(&AppMessage::Status { .. }).await;  // Send any AppMessage
+app.send(&AppMessage::Status { .. }).await;   // Send any AppMessage
 // Status queries now end with AppNotification::StatusComplete { entity_type }
 let msg = app.recv_timeout(Duration::from_secs(2)).await;  // None on timeout
 ```
@@ -98,10 +103,11 @@ let msg = app.recv_timeout(Duration::from_secs(2)).await;  // None on timeout
 
 ```rust
 let mut plugin = TestPlugin::connect(&daemon.socket_path).await;
-plugin.send_entity(urn, "entity-type", json_data).await;       // EntityUpdated
-plugin.send_entity_removed(urn, "entity-type").await;           // EntityRemoved
-plugin.send(&PluginMessage::ActionSuccess { .. }).await;        // Any PluginMessage
-let cmd = plugin.recv_timeout(Duration::from_secs(2)).await;    // None on timeout
+let hello = plugin.handshake("my-plugin", "my-plugin-impl").await; // Optional explicit handshake
+plugin.send_entity(urn, "entity-type", json_data).await;            // EntityUpdated
+plugin.send_entity_removed(urn, "entity-type").await;                // EntityRemoved
+plugin.send(&PluginMessage::ActionSuccess { .. }).await;             // Any PluginMessage
+let cmd = plugin.recv_timeout(Duration::from_secs(2)).await;         // None on timeout
 ```
 
 ## Test Organization
@@ -110,5 +116,6 @@ Integration tests live in `crates/waft/tests/` organized in two tiers:
 
 - **Tier 1** (`tier1_entity_routing.rs`): Subscribe, EntityUpdated relay, entity cache, EntityRemoved
 - **Tier 2** (`tier2_action_routing.rs`, `tier2_multi_subscriber.rs`): TriggerAction forwarding, ActionSuccess/Error relay, multiple app subscribers
+- **Tier 3** (`tier3_protocol_hardening.rs`): handshake negotiation, derived entity-type routing, structured daemon errors
 
 Run with: `cargo test -p waft -- --test-threads=1`

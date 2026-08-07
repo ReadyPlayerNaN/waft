@@ -11,6 +11,8 @@
 
 use serde::Serialize;
 
+use crate::schema::JsonSchema;
+
 /// Metadata about a single entity type in the protocol.
 #[derive(Debug, Clone, Serialize)]
 pub struct EntityTypeInfo {
@@ -52,6 +54,53 @@ pub struct ParamInfo {
     pub type_description: &'static str,
     pub description: &'static str,
     pub required: bool,
+}
+
+impl EntityTypeInfo {
+    pub fn data_schema(&self) -> JsonSchema {
+        let mut schema = JsonSchema::object().closed();
+        for property in self.properties {
+            schema = schema.with_property(
+                property.name,
+                schema_from_type_description(property.type_description).described(property.description),
+                !property.optional,
+            );
+        }
+        schema
+    }
+}
+
+impl ActionInfo {
+    pub fn params_schema(&self) -> JsonSchema {
+        let mut schema = JsonSchema::object().closed();
+        for param in self.params {
+            schema = schema.with_property(
+                param.name,
+                schema_from_type_description(param.type_description).described(param.description),
+                param.required,
+            );
+        }
+        schema
+    }
+
+    pub fn result_schema(&self) -> Option<JsonSchema> {
+        None
+    }
+}
+
+fn schema_from_type_description(type_description: &str) -> JsonSchema {
+    let lower = type_description.to_ascii_lowercase();
+    if lower.contains("bool") {
+        JsonSchema::boolean()
+    } else if lower.contains("percent") || lower.contains("number") || lower.contains("float") || lower.contains("integer") {
+        JsonSchema::number()
+    } else if lower.contains("array") || lower.contains("list") {
+        JsonSchema::array(JsonSchema::string())
+    } else if lower.contains("object") {
+        JsonSchema::object()
+    } else {
+        JsonSchema::string()
+    }
 }
 
 /// Returns all entity types known to the protocol, sorted by domain then entity type.

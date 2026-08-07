@@ -502,7 +502,8 @@ pub async fn setup() -> Result<adw::Application> {
                             match event {
                                 ClientEvent::Notification(ref notification) => {
                                     match notification {
-                                        waft_protocol::AppNotification::EntityUpdated { urn, entity_type, data } => {
+                                        waft_protocol::AppNotification::EntityUpdated { urn, data, .. } => {
+                                            let entity_type = urn.entity_type();
                                             if entity_type == "notification"
                                                 && let Ok(notification) = serde_json::from_value::<waft_protocol::entity::notification::Notification>(data.clone())
                                             {
@@ -513,14 +514,14 @@ pub async fn setup() -> Result<adw::Application> {
                                                 toast_manager.handle_dnd(&dnd);
                                             }
                                         }
-                                        waft_protocol::AppNotification::EntityRemoved { urn, entity_type } => {
-                                            if entity_type == "notification" {
+                                        waft_protocol::AppNotification::EntityRemoved { urn, .. } => {
+                                            if urn.entity_type() == "notification" {
                                                 toast_manager.handle_entity_removed(urn);
                                             }
                                         }
-                                        waft_protocol::AppNotification::EntityStale { urn, entity_type }
-                                        | waft_protocol::AppNotification::EntityOutdated { urn, entity_type }
-                                            if entity_type == "notification" =>
+                                        waft_protocol::AppNotification::EntityStale { urn, .. }
+                                        | waft_protocol::AppNotification::EntityOutdated { urn, .. }
+                                            if urn.entity_type() == "notification" =>
                                         {
                                             toast_manager.handle_entity_removed(urn);
                                         }

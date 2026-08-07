@@ -12,7 +12,11 @@ use tokio::net::UnixStream;
 use tokio::sync::{Mutex, mpsc, watch};
 use uuid::Uuid;
 use waft_protocol::urn::Urn;
-use waft_protocol::{PluginCommand, PluginMessage};
+use waft_protocol::{
+    CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA, CAP_STATUS_COMPLETE,
+    CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PluginCommand, PluginMessage,
+    PROTOCOL_VERSION, ProtocolError,
+};
 
 use crate::notifier::EntityNotifier;
 use crate::plugin::Plugin;
@@ -76,7 +80,32 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
 
         log::info!("[{}] connected to daemon", self.name);
 
-        let (read_half, write_half) = stream.into_split();
+        let (mut read_half, mut write_half) = stream.into_split();
+        let hello = HandshakeMessage::Hello(Hello::plugin(
+            self.name.clone(),
+            format!("waft-{}-daemon", self.name),
+            PROTOCOL_VERSION,
+            vec![
+                CAP_HANDSHAKE.to_string(),
+                CAP_STRUCTURED_ERRORS.to_string(),
+                CAP_DERIVED_ENTITY_TYPE.to_string(),
+                CAP_STATUS_COMPLETE.to_string(),
+                CAP_SCHEMA_METADATA.to_string(),
+            ],
+        ));
+        write_framed(&mut write_half, &hello).await?;
+        let negotiated = match read_framed::<_, HandshakeMessage>(&mut read_half).await? {
+            Some(HandshakeMessage::HelloAck(ack)) => ack,
+            Some(HandshakeMessage::HelloError(err)) => {
+                anyhow::bail!("daemon handshake rejected plugin: {}", err.error.message)
+            }
+            Some(other) => anyhow::bail!("unexpected handshake response from daemon: {other:?}"),
+            None => anyhow::bail!("daemon disconnected before handshake completed"),
+        };
+        let omit_entity_type = negotiated
+            .capabilities
+            .iter()
+            .any(|cap| cap == CAP_DERIVED_ENTITY_TYPE);
 
         // Spawn background write task with mpsc channel
         let (write_tx, write_rx) = mpsc::channel::<PluginMessage>(64);
@@ -88,11 +117,17 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
             Arc::new(Mutex::new(HashMap::new()));
 
         // Send initial entities
-        send_all_entities(&*self.plugin, &write_tx, &self.name, &previous).await;
+        send_all_entities(
+            &*self.plugin,
+            &write_tx,
+            &self.name,
+            &previous,
+            omit_entity_type,
+        )
+        .await;
 
         // Event loop
         let mut notifier_rx = self.notifier_rx;
-        let mut read_half = read_half;
 
         loop {
             tokio::select! {
@@ -102,7 +137,7 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                         log::info!("[{}] notifier dropped, shutting down", self.name);
                         break;
                     }
-                    send_all_entities(&*self.plugin, &write_tx, &self.name, &previous).await;
+                    send_all_entities(&*self.plugin, &write_tx, &self.name, &previous, omit_entity_type).await;
                 }
 
                 // Incoming command from daemon
@@ -116,6 +151,7 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                                         tx: write_tx.clone(),
                                         name: self.name.clone(),
                                         previous: previous.clone(),
+                                        omit_entity_type,
                                     };
                                     tokio::spawn(async move {
                                         handle_action(ctx, urn, action, action_id, params).await;
@@ -133,10 +169,11 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                                         tx: write_tx.clone(),
                                         name: self.name.clone(),
                                         previous: previous.clone(),
+                                        omit_entity_type,
                                     };
                                     tokio::spawn(async move {
                                         ctx.plugin.handle_subscriber_count_changed(entity_type, count).await;
-                                        send_all_entities(&*ctx.plugin, &ctx.tx, &ctx.name, &ctx.previous).await;
+                                        send_all_entities(&*ctx.plugin, &ctx.tx, &ctx.name, &ctx.previous, ctx.omit_entity_type).await;
                                     });
                                 }
                             }
@@ -166,6 +203,7 @@ struct ActionContext<P: Plugin> {
     name: String,
     tx: mpsc::Sender<PluginMessage>,
     previous: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    omit_entity_type: bool,
 }
 
 /// Handle an incoming action: run plugin handler, send success/error, re-send entities.
@@ -199,6 +237,7 @@ async fn handle_action<P: Plugin>(
                 .send(PluginMessage::ActionError {
                     action_id,
                     error: e.to_string(),
+                    error_details: Some(ProtocolError::action(e.to_string())),
                 })
                 .await
             {
@@ -210,7 +249,14 @@ async fn handle_action<P: Plugin>(
 
     // Re-send entities after action, diffing against previous state
     // so that removed entities get EntityRemoved messages.
-    send_all_entities(&*ctx.plugin, &ctx.tx, &ctx.name, &ctx.previous).await;
+    send_all_entities(
+        &*ctx.plugin,
+        &ctx.tx,
+        &ctx.name,
+        &ctx.previous,
+        ctx.omit_entity_type,
+    )
+    .await;
 }
 
 /// Send all current entities to the daemon, diffing against previous state.
@@ -221,6 +267,7 @@ async fn send_all_entities<P: Plugin>(
     tx: &mpsc::Sender<PluginMessage>,
     name: &str,
     previous: &Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    omit_entity_type: bool,
 ) {
     let entities = plugin.get_entities();
     let mut current: HashMap<String, serde_json::Value> = HashMap::new();
@@ -240,7 +287,7 @@ async fn send_all_entities<P: Plugin>(
         if changed {
             let msg = PluginMessage::EntityUpdated {
                 urn: entity.urn.clone(),
-                entity_type: entity.entity_type.clone(),
+                entity_type: (!omit_entity_type).then(|| entity.entity_type.clone()),
                 data: entity.data.clone(),
             };
             if tx.send(msg).await.is_err() {
@@ -263,7 +310,7 @@ async fn send_all_entities<P: Plugin>(
             };
             let msg = PluginMessage::EntityRemoved {
                 urn: urn.clone(),
-                entity_type: urn.entity_type().to_string(),
+                entity_type: (!omit_entity_type).then(|| urn.entity_type().to_string()),
             };
             if tx.send(msg).await.is_err() {
                 log::warn!("[{name}] write channel closed during entity removal");

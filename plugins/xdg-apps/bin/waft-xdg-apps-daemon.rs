@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use waft_i18n::system_locale;
 use waft_plugin::*;
-use waft_protocol::description::*;
+use waft_protocol::{JsonSchema, description::*};
 use waft_xdg_apps::desktop_file::strip_exec_field_codes;
 use waft_xdg_apps::scanner::{DiscoveredApp, scan_apps, xdg_app_dirs};
 
@@ -178,7 +178,19 @@ impl Plugin for XdgAppsPlugin {
                     label: "Open".to_string(),
                     description: "Launch the application".to_string(),
                     params: vec![],
+                    params_schema: Some(JsonSchema::object().closed()),
+                    result_schema: None,
+                    error_codes: vec!["action.execution".to_string()],
                 }],
+                data_schema: Some(
+                    JsonSchema::object()
+                        .with_property("name", JsonSchema::string(), true)
+                        .with_property("icon", JsonSchema::string(), true)
+                        .with_property("available", JsonSchema::boolean(), true)
+                        .with_property("keywords", JsonSchema::string(), true)
+                        .with_property("description", JsonSchema::string(), true)
+                        .closed(),
+                ),
             }],
         })
     }

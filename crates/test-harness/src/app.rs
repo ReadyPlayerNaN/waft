@@ -1,9 +1,13 @@
 use std::path::Path;
 use std::time::Duration;
 
+use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
-use waft_protocol::{AppMessage, AppNotification};
+use waft_protocol::{
+    AppMessage, AppNotification, CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA,
+    CAP_STATUS_COMPLETE, CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PROTOCOL_VERSION,
+};
 
 /// Maximum allowed message size (10 MB), matching the daemon.
 const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
@@ -25,9 +29,8 @@ impl TestApp {
         TestApp { stream }
     }
 
-    /// Send an AppMessage to the daemon.
-    pub async fn send(&mut self, msg: &AppMessage) {
-        let payload = serde_json::to_vec(msg).expect("failed to serialize AppMessage");
+    async fn send_raw<T: Serialize>(&mut self, msg: &T) {
+        let payload = serde_json::to_vec(msg).expect("failed to serialize message");
         let len = payload.len() as u32;
         self.stream
             .write_all(&len.to_be_bytes())
@@ -37,6 +40,50 @@ impl TestApp {
             .write_all(&payload)
             .await
             .expect("failed to write payload");
+    }
+
+    /// Send an AppMessage to the daemon.
+    pub async fn send(&mut self, msg: &AppMessage) {
+        self.send_raw(msg).await;
+    }
+
+    pub async fn handshake(&mut self, implementation: &str) -> HandshakeMessage {
+        let hello = HandshakeMessage::Hello(Hello::app(
+            implementation.to_string(),
+            PROTOCOL_VERSION,
+            vec![
+                CAP_HANDSHAKE.to_string(),
+                CAP_STRUCTURED_ERRORS.to_string(),
+                CAP_DERIVED_ENTITY_TYPE.to_string(),
+                CAP_STATUS_COMPLETE.to_string(),
+                CAP_SCHEMA_METADATA.to_string(),
+            ],
+        ));
+        self.send_raw(&hello).await;
+        self.recv_handshake().await
+    }
+
+    pub async fn send_hello(&mut self, hello: Hello) {
+        self.send_raw(&HandshakeMessage::Hello(hello)).await;
+    }
+
+    pub async fn recv_handshake(&mut self) -> HandshakeMessage {
+        let mut len_bytes = [0u8; 4];
+        self.stream
+            .read_exact(&mut len_bytes)
+            .await
+            .expect("failed to read length prefix");
+
+        let len = u32::from_be_bytes(len_bytes) as usize;
+        assert!(len <= MAX_FRAME_SIZE, "frame too large: {len} bytes (max: {MAX_FRAME_SIZE})");
+
+        let mut payload = vec![0u8; len];
+        self.stream
+            .read_exact(&mut payload)
+            .await
+            .expect("failed to read payload");
+
+        serde_json::from_slice(&payload).expect("failed to deserialize HandshakeMessage")
     }
 
     /// Subscribe to an entity type.

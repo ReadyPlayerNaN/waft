@@ -200,12 +200,11 @@ async fn collect_responses(
 
 /// Extract EntityUpdated from a notification and add to the collection.
 fn collect_notification(entities: &mut Vec<CollectedEntity>, notification: AppNotification) {
-    if let AppNotification::EntityUpdated {
-        urn,
-        entity_type,
-        data,
-    } = notification
-    {
+    if let AppNotification::EntityUpdated { urn, data, .. } = notification.clone() {
+        let entity_type = notification
+            .entity_type()
+            .unwrap_or_else(|| urn.entity_type())
+            .to_string();
         entities.push(CollectedEntity {
             urn,
             entity_type,
@@ -410,7 +409,7 @@ mod tests {
         let mut entities = Vec::new();
         let notification = AppNotification::EntityUpdated {
             urn: Urn::new("clock", "clock", "default"),
-            entity_type: "clock".to_string(),
+            entity_type: Some("clock".to_string()),
             data: serde_json::json!({"time": "14:30"}),
         };
         collect_notification(&mut entities, notification);

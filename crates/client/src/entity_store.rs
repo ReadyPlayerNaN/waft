@@ -66,14 +66,12 @@ impl EntityStore {
     /// Process a notification from the waft daemon.
     pub fn handle_notification(&self, notification: AppNotification) {
         match notification {
-            AppNotification::EntityUpdated {
-                urn,
-                entity_type,
-                data,
-            } => {
+            AppNotification::EntityUpdated { urn, data, .. } => {
+                let entity_type = urn.entity_type().to_string();
                 self.handle_entity_updated(urn, &entity_type, data);
             }
-            AppNotification::EntityRemoved { urn, entity_type } => {
+            AppNotification::EntityRemoved { urn, .. } => {
+                let entity_type = urn.entity_type().to_string();
                 self.handle_entity_removed(&urn, &entity_type);
             }
             AppNotification::ActionSuccess { action_id, data } => {
@@ -82,17 +80,19 @@ impl EntityStore {
                     cb(action_id, data.clone());
                 }
             }
-            AppNotification::ActionError { action_id, error } => {
+            AppNotification::ActionError { action_id, error, .. } => {
                 log::warn!("[entity-store] action {action_id} failed: {error}");
                 for cb in self.action_error_callbacks.borrow().iter() {
                     cb(action_id, error.clone());
                 }
             }
-            AppNotification::EntityStale { urn, entity_type } => {
+            AppNotification::EntityStale { urn, .. } => {
+                let entity_type = urn.entity_type().to_string();
                 log::debug!("[entity-store] entity {urn} ({entity_type}) is stale");
                 self.handle_entity_removed(&urn, &entity_type);
             }
-            AppNotification::EntityOutdated { urn, entity_type } => {
+            AppNotification::EntityOutdated { urn, .. } => {
+                let entity_type = urn.entity_type().to_string();
                 log::debug!("[entity-store] entity {urn} ({entity_type}) is outdated");
                 self.handle_entity_removed(&urn, &entity_type);
             }
@@ -102,6 +102,9 @@ impl EntityStore {
             }
             AppNotification::StatusComplete { entity_type } => {
                 log::debug!("[entity-store] received StatusComplete for {entity_type} (ignored)");
+            }
+            AppNotification::ProtocolError { error } => {
+                log::warn!("[entity-store] received ProtocolError: {}", error.message);
             }
         }
     }
@@ -257,7 +260,7 @@ mod tests {
     fn make_updated(urn: Urn, entity_type: &str, data: serde_json::Value) -> AppNotification {
         AppNotification::EntityUpdated {
             urn,
-            entity_type: entity_type.to_string(),
+            entity_type: Some(entity_type.to_string()),
             data,
         }
     }
@@ -265,7 +268,7 @@ mod tests {
     fn make_removed(urn: Urn, entity_type: &str) -> AppNotification {
         AppNotification::EntityRemoved {
             urn,
-            entity_type: entity_type.to_string(),
+            entity_type: Some(entity_type.to_string()),
         }
     }
 
@@ -472,7 +475,7 @@ mod tests {
 
         store.handle_notification(AppNotification::EntityStale {
             urn,
-            entity_type: entity::clock::ENTITY_TYPE.to_string(),
+            entity_type: Some(entity::clock::ENTITY_TYPE.to_string()),
         });
         assert_eq!(
             store
@@ -541,6 +544,7 @@ mod tests {
         store.handle_notification(AppNotification::ActionError {
             action_id,
             error: "device not found".to_string(),
+            error_details: None,
         });
 
         let result = received.borrow();
@@ -569,7 +573,7 @@ mod tests {
 
         store.handle_notification(AppNotification::EntityOutdated {
             urn,
-            entity_type: entity::clock::ENTITY_TYPE.to_string(),
+            entity_type: Some(entity::clock::ENTITY_TYPE.to_string()),
         });
         assert_eq!(
             store

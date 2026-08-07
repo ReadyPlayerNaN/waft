@@ -9,7 +9,7 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 use waft_plugin::*;
-use waft_protocol::description::*;
+use waft_protocol::{JsonSchema, description::*};
 
 /// Internal apps plugin.
 struct InternalAppsPlugin {
@@ -192,6 +192,9 @@ impl Plugin for InternalAppsPlugin {
                         label: "Open".to_string(),
                         description: "Launch the application".to_string(),
                         params: vec![],
+                        params_schema: Some(JsonSchema::object().closed()),
+                        result_schema: None,
+                        error_codes: vec!["action.execution".to_string()],
                     },
                     ActionDescription {
                         name: "open-page".to_string(),
@@ -204,8 +207,22 @@ impl Plugin for InternalAppsPlugin {
                             required: true,
                             value_type: PropertyValueType::String,
                         }],
+                        params_schema: Some(
+                            JsonSchema::object()
+                                .with_property("page", JsonSchema::string(), true)
+                                .closed(),
+                        ),
+                        result_schema: None,
+                        error_codes: vec!["action.execution".to_string()],
                     },
                 ],
+                data_schema: Some(
+                    JsonSchema::object()
+                        .with_property("name", JsonSchema::string(), true)
+                        .with_property("icon", JsonSchema::string(), true)
+                        .with_property("available", JsonSchema::boolean(), true)
+                        .closed(),
+                ),
             }],
         })
     }

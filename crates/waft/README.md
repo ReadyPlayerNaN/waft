@@ -11,6 +11,14 @@ waft daemon           # Same as above, explicit subcommand
 
 The daemon listens on `$XDG_RUNTIME_DIR/waft/daemon.sock` and registers as `org.waft.Daemon` on the session D-Bus for auto-activation.
 
+## Protocol notes
+
+- New in-tree clients and plugin runtimes begin connections with a `Hello` handshake.
+- The daemon negotiates protocol version and capabilities explicitly.
+- Legacy peers without a handshake are still accepted during the transition period.
+- Entity instance messages may omit `entity_type`; when omitted, receivers derive it from the URN leaf entity type.
+- Action failures may carry structured error details alongside the legacy human-readable error string.
+
 ## CLI Commands
 
 ### `waft plugin ls`
@@ -34,11 +42,13 @@ waft plugin describe bluez
 waft -j plugin describe audio
 ```
 
-Invokes the plugin binary with `provides --describe` to obtain runtime metadata.
+Invokes the plugin binary with `provides --describe` to obtain runtime metadata, including optional schema metadata for action params/results and entity payloads when available.
 
 ### `waft protocol`
 
 List all entity types defined in the static protocol registry. Works offline (no daemon required).
+
+JSON output includes derived schema metadata for entity payloads and action params.
 
 ```bash
 waft protocol                          # List all entity types

@@ -189,8 +189,8 @@ async fn wait_for_live_activation(
             break;
         }
         match tokio::time::timeout(remaining, read_message(stream)).await {
-            Ok(Ok(Some(AppNotification::EntityUpdated { entity_type: updated, .. })))
-                if updated == entity_type =>
+            Ok(Ok(Some(notification @ AppNotification::EntityUpdated { .. })))
+                if notification.entity_type() == Some(entity_type) =>
             {
                 return Ok(());
             }
@@ -223,12 +223,14 @@ async fn collect_status_snapshot(
 
     while !pending.is_empty() {
         match read_message(stream).await {
-            Ok(Some(AppNotification::EntityUpdated {
-                urn,
-                entity_type,
-                data,
-            })) => {
-                entity_map.entry(entity_type).or_default().push((urn, data));
+            Ok(Some(notification @ AppNotification::EntityUpdated { .. })) => {
+                let entity_type = notification
+                    .entity_type()
+                    .ok_or_else(|| "EntityUpdated missing entity type".to_string())?
+                    .to_string();
+                if let AppNotification::EntityUpdated { urn, data, .. } = notification {
+                    entity_map.entry(entity_type).or_default().push((urn, data));
+                }
             }
             Ok(Some(AppNotification::StatusComplete { entity_type })) => {
                 pending.remove(&entity_type);
@@ -262,6 +264,7 @@ async fn wait_for_action(
             Ok(Some(AppNotification::ActionError {
                 action_id: id,
                 error,
+                ..
             })) if id == action_id => {
                 return Err(error);
             }

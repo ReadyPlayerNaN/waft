@@ -58,7 +58,7 @@ async fn both_subscribers_receive_entity_update() {
                 data: recv_data,
             } => {
                 assert_eq!(recv_urn, urn, "{label} URN mismatch");
-                assert_eq!(entity_type, "test-entity", "{label} entity_type mismatch");
+                assert_eq!(entity_type.as_deref().unwrap_or(recv_urn.entity_type()), "test-entity", "{label} entity_type mismatch");
                 assert_eq!(recv_data, data, "{label} data mismatch");
             }
             other => panic!("{label}: expected EntityUpdated, got: {other:?}"),

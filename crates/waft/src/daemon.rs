@@ -6,7 +6,11 @@ use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use waft_protocol::urn::Urn;
-use waft_protocol::{AppMessage, AppNotification, PluginCommand, PluginMessage};
+use waft_protocol::{
+    AppMessage, AppNotification, CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA,
+    CAP_STATUS_COMPLETE, CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, HelloAck, HelloError,
+    MIN_PROTOCOL_VERSION, PeerRole, PluginCommand, PluginMessage, PROTOCOL_VERSION, ProtocolError,
+};
 
 use waft_protocol::entity::plugin::{self as plugin_entity, PluginState, PluginStatus};
 
@@ -210,12 +214,118 @@ impl WaftDaemon {
         }
     }
 
+    fn supported_capabilities() -> Vec<String> {
+        vec![
+            CAP_HANDSHAKE.to_string(),
+            CAP_STRUCTURED_ERRORS.to_string(),
+            CAP_DERIVED_ENTITY_TYPE.to_string(),
+            CAP_STATUS_COMPLETE.to_string(),
+            CAP_SCHEMA_METADATA.to_string(),
+        ]
+    }
+
+    fn top_level_type(bytes: &[u8]) -> Option<String> {
+        let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+        value.get("type")?.as_str().map(ToString::to_string)
+    }
+
+    async fn handle_hello(
+        &mut self,
+        conn_id: Uuid,
+        hello: Hello,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let overlap_min = hello.min_version.max(MIN_PROTOCOL_VERSION);
+        let overlap_max = hello.max_version.min(PROTOCOL_VERSION);
+        if overlap_min > overlap_max {
+            let error = ProtocolError::handshake_incompatible(
+                format!(
+                    "no supported protocol version overlap (peer {}-{}, daemon {}-{})",
+                    hello.min_version, hello.max_version, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION
+                ),
+                serde_json::json!({
+                    "peer_min_version": hello.min_version,
+                    "peer_max_version": hello.max_version,
+                    "daemon_min_version": MIN_PROTOCOL_VERSION,
+                    "daemon_max_version": PROTOCOL_VERSION,
+                }),
+            );
+            if let Some(conn) = self.connections.get(&conn_id) {
+                let _ = conn
+                    .send(&HandshakeMessage::HelloError(HelloError { error: error.clone() }))
+                    .await;
+            }
+            return Err(error.message.into());
+        }
+
+        if hello.role == PeerRole::Plugin && hello.plugin_name.is_none() {
+            let error = ProtocolError::validation("plugin hello missing plugin_name");
+            if let Some(conn) = self.connections.get(&conn_id) {
+                let _ = conn
+                    .send(&HandshakeMessage::HelloError(HelloError {
+                        error: error.clone(),
+                    }))
+                    .await;
+            }
+            return Err(error.message.into());
+        }
+
+        let supported = Self::supported_capabilities();
+        let capabilities: Vec<String> = hello
+            .capabilities
+            .into_iter()
+            .filter(|cap| supported.contains(cap))
+            .collect();
+        let negotiated_version = overlap_max;
+
+        if let Some(conn) = self.connections.get_mut(&conn_id) {
+            conn.protocol.legacy = false;
+            conn.protocol.negotiated_version = Some(negotiated_version);
+            conn.protocol.implementation = Some(hello.implementation.clone());
+            conn.protocol.capabilities = capabilities.iter().cloned().collect();
+            conn.kind = match hello.role {
+                PeerRole::App => ClientKind::App {
+                    subscriptions: Default::default(),
+                    in_flight_status: Default::default(),
+                },
+                PeerRole::Plugin => ClientKind::Plugin {
+                    name: hello.plugin_name.clone().expect("validated above"),
+                },
+            };
+        }
+
+        if let Some(conn) = self.connections.get(&conn_id) {
+            conn.send(&HandshakeMessage::HelloAck(HelloAck {
+                negotiated_version,
+                capabilities: capabilities.clone(),
+            }))
+            .await?;
+        }
+
+        if hello.role == PeerRole::Plugin {
+            let plugin_name = hello.plugin_name.expect("checked above");
+            self.plugin_registry.register(plugin_name.clone(), conn_id);
+            self.stopped_plugins.remove(&plugin_name);
+            self.send_initial_subscriber_counts_to_plugin(&plugin_name, conn_id)
+                .await;
+            self.emit_plugin_status(&plugin_name).await;
+        }
+        Ok(())
+    }
+
     /// First message from a connection identifies it as plugin or app.
     async fn identify_and_handle(
         &mut self,
         conn_id: Uuid,
         bytes: &[u8],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if Self::top_level_type(bytes).as_deref() == Some("Hello") {
+            let msg: HandshakeMessage = serde_json::from_slice(bytes)?;
+            if let HandshakeMessage::Hello(hello) = msg {
+                return self.handle_hello(conn_id, hello).await;
+            }
+            return Err("unexpected non-Hello first handshake frame".into());
+        }
+
         // Try plugin message first (EntityUpdated/EntityRemoved identify a plugin)
         if let Ok(msg) = serde_json::from_slice::<PluginMessage>(bytes) {
             let plugin_name = match &msg {
@@ -229,6 +339,7 @@ impl WaftDaemon {
             };
 
             if let Some(conn) = self.connections.get_mut(&conn_id) {
+                conn.protocol = crate::connection::ProtocolState::legacy();
                 conn.kind = ClientKind::Plugin {
                     name: plugin_name.clone(),
                 };
@@ -247,15 +358,86 @@ impl WaftDaemon {
         // Try app message
         if let Ok(msg) = serde_json::from_slice::<AppMessage>(bytes) {
             if let Some(conn) = self.connections.get_mut(&conn_id) {
+                conn.protocol = crate::connection::ProtocolState::legacy();
                 conn.kind = ClientKind::App {
                     subscriptions: Default::default(),
+                    in_flight_status: Default::default(),
                 };
             }
             debug!("connection {conn_id} identified as app");
             return self.handle_app_message(conn_id, msg).await;
         }
 
-        Err("could not parse first message as PluginMessage or AppMessage".into())
+        Err("could not parse first message as HandshakeMessage, PluginMessage or AppMessage".into())
+    }
+
+    fn connection_supports_derived_entity_type(&self, conn_id: Uuid) -> bool {
+        self.connections
+            .get(&conn_id)
+            .is_some_and(|conn| conn.protocol.supports_derived_entity_type())
+    }
+
+    async fn send_app_notification(
+        &self,
+        conn_id: Uuid,
+        notification: AppNotification,
+    ) -> Result<(), ConnectionError> {
+        let adapted = match notification {
+            AppNotification::EntityUpdated { urn, entity_type, data } => AppNotification::EntityUpdated {
+                urn,
+                entity_type: if self.connection_supports_derived_entity_type(conn_id) { None } else { entity_type },
+                data,
+            },
+            AppNotification::EntityRemoved { urn, entity_type } => AppNotification::EntityRemoved {
+                urn,
+                entity_type: if self.connection_supports_derived_entity_type(conn_id) { None } else { entity_type },
+            },
+            AppNotification::EntityStale { urn, entity_type } => AppNotification::EntityStale {
+                urn,
+                entity_type: if self.connection_supports_derived_entity_type(conn_id) { None } else { entity_type },
+            },
+            AppNotification::EntityOutdated { urn, entity_type } => AppNotification::EntityOutdated {
+                urn,
+                entity_type: if self.connection_supports_derived_entity_type(conn_id) { None } else { entity_type },
+            },
+            other => other,
+        };
+
+        match self.connections.get(&conn_id) {
+            Some(conn) => conn.send(&adapted).await,
+            None => Err(ConnectionError::Closed),
+        }
+    }
+
+    fn validate_plugin_entity_type(
+        &self,
+        conn_id: Uuid,
+        urn: &Urn,
+        explicit_entity_type: Option<&str>,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let derived = urn.entity_type().to_string();
+        if let Some(explicit) = explicit_entity_type
+            && explicit != derived
+        {
+            let negotiated = self
+                .connections
+                .get(&conn_id)
+                .is_some_and(|conn| !conn.protocol.legacy);
+            if negotiated {
+                return Err(ProtocolError::validation(format!(
+                    "entity_type mismatch for {}: explicit '{}' != derived '{}'",
+                    urn, explicit, derived
+                ))
+                .message
+                .into());
+            }
+            warn!(
+                "legacy plugin {} sent mismatched entity_type for {}: '{}' != '{}'",
+                conn_id, urn, explicit, derived
+            );
+            return Err("legacy plugin entity_type mismatch".into());
+        }
+        Ok(derived)
     }
 
     /// Handle a message from a plugin.
@@ -270,26 +452,29 @@ impl WaftDaemon {
                 ref entity_type,
                 ref data,
             } => {
-                // Cache the entity data
+                let canonical_entity_type =
+                    self.validate_plugin_entity_type(conn_id, urn, entity_type.as_deref())?;
                 self.entity_cache.insert(
                     urn.as_str().to_string(),
                     CachedEntity {
                         urn: urn.clone(),
-                        entity_type: entity_type.clone(),
+                        entity_type: canonical_entity_type.clone(),
                         data: data.clone(),
                     },
                 );
 
-                let notification = AppNotification::EntityUpdated {
-                    urn: urn.clone(),
-                    entity_type: entity_type.clone(),
-                    data: data.clone(),
-                };
-
-                let subscribers = self.app_registry.subscribers(entity_type);
+                let subscribers = self.app_registry.subscribers(&canonical_entity_type);
                 for app_id in subscribers {
-                    if let Some(conn) = self.connections.get(&app_id)
-                        && let Err(e) = conn.send(&notification).await
+                    if let Err(e) = self
+                        .send_app_notification(
+                            app_id,
+                            AppNotification::EntityUpdated {
+                                urn: urn.clone(),
+                                entity_type: Some(canonical_entity_type.clone()),
+                                data: data.clone(),
+                            },
+                        )
+                        .await
                     {
                         warn!("failed to forward EntityUpdated to {app_id}: {e}");
                     }
@@ -300,18 +485,21 @@ impl WaftDaemon {
                 ref urn,
                 ref entity_type,
             } => {
-                // Remove from entity cache
+                let canonical_entity_type =
+                    self.validate_plugin_entity_type(conn_id, urn, entity_type.as_deref())?;
                 self.entity_cache.remove(urn.as_str());
 
-                let notification = AppNotification::EntityRemoved {
-                    urn: urn.clone(),
-                    entity_type: entity_type.clone(),
-                };
-
-                let subscribers = self.app_registry.subscribers(entity_type);
+                let subscribers = self.app_registry.subscribers(&canonical_entity_type);
                 for app_id in subscribers {
-                    if let Some(conn) = self.connections.get(&app_id)
-                        && let Err(e) = conn.send(&notification).await
+                    if let Err(e) = self
+                        .send_app_notification(
+                            app_id,
+                            AppNotification::EntityRemoved {
+                                urn: urn.clone(),
+                                entity_type: Some(canonical_entity_type.clone()),
+                            },
+                        )
+                        .await
                     {
                         warn!("failed to forward EntityRemoved to {app_id}: {e}");
                     }
@@ -320,35 +508,35 @@ impl WaftDaemon {
 
             PluginMessage::ActionSuccess { action_id, data } => {
                 if let Some(action) = self.action_tracker.resolve(action_id) {
-                    if let Some(conn) = self.connections.get(&action.app_conn_id)
-                        && let Err(e) = conn
-                            .send(&AppNotification::ActionSuccess { action_id, data })
-                            .await
+                    if let Err(e) = self
+                        .send_app_notification(action.app_conn_id, AppNotification::ActionSuccess { action_id, data })
+                        .await
                     {
-                        warn!(
-                            "failed to forward ActionSuccess to {}: {e}",
-                            action.app_conn_id
-                        );
+                        warn!("failed to forward ActionSuccess to {}: {e}", action.app_conn_id);
                     }
                 } else {
                     warn!("ActionSuccess for unknown action {action_id}");
                 }
             }
 
-            PluginMessage::ActionError { action_id, error } => {
+            PluginMessage::ActionError {
+                action_id,
+                error,
+                error_details,
+            } => {
                 if let Some(action) = self.action_tracker.resolve(action_id) {
-                    if let Some(conn) = self.connections.get(&action.app_conn_id)
-                        && let Err(e) = conn
-                            .send(&AppNotification::ActionError {
+                    if let Err(e) = self
+                        .send_app_notification(
+                            action.app_conn_id,
+                            AppNotification::ActionError {
                                 action_id,
-                                error: error.clone(),
-                            })
-                            .await
+                                error,
+                                error_details,
+                            },
+                        )
+                        .await
                     {
-                        warn!(
-                            "failed to forward ActionError to {}: {e}",
-                            action.app_conn_id
-                        );
+                        warn!("failed to forward ActionError to {}: {e}", action.app_conn_id);
                     }
                 } else {
                     warn!("ActionError for unknown action {action_id}");
@@ -401,7 +589,7 @@ impl WaftDaemon {
 
                 // Track subscription in connection state
                 if let Some(conn) = self.connections.get_mut(&conn_id)
-                    && let ClientKind::App { subscriptions } = &mut conn.kind
+                    && let ClientKind::App { subscriptions, .. } = &mut conn.kind
                 {
                     subscriptions.insert(entity_type.clone());
                 }
@@ -425,9 +613,10 @@ impl WaftDaemon {
                     .await;
 
                 if let Some(conn) = self.connections.get_mut(&conn_id)
-                    && let ClientKind::App { subscriptions } = &mut conn.kind
+                    && let ClientKind::App { subscriptions, in_flight_status } = &mut conn.kind
                 {
                     subscriptions.remove(&entity_type);
+                    in_flight_status.remove(&entity_type);
                 }
 
                 // Check if any plugin now has zero subscribers and can be stopped
@@ -436,6 +625,24 @@ impl WaftDaemon {
 
             AppMessage::Status { entity_type } => {
                 debug!("app {conn_id} requested status for {entity_type}");
+
+                if let Some(conn) = self.connections.get_mut(&conn_id)
+                    && let ClientKind::App { in_flight_status, .. } = &mut conn.kind
+                {
+                    if !in_flight_status.insert(entity_type.clone()) {
+                        let _ = self
+                            .send_app_notification(
+                                conn_id,
+                                AppNotification::ProtocolError {
+                                    error: ProtocolError::validation(format!(
+                                        "duplicate in-flight Status request for entity type '{entity_type}'"
+                                    )),
+                                },
+                            )
+                            .await;
+                        return Ok(());
+                    }
+                }
 
                 if !self.entity_cache.values().any(|c| c.entity_type == entity_type) {
                     self.plugin_spawner.ensure_plugin_for_entity_type(&entity_type);
@@ -447,16 +654,13 @@ impl WaftDaemon {
                     .filter(|cached| cached.entity_type == entity_type)
                     .map(|cached| AppNotification::EntityUpdated {
                         urn: cached.urn.clone(),
-                        entity_type: cached.entity_type.clone(),
+                        entity_type: Some(cached.entity_type.clone()),
                         data: cached.data.clone(),
                     })
                     .collect();
 
                 for notification in notifications {
-                    let send_result = match self.connections.get(&conn_id) {
-                        Some(conn) => conn.send(&notification).await,
-                        None => return Ok(()),
-                    };
+                    let send_result = self.send_app_notification(conn_id, notification).await;
 
                     if let Err(e) = send_result {
                         match e {
@@ -477,10 +681,13 @@ impl WaftDaemon {
                 let completion = AppNotification::StatusComplete {
                     entity_type: entity_type.clone(),
                 };
-                let send_result = match self.connections.get(&conn_id) {
-                    Some(conn) => conn.send(&completion).await,
-                    None => return Ok(()),
-                };
+                let send_result = self.send_app_notification(conn_id, completion).await;
+
+                if let Some(conn) = self.connections.get_mut(&conn_id)
+                    && let ClientKind::App { in_flight_status, .. } = &mut conn.kind
+                {
+                    in_flight_status.remove(&entity_type);
+                }
 
                 if let Err(e) = send_result {
                     match e {
@@ -533,23 +740,33 @@ impl WaftDaemon {
                         && let Err(e) = plugin_conn.send(&cmd).await
                     {
                         warn!("failed to forward TriggerAction to plugin: {e}");
-                        if let Some(action) = self.action_tracker.resolve(action_id)
-                            && let Some(app_conn) = self.connections.get(&action.app_conn_id)
-                        {
-                            let _ = app_conn
-                                .send(&AppNotification::ActionError {
-                                    action_id,
-                                    error: format!("plugin communication failed: {e}"),
-                                })
+                        if let Some(action) = self.action_tracker.resolve(action_id) {
+                            let _ = self
+                                .send_app_notification(
+                                    action.app_conn_id,
+                                    AppNotification::ActionError {
+                                        action_id,
+                                        error: format!("plugin communication failed: {e}"),
+                                        error_details: Some(ProtocolError::action(format!(
+                                            "plugin communication failed: {e}"
+                                        ))),
+                                    },
+                                )
                                 .await;
                         }
                     }
-                } else if let Some(conn) = self.connections.get(&conn_id) {
-                    let _ = conn
-                        .send(&AppNotification::ActionError {
-                            action_id,
-                            error: format!("no plugin found for URN: {urn}"),
-                        })
+                } else {
+                    let _ = self
+                        .send_app_notification(
+                            conn_id,
+                            AppNotification::ActionError {
+                                action_id,
+                                error: format!("no plugin found for URN: {urn}"),
+                                error_details: Some(ProtocolError::not_found(format!(
+                                    "no plugin found for URN: {urn}"
+                                ))),
+                            },
+                        )
                         .await;
                 }
             }
@@ -575,11 +792,9 @@ impl WaftDaemon {
                     plugins.len(),
                 );
 
-                if let Some(conn) = self.connections.get(&conn_id) {
-                    let response = AppNotification::DescribeResponse { plugins };
-                    if let Err(e) = conn.send(&response).await {
-                        warn!("failed to send DescribeResponse to {conn_id}: {e}");
-                    }
+                let response = AppNotification::DescribeResponse { plugins };
+                if let Err(e) = self.send_app_notification(conn_id, response).await {
+                    warn!("failed to send DescribeResponse to {conn_id}: {e}");
                 }
             }
         }
@@ -595,14 +810,16 @@ impl WaftDaemon {
                 "action {} timed out (app: {})",
                 action.action_id, action.app_conn_id
             );
-            if let Some(conn) = self.connections.get(&action.app_conn_id) {
-                let _ = conn
-                    .send(&AppNotification::ActionError {
+            let _ = self
+                .send_app_notification(
+                    action.app_conn_id,
+                    AppNotification::ActionError {
                         action_id: action.action_id,
                         error: "action timed out".to_string(),
-                    })
-                    .await;
-            }
+                        error_details: Some(ProtocolError::timeout("action timed out")),
+                    },
+                )
+                .await;
         }
     }
 
@@ -739,7 +956,7 @@ impl WaftDaemon {
                     info!("plugin {name} disconnected (conn {conn_id})");
                     (Some(name), None)
                 }
-                ClientKind::App { subscriptions } => (None, Some(subscriptions)),
+                ClientKind::App { subscriptions, .. } => (None, Some(subscriptions)),
                 ClientKind::Unknown => (None, None),
             }
         } else {
@@ -789,18 +1006,16 @@ impl WaftDaemon {
                     let notification = match outcome {
                         CrashOutcome::Restart => AppNotification::EntityStale {
                             urn: urn.clone(),
-                            entity_type: entity_type.clone(),
+                            entity_type: Some(entity_type.clone()),
                         },
                         CrashOutcome::CircuitBroken => AppNotification::EntityOutdated {
                             urn: urn.clone(),
-                            entity_type: entity_type.clone(),
+                            entity_type: Some(entity_type.clone()),
                         },
                     };
                     let subscribers = self.app_registry.subscribers(entity_type);
                     for app_id in subscribers {
-                        if let Some(conn) = self.connections.get(&app_id)
-                            && let Err(e) = conn.send(&notification).await
-                        {
+                        if let Err(e) = self.send_app_notification(app_id, notification.clone()).await {
                             warn!("failed to send stale/outdated notification to {app_id}: {e}");
                         }
                     }
@@ -861,14 +1076,16 @@ impl WaftDaemon {
         // Notify apps of failed actions when plugin disconnects
         let orphaned = self.action_tracker.drain_for_connection(conn_id);
         for action in orphaned {
-            if let Some(conn) = self.connections.get(&action.app_conn_id) {
-                let _ = conn
-                    .send(&AppNotification::ActionError {
+            let _ = self
+                .send_app_notification(
+                    action.app_conn_id,
+                    AppNotification::ActionError {
                         action_id: action.action_id,
                         error: "plugin disconnected".to_string(),
-                    })
-                    .await;
-            }
+                        error_details: Some(ProtocolError::action("plugin disconnected")),
+                    },
+                )
+                .await;
         }
 
         // Emit updated plugin-status for the disconnected plugin
@@ -922,15 +1139,13 @@ impl WaftDaemon {
 
         let notification = AppNotification::EntityUpdated {
             urn,
-            entity_type: plugin_entity::ENTITY_TYPE.to_string(),
+            entity_type: Some(plugin_entity::ENTITY_TYPE.to_string()),
             data,
         };
 
         let subscribers = self.app_registry.subscribers(plugin_entity::ENTITY_TYPE);
         for app_id in subscribers {
-            if let Some(conn) = self.connections.get(&app_id)
-                && let Err(e) = conn.send(&notification).await
-            {
+            if let Err(e) = self.send_app_notification(app_id, notification.clone()).await {
                 warn!("failed to send plugin-status to {app_id}: {e}");
             }
         }
@@ -940,35 +1155,90 @@ impl WaftDaemon {
     async fn emit_all_plugin_statuses_to(&self, app_conn_id: Uuid) {
         let all_plugins = self.plugin_spawner.all_plugins();
 
-        if let Some(conn) = self.connections.get(&app_conn_id) {
-            for (plugin_name, entity_types) in all_plugins {
-                let state = self.compute_plugin_state(&plugin_name);
-                let status = PluginStatus {
-                    name: plugin_name.clone(),
-                    state,
-                    entity_types,
-                };
+        for (plugin_name, entity_types) in all_plugins {
+            let state = self.compute_plugin_state(&plugin_name);
+            let status = PluginStatus {
+                name: plugin_name.clone(),
+                state,
+                entity_types,
+            };
 
-                let urn = Urn::new("waft", plugin_entity::ENTITY_TYPE, &plugin_name);
-                let data = match serde_json::to_value(&status) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        error!("failed to serialize plugin-status for {plugin_name}: {e}");
-                        continue;
-                    }
-                };
-
-                let notification = AppNotification::EntityUpdated {
-                    urn,
-                    entity_type: plugin_entity::ENTITY_TYPE.to_string(),
-                    data,
-                };
-
-                if let Err(e) = conn.send(&notification).await {
-                    warn!("failed to send plugin-status to {app_conn_id}: {e}");
-                    break;
+            let urn = Urn::new("waft", plugin_entity::ENTITY_TYPE, &plugin_name);
+            let data = match serde_json::to_value(&status) {
+                Ok(d) => d,
+                Err(e) => {
+                    error!("failed to serialize plugin-status for {plugin_name}: {e}");
+                    continue;
                 }
+            };
+
+            let notification = AppNotification::EntityUpdated {
+                urn,
+                entity_type: Some(plugin_entity::ENTITY_TYPE.to_string()),
+                data,
+            };
+
+            if let Err(e) = self.send_app_notification(app_conn_id, notification).await {
+                warn!("failed to send plugin-status to {app_conn_id}: {e}");
+                break;
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use tokio::io::AsyncReadExt;
+    use tokio::net::UnixStream;
+
+    async fn test_daemon() -> WaftDaemon {
+        let socket_dir = TempDir::new().expect("tempdir");
+        let socket_path = socket_dir.path().join("daemon.sock");
+        let daemon = WaftDaemon::new(&socket_path).expect("daemon");
+        std::mem::forget(socket_dir);
+        daemon
+    }
+
+    async fn read_notification(stream: &mut UnixStream) -> AppNotification {
+        let mut len_bytes = [0u8; 4];
+        stream.read_exact(&mut len_bytes).await.expect("length");
+        let len = u32::from_be_bytes(len_bytes) as usize;
+        let mut payload = vec![0u8; len];
+        stream.read_exact(&mut payload).await.expect("payload");
+        serde_json::from_slice(&payload).expect("notification")
+    }
+
+    #[tokio::test]
+    async fn duplicate_in_flight_status_returns_protocol_error() {
+        let mut daemon = test_daemon().await;
+        let (client, server) = UnixStream::pair().expect("pair");
+        let (mut conn, _read_half) = Connection::new(server);
+        let conn_id = conn.id;
+        conn.kind = ClientKind::App {
+            subscriptions: Default::default(),
+            in_flight_status: HashSet::from(["clock".to_string()]),
+        };
+        daemon.connections.insert(conn_id, conn);
+
+        daemon
+            .handle_app_message(
+                conn_id,
+                AppMessage::Status {
+                    entity_type: "clock".to_string(),
+                },
+            )
+            .await
+            .expect("status handled");
+
+        let mut client = client;
+        match read_notification(&mut client).await {
+            AppNotification::ProtocolError { error } => {
+                assert_eq!(error.code, "protocol.validation");
+                assert!(error.message.contains("duplicate in-flight Status request"));
+            }
+            other => panic!("expected ProtocolError, got: {other:?}"),
         }
     }
 }

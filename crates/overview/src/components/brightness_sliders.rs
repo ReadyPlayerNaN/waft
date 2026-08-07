@@ -146,7 +146,7 @@ pub(crate) mod tests {
     fn make_updated(urn: Urn, data: serde_json::Value) -> AppNotification {
         AppNotification::EntityUpdated {
             urn,
-            entity_type: entity::display::DISPLAY_ENTITY_TYPE.to_string(),
+            entity_type: Some(entity::display::DISPLAY_ENTITY_TYPE.to_string()),
             data,
         }
     }
@@ -154,7 +154,7 @@ pub(crate) mod tests {
     fn make_removed(urn: Urn) -> AppNotification {
         AppNotification::EntityRemoved {
             urn,
-            entity_type: entity::display::DISPLAY_ENTITY_TYPE.to_string(),
+            entity_type: Some(entity::display::DISPLAY_ENTITY_TYPE.to_string()),
         }
     }
 

@@ -10,6 +10,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::schema::JsonSchema;
+
 /// Description of a plugin and all entity types it provides.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginDescription {
@@ -36,6 +38,9 @@ pub struct EntityTypeDescription {
     pub properties: Vec<PropertyDescription>,
     /// Descriptions of actions that can be triggered on this entity.
     pub actions: Vec<ActionDescription>,
+    /// Optional embedded JSON-schema-like description of the entity payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_schema: Option<JsonSchema>,
 }
 
 /// Description of an entity property (a field in the JSON data).
@@ -87,6 +92,15 @@ pub struct ActionDescription {
     pub description: String,
     /// Parameters the action accepts.
     pub params: Vec<ActionParamDescription>,
+    /// Optional schema for the params object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params_schema: Option<JsonSchema>,
+    /// Optional schema for the success payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_schema: Option<JsonSchema>,
+    /// Structured error codes the action may emit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub error_codes: Vec<String>,
 }
 
 /// Description of an action parameter.
@@ -167,14 +181,31 @@ mod tests {
                             required: true,
                             value_type: PropertyValueType::Percent,
                         }],
+                        params_schema: Some(
+                            JsonSchema::object()
+                                .with_property("value", JsonSchema::number(), true)
+                                .closed(),
+                        ),
+                        result_schema: None,
+                        error_codes: vec!["action.execution".to_string()],
                     },
                     ActionDescription {
                         name: "toggle-mute".to_string(),
                         label: "Toggle Mute".to_string(),
                         description: "Mute or unmute the device".to_string(),
                         params: vec![],
+                        params_schema: Some(JsonSchema::object().closed()),
+                        result_schema: None,
+                        error_codes: vec![],
                     },
                 ],
+                data_schema: Some(
+                    JsonSchema::object()
+                        .with_property("volume", JsonSchema::number(), true)
+                        .with_property("muted", JsonSchema::boolean(), true)
+                        .with_property("kind", JsonSchema::string(), true)
+                        .closed(),
+                ),
             }],
         };
         roundtrip(&desc);
@@ -193,6 +224,11 @@ mod tests {
                 value_type: PropertyValueType::String,
             }],
             actions: vec![],
+            data_schema: Some(
+                JsonSchema::object()
+                    .with_property("time", JsonSchema::string(), true)
+                    .closed(),
+            ),
         };
         roundtrip(&desc);
     }
@@ -255,6 +291,7 @@ mod tests {
             description: "A test entity".to_string(),
             properties: vec![],
             actions: vec![],
+            data_schema: None,
         };
         roundtrip(&desc);
     }

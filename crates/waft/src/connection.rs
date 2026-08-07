@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use waft_protocol::CAP_DERIVED_ENTITY_TYPE;
+
 use log::{debug, trace};
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -11,6 +13,27 @@ use uuid::Uuid;
 /// Maximum allowed message size (10 MB), matching waft_protocol::transport.
 const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
 
+#[derive(Debug, Clone, Default)]
+pub struct ProtocolState {
+    pub legacy: bool,
+    pub negotiated_version: Option<u32>,
+    pub implementation: Option<String>,
+    pub capabilities: HashSet<String>,
+}
+
+impl ProtocolState {
+    pub fn legacy() -> Self {
+        Self {
+            legacy: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn supports_derived_entity_type(&self) -> bool {
+        self.capabilities.contains(CAP_DERIVED_ENTITY_TYPE)
+    }
+}
+
 /// What kind of client is connected.
 pub enum ClientKind {
     /// First message not yet received.
@@ -18,13 +41,17 @@ pub enum ClientKind {
     /// A plugin that provides entities.
     Plugin { name: String },
     /// An app that subscribes to entity types.
-    App { subscriptions: HashSet<String> },
+    App {
+        subscriptions: HashSet<String>,
+        in_flight_status: HashSet<String>,
+    },
 }
 
 /// A connected client (app or plugin) with async send/receive.
 pub struct Connection {
     pub id: Uuid,
     pub kind: ClientKind,
+    pub protocol: ProtocolState,
     tx: mpsc::Sender<Vec<u8>>,
 }
 
@@ -40,6 +67,7 @@ impl Connection {
         let conn = Connection {
             id,
             kind: ClientKind::Unknown,
+            protocol: ProtocolState::default(),
             tx,
         };
 

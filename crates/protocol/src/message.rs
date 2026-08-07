@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::description::PluginDescription;
+use crate::error::ProtocolError;
 use crate::urn::Urn;
 
 /// Messages sent from an app to the waft daemon.
@@ -48,12 +49,17 @@ pub enum PluginMessage {
     /// An entity was created or updated.
     EntityUpdated {
         urn: Urn,
-        entity_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entity_type: Option<String>,
         data: serde_json::Value,
     },
 
     /// An entity was removed.
-    EntityRemoved { urn: Urn, entity_type: String },
+    EntityRemoved {
+        urn: Urn,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entity_type: Option<String>,
+    },
 
     /// An action completed successfully, optionally carrying response data.
     ActionSuccess {
@@ -63,7 +69,12 @@ pub enum PluginMessage {
     },
 
     /// An action failed.
-    ActionError { action_id: Uuid, error: String },
+    ActionError {
+        action_id: Uuid,
+        error: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error_details: Option<ProtocolError>,
+    },
 
     /// Response to a CanStop command.
     StopResponse { can_stop: bool },
@@ -76,12 +87,17 @@ pub enum AppNotification {
     /// An entity was created or updated.
     EntityUpdated {
         urn: Urn,
-        entity_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entity_type: Option<String>,
         data: serde_json::Value,
     },
 
     /// An entity was removed.
-    EntityRemoved { urn: Urn, entity_type: String },
+    EntityRemoved {
+        urn: Urn,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entity_type: Option<String>,
+    },
 
     /// An action completed successfully, optionally carrying response data.
     ActionSuccess {
@@ -91,19 +107,35 @@ pub enum AppNotification {
     },
 
     /// An action failed.
-    ActionError { action_id: Uuid, error: String },
+    ActionError {
+        action_id: Uuid,
+        error: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error_details: Option<ProtocolError>,
+    },
 
     /// An entity's data may be stale (plugin unresponsive).
-    EntityStale { urn: Urn, entity_type: String },
+    EntityStale {
+        urn: Urn,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entity_type: Option<String>,
+    },
 
     /// An entity's data is outdated (plugin reconnecting).
-    EntityOutdated { urn: Urn, entity_type: String },
+    EntityOutdated {
+        urn: Urn,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entity_type: Option<String>,
+    },
 
     /// Response to a Describe request.
     DescribeResponse { plugins: Vec<PluginDescription> },
 
     /// Marks completion of one Status query for a specific entity type.
     StatusComplete { entity_type: String },
+
+    /// Structured protocol-level error not tied to an action id.
+    ProtocolError { error: ProtocolError },
 }
 
 /// Commands sent from the waft daemon to a plugin.
@@ -125,9 +157,50 @@ pub enum PluginCommand {
     SubscriberCountChanged { entity_type: String, count: usize },
 }
 
+impl PluginMessage {
+    pub fn entity_type(&self) -> Option<&str> {
+        match self {
+            PluginMessage::EntityUpdated { urn, entity_type, .. }
+            | PluginMessage::EntityRemoved { urn, entity_type } => {
+                entity_type.as_deref().or_else(|| Some(urn.entity_type()))
+            }
+            _ => None,
+        }
+    }
+}
+
+impl AppNotification {
+    pub fn entity_type(&self) -> Option<&str> {
+        match self {
+            AppNotification::EntityUpdated { urn, entity_type, .. }
+            | AppNotification::EntityRemoved { urn, entity_type }
+            | AppNotification::EntityStale { urn, entity_type }
+            | AppNotification::EntityOutdated { urn, entity_type } => {
+                entity_type.as_deref().or_else(|| Some(urn.entity_type()))
+            }
+            AppNotification::StatusComplete { entity_type } => Some(entity_type.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn action_error(&self) -> Option<(&str, Option<&ProtocolError>)> {
+        match self {
+            AppNotification::ActionError {
+                error,
+                error_details,
+                ..
+            } => Some((error.as_str(), error_details.as_ref())),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::description::*;
+    use crate::error::ProtocolErrorScope;
+    use crate::schema::JsonSchema;
 
     fn roundtrip_json<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug>(
         msg: &T,
@@ -184,16 +257,29 @@ mod tests {
     fn plugin_message_entity_updated() {
         roundtrip_json(&PluginMessage::EntityUpdated {
             urn: Urn::new("battery", "battery", "BAT0"),
-            entity_type: "battery".to_string(),
+            entity_type: Some("battery".to_string()),
             data: serde_json::json!({"percentage": 85.0, "state": "Discharging"}),
         });
+    }
+
+    #[test]
+    fn plugin_message_entity_updated_without_entity_type() {
+        let msg = PluginMessage::EntityUpdated {
+            urn: Urn::new("battery", "battery", "BAT0"),
+            entity_type: None,
+            data: serde_json::json!({"percentage": 85.0}),
+        };
+        let json = serde_json::to_string(&msg).expect("serialize");
+        assert!(!json.contains("entity_type"));
+        let decoded: PluginMessage = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(decoded.entity_type(), Some("battery"));
     }
 
     #[test]
     fn plugin_message_entity_removed() {
         roundtrip_json(&PluginMessage::EntityRemoved {
             urn: Urn::new("blueman", "bluetooth-adapter", "hci0"),
-            entity_type: "bluetooth-adapter".to_string(),
+            entity_type: Some("bluetooth-adapter".to_string()),
         });
     }
 
@@ -218,7 +304,18 @@ mod tests {
         roundtrip_json(&PluginMessage::ActionError {
             action_id: Uuid::new_v4(),
             error: "device not found".to_string(),
+            error_details: Some(ProtocolError::not_found("device not found")),
         });
+    }
+
+    #[test]
+    fn plugin_message_entity_type_prefers_explicit_value() {
+        let msg = PluginMessage::EntityUpdated {
+            urn: Urn::new("battery", "battery", "BAT0"),
+            entity_type: Some("custom-battery".to_string()),
+            data: serde_json::json!({"percentage": 85.0}),
+        };
+        assert_eq!(msg.entity_type(), Some("custom-battery"));
     }
 
     #[test]
@@ -231,7 +328,7 @@ mod tests {
     fn app_notification_entity_updated() {
         roundtrip_json(&AppNotification::EntityUpdated {
             urn: Urn::new("clock", "clock", "default"),
-            entity_type: "clock".to_string(),
+            entity_type: Some("clock".to_string()),
             data: serde_json::json!({"time": "14:30", "date": "Thursday, 12 Feb 2026"}),
         });
     }
@@ -240,7 +337,7 @@ mod tests {
     fn app_notification_entity_removed() {
         roundtrip_json(&AppNotification::EntityRemoved {
             urn: Urn::new("audio", "audio-device", "headphones"),
-            entity_type: "audio-device".to_string(),
+            entity_type: Some("audio-device".to_string()),
         });
     }
 
@@ -265,14 +362,43 @@ mod tests {
         roundtrip_json(&AppNotification::ActionError {
             action_id: Uuid::new_v4(),
             error: "permission denied".to_string(),
+            error_details: Some(ProtocolError::new(
+                "permission.denied",
+                "permission denied",
+                ProtocolErrorScope::Action,
+                false,
+            )),
         });
+    }
+
+    #[test]
+    fn app_notification_entity_type_falls_back_to_urn() {
+        let notification = AppNotification::EntityUpdated {
+            urn: Urn::new("clock", "clock", "default"),
+            entity_type: None,
+            data: serde_json::json!({"time": "14:30"}),
+        };
+        assert_eq!(notification.entity_type(), Some("clock"));
+    }
+
+    #[test]
+    fn app_notification_action_error_helper_exposes_structured_details() {
+        let details = ProtocolError::action("boom");
+        let notification = AppNotification::ActionError {
+            action_id: Uuid::nil(),
+            error: "boom".to_string(),
+            error_details: Some(details.clone()),
+        };
+        let (message, structured) = notification.action_error().expect("action error helper");
+        assert_eq!(message, "boom");
+        assert_eq!(structured, Some(&details));
     }
 
     #[test]
     fn app_notification_entity_stale() {
         roundtrip_json(&AppNotification::EntityStale {
             urn: Urn::new("weather", "weather", "default"),
-            entity_type: "weather".to_string(),
+            entity_type: Some("weather".to_string()),
         });
     }
 
@@ -280,7 +406,7 @@ mod tests {
     fn app_notification_entity_outdated() {
         roundtrip_json(&AppNotification::EntityOutdated {
             urn: Urn::new("networkmanager", "network-adapter", "wlan0"),
-            entity_type: "network-adapter".to_string(),
+            entity_type: Some("network-adapter".to_string()),
         });
     }
 
@@ -321,8 +447,6 @@ mod tests {
 
     #[test]
     fn app_notification_describe_response() {
-        use crate::description::*;
-
         roundtrip_json(&AppNotification::DescribeResponse {
             plugins: vec![PluginDescription {
                 name: "clock".to_string(),
@@ -339,6 +463,11 @@ mod tests {
                         value_type: PropertyValueType::String,
                     }],
                     actions: vec![],
+                    data_schema: Some(
+                        JsonSchema::object()
+                            .with_property("time", JsonSchema::string(), true)
+                            .closed(),
+                    ),
                 }],
             }],
         });
@@ -357,9 +486,14 @@ mod tests {
     }
 
     #[test]
+    fn app_notification_protocol_error() {
+        roundtrip_json(&AppNotification::ProtocolError {
+            error: ProtocolError::validation("bad request"),
+        });
+    }
+
+    #[test]
     fn plugin_action_success_backward_compat_no_data_field() {
-        // Older plugins may send ActionSuccess without the `data` field.
-        // #[serde(default)] ensures this deserializes correctly.
         let id = Uuid::new_v4();
         let json = format!(r#"{{"type":"ActionSuccess","action_id":"{id}"}}"#);
         let msg: PluginMessage = serde_json::from_str(&json).expect("deserialize");
@@ -393,9 +527,23 @@ mod tests {
             data: None,
         };
         let json = serde_json::to_string(&msg).expect("expected value");
-        assert!(
-            !json.contains("data"),
-            "data: None should be omitted from JSON"
+        assert!(!json.contains("data"));
+    }
+
+    #[test]
+    fn app_action_error_backward_compat_no_error_details() {
+        let id = Uuid::new_v4();
+        let json = format!(
+            r#"{{"type":"ActionError","action_id":"{id}","error":"oops"}}"#
+        );
+        let msg: AppNotification = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(
+            msg,
+            AppNotification::ActionError {
+                action_id: id,
+                error: "oops".to_string(),
+                error_details: None,
+            }
         );
     }
 }

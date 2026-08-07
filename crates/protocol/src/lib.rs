@@ -12,16 +12,26 @@
 //! never after plugin implementations (`darkman`, `sunsetr`, `caffeine`).
 //! See [`entity`] module docs for details.
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
+pub const MIN_PROTOCOL_VERSION: u32 = 1;
 
 pub mod commands;
 pub mod description;
 pub mod entity;
+pub mod error;
+pub mod handshake;
 pub mod message;
+pub mod schema;
 pub mod transport;
 pub mod urn;
 
 pub use description::PluginDescription;
+pub use error::{ProtocolError, ProtocolErrorScope};
+pub use handshake::{
+    CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA, CAP_STATUS_COMPLETE,
+    CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, HelloAck, HelloError, PeerRole,
+};
 pub use message::{AppMessage, AppNotification, PluginCommand, PluginMessage};
+pub use schema::JsonSchema;
 pub use transport::{MAX_FRAME_SIZE, TransportError, read_framed, write_framed};
 pub use urn::{Urn, UrnError};

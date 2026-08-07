@@ -4,7 +4,7 @@ use std::process::Command;
 
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use waft_protocol::PluginDescription;
+use waft_protocol::{JsonSchema, PluginDescription};
 use waft_protocol::description::PropertyValueType;
 
 /// Manifest returned by `provides` (basic) or `provides --describe` (extended).
@@ -202,6 +202,8 @@ struct PluginDescribeEntityType {
     properties: Vec<PluginDescribeProperty>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     actions: Vec<PluginDescribeAction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data_schema: Option<JsonSchema>,
 }
 
 #[derive(Serialize)]
@@ -220,6 +222,12 @@ struct PluginDescribeAction {
     description: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     params: Vec<PluginDescribeActionParam>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    params_schema: Option<JsonSchema>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result_schema: Option<JsonSchema>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    error_codes: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -286,8 +294,12 @@ fn build_describe_output(plugin: &DiscoveredPlugin) -> PluginDescribeOutput {
                                 required: p.required,
                             })
                             .collect(),
+                        params_schema: a.params_schema.clone(),
+                        result_schema: a.result_schema.clone(),
+                        error_codes: a.error_codes.clone(),
                     })
                     .collect(),
+                data_schema: et.data_schema.clone(),
             })
             .collect(),
         None => plugin
@@ -298,6 +310,7 @@ fn build_describe_output(plugin: &DiscoveredPlugin) -> PluginDescribeOutput {
                 description: None,
                 properties: vec![],
                 actions: vec![],
+                data_schema: None,
             })
             .collect(),
     };
@@ -767,7 +780,11 @@ mod tests {
                         label: "Click".to_string(),
                         description: "Execute click command".to_string(),
                         params: vec![],
+                        params_schema: None,
+                        result_schema: None,
+                        error_codes: vec![],
                     }],
+                    data_schema: None,
                 }],
             }),
         };
@@ -861,7 +878,11 @@ mod tests {
                             required: true,
                             value_type: PropertyValueType::Percent,
                         }],
+                        params_schema: None,
+                        result_schema: None,
+                        error_codes: vec![],
                     }],
+                    data_schema: None,
                 }],
             }),
         };

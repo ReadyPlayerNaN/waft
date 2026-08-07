@@ -191,6 +191,7 @@ async fn action_error_routed_to_app() {
         .send(&PluginMessage::ActionError {
             action_id,
             error: "device not found".to_string(),
+            error_details: Some(waft_protocol::ProtocolError::not_found("device not found")),
         })
         .await;
 
@@ -204,9 +205,14 @@ async fn action_error_routed_to_app() {
         AppNotification::ActionError {
             action_id: recv_id,
             error,
+            error_details,
         } => {
             assert_eq!(recv_id, action_id);
             assert_eq!(error, "device not found");
+            assert_eq!(
+                error_details.expect("expected structured error details").code,
+                "entity.not-found"
+            );
         }
         other => panic!("expected ActionError, got: {other:?}"),
     }

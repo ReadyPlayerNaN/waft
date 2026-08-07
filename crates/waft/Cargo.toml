@@ -25,6 +25,7 @@ env_logger = "0.11"
 [dev-dependencies]
 waft-test-harness = { path = "../test-harness" }
 serial_test = "3"
+tempfile = "3"
 
 [lints]
 workspace = true
