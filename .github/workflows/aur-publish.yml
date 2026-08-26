@@ -3,7 +3,7 @@ name: aur-publish
 # Pushes the waft-git PKGBUILD to its AUR repository.
 #
 # Triggers:
-#   - push to master affecting packaging files or these workflows
+#   - successful `packaging` workflow run on master
 #   - tag push matching `release/*`
 #   - manual dispatch
 #
@@ -12,12 +12,11 @@ name: aur-publish
 #                         that owns the packages.
 
 on:
-  push:
+  workflow_run:
+    workflows: ["packaging"]
+    types: [completed]
     branches: [master]
-    paths:
-      - 'packaging/**'
-      - '.github/workflows/packaging.yml'
-      - '.github/workflows/aur-publish.yml'
+  push:
     tags:
       - 'release/*'
   workflow_dispatch:
@@ -32,6 +31,9 @@ on:
 
 jobs:
   publish:
+    if: >
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
     name: publish ${{ matrix.pkg }}
     runs-on: ubuntu-latest
     strategy:
@@ -53,6 +55,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "value=Update to ${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "value=Sync PKGBUILD from master (${{ github.event.workflow_run.head_sha }})" >> "$GITHUB_OUTPUT"
           else
             echo "value=Manual publish from ${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
