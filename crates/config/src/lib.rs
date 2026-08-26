@@ -127,8 +127,11 @@ pub struct Config {
     pub launcher: LauncherConfig,
 }
 
-fn plugin_id_matches(candidate: &str, plugin_id: &str) -> bool {
-    candidate == plugin_id || matches!((candidate, plugin_id), ("battery", "power"))
+fn legacy_plugin_alias(plugin_id: &str) -> Option<&'static str> {
+    match plugin_id {
+        "power" => Some("battery"),
+        _ => None,
+    }
 }
 
 impl Config {
@@ -150,15 +153,19 @@ impl Config {
     pub fn get_plugin_settings(&self, plugin_id: &str) -> Option<&toml::Table> {
         self.plugins
             .iter()
-            .find(|p| plugin_id_matches(&p.id, plugin_id))
+            .find(|p| p.id == plugin_id)
+            .or_else(|| {
+                legacy_plugin_alias(plugin_id)
+                    .and_then(|legacy_id| self.plugins.iter().find(|p| p.id == legacy_id))
+            })
             .map(|p| &p.settings)
     }
 
     /// Check if a plugin is enabled (listed in config).
     pub fn is_plugin_enabled(&self, plugin_id: &str) -> bool {
-        self.plugins
-            .iter()
-            .any(|p| plugin_id_matches(&p.id, plugin_id))
+        self.plugins.iter().any(|p| p.id == plugin_id)
+            || legacy_plugin_alias(plugin_id)
+                .is_some_and(|legacy_id| self.plugins.iter().any(|p| p.id == legacy_id))
     }
 }
 
@@ -357,7 +364,49 @@ id = "battery"
 
         assert!(config.get_plugin_settings("power").is_some());
         assert!(config.is_plugin_enabled("power"));
-        assert!(!config.is_plugin_enabled("battery"));
+    }
+
+    #[test]
+    fn direct_power_config_wins_over_legacy_battery_alias() {
+        let mut legacy_settings = toml::Table::new();
+        legacy_settings.insert(
+            "driver".to_string(),
+            toml::Value::String("legacy-upower".to_string()),
+        );
+
+        let mut power_settings = toml::Table::new();
+        power_settings.insert(
+            "driver".to_string(),
+            toml::Value::String("power-profiles-daemon".to_string()),
+        );
+
+        let config = Config {
+            system: SystemConfig::default(),
+            toasts: ToastsConfig::default(),
+            launcher: LauncherConfig::default(),
+            plugins: vec![
+                PluginConfigEntry {
+                    id: "battery".to_string(),
+                    use_daemon: Some(true),
+                    settings: legacy_settings,
+                },
+                PluginConfigEntry {
+                    id: "power".to_string(),
+                    use_daemon: Some(true),
+                    settings: power_settings,
+                },
+            ],
+        };
+
+        let settings = config
+            .get_plugin_settings("power")
+            .expect("power should prefer direct config over legacy alias");
+        assert_eq!(
+            settings.get("driver"),
+            Some(&toml::Value::String("power-profiles-daemon".to_string()))
+        );
+        assert!(config.is_plugin_enabled("power"));
+        assert!(config.is_plugin_enabled("battery"));
     }
 
     #[test]

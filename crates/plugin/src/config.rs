@@ -7,12 +7,14 @@ use serde::de::DeserializeOwned;
 use std::path::PathBuf;
 
 fn plugin_id_matches(candidate: &str, plugin_id: &str) -> bool {
-    candidate == plugin_id
-        || candidate == format!("waft::{plugin_id}")
-        || matches!(
-            (candidate, plugin_id),
-            ("battery", "power") | ("waft::battery", "power")
-        )
+    candidate == plugin_id || candidate == format!("waft::{plugin_id}")
+}
+
+fn legacy_plugin_ids(plugin_id: &str) -> &'static [&'static str] {
+    match plugin_id {
+        "power" => &["battery", "waft::battery"],
+        _ => &[],
+    }
 }
 
 /// Load plugin-specific configuration from waft config file.
@@ -44,19 +46,34 @@ where
         .with_context(|| format!("failed to read config file {}", config_path.display()))?;
     let root: toml::Table = toml::from_str(&content).context("failed to parse config TOML")?;
 
+    load_plugin_config_from_root(&root, plugin_id)
+}
+
+fn load_plugin_config_from_root<T>(root: &toml::Table, plugin_id: &str) -> anyhow::Result<T>
+where
+    T: Default + DeserializeOwned,
+{
     if let Some(plugins) = root.get("plugins").and_then(|v| v.as_array()) {
-        for plugin in plugins {
-            if let Some(table) = plugin.as_table()
-                && let Some(id) = table.get("id").and_then(|v| v.as_str())
-                && plugin_id_matches(id, plugin_id)
-            {
-                log::debug!("Found config for plugin '{plugin_id}'");
-                return toml::Value::Table(table.clone())
-                    .try_into()
-                    .with_context(|| {
-                        format!("failed to deserialize config for plugin '{plugin_id}'")
-                    });
-            }
+        if let Some(table) = plugins.iter().find_map(|plugin| {
+            let table = plugin.as_table()?;
+            let id = table.get("id").and_then(|v| v.as_str())?;
+            plugin_id_matches(id, plugin_id).then_some(table)
+        }) {
+            log::debug!("Found config for plugin '{plugin_id}'");
+            return toml::Value::Table(table.clone())
+                .try_into()
+                .with_context(|| format!("failed to deserialize config for plugin '{plugin_id}'"));
+        }
+
+        if let Some(table) = plugins.iter().find_map(|plugin| {
+            let table = plugin.as_table()?;
+            let id = table.get("id").and_then(|v| v.as_str())?;
+            legacy_plugin_ids(plugin_id).contains(&id).then_some(table)
+        }) {
+            log::debug!("Found legacy config for plugin '{plugin_id}'");
+            return toml::Value::Table(table.clone())
+                .try_into()
+                .with_context(|| format!("failed to deserialize config for plugin '{plugin_id}'"));
         }
     }
 
@@ -96,10 +113,41 @@ mod tests {
 
     #[test]
     fn power_alias_matches_legacy_battery_id() {
-        assert!(plugin_id_matches("battery", "power"));
-        assert!(plugin_id_matches("waft::battery", "power"));
+        assert_eq!(legacy_plugin_ids("power"), &["battery", "waft::battery"]);
         assert!(plugin_id_matches("power", "power"));
         assert!(plugin_id_matches("waft::power", "power"));
+        assert!(!plugin_id_matches("battery", "power"));
         assert!(!plugin_id_matches("battery", "audio"));
+    }
+
+    #[test]
+    fn direct_power_config_wins_over_legacy_battery_alias() {
+        #[derive(Debug, Default, Deserialize, PartialEq)]
+        struct DriverConfig {
+            driver: Option<String>,
+        }
+
+        let root: toml::Table = toml::from_str(
+            r#"
+[[plugins]]
+id = "battery"
+driver = "legacy-upower"
+
+[[plugins]]
+id = "power"
+driver = "power-profiles-daemon"
+"#,
+        )
+        .expect("parse config");
+
+        let loaded: DriverConfig =
+            load_plugin_config_from_root(&root, "power").expect("load config");
+
+        assert_eq!(
+            loaded,
+            DriverConfig {
+                driver: Some("power-profiles-daemon".to_string())
+            }
+        );
     }
 }

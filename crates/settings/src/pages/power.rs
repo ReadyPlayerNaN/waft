@@ -5,6 +5,8 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use uuid::Uuid;
+
 use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
@@ -142,14 +144,17 @@ impl PowerPage {
         let updating_profile = Rc::new(Cell::new(false));
         let profile_ids: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
         let profile_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
+        let confirmed_profile: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+        let pending_action_id: Rc<RefCell<Option<Uuid>>> = Rc::new(RefCell::new(None));
 
         {
             let cb = action_callback.clone();
             let guard = updating_profile.clone();
             let ids = profile_ids.clone();
             let urn_ref = profile_urn.clone();
+            let pending_action_id = pending_action_id.clone();
             profile_row.connect_selected_notify(move |row| {
-                if guard.get() {
+                if guard.get() || pending_action_id.borrow().is_some() {
                     return;
                 }
                 let selected = row.selected() as usize;
@@ -159,11 +164,54 @@ impl PowerPage {
                 let Some(urn) = urn_ref.borrow().clone() else {
                     return;
                 };
-                cb(
+                match cb(
                     urn,
                     "set-profile".to_string(),
                     serde_json::json!({ "profile": profile }),
-                );
+                ) {
+                    Some(action_id) => {
+                        *pending_action_id.borrow_mut() = Some(action_id);
+                        row.set_sensitive(false);
+                    }
+                    None => {
+                        row.set_sensitive(true);
+                    }
+                }
+            });
+        }
+
+        {
+            let pending_action_id = pending_action_id.clone();
+            let profile_row = profile_row.clone();
+            entity_store.on_action_success(move |action_id, _data| {
+                if *pending_action_id.borrow() == Some(action_id) {
+                    *pending_action_id.borrow_mut() = None;
+                    profile_row.set_sensitive(true);
+                }
+            });
+        }
+
+        {
+            let pending_action_id = pending_action_id.clone();
+            let confirmed_profile = confirmed_profile.clone();
+            let profile_ids = profile_ids.clone();
+            let guard = updating_profile.clone();
+            let profile_row = profile_row.clone();
+            entity_store.on_action_error(move |action_id, _error| {
+                if *pending_action_id.borrow() != Some(action_id) {
+                    return;
+                }
+
+                *pending_action_id.borrow_mut() = None;
+                profile_row.set_sensitive(true);
+
+                guard.set(true);
+                if let Some(confirmed) = confirmed_profile.borrow().as_ref()
+                    && let Some(index) = profile_ids.borrow().iter().position(|id| id == confirmed)
+                {
+                    profile_row.set_selected(index as u32);
+                }
+                guard.set(false);
             });
         }
 
@@ -176,12 +224,16 @@ impl PowerPage {
                 let updating_profile = updating_profile.clone();
                 let profile_ids = profile_ids.clone();
                 let profile_urn = profile_urn.clone();
+                let confirmed_profile = confirmed_profile.clone();
+                let pending_action_id = pending_action_id.clone();
                 move |batteries, profiles| {
                     Self::reconcile(
                         &state,
                         &updating_profile,
                         &profile_ids,
                         &profile_urn,
+                        &confirmed_profile,
+                        &pending_action_id,
                         &batteries,
                         &profiles,
                     )
@@ -197,6 +249,8 @@ impl PowerPage {
         updating_profile: &Rc<Cell<bool>>,
         profile_ids: &Rc<RefCell<Vec<String>>>,
         profile_urn: &Rc<RefCell<Option<Urn>>>,
+        confirmed_profile: &Rc<RefCell<Option<String>>>,
+        pending_action_id: &Rc<RefCell<Option<Uuid>>>,
         batteries: &[(Urn, Battery)],
         profiles: &[(Urn, PowerProfile)],
     ) {
@@ -238,6 +292,12 @@ impl PowerPage {
             }
             *profile_ids.borrow_mut() = profile.profiles.clone();
             *profile_urn.borrow_mut() = Some(urn.clone());
+            *confirmed_profile.borrow_mut() = Some(profile.active_profile.clone());
+
+            if pending_action_id.borrow().is_some() {
+                *pending_action_id.borrow_mut() = None;
+                state.profile_row.set_sensitive(true);
+            }
 
             let selected = profile
                 .profiles
@@ -257,7 +317,10 @@ impl PowerPage {
             updating_profile.set(false);
         } else {
             updating_profile.set(true);
+            *pending_action_id.borrow_mut() = None;
+            state.profile_row.set_sensitive(true);
             *profile_urn.borrow_mut() = None;
+            *confirmed_profile.borrow_mut() = None;
             profile_ids.borrow_mut().clear();
             state.profile_row.set_selected(gtk::INVALID_LIST_POSITION);
             while state.profile_model.n_items() > 0 {

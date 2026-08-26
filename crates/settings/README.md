@@ -104,6 +104,7 @@ Do not bypass `KdlConfigFile::save()` to write niri config directly. The `ensure
 | Keyboard | Inputs | Yes | Keyboard layout selection |
 | Keyboard Shortcuts | Inputs | No | Direct KDL config editing (niri binds) |
 | Weather | Info | Yes | Weather display |
+| Power | System | Yes | Battery + power profile controls |
 | Plugins | System | Yes | Plugin lifecycle status |
 | Services | System | Yes | Systemd user services |
 | Startup | System | No | Direct KDL config editing (niri spawn-at-startup) |

@@ -32,14 +32,18 @@ jobs:
       - name: Fetch dependencies
         run: cargo fetch --locked
 
-      - name: Test protocol/config/power plugin
-        run: cargo test --locked -p waft-protocol -p waft-config -p waft-plugin-power
+      - name: Test protocol/config/plugin crates
+        run: cargo test --locked -p waft-protocol -p waft-config -p waft-plugin -p waft-plugin-power
 
       - name: Test GTK applications
         run: cargo test --locked -p waft-overview -p waft-settings -p waft-launcher
 
       - name: Test waft library
+        run: cargo test --locked -p waft --lib
+
+      - name: Test waft integration suites
         run: |
-          cargo test --locked -p waft --lib -- \
-            --skip socket_io::tests::connect_daemon_performs_handshake \
-            --skip socket_io::tests::connect_daemon_surfaces_hello_error
+          cargo test --locked -p waft --test tier1_entity_routing
+          cargo test --locked -p waft --test tier2_action_routing
+          cargo test --locked -p waft --test tier2_multi_subscriber
+          cargo test --locked -p waft --test tier3_protocol_hardening
