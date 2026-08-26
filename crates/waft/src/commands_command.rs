@@ -130,7 +130,8 @@ async fn run_commands(
         )
         .await
         .map_err(|e| format!("Failed to send Subscribe: {e}"))?;
-        wait_for_live_activation(&mut stream, best.entity_type, Duration::from_millis(3000)).await?;
+        wait_for_live_activation(&mut stream, best.entity_type, Duration::from_millis(3000))
+            .await?;
         let _ = collect_status_snapshot(&mut stream, &[best.entity_type]).await?;
 
         let action_id = uuid::Uuid::new_v4();

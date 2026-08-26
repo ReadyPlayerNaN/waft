@@ -195,9 +195,7 @@ async fn enrich_device(mut device: WpctlDevice) -> Result<WpctlDevice> {
     let bus = extract_quoted(&stdout, "device.bus = ");
     let icon_name = extract_quoted(&stdout, "device.icon-name = ");
 
-    device.name = node_description
-        .or(node_nick)
-        .unwrap_or(device.name);
+    device.name = node_description.or(node_nick).unwrap_or(device.name);
     device.connection_type = compute_connection_type(bus.as_deref(), None);
     device.device_type = compute_device_type(
         None,

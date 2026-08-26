@@ -77,12 +77,8 @@ pub async fn setup(
 ) -> Result<adw::Application, Box<dyn std::error::Error>> {
     // 1. Create channels
     let (event_tx, event_rx) = flume::unbounded::<ClientEvent>();
-    let (action_tx, action_rx) = std::sync::mpsc::channel::<(
-        uuid::Uuid,
-        waft_protocol::Urn,
-        String,
-        serde_json::Value,
-    )>();
+    let (action_tx, action_rx) =
+        std::sync::mpsc::channel::<(uuid::Uuid, waft_protocol::Urn, String, serde_json::Value)>();
 
     // 2. Create client handle for write path
     let client_handle: Arc<Mutex<Option<WaftClient>>> = Arc::new(Mutex::new(None));

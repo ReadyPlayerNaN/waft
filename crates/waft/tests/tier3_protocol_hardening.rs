@@ -3,11 +3,11 @@
 use std::time::Duration;
 
 use serial_test::serial;
+use waft_protocol::urn::Urn;
 use waft_protocol::{
     AppMessage, AppNotification, CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_STATUS_COMPLETE,
-    HandshakeMessage, Hello, PeerRole, PluginMessage, PROTOCOL_VERSION,
+    HandshakeMessage, Hello, PROTOCOL_VERSION, PeerRole, PluginMessage,
 };
-use waft_protocol::urn::Urn;
 use waft_test_harness::{TestApp, TestDaemon, TestPlugin};
 
 const TIMEOUT: Duration = Duration::from_secs(4);
@@ -28,7 +28,10 @@ async fn app_handshake_negotiates_current_protocol_version() {
         HandshakeMessage::HelloAck(ack) => {
             assert_eq!(ack.negotiated_version, PROTOCOL_VERSION);
             assert!(ack.capabilities.contains(&CAP_HANDSHAKE.to_string()));
-            assert!(ack.capabilities.contains(&CAP_DERIVED_ENTITY_TYPE.to_string()));
+            assert!(
+                ack.capabilities
+                    .contains(&CAP_DERIVED_ENTITY_TYPE.to_string())
+            );
         }
         other => panic!("expected HelloAck, got: {other:?}"),
     }
@@ -84,7 +87,10 @@ async fn unsupported_handshake_version_is_rejected() {
     match response {
         HandshakeMessage::HelloError(err) => {
             assert_eq!(err.error.code, "handshake.incompatible-version");
-            assert_eq!(err.error.scope, waft_protocol::ProtocolErrorScope::Handshake);
+            assert_eq!(
+                err.error.scope,
+                waft_protocol::ProtocolErrorScope::Handshake
+            );
         }
         other => panic!("expected HelloError, got: {other:?}"),
     }
@@ -129,7 +135,10 @@ async fn derived_entity_type_routing_works_without_explicit_entity_type() {
             data,
         } => {
             assert_eq!(recv_urn, urn);
-            assert!(entity_type.is_none(), "handshaked peer should receive derived entity type");
+            assert!(
+                entity_type.is_none(),
+                "handshaked peer should receive derived entity type"
+            );
             assert_eq!(data, serde_json::json!({"value": 42}));
         }
         other => panic!("expected EntityUpdated, got: {other:?}"),
@@ -400,7 +409,11 @@ async fn action_timeout_returns_structured_timeout_error() {
     let mut plugin = TestPlugin::connect(&daemon.socket_path).await;
     let urn = Urn::new("timeout-plugin", "test-entity", "item-timeout");
     plugin
-        .send_entity(urn.clone(), "test-entity", serde_json::json!({"ready": true}))
+        .send_entity(
+            urn.clone(),
+            "test-entity",
+            serde_json::json!({"ready": true}),
+        )
         .await;
     settle().await;
 
@@ -455,7 +468,11 @@ async fn plugin_disconnect_during_inflight_action_returns_structured_error() {
     let mut plugin = TestPlugin::connect(&daemon.socket_path).await;
     let urn = Urn::new("disconnect-plugin", "test-entity", "item-disconnect");
     plugin
-        .send_entity(urn.clone(), "test-entity", serde_json::json!({"ready": true}))
+        .send_entity(
+            urn.clone(),
+            "test-entity",
+            serde_json::json!({"ready": true}),
+        )
         .await;
     settle().await;
 

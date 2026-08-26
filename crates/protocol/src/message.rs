@@ -160,7 +160,9 @@ pub enum PluginCommand {
 impl PluginMessage {
     pub fn entity_type(&self) -> Option<&str> {
         match self {
-            PluginMessage::EntityUpdated { urn, entity_type, .. }
+            PluginMessage::EntityUpdated {
+                urn, entity_type, ..
+            }
             | PluginMessage::EntityRemoved { urn, entity_type } => {
                 entity_type.as_deref().or_else(|| Some(urn.entity_type()))
             }
@@ -172,7 +174,9 @@ impl PluginMessage {
 impl AppNotification {
     pub fn entity_type(&self) -> Option<&str> {
         match self {
-            AppNotification::EntityUpdated { urn, entity_type, .. }
+            AppNotification::EntityUpdated {
+                urn, entity_type, ..
+            }
             | AppNotification::EntityRemoved { urn, entity_type }
             | AppNotification::EntityStale { urn, entity_type }
             | AppNotification::EntityOutdated { urn, entity_type } => {
@@ -533,9 +537,7 @@ mod tests {
     #[test]
     fn app_action_error_backward_compat_no_error_details() {
         let id = Uuid::new_v4();
-        let json = format!(
-            r#"{{"type":"ActionError","action_id":"{id}","error":"oops"}}"#
-        );
+        let json = format!(r#"{{"type":"ActionError","action_id":"{id}","error":"oops"}}"#);
         let msg: AppNotification = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(
             msg,

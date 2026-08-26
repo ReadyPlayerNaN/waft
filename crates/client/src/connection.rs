@@ -17,8 +17,8 @@ use uuid::Uuid;
 use waft_protocol::transport::write_framed;
 use waft_protocol::{
     AppMessage, AppNotification, CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA,
-    CAP_STATUS_COMPLETE, CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, HelloAck, TransportError,
-    PROTOCOL_VERSION,
+    CAP_STATUS_COMPLETE, CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, HelloAck,
+    PROTOCOL_VERSION, TransportError,
 };
 
 /// Default timeout for a single connection attempt (5 seconds).
@@ -322,15 +322,15 @@ async fn perform_handshake(
     let msg = read_handshake(stream).await?;
     match msg {
         HandshakeMessage::HelloAck(ack) => Ok(ack),
-        HandshakeMessage::HelloError(err) => Err(WaftClientError::Transport(
-            TransportError::Io(std::io::Error::other(format!(
+        HandshakeMessage::HelloError(err) => Err(WaftClientError::Transport(TransportError::Io(
+            std::io::Error::other(format!(
                 "daemon handshake rejected client: {}",
                 err.error.message
-            ))),
-        )),
-        other => Err(WaftClientError::Transport(TransportError::Io(std::io::Error::other(
-            format!("unexpected handshake response: {other:?}"),
-        )))),
+            )),
+        ))),
+        other => Err(WaftClientError::Transport(TransportError::Io(
+            std::io::Error::other(format!("unexpected handshake response: {other:?}")),
+        ))),
     }
 }
 

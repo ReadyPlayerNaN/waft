@@ -413,7 +413,10 @@ mod tests {
             label: "Duplex".to_string(),
         };
         let value = toml::Value::try_from(&cfg).expect("serialize");
-        assert_eq!(value.get("module_type").and_then(|v| v.as_str()), Some("duplex"));
+        assert_eq!(
+            value.get("module_type").and_then(|v| v.as_str()),
+            Some("duplex")
+        );
     }
 
     #[test]

@@ -1059,7 +1059,10 @@ mod tests {
         let plugin = make_plugin(AudioState {
             available: true,
             output_devices: vec![make_device("waft_my_sink", 0.42, true)],
-            virtual_devices: vec![make_virtual_state("waft_my_sink", VirtualDeviceKind::Output)],
+            virtual_devices: vec![make_virtual_state(
+                "waft_my_sink",
+                VirtualDeviceKind::Output,
+            )],
             ..Default::default()
         });
 
@@ -1093,7 +1096,10 @@ mod tests {
         let plugin = make_plugin(AudioState {
             available: true,
             input_devices: vec![make_device("waft_my_source.monitor", 0.65, false)],
-            virtual_devices: vec![make_virtual_state("waft_my_source", VirtualDeviceKind::Input)],
+            virtual_devices: vec![make_virtual_state(
+                "waft_my_source",
+                VirtualDeviceKind::Input,
+            )],
             ..Default::default()
         });
 
@@ -1118,7 +1124,10 @@ mod tests {
         let plugin = make_plugin(AudioState {
             available: true,
             output_devices: vec![make_device("alsa_output.pci-0000", 0.8, false)],
-            virtual_devices: vec![make_virtual_state("waft_unrelated", VirtualDeviceKind::Output)],
+            virtual_devices: vec![make_virtual_state(
+                "waft_unrelated",
+                VirtualDeviceKind::Output,
+            )],
             ..Default::default()
         });
 
@@ -1149,7 +1158,10 @@ mod tests {
                 make_device("alsa_output.pci-0000", 0.5, false),
                 make_device("waft_my_sink", 0.7, true),
             ],
-            virtual_devices: vec![make_virtual_state("waft_my_sink", VirtualDeviceKind::Output)],
+            virtual_devices: vec![make_virtual_state(
+                "waft_my_sink",
+                VirtualDeviceKind::Output,
+            )],
             ..Default::default()
         });
 
@@ -1227,7 +1239,11 @@ mod tests {
             .filter(|e| e.entity_type == entity::audio::ENTITY_TYPE)
             .collect();
         assert_eq!(audio_entities.len(), 2);
-        assert!(audio_entities.iter().all(|e| decode_audio_device(e).virtual_device));
+        assert!(
+            audio_entities
+                .iter()
+                .all(|e| decode_audio_device(e).virtual_device)
+        );
     }
 
     #[test]
@@ -1268,7 +1284,10 @@ mod tests {
             ports: vec![],
         };
         let input_devices = vec![make_virtual_state("waft_virtual", VirtualDeviceKind::Input)];
-        let duplex_devices = vec![make_virtual_state("waft_virtual", VirtualDeviceKind::Duplex)];
+        let duplex_devices = vec![make_virtual_state(
+            "waft_virtual",
+            VirtualDeviceKind::Duplex,
+        )];
         assert!(source_allowed_in_waft(&source, &input_devices));
         assert!(source_allowed_in_waft(&source, &duplex_devices));
     }

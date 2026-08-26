@@ -14,8 +14,8 @@ use uuid::Uuid;
 use waft_protocol::urn::Urn;
 use waft_protocol::{
     CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA, CAP_STATUS_COMPLETE,
-    CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PluginCommand, PluginMessage,
-    PROTOCOL_VERSION, ProtocolError,
+    CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PROTOCOL_VERSION, PluginCommand, PluginMessage,
+    ProtocolError,
 };
 
 use crate::notifier::EntityNotifier;

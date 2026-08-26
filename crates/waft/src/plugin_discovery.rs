@@ -4,8 +4,8 @@ use std::process::Command;
 
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use waft_protocol::{JsonSchema, PluginDescription};
 use waft_protocol::description::PropertyValueType;
+use waft_protocol::{JsonSchema, PluginDescription};
 
 /// Manifest returned by `provides` (basic) or `provides --describe` (extended).
 ///

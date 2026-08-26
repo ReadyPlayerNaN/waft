@@ -1,6 +1,6 @@
 use serde::Serialize;
-use waft_protocol::entity::registry::{self, EntityTypeInfo};
 use waft_protocol::JsonSchema;
+use waft_protocol::entity::registry::{self, EntityTypeInfo};
 
 /// Run the `waft protocol` command, printing entity type information to stdout.
 pub fn run(

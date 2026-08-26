@@ -164,7 +164,10 @@ async fn query_daemon(
             .map_err(|e| format!("Failed to send Status: {e}"))?;
         }
 
-        let expected: Vec<String> = all.iter().map(|info| info.entity_type.to_string()).collect();
+        let expected: Vec<String> = all
+            .iter()
+            .map(|info| info.entity_type.to_string())
+            .collect();
         collect_responses(&mut stream, &mut entities, &expected).await?;
     }
 

@@ -264,7 +264,11 @@ mod tests {
         let entity_map = HashMap::new();
         let commands = resolve_commands(&entity_map);
         assert!(commands.iter().any(|c| c.label == "Toggle Night Light"));
-        assert!(commands.iter().any(|c| c.urn.as_str() == "sunsetr/night-light/default"));
+        assert!(
+            commands
+                .iter()
+                .any(|c| c.urn.as_str() == "sunsetr/night-light/default")
+        );
     }
 
     #[test]

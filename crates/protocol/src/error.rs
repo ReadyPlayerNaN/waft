@@ -49,10 +49,7 @@ impl ProtocolError {
         self
     }
 
-    pub fn handshake_incompatible(
-        message: impl Into<String>,
-        details: serde_json::Value,
-    ) -> Self {
+    pub fn handshake_incompatible(message: impl Into<String>, details: serde_json::Value) -> Self {
         Self::new(
             "handshake.incompatible-version",
             message,
@@ -81,7 +78,12 @@ impl ProtocolError {
     }
 
     pub fn action(message: impl Into<String>) -> Self {
-        Self::new("action.execution", message, ProtocolErrorScope::Action, false)
+        Self::new(
+            "action.execution",
+            message,
+            ProtocolErrorScope::Action,
+            false,
+        )
     }
 
     pub fn timeout(message: impl Into<String>) -> Self {
@@ -89,7 +91,12 @@ impl ProtocolError {
     }
 
     pub fn not_found(message: impl Into<String>) -> Self {
-        Self::new("entity.not-found", message, ProtocolErrorScope::NotFound, false)
+        Self::new(
+            "entity.not-found",
+            message,
+            ProtocolErrorScope::NotFound,
+            false,
+        )
     }
 }
 
@@ -99,7 +106,8 @@ mod tests {
 
     #[test]
     fn helper_constructors_set_expected_codes_and_scope() {
-        let handshake = ProtocolError::handshake_incompatible("bad version", serde_json::json!({"want": 3}));
+        let handshake =
+            ProtocolError::handshake_incompatible("bad version", serde_json::json!({"want": 3}));
         assert_eq!(handshake.code, "handshake.incompatible-version");
         assert_eq!(handshake.scope, ProtocolErrorScope::Handshake);
         assert!(handshake.details.is_some());

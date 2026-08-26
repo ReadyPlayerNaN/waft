@@ -58,7 +58,10 @@ async fn plugin_entity_routed_to_subscriber() {
             data: recv_data,
         } => {
             assert_eq!(recv_urn, urn);
-            assert_eq!(entity_type.as_deref().unwrap_or(recv_urn.entity_type()), "test-entity");
+            assert_eq!(
+                entity_type.as_deref().unwrap_or(recv_urn.entity_type()),
+                "test-entity"
+            );
             assert_eq!(recv_data, data2);
         }
         other => panic!("expected EntityUpdated, got: {other:?}"),
@@ -100,7 +103,10 @@ async fn app_subscribes_before_plugin_connects() {
             data: recv_data,
         } => {
             assert_eq!(recv_urn, urn);
-            assert_eq!(entity_type.as_deref().unwrap_or(recv_urn.entity_type()), "test-entity");
+            assert_eq!(
+                entity_type.as_deref().unwrap_or(recv_urn.entity_type()),
+                "test-entity"
+            );
             assert_eq!(recv_data, data);
         }
         other => panic!("expected EntityUpdated, got: {other:?}"),
@@ -145,7 +151,10 @@ async fn cached_entity_returned_on_status() {
             data: recv_data,
         } => {
             assert_eq!(recv_urn, urn);
-            assert_eq!(entity_type.as_deref().unwrap_or(recv_urn.entity_type()), "test-entity");
+            assert_eq!(
+                entity_type.as_deref().unwrap_or(recv_urn.entity_type()),
+                "test-entity"
+            );
             assert_eq!(recv_data, data);
         }
         other => panic!("expected EntityUpdated from cache, got: {other:?}"),
@@ -236,7 +245,10 @@ async fn entity_removed_forwarded_to_subscriber() {
             entity_type,
         } => {
             assert_eq!(recv_urn, urn);
-            assert_eq!(entity_type.as_deref().unwrap_or(recv_urn.entity_type()), "test-entity");
+            assert_eq!(
+                entity_type.as_deref().unwrap_or(recv_urn.entity_type()),
+                "test-entity"
+            );
         }
         other => panic!("expected EntityRemoved, got: {other:?}"),
     }

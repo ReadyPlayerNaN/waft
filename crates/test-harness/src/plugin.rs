@@ -7,8 +7,7 @@ use tokio::net::UnixStream;
 use waft_protocol::urn::Urn;
 use waft_protocol::{
     CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA, CAP_STATUS_COMPLETE,
-    CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PROTOCOL_VERSION, PluginCommand,
-    PluginMessage,
+    CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PROTOCOL_VERSION, PluginCommand, PluginMessage,
 };
 
 /// Maximum allowed message size (10 MB), matching the daemon.
@@ -78,7 +77,10 @@ impl TestPlugin {
             .expect("failed to read length prefix");
 
         let len = u32::from_be_bytes(len_bytes) as usize;
-        assert!(len <= MAX_FRAME_SIZE, "frame too large: {len} bytes (max: {MAX_FRAME_SIZE})");
+        assert!(
+            len <= MAX_FRAME_SIZE,
+            "frame too large: {len} bytes (max: {MAX_FRAME_SIZE})"
+        );
 
         let mut payload = vec![0u8; len];
         self.stream

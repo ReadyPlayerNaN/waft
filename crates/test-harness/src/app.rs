@@ -75,7 +75,10 @@ impl TestApp {
             .expect("failed to read length prefix");
 
         let len = u32::from_be_bytes(len_bytes) as usize;
-        assert!(len <= MAX_FRAME_SIZE, "frame too large: {len} bytes (max: {MAX_FRAME_SIZE})");
+        assert!(
+            len <= MAX_FRAME_SIZE,
+            "frame too large: {len} bytes (max: {MAX_FRAME_SIZE})"
+        );
 
         let mut payload = vec![0u8; len];
         self.stream

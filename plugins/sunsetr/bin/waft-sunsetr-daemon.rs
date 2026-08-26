@@ -107,7 +107,12 @@ async fn ipc_start() -> Result<()> {
         return Ok(());
     }
 
-    anyhow::bail!("sunsetr command failed: args={:?} code={} stderr={}", ["-b"], code, stderr)
+    anyhow::bail!(
+        "sunsetr command failed: args={:?} code={} stderr={}",
+        ["-b"],
+        code,
+        stderr
+    )
 }
 
 async fn ipc_stop() -> Result<()> {
@@ -863,7 +868,9 @@ mod tests {
 
     #[test]
     fn already_running_error_is_detected() {
-        assert!(is_already_running_error("sunsetr is already running (PID: 123)"));
+        assert!(is_already_running_error(
+            "sunsetr is already running (PID: 123)"
+        ));
         assert!(!is_already_running_error("some other failure"));
     }
 

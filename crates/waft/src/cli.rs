@@ -235,7 +235,11 @@ mod tests {
     fn commands_no_args() {
         let cli = Cli::try_parse_from(["waft", "commands"]).expect("expected value");
         match cli.command {
-            Some(Command::Commands { filter, run, refresh }) => {
+            Some(Command::Commands {
+                filter,
+                run,
+                refresh,
+            }) => {
                 assert_eq!(filter, None);
                 assert!(!run);
                 assert!(!refresh);
@@ -248,7 +252,11 @@ mod tests {
     fn commands_with_filter() {
         let cli = Cli::try_parse_from(["waft", "commands", "dark"]).expect("expected value");
         match cli.command {
-            Some(Command::Commands { filter, run, refresh }) => {
+            Some(Command::Commands {
+                filter,
+                run,
+                refresh,
+            }) => {
                 assert_eq!(filter.as_deref(), Some("dark"));
                 assert!(!run);
                 assert!(!refresh);
@@ -262,7 +270,11 @@ mod tests {
         let cli =
             Cli::try_parse_from(["waft", "commands", "--run", "lock"]).expect("expected value");
         match cli.command {
-            Some(Command::Commands { filter, run, refresh }) => {
+            Some(Command::Commands {
+                filter,
+                run,
+                refresh,
+            }) => {
                 assert_eq!(filter.as_deref(), Some("lock"));
                 assert!(run);
                 assert!(!refresh);
@@ -275,7 +287,11 @@ mod tests {
     fn commands_with_run_short_flag() {
         let cli = Cli::try_parse_from(["waft", "commands", "-r", "dark"]).expect("expected value");
         match cli.command {
-            Some(Command::Commands { filter, run, refresh }) => {
+            Some(Command::Commands {
+                filter,
+                run,
+                refresh,
+            }) => {
                 assert_eq!(filter.as_deref(), Some("dark"));
                 assert!(run);
                 assert!(!refresh);
@@ -303,7 +319,11 @@ mod tests {
         let cli = Cli::try_parse_from(["waft", "-j", "commands", "dark"]).expect("expected value");
         assert!(cli.json);
         match cli.command {
-            Some(Command::Commands { filter, run, refresh }) => {
+            Some(Command::Commands {
+                filter,
+                run,
+                refresh,
+            }) => {
                 assert_eq!(filter.as_deref(), Some("dark"));
                 assert!(!run);
                 assert!(!refresh);
@@ -316,7 +336,11 @@ mod tests {
     fn commands_with_refresh_flag() {
         let cli = Cli::try_parse_from(["waft", "commands", "--refresh"]).expect("expected value");
         match cli.command {
-            Some(Command::Commands { filter, run, refresh }) => {
+            Some(Command::Commands {
+                filter,
+                run,
+                refresh,
+            }) => {
                 assert_eq!(filter, None);
                 assert!(!run);
                 assert!(refresh);

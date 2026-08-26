@@ -80,7 +80,9 @@ impl Hello {
 mod tests {
     use super::*;
 
-    fn roundtrip<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug>(value: &T) {
+    fn roundtrip<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug>(
+        value: &T,
+    ) {
         let json = serde_json::to_string(value).expect("serialize");
         let decoded: T = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(decoded, *value);

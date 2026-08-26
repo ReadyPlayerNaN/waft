@@ -80,7 +80,9 @@ impl EntityStore {
                     cb(action_id, data.clone());
                 }
             }
-            AppNotification::ActionError { action_id, error, .. } => {
+            AppNotification::ActionError {
+                action_id, error, ..
+            } => {
                 log::warn!("[entity-store] action {action_id} failed: {error}");
                 for cb in self.action_error_callbacks.borrow().iter() {
                     cb(action_id, error.clone());
@@ -419,7 +421,10 @@ mod tests {
         ));
         assert_eq!(called.get(), 1);
 
-        store.handle_notification(make_removed(urn, entity::notification::NOTIFICATION_ENTITY_TYPE));
+        store.handle_notification(make_removed(
+            urn,
+            entity::notification::NOTIFICATION_ENTITY_TYPE,
+        ));
         assert_eq!(called.get(), 2);
     }
 

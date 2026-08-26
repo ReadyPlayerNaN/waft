@@ -67,7 +67,12 @@ impl JsonSchema {
         self
     }
 
-    pub fn with_property(mut self, name: impl Into<String>, schema: JsonSchema, required: bool) -> Self {
+    pub fn with_property(
+        mut self,
+        name: impl Into<String>,
+        schema: JsonSchema,
+        required: bool,
+    ) -> Self {
         let name = name.into();
         self.properties.insert(name.clone(), schema);
         if required {
@@ -101,11 +106,29 @@ mod tests {
             .closed();
 
         assert_eq!(schema.schema_type.as_deref(), Some("object"));
-        assert_eq!(schema.required, vec!["name".to_string(), "enabled".to_string()]);
-        assert_eq!(schema.properties["name"].description.as_deref(), Some("Display name"));
-        assert_eq!(schema.properties["values"].schema_type.as_deref(), Some("array"));
-        assert_eq!(schema.properties["values"].items.as_ref().and_then(|i| i.schema_type.as_deref()), Some("number"));
-        assert_eq!(schema.enum_values.as_ref().expect("enum"), &vec!["alpha".to_string(), "beta".to_string()]);
+        assert_eq!(
+            schema.required,
+            vec!["name".to_string(), "enabled".to_string()]
+        );
+        assert_eq!(
+            schema.properties["name"].description.as_deref(),
+            Some("Display name")
+        );
+        assert_eq!(
+            schema.properties["values"].schema_type.as_deref(),
+            Some("array")
+        );
+        assert_eq!(
+            schema.properties["values"]
+                .items
+                .as_ref()
+                .and_then(|i| i.schema_type.as_deref()),
+            Some("number")
+        );
+        assert_eq!(
+            schema.enum_values.as_ref().expect("enum"),
+            &vec!["alpha".to_string(), "beta".to_string()]
+        );
         assert_eq!(schema.additional_properties, Some(false));
     }
 }

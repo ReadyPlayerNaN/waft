@@ -46,7 +46,8 @@ pub async fn connect_daemon() -> Result<UnixStream, String> {
             CAP_SCHEMA_METADATA.to_string(),
         ],
     ));
-    let payload = serde_json::to_vec(&hello).map_err(|e| format!("Failed to serialize hello: {e}"))?;
+    let payload =
+        serde_json::to_vec(&hello).map_err(|e| format!("Failed to serialize hello: {e}"))?;
     let len = payload.len() as u32;
     stream
         .write_all(&len.to_be_bytes())
@@ -59,7 +60,9 @@ pub async fn connect_daemon() -> Result<UnixStream, String> {
 
     match read_handshake(&mut stream).await? {
         HandshakeMessage::HelloAck(_) => Ok(stream),
-        HandshakeMessage::HelloError(err) => Err(format!("Daemon rejected handshake: {}", err.error.message)),
+        HandshakeMessage::HelloError(err) => {
+            Err(format!("Daemon rejected handshake: {}", err.error.message))
+        }
         other => Err(format!("Unexpected handshake response: {other:?}")),
     }
 }
@@ -69,14 +72,16 @@ async fn read_handshake(stream: &mut UnixStream) -> Result<HandshakeMessage, Str
     match stream.read_exact(&mut len_bytes).await {
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-            return Err("daemon disconnected during handshake".to_string())
+            return Err("daemon disconnected during handshake".to_string());
         }
         Err(e) => return Err(format!("Failed to read handshake: {e}")),
     }
 
     let len = u32::from_be_bytes(len_bytes) as usize;
     if len > MAX_FRAME_SIZE {
-        return Err(format!("frame too large: {len} bytes (max: {MAX_FRAME_SIZE})"));
+        return Err(format!(
+            "frame too large: {len} bytes (max: {MAX_FRAME_SIZE})"
+        ));
     }
 
     let mut payload = vec![0u8; len];
@@ -169,6 +174,7 @@ mod tests {
                 }),
             )
             .await;
+            stream.shutdown().await.expect("shutdown");
         });
 
         let stream = connect_daemon().await.expect("connect_daemon");
@@ -207,6 +213,7 @@ mod tests {
                 }),
             )
             .await;
+            stream.shutdown().await.expect("shutdown");
         });
 
         let error = connect_daemon().await.expect_err("handshake should fail");

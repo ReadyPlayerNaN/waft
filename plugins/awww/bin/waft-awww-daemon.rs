@@ -599,7 +599,10 @@ fn sync_applies(output_id: &str, sync: bool) -> bool {
     output_id == "all" || sync
 }
 
-async fn verify_backend_state(backend: &str, want_active: bool) -> Result<HashMap<String, Option<String>>> {
+async fn verify_backend_state(
+    backend: &str,
+    want_active: bool,
+) -> Result<HashMap<String, Option<String>>> {
     for _ in 0..10 {
         match run_query(backend).await {
             Ok(outputs) if want_active => return Ok(outputs),

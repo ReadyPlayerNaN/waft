@@ -47,7 +47,10 @@ impl CommandIndex {
     pub fn rebuild(&mut self, store: &EntityStore) {
         let mut entity_map: HashMap<String, Vec<(Urn, serde_json::Value)>> = HashMap::new();
         for entity_type in waft_protocol::commands::command_entity_types() {
-            entity_map.insert((*entity_type).to_string(), store.get_entities_raw(entity_type));
+            entity_map.insert(
+                (*entity_type).to_string(),
+                store.get_entities_raw(entity_type),
+            );
         }
 
         self.commands = resolve_commands(&entity_map)

@@ -62,7 +62,8 @@ impl EntityTypeInfo {
         for property in self.properties {
             schema = schema.with_property(
                 property.name,
-                schema_from_type_description(property.type_description).described(property.description),
+                schema_from_type_description(property.type_description)
+                    .described(property.description),
                 !property.optional,
             );
         }
@@ -92,7 +93,11 @@ fn schema_from_type_description(type_description: &str) -> JsonSchema {
     let lower = type_description.to_ascii_lowercase();
     if lower.contains("bool") {
         JsonSchema::boolean()
-    } else if lower.contains("percent") || lower.contains("number") || lower.contains("float") || lower.contains("integer") {
+    } else if lower.contains("percent")
+        || lower.contains("number")
+        || lower.contains("float")
+        || lower.contains("integer")
+    {
         JsonSchema::number()
     } else if lower.contains("array") || lower.contains("list") {
         JsonSchema::array(JsonSchema::string())
@@ -705,8 +710,16 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                     "string",
                     "Absolute path to current wallpaper image",
                 ),
-                prop("available", "bool", "Whether the wallpaper backend binary is available"),
-                prop("active", "bool", "Whether the wallpaper backend daemon is active"),
+                prop(
+                    "available",
+                    "bool",
+                    "Whether the wallpaper backend binary is available",
+                ),
+                prop(
+                    "active",
+                    "bool",
+                    "Whether the wallpaper backend daemon is active",
+                ),
                 prop("transition", "object", "Transition animation parameters"),
                 prop("wallpaper_dir", "string", "Configured wallpaper directory"),
                 prop("sync", "bool", "Whether all outputs are synchronized"),

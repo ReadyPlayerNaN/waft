@@ -210,7 +210,9 @@ async fn action_error_routed_to_app() {
             assert_eq!(recv_id, action_id);
             assert_eq!(error, "device not found");
             assert_eq!(
-                error_details.expect("expected structured error details").code,
+                error_details
+                    .expect("expected structured error details")
+                    .code,
                 "entity.not-found"
             );
         }
