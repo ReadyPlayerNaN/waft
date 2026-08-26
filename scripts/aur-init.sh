@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot bootstrap for the four AUR repos backing this project.
+# One-shot bootstrap for the waft-git AUR repo.
 #
 # For each package under packaging/, this clones the (possibly empty) AUR
 # repo into a scratch directory, copies the PKGBUILD, regenerates .SRCINFO,
@@ -11,7 +11,7 @@
 #   - makepkg (pacman package: pacman) available on PATH.
 #
 # Usage:
-#   scripts/aur-init.sh                    # all four packages
+#   scripts/aur-init.sh                    # waft-git
 #   scripts/aur-init.sh waft-git           # one package
 #   AUR_SSH_KEY=~/.ssh/aur_ci scripts/aur-init.sh
 
@@ -22,7 +22,7 @@ readonly PKG_DIR="$REPO_ROOT/packaging"
 readonly WORK_DIR="${AUR_WORK_DIR:-/tmp/waft-aur}"
 readonly AUR_HOST="aur@aur.archlinux.org"
 
-ALL_PKGS=(waft-git waft-launcher-git waft-overview-git waft-settings-git waft-toasts-git)
+ALL_PKGS=(waft-git)
 PKGS=("${@:-${ALL_PKGS[@]}}")
 
 if [[ -n "${AUR_SSH_KEY:-}" ]]; then

@@ -25,9 +25,6 @@ jobs:
       matrix:
         pkg:
           - waft-git
-          - waft-overview-git
-          - waft-settings-git
-          - waft-launcher-git
     steps:
       - name: Install dependencies
         run: |
