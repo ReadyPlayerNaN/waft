@@ -38,6 +38,18 @@ pub enum FeatureToggleOutput {
     ExpandToggle(bool),
 }
 
+fn details_label_classes() -> [&'static str; 3] {
+    ["dim-label", "caption", "details"]
+}
+
+fn buttons_sensitive(props: &FeatureToggleProps) -> bool {
+    !props.busy
+}
+
+fn has_details(props: &FeatureToggleProps) -> bool {
+    props.details.is_some()
+}
+
 /// Pure render function for the feature toggle widget.
 pub struct FeatureToggleRender;
 
@@ -58,19 +70,19 @@ impl RenderFn for FeatureToggleRender {
 
         // Details label (inside revealer)
         let details_revealer = if let Some(ref details) = props.details {
-            let details_label = VLabel::new(details)
-                .css_class("dim-label")
-                .css_class("caption")
-                .xalign(0.0);
+            let mut details_label = VLabel::new(details).xalign(0.0);
+            for class_name in details_label_classes() {
+                details_label = details_label.css_class(class_name);
+            }
             VNode::revealer(
                 VRevealer::new(true, VNode::label(details_label))
                     .transition_type(gtk::RevealerTransitionType::SlideDown),
             )
         } else {
-            let empty_label = VLabel::new("")
-                .css_class("dim-label")
-                .css_class("caption")
-                .xalign(0.0);
+            let mut empty_label = VLabel::new("").xalign(0.0);
+            for class_name in details_label_classes() {
+                empty_label = empty_label.css_class(class_name);
+            }
             VNode::revealer(
                 VRevealer::new(false, VNode::label(empty_label))
                     .transition_type(gtk::RevealerTransitionType::SlideDown),
@@ -92,6 +104,7 @@ impl RenderFn for FeatureToggleRender {
             VCustomButton::new(VNode::vbox(main_content))
                 .css_class("toggle-main")
                 .hexpand(true)
+                .sensitive(buttons_sensitive(props))
                 .on_click(move || {
                     if let Some(ref cb) = *emit_main.borrow() {
                         if is_active {
@@ -112,6 +125,7 @@ impl RenderFn for FeatureToggleRender {
             VCustomButton::new(expand_chevron)
                 .css_class("toggle-expand")
                 .vexpand(true)
+                .sensitive(buttons_sensitive(props))
                 .on_click(move || {
                     if let Some(ref cb) = *emit_expand.borrow() {
                         cb(FeatureToggleOutput::ExpandToggle(true));
@@ -145,6 +159,9 @@ impl RenderFn for FeatureToggleRender {
         if props.expanded {
             root = root.css_class("expanded");
         }
+        if has_details(props) {
+            root = root.css_class("has-details");
+        }
 
         let root = root.child(main_button).child(expand_revealer);
 
@@ -167,10 +184,7 @@ impl FeatureToggleWidget {
         _menu_store: Option<std::rc::Rc<waft_core::menu_state::MenuStore>>,
     ) -> Self {
         let menu_id = props.menu_id.clone();
-        let props_with_expanded = FeatureToggleProps {
-            expanded: false,
-            ..props
-        };
+        let props_with_expanded = props;
         let inner = Rc::new(RenderComponent::<FeatureToggleRender>::build(
             &props_with_expanded,
         ));
@@ -261,5 +275,45 @@ impl FeatureToggleWidget {
 impl crate::widget_base::WidgetBase for FeatureToggleWidget {
     fn widget(&self) -> gtk::Widget {
         self.widget()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn details_label_classes_include_expected_selector() {
+        assert_eq!(details_label_classes(), ["dim-label", "caption", "details"]);
+    }
+
+    #[test]
+    fn busy_feature_toggle_disables_buttons() {
+        let props = FeatureToggleProps {
+            active: false,
+            busy: true,
+            details: None,
+            expandable: false,
+            icon: "test-icon".to_string(),
+            title: "Test".to_string(),
+            menu_id: None,
+            expanded: false,
+        };
+        assert!(!buttons_sensitive(&props));
+    }
+
+    #[test]
+    fn details_presence_marks_two_line_variant() {
+        let props = FeatureToggleProps {
+            active: false,
+            busy: false,
+            details: Some("Connected".to_string()),
+            expandable: false,
+            icon: "test-icon".to_string(),
+            title: "Test".to_string(),
+            menu_id: None,
+            expanded: false,
+        };
+        assert!(has_details(&props));
     }
 }

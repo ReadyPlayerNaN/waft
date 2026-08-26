@@ -50,7 +50,11 @@ pub(super) struct ToggleEntry {
 /// or a ConnectionRow widget (VPN/Tethering).
 pub(super) enum NetworkRow {
     /// WiFi/Ethernet rows using plain gtk::Box layout.
-    Plain { urn_str: String, root: gtk::Box },
+    Plain {
+        urn_str: String,
+        root: gtk::Box,
+        connected: Rc<Cell<bool>>,
+    },
     /// VPN/Tethering rows using the extracted ConnectionRow widget.
     Connection {
         urn_str: String,

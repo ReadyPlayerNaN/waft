@@ -41,6 +41,8 @@ agenda-all-day = All day
 agenda-no-title = (No title)
 agenda-hide-past-tooltip = Hide past events
 agenda-show-past-tooltip = Show past events
+agenda-hide-tomorrow-tooltip = Hide tomorrow events
+agenda-show-tomorrow-tooltip = Show tomorrow events
 agenda-today = Today
 agenda-tomorrow = Tomorrow
 
@@ -86,6 +88,10 @@ network-subnet-mask = Subnet Mask
 network-gateway = Gateway
 
 wired-settings-button = Settings
+wired-local-ip = Local IP
+wired-gateway = Gateway
+wired-public-ip = Public IP
+wired-unavailable = Unavailable
 
 # WiFi
 wifi-scanning = Scanning for networks...

@@ -404,6 +404,12 @@ impl MainWindowWidget {
               padding: 0;
             }}
 
+            .feature-toggle.has-details .toggle-main {{
+                min-height: 56px;
+                padding-top: 4px;
+                padding-bottom: 4px;
+            }}
+
             .feature-toggle.active .toggle-main {{
                 background-color: color-mix(
                   in srgb,
@@ -530,6 +536,11 @@ impl MainWindowWidget {
                   @accent_bg_color 50%,
                   @card_bg_color
                 );
+            }}
+
+            .feature-toggle.expandable.has-details .toggle-main,
+            .feature-toggle.expandable.has-details .toggle-expand {{
+                min-height: 56px;
             }}
 
             .feature-toggle-expandable .toggle-main .title {{

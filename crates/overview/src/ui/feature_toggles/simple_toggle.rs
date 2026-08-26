@@ -26,6 +26,10 @@ pub struct ToggleUpdate {
 
 pub type ToggleActionSelector<E> = fn(&E, currently_active: bool) -> &'static str;
 
+fn should_dispatch_click(pending_action_id: &Option<Uuid>) -> bool {
+    pending_action_id.is_none()
+}
+
 /// Configuration for a `SimpleToggle`.
 pub struct SimpleToggleConfig<E> {
     /// Entity type constant (e.g. `entity::session::SLEEP_INHIBITOR_ENTITY_TYPE`).
@@ -93,6 +97,9 @@ impl SimpleToggle {
         let action_name_for_click = action_name.clone();
         // SimpleToggle has exactly one output variant; all clicks dispatch "toggle".
         toggle.connect_output(move |_output| {
+            if !should_dispatch_click(&pending_action_for_click.borrow()) {
+                return;
+            }
             toggle_for_click.set_busy(true);
             let action_id = cb(
                 urn.clone(),
@@ -211,5 +218,20 @@ impl SimpleToggle {
             toggle: (*self.toggle).clone(),
             menu: None,
         })]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_clicks_are_blocked_while_action_is_pending() {
+        assert!(!should_dispatch_click(&Some(Uuid::nil())));
+    }
+
+    #[test]
+    fn click_dispatch_allowed_when_no_action_is_pending() {
+        assert!(should_dispatch_click(&None));
     }
 }

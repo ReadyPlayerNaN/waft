@@ -41,6 +41,8 @@ agenda-all-day = Celý den
 agenda-no-title = (Bez názvu)
 agenda-hide-past-tooltip = Skrýt uplynulé události
 agenda-show-past-tooltip = Zobrazit uplynulé události
+agenda-hide-tomorrow-tooltip = Skrýt zítřejší události
+agenda-show-tomorrow-tooltip = Zobrazit zítřejší události
 agenda-today = Dnes
 agenda-tomorrow = Zítra
 
@@ -90,6 +92,10 @@ network-subnet-mask = Maska podsítě
 network-gateway = Brána
 
 wired-settings-button = Nastavení
+wired-local-ip = Lokální IP
+wired-gateway = Brána
+wired-public-ip = Veřejná IP
+wired-unavailable = Nedostupné
 
 # WiFi
 wifi-scanning = Vyhledávání sítí...

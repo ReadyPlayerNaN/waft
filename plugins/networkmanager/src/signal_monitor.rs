@@ -20,10 +20,10 @@ use crate::nmrs_adapter;
 use crate::state::{
     BluetoothDeviceInfo, CachedIpConfig, EthernetAdapterState, NmState, WiFiAdapterState,
 };
-use waft_plugin::lock_or_recover;
 use crate::tethering::refresh_tethering_states;
 use crate::vpn::{is_vpn_type, refresh_vpn_states};
 use waft_plugin::EntityNotifier;
+use waft_plugin::lock_or_recover;
 
 fn is_nm_active_connections_change(
     obj_path: &str,
@@ -38,6 +38,14 @@ fn is_wifi_active_access_point_change(
     props: &HashMap<String, OwnedValue>,
 ) -> bool {
     prop_iface == NM_WIRELESS_INTERFACE && props.contains_key("ActiveAccessPoint")
+}
+
+fn is_nm_wireless_enabled_change(
+    obj_path: &str,
+    prop_iface: &str,
+    props: &HashMap<String, OwnedValue>,
+) -> bool {
+    obj_path == NM_PATH && prop_iface == NM_INTERFACE && props.contains_key("WirelessEnabled")
 }
 
 async fn refresh_wifi_active_access_point(
@@ -243,6 +251,22 @@ pub async fn monitor_nm_signals(
                         error!("[nm] Failed to refresh VPN states: {e}");
                     }
                     changed = true;
+                }
+
+                if is_nm_wireless_enabled_change(&obj_path, &prop_iface, &props) {
+                    if let Some(enabled_val) = props.get("WirelessEnabled")
+                        && let Ok(enabled) = bool::try_from(enabled_val.clone())
+                    {
+                        let mut st = lock_or_recover(&state);
+                        for adapter in &mut st.wifi_adapters {
+                            adapter.enabled = enabled;
+                            if !enabled {
+                                adapter.active_ssid = None;
+                                adapter.access_points.clear();
+                            }
+                        }
+                        changed = true;
+                    }
                 }
 
                 // Self-heal on global NM connection graph changes. This covers cases
@@ -578,8 +602,17 @@ mod tests {
 
     #[test]
     fn detects_nm_active_connections_refresh_trigger() {
-        let props = owned_props(&[("ActiveConnections", zbus::zvariant::Value::from(Vec::<String>::new()).try_into().expect("valid value"))]);
-        assert!(is_nm_active_connections_change(NM_PATH, NM_INTERFACE, &props));
+        let props = owned_props(&[(
+            "ActiveConnections",
+            zbus::zvariant::Value::from(Vec::<String>::new())
+                .try_into()
+                .expect("valid value"),
+        )]);
+        assert!(is_nm_active_connections_change(
+            NM_PATH,
+            NM_INTERFACE,
+            &props
+        ));
         assert!(!is_nm_active_connections_change(
             "/org/freedesktop/NetworkManager/Devices/1",
             NM_INTERFACE,
@@ -589,11 +622,35 @@ mod tests {
 
     #[test]
     fn detects_wifi_active_access_point_refresh_trigger() {
-        let props = owned_props(&[("ActiveAccessPoint", zbus::zvariant::Value::from("/").try_into().expect("valid value"))]);
+        let props = owned_props(&[(
+            "ActiveAccessPoint",
+            zbus::zvariant::Value::from("/")
+                .try_into()
+                .expect("valid value"),
+        )]);
         assert!(is_wifi_active_access_point_change(
             NM_WIRELESS_INTERFACE,
             &props
         ));
-        assert!(!is_wifi_active_access_point_change(NM_DEVICE_INTERFACE, &props));
+        assert!(!is_wifi_active_access_point_change(
+            NM_DEVICE_INTERFACE,
+            &props
+        ));
+    }
+
+    #[test]
+    fn detects_nm_wireless_enabled_refresh_trigger() {
+        let props = owned_props(&[(
+            "WirelessEnabled",
+            zbus::zvariant::Value::from(true)
+                .try_into()
+                .expect("valid value"),
+        )]);
+        assert!(is_nm_wireless_enabled_change(NM_PATH, NM_INTERFACE, &props));
+        assert!(!is_nm_wireless_enabled_change(
+            "/org/freedesktop/NetworkManager/Devices/1",
+            NM_INTERFACE,
+            &props
+        ));
     }
 }

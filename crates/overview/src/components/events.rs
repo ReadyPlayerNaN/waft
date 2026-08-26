@@ -58,6 +58,7 @@ impl EventsComponent {
             .build();
 
         let past_btn = agenda.past_events_button().clone();
+        let tomorrow_btn = agenda.tomorrow_events_button().clone();
 
         // Spinner shown while the EDS plugin is actively refreshing calendar backends.
         let sync_spinner = Rc::new(gtk::Spinner::new());
@@ -70,6 +71,7 @@ impl EventsComponent {
         controls.append(sync_spinner.as_ref()); // spinner left of toggle buttons
         controls.append(&calendar_toggle);
         controls.append(&past_btn);
+        controls.append(&tomorrow_btn);
 
         header.append(&title_label);
         header.append(&controls);
@@ -101,12 +103,14 @@ impl EventsComponent {
         // past/future split only applies in the default today+tomorrow view;
         // selecting today is treated as no-selection).
         let past_btn_ref = past_btn.clone();
+        let tomorrow_btn_ref = tomorrow_btn.clone();
         let selection_store_ref = selection_store.clone();
         selection_store.subscribe(move || {
             let selected = selection_store_ref.get_state().selected_date;
             let today = chrono::Local::now().date_naive();
             let use_selected_mode = selected.is_some_and(|d| d != today);
             past_btn_ref.set_visible(!use_selected_mode);
+            tomorrow_btn_ref.set_visible(!use_selected_mode);
         });
 
         // Trigger window resize after revealer animation completes

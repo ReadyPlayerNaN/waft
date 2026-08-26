@@ -7,7 +7,7 @@
 //! When a date is selected in the calendar grid, the agenda filters to that
 //! single day only. When no date is selected, it shows today+tomorrow events.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -47,6 +47,7 @@ pub struct AgendaComponent {
     #[allow(dead_code)]
     past_box: gtk::Box,
     show_past_btn: gtk::ToggleButton,
+    show_tomorrow_btn: gtk::ToggleButton,
     /// Map of occurrence keys to card widgets
     #[allow(dead_code)]
     event_cards: Rc<RefCell<HashMap<String, Rc<AgendaCard>>>>,
@@ -72,17 +73,65 @@ fn secs_until_next_midnight() -> u64 {
 }
 
 /// Returns seconds until the next display-relevant change: whichever comes first --
-/// an in-window future event ending, or local midnight.
+/// an event start, an event end, or local midnight.
 fn next_boundary_secs(future_events: &[(Urn, entity::calendar::CalendarEvent)]) -> u64 {
     let now = chrono::Local::now().timestamp();
     let midnight = secs_until_next_midnight();
     future_events
         .iter()
-        .map(|(_, e)| e.end_time)
+        .flat_map(|(_, e)| [e.start_time, e.end_time])
         .filter(|&t| t > now)
         .min()
         .map(|t| ((t - now).max(1) as u64).min(midnight))
         .unwrap_or(midnight)
+}
+
+fn use_selected_mode(selected_date: Option<NaiveDate>, today_date: NaiveDate) -> bool {
+    selected_date.is_some_and(|d| d != today_date)
+}
+
+fn filter_window(
+    selected_date: Option<NaiveDate>,
+    local_now: chrono::DateTime<chrono::Local>,
+    show_tomorrow: bool,
+) -> (i64, i64) {
+    if let Some(date) = selected_date {
+        let start = date
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always valid")
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .unwrap_or(local_now)
+            .timestamp();
+        let end = (date + chrono::Duration::days(1))
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always valid")
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .unwrap_or(local_now)
+            .timestamp();
+        return (start, end);
+    }
+
+    let today_midnight = local_now
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is always valid");
+    let start_of_today = today_midnight
+        .and_local_timezone(chrono::Local)
+        .earliest()
+        .unwrap_or(local_now)
+        .timestamp();
+    let day_span = if show_tomorrow { 2 } else { 1 };
+    let end_date = (local_now.date_naive() + chrono::Duration::days(day_span))
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is always valid");
+    let end = end_date
+        .and_local_timezone(chrono::Local)
+        .earliest()
+        .unwrap_or(local_now)
+        .timestamp();
+    (start_of_today, end)
 }
 
 impl AgendaComponent {
@@ -113,13 +162,20 @@ impl AgendaComponent {
 
         let show_past_btn = gtk::ToggleButton::builder()
             .icon_name("task-past-due-symbolic")
-            .tooltip_text(crate::i18n::t("agenda-show-past-tooltip"))
+            .tooltip_text(crate::i18n::t("agenda-hide-past-tooltip"))
             .css_classes(["agenda-show-past-pill"])
             .active(true) // Start with past events visible
+            .build();
+        let show_tomorrow_btn = gtk::ToggleButton::builder()
+            .icon_name("media-seek-forward-symbolic")
+            .tooltip_text(crate::i18n::t("agenda-show-tomorrow-tooltip"))
+            .css_classes(["agenda-show-past-pill"])
+            .active(false)
             .build();
 
         header.append(&header_label);
         header.append(&show_past_btn);
+        header.append(&show_tomorrow_btn);
 
         // Revealer for past events with slide-down animation
         let past_box = gtk::Box::builder()
@@ -159,9 +215,11 @@ impl AgendaComponent {
 
         let event_cards: Rc<RefCell<HashMap<String, Rc<AgendaCard>>>> =
             Rc::new(RefCell::new(HashMap::new()));
+        let show_tomorrow = Rc::new(Cell::new(false));
 
         // Toggle past events visibility
         let past_revealer_toggle = past_revealer.clone();
+        let past_box_toggle = past_box.clone();
         let content_box_toggle = content_box.clone();
         let empty_label_toggle = empty_label.clone();
         show_past_btn.connect_toggled(move |btn| {
@@ -171,16 +229,33 @@ impl AgendaComponent {
             // Update tooltip
             if show_past {
                 btn.set_tooltip_text(Some(&crate::i18n::t("agenda-hide-past-tooltip")));
+                if past_box_toggle.first_child().is_some() {
+                    empty_label_toggle.set_visible(false);
+                }
             } else {
                 btn.set_tooltip_text(Some(&crate::i18n::t("agenda-show-past-tooltip")));
-            }
 
-            // If hiding past and no future events, show empty label
-            if !show_past && content_box_toggle.first_child().is_none() {
-                content_box_toggle.set_visible(false);
-                empty_label_toggle.set_visible(true);
+                // If hiding past and no future events, show empty label
+                if content_box_toggle.first_child().is_none() {
+                    content_box_toggle.set_visible(false);
+                    empty_label_toggle.set_visible(true);
+                }
             }
         });
+
+        // Toggle tomorrow events visibility
+        {
+            let show_tomorrow_state = show_tomorrow.clone();
+            show_tomorrow_btn.connect_toggled(move |btn| {
+                let enabled = btn.is_active();
+                show_tomorrow_state.set(enabled);
+                if enabled {
+                    btn.set_tooltip_text(Some(&crate::i18n::t("agenda-hide-tomorrow-tooltip")));
+                } else {
+                    btn.set_tooltip_text(Some(&crate::i18n::t("agenda-show-tomorrow-tooltip")));
+                }
+            });
+        }
 
         // Subscribe to MenuStore for expansion state sync
         let event_cards_menu = event_cards.clone();
@@ -216,6 +291,7 @@ impl AgendaComponent {
             let menu_store_ref = menu_store.clone();
             let selection_store_ref = selection_store.clone();
             let now_divider = Rc::new(RefCell::new(None::<gtk::Separator>));
+            let show_tomorrow_ref = show_tomorrow.clone();
 
             // Timer captures
             let store_ref_timer = store.clone();
@@ -233,6 +309,7 @@ impl AgendaComponent {
                     &menu_store_ref,
                     &now_divider,
                     selected_date,
+                    show_tomorrow_ref.get(),
                 );
 
                 // --- sleep-to-deadline timer ---
@@ -281,6 +358,11 @@ impl AgendaComponent {
             rebuild_selection();
         });
 
+        let rebuild_tomorrow = rebuild.clone();
+        show_tomorrow_btn.connect_toggled(move |_| {
+            rebuild_tomorrow();
+        });
+
         // Arm the first sleep-to-deadline timer via idle so all subscriptions
         // are registered before we read entity state.
         let rebuild_init = rebuild.clone();
@@ -295,6 +377,7 @@ impl AgendaComponent {
             past_revealer,
             past_box,
             show_past_btn,
+            show_tomorrow_btn,
             event_cards,
             now_divider: RefCell::new(None),
             _store: store.clone(),
@@ -323,52 +406,23 @@ impl AgendaComponent {
         menu_store: &Rc<MenuStore>,
         now_divider: &Rc<RefCell<Option<gtk::Separator>>>,
         selected_date: Option<NaiveDate>,
+        show_tomorrow: bool,
     ) {
         let entities: Vec<(Urn, entity::calendar::CalendarEvent)> =
             store.get_entities_typed(entity::calendar::ENTITY_TYPE);
 
         let local_now = chrono::Local::now();
         let now = local_now.timestamp();
+        let today_date = local_now.date_naive();
+        let effective_selected_date = if selected_date == Some(today_date) {
+            None
+        } else {
+            selected_date
+        };
 
         // Determine time window based on selection
-        let (filter_start, filter_end) = if let Some(date) = selected_date {
-            // Single day filter: [start_of_date, end_of_date)
-            let start = date
-                .and_hms_opt(0, 0, 0)
-                .expect("midnight is always valid")
-                .and_local_timezone(chrono::Local)
-                .earliest()
-                .unwrap_or(local_now)
-                .timestamp();
-            let end = (date + chrono::Duration::days(1))
-                .and_hms_opt(0, 0, 0)
-                .expect("midnight is always valid")
-                .and_local_timezone(chrono::Local)
-                .earliest()
-                .unwrap_or(local_now)
-                .timestamp();
-            (start, end)
-        } else {
-            // Default: today+tomorrow
-            let today_midnight = local_now
-                .date_naive()
-                .and_hms_opt(0, 0, 0)
-                .expect("midnight is always valid");
-            let start_of_today = today_midnight
-                .and_local_timezone(chrono::Local)
-                .earliest()
-                .unwrap_or(local_now)
-                .timestamp();
-            let day_after_tomorrow = (local_now.date_naive() + chrono::Duration::days(2))
-                .and_hms_opt(0, 0, 0)
-                .expect("midnight is always valid");
-            let end_of_tomorrow = day_after_tomorrow
-                .and_local_timezone(chrono::Local)
-                .earliest()
-                .unwrap_or(local_now)
-                .timestamp();
-            (start_of_today, end_of_tomorrow)
-        };
+        let (filter_start, filter_end) =
+            filter_window(effective_selected_date, local_now, show_tomorrow);
 
         log::info!(
             "[agenda] filter window: [{}, {}), {} total entities",
@@ -439,8 +493,7 @@ impl AgendaComponent {
 
         // Treat selecting today the same as no selection (shows today+tomorrow
         // with past/future split, identical to the default view).
-        let today_date = local_now.date_naive();
-        let use_selected_mode = selected_date.is_some_and(|d| d != today_date);
+        let use_selected_mode = use_selected_mode(selected_date, today_date);
 
         if use_selected_mode {
             // --- Selected date mode: flat chronological list in content_box ---
@@ -452,18 +505,12 @@ impl AgendaComponent {
                 let is_past = event.end_time <= now;
                 let is_ongoing = event.start_time <= now && now < event.end_time;
 
-                let card = if let Some(existing) = cards_map.get(&occurrence_key) {
-                    existing.clone()
-                } else {
-                    let new_card = Rc::new(AgendaCard::new(event, is_past, is_ongoing, menu_store));
+                let card = Rc::new(AgendaCard::new(event, is_past, is_ongoing, menu_store));
 
-                    let menu_store_toggle = menu_store.clone();
-                    new_card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
-                        menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
-                    });
-
-                    new_card
-                };
+                let menu_store_toggle = menu_store.clone();
+                card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
+                    menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
+                });
 
                 content_box.append(&card.root);
                 new_cards.insert(occurrence_key, card);
@@ -480,18 +527,12 @@ impl AgendaComponent {
             for (_urn, event) in &past_events {
                 let occurrence_key = format!("{}@{}", event.uid, event.start_time);
 
-                let card = if let Some(existing) = cards_map.get(&occurrence_key) {
-                    existing.clone()
-                } else {
-                    let new_card = Rc::new(AgendaCard::new(event, true, false, menu_store));
+                let card = Rc::new(AgendaCard::new(event, true, false, menu_store));
 
-                    let menu_store_toggle = menu_store.clone();
-                    new_card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
-                        menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
-                    });
-
-                    new_card
-                };
+                let menu_store_toggle = menu_store.clone();
+                card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
+                    menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
+                });
 
                 past_box.append(&card.root);
                 new_cards.insert(occurrence_key, card);
@@ -550,19 +591,12 @@ impl AgendaComponent {
                     let occurrence_key = format!("{}@{}", event.uid, event.start_time);
                     let is_ongoing = event.start_time <= now && now < event.end_time;
 
-                    let card = if let Some(existing) = cards_map.get(&occurrence_key) {
-                        existing.clone()
-                    } else {
-                        let new_card =
-                            Rc::new(AgendaCard::new(event, false, is_ongoing, menu_store));
+                    let card = Rc::new(AgendaCard::new(event, false, is_ongoing, menu_store));
 
-                        let menu_store_toggle = menu_store.clone();
-                        new_card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
-                            menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
-                        });
-
-                        new_card
-                    };
+                    let menu_store_toggle = menu_store.clone();
+                    card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
+                        menu_store_toggle.emit(MenuOp::OpenMenu(menu_id));
+                    });
 
                     content_box.append(&card.root);
                     new_cards.insert(occurrence_key, card);
@@ -578,6 +612,10 @@ impl AgendaComponent {
 
     pub fn past_events_button(&self) -> &gtk::ToggleButton {
         &self.show_past_btn
+    }
+
+    pub fn tomorrow_events_button(&self) -> &gtk::ToggleButton {
+        &self.show_tomorrow_btn
     }
 
     pub fn widget(&self) -> &gtk::Widget {
@@ -630,6 +668,24 @@ mod tests {
     }
 
     #[test]
+    fn next_boundary_event_start_before_end_wakes_on_start() {
+        let now = chrono::Local::now().timestamp();
+        let event = entity::calendar::CalendarEvent {
+            uid: "future-uid".to_string(),
+            summary: "Future event".to_string(),
+            start_time: now + 120,
+            end_time: now + 600,
+            all_day: false,
+            description: None,
+            location: None,
+            attendees: vec![],
+        };
+        let urn = Urn::new("eds", entity::calendar::ENTITY_TYPE, "future-uid@0");
+        let result = next_boundary_secs(&[(urn, event)]);
+        assert!(result <= 120, "should wake on start boundary, got {result}");
+    }
+
+    #[test]
     fn next_boundary_event_after_midnight_returns_midnight() {
         // Event ending 26 hours from now (past tomorrow midnight)
         let (urn, event) = make_event(26 * 3600);
@@ -645,5 +701,48 @@ mod tests {
         let result = next_boundary_secs(&[event_far, event_near]);
         assert!(result <= 120);
         assert!(result > 0);
+    }
+
+    #[test]
+    fn default_mode_excludes_tomorrow_when_toggle_is_off() {
+        let now = chrono::Local::now();
+        let (start, end) = filter_window(None, now, false);
+        let today_midnight = now
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always valid")
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .unwrap_or(now)
+            .timestamp();
+        let tomorrow_midnight = (now.date_naive() + chrono::Duration::days(1))
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always valid")
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .unwrap_or(now)
+            .timestamp();
+        assert_eq!(start, today_midnight);
+        assert_eq!(end, tomorrow_midnight);
+    }
+
+    #[test]
+    fn default_mode_includes_tomorrow_when_toggle_is_on() {
+        let now = chrono::Local::now();
+        let (_start, end) = filter_window(None, now, true);
+        let day_after_tomorrow = (now.date_naive() + chrono::Duration::days(2))
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always valid")
+            .and_local_timezone(chrono::Local)
+            .earliest()
+            .unwrap_or(now)
+            .timestamp();
+        assert_eq!(end, day_after_tomorrow);
+    }
+
+    #[test]
+    fn selecting_today_uses_default_mode() {
+        let today = chrono::Local::now().date_naive();
+        assert!(!use_selected_mode(Some(today), today));
     }
 }

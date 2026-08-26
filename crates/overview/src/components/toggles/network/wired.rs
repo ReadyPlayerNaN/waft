@@ -350,6 +350,7 @@ fn update_ethernet_menus(
             network_rows.push(NetworkRow::Plain {
                 urn_str: conn_urn_str,
                 root: row_box,
+                connected: Rc::new(Cell::new(conn.active)),
             });
         }
 
@@ -394,7 +395,7 @@ fn update_wired_info_rows(
     // Local IP row
     let local_label = format!("{}/{}", ip.address, ip.prefix);
     let local_row = FeatureToggleMenuInfoRow::build(&FeatureToggleMenuInfoRowProps {
-        label: "Local IP".to_string(),
+        label: crate::i18n::t("wired-local-ip"),
         value: local_label,
     });
     entry.menu.append(&local_row.widget());
@@ -403,7 +404,7 @@ fn update_wired_info_rows(
     // Gateway row
     if let Some(ref gateway) = ip.gateway {
         let gw_row = FeatureToggleMenuInfoRow::build(&FeatureToggleMenuInfoRowProps {
-            label: "Gateway".to_string(),
+            label: crate::i18n::t("wired-gateway"),
             value: gateway.clone(),
         });
         entry.menu.append(&gw_row.widget());
@@ -411,10 +412,13 @@ fn update_wired_info_rows(
     }
 
     // Public IP row
-    let public_text = adapter.public_ip.as_deref().unwrap_or("Unavailable");
+    let public_text = adapter
+        .public_ip
+        .clone()
+        .unwrap_or_else(|| crate::i18n::t("wired-unavailable"));
     let public_row = FeatureToggleMenuInfoRow::build(&FeatureToggleMenuInfoRowProps {
-        label: "Public IP".to_string(),
-        value: public_text.to_string(),
+        label: crate::i18n::t("wired-public-ip"),
+        value: public_text,
     });
     entry.menu.append(&public_row.widget());
     info_rows.push(public_row);

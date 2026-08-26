@@ -7,6 +7,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::prelude::*;
+use gtk::{Box as GtkBox, Label};
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity;
@@ -35,6 +36,53 @@ pub struct WifiToggles {
     menu_store: Rc<waft_core::menu_state::MenuStore>,
     #[allow(dead_code)]
     settings_tracker: Rc<SettingsAppTracker>,
+}
+
+fn wifi_toggle_action(output: &FeatureToggleOutput) -> Option<&'static str> {
+    match output {
+        FeatureToggleOutput::Activate => Some("activate"),
+        FeatureToggleOutput::Deactivate => Some("deactivate"),
+        FeatureToggleOutput::ExpandToggle(_) => None,
+    }
+}
+
+fn wifi_network_row_action(connected: bool) -> &'static str {
+    if connected { "disconnect" } else { "connect" }
+}
+
+fn wifi_signal_icon_name(strength: u8) -> &'static str {
+    match strength {
+        s if s > 75 => "network-wireless-signal-excellent-symbolic",
+        s if s > 50 => "network-wireless-signal-good-symbolic",
+        s if s > 25 => "network-wireless-signal-ok-symbolic",
+        _ => "network-wireless-signal-weak-symbolic",
+    }
+}
+
+fn rebuild_wifi_row_contents(row_box: &GtkBox, network: &entity::network::WiFiNetwork) {
+    while let Some(child) = row_box.first_child() {
+        row_box.remove(&child);
+    }
+
+    let icon_widget = IconWidget::from_name(wifi_signal_icon_name(network.strength), 24);
+    row_box.append(icon_widget.widget());
+
+    let ssid_label = Label::builder()
+        .label(&network.ssid)
+        .hexpand(true)
+        .xalign(0.0)
+        .build();
+    row_box.append(&ssid_label);
+
+    if network.secure {
+        let lock_icon = IconWidget::from_name("channel-secure-symbolic", 24);
+        row_box.append(lock_icon.widget());
+    }
+
+    if network.connected {
+        let check_icon = IconWidget::from_name("object-select-symbolic", 24);
+        row_box.append(check_icon.widget());
+    }
 }
 
 impl WifiToggles {
@@ -148,15 +196,17 @@ impl WifiToggles {
                         let menu_id_for_expand = menu_id.clone();
                         let menu_store_for_expand = menu_store_ref.clone();
                         toggle.connect_output(move |output| match output {
-                            FeatureToggleOutput::Activate | FeatureToggleOutput::Deactivate => {
-                                action_cb(
-                                    action_urn.clone(),
-                                    "activate".to_string(),
-                                    serde_json::Value::Null,
-                                );
-                            }
                             FeatureToggleOutput::ExpandToggle(_) => {
                                 toggle_menu(&menu_store_for_expand, &menu_id_for_expand);
+                            }
+                            _ => {
+                                if let Some(action) = wifi_toggle_action(&output) {
+                                    action_cb(
+                                        action_urn.clone(),
+                                        action.to_string(),
+                                        serde_json::Value::Null,
+                                    );
+                                }
                             }
                         });
 
@@ -298,8 +348,14 @@ fn update_wifi_menus(
         for (network_urn, network) in &adapter_networks {
             let network_urn_str = network_urn.as_str().to_string();
 
-            if network_rows.iter().any(|r| r.urn_str() == network_urn_str) {
-                // Network row already exists - no update needed for now
+            if let Some(existing) = network_rows.iter().find(|r| r.urn_str() == network_urn_str) {
+                if let NetworkRow::Plain {
+                    root, connected, ..
+                } = existing
+                {
+                    connected.set(network.connected);
+                    rebuild_wifi_row_contents(root, network);
+                }
             } else {
                 // Create new network row
                 let row_box = gtk::Box::builder()
@@ -307,51 +363,18 @@ fn update_wifi_menus(
                     .spacing(12)
                     .css_classes(["menu-row", "clickable"])
                     .build();
-
-                // Signal strength icon
-                let icon_name = match network.strength {
-                    s if s > 75 => "network-wireless-signal-excellent-symbolic",
-                    s if s > 50 => "network-wireless-signal-good-symbolic",
-                    s if s > 25 => "network-wireless-signal-ok-symbolic",
-                    _ => "network-wireless-signal-weak-symbolic",
-                };
-                let icon_widget = IconWidget::from_name(icon_name, 24);
-                row_box.append(icon_widget.widget());
-
-                // SSID label
-                let ssid_label = gtk::Label::builder()
-                    .label(&network.ssid)
-                    .hexpand(true)
-                    .xalign(0.0)
-                    .build();
-                row_box.append(&ssid_label);
-
-                // Security icon
-                if network.secure {
-                    let lock_icon = IconWidget::from_name("channel-secure-symbolic", 24);
-                    row_box.append(lock_icon.widget());
-                }
-
-                // Connected indicator
-                if network.connected {
-                    let check_icon = IconWidget::from_name("object-select-symbolic", 24);
-                    row_box.append(check_icon.widget());
-                }
+                rebuild_wifi_row_contents(&row_box, network);
 
                 // Make row clickable
                 let gesture = gtk::GestureClick::new();
                 let action_cb = action_callback.clone();
                 let urn_for_click = network_urn.clone();
-                let is_connected = network.connected;
+                let connected = Rc::new(Cell::new(network.connected));
+                let connected_for_click = connected.clone();
                 gesture.connect_released(move |_, _, _, _| {
-                    let action = if is_connected {
-                        "disconnect"
-                    } else {
-                        "connect"
-                    };
                     action_cb(
                         urn_for_click.clone(),
-                        action.to_string(),
+                        wifi_network_row_action(connected_for_click.get()).to_string(),
                         serde_json::Value::Null,
                     );
                 });
@@ -362,6 +385,7 @@ fn update_wifi_menus(
                 network_rows.push(NetworkRow::Plain {
                     urn_str: network_urn_str,
                     root: row_box,
+                    connected,
                 });
             }
         }
@@ -372,5 +396,32 @@ fn update_wifi_menus(
                 .menu
                 .reorder_child_after(&btn_container.widget(), entry.menu.last_child().as_ref());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deactivate_output_maps_to_wifi_deactivate_action() {
+        assert_eq!(
+            wifi_toggle_action(&FeatureToggleOutput::Deactivate),
+            Some("deactivate")
+        );
+    }
+
+    #[test]
+    fn activate_output_maps_to_wifi_activate_action() {
+        assert_eq!(
+            wifi_toggle_action(&FeatureToggleOutput::Activate),
+            Some("activate")
+        );
+    }
+
+    #[test]
+    fn connected_network_rows_disconnect_when_clicked() {
+        assert_eq!(wifi_network_row_action(true), "disconnect");
+        assert_eq!(wifi_network_row_action(false), "connect");
     }
 }

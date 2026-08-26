@@ -90,7 +90,7 @@ impl FeatureGridWidget {
                 .filter_map(|item| {
                     item.menu
                         .clone()
-                        .map(|menu| (menu, item.toggle.menu_id.clone()))
+                        .map(|menu| (menu, item.toggle.menu_id.clone(), item.toggle.clone()))
                 })
                 .collect();
 
@@ -104,7 +104,7 @@ impl FeatureGridWidget {
                 self.grid.attach(&menu_container, 0, grid_row + 1, cols, 1);
 
                 // Create a separate revealer for each menu
-                for (menu, menu_id) in menus_with_ids {
+                for (menu, menu_id, toggle_widget) in menus_with_ids {
                     if let Some(menu_id) = menu_id {
                         let menu_box = gtk::Box::builder()
                             .orientation(gtk::Orientation::Vertical)
@@ -137,6 +137,7 @@ impl FeatureGridWidget {
                         let menu_container_clone = menu_container.clone();
                         let menu_store_clone = self.menu_store.clone();
                         let menu_id_clone = menu_id.clone();
+                        let toggle_for_state = toggle_widget.clone();
                         self.menu_store.subscribe(move || {
                             let state = menu_store_clone.get_state();
                             let should_be_open = state
@@ -151,6 +152,7 @@ impl FeatureGridWidget {
                             }
 
                             menu_revealer_clone.set_reveal_child(should_be_open);
+                            toggle_for_state.set_expanded(should_be_open);
                         });
 
                         // Sync initial state
@@ -167,6 +169,7 @@ impl FeatureGridWidget {
                             }
 
                             menu_revealer.set_reveal_child(should_be_open);
+                            toggle_widget.set_expanded(should_be_open);
                         }
                     }
                 }
