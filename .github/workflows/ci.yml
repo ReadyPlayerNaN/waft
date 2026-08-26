@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            cargo \
+            git \
+            gtk4 \
+            gtk4-layer-shell \
+            libadwaita \
+            pkgconf \
+            rust
+
+      - uses: actions/checkout@v4
+
+      - name: Fetch dependencies
+        run: cargo fetch --locked
+
+      - name: Test protocol/config/power plugin
+        run: cargo test --locked -p waft-protocol -p waft-config -p waft-plugin-power
+
+      - name: Test GTK applications
+        run: cargo test --locked -p waft-overview -p waft-settings -p waft-launcher
+
+      - name: Test waft library
+        run: |
+          cargo test --locked -p waft --lib -- \
+            --skip socket_io::tests::connect_daemon_performs_handshake \
+            --skip socket_io::tests::connect_daemon_surfaces_hello_error
