@@ -125,7 +125,7 @@ mod tests {
         let urn = Urn::new("clock", "clock", "default");
         assert_eq!(reg.connection_for_urn(&urn), Some(conn));
 
-        let other_urn = Urn::new("battery", "battery", "BAT0");
+        let other_urn = Urn::new("power", "battery", "BAT0");
         assert_eq!(reg.connection_for_urn(&other_urn), None);
     }
 

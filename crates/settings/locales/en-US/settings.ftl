@@ -25,9 +25,36 @@ settings-sounds = Sounds
 settings-keyboard = Keyboard
 settings-audio = Audio
 settings-weather = Weather
+settings-power = Power
 settings-plugins = Plugins
 settings-online-accounts = Online Accounts
 settings-scheduled-tasks = Scheduled Tasks
+
+# Power
+power-battery-section = Battery
+power-profile-section = Power Profile
+power-profile-row = Profile
+power-charge = Charge
+power-state = State
+power-time = Time
+power-time-remaining = Time Remaining
+power-time-to-full = Time to Full
+power-performance-degraded = Performance Limited
+power-empty-title = No Power Controls
+power-empty-description = No battery or power profile backend is currently available.
+power-profile-power-saver = Power Saver
+power-profile-balanced = Balanced
+power-profile-performance = Performance
+battery-unknown = Unknown
+battery-charging = Charging
+battery-discharging = Discharging
+battery-empty = Empty
+battery-fully-charged = Fully charged
+battery-pending-charge = Pending charge
+battery-pending-discharge = Pending discharge
+battery-time-remaining = { $time } remaining
+battery-time-to-full = { $time } to full
+battery-time-less-than-minute = < 1min
 
 # Audio
 audio-output-devices = Output Devices

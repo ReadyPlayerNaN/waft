@@ -33,6 +33,7 @@ use waft_protocol::entity::notification_filter::{
 };
 use waft_protocol::entity::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE;
 use waft_protocol::entity::plugin::ENTITY_TYPE as PLUGIN_STATUS_ENTITY_TYPE;
+use waft_protocol::entity::power::{ENTITY_TYPE as BATTERY_ENTITY_TYPE, POWER_PROFILE_ENTITY_TYPE};
 use waft_protocol::entity::session;
 use waft_protocol::entity::weather;
 
@@ -55,6 +56,8 @@ const ENTITY_TYPES: &[&str] = &[
     NIGHT_LIGHT_CONFIG_ENTITY_TYPE,
     WALLPAPER_MANAGER_ENTITY_TYPE,
     GTK_APPEARANCE_ENTITY_TYPE,
+    BATTERY_ENTITY_TYPE,
+    POWER_PROFILE_ENTITY_TYPE,
     KEYBOARD_CONFIG_ENTITY_TYPE,
     KEYBOARD_ENTITY_TYPE,
     weather::ENTITY_TYPE,
@@ -346,10 +349,19 @@ mod tests {
     use waft_protocol::entity::accounts::{
         ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
     };
+    use waft_protocol::entity::power::{
+        ENTITY_TYPE as BATTERY_ENTITY_TYPE, POWER_PROFILE_ENTITY_TYPE,
+    };
 
     #[test]
     fn entity_types_include_online_accounts_and_providers() {
         assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_ENTITY_TYPE));
         assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE));
+    }
+
+    #[test]
+    fn entity_types_include_power_entities() {
+        assert!(ENTITY_TYPES.contains(&BATTERY_ENTITY_TYPE));
+        assert!(ENTITY_TYPES.contains(&POWER_PROFILE_ENTITY_TYPE));
     }
 }

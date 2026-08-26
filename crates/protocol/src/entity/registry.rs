@@ -1164,6 +1164,38 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             ],
             actions: &[],
         },
+        EntityTypeInfo {
+            entity_type: super::power::POWER_PROFILE_ENTITY_TYPE,
+            domain: "power",
+            description: "System power profile selection state",
+            urn_pattern: "{plugin}/power-profile/{id}",
+            properties: &[
+                prop(
+                    "active_profile",
+                    "string",
+                    "Currently active backend-native profile name",
+                ),
+                prop(
+                    "profiles",
+                    "array",
+                    "Available backend-native profile names",
+                ),
+                opt_prop(
+                    "performance_degraded",
+                    "string",
+                    "Optional degraded-performance reason from the backend",
+                ),
+            ],
+            actions: &[action_p(
+                "set-profile",
+                "Set the active power profile",
+                &[req_param(
+                    "profile",
+                    "string",
+                    "Backend-native profile name to activate",
+                )],
+            )],
+        },
         // ── session ──
         EntityTypeInfo {
             entity_type: super::session::SESSION_ENTITY_TYPE,
@@ -1430,6 +1462,7 @@ mod tests {
             super::super::notification_sound::NOTIFICATION_SOUND_ENTITY_TYPE,
             super::super::plugin::ENTITY_TYPE,
             super::super::power::ENTITY_TYPE,
+            super::super::power::POWER_PROFILE_ENTITY_TYPE,
             super::super::session::SESSION_ENTITY_TYPE,
             super::super::session::SLEEP_INHIBITOR_ENTITY_TYPE,
             super::super::session::USER_SERVICE_ENTITY_TYPE,
@@ -1575,5 +1608,20 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn power_profile_registry_entry_documents_action() {
+        let entry = all_entity_types()
+            .iter()
+            .find(|entry| entry.entity_type == super::super::power::POWER_PROFILE_ENTITY_TYPE)
+            .expect("power-profile should be registered");
+
+        assert_eq!(entry.urn_pattern, "{plugin}/power-profile/{id}");
+        assert_eq!(entry.actions.len(), 1);
+        assert_eq!(entry.actions[0].name, "set-profile");
+        assert_eq!(entry.actions[0].params.len(), 1);
+        assert_eq!(entry.actions[0].params[0].name, "profile");
+        assert!(entry.actions[0].params[0].required);
     }
 }

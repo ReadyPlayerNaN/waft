@@ -5,5 +5,6 @@ pub mod dark_mode;
 pub mod dnd;
 pub mod network;
 pub mod night_light;
+pub mod power_profiles;
 pub mod settings_app_tracker;
 pub mod wallpaper;

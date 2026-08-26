@@ -1,11 +1,11 @@
 [package]
-name = "waft-plugin-battery"
+name = "waft-plugin-power"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "waft-battery-daemon"
-path = "bin/waft-battery-daemon.rs"
+name = "waft-power-daemon"
+path = "bin/waft-power-daemon.rs"
 
 [dependencies]
 waft-plugin = { path = "../../crates/plugin" }

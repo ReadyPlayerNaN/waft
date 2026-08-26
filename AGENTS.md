@@ -56,7 +56,7 @@ waft protocol --entity-type clock  # Show single entity type (verbose)
 - **`waft-config`** - Configuration loading from `~/.config/waft/config.toml`
 - **`waft-i18n`** - Fluent localization: `system_locale()` returns BCP47 locale, `I18n` struct for translations with `t()` and `t_args()`.
 - **`waft-launcher`** - Standalone GTK4/libadwaita launcher application. Searches XDG applications and niri compositor windows. Supports fuzzy matching, keyboard navigation, and usage-based ranking. Subscribes to `app` and `window` entity types.
-- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with categorized sidebar, `gtk::Stack` for page switching, and `adw::NavigationView` for sub-page drill-down. Pages: Bluetooth, WiFi, Wired, Online Accounts (Connectivity); Appearance, Display, Windows, Wallpaper (Visual); Audio, Notifications, Sounds (Feedback); Keyboard, Keyboard Shortcuts (Inputs); Weather (Info); Plugins, Services, Startup (System). Uses same `WaftClient` + `EntityStore` pattern as overview. Startup, Keyboard Shortcuts, and Windows pages use direct KDL config file editing (niri config) rather than entity-based approach. Appearance page has sub-pages for dark mode automation and night light configuration. Settings-app-specific preferences stored in `~/.config/waft/settings-app.toml`.
+- **`waft-settings`** - Standalone GTK4/libadwaita settings application. `AdwNavigationSplitView` with categorized sidebar, `gtk::Stack` for page switching, and `adw::NavigationView` for sub-page drill-down. Pages: Bluetooth, WiFi, Wired, Online Accounts (Connectivity); Appearance, Display, Windows, Wallpaper (Visual); Audio, Notifications, Sounds (Feedback); Keyboard, Keyboard Shortcuts (Inputs); Weather (Info); Power, Plugins, Services, Startup (System). Uses same `WaftClient` + `EntityStore` pattern as overview. Startup, Keyboard Shortcuts, and Windows pages use direct KDL config file editing (niri config) rather than entity-based approach. Appearance page has sub-pages for dark mode automation and night light configuration. Settings-app-specific preferences stored in `~/.config/waft/settings-app.toml`.
 - **`waft-core`** - Common types: `Callback<T>`, `VoidCallback`, `DbusHandle` (zbus wrapper). Re-exports `waft-config`.
 - **`waft-ipc`** - Legacy widget protocol types (being phased out).
 
@@ -69,7 +69,7 @@ All bundled plugins are standalone daemon binaries implementing the `Plugin` tra
 | **clock**           | `clock`                                                                                                                     | Current time and date with locale support                           |
 | **darkman**         | `dark-mode`                                                                                                                 | Dark mode toggle via darkman D-Bus                                  |
 | **caffeine**        | `sleep-inhibitor`                                                                                                           | Prevent sleep/screensaver (Portal/ScreenSaver)                      |
-| **battery**         | `battery`                                                                                                                   | Battery percentage, health, charging (UPower D-Bus)                 |
+| **power**           | `battery`, `power-profile`                                                                                                  | Battery percentage, health, charging, and power profile management (UPower + power-profiles-daemon) |
 | **brightness**      | `display`                                                                                                                   | Display brightness with connector resolution, inotify monitoring (brightnessctl/ddcutil) |
 | **keyboard-layout** | `keyboard-layout`                                                                                                           | Input method display/switch (Niri/Sway/Hyprland/localed)            |
 | **niri**            | `keyboard-layout`, `keyboard-layout-config`, `display-output`, `window`                                                     | Niri compositor integration (layouts, displays, windows)            |
@@ -174,7 +174,7 @@ plugins/
     clock/          bin/          # Entity types: clock
     darkman/        bin/          # Entity types: dark-mode
     caffeine/       bin/          # Entity types: sleep-inhibitor
-    battery/        bin/          # Entity types: battery
+    power/          bin/          # Entity types: battery, power-profile
     brightness/     bin/          # Entity types: display
     keyboard-layout/ bin/         # Entity types: keyboard-layout
     niri/           bin/          # Entity types: keyboard-layout, keyboard-layout-config, display-output, window
@@ -429,6 +429,10 @@ Default config location: `~/.config/waft/config.toml`
 id = "plugin::notifications"
 toast_limit = 3
 disable_toasts = false
+
+[[plugins]]
+id = "power"
+# One-release compatibility alias: id = "battery"
 
 [[plugins]]
 id = "plugin::brightness"

@@ -109,6 +109,12 @@ vpn-disconnecting = Disconnecting...
 # Backup
 backup-title = Backup
 
+# Power profiles
+power-profiles-title = Power
+power-profile-power-saver = Power Saver
+power-profile-balanced = Balanced
+power-profile-performance = Performance
+
 # Battery states
 battery-unknown = Unknown
 battery-charging = Charging

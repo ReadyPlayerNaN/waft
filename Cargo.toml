@@ -19,7 +19,7 @@ members = [
     "plugins/eds",
     "plugins/gnome-online-accounts",
     "plugins/gsettings",
-    "plugins/battery",
+    "plugins/power",
     "plugins/bluez",
     "plugins/brightness",
     "plugins/caffeine",

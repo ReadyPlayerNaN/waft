@@ -311,7 +311,7 @@ mod tests {
                 serde_json::json!({"time": "14:30"}),
             ),
             make_entity(
-                "battery/battery/BAT0",
+                "power/battery/BAT0",
                 "battery",
                 serde_json::json!({"percentage": 85.0, "state": "Discharging"}),
             ),
@@ -398,7 +398,7 @@ mod tests {
                 serde_json::json!({"time": "14:30"}),
             ),
             make_entity(
-                "battery/battery/BAT0",
+                "power/battery/BAT0",
                 "battery",
                 serde_json::json!({"percentage": 85}),
             ),

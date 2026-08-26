@@ -25,9 +25,36 @@ settings-sounds = Zvuky
 settings-keyboard = Klávesnice
 settings-audio = Zvuk
 settings-weather = Počasí
+settings-power = Napájení
 settings-plugins = Doplňky
 settings-online-accounts = Online účty
 settings-scheduled-tasks = Plánované úlohy
+
+# Power
+power-battery-section = Baterie
+power-profile-section = Napájecí profil
+power-profile-row = Profil
+power-charge = Nabití
+power-state = Stav
+power-time = Čas
+power-time-remaining = Zbývající čas
+power-time-to-full = Čas do plného nabití
+power-performance-degraded = Omezený výkon
+power-empty-title = Žádné ovládání napájení
+power-empty-description = Není dostupná baterie ani backend napájecích profilů.
+power-profile-power-saver = Úsporný
+power-profile-balanced = Vyvážený
+power-profile-performance = Výkon
+battery-unknown = Neznámý stav
+battery-charging = Nabíjení
+battery-discharging = Vybíjení
+battery-empty = Vybito
+battery-fully-charged = Plně nabito
+battery-pending-charge = Čekání na nabíjení
+battery-pending-discharge = Čekání na vybíjení
+battery-time-remaining = zbývá { $time }
+battery-time-to-full = { $time } do plného nabití
+battery-time-less-than-minute = < 1min
 
 # Audio
 audio-output-devices = Výstupní zařízení

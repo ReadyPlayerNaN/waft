@@ -72,7 +72,12 @@ id = "plugin::darkman"
 id = "plugin::notifications"
 toast_limit = 3
 disable_toasts = false
+
+[[plugins]]
+id = "power"
 ```
+
+Legacy `[[plugins]] id = "battery"` remains accepted as a config alias for one release cycle.
 
 ## Plugins
 
@@ -83,7 +88,7 @@ All plugins are standalone daemon binaries implementing the `Plugin` trait from 
 | clock | waft-clock-daemon | `clock` | Date and time with locale support |
 | darkman | waft-darkman-daemon | `dark-mode` | Dark mode toggle via darkman D-Bus |
 | caffeine | waft-caffeine-daemon | `sleep-inhibitor` | Prevent sleep/screensaver via Portal |
-| battery | waft-battery-daemon | `battery` | Battery status via UPower D-Bus |
+| power | waft-power-daemon | `battery`, `power-profile` | Battery status via UPower and power profile management via power-profiles-daemon |
 | brightness | waft-brightness-daemon | `display` | Display brightness via brightnessctl/ddcutil |
 | keyboard-layout | waft-keyboard-layout-daemon | `keyboard-layout` | Input method display/switch (Niri/Sway/Hyprland/localed) |
 | systemd-actions | waft-systemd-actions-daemon | `session` | Lock, logout, reboot, shutdown, suspend |

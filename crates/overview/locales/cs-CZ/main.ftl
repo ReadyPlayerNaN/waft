@@ -113,6 +113,12 @@ vpn-disconnecting = Odpojování...
 # Backup
 backup-title = Záloha
 
+# Power profiles
+power-profiles-title = Napájení
+power-profile-power-saver = Úsporný
+power-profile-balanced = Vyvážený
+power-profile-performance = Výkon
+
 # Battery states
 battery-unknown = Neznámý stav
 battery-charging = Nabíjení

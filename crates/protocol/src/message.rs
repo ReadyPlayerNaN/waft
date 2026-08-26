@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn plugin_message_entity_updated() {
         roundtrip_json(&PluginMessage::EntityUpdated {
-            urn: Urn::new("battery", "battery", "BAT0"),
+            urn: Urn::new("power", "battery", "BAT0"),
             entity_type: Some("battery".to_string()),
             data: serde_json::json!({"percentage": 85.0, "state": "Discharging"}),
         });
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn plugin_message_entity_updated_without_entity_type() {
         let msg = PluginMessage::EntityUpdated {
-            urn: Urn::new("battery", "battery", "BAT0"),
+            urn: Urn::new("power", "battery", "BAT0"),
             entity_type: None,
             data: serde_json::json!({"percentage": 85.0}),
         };
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn plugin_message_entity_type_prefers_explicit_value() {
         let msg = PluginMessage::EntityUpdated {
-            urn: Urn::new("battery", "battery", "BAT0"),
+            urn: Urn::new("power", "battery", "BAT0"),
             entity_type: Some("custom-battery".to_string()),
             data: serde_json::json!({"percentage": 85.0}),
         };

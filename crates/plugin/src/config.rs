@@ -6,6 +6,15 @@ use anyhow::Context;
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
 
+fn plugin_id_matches(candidate: &str, plugin_id: &str) -> bool {
+    candidate == plugin_id
+        || candidate == format!("waft::{plugin_id}")
+        || matches!(
+            (candidate, plugin_id),
+            ("battery", "power") | ("waft::battery", "power")
+        )
+}
+
 /// Load plugin-specific configuration from waft config file.
 ///
 /// Searches for a plugin entry in `~/.config/waft/config.toml` matching
@@ -39,7 +48,7 @@ where
         for plugin in plugins {
             if let Some(table) = plugin.as_table()
                 && let Some(id) = table.get("id").and_then(|v| v.as_str())
-                && (id == plugin_id || id == format!("waft::{plugin_id}"))
+                && plugin_id_matches(id, plugin_id)
             {
                 log::debug!("Found config for plugin '{plugin_id}'");
                 return toml::Value::Table(table.clone())
@@ -83,5 +92,14 @@ mod tests {
         let config: TestConfig =
             load_plugin_config("nonexistent-test-plugin-12345").expect("should return defaults");
         assert_eq!(config, TestConfig::default());
+    }
+
+    #[test]
+    fn power_alias_matches_legacy_battery_id() {
+        assert!(plugin_id_matches("battery", "power"));
+        assert!(plugin_id_matches("waft::battery", "power"));
+        assert!(plugin_id_matches("power", "power"));
+        assert!(plugin_id_matches("waft::power", "power"));
+        assert!(!plugin_id_matches("battery", "audio"));
     }
 }

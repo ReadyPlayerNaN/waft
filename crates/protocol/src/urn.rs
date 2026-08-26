@@ -182,8 +182,8 @@ mod tests {
 
     #[test]
     fn parse_simple_urn() {
-        let urn = Urn::parse("battery/battery/BAT0").expect("expected value");
-        assert_eq!(urn.plugin(), "battery");
+        let urn = Urn::parse("power/battery/BAT0").expect("expected value");
+        assert_eq!(urn.plugin(), "power");
         assert_eq!(urn.entity_type(), "battery");
         assert_eq!(urn.id(), "BAT0");
     }

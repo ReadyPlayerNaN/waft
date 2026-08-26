@@ -24,6 +24,7 @@ use crate::pages::niri_windows::NiriWindowsPage;
 use crate::pages::notifications::NotificationsPage;
 use crate::pages::online_accounts::OnlineAccountsPage;
 use crate::pages::plugins::PluginsPage;
+use crate::pages::power::PowerPage;
 use crate::pages::scheduler::SchedulerPage;
 use crate::pages::services::ServicesPage;
 use crate::pages::sounds::SoundsPage;
@@ -53,6 +54,7 @@ fn page_title(page_id: &str) -> String {
         "wallpaper" => "settings-wallpaper",
         "windows" => "settings-windows",
         "weather" => "settings-weather",
+        "power" => "settings-power",
         "plugins" => "settings-plugins",
         "services" => "settings-services",
         "startup" => "settings-startup",
@@ -132,6 +134,7 @@ impl SettingsWindow {
                 "settings-online-accounts",
             );
             idx.add_page("weather", &t("settings-weather"), "settings-weather");
+            idx.add_page("power", &t("settings-power"), "settings-power");
             idx.add_page(
                 "appearance",
                 &t("settings-appearance"),
@@ -178,6 +181,7 @@ impl SettingsWindow {
             NotificationsPage::register_search(&mut idx);
             SoundsPage::register_search(&mut idx);
             PluginsPage::register_search(&mut idx);
+            PowerPage::register_search(&mut idx);
             ServicesPage::register_search(&mut idx);
             SchedulerPage::register_search(&mut idx);
             OnlineAccountsPage::register_search(&mut idx);
@@ -223,6 +227,7 @@ impl SettingsWindow {
             entity_page_factory!(f, "keyboard", KeyboardPage);
             entity_page_factory!(f, "notifications", NotificationsPage);
             entity_page_factory!(f, "sounds", SoundsPage);
+            entity_page_factory!(f, "power", PowerPage);
             entity_page_factory!(f, "services", ServicesPage);
             entity_page_factory!(f, "scheduled-tasks", SchedulerPage);
 

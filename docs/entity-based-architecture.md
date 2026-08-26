@@ -202,7 +202,7 @@ let child = parent.child("bluetooth-device", "AA:BB:CC:DD:EE:FF");
 | Plugin | URN | Pattern |
 |--------|-----|---------|
 | clock | `clock/clock/default` | Simple, single entity |
-| battery | `battery/battery/BAT0` | Simple, hardware-based ID |
+| power | `power/battery/BAT0` | Simple, hardware-based ID |
 | audio | `audio/audio-device/speakers` | Simple, device name ID |
 | darkman | `darkman/dark-mode/default` | Simple, singleton |
 | bluez | `bluez/bluetooth-adapter/hci0` | Simple, adapter |
@@ -251,7 +251,7 @@ Entity types are defined in `crates/protocol/src/entity/` and organized by **dom
 | `keyboard` | `KeyboardLayout` | `ENTITY_TYPE = "keyboard-layout"` |
 | `network` | `NetworkAdapter`, `WifiNetwork`, `EthernetConnection`, `Vpn`, `TetheringConnection` | Multiple constants |
 | `notification` | `Notification`, `Dnd` | `NOTIFICATION_ENTITY_TYPE`, `DND_ENTITY_TYPE` |
-| `power` | `Battery` | `ENTITY_TYPE = "battery"` |
+| `power` | `Battery`, `PowerProfile` | `ENTITY_TYPE = "battery"`, `POWER_PROFILE_ENTITY_TYPE = "power-profile"` |
 | `session` | `SleepInhibitor`, `Session` | `SLEEP_INHIBITOR_ENTITY_TYPE`, `SESSION_ENTITY_TYPE` |
 | `storage` | `BackupMethod` | `BACKUP_METHOD_ENTITY_TYPE` |
 | `weather` | `Weather` | `ENTITY_TYPE = "weather"` |

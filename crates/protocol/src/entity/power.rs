@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 /// Entity type identifier for batteries.
 pub const ENTITY_TYPE: &str = "battery";
 
+/// Entity type identifier for power profile management.
+pub const POWER_PROFILE_ENTITY_TYPE: &str = "power-profile";
+
 /// A battery device (typically laptop battery via UPower).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Battery {
@@ -26,12 +29,20 @@ pub enum BatteryState {
     PendingDischarge,
 }
 
+/// Power profile state from power-profiles-daemon.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PowerProfile {
+    pub active_profile: String,
+    pub profiles: Vec<String>,
+    pub performance_degraded: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn serde_roundtrip() {
+    fn battery_serde_roundtrip() {
         let battery = Battery {
             present: true,
             percentage: 85.0,
@@ -46,7 +57,7 @@ mod tests {
     }
 
     #[test]
-    fn serde_roundtrip_all_states() {
+    fn battery_state_serde_roundtrip_all_states() {
         let states = [
             BatteryState::Unknown,
             BatteryState::Charging,
@@ -61,5 +72,21 @@ mod tests {
             let decoded: BatteryState = serde_json::from_value(json).expect("expected value");
             assert_eq!(state, decoded);
         }
+    }
+
+    #[test]
+    fn power_profile_serde_roundtrip() {
+        let profile = PowerProfile {
+            active_profile: "balanced".to_string(),
+            profiles: vec![
+                "power-saver".to_string(),
+                "balanced".to_string(),
+                "performance".to_string(),
+            ],
+            performance_degraded: Some("high-operating-temperature".to_string()),
+        };
+        let json = serde_json::to_value(&profile).expect("expected value");
+        let decoded: PowerProfile = serde_json::from_value(json).expect("expected value");
+        assert_eq!(profile, decoded);
     }
 }

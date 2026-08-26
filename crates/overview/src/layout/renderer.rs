@@ -36,6 +36,7 @@ use crate::components::toggles::network::{
     TetheringToggles, VpnToggles, WifiToggles, WiredToggles,
 };
 use crate::components::toggles::night_light::night_light_toggle;
+use crate::components::toggles::power_profiles::PowerProfilesToggle;
 use crate::components::toggles::wallpaper::wallpaper_toggle;
 use crate::components::weather::WeatherComponent;
 use crate::layout::model::LayoutNode;
@@ -485,6 +486,16 @@ fn render_feature_toggle_grid(
                         dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));
                     }
+                    "PowerProfilesToggle" => {
+                        let t = Rc::new(PowerProfilesToggle::new(
+                            &ctx.store,
+                            &ctx.action_callback,
+                            menu_store,
+                            dynamic_rebuild.clone(),
+                        ));
+                        dynamic_sources.push(t.clone());
+                        keep.push(Box::new(t));
+                    }
                     "WallpaperToggle" => {
                         let t = Rc::new(wallpaper_toggle(
                             &ctx.store,
@@ -640,5 +651,11 @@ impl DynamicToggleSource for SimpleToggle {
 impl DynamicToggleSource for BackupToggle {
     fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
         BackupToggle::as_feature_toggles(self)
+    }
+}
+
+impl DynamicToggleSource for PowerProfilesToggle {
+    fn as_feature_toggles(&self) -> Vec<Rc<WidgetFeatureToggle>> {
+        PowerProfilesToggle::as_feature_toggles(self)
     }
 }

@@ -3540,20 +3540,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "waft-plugin-battery"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "log",
- "tokio",
- "waft-i18n",
- "waft-plugin",
- "waft-protocol",
- "zbus",
-]
-
-[[package]]
 name = "waft-plugin-bluetooth"
 version = "0.1.0"
 dependencies = [
@@ -3790,6 +3776,20 @@ dependencies = [
  "waft-protocol",
  "zbus",
  "zvariant",
+]
+
+[[package]]
+name = "waft-plugin-power"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "log",
+ "tokio",
+ "waft-i18n",
+ "waft-plugin",
+ "waft-protocol",
+ "zbus",
 ]
 
 [[package]]

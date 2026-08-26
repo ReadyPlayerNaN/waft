@@ -173,6 +173,12 @@ fn categories() -> Vec<SidebarCategory> {
             label: t("sidebar-system"),
             items: vec![
                 SidebarItem {
+                    page_id: "power",
+                    title: t("settings-power"),
+                    icon: "power-profile-balanced-symbolic",
+                    visible: true,
+                },
+                SidebarItem {
                     page_id: "plugins",
                     title: t("settings-plugins"),
                     icon: "application-x-addon-symbolic",

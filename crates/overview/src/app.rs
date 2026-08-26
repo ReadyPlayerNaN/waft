@@ -31,6 +31,7 @@ const ENTITY_TYPES: &[&str] = &[
     entity::display::WALLPAPER_MANAGER_ENTITY_TYPE,
     entity::session::SLEEP_INHIBITOR_ENTITY_TYPE,
     entity::power::ENTITY_TYPE,
+    entity::power::POWER_PROFILE_ENTITY_TYPE,
     entity::keyboard::ENTITY_TYPE,
     entity::audio::ENTITY_TYPE,
     entity::bluetooth::BluetoothAdapter::ENTITY_TYPE,
@@ -50,6 +51,18 @@ const ENTITY_TYPES: &[&str] = &[
     entity::storage::BACKUP_METHOD_ENTITY_TYPE,
     entity::app::ENTITY_TYPE,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::ENTITY_TYPES;
+    use waft_protocol::entity;
+
+    #[test]
+    fn entity_types_include_power_profiles() {
+        assert!(ENTITY_TYPES.contains(&entity::power::ENTITY_TYPE));
+        assert!(ENTITY_TYPES.contains(&entity::power::POWER_PROFILE_ENTITY_TYPE));
+    }
+}
 
 fn sync_overview_color_scheme(style_manager: &adw::StyleManager, entity_store: &EntityStore) {
     if style_manager.system_supports_color_schemes() {
