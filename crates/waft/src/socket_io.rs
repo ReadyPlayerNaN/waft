@@ -131,6 +131,7 @@ pub async fn read_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
     use tokio::net::UnixListener;
     use waft_protocol::{ProtocolError, ProtocolErrorScope};
@@ -145,6 +146,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     #[allow(unsafe_code)]
     async fn connect_daemon_performs_handshake() {
         let runtime_dir = TempDir::new().expect("tempdir");
@@ -187,6 +189,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     #[allow(unsafe_code)]
     async fn connect_daemon_surfaces_hello_error() {
         let runtime_dir = TempDir::new().expect("tempdir");

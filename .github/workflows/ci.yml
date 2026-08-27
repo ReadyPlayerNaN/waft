@@ -19,13 +19,9 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm --needed \
-            cargo \
-            git \
-            gtk4 \
-            gtk4-layer-shell \
-            libadwaita \
-            pkgconf \
-            rust
+            cargo git rust pkgconf \
+            gtk4 libadwaita gtk4-layer-shell \
+            glib2 dbus libsoup3 cairo pango gdk-pixbuf2 graphene
 
       - uses: actions/checkout@v4
 

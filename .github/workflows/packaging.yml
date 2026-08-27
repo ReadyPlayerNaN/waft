@@ -1,21 +1,17 @@
 name: packaging
 
 on:
-  push:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
     branches: [master]
-    paths:
-      - 'packaging/**'
-      - '.github/workflows/packaging.yml'
-      - '.github/workflows/aur-publish.yml'
-  pull_request:
-    paths:
-      - 'packaging/**'
-      - '.github/workflows/packaging.yml'
-      - '.github/workflows/aur-publish.yml'
   workflow_dispatch:
 
 jobs:
   validate:
+    if: >
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
     name: validate ${{ matrix.pkg }}
     runs-on: ubuntu-latest
     container:
