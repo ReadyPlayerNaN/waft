@@ -19,14 +19,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pkg:
-          - waft-git
+        include:
+          - pkg: waft-git
+            prepare: none
+          - pkg: waft-bin
+            prepare: render-template
     steps:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm --needed git namcap pacman-contrib
 
       - uses: actions/checkout@v4
+
+      - name: Prepare waft-bin PKGBUILD from template
+        if: matrix.prepare == 'render-template'
+        run: |
+          chmod +x packaging/render-waft-bin-pkgbuild.sh
+          packaging/render-waft-bin-pkgbuild.sh 0.0.0 0000000000000000000000000000000000000000000000000000000000000000 packaging/waft-bin/PKGBUILD
 
       - name: Allow non-root makepkg user
         run: |

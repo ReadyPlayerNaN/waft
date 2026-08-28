@@ -44,6 +44,17 @@ cargo build --workspace
 cargo test --workspace
 ```
 
+## Packaging and releases
+
+AUR package tracks:
+
+- `waft-git` — VCS/source-built package
+- `waft-bin` — stable package repackaging prebuilt GitHub Release artifacts
+
+Release automation and AUR publication flow are documented in:
+
+- `docs/release-process.md`
+
 ## Running
 
 ```bash
