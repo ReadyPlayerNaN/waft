@@ -9,7 +9,7 @@ use nmrs::models::DeviceState as NmDeviceState;
 use zbus::Connection;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 
-use crate::dbus_property::{NM_INTERFACE, NM_PATH, NM_SERVICE};
+use crate::dbus_property::{NM_INTERFACE, NM_PATH, NM_SERVICE, NM_VPN_CONNECTION_INTERFACE};
 
 use crate::state::{NmState, VpnConnectionInfo, VpnState};
 
@@ -84,7 +84,7 @@ pub async fn get_active_vpn_connections(_conn: &Connection) -> Result<HashMap<St
         let Ok(active) = zbus::Proxy::new(
             &conn,
             "org.freedesktop.NetworkManager",
-            path,
+            path.clone(),
             "org.freedesktop.NetworkManager.Connection.Active",
         )
         .await
@@ -94,7 +94,10 @@ pub async fn get_active_vpn_connections(_conn: &Connection) -> Result<HashMap<St
 
         let conn_type: String = match active.get_property("Type").await {
             Ok(value) => value,
-            Err(_) => continue,
+            Err(error) => {
+                log::debug!("[nm] Active connection {path:?} disappeared before Type: {error}");
+                continue;
+            }
         };
         if !is_vpn_type(&conn_type) {
             continue;
@@ -102,10 +105,37 @@ pub async fn get_active_vpn_connections(_conn: &Connection) -> Result<HashMap<St
 
         let uuid: String = match active.get_property("Uuid").await {
             Ok(value) => value,
-            Err(_) => continue,
+            Err(error) => {
+                log::debug!("[nm] VPN connection {path:?} disappeared before UUID: {error}");
+                continue;
+            }
         };
-        let state_code: u32 = active.get_property("State").await.unwrap_or(0);
-        states.insert(uuid, VpnState::from_active_state(state_code));
+        let state_code: u32 = match active.get_property("State").await {
+            Ok(value) => value,
+            Err(error) => {
+                log::debug!("[nm] VPN connection {uuid} disappeared before State: {error}");
+                continue;
+            }
+        };
+
+        // VPN.Connection.VpnState is more precise than the generic active
+        // connection state, especially for VPN failures while the wrapper
+        // remains activated.
+        let vpn_state =
+            match zbus::Proxy::new(&conn, NM_SERVICE, path.clone(), NM_VPN_CONNECTION_INTERFACE)
+                .await
+            {
+                Ok(vpn) => vpn
+                    .get_property::<u32>("VpnState")
+                    .await
+                    .ok()
+                    .map(VpnState::from_vpn_state),
+                Err(_) => None,
+            };
+        states.insert(
+            uuid,
+            vpn_state.unwrap_or_else(|| VpnState::from_active_state(state_code)),
+        );
     }
 
     Ok(states)
@@ -187,37 +217,60 @@ pub async fn refresh_vpn_states(
     conn: &Connection,
     nm: &nmrs::NetworkManager,
     state: &Arc<StdMutex<NmState>>,
+    refresh_lock: &tokio::sync::Mutex<()>,
 ) -> Result<()> {
-    let profiles = get_vpn_profiles(nm).await?;
-    let active_vpns = get_active_vpn_connections(conn).await.unwrap_or_default();
+    // Signal handling and action reconciliation can overlap. Serialize the
+    // read-modify-publish cycle so an older D-Bus snapshot cannot overwrite a
+    // newer one after a rapid VPN transition.
+    let _refresh_guard = refresh_lock.lock().await;
 
-    let mut new_connections = Vec::new();
+    for _ in 0..3 {
+        let revision = {
+            let st = match state.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    log::warn!("[nm] Mutex poisoned, recovering: {e}");
+                    e.into_inner()
+                }
+            };
+            st.vpn_revision
+        };
+        let profiles = get_vpn_profiles(nm).await?;
+        let active_vpns = get_active_vpn_connections(conn).await?;
 
-    for profile in profiles {
-        let vpn_state = active_vpns
-            .get(&profile.uuid)
-            .cloned()
-            .unwrap_or(VpnState::Disconnected);
+        let new_connections = profiles
+            .into_iter()
+            .map(|profile| VpnConnectionInfo {
+                state: active_vpns
+                    .get(&profile.uuid)
+                    .cloned()
+                    .unwrap_or(VpnState::Disconnected),
+                path: profile.path,
+                uuid: profile.uuid,
+                name: profile.name,
+                conn_type: profile.conn_type,
+                active_path: None,
+            })
+            .collect();
 
-        new_connections.push(VpnConnectionInfo {
-            path: profile.path,
-            uuid: profile.uuid,
-            name: profile.name,
-            conn_type: profile.conn_type,
-            state: vpn_state.clone(),
-            active_path: None,
-        });
+        let mut st = match state.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("[nm] Mutex poisoned, recovering: {e}");
+                e.into_inner()
+            }
+        };
+        if st.vpn_revision != revision {
+            // An action changed the state while D-Bus reads were in flight.
+            // Retry so the older snapshot cannot roll it back.
+            continue;
+        }
+        st.vpn_connections = new_connections;
+        st.vpn_revision = st.vpn_revision.wrapping_add(1);
+        return Ok(());
     }
 
-    let mut st = match state.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            log::warn!("[nm] Mutex poisoned, recovering: {e}");
-            e.into_inner()
-        }
-    };
-    st.vpn_connections = new_connections;
-
+    log::debug!("[nm] VPN refresh superseded by a newer state change");
     Ok(())
 }
 
@@ -259,5 +312,13 @@ mod tests {
             nmrs_vpn_state_to_plugin_state(&NmDeviceState::Disconnected, true),
             VpnState::Connected
         );
+    }
+
+    #[test]
+    fn maps_vpn_connection_state_codes() {
+        assert_eq!(VpnState::from_vpn_state(2), VpnState::Connecting);
+        assert_eq!(VpnState::from_vpn_state(5), VpnState::Connected);
+        assert_eq!(VpnState::from_vpn_state(6), VpnState::Disconnected);
+        assert_eq!(VpnState::from_vpn_state(7), VpnState::Disconnected);
     }
 }

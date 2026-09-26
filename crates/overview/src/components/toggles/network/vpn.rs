@@ -157,6 +157,11 @@ impl VpnToggles {
                     )
                 }) {
                     *last_active_vpn.borrow_mut() = Some(urn.as_str().to_string());
+                } else {
+                    // Do not retain a historical target after all VPNs have
+                    // disconnected; the next activation should use current
+                    // state only.
+                    *last_active_vpn.borrow_mut() = None;
                 }
 
                 let mut entries_mut = entries_ref.borrow_mut();
