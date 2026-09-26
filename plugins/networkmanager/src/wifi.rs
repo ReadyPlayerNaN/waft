@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use zbus::Connection;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
 
 use waft_plugin::entity::network::SecurityType;
 
@@ -84,6 +84,32 @@ pub async fn activate_connection(
 ///
 /// This remains as the legacy fallback for features not currently covered by the
 /// public nmrs WiFi connect surface, notably fresh WEP creation.
+/// Deactivate the active connection on a WiFi device without waiting on
+/// nmrs' global connect mutex.
+pub async fn deactivate_wifi_connection(conn: &Connection, device_path: &str) -> Result<()> {
+    let active_path: OwnedObjectPath = crate::dbus_property::get_property(
+        conn,
+        device_path,
+        NM_DEVICE_INTERFACE,
+        "ActiveConnection",
+    )
+    .await
+    .context("WiFi device has no active connection")?;
+    if active_path.as_str() == "/" {
+        return Ok(());
+    }
+
+    let proxy = zbus::Proxy::new(conn, NM_SERVICE, NM_PATH, NM_INTERFACE)
+        .await
+        .context("Failed to create NM proxy")?;
+    let active_obj = ObjectPath::try_from(active_path.as_str())?;
+    let _: () = proxy
+        .call("DeactivateConnection", &(active_obj,))
+        .await
+        .context("Failed to deactivate WiFi connection")?;
+    Ok(())
+}
+
 pub async fn add_and_activate_connection(
     conn: &Connection,
     device_path: &str,

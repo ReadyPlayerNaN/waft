@@ -92,6 +92,12 @@ fn summarize_vpns(vpns: &[(Urn, entity::network::Vpn)]) -> VpnSummary {
     let any_connecting = vpns
         .iter()
         .any(|(_, vpn)| vpn.state == entity::network::VpnState::Connecting);
+    let any_transitioning = vpns.iter().any(|(_, vpn)| {
+        matches!(
+            vpn.state,
+            entity::network::VpnState::Connecting | entity::network::VpnState::Disconnecting
+        )
+    });
     let details = vpns
         .iter()
         .find(|(_, vpn)| vpn.state == entity::network::VpnState::Disconnecting)
@@ -110,7 +116,7 @@ fn summarize_vpns(vpns: &[(Urn, entity::network::Vpn)]) -> VpnSummary {
 
     VpnSummary {
         active: any_connected || any_connecting,
-        busy: false,
+        busy: any_transitioning,
         details,
     }
 }
@@ -388,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_summary_prefers_transition_details_without_global_busy() {
+    fn aggregate_summary_locks_global_toggle_during_transition() {
         let vpns = vec![
             make_vpn("kiwi", entity::network::VpnState::Disconnecting),
             make_vpn("office", entity::network::VpnState::Connected),
@@ -398,8 +404,8 @@ mod tests {
 
         assert!(summary.active);
         assert!(
-            !summary.busy,
-            "one transitioning VPN must not globally busy-lock the tile"
+            summary.busy,
+            "the global toggle must block duplicate actions"
         );
         assert_eq!(
             summary.details,
