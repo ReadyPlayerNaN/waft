@@ -27,8 +27,15 @@ settings-audio = Zvuk
 settings-weather = Počasí
 settings-power = Napájení
 settings-plugins = Doplňky
+settings-providers = Poskytovatelé AI
 settings-online-accounts = Online účty
 settings-scheduled-tasks = Plánované úlohy
+
+# Poskytovatelé AI
+providers-title = Poskytovatelé AI
+providers-description = Vyberte, kteří nakonfigurovaní poskytovatelé AI mají hlásit kvóty využití do Waftu.
+providers-credentials-found = Přihlašovací údaje nalezeny
+providers-credentials-missing = Přihlašovací údaje nenalezeny
 
 # Power
 power-battery-section = Baterie

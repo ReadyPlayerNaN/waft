@@ -25,6 +25,7 @@ use crate::pages::notifications::NotificationsPage;
 use crate::pages::online_accounts::OnlineAccountsPage;
 use crate::pages::plugins::PluginsPage;
 use crate::pages::power::PowerPage;
+use crate::pages::providers::ProvidersPage;
 use crate::pages::scheduler::SchedulerPage;
 use crate::pages::services::ServicesPage;
 use crate::pages::sounds::SoundsPage;
@@ -56,6 +57,7 @@ fn page_title(page_id: &str) -> String {
         "weather" => "settings-weather",
         "power" => "settings-power",
         "plugins" => "settings-plugins",
+        "providers" => "settings-providers",
         "services" => "settings-services",
         "startup" => "settings-startup",
         "keyboard-shortcuts" => "settings-keyboard-shortcuts",
@@ -151,6 +153,7 @@ impl SettingsWindow {
             );
             idx.add_page("sounds", &t("settings-sounds"), "settings-sounds");
             idx.add_page("plugins", &t("settings-plugins"), "settings-plugins");
+            idx.add_page("providers", &t("settings-providers"), "settings-providers");
             idx.add_page("services", &t("settings-services"), "settings-services");
             idx.add_page("startup", &t("settings-startup"), "settings-startup");
             idx.add_page(
@@ -181,6 +184,7 @@ impl SettingsWindow {
             NotificationsPage::register_search(&mut idx);
             SoundsPage::register_search(&mut idx);
             PluginsPage::register_search(&mut idx);
+            ProvidersPage::register_search(&mut idx);
             PowerPage::register_search(&mut idx);
             ServicesPage::register_search(&mut idx);
             SchedulerPage::register_search(&mut idx);
@@ -246,6 +250,15 @@ impl SettingsWindow {
                 f.insert(
                     "plugins".into(),
                     Box::new(move || clamped(&PluginsPage::new(&es, &si).root)),
+                );
+            }
+            {
+                let es = entity_store.clone();
+                let ac = action_callback.clone();
+                let si = search_index.clone();
+                f.insert(
+                    "providers".into(),
+                    Box::new(move || clamped(&ProvidersPage::new(&es, &ac, &si).root)),
                 );
             }
 

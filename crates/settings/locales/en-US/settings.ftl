@@ -27,8 +27,15 @@ settings-audio = Audio
 settings-weather = Weather
 settings-power = Power
 settings-plugins = Plugins
+settings-providers = AI Providers
 settings-online-accounts = Online Accounts
 settings-scheduled-tasks = Scheduled Tasks
+
+# AI Providers
+providers-title = AI Providers
+providers-description = Choose which configured AI providers report usage quotas to Waft.
+providers-credentials-found = Credentials found
+providers-credentials-missing = No credentials found
 
 # Power
 power-battery-section = Battery

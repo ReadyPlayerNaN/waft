@@ -185,6 +185,12 @@ fn categories() -> Vec<SidebarCategory> {
                     visible: true,
                 },
                 SidebarItem {
+                    page_id: "providers",
+                    title: t("settings-providers"),
+                    icon: "applications-science-symbolic",
+                    visible: true,
+                },
+                SidebarItem {
                     page_id: "services",
                     title: t("settings-services"),
                     icon: "system-run-symbolic",

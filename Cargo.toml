@@ -31,7 +31,7 @@ members = [
     "plugins/audio",
     "plugins/notifications",
     "plugins/syncthing",
-    "plugins/claude",
+    "plugins/providers",
     "plugins/awww",
     "plugins/internal-apps",
     "plugins/xdg-apps",

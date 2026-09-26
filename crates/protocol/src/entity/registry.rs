@@ -252,30 +252,54 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
         },
         // ── ai ──
         EntityTypeInfo {
+            entity_type: super::ai::CONFIG_ENTITY_TYPE,
+            domain: "ai",
+            description: "Enablement and credential status for an AI provider",
+            urn_pattern: "{plugin}/provider-config/{provider}",
+            properties: &[
+                prop("provider", "string", "Stable provider identifier"),
+                prop("display_name", "string", "Human-readable provider name"),
+                prop("enabled", "bool", "Whether quota fetching is enabled"),
+                prop("configured", "bool", "Whether local credentials were found"),
+            ],
+            actions: &[action_p(
+                "set-enabled",
+                "Enable or disable quota fetching",
+                &[req_param(
+                    "enabled",
+                    "bool",
+                    "Whether fetching should be enabled",
+                )],
+            )],
+        },
+        EntityTypeInfo {
             entity_type: super::ai::ENTITY_TYPE,
             domain: "ai",
-            description: "Claude Code rate limit utilization across time windows",
-            urn_pattern: "{plugin}/claude-usage/{id}",
+            description: "Usage quota windows reported by an AI provider",
+            urn_pattern: "{plugin}/provider-usage/{provider}",
             properties: &[
+                prop("provider", "string", "Stable provider identifier"),
+                prop("display_name", "string", "Human-readable provider name"),
+                prop("plan_name", "string", "Subscription or account plan name"),
                 prop(
-                    "five_hour_utilization",
-                    "f64",
-                    "5-hour window utilization (0.0 - 1.0)",
+                    "unlimited",
+                    "bool",
+                    "Whether the provider reports an unlimited plan",
                 ),
                 prop(
-                    "five_hour_reset_at",
+                    "windows",
+                    "array",
+                    "Provider-reported hourly, weekly, monthly, or balance windows",
+                ),
+                prop(
+                    "fetched_at",
                     "i64",
-                    "Unix timestamp (ms) when the 5-hour window resets",
+                    "Unix timestamp (ms) when data was fetched",
                 ),
-                prop(
-                    "seven_day_utilization",
-                    "f64",
-                    "7-day window utilization (0.0 - 1.0)",
-                ),
-                prop(
-                    "seven_day_reset_at",
+                opt_prop(
+                    "cached_at",
                     "i64",
-                    "Unix timestamp (ms) when the 7-day window resets",
+                    "Unix timestamp (ms) when cached data was fetched",
                 ),
             ],
             actions: &[],
@@ -1429,6 +1453,7 @@ mod tests {
             super::super::accounts::ONLINE_ACCOUNT_ENTITY_TYPE,
             super::super::accounts::ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
             super::super::ai::ENTITY_TYPE,
+            super::super::ai::CONFIG_ENTITY_TYPE,
             super::super::app::ENTITY_TYPE,
             super::super::audio::CARD_ENTITY_TYPE,
             super::super::audio::ENTITY_TYPE,
