@@ -100,7 +100,7 @@ fn parse_node(node: &roxmltree::Node) -> Result<LayoutNode> {
         | "VpnToggles"
         | "TetheringToggles"
         | "BackupToggle"
-        | "ClaudeUsage") => Ok(LayoutNode::Component {
+        | "ProviderUsage") => Ok(LayoutNode::Component {
             name: tag.to_string(),
         }),
         tag => Err(anyhow!("Unknown layout tag: {tag}")),
@@ -188,7 +188,7 @@ mod tests {
                             matches!(&children[2], LayoutNode::Component { name } if name == "Weather")
                         );
                         assert!(
-                            matches!(&children[3], LayoutNode::Component { name } if name == "ClaudeUsage")
+                            matches!(&children[3], LayoutNode::Component { name } if name == "ProviderUsage")
                         );
                     }
                     if let LayoutNode::Row { halign, children } = &header_children[1] {

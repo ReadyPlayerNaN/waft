@@ -9,6 +9,7 @@ pub mod notifications;
 pub mod online_accounts;
 pub mod plugins;
 pub mod power;
+pub mod providers;
 pub mod scheduler;
 pub mod services;
 pub mod sounds;

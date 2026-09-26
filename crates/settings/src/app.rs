@@ -14,6 +14,7 @@ use waft_client::{
 use waft_protocol::entity::accounts::{
     ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
 };
+use waft_protocol::entity::ai::CONFIG_ENTITY_TYPE as PROVIDER_CONFIG_ENTITY_TYPE;
 use waft_protocol::entity::appearance::GTK_APPEARANCE_ENTITY_TYPE;
 use waft_protocol::entity::audio;
 use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
@@ -71,6 +72,7 @@ const ENTITY_TYPES: &[&str] = &[
     session::USER_SERVICE_ENTITY_TYPE,
     session::USER_TIMER_ENTITY_TYPE,
     PLUGIN_STATUS_ENTITY_TYPE,
+    PROVIDER_CONFIG_ENTITY_TYPE,
     ONLINE_ACCOUNT_ENTITY_TYPE,
     ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
 ];
@@ -345,7 +347,7 @@ fn load_css() {
 
 #[cfg(test)]
 mod tests {
-    use super::ENTITY_TYPES;
+    use super::{ENTITY_TYPES, PROVIDER_CONFIG_ENTITY_TYPE};
     use waft_protocol::entity::accounts::{
         ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
     };
@@ -357,6 +359,7 @@ mod tests {
     fn entity_types_include_online_accounts_and_providers() {
         assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_ENTITY_TYPE));
         assert!(ENTITY_TYPES.contains(&ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE));
+        assert!(ENTITY_TYPES.contains(&PROVIDER_CONFIG_ENTITY_TYPE));
     }
 
     #[test]

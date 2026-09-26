@@ -18,11 +18,11 @@ use crate::components::audio_sliders::AudioSlidersComponent;
 use crate::components::battery::BatteryComponent;
 use crate::components::brightness_sliders::BrightnessSlidersComponent;
 use crate::components::calendar::CalendarComponent;
-use crate::components::claude::ClaudeComponent;
 use crate::components::clock::ClockComponent;
 use crate::components::events::EventsComponent;
 use crate::components::keyboard_layout::KeyboardLayoutComponent;
 use crate::components::notification_list::NotificationsComponent;
+use crate::components::providers::ProvidersComponent;
 use crate::components::right_column_stack::RightColumnStackComponent;
 use crate::components::session_actions::SessionActionsComponent;
 use crate::components::settings_button::SettingsButtonComponent;
@@ -345,8 +345,8 @@ fn render_component(
             keep.push(Box::new(c));
             w
         }
-        "ClaudeUsage" => {
-            let c = ClaudeComponent::new(&ctx.store);
+        "ProviderUsage" => {
+            let c = ProvidersComponent::new(&ctx.store);
             let w = c.widget();
             keep.push(Box::new(c));
             w

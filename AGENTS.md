@@ -85,7 +85,7 @@ All bundled plugins are standalone daemon binaries implementing the `Plugin` tra
 | **sunsetr**         | `night-light`                                                                                                               | Night light control via sunsetr CLI                                 |
 | **syncthing**       | `backup-method`                                                                                                             | Syncthing service toggle                                            |
 | **awww**            | `wallpaper-manager`                                                                                                         | Per-output wallpaper management (static / day-tracking / style-tracking) via awww or swww CLI |
-| **claude**          | `claude-usage`                                                                                                              | Claude Code API usage utilization for the 5-hour and 7-day windows  |
+| **providers**       | `provider-usage`                                                                                                           | Usage quota windows for configured AI providers via the `quotas` crate |
 | **internal-apps**   | `app`                                                                                                                       | Launchable entries for waft's own apps (e.g. `waft-settings`)       |
 | **xdg-apps**        | `app`                                                                                                                       | Launchable entries discovered from XDG `.desktop` files             |
 
@@ -190,7 +190,7 @@ plugins/
     sunsetr/        bin/          # Entity types: night-light
     syncthing/      bin/          # Entity types: backup-method
     awww/           bin/          # Entity types: wallpaper-manager
-    claude/         bin/          # Entity types: claude-usage
+    providers/      bin/          # Entity types: provider-usage
     internal-apps/  bin/          # Entity types: app
     xdg-apps/       bin/          # Entity types: app
 crates/
