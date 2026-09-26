@@ -140,7 +140,7 @@ pub fn print_plugin_list(json: bool) {
     let plugins = discover_plugins(&daemon_dir);
 
     if plugins.is_empty() {
-        eprintln!("No plugins found in {}", daemon_dir.display());
+        log::warn!("No plugins found in {}", daemon_dir.display());
         return;
     }
 
@@ -178,7 +178,7 @@ fn print_plugin_list_json(plugins: &[DiscoveredPlugin]) {
 
     match serde_json::to_string_pretty(&entries) {
         Ok(json) => println!("{json}"),
-        Err(e) => eprintln!("[waft] failed to serialize plugin list: {e}"),
+        Err(e) => log::error!("[waft] failed to serialize plugin list: {e}"),
     }
 }
 
@@ -245,7 +245,7 @@ pub fn print_plugin_description(plugin_name: &str, json: bool) {
     let plugins = discover_plugins(&daemon_dir);
 
     let Some(plugin) = plugins.iter().find(|p| p.id == plugin_name) else {
-        eprintln!(
+        log::error!(
             "error: plugin '{plugin_name}' not found. Run 'waft plugin ls' to see available plugins."
         );
         std::process::exit(1);
@@ -329,7 +329,7 @@ fn print_describe_json(plugin: &DiscoveredPlugin) {
     match serde_json::to_string_pretty(&output) {
         Ok(json) => println!("{json}"),
         Err(e) => {
-            eprintln!("[waft] failed to serialize plugin description: {e}");
+            log::error!("[waft] failed to serialize plugin description: {e}");
             std::process::exit(1);
         }
     }
@@ -478,7 +478,7 @@ fn discover_plugins(dir: &PathBuf) -> Vec<DiscoveredPlugin> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("Failed to read daemon directory {}: {e}", dir.display());
+            log::error!("Failed to read daemon directory {}: {e}", dir.display());
             return Vec::new();
         }
     };

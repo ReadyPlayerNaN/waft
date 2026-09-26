@@ -87,7 +87,7 @@ pub fn handle_provides_full(entity_types: &[&str], name: &str, description: &str
         };
         match serde_json::to_string_pretty(&manifest) {
             Ok(json) => println!("{json}"),
-            Err(e) => eprintln!("failed to serialize manifest: {e}"),
+            Err(e) => log::error!("failed to serialize manifest: {e}"),
         }
         return true;
     }
@@ -121,7 +121,7 @@ pub fn handle_manifest(
                 };
                 match serde_json::to_string_pretty(&manifest) {
                     Ok(json) => println!("{json}"),
-                    Err(e) => eprintln!("failed to serialize described manifest: {e}"),
+                    Err(e) => log::error!("failed to serialize described manifest: {e}"),
                 }
             } else {
                 print_basic_manifest(entity_types, name, description);
@@ -142,7 +142,7 @@ fn print_basic_manifest(entity_types: &[&str], name: &str, description: &str) {
     };
     match serde_json::to_string_pretty(&manifest) {
         Ok(json) => println!("{json}"),
-        Err(e) => eprintln!("failed to serialize manifest: {e}"),
+        Err(e) => log::error!("failed to serialize manifest: {e}"),
     }
 }
 
@@ -196,7 +196,7 @@ pub fn handle_provides_described<P: Plugin>(
             };
             match serde_json::to_string_pretty(&manifest) {
                 Ok(json) => println!("{json}"),
-                Err(e) => eprintln!("failed to serialize described manifest: {e}"),
+                Err(e) => log::error!("failed to serialize described manifest: {e}"),
             }
         } else {
             let manifest = PluginManifest {
@@ -206,7 +206,7 @@ pub fn handle_provides_described<P: Plugin>(
             };
             match serde_json::to_string_pretty(&manifest) {
                 Ok(json) => println!("{json}"),
-                Err(e) => eprintln!("failed to serialize manifest: {e}"),
+                Err(e) => log::error!("failed to serialize manifest: {e}"),
             }
         }
         return true;

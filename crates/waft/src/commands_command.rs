@@ -14,7 +14,7 @@ pub fn run(json: bool, filter: Option<&str>, run: bool, refresh: bool) {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("Failed to create tokio runtime: {e}");
+            log::error!("Failed to create tokio runtime: {e}");
             std::process::exit(1);
         }
     };
@@ -32,8 +32,8 @@ pub fn run(json: bool, filter: Option<&str>, run: bool, refresh: bool) {
                     println!("[]");
                 } else {
                     match filter {
-                        Some(f) => eprintln!("No commands matching '{f}'."),
-                        None => eprintln!("No commands available."),
+                        Some(f) => log::warn!("No commands matching '{f}'."),
+                        None => log::warn!("No commands available."),
                     }
                 }
                 return;
@@ -45,7 +45,7 @@ pub fn run(json: bool, filter: Option<&str>, run: bool, refresh: bool) {
             }
         }
         Err(e) => {
-            eprintln!("{e}");
+            log::error!("{e}");
             std::process::exit(1);
         }
     }
@@ -153,13 +153,15 @@ async fn run_commands(
         let action_timeout = Duration::from_millis(5000);
         match tokio::time::timeout(action_timeout, wait_for_action(&mut stream, action_id)).await {
             Ok(Ok(())) => {
-                eprintln!("Executed: {} → {} → {}", best.label, best.urn, best.action);
+                log::info!("Executed: {} → {} → {}", best.label, best.urn, best.action);
             }
             Ok(Err(e)) => return Err(format!("Action failed: {e}")),
             Err(_) => {
-                eprintln!(
+                log::warn!(
                     "Executed: {} → {} → {} (no confirmation within timeout)",
-                    best.label, best.urn, best.action
+                    best.label,
+                    best.urn,
+                    best.action
                 );
             }
         }
@@ -280,7 +282,7 @@ fn print_json(commands: &[ResolvedCommand]) {
     match serde_json::to_string_pretty(commands) {
         Ok(json) => println!("{json}"),
         Err(e) => {
-            eprintln!("Failed to serialize commands: {e}");
+            log::error!("Failed to serialize commands: {e}");
             std::process::exit(1);
         }
     }

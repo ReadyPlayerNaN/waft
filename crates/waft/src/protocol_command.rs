@@ -26,11 +26,11 @@ pub fn run(
 
     if filtered.is_empty() {
         if let Some(et) = entity_type_filter {
-            eprintln!("Unknown entity type: {et}");
-            eprintln!("Run `waft protocol` to see all available entity types.");
+            log::error!("Unknown entity type: {et}");
+            log::error!("Run `waft protocol` to see all available entity types.");
         } else if let Some(d) = domain_filter {
-            eprintln!("Unknown domain: {d}");
-            eprintln!("Run `waft protocol` to see all available domains.");
+            log::error!("Unknown domain: {d}");
+            log::error!("Run `waft protocol` to see all available domains.");
         }
         std::process::exit(1);
     }
@@ -93,7 +93,7 @@ fn print_json(entries: &[&EntityTypeInfo]) {
     match serde_json::to_string_pretty(&output) {
         Ok(json) => println!("{json}"),
         Err(e) => {
-            eprintln!("[waft] failed to serialize protocol registry: {e}");
+            log::error!("[waft] failed to serialize protocol registry: {e}");
             std::process::exit(1);
         }
     }

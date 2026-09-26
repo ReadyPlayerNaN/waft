@@ -52,7 +52,7 @@ mod gtk_component_tests {
     #[test]
     fn all_gtk_component_tests() {
         if !init_gtk() {
-            eprintln!("Skipping GTK component tests: GTK unavailable in this environment");
+            log::warn!("Skipping GTK component tests: GTK unavailable in this environment");
             return;
         }
 

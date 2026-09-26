@@ -1040,7 +1040,7 @@ output "DP-1" {
         let modified =
             modify_keyboard_layouts(doc, &["cz".into(), "us".into()]).expect("expected value");
         let output = modified.to_string();
-        eprintln!("=== v2 config output ===\n{output}");
+        log::debug!("=== v2 config output ===\n{output}");
 
         assert!(
             output.contains(r#"layout "cz,us""#),
@@ -1076,7 +1076,7 @@ window-rule {
         let modified =
             modify_keyboard_layouts(doc, &["cz".into(), "us".into()]).expect("expected value");
         let output = modified.to_string();
-        eprintln!("=== v1 config output ===\n{output}");
+        log::debug!("=== v1 config output ===\n{output}");
 
         // Layout must be quoted
         assert!(

@@ -107,6 +107,10 @@ impl<'a> PluginRunner<'a> {
             (String::new(), String::new())
         };
 
+        // Initialize logging before handling the manifest CLI so serialization
+        // failures are reported through the project logging framework.
+        crate::init_plugin_logger("info");
+
         // Handle manifest CLI (provides / provides --describe)
         if manifest::handle_manifest(
             self.entity_types,
@@ -117,7 +121,6 @@ impl<'a> PluginRunner<'a> {
             return Ok(());
         }
 
-        crate::init_plugin_logger("info");
         log::info!("Starting {} plugin...", self.name);
 
         let rt = tokio::runtime::Builder::new_current_thread()

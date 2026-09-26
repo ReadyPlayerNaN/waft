@@ -23,11 +23,10 @@ const DBUS_NAME: &str = "org.waft.Daemon";
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cli = Cli::parse();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     match cli.command {
         None | Some(Command::Daemon) => {
-            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-                .init();
             run_daemon()?;
         }
         Some(Command::Plugin { command }) => match command {
