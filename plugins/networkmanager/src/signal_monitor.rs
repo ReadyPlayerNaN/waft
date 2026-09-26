@@ -48,61 +48,67 @@ fn is_nm_wireless_enabled_change(
     obj_path == NM_PATH && prop_iface == NM_INTERFACE && props.contains_key("WirelessEnabled")
 }
 
-async fn refresh_wifi_active_access_point(
+pub async fn refresh_wifi_active_access_point(
     nm: &nmrs::NetworkManager,
     state: &Arc<StdMutex<NmState>>,
     device_path: &str,
 ) -> Result<bool> {
-    let interface_name = {
-        let st = lock_or_recover(state);
-        st.wifi_adapters
-            .iter()
-            .find(|a| a.path == device_path)
-            .map(|a| a.interface_name.clone())
-    };
+    for _attempt in 0..3 {
+        let (interface_name, revision) = {
+            let st = lock_or_recover(state);
+            let Some(adapter) = st.wifi_adapters.iter().find(|a| a.path == device_path) else {
+                return Ok(false);
+            };
+            (adapter.interface_name.clone(), st.wifi_revision)
+        };
 
-    let Some(interface_name) = interface_name else {
-        return Ok(false);
-    };
+        let active_ap = crate::nmrs_adapter::get_active_access_point(nm, &interface_name).await?;
 
-    let active_ap = crate::nmrs_adapter::get_active_access_point(nm, &interface_name).await?;
+        let mut st = lock_or_recover(state);
+        // A signal, action, or scan changed WiFi state while the D-Bus read was
+        // in flight. Retry against the newer revision rather than reverting it.
+        if st.wifi_revision != revision {
+            continue;
+        }
+        let Some(adapter) = st.wifi_adapters.iter_mut().find(|a| a.path == device_path) else {
+            return Ok(false);
+        };
 
-    let mut st = lock_or_recover(state);
-    let Some(adapter) = st.wifi_adapters.iter_mut().find(|a| a.path == device_path) else {
-        return Ok(false);
-    };
+        let changed = match active_ap {
+            Some(ap_info) => {
+                let mut changed = adapter.active_ssid.as_deref() != Some(&ap_info.ssid);
+                adapter.active_ssid = Some(ap_info.ssid.clone());
 
-    match active_ap {
-        Some(ap_info) => {
-            let mut changed = adapter.active_ssid.as_deref() != Some(&ap_info.ssid);
-            adapter.active_ssid = Some(ap_info.ssid.clone());
-
-            if let Some(existing) = adapter
-                .access_points
-                .iter_mut()
-                .find(|ap| ap.ssid == ap_info.ssid)
-            {
-                if existing.strength != ap_info.strength
-                    || existing.secure != ap_info.secure
-                    || existing.known != ap_info.known
-                    || existing.ap_path != ap_info.ap_path
-                    || existing.security_type != ap_info.security_type
+                if let Some(existing) = adapter
+                    .access_points
+                    .iter_mut()
+                    .find(|ap| ap.ssid == ap_info.ssid)
                 {
-                    *existing = ap_info;
+                    if existing.strength != ap_info.strength
+                        || existing.secure != ap_info.secure
+                        || existing.known != ap_info.known
+                        || existing.ap_path != ap_info.ap_path
+                        || existing.security_type != ap_info.security_type
+                    {
+                        *existing = ap_info;
+                        changed = true;
+                    }
+                } else {
+                    adapter.access_points.push(ap_info);
                     changed = true;
                 }
-            } else {
-                adapter.access_points.push(ap_info);
-                changed = true;
+                changed
             }
+            None => adapter.active_ssid.take().is_some(),
+        };
 
-            Ok(changed)
+        if changed {
+            st.wifi_revision = st.wifi_revision.wrapping_add(1);
         }
-        None => {
-            let changed = adapter.active_ssid.take().is_some();
-            Ok(changed)
-        }
+        return Ok(changed);
     }
+
+    Ok(false)
 }
 
 async fn refresh_all_wifi_active_access_points(
@@ -122,12 +128,132 @@ async fn refresh_all_wifi_active_access_points(
     Ok(changed)
 }
 
+async fn refresh_device_states(
+    conn: &Connection,
+    nm: &nmrs::NetworkManager,
+    state: &Arc<StdMutex<NmState>>,
+) -> Result<bool> {
+    let devices = nmrs_adapter::discover_devices(nm).await?;
+    let wireless_enabled =
+        get_property::<bool>(conn, NM_PATH, NM_INTERFACE, "WirelessEnabled").await?;
+    let mut changed = false;
+    let mut st = lock_or_recover(state);
+
+    for device in devices {
+        if let Some(adapter) = st
+            .ethernet_adapters
+            .iter_mut()
+            .find(|adapter| adapter.path == device.path)
+            && adapter.device_state != device.device_state
+        {
+            adapter.device_state = device.device_state;
+            changed = true;
+        }
+        if let Some(device_state) = st
+            .bluetooth_devices
+            .iter_mut()
+            .find(|tracked| tracked.path == device.path)
+            && device_state.device_state != device.device_state
+        {
+            device_state.device_state = device.device_state;
+            changed = true;
+        }
+    }
+    let mut wifi_changed = false;
+    for adapter in &mut st.wifi_adapters {
+        if adapter.enabled != wireless_enabled {
+            adapter.enabled = wireless_enabled;
+            if !wireless_enabled {
+                adapter.active_ssid = None;
+                adapter.access_points.clear();
+            }
+            wifi_changed = true;
+            changed = true;
+        }
+    }
+    if wifi_changed {
+        st.wifi_revision = st.wifi_revision.wrapping_add(1);
+    }
+
+    Ok(changed)
+}
+
+async fn resync_network_state(
+    conn: &Connection,
+    nm: &nmrs::NetworkManager,
+    state: &Arc<StdMutex<NmState>>,
+    vpn_refresh_lock: &tokio::sync::Mutex<()>,
+) -> bool {
+    let mut refreshed = false;
+
+    match refresh_vpn_states(conn, nm, state, vpn_refresh_lock).await {
+        Ok(()) => refreshed = true,
+        Err(error) => error!("[nm] Failed to refresh VPN states: {error}"),
+    }
+    match refresh_device_states(conn, nm, state).await {
+        Ok(changed) => refreshed |= changed,
+        Err(error) => error!("[nm] Failed to refresh device states: {error}"),
+    }
+    match refresh_all_wifi_active_access_points(nm, state).await {
+        Ok(changed) => refreshed |= changed,
+        Err(error) => error!("[nm] Failed to refresh WiFi state: {error}"),
+    }
+    match refresh_ethernet_state(conn, nm, state).await {
+        Ok(()) => refreshed = true,
+        Err(error) => error!("[nm] Failed to refresh ethernet state: {error}"),
+    }
+    match refresh_tethering_states(conn, nm, state).await {
+        Ok(()) => refreshed = true,
+        Err(error) => error!("[nm] Failed to refresh tethering state: {error}"),
+    }
+
+    refreshed
+}
+
 /// Monitor NM D-Bus signals and update shared state accordingly.
 pub async fn monitor_nm_signals(
     conn: Connection,
     nm: nmrs::NetworkManager,
     state: Arc<StdMutex<NmState>>,
     notifier: EntityNotifier,
+    vpn_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+) -> Result<()> {
+    let mut monitor_conn = conn;
+    let mut monitor_nm = nm;
+    loop {
+        match monitor_nm_signals_once(
+            monitor_conn.clone(),
+            monitor_nm.clone(),
+            state.clone(),
+            notifier.clone(),
+            vpn_refresh_lock.clone(),
+        )
+        .await
+        {
+            Ok(()) => warn!("[nm] D-Bus signal stream ended; reconnecting"),
+            Err(error) => warn!("[nm] D-Bus signal monitor failed: {error}; reconnecting"),
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        match Connection::system().await {
+            Ok(new_conn) => match nmrs::NetworkManager::new().await {
+                Ok(new_nm) => {
+                    monitor_conn = new_conn;
+                    monitor_nm = new_nm;
+                }
+                Err(error) => warn!("[nm] Failed to recreate NetworkManager client: {error}"),
+            },
+            Err(error) => warn!("[nm] Failed to recreate system-bus connection: {error}"),
+        }
+    }
+}
+
+async fn monitor_nm_signals_once(
+    conn: Connection,
+    nm: nmrs::NetworkManager,
+    state: Arc<StdMutex<NmState>>,
+    notifier: EntityNotifier,
+    vpn_refresh_lock: Arc<tokio::sync::Mutex<()>>,
 ) -> Result<()> {
     // Subscribe to PropertiesChanged signals from NM
     let rule = zbus::MatchRule::builder()
@@ -174,14 +300,39 @@ pub async fn monitor_nm_signals(
         .build();
     dbus_proxy.add_match_rule(state_changed_rule).await?;
 
+    // NetworkManager may not emit a complete set of state signals across
+    // suspend/resume. Subscribe to logind so we can take a fresh snapshot when
+    // the system wakes instead of waiting for the next user action.
+    let resume_rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender("org.freedesktop.login1")?
+        .interface("org.freedesktop.login1.Manager")?
+        .member("PrepareForSleep")?
+        .build();
+    dbus_proxy
+        .add_match_rule(resume_rule)
+        .await
+        .context("Failed to add PrepareForSleep match rule")?;
+
     info!("[nm] Listening for NetworkManager signals");
+    if resync_network_state(&conn, &nm, &state, &vpn_refresh_lock).await {
+        notifier.notify();
+    }
 
     let mut stream = zbus::MessageStream::from(&conn);
+    let mut consecutive_stream_errors = 0u8;
     while let Some(msg) = stream.next().await {
         let msg = match msg {
-            Ok(m) => m,
+            Ok(m) => {
+                consecutive_stream_errors = 0;
+                m
+            }
             Err(e) => {
+                consecutive_stream_errors = consecutive_stream_errors.saturating_add(1);
                 warn!("[nm] D-Bus stream error: {e}");
+                if consecutive_stream_errors >= 3 {
+                    anyhow::bail!("D-Bus signal stream failed repeatedly");
+                }
                 continue;
             }
         };
@@ -197,6 +348,22 @@ pub async fn monitor_nm_signals(
             .unwrap_or_default();
 
         match (iface, member) {
+            ("org.freedesktop.login1.Manager", "PrepareForSleep") => {
+                let Ok(sleeping) = msg.body().deserialize::<bool>() else {
+                    continue;
+                };
+                if sleeping {
+                    continue;
+                }
+
+                // NM and VPN helpers can still be restoring immediately after
+                // resume. Debounce once, then read authoritative state from
+                // each subsystem. This is event-driven, not a polling loop.
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                if resync_network_state(&conn, &nm, &state, &vpn_refresh_lock).await {
+                    notifier.notify();
+                }
+            }
             ("org.freedesktop.DBus.Properties", "PropertiesChanged") => {
                 let Ok((prop_iface, props, _invalidated)) =
                     msg.body()
@@ -228,7 +395,9 @@ pub async fn monitor_nm_signals(
 
                     if is_vpn_type(&conn_type) {
                         debug!("[nm] VPN state changed: path={obj_path}, state={state_code}");
-                        if let Err(e) = refresh_vpn_states(&conn, &nm, &state).await {
+                        if let Err(e) =
+                            refresh_vpn_states(&conn, &nm, &state, &vpn_refresh_lock).await
+                        {
                             error!("[nm] Failed to refresh VPN states: {e}");
                         }
                         changed = true;
@@ -247,33 +416,35 @@ pub async fn monitor_nm_signals(
                     && props.contains_key("VpnState")
                 {
                     debug!("[nm] VPN.Connection state changed: {obj_path}");
-                    if let Err(e) = refresh_vpn_states(&conn, &nm, &state).await {
+                    if let Err(e) = refresh_vpn_states(&conn, &nm, &state, &vpn_refresh_lock).await
+                    {
                         error!("[nm] Failed to refresh VPN states: {e}");
                     }
                     changed = true;
                 }
 
-                if is_nm_wireless_enabled_change(&obj_path, &prop_iface, &props) {
-                    if let Some(enabled_val) = props.get("WirelessEnabled")
-                        && let Ok(enabled) = bool::try_from(enabled_val.clone())
-                    {
-                        let mut st = lock_or_recover(&state);
-                        for adapter in &mut st.wifi_adapters {
-                            adapter.enabled = enabled;
-                            if !enabled {
-                                adapter.active_ssid = None;
-                                adapter.access_points.clear();
-                            }
+                if is_nm_wireless_enabled_change(&obj_path, &prop_iface, &props)
+                    && let Some(enabled_val) = props.get("WirelessEnabled")
+                    && let Ok(enabled) = bool::try_from(enabled_val.clone())
+                {
+                    let mut st = lock_or_recover(&state);
+                    for adapter in &mut st.wifi_adapters {
+                        adapter.enabled = enabled;
+                        if !enabled {
+                            adapter.active_ssid = None;
+                            adapter.access_points.clear();
                         }
-                        changed = true;
                     }
+                    st.wifi_revision = st.wifi_revision.wrapping_add(1);
+                    changed = true;
                 }
 
                 // Self-heal on global NM connection graph changes. This covers cases
                 // where the per-device signal ordering leaves Waft behind real state.
                 if is_nm_active_connections_change(&obj_path, &prop_iface, &props) {
                     debug!("[nm] ActiveConnections changed; refreshing VPN and WiFi state");
-                    if let Err(e) = refresh_vpn_states(&conn, &nm, &state).await {
+                    if let Err(e) = refresh_vpn_states(&conn, &nm, &state, &vpn_refresh_lock).await
+                    {
                         error!("[nm] Failed to refresh VPN states: {e}");
                     }
                     if let Err(e) = refresh_all_wifi_active_access_points(&nm, &state).await {
@@ -307,12 +478,25 @@ pub async fn monitor_nm_signals(
                         get_property(&conn, &device_path, NM_DEVICE_INTERFACE, "DeviceType")
                             .await
                             .unwrap_or(0);
+                    let mut refresh_wifi_path = None;
 
                     match device_type {
                         DEVICE_TYPE_ETHERNET | DEVICE_TYPE_WIFI => {
                             if let Ok(Some(info)) =
                                 nmrs_adapter::get_device_info_by_path(&nm, &device_path).await
                             {
+                                let wifi_enabled = if info.device_type == DEVICE_TYPE_WIFI {
+                                    get_property::<bool>(
+                                        &conn,
+                                        NM_PATH,
+                                        NM_INTERFACE,
+                                        "WirelessEnabled",
+                                    )
+                                    .await
+                                    .unwrap_or(true)
+                                } else {
+                                    true
+                                };
                                 let mut st = match state.lock() {
                                     Ok(g) => g,
                                     Err(e) => {
@@ -340,10 +524,11 @@ pub async fn monitor_nm_signals(
                                             .iter()
                                             .any(|a| a.path == info.path) =>
                                     {
+                                        refresh_wifi_path = Some(info.path.clone());
                                         st.wifi_adapters.push(WiFiAdapterState {
                                             path: info.path,
                                             interface_name: info.interface_name,
-                                            enabled: true,
+                                            enabled: wifi_enabled,
                                             busy: false,
                                             active_ssid: None,
                                             access_points: Vec::new(),
@@ -382,6 +567,12 @@ pub async fn monitor_nm_signals(
                         _ => {}
                     }
 
+                    if let Some(wifi_path) = refresh_wifi_path
+                        && let Err(error) =
+                            refresh_wifi_active_access_point(&nm, &state, &wifi_path).await
+                    {
+                        error!("[nm] Failed to refresh added WiFi adapter: {error}");
+                    }
                     notifier.notify();
                 }
             }
@@ -457,24 +648,17 @@ pub async fn monitor_nm_signals(
                             }
                         }
 
-                        // Update WiFi adapter state
-                        if let Some(adapter) =
-                            st.wifi_adapters.iter_mut().find(|a| a.path == obj_path)
+                        // Update WiFi state from the authoritative ActiveAccessPoint
+                        // property after the device transition settles. Do not clear
+                        // active_ssid from the signal itself: rapid transitions can
+                        // deliver an older StateChanged after a newer connection.
+                        if let Some(adapter) = st.wifi_adapters.iter().find(|a| a.path == obj_path)
                         {
                             debug!(
                                 "[nm] WiFi {} device state change: {}",
                                 adapter.interface_name, new_state
                             );
-                            // If device transitions away from activated, clear active SSID
-                            if new_state != 100 && adapter.active_ssid.is_some() {
-                                adapter.active_ssid = None;
-                                changed = true;
-                            }
-                            // If device becomes activated, schedule SSID refresh
-                            if new_state == 100 && adapter.active_ssid.is_none() {
-                                refresh_ssid_for = Some(adapter.path.clone());
-                                changed = true;
-                            }
+                            refresh_ssid_for = Some(adapter.path.clone());
                         }
 
                         // Update bluetooth device state (affects tethering visibility)

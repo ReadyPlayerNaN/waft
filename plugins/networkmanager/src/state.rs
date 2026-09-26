@@ -19,6 +19,16 @@ impl VpnState {
             _ => Self::Disconnected,
         }
     }
+
+    /// Convert NetworkManager's VPN.Connection.VpnState value.
+    pub fn from_vpn_state(code: u32) -> Self {
+        match code {
+            1..=4 => Self::Connecting,
+            5 => Self::Connected,
+            6..=7 => Self::Disconnected,
+            _ => Self::Disconnected,
+        }
+    }
 }
 
 /// Information about a visible WiFi access point.
@@ -172,6 +182,13 @@ pub struct NmState {
     pub public_ip: Option<String>,
     /// SSID currently being connected to (for connecting state indication).
     pub connecting_ssid: Option<String>,
+    /// Monotonically increasing revision for WiFi state writes.
+    ///
+    /// Async D-Bus reads compare this value before committing so a result
+    /// fetched before a newer signal or scan cannot overwrite current state.
+    pub wifi_revision: u64,
+    /// Monotonically increasing revision for VPN state writes.
+    pub vpn_revision: u64,
 }
 
 impl NmState {

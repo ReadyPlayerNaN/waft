@@ -35,11 +35,6 @@ impl ProvidersComponent {
             .build();
         let cards: CardMap = Rc::new(RefCell::new(HashMap::new()));
 
-        let store_ref = store.clone();
-        let container_ref = container.clone();
-        let cards_ref = cards.clone();
-        let reconcile = move || reconcile(&store_ref, &container_ref, &cards_ref);
-
         let callback_store = store.clone();
         let callback_container = container.clone();
         let callback_cards = cards.clone();
@@ -49,7 +44,12 @@ impl ProvidersComponent {
 
         // Subscriptions are registered before the initial reconciliation so
         // entities received during startup cannot be missed.
-        glib::idle_add_local_once(reconcile);
+        let initial_store = store.clone();
+        let initial_container = container.clone();
+        let initial_cards = cards.clone();
+        glib::idle_add_local_once(move || {
+            reconcile(&initial_store, &initial_container, &initial_cards);
+        });
 
         Self {
             container,

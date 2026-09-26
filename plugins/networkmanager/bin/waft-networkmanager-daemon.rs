@@ -6,6 +6,7 @@
 //!
 //! Monitors NetworkManager D-Bus signals for device/connection state changes.
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
@@ -38,7 +39,9 @@ use waft_plugin_networkmanager::ethernet::{
 };
 use waft_plugin_networkmanager::ip_config::{fetch_public_ip, get_device_ip4_config};
 use waft_plugin_networkmanager::nmrs_adapter;
-use waft_plugin_networkmanager::signal_monitor::monitor_nm_signals;
+use waft_plugin_networkmanager::signal_monitor::{
+    monitor_nm_signals, refresh_wifi_active_access_point,
+};
 use waft_plugin_networkmanager::state::{
     CachedIpConfig, EthernetAdapterState, NmState, TetheringConnectionState, VpnState,
     WiFiAdapterState,
@@ -65,6 +68,13 @@ struct NetworkManagerPlugin {
     nm: nmrs::NetworkManager,
     state: Arc<StdMutex<NmState>>,
     notifier: EntityNotifier,
+    /// Serializes VPN refreshes from D-Bus signals and action reconciliation.
+    vpn_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes VPN actions so a later disconnect cannot run before an
+    /// earlier activation has returned.
+    vpn_action_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Invalidates older per-UUID reconciliation tasks when a new action starts.
+    vpn_action_generations: Arc<StdMutex<HashMap<String, u64>>>,
     /// Channel to request WiFi scan from background task.
     scan_tx: tokio::sync::mpsc::Sender<()>,
 }
@@ -305,6 +315,9 @@ impl NetworkManagerPlugin {
             nm,
             state: Arc::new(StdMutex::new(state)),
             notifier,
+            vpn_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            vpn_action_lock: Arc::new(tokio::sync::Mutex::new(())),
+            vpn_action_generations: Arc::new(StdMutex::new(HashMap::new())),
             scan_tx,
         };
 
@@ -319,28 +332,88 @@ impl NetworkManagerPlugin {
         lock_or_recover(&self.state)
     }
 
-    fn spawn_vpn_reconcile(&self) {
-        let conn = self.conn.clone();
+    fn spawn_wifi_reconcile(&self, device_path: String, expected_ssid: Option<String>) {
         let nm = self.nm.clone();
         let state = self.state.clone();
         let notifier = self.notifier.clone();
         tokio::spawn(async move {
+            // WiFi transitions can briefly report no active AP. Keep reading
+            // authoritative state for the bounded transition window rather
+            // than accepting that transient result as final.
             for _ in 0..30 {
-                match refresh_vpn_states(&conn, &nm, &state).await {
-                    Ok(()) => notifier.notify(),
+                match refresh_wifi_active_access_point(&nm, &state, &device_path).await {
+                    Ok(changed) => {
+                        if changed {
+                            notifier.notify();
+                        }
+                    }
+                    Err(error) => {
+                        warn!("[nm] Failed to refresh WiFi state after action: {error}");
+                    }
+                }
+
+                let settled = {
+                    let state = lock_or_recover(&state);
+                    state
+                        .wifi_adapters
+                        .iter()
+                        .find(|adapter| adapter.path == device_path)
+                        .is_some_and(|adapter| adapter.active_ssid == expected_ssid)
+                };
+                if settled {
+                    break;
+                }
+
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+        });
+    }
+
+    fn begin_vpn_action(&self, uuid: &str) -> u64 {
+        let mut generations = lock_or_recover(&self.vpn_action_generations);
+        let generation = generations.entry(uuid.to_string()).or_default();
+        *generation = generation.wrapping_add(1);
+        *generation
+    }
+
+    fn spawn_vpn_reconcile(&self, uuid: String, expected: VpnState, generation: u64) {
+        let conn = self.conn.clone();
+        let nm = self.nm.clone();
+        let state = self.state.clone();
+        let notifier = self.notifier.clone();
+        let refresh_lock = self.vpn_refresh_lock.clone();
+        let action_generations = self.vpn_action_generations.clone();
+        tokio::spawn(async move {
+            let action_is_current =
+                || lock_or_recover(&action_generations).get(&uuid).copied() == Some(generation);
+            // NM may publish ActiveConnections before the per-connection state
+            // has settled. Keep reconciling for the whole bounded transition
+            // window instead of stopping at the first transient Disconnected.
+            for _ in 0..30 {
+                if !action_is_current() {
+                    return;
+                }
+                match refresh_vpn_states(&conn, &nm, &state, &refresh_lock).await {
+                    Ok(()) => {
+                        notifier.notify();
+                    }
                     Err(e) => {
                         warn!("[nm] Failed to refresh VPN states after action: {e}");
-                        break;
                     }
                 };
+                if !action_is_current() {
+                    return;
+                }
 
-                let any_transitioning = {
+                let settled = {
                     let state = lock_or_recover(&state);
-                    state.vpn_connections.iter().any(|vpn| {
-                        matches!(vpn.state, VpnState::Connecting | VpnState::Disconnecting)
-                    })
+                    state
+                        .vpn_connections
+                        .iter()
+                        .find(|vpn| vpn.uuid == uuid)
+                        .is_some_and(|vpn| vpn.state == expected)
                 };
-                if !any_transitioning {
+                if settled {
                     break;
                 }
 
@@ -930,6 +1003,7 @@ impl NetworkManagerPlugin {
                             }
                         }
                     }
+                    state.wifi_revision = state.wifi_revision.wrapping_add(1);
                 }
             }
             "update-settings" => {
@@ -1160,6 +1234,7 @@ impl NetworkManagerPlugin {
                 adapter.active_ssid = None;
                 adapter.access_points.clear();
             }
+            state.wifi_revision = state.wifi_revision.wrapping_add(1);
         }
 
         Ok(())
@@ -1239,6 +1314,11 @@ impl NetworkManagerPlugin {
                     adapter.active_ssid = Some(ssid.to_string());
                 }
             }
+            state.wifi_revision = state.wifi_revision.wrapping_add(1);
+            self.notifier.notify();
+            if let Some(device_path) = device_path {
+                self.spawn_wifi_reconcile(device_path, Some(ssid.to_string()));
+            }
             return Ok(());
         }
 
@@ -1253,6 +1333,7 @@ impl NetworkManagerPlugin {
             let mut state = self.lock_state();
             state.connecting_ssid = Some(ssid.to_string());
         }
+        self.notifier.notify();
 
         match self.nm.wifi(&interface_name).connect(ssid, creds).await {
             Ok(_) => {
@@ -1264,15 +1345,21 @@ impl NetworkManagerPlugin {
                         adapter.active_ssid = Some(ssid.to_string());
                     }
                 }
+                state.wifi_revision = state.wifi_revision.wrapping_add(1);
+                self.notifier.notify();
             }
             Err(e) => {
                 error!("[nm] Failed to connect WiFi via nmrs: {e}");
                 let mut state = self.lock_state();
                 state.connecting_ssid = None;
+                self.notifier.notify();
                 return Err(anyhow::anyhow!(e));
             }
         }
 
+        if let Some(device_path) = device_path {
+            self.spawn_wifi_reconcile(device_path, Some(ssid.to_string()));
+        }
         Ok(())
     }
 
@@ -1304,7 +1391,10 @@ impl NetworkManagerPlugin {
                     adapter.active_ssid = None;
                 }
             }
+            state.wifi_revision = state.wifi_revision.wrapping_add(1);
         }
+        self.notifier.notify();
+        self.spawn_wifi_reconcile(device_path.to_string(), None);
 
         Ok(())
     }
@@ -1359,6 +1449,8 @@ impl NetworkManagerPlugin {
         name: &str,
         conn_type: &str,
     ) -> anyhow::Result<()> {
+        let _action_guard = self.vpn_action_lock.lock().await;
+        let generation = self.begin_vpn_action(uuid);
         info!("[nm] Connecting {conn_type} VPN: {name} ({uuid})");
 
         {
@@ -1366,7 +1458,9 @@ impl NetworkManagerPlugin {
             if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
                 vpn.state = VpnState::Connecting;
             }
+            state.vpn_revision = state.vpn_revision.wrapping_add(1);
         }
+        self.notifier.notify();
 
         if let Err(e) = activate_vpn_by_uuid(&self.conn, uuid).await {
             error!("[nm] Failed to connect {conn_type} VPN {name} ({uuid}): {e}");
@@ -1374,15 +1468,19 @@ impl NetworkManagerPlugin {
             if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
                 vpn.state = VpnState::Disconnected;
             }
+            state.vpn_revision = state.vpn_revision.wrapping_add(1);
+            self.notifier.notify();
             return Err(e);
         }
 
-        self.spawn_vpn_reconcile();
+        self.spawn_vpn_reconcile(uuid.to_string(), VpnState::Connected, generation);
 
         Ok(())
     }
 
     async fn handle_disconnect_vpn(&self, uuid: &str, name: &str) -> anyhow::Result<()> {
+        let _action_guard = self.vpn_action_lock.lock().await;
+        let generation = self.begin_vpn_action(uuid);
         info!("[nm] Disconnecting VPN: {name} ({uuid})");
 
         {
@@ -1390,7 +1488,9 @@ impl NetworkManagerPlugin {
             if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
                 vpn.state = VpnState::Disconnecting;
             }
+            state.vpn_revision = state.vpn_revision.wrapping_add(1);
         }
+        self.notifier.notify();
 
         if let Err(e) = deactivate_vpn_by_uuid(&self.conn, uuid).await {
             error!("[nm] Failed to disconnect VPN {name} ({uuid}): {e}");
@@ -1398,10 +1498,12 @@ impl NetworkManagerPlugin {
             if let Some(vpn) = state.vpn_connections.iter_mut().find(|v| v.uuid == uuid) {
                 vpn.state = VpnState::Connected;
             }
+            state.vpn_revision = state.vpn_revision.wrapping_add(1);
+            self.notifier.notify();
             return Err(e);
         }
 
-        self.spawn_vpn_reconcile();
+        self.spawn_vpn_reconcile(uuid.to_string(), VpnState::Disconnected, generation);
 
         Ok(())
     }
@@ -1606,8 +1708,16 @@ fn main() -> Result<()> {
         // Monitor NM D-Bus signals
         let monitor_state = shared_state.clone();
         let monitor_notifier = notifier.clone();
+        let monitor_vpn_refresh_lock = plugin.vpn_refresh_lock.clone();
         spawn_monitored("nm/signal-monitor", async move {
-            monitor_nm_signals(monitor_conn, monitor_nm, monitor_state, monitor_notifier).await
+            monitor_nm_signals(
+                monitor_conn,
+                monitor_nm,
+                monitor_state,
+                monitor_notifier,
+                monitor_vpn_refresh_lock,
+            )
+            .await
         });
 
         // Monitor BlueZ D-Bus signals (paired device connection state for tethering).
