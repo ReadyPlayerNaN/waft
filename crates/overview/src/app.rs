@@ -98,7 +98,7 @@ pub async fn setup() -> Result<adw::Application> {
     let socket = match ipc_socket_path() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("{e}");
+            log::error!("{e}");
             std::process::exit(2);
         }
     };
@@ -115,7 +115,7 @@ pub async fn setup() -> Result<adw::Application> {
                 std::process::exit(0);
             }
             Err(e) => {
-                eprintln!("{e}");
+                log::error!("{e}");
                 std::process::exit(2);
             }
         }
@@ -124,11 +124,11 @@ pub async fn setup() -> Result<adw::Application> {
     let listener = match ipc_net::try_become_server(&socket).await {
         Ok(l) => l,
         Err(ipc_net::IpcNetError::AlreadyRunning) => {
-            eprintln!("already running");
+            log::warn!("already running");
             std::process::exit(1);
         }
         Err(e) => {
-            eprintln!("{e}");
+            log::error!("{e}");
             std::process::exit(2);
         }
     };
@@ -143,13 +143,13 @@ pub async fn setup() -> Result<adw::Application> {
             let rt = match tokio::runtime::Runtime::new() {
                 Ok(rt) => rt,
                 Err(e) => {
-                    eprintln!("failed to create tokio runtime for ipc server: {e}");
+                    log::error!("failed to create tokio runtime for ipc server: {e}");
                     return;
                 }
             };
 
             let on_command = move |cmd: IpcCommand| {
-                eprintln!("[ipc] received command: {cmd:?}");
+                debug!("[ipc] received command: {cmd:?}");
                 // Convert IPC command to window input
                 let input = match cmd {
                     IpcCommand::Show => MainWindowInput::ShowOverlay,
@@ -159,16 +159,16 @@ pub async fn setup() -> Result<adw::Application> {
                     IpcCommand::Ping => return,
                 };
 
-                eprintln!("[ipc] sending to channel...");
+                debug!("[ipc] sending to channel...");
                 match ipc_tx.try_send(input) {
-                    Ok(()) => eprintln!("[ipc] successfully sent to UI thread"),
-                    Err(e) => eprintln!("[ipc] failed to forward command to UI: {e}"),
+                    Ok(()) => debug!("[ipc] successfully sent to UI thread"),
+                    Err(e) => log::warn!("[ipc] failed to forward command to UI: {e}"),
                 }
             };
 
             match rt.block_on(async { ipc_net::run_server(listener, on_command).await }) {
-                Ok(()) => eprintln!("[ipc] server exited cleanly"),
-                Err(e) => eprintln!("[ipc] server error: {e}"),
+                Ok(()) => debug!("[ipc] server exited cleanly"),
+                Err(e) => log::error!("[ipc] server error: {e}"),
             }
         });
     }

@@ -20,8 +20,8 @@ struct CollectedEntity {
 pub fn run(json: bool, entity_type: Option<&str>, start: bool, timeout_ms: u64) {
     // Reject --start without entity_type
     if start && entity_type.is_none() {
-        eprintln!("--start requires an entity type argument.");
-        eprintln!("Usage: waft query <entity-type> --start");
+        log::error!("--start requires an entity type argument.");
+        log::error!("Usage: waft query <entity-type> --start");
         std::process::exit(1);
     }
 
@@ -29,7 +29,7 @@ pub fn run(json: bool, entity_type: Option<&str>, start: bool, timeout_ms: u64) 
     if let Some(et) = entity_type {
         let all = registry::all_entity_types();
         if !all.iter().any(|info| info.entity_type == et) {
-            eprintln!(
+            log::error!(
                 "Unknown entity type: '{et}'. Run `waft protocol` to see all available types."
             );
             std::process::exit(1);
@@ -39,7 +39,7 @@ pub fn run(json: bool, entity_type: Option<&str>, start: bool, timeout_ms: u64) 
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("Failed to create tokio runtime: {e}");
+            log::error!("Failed to create tokio runtime: {e}");
             std::process::exit(1);
         }
     };
@@ -49,7 +49,7 @@ pub fn run(json: bool, entity_type: Option<&str>, start: bool, timeout_ms: u64) 
     let entities = match result {
         Ok(entities) => entities,
         Err(e) => {
-            eprintln!("{e}");
+            log::error!("{e}");
             std::process::exit(1);
         }
     };
@@ -59,8 +59,8 @@ pub fn run(json: bool, entity_type: Option<&str>, start: bool, timeout_ms: u64) 
             println!("[]");
         } else {
             match entity_type {
-                Some(et) => eprintln!("No entities of type '{et}' found."),
-                None => eprintln!("No entities found."),
+                Some(et) => log::info!("No entities of type '{et}' found."),
+                None => log::info!("No entities found."),
             }
         }
         return;
@@ -233,7 +233,7 @@ fn print_json(entities: &[CollectedEntity]) {
     match serde_json::to_string_pretty(entities) {
         Ok(json) => println!("{json}"),
         Err(e) => {
-            eprintln!("Failed to serialize entities: {e}");
+            log::error!("Failed to serialize entities: {e}");
             std::process::exit(1);
         }
     }
