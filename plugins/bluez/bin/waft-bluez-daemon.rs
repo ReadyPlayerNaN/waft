@@ -21,6 +21,7 @@ use std::sync::LazyLock;
 use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex as StdMutex};
+use tokio::sync::RwLock;
 use waft_plugin::*;
 use waft_plugin_bluetooth::dbus;
 use waft_plugin_bluetooth::signal_monitor::monitor_bluez_signals;
@@ -58,7 +59,7 @@ fn device_id(path: &str) -> String {
 }
 
 struct BluezPlugin {
-    conn: Connection,
+    action_conn: Arc<RwLock<Connection>>,
     state: Arc<StdMutex<State>>,
     notifier: EntityNotifier,
 }
@@ -92,7 +93,7 @@ impl BluezPlugin {
         };
 
         Ok(Self {
-            conn,
+            action_conn: Arc::new(RwLock::new(conn)),
             state: Arc::new(StdMutex::new(state)),
             notifier,
         })
@@ -100,6 +101,10 @@ impl BluezPlugin {
 
     fn shared_state(&self) -> Arc<StdMutex<State>> {
         self.state.clone()
+    }
+
+    async fn action_connection(&self) -> Connection {
+        self.action_conn.read().await.clone()
     }
 
     fn lock_state(&self) -> std::sync::MutexGuard<'_, State> {
@@ -189,6 +194,7 @@ impl Plugin for BluezPlugin {
         action: String,
         params: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
+        let action_conn = self.action_connection().await;
         let entity_type = urn.entity_type();
 
         if entity_type == BluetoothAdapter::ENTITY_TYPE {
@@ -214,7 +220,8 @@ impl Plugin for BluezPlugin {
                     };
 
                     let new_powered = !current_powered;
-                    if let Err(e) = dbus::set_powered(&self.conn, &adapter_path, new_powered).await
+                    if let Err(e) =
+                        dbus::set_powered(&action_conn, &adapter_path, new_powered).await
                     {
                         error!("[bluetooth] Failed to set powered: {e}");
                         return Err(e);
@@ -251,7 +258,7 @@ impl Plugin for BluezPlugin {
 
                     let new_discoverable = !current_discoverable;
                     if let Err(e) =
-                        dbus::set_discoverable(&self.conn, &adapter_path, new_discoverable).await
+                        dbus::set_discoverable(&action_conn, &adapter_path, new_discoverable).await
                     {
                         error!("[bluetooth] Failed to set discoverable: {e}");
                         return Err(e);
@@ -280,7 +287,8 @@ impl Plugin for BluezPlugin {
                         return Ok(serde_json::Value::Null);
                     };
 
-                    if let Err(e) = dbus::set_adapter_alias(&self.conn, &adapter_path, &alias).await
+                    if let Err(e) =
+                        dbus::set_adapter_alias(&action_conn, &adapter_path, &alias).await
                     {
                         error!("[bluetooth] Failed to set alias: {e}");
                         return Err(e);
@@ -305,7 +313,7 @@ impl Plugin for BluezPlugin {
                         return Ok(serde_json::Value::Null);
                     };
 
-                    if let Err(e) = dbus::start_discovery(&self.conn, &adapter_path).await {
+                    if let Err(e) = dbus::start_discovery(&action_conn, &adapter_path).await {
                         error!("[bluetooth] Failed to start discovery: {e}");
                         return Err(e);
                     }
@@ -329,7 +337,7 @@ impl Plugin for BluezPlugin {
                         return Ok(serde_json::Value::Null);
                     };
 
-                    if let Err(e) = dbus::stop_discovery(&self.conn, &adapter_path).await {
+                    if let Err(e) = dbus::stop_discovery(&action_conn, &adapter_path).await {
                         error!("[bluetooth] Failed to stop discovery: {e}");
                         return Err(e);
                     }
@@ -398,9 +406,9 @@ impl Plugin for BluezPlugin {
                     // Perform the D-Bus operation
                     let result = match current_state {
                         ConnectionState::Connected => {
-                            dbus::disconnect_device(&self.conn, &device_path).await
+                            dbus::disconnect_device(&action_conn, &device_path).await
                         }
-                        _ => dbus::connect_device(&self.conn, &device_path).await,
+                        _ => dbus::connect_device(&action_conn, &device_path).await,
                     };
 
                     if let Err(e) = result {
@@ -439,7 +447,7 @@ impl Plugin for BluezPlugin {
                         return Ok(serde_json::Value::Null);
                     };
 
-                    if let Err(e) = dbus::pair_device(&self.conn, &device_path).await {
+                    if let Err(e) = dbus::pair_device(&action_conn, &device_path).await {
                         error!("[bluetooth] Failed to pair device: {e}");
                         return Err(e);
                     }
@@ -455,7 +463,7 @@ impl Plugin for BluezPlugin {
                     };
 
                     if let Err(e) =
-                        dbus::remove_device(&self.conn, &adapter_path, &device_path).await
+                        dbus::remove_device(&action_conn, &adapter_path, &device_path).await
                     {
                         error!("[bluetooth] Failed to remove device: {e}");
                         return Err(e);
@@ -481,6 +489,29 @@ impl Plugin for BluezPlugin {
 
         Ok(serde_json::Value::Null)
     }
+
+    async fn handle_action_cancelled(&self, urn: &Urn, action: &str, _params: &serde_json::Value) {
+        if urn.entity_type() != BluetoothDevice::ENTITY_TYPE || action != "toggle-connect" {
+            return;
+        }
+        let did = urn.id();
+        let mut state = self.lock_state();
+        for adapter in &mut state.adapters {
+            if let Some(device) = adapter
+                .devices
+                .iter_mut()
+                .find(|device| device_id(&device.path) == did)
+            {
+                device.connection_state = match device.connection_state {
+                    ConnectionState::Connecting => ConnectionState::Disconnected,
+                    ConnectionState::Disconnecting => ConnectionState::Connected,
+                    current => current,
+                };
+            }
+        }
+        drop(state);
+        self.notify();
+    }
 }
 
 fn main() -> Result<()> {
@@ -493,11 +524,64 @@ fn main() -> Result<()> {
         let plugin = BluezPlugin::new(notifier.clone()).await?;
 
         let shared_state = plugin.shared_state();
-        let monitor_conn = plugin.conn.clone();
+        let action_conn_slot = plugin.action_conn.clone();
 
-        // Monitor BlueZ D-Bus signals
+        // Monitor BlueZ D-Bus signals and create fresh system-bus
+        // connections after a stream failure or bus restart. Reconcile the
+        // complete object tree before resuming signals so state and actions
+        // do not remain tied to the dead bus connection.
         spawn_monitored("bluetooth/signal-monitor", async move {
-            monitor_bluez_signals(monitor_conn, shared_state, notifier).await
+            loop {
+                match Connection::system().await {
+                    Ok(monitor_conn) => {
+                        let refreshed_state = match dbus::load_state(&monitor_conn).await {
+                            Ok(state) => state,
+                            Err(error) => {
+                                log::warn!(
+                                    "[bluetooth] failed to refresh state after reconnect; retrying: {error}"
+                                );
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                continue;
+                            }
+                        };
+
+                        let action_conn = match Connection::system().await {
+                            Ok(conn) => conn,
+                            Err(error) => {
+                                log::warn!(
+                                    "[bluetooth] failed to refresh action connection; retrying: {error}"
+                                );
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                continue;
+                            }
+                        };
+
+                        // Install the replacement before publishing refreshed
+                        // state so UI actions cannot race onto the dead bus.
+                        *action_conn_slot.write().await = action_conn;
+                        *shared_state.lock_or_recover() = refreshed_state;
+                        notifier.notify();
+
+                        if let Err(error) = monitor_bluez_signals(
+                            monitor_conn,
+                            shared_state.clone(),
+                            notifier.clone(),
+                        )
+                        .await
+                        {
+                            log::warn!("[bluetooth] signal monitor failed; reconnecting: {error}");
+                        } else {
+                            log::warn!("[bluetooth] signal monitor ended; reconnecting");
+                        }
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "[bluetooth] failed to connect to system bus; retrying: {error}"
+                        );
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
         });
 
         Ok(plugin)

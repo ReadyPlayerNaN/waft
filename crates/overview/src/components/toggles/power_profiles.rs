@@ -25,7 +25,7 @@ impl PowerProfilesToggle {
         store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
         menu_store: &Rc<waft_core::menu_state::MenuStore>,
-        rebuild_callback: Rc<dyn Fn()>,
+        rebuild_callback: &Rc<dyn Fn()>,
     ) -> Self {
         let menu_id = menu_id_for_widget("power-profiles-toggle");
         let menu = FeatureToggleMenuWidget::new();

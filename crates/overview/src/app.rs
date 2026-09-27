@@ -16,7 +16,7 @@ use crate::features::toasts::{ToastManager, ToastWindow};
 use crate::menu_state::create_menu_store;
 use crate::ui::main_window::{MainWindowInput, MainWindowWidget};
 use waft_client::{
-    ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
+    ActionGate, ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
 };
 use waft_ipc::net as ipc_net;
 use waft_ipc::{IpcCommand, command_from_args, ipc_socket_path};
@@ -53,6 +53,7 @@ const ENTITY_TYPES: &[&str] = &[
 ];
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::ENTITY_TYPES;
     use waft_protocol::entity;
@@ -286,9 +287,9 @@ pub async fn setup() -> Result<adw::Application> {
             });
             glib::idle_add_local_once(move || sync_theme());
 
-            // Entity action callback routes actions from components back through WaftClient
+            // Entity action callback routes actions from components back through WaftClient.
             let waft_client_for_entity_actions = waft_client_slot.clone();
-            let entity_action_callback: EntityActionCallback =
+            let raw_entity_action_callback: EntityActionCallback =
                 Rc::new(move |urn, action_name, params| {
                     debug!("[entity] Entity action on {urn}: {action_name}");
                     let guard = match waft_client_for_entity_actions.lock() {
@@ -305,6 +306,14 @@ pub async fn setup() -> Result<adw::Application> {
                         None
                     }
                 });
+            let action_gate = ActionGate::new();
+            let entity_action_callback = action_gate.wrap(&raw_entity_action_callback);
+            {
+                let gate = action_gate.clone();
+                entity_store.on_action_success(move |action_id, _| gate.release(action_id));
+                let gate = action_gate.clone();
+                entity_store.on_action_error(move |action_id, _| gate.release(action_id));
+            }
 
             let toast_manager = Rc::new(ToastManager::new(
                 toast_window.container.clone(),
@@ -544,10 +553,12 @@ pub async fn setup() -> Result<adw::Application> {
                                 }
                                 ClientEvent::Connected => {
                                     log::info!("[app] daemon connected, enabling UI");
+                                    action_gate.clear();
                                     clip_for_events.set_sensitive(true);
                                 }
                                 ClientEvent::Disconnected => {
                                     log::info!("[app] daemon disconnected, disabling UI");
+                                    action_gate.clear();
                                     clip_for_events.set_sensitive(false);
                                 }
                             }

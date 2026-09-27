@@ -6,38 +6,65 @@ use uuid::Uuid;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A pending action awaiting a response from a plugin.
+#[derive(Clone)]
 pub struct PendingAction {
     pub action_id: Uuid,
     pub app_conn_id: Uuid,
     pub plugin_conn_id: Uuid,
     pub deadline: Instant,
+    action_key: Option<String>,
 }
 
 /// Tracks in-flight actions and their timeouts.
 pub struct ActionTracker {
     pending: HashMap<Uuid, PendingAction>,
+    pending_keys: HashMap<String, Uuid>,
 }
 
 impl ActionTracker {
     pub fn new() -> Self {
         ActionTracker {
             pending: HashMap::new(),
+            pending_keys: HashMap::new(),
         }
     }
 
-    /// Start tracking an action. Returns when the action should time out.
+    /// Start tracking an action. Returns `false` when the action ID is already
+    /// in flight, preserving the original request instead of orphaning it.
     pub fn track(
         &mut self,
         action_id: Uuid,
         app_conn_id: Uuid,
         plugin_conn_id: Uuid,
         timeout_ms: Option<u64>,
-    ) {
+    ) -> bool {
+        self.track_with_key(action_id, app_conn_id, plugin_conn_id, timeout_ms, None)
+    }
+
+    /// Start tracking a non-reentrant action keyed by entity/action identity.
+    pub fn track_with_key(
+        &mut self,
+        action_id: Uuid,
+        app_conn_id: Uuid,
+        plugin_conn_id: Uuid,
+        timeout_ms: Option<u64>,
+        action_key: Option<String>,
+    ) -> bool {
+        if self.pending.contains_key(&action_id)
+            || action_key
+                .as_ref()
+                .is_some_and(|key| self.pending_keys.contains_key(key))
+        {
+            return false;
+        }
         let timeout = timeout_ms
             .map(Duration::from_millis)
             .unwrap_or(DEFAULT_TIMEOUT);
         let deadline = Instant::now() + timeout;
 
+        if let Some(key) = action_key.as_ref() {
+            self.pending_keys.insert(key.clone(), action_id);
+        }
         self.pending.insert(
             action_id,
             PendingAction {
@@ -45,13 +72,19 @@ impl ActionTracker {
                 app_conn_id,
                 plugin_conn_id,
                 deadline,
+                action_key,
             },
         );
+        true
     }
 
     /// Resolve (complete) a pending action, returning its metadata.
     pub fn resolve(&mut self, action_id: Uuid) -> Option<PendingAction> {
-        self.pending.remove(&action_id)
+        let action = self.pending.remove(&action_id)?;
+        if let Some(key) = action.action_key.as_ref() {
+            self.pending_keys.remove(key);
+        }
+        Some(action)
     }
 
     /// Remove and return all actions that have exceeded their deadline.
@@ -66,7 +99,16 @@ impl ActionTracker {
 
         expired
             .into_iter()
-            .filter_map(|id| self.pending.remove(&id))
+            .filter_map(|id| self.resolve(id))
+            .collect()
+    }
+
+    /// Snapshot all actions associated with a connection without resolving them.
+    pub fn actions_for_connection(&self, conn_id: Uuid) -> Vec<PendingAction> {
+        self.pending
+            .values()
+            .filter(|a| a.app_conn_id == conn_id || a.plugin_conn_id == conn_id)
+            .cloned()
             .collect()
     }
 
@@ -81,7 +123,7 @@ impl ActionTracker {
 
         matching
             .into_iter()
-            .filter_map(|id| self.pending.remove(&id))
+            .filter_map(|id| self.resolve(id))
             .collect()
     }
 
@@ -175,5 +217,26 @@ mod tests {
         let deadline = tracker.next_deadline().expect("expected value");
         // The nearest deadline should be roughly 100ms from now
         assert!(deadline <= Instant::now() + Duration::from_millis(200));
+    }
+
+    #[test]
+    fn duplicate_action_ids_do_not_replace_an_in_flight_action() {
+        let mut tracker = ActionTracker::new();
+        let action_id = Uuid::new_v4();
+        let first_app = Uuid::new_v4();
+        let second_app = Uuid::new_v4();
+        let plugin = Uuid::new_v4();
+
+        tracker.track(action_id, first_app, plugin, Some(0));
+        tracker.track(action_id, second_app, plugin, Some(60_000));
+
+        std::thread::sleep(Duration::from_millis(1));
+        let timed_out = tracker.drain_timed_out();
+
+        assert_eq!(timed_out.len(), 1);
+        assert_eq!(
+            timed_out[0].app_conn_id, first_app,
+            "a repeated daemon call must not orphan the original request"
+        );
     }
 }

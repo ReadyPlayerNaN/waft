@@ -894,56 +894,72 @@ async fn monitor_darkman_signals(
     wp_tx: tokio::sync::mpsc::Sender<WallpaperCommand>,
     notifier: EntityNotifier,
 ) -> Result<()> {
-    let conn = match Connection::session().await {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!("[awww] cannot connect to session bus for darkman monitoring: {e}");
-            return Ok(());
-        }
-    };
+    loop {
+        let conn = match Connection::session().await {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("[awww] cannot connect to session bus for darkman monitoring: {e}");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                continue;
+            }
+        };
 
-    // Check if darkman is available and get initial mode
-    match get_darkman_mode(&conn).await {
-        Ok(dark) => {
-            let mut s = lock_state(&state);
-            s.style_tracking_available = true;
-            s.dark_mode_active = Some(dark);
-            log::info!("[awww] darkman available, dark_mode={dark}");
-        }
-        Err(e) => {
-            log::info!("[awww] darkman not available: {e}");
-            // style_tracking_available stays false (set in AwwwPlugin::new)
-        }
-    }
-    notifier.notify();
-
-    let config = SignalMonitorConfig::builder()
-        .sender(DARKMAN_DESTINATION)
-        .path(DARKMAN_PATH)
-        .interface(DARKMAN_INTERFACE)
-        .member("ModeChanged")
-        .build()?;
-
-    monitor_signal(conn, config, state, notifier, move |msg, awww_state| {
-        let new_mode_str: String = msg.body().deserialize()?;
-        let dark = new_mode_str == "dark";
-        let old_dark = awww_state.dark_mode_active;
-        awww_state.dark_mode_active = Some(dark);
-        awww_state.style_tracking_available = true;
-
-        log::info!("[awww] darkman mode changed: dark={dark}");
-
-        if awww_state.mode == WallpaperMode::StyleTracking && old_dark != Some(dark) {
-            let subfolder = if dark { "dark" } else { "light" };
-            let dir = AwwwPlugin::expand_tilde(&awww_state.wallpaper_dir);
-            let segment_dir = format!("{dir}/{subfolder}");
-            if let Err(e) = wp_tx.try_send(WallpaperCommand::ApplyFromDir { dir: segment_dir }) {
-                log::warn!("[awww] failed to queue style-tracking wallpaper: {e}");
+        // Check if darkman is available and get initial mode
+        match get_darkman_mode(&conn).await {
+            Ok(dark) => {
+                let mut s = lock_state(&state);
+                s.style_tracking_available = true;
+                s.dark_mode_active = Some(dark);
+                log::info!("[awww] darkman available, dark_mode={dark}");
+            }
+            Err(e) => {
+                log::info!("[awww] darkman not available: {e}");
+                // style_tracking_available stays false (set in AwwwPlugin::new)
             }
         }
-        Ok(true)
-    })
-    .await
+        notifier.notify();
+
+        let config = SignalMonitorConfig::builder()
+            .sender(DARKMAN_DESTINATION)
+            .path(DARKMAN_PATH)
+            .interface(DARKMAN_INTERFACE)
+            .member("ModeChanged")
+            .build()?;
+        let wp_tx_for_handler = wp_tx.clone();
+
+        let result = monitor_signal(
+            conn,
+            config,
+            state.clone(),
+            notifier.clone(),
+            move |msg, awww_state| {
+                let new_mode_str: String = msg.body().deserialize()?;
+                let dark = new_mode_str == "dark";
+                let old_dark = awww_state.dark_mode_active;
+                awww_state.dark_mode_active = Some(dark);
+                awww_state.style_tracking_available = true;
+
+                log::info!("[awww] darkman mode changed: dark={dark}");
+
+                if awww_state.mode == WallpaperMode::StyleTracking && old_dark != Some(dark) {
+                    let subfolder = if dark { "dark" } else { "light" };
+                    let dir = AwwwPlugin::expand_tilde(&awww_state.wallpaper_dir);
+                    let segment_dir = format!("{dir}/{subfolder}");
+                    if let Err(e) = wp_tx_for_handler
+                        .try_send(WallpaperCommand::ApplyFromDir { dir: segment_dir })
+                    {
+                        log::warn!("[awww] failed to queue style-tracking wallpaper: {e}");
+                    }
+                }
+                Ok(true)
+            },
+        )
+        .await;
+        if let Err(error) = result {
+            log::warn!("[awww] darkman monitor failed; reconnecting: {error}");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 }
 
 /// Day-segment timer that sleeps to the next boundary (NO POLLING).

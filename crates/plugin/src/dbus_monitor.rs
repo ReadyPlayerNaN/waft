@@ -116,11 +116,19 @@ where
     );
 
     let mut stream = MessageStream::from(&conn);
+    let mut consecutive_stream_errors = 0u8;
     while let Some(msg) = stream.next().await {
         let msg = match msg {
-            Ok(m) => m,
+            Ok(m) => {
+                consecutive_stream_errors = 0;
+                m
+            }
             Err(e) => {
+                consecutive_stream_errors = consecutive_stream_errors.saturating_add(1);
                 log::warn!("D-Bus stream error: {e}");
+                if consecutive_stream_errors >= 3 {
+                    anyhow::bail!("D-Bus signal stream failed repeatedly");
+                }
                 continue;
             }
         };
@@ -194,11 +202,19 @@ where
     );
 
     let mut stream = MessageStream::from(&conn);
+    let mut consecutive_stream_errors = 0u8;
     while let Some(msg) = stream.next().await {
         let msg = match msg {
-            Ok(m) => m,
+            Ok(m) => {
+                consecutive_stream_errors = 0;
+                m
+            }
             Err(e) => {
+                consecutive_stream_errors = consecutive_stream_errors.saturating_add(1);
                 log::warn!("D-Bus stream error: {e}");
+                if consecutive_stream_errors >= 3 {
+                    anyhow::bail!("D-Bus signal stream failed repeatedly");
+                }
                 continue;
             }
         };

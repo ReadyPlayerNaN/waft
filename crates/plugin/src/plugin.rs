@@ -94,4 +94,15 @@ pub trait Plugin: Send + Sync {
     /// Plugins can use this to lazily start or stop expensive monitoring work.
     /// Default: no-op.
     async fn handle_subscriber_count_changed(&self, _entity_type: String, _count: usize) {}
+
+    /// Called before the runtime aborts an action that exceeded its lifecycle
+    /// deadline or was explicitly cancelled by the daemon. Plugins should
+    /// clear intermediate state and emit a fresh authoritative snapshot.
+    async fn handle_action_cancelled(
+        &self,
+        _urn: &Urn,
+        _action: &str,
+        _params: &serde_json::Value,
+    ) {
+    }
 }

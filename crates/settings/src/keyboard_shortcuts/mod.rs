@@ -137,11 +137,8 @@ fn parse_bind_node(key_chord: &str, node: &kdl::KdlNode) -> Option<BindEntry> {
         if i == parts.len() - 1 {
             // Last part is always the key
             key = Some(part.to_string());
-        } else if let Some(m) = Modifier::from_str(part) {
-            modifiers.push(m);
         } else {
-            // Unknown modifier, skip this bind
-            return None;
+            modifiers.push(Modifier::from_str(part)?);
         }
     }
 

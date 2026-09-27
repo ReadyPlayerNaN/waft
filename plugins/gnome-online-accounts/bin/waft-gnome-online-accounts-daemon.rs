@@ -333,9 +333,22 @@ fn main() -> Result<()> {
             state: state.clone(),
         };
 
-        // Monitor GOA D-Bus signals
+        // Monitor GOA D-Bus signals and reconnect after a session-bus or
+        // goa-daemon restart.
         spawn_monitored("goa/signal-monitor", async move {
-            monitor_goa_signals(conn, state, notifier).await
+            loop {
+                match Connection::session().await {
+                    Ok(monitor_conn) => {
+                        if let Err(error) =
+                            monitor_goa_signals(monitor_conn, state.clone(), notifier.clone()).await
+                        {
+                            warn!("[goa] signal monitor failed; reconnecting: {error}");
+                        }
+                    }
+                    Err(error) => warn!("[goa] session bus unavailable: {error}"),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
         });
 
         Ok(plugin)

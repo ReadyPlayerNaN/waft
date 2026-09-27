@@ -236,7 +236,7 @@ impl PowerPage {
                         &pending_action_id,
                         &batteries,
                         &profiles,
-                    )
+                    );
                 }
             },
         );
@@ -244,6 +244,7 @@ impl PowerPage {
         Self { root }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn reconcile(
         state: &Rc<RefCell<PowerPageState>>,
         updating_profile: &Rc<Cell<bool>>,

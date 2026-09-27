@@ -493,4 +493,48 @@ mod tests {
         let targets = vpn_toggle_deactivate_targets(&states);
         assert_eq!(targets.len(), 2);
     }
+
+    #[test]
+    fn repeated_vpn_clicks_are_coalesced_before_state_update() {
+        let urn = Urn::new("networkmanager", entity::network::VPN_ENTITY_TYPE, "office");
+        let dispatched = Rc::new(Cell::new(0));
+        let dispatched_ref = dispatched.clone();
+        let raw: EntityActionCallback = Rc::new(move |_, _, _| {
+            dispatched_ref.set(dispatched_ref.get() + 1);
+            Some(uuid::Uuid::new_v4())
+        });
+        let callback = waft_client::ActionGate::new().wrap(&raw);
+
+        for _ in 0..3 {
+            callback(
+                urn.clone(),
+                "disconnect".to_string(),
+                serde_json::Value::Null,
+            );
+        }
+
+        assert_eq!(dispatched.get(), 1);
+    }
+
+    #[test]
+    fn repeated_global_vpn_clicks_are_coalesced_per_target() {
+        let urn = Urn::new("networkmanager", entity::network::VPN_ENTITY_TYPE, "office");
+        let dispatched = Rc::new(Cell::new(0));
+        let dispatched_ref = dispatched.clone();
+        let raw: EntityActionCallback = Rc::new(move |_, _, _| {
+            dispatched_ref.set(dispatched_ref.get() + 1);
+            Some(uuid::Uuid::new_v4())
+        });
+        let callback = waft_client::ActionGate::new().wrap(&raw);
+
+        for _ in 0..3 {
+            callback(
+                urn.clone(),
+                "disconnect".to_string(),
+                serde_json::Value::Null,
+            );
+        }
+
+        assert_eq!(dispatched.get(), 1);
+    }
 }

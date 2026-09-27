@@ -7,7 +7,7 @@
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use waft_plugin::dbus_monitor::{SignalMonitorConfig, monitor_signal_async};
 use waft_plugin::*;
 use zbus::Connection;
@@ -221,15 +221,24 @@ fn main() -> Result<()> {
         let plugin = GsettingsPlugin::new().await;
         let shared_state = plugin.state.clone();
 
-        let conn = Connection::session()
-            .await
-            .context("failed to connect to session bus")?;
-
-        // Monitor portal for external accent colour changes
-        spawn_monitored(
-            "gsettings",
-            monitor_portal_settings(conn, shared_state, notifier),
-        );
+        // Monitor portal for external accent colour changes and reconnect
+        // after a session-bus restart.
+        spawn_monitored("gsettings", async move {
+            loop {
+                match Connection::session().await {
+                    Ok(conn) => {
+                        if let Err(error) =
+                            monitor_portal_settings(conn, shared_state.clone(), notifier.clone())
+                                .await
+                        {
+                            log::warn!("[gsettings] monitor failed; reconnecting: {error}");
+                        }
+                    }
+                    Err(error) => log::warn!("[gsettings] session bus unavailable: {error}"),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
 
         Ok(plugin)
     })

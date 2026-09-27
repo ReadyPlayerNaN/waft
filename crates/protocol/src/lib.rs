@@ -28,8 +28,9 @@ pub mod urn;
 pub use description::PluginDescription;
 pub use error::{ProtocolError, ProtocolErrorScope};
 pub use handshake::{
-    CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA, CAP_STATUS_COMPLETE,
-    CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, HelloAck, HelloError, PeerRole,
+    CAP_ACTION_CANCELLATION, CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA,
+    CAP_STATUS_COMPLETE, CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, HelloAck, HelloError,
+    PeerRole,
 };
 pub use message::{AppMessage, AppNotification, PluginCommand, PluginMessage};
 pub use schema::JsonSchema;

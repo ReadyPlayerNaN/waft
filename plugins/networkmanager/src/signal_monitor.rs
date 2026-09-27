@@ -359,10 +359,24 @@ async fn monitor_nm_signals_once(
                 // NM and VPN helpers can still be restoring immediately after
                 // resume. Debounce once, then read authoritative state from
                 // each subsystem. This is event-driven, not a polling loop.
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                if resync_network_state(&conn, &nm, &state, &vpn_refresh_lock).await {
-                    notifier.notify();
-                }
+                let resume_conn = conn.clone();
+                let resume_nm = nm.clone();
+                let resume_state = state.clone();
+                let resume_notifier = notifier.clone();
+                let resume_refresh_lock = vpn_refresh_lock.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    if resync_network_state(
+                        &resume_conn,
+                        &resume_nm,
+                        &resume_state,
+                        &resume_refresh_lock,
+                    )
+                    .await
+                    {
+                        resume_notifier.notify();
+                    }
+                });
             }
             ("org.freedesktop.DBus.Properties", "PropertiesChanged") => {
                 let Ok((prop_iface, props, _invalidated)) =
@@ -395,17 +409,40 @@ async fn monitor_nm_signals_once(
 
                     if is_vpn_type(&conn_type) {
                         debug!("[nm] VPN state changed: path={obj_path}, state={state_code}");
-                        if let Err(e) =
-                            refresh_vpn_states(&conn, &nm, &state, &vpn_refresh_lock).await
-                        {
-                            error!("[nm] Failed to refresh VPN states: {e}");
-                        }
+                        let refresh_conn = conn.clone();
+                        let refresh_nm = nm.clone();
+                        let refresh_state = state.clone();
+                        let refresh_notifier = notifier.clone();
+                        let refresh_lock = vpn_refresh_lock.clone();
+                        tokio::spawn(async move {
+                            if let Err(error) = refresh_vpn_states(
+                                &refresh_conn,
+                                &refresh_nm,
+                                &refresh_state,
+                                &refresh_lock,
+                            )
+                            .await
+                            {
+                                error!("[nm] Failed to refresh VPN states: {error}");
+                            }
+                            refresh_notifier.notify();
+                        });
                         changed = true;
                     } else if conn_type == "bluetooth" {
                         debug!("[nm] Tethering state changed: path={obj_path}, state={state_code}");
-                        if let Err(e) = refresh_tethering_states(&conn, &nm, &state).await {
-                            error!("[nm] Failed to refresh tethering states: {e}");
-                        }
+                        let refresh_conn = conn.clone();
+                        let refresh_nm = nm.clone();
+                        let refresh_state = state.clone();
+                        let refresh_notifier = notifier.clone();
+                        tokio::spawn(async move {
+                            if let Err(error) =
+                                refresh_tethering_states(&refresh_conn, &refresh_nm, &refresh_state)
+                                    .await
+                            {
+                                error!("[nm] Failed to refresh tethering states: {error}");
+                            }
+                            refresh_notifier.notify();
+                        });
                         changed = true;
                     }
                 }
@@ -416,10 +453,24 @@ async fn monitor_nm_signals_once(
                     && props.contains_key("VpnState")
                 {
                     debug!("[nm] VPN.Connection state changed: {obj_path}");
-                    if let Err(e) = refresh_vpn_states(&conn, &nm, &state, &vpn_refresh_lock).await
-                    {
-                        error!("[nm] Failed to refresh VPN states: {e}");
-                    }
+                    let refresh_conn = conn.clone();
+                    let refresh_nm = nm.clone();
+                    let refresh_state = state.clone();
+                    let refresh_notifier = notifier.clone();
+                    let refresh_lock = vpn_refresh_lock.clone();
+                    tokio::spawn(async move {
+                        if let Err(error) = refresh_vpn_states(
+                            &refresh_conn,
+                            &refresh_nm,
+                            &refresh_state,
+                            &refresh_lock,
+                        )
+                        .await
+                        {
+                            error!("[nm] Failed to refresh VPN states: {error}");
+                        }
+                        refresh_notifier.notify();
+                    });
                     changed = true;
                 }
 
@@ -443,13 +494,29 @@ async fn monitor_nm_signals_once(
                 // where the per-device signal ordering leaves Waft behind real state.
                 if is_nm_active_connections_change(&obj_path, &prop_iface, &props) {
                     debug!("[nm] ActiveConnections changed; refreshing VPN and WiFi state");
-                    if let Err(e) = refresh_vpn_states(&conn, &nm, &state, &vpn_refresh_lock).await
-                    {
-                        error!("[nm] Failed to refresh VPN states: {e}");
-                    }
-                    if let Err(e) = refresh_all_wifi_active_access_points(&nm, &state).await {
-                        error!("[nm] Failed to refresh WiFi active APs: {e}");
-                    }
+                    let refresh_conn = conn.clone();
+                    let refresh_nm = nm.clone();
+                    let refresh_state = state.clone();
+                    let refresh_notifier = notifier.clone();
+                    let refresh_lock = vpn_refresh_lock.clone();
+                    tokio::spawn(async move {
+                        if let Err(error) = refresh_vpn_states(
+                            &refresh_conn,
+                            &refresh_nm,
+                            &refresh_state,
+                            &refresh_lock,
+                        )
+                        .await
+                        {
+                            error!("[nm] Failed to refresh VPN states: {error}");
+                        }
+                        if let Err(error) =
+                            refresh_all_wifi_active_access_points(&refresh_nm, &refresh_state).await
+                        {
+                            error!("[nm] Failed to refresh WiFi active APs: {error}");
+                        }
+                        refresh_notifier.notify();
+                    });
                     changed = true;
                 }
 
@@ -457,10 +524,25 @@ async fn monitor_nm_signals_once(
                 // The previous logic only handled disconnect ("/"). Refreshing from NM
                 // here makes connect transitions self-healing too.
                 if is_wifi_active_access_point_change(&prop_iface, &props) {
-                    match refresh_wifi_active_access_point(&nm, &state, &obj_path).await {
-                        Ok(wifi_changed) => changed |= wifi_changed,
-                        Err(e) => error!("[nm] Failed to refresh WiFi active AP: {e}"),
-                    }
+                    let refresh_nm = nm.clone();
+                    let refresh_state = state.clone();
+                    let refresh_path = obj_path.clone();
+                    let refresh_notifier = notifier.clone();
+                    tokio::spawn(async move {
+                        match refresh_wifi_active_access_point(
+                            &refresh_nm,
+                            &refresh_state,
+                            &refresh_path,
+                        )
+                        .await
+                        {
+                            Ok(true) => {
+                                refresh_notifier.notify();
+                            }
+                            Ok(false) => {}
+                            Err(error) => error!("[nm] Failed to refresh WiFi active AP: {error}"),
+                        }
+                    });
                 }
 
                 if changed {

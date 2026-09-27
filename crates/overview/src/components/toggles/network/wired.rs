@@ -243,6 +243,10 @@ impl WiredToggles {
 }
 
 /// Update Ethernet connection profile menus for wired adapters.
+fn wired_connection_row_action(active: bool) -> &'static str {
+    if active { "deactivate" } else { "activate" }
+}
+
 fn update_ethernet_menus(
     entries: &Rc<RefCell<Vec<ToggleEntry>>>,
     store: &Rc<EntityStore>,
@@ -336,7 +340,7 @@ fn update_ethernet_menus(
             let urn_for_click = (*conn_urn).clone();
             let is_active = conn.active;
             gesture.connect_released(move |_, _, _, _| {
-                let action = if is_active { "deactivate" } else { "activate" };
+                let action = wired_connection_row_action(is_active);
                 action_cb(
                     urn_for_click.clone(),
                     action.to_string(),
@@ -428,5 +432,36 @@ fn update_wired_info_rows(
         entry
             .menu
             .reorder_child_after(&btn_container.widget(), entry.menu.last_child().as_ref());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn triple_clicking_a_wired_profile_dispatches_only_one_action() {
+        let urn = Urn::new(
+            "networkmanager",
+            entity::network::ETHERNET_CONNECTION_ENTITY_TYPE,
+            "office",
+        );
+        let dispatched = Rc::new(Cell::new(0));
+        let dispatched_ref = dispatched.clone();
+        let raw: EntityActionCallback = Rc::new(move |_, _, _| {
+            dispatched_ref.set(dispatched_ref.get() + 1);
+            Some(uuid::Uuid::new_v4())
+        });
+        let callback = waft_client::ActionGate::new().wrap(&raw);
+
+        for _ in 0..3 {
+            callback(
+                urn.clone(),
+                wired_connection_row_action(false).to_string(),
+                serde_json::Value::Null,
+            );
+        }
+
+        assert_eq!(dispatched.get(), 1);
     }
 }

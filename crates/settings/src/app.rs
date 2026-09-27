@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use gtk::prelude::*;
 use waft_client::{
-    ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
+    ActionGate, ClientEvent, EntityActionCallback, EntityStore, WaftClient, daemon_connection_task,
 };
 use waft_protocol::entity::accounts::{
     ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
@@ -92,14 +92,17 @@ pub async fn setup(
     let rt_handle = tokio::runtime::Handle::current();
 
     // 4. Create entity action callback (routes UI actions to the writer thread).
-    let entity_action_callback: EntityActionCallback = Rc::new(move |urn, action_name, params| {
-        let action_id = uuid::Uuid::new_v4();
-        if let Err(e) = action_tx.send((action_id, urn, action_name, params)) {
-            log::warn!("[settings] failed to send action: {e}");
-            return None;
-        }
-        Some(action_id)
-    });
+    let raw_entity_action_callback: EntityActionCallback =
+        Rc::new(move |urn, action_name, params| {
+            let action_id = uuid::Uuid::new_v4();
+            if let Err(e) = action_tx.send((action_id, urn, action_name, params)) {
+                log::warn!("[settings] failed to send action: {e}");
+                return None;
+            }
+            Some(action_id)
+        });
+    let action_gate = ActionGate::new();
+    let entity_action_callback = action_gate.wrap(&raw_entity_action_callback);
 
     // Wrap one-shot values in slots so they can be taken inside connect_startup.
     // connect_startup requires Fn (not FnOnce) but fires exactly once, in the
@@ -191,6 +194,12 @@ pub async fn setup(
         });
 
         let entity_store = Rc::new(EntityStore::new());
+        {
+            let gate = action_gate.clone();
+            entity_store.on_action_success(move |action_id, _| gate.release(action_id));
+            let gate = action_gate.clone();
+            entity_store.on_action_error(move |action_id, _| gate.release(action_id));
+        }
         let settings_window = SettingsWindow::new(
             app,
             &entity_store,
@@ -201,14 +210,17 @@ pub async fn setup(
         // Spawn entity event handler (glib context)
         let store = entity_store.clone();
         let event_rx_clone = event_rx.clone();
+        let action_gate_for_events = action_gate.clone();
         gtk::glib::spawn_future_local(async move {
             while let Ok(event) = event_rx_clone.recv_async().await {
                 match event {
                     ClientEvent::Connected => {
                         log::info!("[settings] connected to daemon");
+                        action_gate_for_events.clear();
                     }
                     ClientEvent::Disconnected => {
                         log::warn!("[settings] disconnected from daemon");
+                        action_gate_for_events.clear();
                     }
                     ClientEvent::Notification(notification) => {
                         store.handle_notification(notification);

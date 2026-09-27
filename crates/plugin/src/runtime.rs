@@ -7,15 +7,16 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::net::UnixStream;
 use tokio::sync::{Mutex, mpsc, watch};
 use uuid::Uuid;
 use waft_protocol::urn::Urn;
 use waft_protocol::{
-    CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA, CAP_STATUS_COMPLETE,
-    CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PROTOCOL_VERSION, PluginCommand, PluginMessage,
-    ProtocolError,
+    CAP_ACTION_CANCELLATION, CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA,
+    CAP_STATUS_COMPLETE, CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PROTOCOL_VERSION,
+    PluginCommand, PluginMessage, ProtocolError,
 };
 
 use crate::notifier::EntityNotifier;
@@ -23,6 +24,13 @@ use crate::plugin::Plugin;
 use crate::transport::{read_framed, write_framed};
 
 /// Plugin runtime that connects to the waft daemon and runs the event loop.
+struct ActiveAction {
+    task: tokio::task::JoinHandle<()>,
+    urn: Urn,
+    action: String,
+    params: serde_json::Value,
+}
+
 pub struct PluginRuntime<P: Plugin> {
     name: String,
     plugin: Arc<P>,
@@ -91,6 +99,7 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                 CAP_DERIVED_ENTITY_TYPE.to_string(),
                 CAP_STATUS_COMPLETE.to_string(),
                 CAP_SCHEMA_METADATA.to_string(),
+                CAP_ACTION_CANCELLATION.to_string(),
             ],
         ));
         write_framed(&mut write_half, &hello).await?;
@@ -112,9 +121,16 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
         let name_for_writer = self.name.clone();
         tokio::spawn(write_loop(name_for_writer, write_half, write_rx));
 
-        // Shared previous-entity state for diffing (used by both the main loop and handle_action)
+        // Shared previous-entity state for diffing (used by both the main loop and handle_action).
         let previous: Arc<Mutex<HashMap<String, serde_json::Value>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        // Serialize the complete publication transaction. Without this, concurrent
+        // actions can snapshot and overwrite `previous` out of order.
+        let publication_lock = Arc::new(Mutex::new(()));
+        // Keep abort handles for action tasks so daemon timeouts can cancel work
+        // instead of leaving D-Bus/CLI futures and plugin locks alive.
+        let mut action_tasks: HashMap<Uuid, ActiveAction> = HashMap::new();
+        let (action_done_tx, mut action_done_rx) = mpsc::channel::<Uuid>(64);
 
         // Send initial entities
         send_all_entities(
@@ -122,6 +138,7 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
             &write_tx,
             &self.name,
             &previous,
+            &publication_lock,
             omit_entity_type,
         )
         .await;
@@ -137,7 +154,18 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                         log::info!("[{}] notifier dropped, shutting down", self.name);
                         break;
                     }
-                    send_all_entities(&*self.plugin, &write_tx, &self.name, &previous, omit_entity_type).await;
+                    send_all_entities(
+                        &*self.plugin,
+                        &write_tx,
+                        &self.name,
+                        &previous,
+                        &publication_lock,
+                        omit_entity_type,
+                    ).await;
+                }
+
+                Some(action_id) = action_done_rx.recv() => {
+                    action_tasks.remove(&action_id);
                 }
 
                 // Incoming command from daemon
@@ -146,16 +174,70 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                         Ok(Some(cmd)) => {
                             match cmd {
                                 PluginCommand::TriggerAction { urn, action, action_id, params } => {
+                                    if action_tasks.contains_key(&action_id) {
+                                        let _ = write_tx.send(PluginMessage::ActionError {
+                                            action_id,
+                                            error: "action already in progress".to_string(),
+                                            error_details: Some(ProtocolError::action("action already in progress")),
+                                        }).await;
+                                        continue;
+                                    }
+                                    let active_urn = urn.clone();
+                                    let active_action = action.clone();
+                                    let active_params = params.clone();
                                     let ctx = ActionContext {
                                         plugin: self.plugin.clone(),
                                         tx: write_tx.clone(),
                                         name: self.name.clone(),
                                         previous: previous.clone(),
+                                        publication_lock: publication_lock.clone(),
                                         omit_entity_type,
                                     };
-                                    tokio::spawn(async move {
+                                    let done_tx = action_done_tx.clone();
+                                    let task = tokio::spawn(async move {
                                         handle_action(ctx, urn, action, action_id, params).await;
+                                        let _ = done_tx.send(action_id).await;
                                     });
+                                    action_tasks.insert(
+                                        action_id,
+                                        ActiveAction {
+                                            task,
+                                            urn: active_urn,
+                                            action: active_action,
+                                            params: active_params,
+                                        },
+                                    );
+                                }
+                                PluginCommand::CancelAction { action_id } => {
+                                    if let Some(active) = action_tasks.remove(&action_id) {
+                                        // Stop the action first and join it. Cleanup must not race a
+                                        // still-running handler that can publish a late success state.
+                                        active.task.abort();
+                                        if tokio::time::timeout(Duration::from_secs(1), active.task)
+                                            .await
+                                            .is_err()
+                                        {
+                                            log::warn!(
+                                                "[{}] action task did not stop promptly for {action_id}",
+                                                self.name
+                                            );
+                                        }
+                                        let cleanup = self.plugin.handle_action_cancelled(
+                                            &active.urn,
+                                            &active.action,
+                                            &active.params,
+                                        );
+                                        if tokio::time::timeout(Duration::from_secs(1), cleanup)
+                                            .await
+                                            .is_err()
+                                        {
+                                            log::warn!(
+                                                "[{}] cancellation cleanup timed out for action {action_id}",
+                                                self.name
+                                            );
+                                        }
+                                        log::debug!("[{}] cancelled action {action_id}", self.name);
+                                    }
                                 }
                                 PluginCommand::CanStop => {
                                     let can_stop = self.plugin.can_stop();
@@ -164,16 +246,21 @@ impl<P: Plugin + 'static> PluginRuntime<P> {
                                     }
                                 }
                                 PluginCommand::SubscriberCountChanged { entity_type, count } => {
-                                    let ctx = ActionContext {
-                                        plugin: self.plugin.clone(),
-                                        tx: write_tx.clone(),
-                                        name: self.name.clone(),
-                                        previous: previous.clone(),
-                                        omit_entity_type,
-                                    };
+                                    let plugin = self.plugin.clone();
+                                    let tx = write_tx.clone();
+                                    let name = self.name.clone();
+                                    let previous = previous.clone();
+                                    let publication_lock = publication_lock.clone();
                                     tokio::spawn(async move {
-                                        ctx.plugin.handle_subscriber_count_changed(entity_type, count).await;
-                                        send_all_entities(&*ctx.plugin, &ctx.tx, &ctx.name, &ctx.previous, ctx.omit_entity_type).await;
+                                        plugin.handle_subscriber_count_changed(entity_type, count).await;
+                                        send_all_entities(
+                                            &*plugin,
+                                            &tx,
+                                            &name,
+                                            &previous,
+                                            &publication_lock,
+                                            omit_entity_type,
+                                        ).await;
                                     });
                                 }
                             }
@@ -203,6 +290,7 @@ struct ActionContext<P: Plugin> {
     name: String,
     tx: mpsc::Sender<PluginMessage>,
     previous: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    publication_lock: Arc<Mutex<()>>,
     omit_entity_type: bool,
 }
 
@@ -254,6 +342,7 @@ async fn handle_action<P: Plugin>(
         &ctx.tx,
         &ctx.name,
         &ctx.previous,
+        &ctx.publication_lock,
         ctx.omit_entity_type,
     )
     .await;
@@ -267,8 +356,10 @@ async fn send_all_entities<P: Plugin>(
     tx: &mpsc::Sender<PluginMessage>,
     name: &str,
     previous: &Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    publication_lock: &Arc<Mutex<()>>,
     omit_entity_type: bool,
 ) {
+    let _publication_guard = publication_lock.lock().await;
     let entities = plugin.get_entities();
     let mut current: HashMap<String, serde_json::Value> = HashMap::new();
 

@@ -424,4 +424,30 @@ mod tests {
         assert_eq!(wifi_network_row_action(true), "disconnect");
         assert_eq!(wifi_network_row_action(false), "connect");
     }
+
+    #[test]
+    fn triple_clicking_a_wifi_network_dispatches_only_one_action() {
+        let urn = Urn::new(
+            "networkmanager",
+            entity::network::WIFI_NETWORK_ENTITY_TYPE,
+            "office",
+        );
+        let dispatched = Rc::new(Cell::new(0));
+        let dispatched_ref = dispatched.clone();
+        let raw: EntityActionCallback = Rc::new(move |_, _, _| {
+            dispatched_ref.set(dispatched_ref.get() + 1);
+            Some(uuid::Uuid::new_v4())
+        });
+        let callback = waft_client::ActionGate::new().wrap(&raw);
+
+        for _ in 0..3 {
+            callback(
+                urn.clone(),
+                wifi_network_row_action(false).to_string(),
+                serde_json::Value::Null,
+            );
+        }
+
+        assert_eq!(dispatched.get(), 1);
+    }
 }

@@ -153,6 +153,9 @@ pub enum PluginCommand {
         params: serde_json::Value,
     },
 
+    /// Cancel a previously-triggered action.
+    CancelAction { action_id: Uuid },
+
     /// Current subscriber count for an entity type changed.
     SubscriberCountChanged { entity_type: String, count: usize },
 }
@@ -429,12 +432,14 @@ mod tests {
 
     #[test]
     fn plugin_command_trigger_action() {
+        let action_id = Uuid::new_v4();
         roundtrip_json(&PluginCommand::TriggerAction {
             urn: Urn::new("caffeine", "sleep-inhibitor", "default"),
             action: "toggle".to_string(),
-            action_id: Uuid::new_v4(),
+            action_id,
             params: serde_json::Value::Null,
         });
+        roundtrip_json(&PluginCommand::CancelAction { action_id });
     }
 
     #[test]

@@ -50,7 +50,7 @@ pub async fn monitor_bluez_signals(
             Ok(m) => m,
             Err(e) => {
                 warn!("[nm] BlueZ D-Bus stream error: {e}");
-                continue;
+                return Err(anyhow::anyhow!("BlueZ D-Bus signal stream failed: {e}"));
             }
         };
 

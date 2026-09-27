@@ -7,6 +7,7 @@ pub const CAP_STRUCTURED_ERRORS: &str = "structured-errors";
 pub const CAP_DERIVED_ENTITY_TYPE: &str = "derived-entity-type";
 pub const CAP_SCHEMA_METADATA: &str = "schema-metadata";
 pub const CAP_STATUS_COMPLETE: &str = "status-complete";
+pub const CAP_ACTION_CANCELLATION: &str = "action-cancellation";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]

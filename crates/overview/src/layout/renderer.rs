@@ -491,7 +491,7 @@ fn render_feature_toggle_grid(
                             &ctx.store,
                             &ctx.action_callback,
                             menu_store,
-                            dynamic_rebuild.clone(),
+                            &dynamic_rebuild,
                         ));
                         dynamic_sources.push(t.clone());
                         keep.push(Box::new(t));

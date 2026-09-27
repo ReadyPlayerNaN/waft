@@ -105,7 +105,7 @@ async fn query_daemon(
 
                 match tokio::time::timeout(remaining, read_message(&mut stream)).await {
                     Ok(Ok(Some(notification))) => {
-                        collect_notification(&mut entities, notification);
+                        collect_notification(&mut entities, &notification);
                     }
                     Ok(Ok(None)) => break, // clean disconnect
                     Ok(Err(e)) => {
@@ -192,7 +192,7 @@ async fn collect_responses(
                 AppNotification::StatusComplete { entity_type } => {
                     pending.remove(&entity_type);
                 }
-                other => collect_notification(entities, other),
+                other => collect_notification(entities, &other),
             },
             Ok(None) => break,
             Err(e) => return Err(format!("Failed to read from daemon: {e}")),
@@ -202,8 +202,10 @@ async fn collect_responses(
 }
 
 /// Extract EntityUpdated from a notification and add to the collection.
-fn collect_notification(entities: &mut Vec<CollectedEntity>, notification: AppNotification) {
-    if let AppNotification::EntityUpdated { urn, data, .. } = notification.clone() {
+fn collect_notification(entities: &mut Vec<CollectedEntity>, notification: &AppNotification) {
+    if let AppNotification::EntityUpdated { urn, data, .. } = notification {
+        let urn = urn.clone();
+        let data = data.clone();
         let entity_type = notification
             .entity_type()
             .unwrap_or_else(|| urn.entity_type())
@@ -415,7 +417,7 @@ mod tests {
             entity_type: Some("clock".to_string()),
             data: serde_json::json!({"time": "14:30"}),
         };
-        collect_notification(&mut entities, notification);
+        collect_notification(&mut entities, &notification);
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].entity_type, "clock");
     }
@@ -427,7 +429,7 @@ mod tests {
             action_id: uuid::Uuid::new_v4(),
             data: None,
         };
-        collect_notification(&mut entities, notification);
+        collect_notification(&mut entities, &notification);
         assert!(entities.is_empty());
     }
 }

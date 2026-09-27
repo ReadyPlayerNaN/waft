@@ -49,6 +49,15 @@ pub async fn monitor_bluez_signals(
         .await
         .context("Failed to add ObjectManager match rule")?;
 
+    // Reconcile after match rules are installed. The setup snapshot taken by
+    // the daemon can race a property/object-manager signal; this second
+    // snapshot closes that gap before the stream loop begins.
+    let refreshed_state = dbus::load_state(&conn)
+        .await
+        .context("Failed to refresh BlueZ state after subscribing")?;
+    *state.lock_or_recover() = refreshed_state;
+    notifier.notify();
+
     info!("[bluetooth] Listening for BlueZ PropertiesChanged and ObjectManager signals");
 
     let mut stream = zbus::MessageStream::from(&conn);
@@ -57,7 +66,7 @@ pub async fn monitor_bluez_signals(
             Ok(m) => m,
             Err(e) => {
                 warn!("[bluetooth] D-Bus stream error: {e}");
-                continue;
+                return Err(anyhow::anyhow!("D-Bus signal stream failed: {e}"));
             }
         };
 

@@ -6,8 +6,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use waft_protocol::urn::Urn;
 use waft_protocol::{
-    CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA, CAP_STATUS_COMPLETE,
-    CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PROTOCOL_VERSION, PluginCommand, PluginMessage,
+    CAP_ACTION_CANCELLATION, CAP_DERIVED_ENTITY_TYPE, CAP_HANDSHAKE, CAP_SCHEMA_METADATA,
+    CAP_STATUS_COMPLETE, CAP_STRUCTURED_ERRORS, HandshakeMessage, Hello, PROTOCOL_VERSION,
+    PluginCommand, PluginMessage,
 };
 
 /// Maximum allowed message size (10 MB), matching the daemon.
@@ -59,6 +60,7 @@ impl TestPlugin {
                 CAP_DERIVED_ENTITY_TYPE.to_string(),
                 CAP_STATUS_COMPLETE.to_string(),
                 CAP_SCHEMA_METADATA.to_string(),
+                CAP_ACTION_CANCELLATION.to_string(),
             ],
         ));
         self.send_raw(&hello).await;

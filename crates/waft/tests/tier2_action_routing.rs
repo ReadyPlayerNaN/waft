@@ -221,3 +221,112 @@ async fn action_error_routed_to_app() {
 
     daemon.shutdown().await;
 }
+
+/// Repeated network actions are rejected before they fan out to the plugin.
+#[tokio::test]
+#[serial]
+async fn repeated_connect_actions_are_not_fanned_out() {
+    let daemon = TestDaemon::start().await;
+
+    let mut plugin = TestPlugin::connect(&daemon.socket_path).await;
+    let urn = Urn::new("test-plugin", "test-entity", "vpn-1");
+    plugin
+        .send_entity(
+            urn.clone(),
+            "test-entity",
+            serde_json::json!({"state": "disconnected"}),
+        )
+        .await;
+    settle().await;
+
+    let mut app = TestApp::connect(&daemon.socket_path).await;
+    app.subscribe("test-entity").await;
+    settle().await;
+
+    for _ in 0..3 {
+        app.send(&AppMessage::TriggerAction {
+            urn: urn.clone(),
+            action: "connect".to_string(),
+            action_id: Uuid::new_v4(),
+            params: serde_json::Value::Null,
+            timeout_ms: Some(5000),
+        })
+        .await;
+    }
+
+    let first = plugin
+        .recv_timeout(TIMEOUT)
+        .await
+        .expect("first connect action should reach the plugin");
+    assert!(matches!(first, PluginCommand::TriggerAction { .. }));
+
+    assert!(
+        plugin
+            .recv_timeout(Duration::from_millis(100))
+            .await
+            .is_none(),
+        "rapid duplicate connect actions must not reach the plugin"
+    );
+
+    daemon.shutdown().await;
+}
+
+/// A daemon timeout must actively cancel the plugin operation.
+#[tokio::test]
+#[serial]
+async fn timed_out_action_sends_cancellation_to_plugin() {
+    let daemon = TestDaemon::start().await;
+
+    let mut plugin = TestPlugin::connect(&daemon.socket_path).await;
+    let handshake = plugin.handshake("test-plugin", "test-plugin-impl").await;
+    assert!(matches!(
+        handshake,
+        waft_protocol::HandshakeMessage::HelloAck(_)
+    ));
+    let urn = Urn::new("test-plugin", "test-entity", "item-timeout");
+    plugin
+        .send_entity(
+            urn.clone(),
+            "test-entity",
+            serde_json::json!({"ready": true}),
+        )
+        .await;
+    settle().await;
+
+    let mut app = TestApp::connect(&daemon.socket_path).await;
+    app.subscribe("test-entity").await;
+    settle().await;
+
+    let action_id = Uuid::new_v4();
+    app.send(&AppMessage::TriggerAction {
+        urn,
+        action: "connect".to_string(),
+        action_id,
+        params: serde_json::Value::Null,
+        timeout_ms: Some(50),
+    })
+    .await;
+
+    let command = plugin
+        .recv_timeout(TIMEOUT)
+        .await
+        .expect("plugin should receive the timed action");
+    assert!(matches!(command, PluginCommand::TriggerAction { .. }));
+
+    let timeout_error = app
+        .recv_timeout(Duration::from_secs(1))
+        .await
+        .expect("app should receive timeout error");
+    assert!(matches!(
+        timeout_error,
+        AppNotification::ActionError { action_id: id, .. } if id == action_id
+    ));
+
+    let cancel = plugin
+        .recv_timeout(TIMEOUT)
+        .await
+        .expect("plugin should receive cancellation");
+    assert_eq!(cancel, PluginCommand::CancelAction { action_id });
+
+    daemon.shutdown().await;
+}

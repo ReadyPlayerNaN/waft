@@ -838,6 +838,61 @@ impl Plugin for NetworkManagerPlugin {
 
         Ok(serde_json::Value::Null)
     }
+
+    async fn handle_action_cancelled(&self, urn: &Urn, action: &str, _params: &serde_json::Value) {
+        if matches!(
+            (urn.entity_type(), action),
+            ("vpn", "connect") | ("vpn", "disconnect")
+        ) {
+            // Invalidate any reconciliation task spawned by the action before
+            // restoring the authoritative pre-action state.
+            self.begin_vpn_action(urn.id());
+        }
+        let mut state = self.lock_state();
+        let mut changed = false;
+        match (urn.entity_type(), action) {
+            ("vpn", "connect") => {
+                if let Some(vpn) = state
+                    .vpn_connections
+                    .iter_mut()
+                    .find(|vpn| vpn.uuid == urn.id())
+                {
+                    vpn.state = VpnState::Disconnected;
+                    changed = true;
+                }
+            }
+            ("vpn", "disconnect") => {
+                if let Some(vpn) = state
+                    .vpn_connections
+                    .iter_mut()
+                    .find(|vpn| vpn.uuid == urn.id())
+                {
+                    vpn.state = VpnState::Connected;
+                    changed = true;
+                }
+            }
+            ("wifi-network", "connect") | ("wifi-network", "disconnect") => {
+                if state.connecting_ssid.take().is_some() {
+                    changed = true;
+                }
+            }
+            ("network-adapter", "activate") | ("network-adapter", "deactivate") => {
+                for adapter in &mut state.wifi_adapters {
+                    if adapter.interface_name == urn.id() && adapter.busy {
+                        adapter.busy = false;
+                        changed = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        if changed {
+            state.vpn_revision = state.vpn_revision.wrapping_add(1);
+            state.wifi_revision = state.wifi_revision.wrapping_add(1);
+            drop(state);
+            self.notifier.notify();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1738,8 +1793,25 @@ fn main() -> Result<()> {
         let bluez_state = shared_state.clone();
         let bluez_notifier = notifier.clone();
         spawn_monitored("nm/bluez-monitor", async move {
-            let bluez_conn = Connection::system().await?;
-            monitor_bluez_signals(bluez_conn, bluez_state, bluez_notifier).await
+            loop {
+                match Connection::system().await {
+                    Ok(bluez_conn) => {
+                        if let Err(error) = monitor_bluez_signals(
+                            bluez_conn,
+                            bluez_state.clone(),
+                            bluez_notifier.clone(),
+                        )
+                        .await
+                        {
+                            warn!("[nm] BlueZ signal monitor failed; reconnecting: {error}");
+                        } else {
+                            warn!("[nm] BlueZ signal stream ended; reconnecting");
+                        }
+                    }
+                    Err(error) => warn!("[nm] Failed to connect to BlueZ; retrying: {error}"),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
         });
 
         // WiFi scan background task — pure D-Bus, runs on main tokio runtime

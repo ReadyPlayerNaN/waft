@@ -565,6 +565,7 @@ fn describe_power_plugin() -> Option<PluginDescription> {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn monitor_backend_signals<T, F>(
     conn: Connection,
     sender: &str,
@@ -639,36 +640,57 @@ fn main() -> Result<()> {
 
         let battery = plugin.shared_battery();
         let profile = plugin.shared_profile();
-        let battery_conn = plugin.conn.clone();
-        let profile_conn = plugin.conn.clone();
+        let notifier_battery = notifier.clone();
+        let notifier_profile = notifier;
+        spawn_monitored("power/battery", async move {
+            loop {
+                match Connection::system().await {
+                    Ok(conn) => {
+                        if let Err(error) = monitor_backend_signals(
+                            conn,
+                            UPOWER_DEST,
+                            DISPLAY_DEVICE_PATH,
+                            UPOWER_DEVICE_IFACE,
+                            "battery",
+                            battery.clone(),
+                            notifier_battery.clone(),
+                            |conn| Box::pin(async move { get_battery_info(&conn).await }),
+                        )
+                        .await
+                        {
+                            log::warn!("[power] battery monitor failed; reconnecting: {error}");
+                        }
+                    }
+                    Err(error) => log::warn!("[power] system bus unavailable: {error}"),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
 
-        spawn_monitored(
-            "power/battery",
-            monitor_backend_signals(
-                battery_conn,
-                UPOWER_DEST,
-                DISPLAY_DEVICE_PATH,
-                UPOWER_DEVICE_IFACE,
-                "battery",
-                battery,
-                notifier.clone(),
-                |conn| Box::pin(async move { get_battery_info(&conn).await }),
-            ),
-        );
-
-        spawn_monitored(
-            "power/power-profile",
-            monitor_backend_signals(
-                profile_conn,
-                POWER_PROFILES_DEST,
-                POWER_PROFILES_PATH,
-                POWER_PROFILES_IFACE,
-                "power profile",
-                profile,
-                notifier,
-                |conn| Box::pin(async move { get_power_profile_info(&conn).await }),
-            ),
-        );
+        spawn_monitored("power/power-profile", async move {
+            loop {
+                match Connection::system().await {
+                    Ok(conn) => {
+                        if let Err(error) = monitor_backend_signals(
+                            conn,
+                            POWER_PROFILES_DEST,
+                            POWER_PROFILES_PATH,
+                            POWER_PROFILES_IFACE,
+                            "power profile",
+                            profile.clone(),
+                            notifier_profile.clone(),
+                            |conn| Box::pin(async move { get_power_profile_info(&conn).await }),
+                        )
+                        .await
+                        {
+                            log::warn!("[power] profile monitor failed; reconnecting: {error}");
+                        }
+                    }
+                    Err(error) => log::warn!("[power] system bus unavailable: {error}"),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
 
         Ok(plugin)
     })

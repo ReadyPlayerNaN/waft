@@ -53,6 +53,7 @@ pub struct Connection {
     pub kind: ClientKind,
     pub protocol: ProtocolState,
     tx: mpsc::Sender<Vec<u8>>,
+    control_tx: mpsc::Sender<Vec<u8>>,
 }
 
 impl Connection {
@@ -61,14 +62,16 @@ impl Connection {
         let id = Uuid::new_v4();
         let (read_half, write_half) = stream.into_split();
         let (tx, rx) = mpsc::channel(64);
+        let (control_tx, control_rx) = mpsc::channel(64);
 
-        tokio::spawn(write_loop(id, write_half, rx));
+        tokio::spawn(write_loop(id, write_half, control_rx, rx));
 
         let conn = Connection {
             id,
             kind: ClientKind::Unknown,
             protocol: ProtocolState::default(),
             tx,
+            control_tx,
         };
 
         (
@@ -82,16 +85,30 @@ impl Connection {
 
     /// Queue a serialized message to send to this client.
     pub async fn send<T: Serialize>(&self, msg: &T) -> Result<(), ConnectionError> {
+        self.send_frame(&self.tx, msg)
+    }
+
+    /// Send a control-plane command through the priority queue. Cancellation
+    /// and shutdown commands must not wait behind bulk entity updates.
+    pub async fn send_control<T: Serialize>(&self, msg: &T) -> Result<(), ConnectionError> {
+        self.send_frame(&self.control_tx, msg)
+    }
+
+    fn send_frame<T: Serialize>(
+        &self,
+        tx: &mpsc::Sender<Vec<u8>>,
+        msg: &T,
+    ) -> Result<(), ConnectionError> {
         let payload = serde_json::to_vec(msg)?;
         let len = payload.len() as u32;
         let mut frame = Vec::with_capacity(4 + payload.len());
         frame.extend_from_slice(&len.to_be_bytes());
         frame.extend_from_slice(&payload);
 
-        self.tx
-            .send(frame)
-            .await
-            .map_err(|_| ConnectionError::Closed)?;
+        tx.try_send(frame).map_err(|error| match error {
+            mpsc::error::TrySendError::Full(_) => ConnectionError::Backpressure,
+            mpsc::error::TrySendError::Closed(_) => ConnectionError::Closed,
+        })?;
         Ok(())
     }
 }
@@ -126,8 +143,37 @@ impl ReadHalf {
 }
 
 /// Background task that writes queued frames to the socket.
-async fn write_loop(conn_id: Uuid, mut writer: OwnedWriteHalf, mut rx: mpsc::Receiver<Vec<u8>>) {
-    while let Some(frame) = rx.recv().await {
+async fn write_loop(
+    conn_id: Uuid,
+    mut writer: OwnedWriteHalf,
+    mut control_rx: mpsc::Receiver<Vec<u8>>,
+    mut rx: mpsc::Receiver<Vec<u8>>,
+) {
+    let mut control_open = true;
+    loop {
+        let mut control_closed = false;
+        let frame = if control_open {
+            tokio::select! {
+                biased;
+                frame = control_rx.recv() => match frame {
+                    Some(frame) => Some(frame),
+                    None => {
+                        control_open = false;
+                        control_closed = true;
+                        None
+                    }
+                },
+                frame = rx.recv() => frame,
+            }
+        } else {
+            rx.recv().await
+        };
+        if control_closed {
+            continue;
+        }
+        let Some(frame) = frame else {
+            break;
+        };
         if let Err(e) = writer.write_all(&frame).await {
             debug!("write error for connection {conn_id}: {e}");
             break;
@@ -143,6 +189,7 @@ pub enum ConnectionError {
     Serialization(serde_json::Error),
     FrameTooLarge(usize),
     Closed,
+    Backpressure,
 }
 
 impl std::fmt::Display for ConnectionError {
@@ -154,6 +201,7 @@ impl std::fmt::Display for ConnectionError {
                 write!(f, "frame too large: {size} bytes (max: {MAX_FRAME_SIZE})")
             }
             ConnectionError::Closed => write!(f, "connection closed"),
+            ConnectionError::Backpressure => write!(f, "connection output queue full"),
         }
     }
 }

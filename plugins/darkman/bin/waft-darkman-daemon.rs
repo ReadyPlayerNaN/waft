@@ -339,13 +339,23 @@ fn main() -> Result<()> {
 
         // Grab shared handles before plugin is moved into the runtime
         let shared_state = plugin.shared_state();
-        let monitor_conn = plugin.conn.clone();
-
-        // Listen for D-Bus ModeChanged signals (instant, no polling)
-        spawn_monitored(
-            "darkman",
-            monitor_mode_signals(monitor_conn, shared_state, notifier),
-        );
+        // Listen for D-Bus ModeChanged signals and reconnect after bus or
+        // monitor failure instead of silently losing external updates.
+        spawn_monitored("darkman", async move {
+            loop {
+                match Connection::session().await {
+                    Ok(conn) => {
+                        if let Err(error) =
+                            monitor_mode_signals(conn, shared_state.clone(), notifier.clone()).await
+                        {
+                            log::warn!("[darkman] monitor failed; reconnecting: {error}");
+                        }
+                    }
+                    Err(error) => log::warn!("[darkman] session bus unavailable: {error}"),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
 
         Ok(plugin)
     })
