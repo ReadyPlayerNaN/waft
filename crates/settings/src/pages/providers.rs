@@ -101,6 +101,13 @@ fn reconcile(
                 let row = adw::SwitchRow::builder()
                     .title(&provider.display_name)
                     .build();
+                let configure = gtk::Button::with_label(&t("providers-configure"));
+                let provider_name = provider.display_name.clone();
+                let provider_slug = provider.provider.clone();
+                configure.connect_clicked(move |button| {
+                    show_credentials_dialog(button, &provider_name, &provider_slug);
+                });
+                row.add_suffix(&configure);
                 let updating = Rc::new(Cell::new(false));
                 let updating_ref = updating.clone();
                 let callback = action_callback.clone();
@@ -174,4 +181,50 @@ fn reconcile(
             );
         }
     }
+}
+
+fn show_credentials_dialog(parent: &impl IsA<gtk::Widget>, display_name: &str, slug: &str) {
+    let dialog = adw::AlertDialog::builder()
+        .heading(format!("{} — {}", t("providers-configure"), display_name))
+        .body(t("providers-credentials-dialog-body"))
+        .close_response("close")
+        .build();
+    dialog.add_response("close", &t("providers-dialog-close"));
+
+    let instructions = gtk::Label::builder()
+        .label(provider_credentials_help(slug))
+        .xalign(0.0)
+        .wrap(true)
+        .selectable(true)
+        .margin_start(12)
+        .margin_end(12)
+        .margin_top(12)
+        .margin_bottom(12)
+        .build();
+    dialog.set_extra_child(Some(&instructions));
+    dialog.present(Some(parent));
+}
+
+fn provider_credentials_help(slug: &str) -> String {
+    let details_key = match slug {
+        "claude" => "providers-help-claude",
+        "codex" => "providers-help-codex",
+        "cursor" => "providers-help-cursor",
+        "deepseek" => "providers-help-deepseek",
+        "antigravity" => "providers-help-antigravity",
+        "github-copilot" => "providers-help-github-copilot",
+        "grok" => "providers-help-grok",
+        "kimi" => "providers-help-kimi",
+        "minimax" => "providers-help-minimax",
+        "openrouter" => "providers-help-openrouter",
+        "siliconflow" => "providers-help-siliconflow",
+        "zai" => "providers-help-zai",
+        "mimo" => "providers-help-mimo",
+        _ => "providers-help-generic",
+    };
+    format!(
+        "{}\n\n{}",
+        t(details_key),
+        t("providers-credentials-dialog-footer")
+    )
 }

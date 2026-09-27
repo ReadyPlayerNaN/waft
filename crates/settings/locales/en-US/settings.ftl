@@ -36,6 +36,24 @@ providers-title = AI Providers
 providers-description = Choose which configured AI providers report usage quotas to Waft.
 providers-credentials-found = Credentials found
 providers-credentials-missing = No credentials found
+providers-configure = Configure credentials
+providers-credentials-dialog-body = Waft reads credentials from the provider's supported CLI, local auth files, or environment variables. Configure the provider outside Waft, then return here and restart the provider daemon if needed.
+providers-credentials-dialog-footer = Credentials are never stored by Waft. Do not paste secret keys into this dialog.
+providers-dialog-close = Close
+providers-help-claude = Claude: sign in with `claude` or set ANTHROPIC_API_KEY.
+providers-help-codex = Codex: run `codex login` or set OPENAI_API_KEY.
+providers-help-cursor = Cursor: sign in to Cursor; quotas reads the local Cursor credentials.
+providers-help-deepseek = Set DEEPSEEK_API_KEY or save it in ~/.deepseek.
+providers-help-antigravity = Sign in with the supported Gemini/Antigravity client, or set GEMINI_API_KEY / GOOGLE_API_KEY.
+providers-help-github-copilot = Sign in with OpenCode/Pi or set GITHUB_COPILOT_TOKEN.
+providers-help-grok = Sign in with the supported Grok client, or set XAI_MANAGEMENT_KEY / XAI_API_KEY.
+providers-help-kimi = Sign in with the Kimi CLI/OpenCode/Pi, or set KIMI_API_KEY / MOONSHOT_API_KEY.
+providers-help-minimax = Sign in with OpenCode/Pi, or set MINIMAX_API_KEY.
+providers-help-openrouter = Set OPENROUTER_API_KEY or save it in ~/.openrouter.
+providers-help-siliconflow = Set SILICONFLOW_API_KEY or SILICON_FLOW_API_KEY.
+providers-help-zai = Sign in with OpenCode/Pi, or set ZAI_API_KEY / ZHIPU_API_KEY.
+providers-help-mimo = Set MIMO_API_KEY or save a supported cookie/API key in the local MiMo credential file.
+providers-help-generic = Use the provider's supported CLI login or API-key environment variable.
 
 # Power
 power-battery-section = Battery

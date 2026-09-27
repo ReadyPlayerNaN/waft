@@ -36,6 +36,24 @@ providers-title = Poskytovatelé AI
 providers-description = Vyberte, kteří nakonfigurovaní poskytovatelé AI mají hlásit kvóty využití do Waftu.
 providers-credentials-found = Přihlašovací údaje nalezeny
 providers-credentials-missing = Přihlašovací údaje nenalezeny
+providers-configure = Nastavit přihlašovací údaje
+providers-credentials-dialog-body = Waft načítá přihlašovací údaje z podporovaného CLI poskytovatele, místních souborů nebo proměnných prostředí. Nastavte poskytovatele mimo Waft a poté se vraťte sem; v případě potřeby restartujte jeho démona.
+providers-credentials-dialog-footer = Waft přihlašovací údaje neukládá. Nevkládejte do tohoto dialogu tajné klíče.
+providers-dialog-close = Zavřít
+providers-help-claude = Claude: přihlaste se pomocí `claude` nebo nastavte ANTHROPIC_API_KEY.
+providers-help-codex = Codex: spusťte `codex login` nebo nastavte OPENAI_API_KEY.
+providers-help-cursor = Cursor: přihlaste se do Cursoru; kvóty načtou místní přihlašovací údaje Cursoru.
+providers-help-deepseek = Nastavte DEEPSEEK_API_KEY nebo klíč uložte do ~/.deepseek.
+providers-help-antigravity = Přihlaste se podporovaným klientem Gemini/Antigravity nebo nastavte GEMINI_API_KEY / GOOGLE_API_KEY.
+providers-help-github-copilot = Přihlaste se pomocí OpenCode/Pi nebo nastavte GITHUB_COPILOT_TOKEN.
+providers-help-grok = Přihlaste se podporovaným klientem Grok nebo nastavte XAI_MANAGEMENT_KEY / XAI_API_KEY.
+providers-help-kimi = Přihlaste se pomocí Kimi CLI/OpenCode/Pi nebo nastavte KIMI_API_KEY / MOONSHOT_API_KEY.
+providers-help-minimax = Přihlaste se pomocí OpenCode/Pi nebo nastavte MINIMAX_API_KEY.
+providers-help-openrouter = Nastavte OPENROUTER_API_KEY nebo klíč uložte do ~/.openrouter.
+providers-help-siliconflow = Nastavte SILICONFLOW_API_KEY nebo SILICON_FLOW_API_KEY.
+providers-help-zai = Přihlaste se pomocí OpenCode/Pi nebo nastavte ZAI_API_KEY / ZHIPU_API_KEY.
+providers-help-mimo = Nastavte MIMO_API_KEY nebo použijte podporovaný soubor s cookie či API klíčem MiMo.
+providers-help-generic = Použijte podporované přihlášení CLI poskytovatele nebo proměnnou prostředí s API klíčem.
 
 # Power
 power-battery-section = Baterie
