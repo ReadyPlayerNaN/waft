@@ -57,6 +57,9 @@ pub struct ProviderUsageWindow {
     pub remaining: i64,
     /// Unix timestamp (ms) when this window resets.
     pub reset_at: Option<i64>,
+    /// Whether used/remaining values are percentages rather than credits or units.
+    #[serde(default)]
+    pub percentage: bool,
     /// Total window length in seconds, when reported by the provider.
     pub period_seconds: Option<i64>,
 }
@@ -78,6 +81,7 @@ mod tests {
                 limit: 100,
                 remaining: 58,
                 reset_at: Some(1_000_000_000_000),
+                percentage: true,
                 period_seconds: Some(18_000),
             }],
             usage_url: Some("https://example.com/usage".to_string()),

@@ -348,6 +348,20 @@ impl MainWindowWidget {
                 background: transparent;
             }}
 
+            /* Keep provider quota tooltips readable over the transparent layer shell. */
+            tooltip {{
+                background-color: @card_bg_color;
+                color: @card_fg_color;
+                border: 1px solid @borders;
+                border-radius: 8px;
+                box-shadow: 0 4px 16px alpha(black, 0.35);
+                padding: 8px 10px;
+            }}
+
+            tooltip label {{
+                color: @card_fg_color;
+            }}
+
             .relm4-overlay-surface {{
                 background: @window_bg_color;
                 border-radius: {OVERLAY_CORNER_RADIUS_PX}px;

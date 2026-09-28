@@ -3,6 +3,18 @@
 # App
 app-title = sacrebleui (overlay host)
 
+# Provider quota tooltips
+providers-tooltip-provider = Provider
+providers-tooltip-plan = Plan
+providers-tooltip-window = Window
+providers-tooltip-used = Used
+providers-tooltip-remaining = Remaining
+providers-tooltip-resets = Resets
+providers-tooltip-updated = Updated
+providers-tooltip-just-now = just now
+providers-tooltip-minutes-ago = { $minutes }m ago
+providers-tooltip-hours-ago = { $hours }h ago
+
 # Notifications
 notifications-title = Notifications
 notifications-empty = No notifications

@@ -3,6 +3,18 @@
 # App
 app-title = sacrebleui (overlay host)
 
+# Nápovědy kvót poskytovatelů
+providers-tooltip-provider = Poskytovatel
+providers-tooltip-plan = Tarif
+providers-tooltip-window = Okno
+providers-tooltip-used = Využito
+providers-tooltip-remaining = Zbývá
+providers-tooltip-resets = Obnoví se
+providers-tooltip-updated = Aktualizováno
+providers-tooltip-just-now = právě teď
+providers-tooltip-minutes-ago = před { $minutes } min
+providers-tooltip-hours-ago = před { $hours } h
+
 # Notifications
 notifications-title = Oznámení
 notifications-empty = Žádná oznámení

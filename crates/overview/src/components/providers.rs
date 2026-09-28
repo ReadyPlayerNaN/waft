@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gtk::prelude::*;
 
+use crate::i18n::{t, t_args};
 use waft_client::EntityStore;
 use waft_protocol::entity;
 use waft_ui_gtk::links::open_uri;
@@ -122,14 +123,21 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
 
             let reset = format_remaining(window.reset_at);
             let details = format!(
-                "{}\nPlan: {}\n{}\nUsed: {} / {}\nRemaining: {}\nResets: {}\nUpdated: {}",
+                "{}: {}\n{}: {}\n{}: {}\n{}: {} / {}\n{}: {}\n{}: {}\n{}: {}",
+                t("providers-tooltip-provider"),
                 usage.display_name,
+                t("providers-tooltip-plan"),
                 usage.plan_name,
+                t("providers-tooltip-window"),
                 window.window_type,
-                window.used,
-                window.limit,
-                window.remaining,
+                t("providers-tooltip-used"),
+                format_quota_value(window.used, window.percentage),
+                format_quota_value(window.limit, window.percentage),
+                t("providers-tooltip-remaining"),
+                format_quota_value(window.remaining, window.percentage),
+                t("providers-tooltip-resets"),
                 reset,
+                t("providers-tooltip-updated"),
                 format_freshness(usage.fetched_at)
             );
             card.set_icon(&icon);
@@ -157,6 +165,14 @@ fn format_percentage(value: f64) -> String {
     format!("{value:.0}\u{00a0}%")
 }
 
+fn format_quota_value(value: i64, percentage: bool) -> String {
+    if percentage {
+        format!("{value}\u{00a0}%")
+    } else {
+        value.to_string()
+    }
+}
+
 fn format_freshness(fetched_at_ms: i64) -> String {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -164,11 +180,13 @@ fn format_freshness(fetched_at_ms: i64) -> String {
         .as_millis() as i64;
     let age_secs = ((now_ms - fetched_at_ms) / 1000).max(0);
     if age_secs < 60 {
-        "just now".to_string()
+        t("providers-tooltip-just-now")
     } else if age_secs < 3600 {
-        format!("{}m ago", age_secs / 60)
+        let minutes = (age_secs / 60).to_string();
+        t_args("providers-tooltip-minutes-ago", &[("minutes", &minutes)])
     } else {
-        format!("{}h ago", age_secs / 3600)
+        let hours = (age_secs / 3600).to_string();
+        t_args("providers-tooltip-hours-ago", &[("hours", &hours)])
     }
 }
 fn provider_icon(provider: &str) -> String {
@@ -286,6 +304,12 @@ mod tests {
     fn percentage_format_uses_a_non_breaking_space() {
         assert_eq!(format_percentage(0.0), "0\u{00a0}%");
         assert_eq!(format_percentage(42.0), "42\u{00a0}%");
+    }
+
+    #[test]
+    fn tooltip_values_distinguish_percentages_from_credits() {
+        assert_eq!(format_quota_value(42, true), "42\u{00a0}%");
+        assert_eq!(format_quota_value(42, false), "42");
     }
 
     #[test]

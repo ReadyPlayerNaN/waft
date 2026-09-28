@@ -29,7 +29,7 @@ Providers without credentials are skipped. Failed refreshes retain the last succ
 | `provider-usage` | `providers/provider-usage/{provider}` | Usage quota windows for one AI provider |
 | `provider-config` | `providers/provider-config/{provider}` | Enablement and credential status for one AI provider |
 
-Each usage entity contains the provider name, plan, fetch timestamps, an optional dashboard usage URL, and a list of windows. Windows carry provider-defined labels such as `5h`, `weekly`, or `monthly`, used/limit/remaining values, reset timestamps, and optional window durations. Configuration entities also expose the shared usage/leftover display mode.
+Each usage entity contains the provider name, plan, fetch timestamps, an optional dashboard usage URL, and a list of windows. Windows carry provider-defined labels such as `5h`, `weekly`, or `monthly`, used/limit/remaining values, reset timestamps, optional window durations, and a flag identifying percentage-based capacity (for example Codex rate limits) versus credits/units. Configuration entities also expose the shared usage/leftover display mode.
 
 ## Configuration
 

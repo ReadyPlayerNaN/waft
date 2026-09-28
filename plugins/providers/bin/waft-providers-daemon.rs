@@ -250,6 +250,7 @@ fn provider_result_to_entity(result: &ProviderResult) -> Option<Entity> {
             limit: window.limit,
             remaining: window.remaining,
             reset_at: window.reset_at.map(|time| time.timestamp_millis()),
+            percentage: is_percentage_window(result.kind, &window.window_type),
             period_seconds: window.period_seconds,
         })
         .collect();
@@ -291,8 +292,16 @@ fn provider_usage_url(kind: ProviderKind) -> &'static str {
         ProviderKind::Minimax => "https://platform.minimax.io/user-center/payment/coding-plan",
         ProviderKind::OpenRouter => "https://openrouter.ai/activity",
         ProviderKind::SiliconFlow => "https://cloud.siliconflow.cn/account/ak",
-        ProviderKind::Zai => "https://open.bigmodel.cn/finance-center/finance/pay",
+        ProviderKind::Zai => "https://z.ai/manage-apikey/coding-plan/personal/usage",
         ProviderKind::Mimo => "https://platform.xiaomimimo.com",
+    }
+}
+
+fn is_percentage_window(kind: ProviderKind, window_type: &str) -> bool {
+    match kind {
+        ProviderKind::Codex => window_type != "credits",
+        ProviderKind::Grok => window_type == "7d" || window_type.starts_with("7d/"),
+        _ => false,
     }
 }
 
@@ -580,7 +589,7 @@ fn main() -> Result<()> {
 mod tests {
     use super::{
         ProviderKind, ProviderResult, ProviderSettings, ProviderStatus, ProviderUsage,
-        build_providers, provider_result_to_entity, provider_usage_url,
+        build_providers, is_percentage_window, provider_result_to_entity, provider_usage_url,
     };
     use chrono::Utc;
     use quotas::providers::{ProviderQuota, QuotaWindow};
@@ -653,5 +662,20 @@ mod tests {
             provider_usage_url(ProviderKind::Codex),
             "https://chatgpt.com/codex/cloud/settings/analytics#usage"
         );
+        assert_eq!(
+            provider_usage_url(ProviderKind::Zai),
+            "https://z.ai/manage-apikey/coding-plan/personal/usage"
+        );
+    }
+
+    #[test]
+    fn percentage_windows_are_marked_for_percent_based_providers() {
+        assert!(is_percentage_window(ProviderKind::Codex, "5h"));
+        assert!(is_percentage_window(ProviderKind::Grok, "7d/build"));
+        assert!(!is_percentage_window(ProviderKind::Codex, "credits"));
+        assert!(!is_percentage_window(
+            ProviderKind::OpenRouter,
+            "credits_usd"
+        ));
     }
 }
