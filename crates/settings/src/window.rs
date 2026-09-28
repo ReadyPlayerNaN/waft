@@ -80,7 +80,22 @@ impl SettingsWindow {
         initial_page: Option<&str>,
     ) -> Self {
         let search_index = Rc::new(RefCell::new(SearchIndex::new()));
-        let split_view = adw::NavigationSplitView::new();
+        let shell_builder = gtk::Builder::from_resource("/com/waft/settings/settings-shell.ui");
+        let split_view: adw::NavigationSplitView = shell_builder
+            .object("split_view")
+            .expect("settings-shell.ui must contain split_view");
+        let sidebar_page: adw::NavigationPage = shell_builder
+            .object("sidebar_page")
+            .expect("settings-shell.ui must contain sidebar_page");
+        let sidebar_slot: gtk::Box = shell_builder
+            .object("sidebar_slot")
+            .expect("settings-shell.ui must contain sidebar_slot");
+        let content_page: adw::NavigationPage = shell_builder
+            .object("content_page")
+            .expect("settings-shell.ui must contain content_page");
+        let content_slot: gtk::Box = shell_builder
+            .object("content_slot")
+            .expect("settings-shell.ui must contain content_slot");
 
         // -- Sidebar --
         let sidebar = Sidebar::new(search_index.clone());
@@ -109,13 +124,9 @@ impl SettingsWindow {
             .build();
         sidebar_scrolled.set_child(Some(&sidebar.root));
         sidebar_toolbar.set_content(Some(&sidebar_scrolled));
-
-        let sidebar_page = adw::NavigationPage::builder()
-            .title(t("settings-title"))
-            .child(&sidebar_toolbar)
-            .build();
-
-        split_view.set_sidebar(Some(&sidebar_page));
+        sidebar_slot.append(&sidebar_toolbar);
+        let sidebar_title = t("settings-title");
+        sidebar_page.set_title(&sidebar_title);
 
         // Create NavigationView early so sub-page-aware pages can reference it.
         // The root navigation page is added later after the stack is built.
@@ -385,12 +396,8 @@ impl SettingsWindow {
 
         navigation_view.add(&root_nav_page);
 
-        let content_page = adw::NavigationPage::builder()
-            .title(initial_title)
-            .child(&navigation_view)
-            .build();
-
-        split_view.set_content(Some(&content_page));
+        content_page.set_title(&initial_title);
+        content_slot.append(&navigation_view);
 
         // -- Connect sidebar selection --
         let stack_ref = stack.clone();

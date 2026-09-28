@@ -2,14 +2,12 @@
 
 /// Build the standard root box used by all settings pages.
 ///
-/// Vertical orientation, 24px spacing, 24/24/12/12 margins.
+/// The stable hierarchy and layout properties are defined in
+/// `ui/page-root.ui`; pages remain responsible for appending their dynamic
+/// sections in Rust.
 pub fn page_root() -> gtk::Box {
-    gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(24)
-        .margin_top(24)
-        .margin_bottom(24)
-        .margin_start(12)
-        .margin_end(12)
-        .build()
+    let builder = gtk::Builder::from_resource("/com/waft/settings/page-root.ui");
+    builder
+        .object("root")
+        .expect("page-root.ui must contain a GtkBox named root")
 }

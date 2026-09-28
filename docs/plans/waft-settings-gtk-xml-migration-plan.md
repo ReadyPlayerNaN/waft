@@ -105,7 +105,7 @@ Before implementation:
 - [x] Choose the resource location, recommended: `crates/settings/ui/`.
 - [x] Add one resource manifest and one resource-registration path.
 - [x] Document template naming, IDs, and component ownership conventions.
-- [ ] Verify debug and release builds include the same resources.
+- [x] Verify debug and release builds include the same resources.
 
 ## Component conventions
 
@@ -228,15 +228,15 @@ The abstraction must work with the containers actually used by the settings app,
 
 ### Tasks
 
-- [ ] Define the static `AdwNavigationSplitView` shell in XML.
-- [ ] Define static sidebar header/search presentation in XML.
-- [ ] Define sidebar category/group containers in XML.
+- [x] Define the static `AdwNavigationSplitView` shell in XML.
+- [x] Define static sidebar header/search presentation in XML.
+- [x] Define sidebar category/group containers in XML.
 - [ ] Keep page category data and translated labels in Rust initially.
 - [ ] Keep dynamic WiFi/wired sidebar visibility in Rust.
-- [ ] Define the content navigation and page placeholder in XML.
+- [x] Define the content navigation and page placeholder in XML.
 - [ ] Keep the page factory/lazy construction behavior in Rust.
 - [ ] Keep `gtk::Stack`/`AdwNavigationView` navigation callbacks in Rust.
-- [ ] Convert the standard page root from repeated builder properties into a template or shared XML fragment only if that does not complicate ownership.
+- [x] Convert the standard page root from repeated builder properties into a template or shared XML fragment only if that does not complicate ownership.
 - [ ] Move stable search-result row structure into XML.
 - [ ] Preserve search result selection and post-construction widget lookup behavior.
 - [ ] Preserve initial-page command-line navigation.

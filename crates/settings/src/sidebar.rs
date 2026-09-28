@@ -229,31 +229,32 @@ pub struct Sidebar {
 
 impl Sidebar {
     pub fn new(search_index: Rc<RefCell<SearchIndex>>) -> Self {
-        let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let builder = gtk::Builder::from_resource("/com/waft/settings/sidebar.ui");
+        let container: gtk::Box = builder
+            .object("root")
+            .expect("sidebar.ui must contain root");
+        let search_bar: gtk::SearchBar = builder
+            .object("search_bar")
+            .expect("sidebar.ui must contain search_bar");
+        let search_entry: gtk::SearchEntry = builder
+            .object("search_entry")
+            .expect("sidebar.ui must contain search_entry");
+        let categories_box: gtk::Box = builder
+            .object("categories_box")
+            .expect("sidebar.ui must contain categories_box");
+        let search_results_slot: gtk::Box = builder
+            .object("search_results_slot")
+            .expect("sidebar.ui must contain search_results_slot");
         let output_cb: OutputCallback = Rc::new(RefCell::new(None));
         let selecting = Rc::new(Cell::new(false));
 
-        // -- Search bar --
-        let search_entry = gtk::SearchEntry::builder()
-            .placeholder_text(t("search-placeholder"))
-            .hexpand(true)
-            .build();
-
-        let search_bar = gtk::SearchBar::builder()
-            .child(&search_entry)
-            .show_close_button(false)
-            .build();
+        search_entry.set_placeholder_text(Some(&t("search-placeholder")));
         search_bar.connect_entry(&search_entry);
-        container.append(&search_bar);
-
-        // -- Categories container (shown when not searching) --
-        let categories_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        container.append(&categories_box);
 
         // -- Search results (shown when searching) --
         let search_results = SearchResults::new();
         search_results.root.set_visible(false);
-        container.append(&search_results.root);
+        search_results_slot.append(&search_results.root);
 
         let mut list_boxes: Vec<gtk::ListBox> = Vec::new();
         let mut wifi_row_slot: Option<adw::ActionRow> = None;

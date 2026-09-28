@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwNavigationPage" id="root">
+    <property name="title">Settings</property>
+    <property name="child">
+      <object class="AdwToolbarView" id="toolbar">
+        <child type="top">
+          <object class="AdwHeaderBar" id="header" />
+        </child>
+        <property name="content">
+          <object class="GtkScrolledWindow" id="scrolled">
+            <property name="hscrollbar-policy">never</property>
+            <property name="child">
+              <object class="AdwClamp" id="clamp">
+                <property name="maximum-size">600</property>
+              </object>
+            </property>
+          </object>
+        </property>
+      </object>
+    </property>
+  </object>
+</interface>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="GtkBox" id="root">
+    <property name="orientation">vertical</property>
+    <property name="spacing">24</property>
+    <property name="margin-top">24</property>
+    <property name="margin-bottom">24</property>
+    <property name="margin-start">12</property>
+    <property name="margin-end">12</property>
+  </object>
+</interface>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwNavigationSplitView" id="split_view">
+    <property name="sidebar-width-fraction">0.28</property>
+    <property name="min-sidebar-width">220</property>
+    <child type="sidebar">
+      <object class="AdwNavigationPage" id="sidebar_page">
+        <child>
+          <object class="GtkBox" id="sidebar_slot">
+            <property name="orientation">vertical</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child type="content">
+      <object class="AdwNavigationPage" id="content_page">
+        <child>
+          <object class="GtkBox" id="content_slot">
+            <property name="orientation">vertical</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>
