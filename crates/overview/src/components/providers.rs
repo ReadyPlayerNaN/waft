@@ -40,7 +40,11 @@ impl QuotaWindowChart {
         capacity_fill.set_css_classes(&["provider-quota-fill"]);
         capacity_fill.set_halign(gtk::Align::Fill);
         capacity_fill.set_valign(gtk::Align::End);
-        capacity_track.append(&capacity_fill);
+
+        let capacity_overlay = gtk::Overlay::new();
+        capacity_overlay.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT);
+        capacity_overlay.set_child(Some(&capacity_track));
+        capacity_overlay.add_overlay(&capacity_fill);
 
         let reset_track = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         reset_track.set_css_classes(&["provider-quota-reset-track"]);
@@ -50,7 +54,11 @@ impl QuotaWindowChart {
         reset_fill.set_css_classes(&["provider-quota-fill"]);
         reset_fill.set_halign(gtk::Align::End);
         reset_fill.set_valign(gtk::Align::Fill);
-        reset_track.append(&reset_fill);
+
+        let reset_overlay = gtk::Overlay::new();
+        reset_overlay.set_size_request(CAPACITY_WIDTH, RESET_HEIGHT);
+        reset_overlay.set_child(Some(&reset_track));
+        reset_overlay.add_overlay(&reset_fill);
 
         let label_widget = gtk::Label::new(Some(label));
         label_widget.set_css_classes(&["caption", "provider-quota-label"]);
@@ -59,16 +67,13 @@ impl QuotaWindowChart {
         label_widget.set_margin_bottom(1);
         label_widget.set_width_request(CAPACITY_WIDTH);
 
-        let capacity_overlay = gtk::Overlay::new();
-        capacity_overlay.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT);
-        capacity_overlay.set_child(Some(&capacity_track));
         capacity_overlay.add_overlay(&label_widget);
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 1);
         root.set_css_classes(&["provider-quota-chart"]);
         root.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT + RESET_HEIGHT + 1);
         root.append(&capacity_overlay);
-        root.append(&reset_track);
+        root.append(&reset_overlay);
 
         Rc::new(Self {
             root,
@@ -78,9 +83,15 @@ impl QuotaWindowChart {
         })
     }
 
-    fn update(&self, window: &entity::ai::ProviderUsageWindow, now_ms: i64, details: &str) {
+    fn update(
+        &self,
+        window: &entity::ai::ProviderUsageWindow,
+        now_ms: i64,
+        display_usage: bool,
+        details: &str,
+    ) {
         self.label.set_label(&short_window_label(window));
-        let capacity_height = capacity_fraction(window)
+        let capacity_height = displayed_fraction(window, display_usage)
             .map(|fraction| (CAPACITY_HEIGHT as f64 * fraction).round() as i32)
             .unwrap_or(0);
         self.capacity_fill
@@ -131,6 +142,7 @@ impl ProviderCard {
         key: &str,
         window: &entity::ai::ProviderUsageWindow,
         now_ms: i64,
+        display_usage: bool,
         details: &str,
     ) {
         let chart = self
@@ -143,7 +155,7 @@ impl ProviderCard {
                 chart
             })
             .clone();
-        chart.update(window, now_ms, details);
+        chart.update(window, now_ms, display_usage, details);
         chart.root.set_visible(true);
     }
 
@@ -217,6 +229,12 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
+    let display_usage = store
+        .get_entities_typed::<entity::ai::ProviderConfig>(entity::ai::CONFIG_ENTITY_TYPE)
+        .into_iter()
+        .next()
+        .map(|(_, config)| config.display_usage)
+        .unwrap_or(true);
 
     let mut visible_cards = HashSet::new();
     for (urn, usage) in entities {
@@ -259,7 +277,7 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
                 t("providers-tooltip-updated"),
                 format_freshness(usage.fetched_at)
             );
-            card.update_window(&key, window, now_ms, &details);
+            card.update_window(&key, window, now_ms, display_usage, &details);
             visible_windows.insert(key);
             tooltip_sections.push(details);
         }
@@ -284,6 +302,17 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
 
 fn capacity_fraction(window: &entity::ai::ProviderUsageWindow) -> Option<f64> {
     percentage(window.remaining, window.limit)
+}
+
+fn displayed_fraction(
+    window: &entity::ai::ProviderUsageWindow,
+    display_usage: bool,
+) -> Option<f64> {
+    if display_usage {
+        percentage(window.used, window.limit)
+    } else {
+        capacity_fraction(window)
+    }
 }
 
 fn reset_remaining_fraction(window: &entity::ai::ProviderUsageWindow, now_ms: i64) -> Option<f64> {
@@ -512,6 +541,21 @@ mod tests {
         assert_eq!(percentage(25, 0), None);
         assert_eq!(percentage(25, -1), None);
         assert_eq!(percentage(25, 100), Some(0.25));
+    }
+
+    #[test]
+    fn usage_display_flips_the_selected_bar_value_without_moving_colors() {
+        let window = entity::ai::ProviderUsageWindow {
+            window_type: "5h".to_string(),
+            used: 7,
+            limit: 100,
+            remaining: 93,
+            reset_at: None,
+            percentage: true,
+            period_seconds: Some(5 * 3_600),
+        };
+        assert_eq!(displayed_fraction(&window, true), Some(0.07));
+        assert_eq!(displayed_fraction(&window, false), Some(0.93));
     }
 
     #[test]

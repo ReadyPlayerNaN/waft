@@ -25,7 +25,7 @@ use waft_protocol::entity::ai::{
 
 const POLL_INTERVAL_SECS: u64 = 300;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 struct ProviderSettings {
     #[serde(default)]
     enabled: BTreeMap<String, bool>,
@@ -34,16 +34,7 @@ struct ProviderSettings {
 }
 
 fn default_display_usage() -> bool {
-    true
-}
-
-impl Default for ProviderSettings {
-    fn default() -> Self {
-        Self {
-            enabled: BTreeMap::new(),
-            display_usage: true,
-        }
-    }
+    false
 }
 
 impl ProviderSettings {
@@ -652,8 +643,8 @@ mod tests {
     }
 
     #[test]
-    fn fresh_provider_settings_show_usage_by_default() {
-        assert!(ProviderSettings::default().display_usage);
+    fn fresh_provider_settings_show_remaining_by_default() {
+        assert!(!ProviderSettings::default().display_usage);
     }
 
     #[test]

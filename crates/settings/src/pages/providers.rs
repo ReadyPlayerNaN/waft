@@ -58,7 +58,7 @@ impl ProvidersPage {
             .description(t("providers-description"))
             .build();
         let display_row = adw::SwitchRow::builder()
-            .title(t("providers-display-usage"))
+            .title(t("providers-display-remaining"))
             .subtitle(t("providers-display-mode-description"))
             .build();
         group.add(&display_row);
@@ -85,7 +85,7 @@ impl ProvidersPage {
                 let _ = callback(
                     urn,
                     "set-display-mode".to_string(),
-                    serde_json::json!({ "display_usage": row.is_active() }),
+                    serde_json::json!({ "display_usage": !row.is_active() }),
                 );
             });
         }
@@ -124,20 +124,19 @@ fn reconcile(
     if let Some((urn, first)) = providers.first() {
         *state.display_urn.borrow_mut() = Some(urn.clone());
         state.display_updating.set(true);
-        state.display_row.set_active(first.display_usage);
-        let display_title = if first.display_usage {
-            t("providers-display-usage")
-        } else {
-            t("providers-display-leftover")
-        };
-        state.display_row.set_title(&display_title);
+        state.display_row.set_active(!first.display_usage);
+        state
+            .display_row
+            .set_title(&t("providers-display-remaining"));
         state.display_row.set_sensitive(true);
         state.display_updating.set(false);
     } else {
         *state.display_urn.borrow_mut() = None;
         state.display_updating.set(true);
-        state.display_row.set_active(true);
-        state.display_row.set_title(&t("providers-display-usage"));
+        state.display_row.set_active(false);
+        state
+            .display_row
+            .set_title(&t("providers-display-remaining"));
         state.display_row.set_sensitive(false);
         state.display_updating.set(false);
     }
