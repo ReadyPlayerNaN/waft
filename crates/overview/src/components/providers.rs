@@ -4,7 +4,7 @@
 //! quota window. Providers and windows are discovered from the protocol data,
 //! so the overview does not need provider-specific UI code.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,10 +14,192 @@ use gtk::prelude::*;
 use crate::i18n::{t, t_args};
 use waft_client::EntityStore;
 use waft_protocol::entity;
+use waft_ui_gtk::icons::{Icon, IconWidget};
 use waft_ui_gtk::links::open_uri;
-use waft_ui_gtk::widgets::info_card::InfoCardWidget;
 
-type CardMap = Rc<RefCell<HashMap<String, Rc<InfoCardWidget>>>>;
+type CardMap = Rc<RefCell<HashMap<String, Rc<ProviderCard>>>>;
+
+const CAPACITY_WIDTH: i32 = 16;
+const CAPACITY_HEIGHT: i32 = 32;
+const RESET_HEIGHT: i32 = 4;
+
+struct QuotaWindowChart {
+    root: gtk::Box,
+    capacity: Rc<Cell<Option<f64>>>,
+    reset_remaining: Rc<Cell<Option<f64>>>,
+    label: gtk::Label,
+}
+
+impl QuotaWindowChart {
+    fn new(label: &str) -> Rc<Self> {
+        let capacity = Rc::new(Cell::new(None));
+        let capacity_state = capacity.clone();
+        let capacity_area = gtk::DrawingArea::builder()
+            .content_width(CAPACITY_WIDTH)
+            .content_height(CAPACITY_HEIGHT)
+            .build();
+        capacity_area.set_draw_func(move |_area, cr, width, height| {
+            draw_capacity_bar(cr, width as f64, height as f64, capacity_state.get());
+        });
+
+        let reset_remaining = Rc::new(Cell::new(None));
+        let reset_state = reset_remaining.clone();
+        let reset_area = gtk::DrawingArea::builder()
+            .content_width(CAPACITY_WIDTH)
+            .content_height(RESET_HEIGHT)
+            .build();
+        reset_area.set_draw_func(move |_area, cr, width, height| {
+            draw_reset_bar(cr, width as f64, height as f64, reset_state.get());
+        });
+
+        let label_widget = gtk::Label::new(Some(label));
+        label_widget.set_css_classes(&["caption", "provider-quota-label"]);
+        label_widget.set_halign(gtk::Align::Center);
+        label_widget.set_valign(gtk::Align::End);
+        label_widget.set_margin_bottom(1);
+        label_widget.set_width_request(CAPACITY_WIDTH);
+
+        let capacity_overlay = gtk::Overlay::new();
+        capacity_overlay.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT);
+        capacity_overlay.set_child(Some(&capacity_area));
+        capacity_overlay.add_overlay(&label_widget);
+
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 1);
+        root.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT + RESET_HEIGHT + 1);
+        root.append(&capacity_overlay);
+        root.append(&reset_area);
+
+        Rc::new(Self {
+            root,
+            capacity,
+            reset_remaining,
+            label: label_widget,
+        })
+    }
+
+    fn update(&self, window: &entity::ai::ProviderUsageWindow, now_ms: i64, details: &str) {
+        self.label.set_label(&short_window_label(window));
+        self.capacity.set(capacity_fraction(window));
+        self.reset_remaining
+            .set(reset_remaining_fraction(window, now_ms));
+        self.root.set_tooltip_text(Some(details));
+        self.root.queue_draw();
+        if let Some(parent) = self.root.parent() {
+            parent.queue_draw();
+        }
+    }
+}
+
+struct ProviderCard {
+    root: gtk::Box,
+    windows_box: gtk::Box,
+    windows: RefCell<HashMap<String, Rc<QuotaWindowChart>>>,
+}
+
+impl ProviderCard {
+    fn new(icon: &str, usage_url: Option<String>) -> Rc<Self> {
+        let root = gtk::Box::new(gtk::Orientation::Horizontal, 5);
+        root.set_valign(gtk::Align::Center);
+
+        let provider_icon = IconWidget::new(&[Icon::parse(icon)], 32);
+        root.append(provider_icon.widget());
+
+        let windows_box = gtk::Box::new(gtk::Orientation::Horizontal, 3);
+        windows_box.set_valign(gtk::Align::Center);
+        root.append(&windows_box);
+
+        if let Some(url) = usage_url {
+            let gesture = gtk::GestureClick::new();
+            gesture.connect_released(move |_, _, _, _| open_uri(&url));
+            root.add_controller(gesture);
+            root.set_cursor_from_name(Some("pointer"));
+        }
+
+        Rc::new(Self {
+            root,
+            windows_box,
+            windows: RefCell::new(HashMap::new()),
+        })
+    }
+
+    fn update_window(
+        &self,
+        key: &str,
+        window: &entity::ai::ProviderUsageWindow,
+        now_ms: i64,
+        details: &str,
+    ) {
+        let chart = self
+            .windows
+            .borrow_mut()
+            .entry(key.to_string())
+            .or_insert_with(|| {
+                let chart = QuotaWindowChart::new(&short_window_label(window));
+                self.windows_box.append(&chart.root);
+                chart
+            })
+            .clone();
+        chart.update(window, now_ms, details);
+        chart.root.set_visible(true);
+    }
+
+    fn hide_missing_windows(&self, visible_keys: &HashSet<String>) {
+        for (key, chart) in self.windows.borrow().iter() {
+            chart.root.set_visible(visible_keys.contains(key));
+        }
+    }
+}
+
+fn draw_capacity_bar(cr: &gtk::cairo::Context, width: f64, height: f64, remaining: Option<f64>) {
+    let Some(remaining) = remaining else {
+        draw_rect(cr, 0.0, 0.0, width, height, (0.30, 0.30, 0.33, 1.0));
+        return;
+    };
+
+    draw_rect(cr, 0.0, 0.0, width, height, (0.82, 0.16, 0.22, 1.0));
+    let green_height = height * remaining;
+    draw_rect(
+        cr,
+        0.0,
+        height - green_height,
+        width,
+        green_height,
+        (0.20, 0.68, 0.32, 1.0),
+    );
+}
+
+fn draw_reset_bar(cr: &gtk::cairo::Context, width: f64, height: f64, remaining: Option<f64>) {
+    let Some(remaining) = remaining else {
+        draw_rect(cr, 0.0, 0.0, width, height, (0.30, 0.30, 0.33, 1.0));
+        return;
+    };
+
+    draw_rect(cr, 0.0, 0.0, width, height, (0.92, 0.47, 0.10, 1.0));
+    let blue_width = width * remaining;
+    draw_rect(
+        cr,
+        width - blue_width,
+        0.0,
+        blue_width,
+        height,
+        (0.20, 0.48, 0.90, 1.0),
+    );
+}
+
+fn draw_rect(
+    cr: &gtk::cairo::Context,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    color: (f64, f64, f64, f64),
+) {
+    cr.set_source_rgba(color.0, color.1, color.2, color.3);
+    cr.rectangle(x, y, width.max(0.0), height.max(0.0));
+    if let Err(error) = cr.fill() {
+        log::warn!("provider quota chart draw failed: {error}");
+    }
+}
 
 /// Renders quota cards for every provider/window currently available.
 pub struct ProvidersComponent {
@@ -78,49 +260,33 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
     let mut entities =
         store.get_entities_typed::<entity::ai::ProviderUsage>(entity::ai::ENTITY_TYPE);
     entities.sort_by(|(_, left), (_, right)| left.provider.cmp(&right.provider));
-    let display_usage = store
-        .get_entities_typed::<entity::ai::ProviderConfig>(entity::ai::CONFIG_ENTITY_TYPE)
-        .into_iter()
-        .next()
-        .map(|(_, config)| config.display_usage)
-        .unwrap_or(true);
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
 
-    let mut visible_keys = HashSet::new();
+    let mut visible_cards = HashSet::new();
     for (urn, usage) in entities {
+        let card_key = urn.to_string();
+        let card = if let Some(card) = cards.borrow().get(&card_key).cloned() {
+            card
+        } else {
+            let card = ProviderCard::new(&provider_icon(&usage.provider), usage.usage_url.clone());
+            container.insert(&card.root, -1);
+            cards.borrow_mut().insert(card_key.clone(), card.clone());
+            card
+        };
+
+        let mut visible_windows = HashSet::new();
+        let mut tooltip_sections = Vec::new();
         for (index, window) in usage.windows.iter().enumerate() {
-            // A reset-less limit is not actionable and should never appear,
-            // even if an older daemon published one before filtering it.
-            if window.reset_at.is_none() {
+            // A positive limit is enough to display a capacity bar. Reset-less
+            // windows remain visible; their reset bar shows the unknown state.
+            if capacity_fraction(window).is_none() {
                 continue;
             }
 
-            let Some(percent_value) = (if display_usage {
-                percentage(window.used, window.limit)
-            } else {
-                percentage(window.remaining, window.limit)
-            }) else {
-                // Balance-only windows have no meaningful percentage card.
-                continue;
-            };
-            let key = format!("{urn}:{}:{index}", window.window_type);
-            let icon = provider_icon(&usage.provider);
-            let usage_url = usage.usage_url.clone();
-            let card = cards
-                .borrow_mut()
-                .entry(key.clone())
-                .or_insert_with(|| {
-                    let card = Rc::new(InfoCardWidget::new(&icon, "", None));
-                    if let Some(url) = usage_url {
-                        let gesture = gtk::GestureClick::new();
-                        gesture.connect_released(move |_, _, _, _| open_uri(&url));
-                        card.widget().add_controller(gesture);
-                        card.widget().set_cursor_from_name(Some("pointer"));
-                    }
-                    container.insert(&card.widget(), -1);
-                    card
-                })
-                .clone();
-
+            let key = format!("{}:{index}", window.window_type);
             let reset = format_remaining(window.reset_at);
             let details = format!(
                 "{}: {}\n{}: {}\n{}: {}\n{}: {} / {}\n{}: {}\n{}: {}\n{}: {}",
@@ -129,7 +295,7 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
                 t("providers-tooltip-plan"),
                 usage.plan_name,
                 t("providers-tooltip-window"),
-                window.window_type,
+                short_window_label(window),
                 t("providers-tooltip-used"),
                 format_quota_value(window.used, window.percentage),
                 format_quota_value(window.limit, window.percentage),
@@ -140,29 +306,83 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
                 t("providers-tooltip-updated"),
                 format_freshness(usage.fetched_at)
             );
-            card.set_icon(&icon);
-            card.set_title(&format_percentage(percent_value));
-            card.set_description(Some(&reset));
-            card.widget().set_tooltip_text(Some(&details));
-            card.widget().set_visible(true);
-            visible_keys.insert(key);
+            card.update_window(&key, window, now_ms, &details);
+            visible_windows.insert(key);
+            tooltip_sections.push(details);
+        }
+
+        card.hide_missing_windows(&visible_windows);
+        let tooltip = tooltip_sections.join("\n\n");
+        card.root
+            .set_tooltip_text((!tooltip.is_empty()).then_some(tooltip.as_str()));
+        card.root.set_visible(!visible_windows.is_empty());
+        if !visible_windows.is_empty() {
+            visible_cards.insert(card_key);
         }
     }
 
     for (key, card) in cards.borrow().iter() {
-        if !visible_keys.contains(key) {
-            card.widget().set_visible(false);
+        if !visible_cards.contains(key) {
+            card.root.set_visible(false);
         }
     }
-    container.set_visible(!visible_keys.is_empty());
+    container.set_visible(!visible_cards.is_empty());
+}
+
+fn capacity_fraction(window: &entity::ai::ProviderUsageWindow) -> Option<f64> {
+    percentage(window.remaining, window.limit)
+}
+
+fn reset_remaining_fraction(window: &entity::ai::ProviderUsageWindow, now_ms: i64) -> Option<f64> {
+    let reset_at = window.reset_at?;
+    let period_seconds = window.period_seconds.filter(|seconds| *seconds > 0)?;
+    let period_ms = period_seconds.saturating_mul(1_000);
+    Some(((reset_at - now_ms) as f64 / period_ms as f64).clamp(0.0, 1.0))
 }
 
 fn percentage(value: i64, limit: i64) -> Option<f64> {
-    (limit > 0).then(|| (value as f64 / limit as f64 * 100.0).clamp(0.0, 100.0))
+    (limit > 0).then(|| (value as f64 / limit as f64).clamp(0.0, 1.0))
 }
 
-fn format_percentage(value: f64) -> String {
-    format!("{value:.0}\u{00a0}%")
+fn short_window_label(window: &entity::ai::ProviderUsageWindow) -> String {
+    if let Some(seconds) = window.period_seconds.filter(|seconds| *seconds > 0) {
+        if seconds % 86_400 == 0 {
+            return format!("{}{}", seconds / 86_400, t("providers-unit-day"));
+        }
+        if seconds % 3_600 == 0 {
+            return format!("{}{}", seconds / 3_600, t("providers-unit-hour"));
+        }
+        if seconds % 60 == 0 {
+            return format!("{}{}", seconds / 60, t("providers-unit-minute"));
+        }
+        return format!("{}{}", seconds, t("providers-unit-second"));
+    }
+
+    let raw = window.window_type.to_ascii_lowercase();
+    for part in raw.split('/') {
+        let digit_end = part
+            .char_indices()
+            .take_while(|(_, character)| character.is_ascii_digit())
+            .map(|(index, character)| index + character.len_utf8())
+            .last()
+            .unwrap_or(0);
+        let suffix = &part[digit_end..];
+        if digit_end > 0 && ["s", "m", "h", "d"].contains(&suffix) {
+            return format!(
+                "{}{}",
+                &part[..digit_end],
+                t(&format!("providers-unit-{suffix}"))
+            );
+        }
+    }
+
+    if raw.contains("week") || raw == "wk" {
+        format!("7{}", t("providers-unit-day"))
+    } else if raw.contains("month") {
+        format!("30{}", t("providers-unit-day"))
+    } else {
+        t("providers-unit-unknown")
+    }
 }
 
 fn format_quota_value(value: i64, percentage: bool) -> String {
@@ -301,12 +521,6 @@ mod tests {
     }
 
     #[test]
-    fn percentage_format_uses_a_non_breaking_space() {
-        assert_eq!(format_percentage(0.0), "0\u{00a0}%");
-        assert_eq!(format_percentage(42.0), "42\u{00a0}%");
-    }
-
-    #[test]
     fn tooltip_values_distinguish_percentages_from_credits() {
         assert_eq!(format_quota_value(42, true), "42\u{00a0}%");
         assert_eq!(format_quota_value(42, false), "42");
@@ -316,7 +530,7 @@ mod tests {
     fn balance_only_windows_do_not_become_zero_percent_cards() {
         assert_eq!(percentage(25, 0), None);
         assert_eq!(percentage(25, -1), None);
-        assert_eq!(percentage(25, 100), Some(25.0));
+        assert_eq!(percentage(25, 100), Some(0.25));
     }
 
     #[test]
@@ -340,6 +554,20 @@ mod tests {
             assert!(path.ends_with(&format!("provider-{provider}.svg")));
             assert!(std::path::Path::new(&path).is_file());
         }
+    }
+
+    #[test]
+    fn period_labels_use_a_number_and_single_unit_letter() {
+        let window = entity::ai::ProviderUsageWindow {
+            window_type: "weekly".to_string(),
+            used: 1,
+            limit: 100,
+            remaining: 99,
+            reset_at: None,
+            percentage: true,
+            period_seconds: Some(7 * 86_400),
+        };
+        assert_eq!(short_window_label(&window), "7d");
     }
 
     #[test]

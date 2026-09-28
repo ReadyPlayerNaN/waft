@@ -14,6 +14,11 @@ providers-tooltip-updated = Aktualizováno
 providers-tooltip-just-now = právě teď
 providers-tooltip-minutes-ago = před { $minutes } min
 providers-tooltip-hours-ago = před { $hours } h
+providers-unit-second = s
+providers-unit-minute = m
+providers-unit-hour = h
+providers-unit-day = d
+providers-unit-unknown = ?
 
 # Notifications
 notifications-title = Oznámení

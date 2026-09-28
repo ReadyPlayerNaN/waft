@@ -362,6 +362,12 @@ impl MainWindowWidget {
                 color: @card_fg_color;
             }}
 
+            .provider-quota-label {{
+                color: white;
+                font-size: 8px;
+                font-weight: 700;
+            }}
+
             .relm4-overlay-surface {{
                 background: @window_bg_color;
                 border-radius: {OVERLAY_CORNER_RADIUS_PX}px;

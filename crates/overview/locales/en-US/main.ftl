@@ -14,6 +14,11 @@ providers-tooltip-updated = Updated
 providers-tooltip-just-now = just now
 providers-tooltip-minutes-ago = { $minutes }m ago
 providers-tooltip-hours-ago = { $hours }h ago
+providers-unit-second = s
+providers-unit-minute = m
+providers-unit-hour = h
+providers-unit-day = d
+providers-unit-unknown = ?
 
 # Notifications
 notifications-title = Notifications
