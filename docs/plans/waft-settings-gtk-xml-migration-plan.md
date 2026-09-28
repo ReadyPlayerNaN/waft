@@ -101,10 +101,10 @@ Avoid scattering ad-hoc `gtk::Builder::from_string()` calls throughout the crate
 
 Before implementation:
 
-- [ ] Confirm the exact `gtk4`/`libadwaita` composite-template API available in the workspace versions.
-- [ ] Choose the resource location, recommended: `crates/settings/ui/`.
-- [ ] Add one resource manifest and one resource-registration path.
-- [ ] Document template naming, IDs, and component ownership conventions.
+- [x] Confirm the exact `gtk4`/`libadwaita` composite-template API available in the workspace versions.
+- [x] Choose the resource location, recommended: `crates/settings/ui/`.
+- [x] Add one resource manifest and one resource-registration path.
+- [x] Document template naming, IDs, and component ownership conventions.
 - [ ] Verify debug and release builds include the same resources.
 
 ## Component conventions
@@ -198,9 +198,9 @@ The abstraction must work with the containers actually used by the settings app,
 
 ### Tasks
 
-- [ ] Add the settings UI resource directory.
-- [ ] Add the GResource manifest/build integration.
-- [ ] Register resources exactly once during application startup.
+- [x] Add the settings UI resource directory.
+- [x] Add the GResource manifest/build integration.
+- [x] Register resources exactly once during application startup.
 - [ ] Add a minimal template-backed test widget or page.
 - [ ] Verify template loading in debug and release builds.
 - [ ] Add a convention for template IDs:

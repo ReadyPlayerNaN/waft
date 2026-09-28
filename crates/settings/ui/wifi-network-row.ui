@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="WaftNetworkRow" parent="AdwActionRow">
+    <property name="activatable">true</property>
+    <child type="prefix">
+      <object class="GtkBox" id="icon_box">
+        <property name="spacing">6</property>
+        <property name="valign">center</property>
+      </object>
+    </child>
+    <child type="suffix">
+      <object class="GtkBox" id="suffix_box">
+        <property name="spacing">8</property>
+        <property name="valign">center</property>
+        <child>
+          <object class="GtkButton" id="action_button">
+            <property name="css-classes">flat</property>
+            <property name="valign">center</property>
+            <child>
+              <object class="GtkLabel" id="action_label" />
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox" id="navigate_box">
+            <property name="valign">center</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

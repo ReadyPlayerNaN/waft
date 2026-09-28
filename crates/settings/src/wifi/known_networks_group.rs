@@ -13,8 +13,6 @@ use adw::prelude::*;
 use waft_client::EntityActionCallback;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::WiFiNetwork;
-use waft_ui_gtk::vdom::Component;
-
 use crate::display::settings_sub_page::SettingsSubPage;
 use crate::i18n::t;
 use crate::wifi::network_detail::{NetworkDetailOutput, NetworkDetailPage, NetworkDetailProps};
@@ -35,6 +33,7 @@ struct KnownNetworkEntry {
 pub struct KnownNetworksGroup {
     pub root: adw::PreferencesGroup,
     entries: HashMap<String, KnownNetworkEntry>,
+    ordered_keys: Vec<String>,
 }
 
 impl KnownNetworksGroup {
@@ -48,6 +47,7 @@ impl KnownNetworksGroup {
         Self {
             root: group,
             entries: HashMap::new(),
+            ordered_keys: Vec::new(),
         }
     }
 
@@ -64,9 +64,11 @@ impl KnownNetworksGroup {
         pending_share_ssid: &Rc<RefCell<Option<String>>>,
     ) {
         let mut seen = std::collections::HashSet::new();
+        let mut ordered_keys = Vec::with_capacity(networks.len());
 
         for (urn, network) in networks {
             let urn_str = urn.as_str().to_string();
+            ordered_keys.push(urn_str.clone());
             seen.insert(urn_str.clone());
 
             let detail_props = NetworkDetailProps::from(network);
@@ -192,6 +194,18 @@ impl KnownNetworksGroup {
         for key in to_remove {
             if let Some(entry) = self.entries.remove(&key) {
                 self.root.remove(&entry.row.widget());
+            }
+        }
+
+        self.ordered_keys = ordered_keys
+            .into_iter()
+            .filter(|key| self.entries.contains_key(key))
+            .collect();
+        let mut previous: Option<gtk::Widget> = None;
+        for key in &self.ordered_keys {
+            if let Some(widget) = self.entries.get(key).map(|entry| entry.row.widget()) {
+                widget.insert_after(&self.root, previous.as_ref());
+                previous = Some(widget);
             }
         }
 

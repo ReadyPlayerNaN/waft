@@ -80,6 +80,8 @@ const ENTITY_TYPES: &[&str] = &[
 pub async fn setup(
     initial_page: Option<String>,
 ) -> Result<adw::Application, Box<dyn std::error::Error>> {
+    crate::resources::register();
+
     // 1. Create channels
     let (event_tx, event_rx) = flume::unbounded::<ClientEvent>();
     let (action_tx, action_rx) =

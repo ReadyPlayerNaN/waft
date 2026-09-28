@@ -17,6 +17,7 @@ mod page_layout;
 mod pages;
 mod plugins;
 mod prefs;
+mod resources;
 mod scheduler;
 mod search_index;
 mod search_results;

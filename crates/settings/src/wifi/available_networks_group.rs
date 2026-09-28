@@ -12,8 +12,6 @@ use adw::prelude::*;
 use waft_client::EntityActionCallback;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::WiFiNetwork;
-use waft_ui_gtk::vdom::Component;
-
 use crate::i18n::t;
 
 use super::network_row::{NetworkRow, NetworkRowOutput, NetworkRowProps};
@@ -35,6 +33,7 @@ pub struct AvailableNetworksGroup {
     spinner: gtk::Spinner,
     search_button: gtk::Button,
     rows: HashMap<String, NetworkRow>,
+    ordered_keys: Vec<String>,
     output_cb: OutputCallback,
 }
 
@@ -77,6 +76,7 @@ impl AvailableNetworksGroup {
             spinner,
             search_button,
             rows: HashMap::new(),
+            ordered_keys: Vec::new(),
             output_cb,
         }
     }
@@ -98,9 +98,11 @@ impl AvailableNetworksGroup {
         action_callback: &EntityActionCallback,
     ) {
         let mut seen = std::collections::HashSet::new();
+        let mut ordered_keys = Vec::with_capacity(networks.len());
 
         for (urn, network) in networks {
             let urn_str = urn.as_str().to_string();
+            ordered_keys.push(urn_str.clone());
             seen.insert(urn_str.clone());
 
             let props = NetworkRowProps {
@@ -156,6 +158,18 @@ impl AvailableNetworksGroup {
         for key in to_remove {
             if let Some(row) = self.rows.remove(&key) {
                 self.root.remove(&row.widget());
+            }
+        }
+
+        self.ordered_keys = ordered_keys
+            .into_iter()
+            .filter(|key| self.rows.contains_key(key))
+            .collect();
+        let mut previous: Option<gtk::Widget> = None;
+        for key in &self.ordered_keys {
+            if let Some(widget) = self.rows.get(key).map(NetworkRow::widget) {
+                widget.insert_after(&self.root, previous.as_ref());
+                previous = Some(widget);
             }
         }
 

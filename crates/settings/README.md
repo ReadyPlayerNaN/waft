@@ -2,6 +2,10 @@
 
 Standalone GTK4/libadwaita settings application for Waft. Uses `AdwNavigationSplitView` with a categorized sidebar and `gtk::Stack` for page switching. Connects to the Waft daemon via `WaftClient` + `EntityStore` for entity-driven pages.
 
+## GTK XML templates
+
+Stable widget hierarchies live in `ui/` as GTK XML templates and are compiled into a GResource bundle by `build.rs`. Runtime state, translated strings, signal handlers, entity subscriptions, and dynamic child reconciliation remain in Rust. Template IDs use stable semantic names and must not contain transient entity identifiers. XML-backed components expose in-place update methods so entity updates preserve GTK widget identity.
+
 ## Niri Config Writing: KdlConfigFile
 
 The `KdlConfigFile` struct in `src/kdl_config.rs` is the single entry point for reading and writing niri's KDL configuration file (`~/.config/niri/config.kdl`). Both the Startup page and Keyboard Shortcuts page use it.
