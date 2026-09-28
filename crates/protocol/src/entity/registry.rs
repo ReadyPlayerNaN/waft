@@ -261,16 +261,32 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 prop("display_name", "string", "Human-readable provider name"),
                 prop("enabled", "bool", "Whether quota fetching is enabled"),
                 prop("configured", "bool", "Whether local credentials were found"),
-            ],
-            actions: &[action_p(
-                "set-enabled",
-                "Enable or disable quota fetching",
-                &[req_param(
-                    "enabled",
+                prop(
+                    "display_usage",
                     "bool",
-                    "Whether fetching should be enabled",
-                )],
-            )],
+                    "Whether cards show consumed usage instead of leftover quota",
+                ),
+            ],
+            actions: &[
+                action_p(
+                    "set-enabled",
+                    "Enable or disable quota fetching",
+                    &[req_param(
+                        "enabled",
+                        "bool",
+                        "Whether fetching should be enabled",
+                    )],
+                ),
+                action_p(
+                    "set-display-mode",
+                    "Choose consumed usage or leftover quota for cards",
+                    &[req_param(
+                        "display_usage",
+                        "bool",
+                        "Whether cards show consumed usage",
+                    )],
+                ),
+            ],
         },
         EntityTypeInfo {
             entity_type: super::ai::ENTITY_TYPE,
@@ -290,6 +306,11 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                     "windows",
                     "array",
                     "Provider-reported hourly, weekly, monthly, or balance windows",
+                ),
+                opt_prop(
+                    "usage_url",
+                    "string",
+                    "Provider dashboard or usage page opened by cards",
                 ),
                 prop(
                     "fetched_at",

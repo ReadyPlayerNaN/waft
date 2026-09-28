@@ -33,7 +33,12 @@ settings-scheduled-tasks = Scheduled Tasks
 
 # AI Providers
 providers-title = AI Providers
-providers-description = Choose which configured AI providers report usage quotas to Waft.
+providers-description = Choose which available AI providers report usage quotas to Waft.
+providers-display-usage = Display usage
+providers-display-leftover = Display leftover
+providers-display-mode-description = Choose whether quota cards show consumed or remaining quota.
+providers-available = Available
+providers-unavailable = Not available
 providers-credentials-found = Credentials found
 providers-credentials-missing = No credentials found
 providers-configure = Configure credentials

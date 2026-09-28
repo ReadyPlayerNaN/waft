@@ -13,6 +13,7 @@ use gtk::prelude::*;
 
 use waft_client::EntityStore;
 use waft_protocol::entity;
+use waft_ui_gtk::links::open_uri;
 use waft_ui_gtk::widgets::info_card::InfoCardWidget;
 
 type CardMap = Rc<RefCell<HashMap<String, Rc<InfoCardWidget>>>>;
@@ -36,9 +37,11 @@ impl ProvidersComponent {
         let callback_store = store.clone();
         let callback_container = container.clone();
         let callback_cards = cards.clone();
-        store.subscribe_type(entity::ai::ENTITY_TYPE, move || {
+        let reconcile_callback = move || {
             reconcile(&callback_store, &callback_container, &callback_cards);
-        });
+        };
+        store.subscribe_type(entity::ai::ENTITY_TYPE, reconcile_callback.clone());
+        store.subscribe_type(entity::ai::CONFIG_ENTITY_TYPE, reconcile_callback);
 
         // Subscriptions are registered before the initial reconciliation so
         // entities received during startup cannot be missed.
@@ -74,9 +77,15 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
     let mut entities =
         store.get_entities_typed::<entity::ai::ProviderUsage>(entity::ai::ENTITY_TYPE);
     entities.sort_by(|(_, left), (_, right)| left.provider.cmp(&right.provider));
+    let display_usage = store
+        .get_entities_typed::<entity::ai::ProviderConfig>(entity::ai::CONFIG_ENTITY_TYPE)
+        .into_iter()
+        .next()
+        .map(|(_, config)| config.display_usage)
+        .unwrap_or(true);
 
     let mut visible_keys = HashSet::new();
-    for (_urn, usage) in entities {
+    for (urn, usage) in entities {
         for (index, window) in usage.windows.iter().enumerate() {
             // A reset-less limit is not actionable and should never appear,
             // even if an older daemon published one before filtering it.
@@ -84,26 +93,49 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
                 continue;
             }
 
-            let key = format!("{}:{}:{index}", usage.provider, window.window_type);
+            let Some(percent_value) = (if display_usage {
+                percentage(window.used, window.limit)
+            } else {
+                percentage(window.remaining, window.limit)
+            }) else {
+                // Balance-only windows have no meaningful percentage card.
+                continue;
+            };
+            let key = format!("{urn}:{}:{index}", window.window_type);
             let icon = provider_icon(&usage.provider);
+            let usage_url = usage.usage_url.clone();
             let card = cards
                 .borrow_mut()
                 .entry(key.clone())
                 .or_insert_with(|| {
                     let card = Rc::new(InfoCardWidget::new(&icon, "", None));
+                    if let Some(url) = usage_url {
+                        let gesture = gtk::GestureClick::new();
+                        gesture.connect_released(move |_, _, _, _| open_uri(&url));
+                        card.widget().add_controller(gesture);
+                        card.widget().set_cursor_from_name(Some("pointer"));
+                    }
                     container.insert(&card.widget(), -1);
                     card
                 })
                 .clone();
 
-            let utilization = if window.limit > 0 {
-                (window.used as f64 / window.limit as f64 * 100.0).clamp(0.0, 100.0)
-            } else {
-                0.0
-            };
+            let reset = format_remaining(window.reset_at);
+            let details = format!(
+                "{}\nPlan: {}\n{}\nUsed: {} / {}\nRemaining: {}\nResets: {}\nUpdated: {}",
+                usage.display_name,
+                usage.plan_name,
+                window.window_type,
+                window.used,
+                window.limit,
+                window.remaining,
+                reset,
+                format_freshness(usage.fetched_at)
+            );
             card.set_icon(&icon);
-            card.set_title(&format!("{utilization:.0}%"));
-            card.set_description(Some(&format_remaining(window.reset_at)));
+            card.set_title(&format_percentage(percent_value));
+            card.set_description(Some(&reset));
+            card.widget().set_tooltip_text(Some(&details));
             card.widget().set_visible(true);
             visible_keys.insert(key);
         }
@@ -117,6 +149,28 @@ fn reconcile(store: &Rc<EntityStore>, container: &gtk::FlowBox, cards: &CardMap)
     container.set_visible(!visible_keys.is_empty());
 }
 
+fn percentage(value: i64, limit: i64) -> Option<f64> {
+    (limit > 0).then(|| (value as f64 / limit as f64 * 100.0).clamp(0.0, 100.0))
+}
+
+fn format_percentage(value: f64) -> String {
+    format!("{value:.0}\u{00a0}%")
+}
+
+fn format_freshness(fetched_at_ms: i64) -> String {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let age_secs = ((now_ms - fetched_at_ms) / 1000).max(0);
+    if age_secs < 60 {
+        "just now".to_string()
+    } else if age_secs < 3600 {
+        format!("{}m ago", age_secs / 60)
+    } else {
+        format!("{}h ago", age_secs / 3600)
+    }
+}
 fn provider_icon(provider: &str) -> String {
     let (slug, svg): (&str, &[u8]) = match provider {
         "claude" => (
@@ -226,6 +280,19 @@ mod tests {
     #[test]
     fn format_remaining_without_reset() {
         assert_eq!(format_remaining(None), "never");
+    }
+
+    #[test]
+    fn percentage_format_uses_a_non_breaking_space() {
+        assert_eq!(format_percentage(0.0), "0\u{00a0}%");
+        assert_eq!(format_percentage(42.0), "42\u{00a0}%");
+    }
+
+    #[test]
+    fn balance_only_windows_do_not_become_zero_percent_cards() {
+        assert_eq!(percentage(25, 0), None);
+        assert_eq!(percentage(25, -1), None);
+        assert_eq!(percentage(25, 100), Some(25.0));
     }
 
     #[test]

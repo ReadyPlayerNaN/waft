@@ -18,6 +18,9 @@ pub struct ProviderUsage {
     pub unlimited: bool,
     /// All quota windows reported by the provider.
     pub windows: Vec<ProviderUsageWindow>,
+    /// Provider dashboard or usage page opened when a card is clicked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_url: Option<String>,
     /// Unix timestamp (ms) when the provider data was fetched.
     pub fetched_at: i64,
     /// Unix timestamp (ms) when the data was originally fetched, if cached.
@@ -33,8 +36,15 @@ pub struct ProviderConfig {
     pub display_name: String,
     /// Whether quota fetching is enabled for this provider.
     pub enabled: bool,
-    /// Whether credentials were found locally.
+    /// Whether credentials were found locally and the provider can be used.
     pub configured: bool,
+    /// Whether quota cards should show consumed usage (`true`) or leftover quota (`false`).
+    #[serde(default = "default_display_usage")]
+    pub display_usage: bool,
+}
+
+fn default_display_usage() -> bool {
+    true
 }
 
 /// One provider-specific quota window.
@@ -70,6 +80,7 @@ mod tests {
                 reset_at: Some(1_000_000_000_000),
                 period_seconds: Some(18_000),
             }],
+            usage_url: Some("https://example.com/usage".to_string()),
             fetched_at: 2_000_000_000_000,
             cached_at: None,
         };

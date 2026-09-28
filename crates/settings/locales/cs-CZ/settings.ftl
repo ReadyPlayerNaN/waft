@@ -33,7 +33,12 @@ settings-scheduled-tasks = Plánované úlohy
 
 # Poskytovatelé AI
 providers-title = Poskytovatelé AI
-providers-description = Vyberte, kteří nakonfigurovaní poskytovatelé AI mají hlásit kvóty využití do Waftu.
+providers-description = Vyberte, kteří dostupní poskytovatelé AI mají hlásit kvóty využití do Waftu.
+providers-display-usage = Zobrazit využití
+providers-display-leftover = Zobrazit zbývající kvótu
+providers-display-mode-description = Zvolte, zda karty kvót zobrazí využití nebo zbývající kvótu.
+providers-available = Dostupný
+providers-unavailable = Nedostupný
 providers-credentials-found = Přihlašovací údaje nalezeny
 providers-credentials-missing = Přihlašovací údaje nenalezeny
 providers-configure = Nastavit přihlašovací údaje

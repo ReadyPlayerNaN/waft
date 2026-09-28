@@ -1,9 +1,9 @@
 //! AI provider settings page.
 //!
 //! Provider credentials remain owned by each provider's CLI or environment.
-//! This page controls whether Waft fetches quota data for each provider.
+//! This page controls quota collection and the presentation mode.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -17,7 +17,8 @@ use crate::search_index::SearchIndex;
 use crate::subscription::subscribe_entities;
 
 struct ProviderRow {
-    row: adw::SwitchRow,
+    row: adw::ExpanderRow,
+    toggle: gtk::Switch,
     updating: Rc<Cell<bool>>,
 }
 
@@ -25,6 +26,9 @@ struct ProvidersPageState {
     rows: HashMap<String, ProviderRow>,
     sorted_providers: Vec<String>,
     group: adw::PreferencesGroup,
+    display_row: adw::SwitchRow,
+    display_updating: Rc<Cell<bool>>,
+    display_urn: Rc<RefCell<Option<Urn>>>,
 }
 
 /// Settings page for enabling and disabling provider quota collection.
@@ -46,13 +50,18 @@ impl ProvidersPage {
     pub fn new(
         entity_store: &Rc<EntityStore>,
         action_callback: &EntityActionCallback,
-        search_index: &Rc<std::cell::RefCell<SearchIndex>>,
+        search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
         let root = crate::page_layout::page_root();
         let group = adw::PreferencesGroup::builder()
             .title(t("providers-title"))
             .description(t("providers-description"))
             .build();
+        let display_row = adw::SwitchRow::builder()
+            .title(t("providers-display-usage"))
+            .subtitle(t("providers-display-mode-description"))
+            .build();
+        group.add(&display_row);
         root.append(&group);
 
         {
@@ -60,10 +69,34 @@ impl ProvidersPage {
             index.backfill_widget("providers", &t("providers-title"), None, Some(&group));
         }
 
-        let state = Rc::new(std::cell::RefCell::new(ProvidersPageState {
+        let display_updating = Rc::new(Cell::new(false));
+        let display_urn = Rc::new(RefCell::new(None));
+        {
+            let updating = display_updating.clone();
+            let target = display_urn.clone();
+            let callback = action_callback.clone();
+            display_row.connect_active_notify(move |row| {
+                if updating.get() {
+                    return;
+                }
+                let Some(urn) = target.borrow().clone() else {
+                    return;
+                };
+                let _ = callback(
+                    urn,
+                    "set-display-mode".to_string(),
+                    serde_json::json!({ "display_usage": row.is_active() }),
+                );
+            });
+        }
+
+        let state = Rc::new(RefCell::new(ProvidersPageState {
             rows: HashMap::new(),
             sorted_providers: Vec::new(),
             group,
+            display_row,
+            display_updating,
+            display_urn,
         }));
         let callback = action_callback.clone();
         let search_index = search_index.clone();
@@ -79,15 +112,36 @@ impl ProvidersPage {
 }
 
 fn reconcile(
-    state: &Rc<std::cell::RefCell<ProvidersPageState>>,
+    state: &Rc<RefCell<ProvidersPageState>>,
     providers: &[(Urn, ProviderConfig)],
     action_callback: &EntityActionCallback,
-    search_index: &Rc<std::cell::RefCell<SearchIndex>>,
+    search_index: &Rc<RefCell<SearchIndex>>,
 ) {
     let mut providers = providers.to_vec();
     providers.sort_by(|(_, left), (_, right)| left.display_name.cmp(&right.display_name));
 
     let mut state = state.borrow_mut();
+    if let Some((urn, first)) = providers.first() {
+        *state.display_urn.borrow_mut() = Some(urn.clone());
+        state.display_updating.set(true);
+        state.display_row.set_active(first.display_usage);
+        let display_title = if first.display_usage {
+            t("providers-display-usage")
+        } else {
+            t("providers-display-leftover")
+        };
+        state.display_row.set_title(&display_title);
+        state.display_row.set_sensitive(true);
+        state.display_updating.set(false);
+    } else {
+        *state.display_urn.borrow_mut() = None;
+        state.display_updating.set(true);
+        state.display_row.set_active(true);
+        state.display_row.set_title(&t("providers-display-usage"));
+        state.display_row.set_sensitive(false);
+        state.display_updating.set(false);
+    }
+
     let sorted_providers: Vec<String> = providers
         .iter()
         .map(|(_, provider)| provider.provider.clone())
@@ -98,43 +152,58 @@ fn reconcile(
             .rows
             .entry(provider.provider.clone())
             .or_insert_with(|| {
-                let row = adw::SwitchRow::builder()
+                let row = adw::ExpanderRow::builder()
                     .title(&provider.display_name)
                     .build();
-                let configure = gtk::Button::with_label(&t("providers-configure"));
-                let provider_name = provider.display_name.clone();
-                let provider_slug = provider.provider.clone();
-                configure.connect_clicked(move |button| {
-                    show_credentials_dialog(button, &provider_name, &provider_slug);
-                });
-                row.add_suffix(&configure);
+                let toggle = gtk::Switch::builder().valign(gtk::Align::Center).build();
+                row.add_suffix(&toggle);
+
+                let help = gtk::Label::builder()
+                    .label(provider_credentials_help(&provider.provider))
+                    .xalign(0.0)
+                    .wrap(true)
+                    .selectable(true)
+                    .margin_start(12)
+                    .margin_end(12)
+                    .margin_top(12)
+                    .margin_bottom(12)
+                    .build();
+                let help_row = gtk::ListBoxRow::builder().child(&help).build();
+                row.add_row(&help_row);
+
                 let updating = Rc::new(Cell::new(false));
                 let updating_ref = updating.clone();
                 let callback = action_callback.clone();
                 let urn = urn.clone();
-                row.connect_active_notify(move |row| {
+                toggle.connect_active_notify(move |toggle| {
                     if updating_ref.get() {
                         return;
                     }
                     let _ = callback(
                         urn.clone(),
                         "set-enabled".to_string(),
-                        serde_json::json!({ "enabled": row.is_active() }),
+                        serde_json::json!({ "enabled": toggle.is_active() }),
                     );
                 });
-                ProviderRow { row, updating }
+                ProviderRow {
+                    row,
+                    toggle,
+                    updating,
+                }
             });
 
+        let available = provider.configured;
         row_state.updating.set(true);
-        row_state.row.set_active(provider.enabled);
+        row_state.toggle.set_sensitive(available);
+        row_state.toggle.set_active(available && provider.enabled);
         row_state.updating.set(false);
         row_state.row.set_title(&provider.display_name);
-        let subtitle = if provider.configured {
-            t("providers-credentials-found")
+        let availability = if available {
+            t("providers-available")
         } else {
-            t("providers-credentials-missing")
+            t("providers-unavailable")
         };
-        row_state.row.set_subtitle(&subtitle);
+        row_state.row.set_subtitle(&availability);
     }
 
     let stale: Vec<String> = state
@@ -181,28 +250,6 @@ fn reconcile(
             );
         }
     }
-}
-
-fn show_credentials_dialog(parent: &impl IsA<gtk::Widget>, display_name: &str, slug: &str) {
-    let dialog = adw::AlertDialog::builder()
-        .heading(format!("{} — {}", t("providers-configure"), display_name))
-        .body(t("providers-credentials-dialog-body"))
-        .close_response("close")
-        .build();
-    dialog.add_response("close", &t("providers-dialog-close"));
-
-    let instructions = gtk::Label::builder()
-        .label(provider_credentials_help(slug))
-        .xalign(0.0)
-        .wrap(true)
-        .selectable(true)
-        .margin_start(12)
-        .margin_end(12)
-        .margin_top(12)
-        .margin_bottom(12)
-        .build();
-    dialog.set_extra_child(Some(&instructions));
-    dialog.present(Some(parent));
 }
 
 fn provider_credentials_help(slug: &str) -> String {

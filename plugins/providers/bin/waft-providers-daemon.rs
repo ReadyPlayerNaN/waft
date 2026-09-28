@@ -25,10 +25,25 @@ use waft_protocol::entity::ai::{
 
 const POLL_INTERVAL_SECS: u64 = 300;
 
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct ProviderSettings {
     #[serde(default)]
     enabled: BTreeMap<String, bool>,
+    #[serde(default = "default_display_usage")]
+    display_usage: bool,
+}
+
+fn default_display_usage() -> bool {
+    true
+}
+
+impl Default for ProviderSettings {
+    fn default() -> Self {
+        Self {
+            enabled: BTreeMap::new(),
+            display_usage: true,
+        }
+    }
 }
 
 impl ProviderSettings {
@@ -131,10 +146,35 @@ impl Plugin for ProvidersPlugin {
         action: String,
         params: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
-        if urn.entity_type() != CONFIG_ENTITY_TYPE || action != "set-enabled" {
+        if urn.entity_type() != CONFIG_ENTITY_TYPE {
             anyhow::bail!("Unknown action: {action}");
         }
 
+        if action == "set-display-mode" {
+            let display_usage = params
+                .get("display_usage")
+                .and_then(serde_json::Value::as_bool)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("set-display-mode requires a boolean display_usage parameter")
+                })?;
+            let mut settings = match self.settings.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let previous = settings.display_usage;
+            settings.display_usage = display_usage;
+            if let Err(error) = settings.save() {
+                settings.display_usage = previous;
+                return Err(error);
+            }
+            drop(settings);
+            self.notifier.notify();
+            return Ok(serde_json::Value::Null);
+        }
+
+        if action != "set-enabled" {
+            anyhow::bail!("Unknown action: {action}");
+        }
         let kind = supported_provider_kind(urn.id())
             .ok_or_else(|| anyhow::anyhow!("Unknown provider: {}", urn.id()))?;
         let enabled = params
@@ -176,6 +216,7 @@ fn provider_config_to_entity(spec: &ProviderSpec, settings: &ProviderSettings) -
         display_name: spec.kind.display_name().to_string(),
         enabled: settings.is_enabled(spec.kind),
         configured: spec.provider.auth_resolver().have_credentials(),
+        display_usage: settings.display_usage,
     };
     Entity::new(
         Urn::new("providers", CONFIG_ENTITY_TYPE, spec.kind.slug()),
@@ -225,6 +266,7 @@ fn provider_result_to_entity(result: &ProviderResult) -> Option<Entity> {
         plan_name: quota.plan_name.clone(),
         unlimited: quota.unlimited,
         windows,
+        usage_url: Some(provider_usage_url(result.kind).to_string()),
         fetched_at: result.fetched_at.timestamp_millis(),
         cached_at: result.cached_at.map(|time| time.timestamp_millis()),
     };
@@ -234,6 +276,24 @@ fn provider_result_to_entity(result: &ProviderResult) -> Option<Entity> {
         ENTITY_TYPE,
         &usage,
     ))
+}
+
+fn provider_usage_url(kind: ProviderKind) -> &'static str {
+    match kind {
+        ProviderKind::Claude => "https://claude.ai/settings/usage",
+        ProviderKind::Codex => "https://chatgpt.com/codex/cloud/settings/analytics#usage",
+        ProviderKind::Cursor => "https://cursor.com/dashboard/spending",
+        ProviderKind::DeepSeek => "https://platform.deepseek.com/usage",
+        ProviderKind::Antigravity => "https://antigravity.google",
+        ProviderKind::GitHubCopilot => "https://github.com/settings/copilot",
+        ProviderKind::Grok => "https://grok.com?_s=usage",
+        ProviderKind::Kimi => "https://platform.kimi.ai/",
+        ProviderKind::Minimax => "https://platform.minimax.io/user-center/payment/coding-plan",
+        ProviderKind::OpenRouter => "https://openrouter.ai/activity",
+        ProviderKind::SiliconFlow => "https://cloud.siliconflow.cn/account/ak",
+        ProviderKind::Zai => "https://open.bigmodel.cn/finance-center/finance/pay",
+        ProviderKind::Mimo => "https://platform.xiaomimimo.com",
+    }
 }
 
 fn parse_key_file(content: &str) -> Option<String> {
@@ -519,8 +579,8 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ProviderKind, ProviderResult, ProviderStatus, ProviderUsage, build_providers,
-        provider_result_to_entity,
+        ProviderKind, ProviderResult, ProviderSettings, ProviderStatus, ProviderUsage,
+        build_providers, provider_result_to_entity, provider_usage_url,
     };
     use chrono::Utc;
     use quotas::providers::{ProviderQuota, QuotaWindow};
@@ -576,5 +636,22 @@ mod tests {
         assert_eq!(usage.windows.len(), 1);
         assert_eq!(usage.windows[0].window_type, "weekly");
         assert_eq!(usage.windows[0].remaining, 75);
+        assert_eq!(
+            usage.usage_url.as_deref(),
+            Some("https://claude.ai/settings/usage")
+        );
+    }
+
+    #[test]
+    fn fresh_provider_settings_show_usage_by_default() {
+        assert!(ProviderSettings::default().display_usage);
+    }
+
+    #[test]
+    fn codex_usage_url_matches_the_dashboard_usage_page() {
+        assert_eq!(
+            provider_usage_url(ProviderKind::Codex),
+            "https://chatgpt.com/codex/cloud/settings/analytics#usage"
+        );
     }
 }
