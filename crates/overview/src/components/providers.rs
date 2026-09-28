@@ -42,6 +42,8 @@ impl QuotaWindowChart {
         capacity_fill.set_valign(gtk::Align::End);
 
         let capacity_overlay = gtk::Overlay::new();
+        capacity_overlay.set_css_classes(&["provider-quota-graph"]);
+        capacity_overlay.set_overflow(gtk::Overflow::Hidden);
         capacity_overlay.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT);
         capacity_overlay.set_child(Some(&capacity_track));
         capacity_overlay.add_overlay(&capacity_fill);
@@ -56,6 +58,8 @@ impl QuotaWindowChart {
         reset_fill.set_valign(gtk::Align::Fill);
 
         let reset_overlay = gtk::Overlay::new();
+        reset_overlay.set_css_classes(&["provider-quota-graph"]);
+        reset_overlay.set_overflow(gtk::Overflow::Hidden);
         reset_overlay.set_size_request(CAPACITY_WIDTH, RESET_HEIGHT);
         reset_overlay.set_child(Some(&reset_track));
         reset_overlay.add_overlay(&reset_fill);
@@ -69,7 +73,7 @@ impl QuotaWindowChart {
 
         capacity_overlay.add_overlay(&label_widget);
 
-        let root = gtk::Box::new(gtk::Orientation::Vertical, 1);
+        let root = gtk::Box::new(gtk::Orientation::Vertical, RESET_HEIGHT / 2);
         root.set_css_classes(&["provider-quota-chart"]);
         root.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT + RESET_HEIGHT + 1);
         root.append(&capacity_overlay);
@@ -113,7 +117,8 @@ struct ProviderCard {
 
 impl ProviderCard {
     fn new(icon: &str, usage_url: Option<String>) -> Rc<Self> {
-        let root = gtk::Box::new(gtk::Orientation::Horizontal, 5);
+        // Match InfoCardWidget's 8px icon-to-content spacing used by the clock.
+        let root = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         root.set_valign(gtk::Align::Center);
 
         let provider_icon = IconWidget::new(&[Icon::parse(icon)], 32);
