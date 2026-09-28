@@ -197,6 +197,25 @@ fn provider_result_to_entity(result: &ProviderResult) -> Option<Entity> {
         return None;
     };
 
+    let windows: Vec<ProviderUsageWindow> = quota
+        .windows
+        .iter()
+        // A quota with no reset boundary is not actionable usage data for
+        // the overview. Do not publish it as a misleading limit card.
+        .filter(|window| window.reset_at.is_some())
+        .map(|window| ProviderUsageWindow {
+            window_type: window.window_type.clone(),
+            used: window.used,
+            limit: window.limit,
+            remaining: window.remaining,
+            reset_at: window.reset_at.map(|time| time.timestamp_millis()),
+            period_seconds: window.period_seconds,
+        })
+        .collect();
+    if windows.is_empty() {
+        return None;
+    }
+
     let usage = ProviderUsage {
         provider: result.kind.slug().to_string(),
         display_name: result
@@ -205,18 +224,7 @@ fn provider_result_to_entity(result: &ProviderResult) -> Option<Entity> {
             .unwrap_or_else(|| result.kind.display_name().to_string()),
         plan_name: quota.plan_name.clone(),
         unlimited: quota.unlimited,
-        windows: quota
-            .windows
-            .iter()
-            .map(|window| ProviderUsageWindow {
-                window_type: window.window_type.clone(),
-                used: window.used,
-                limit: window.limit,
-                remaining: window.remaining,
-                reset_at: window.reset_at.map(|time| time.timestamp_millis()),
-                period_seconds: window.period_seconds,
-            })
-            .collect(),
+        windows,
         fetched_at: result.fetched_at.timestamp_millis(),
         cached_at: result.cached_at.map(|time| time.timestamp_millis()),
     };
@@ -532,14 +540,24 @@ mod tests {
                     plan_name: "Max".to_string(),
                     unlimited: false,
                     banked_resets: None,
-                    windows: vec![QuotaWindow {
-                        window_type: "weekly".to_string(),
-                        used: 25,
-                        limit: 100,
-                        remaining: 75,
-                        reset_at: Some(Utc::now()),
-                        period_seconds: Some(604_800),
-                    }],
+                    windows: vec![
+                        QuotaWindow {
+                            window_type: "weekly".to_string(),
+                            used: 25,
+                            limit: 100,
+                            remaining: 75,
+                            reset_at: Some(Utc::now()),
+                            period_seconds: Some(604_800),
+                        },
+                        QuotaWindow {
+                            window_type: "CRED_LIMIT".to_string(),
+                            used: 1,
+                            limit: 1,
+                            remaining: 0,
+                            reset_at: None,
+                            period_seconds: None,
+                        },
+                    ],
                 },
             },
             fetched_at: Utc::now(),
@@ -555,6 +573,7 @@ mod tests {
         assert_eq!(entity.urn.as_str(), "providers/provider-usage/claude");
         let usage: ProviderUsage = serde_json::from_value(entity.data).expect("valid usage entity");
         assert_eq!(usage.provider, "claude");
+        assert_eq!(usage.windows.len(), 1);
         assert_eq!(usage.windows[0].window_type, "weekly");
         assert_eq!(usage.windows[0].remaining, 75);
     }

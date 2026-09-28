@@ -81,6 +81,9 @@ impl IconWidget {
     pub fn with_fallback(icon_hints: &[Icon], pixel_size: i32, fallback: bool) -> Self {
         let image = gtk::Image::builder()
             .pixel_size(pixel_size)
+            // Keep file-backed provider marks from changing the card layout.
+            .width_request(pixel_size)
+            .height_request(pixel_size)
             .valign(gtk::Align::Center)
             .build();
 
