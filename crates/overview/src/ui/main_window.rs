@@ -367,6 +367,23 @@ impl MainWindowWidget {
                 overflow: hidden;
             }}
 
+            .provider-quota-capacity-track,
+            .provider-quota-reset-track {{
+                background-color: alpha(@window_fg_color, 0.2);
+            }}
+
+            .provider-quota-capacity-track {{
+                border-radius: 3px 3px 0 0;
+            }}
+
+            .provider-quota-reset-track {{
+                border-radius: 0 0 3px 3px;
+            }}
+
+            .provider-quota-fill {{
+                background-color: @accent_bg_color;
+            }}
+
             .provider-quota-label {{
                 color: white;
                 font-size: 8px;

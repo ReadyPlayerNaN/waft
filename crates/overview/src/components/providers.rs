@@ -4,7 +4,7 @@
 //! quota window. Providers and windows are discovered from the protocol data,
 //! so the overview does not need provider-specific UI code.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -25,32 +25,32 @@ const RESET_HEIGHT: i32 = 4;
 
 struct QuotaWindowChart {
     root: gtk::Box,
-    capacity: Rc<Cell<Option<f64>>>,
-    reset_remaining: Rc<Cell<Option<f64>>>,
+    capacity_fill: gtk::Box,
+    reset_fill: gtk::Box,
     label: gtk::Label,
 }
 
 impl QuotaWindowChart {
     fn new(label: &str) -> Rc<Self> {
-        let capacity = Rc::new(Cell::new(None));
-        let capacity_state = capacity.clone();
-        let capacity_area = gtk::DrawingArea::builder()
-            .content_width(CAPACITY_WIDTH)
-            .content_height(CAPACITY_HEIGHT)
-            .build();
-        capacity_area.set_draw_func(move |_area, cr, width, height| {
-            draw_capacity_bar(cr, width as f64, height as f64, capacity_state.get());
-        });
+        let capacity_track = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        capacity_track.set_css_classes(&["provider-quota-capacity-track"]);
+        capacity_track.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT);
 
-        let reset_remaining = Rc::new(Cell::new(None));
-        let reset_state = reset_remaining.clone();
-        let reset_area = gtk::DrawingArea::builder()
-            .content_width(CAPACITY_WIDTH)
-            .content_height(RESET_HEIGHT)
-            .build();
-        reset_area.set_draw_func(move |_area, cr, width, height| {
-            draw_reset_bar(cr, width as f64, height as f64, reset_state.get());
-        });
+        let capacity_fill = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        capacity_fill.set_css_classes(&["provider-quota-fill"]);
+        capacity_fill.set_halign(gtk::Align::Fill);
+        capacity_fill.set_valign(gtk::Align::End);
+        capacity_track.append(&capacity_fill);
+
+        let reset_track = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        reset_track.set_css_classes(&["provider-quota-reset-track"]);
+        reset_track.set_size_request(CAPACITY_WIDTH, RESET_HEIGHT);
+
+        let reset_fill = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        reset_fill.set_css_classes(&["provider-quota-fill"]);
+        reset_fill.set_halign(gtk::Align::End);
+        reset_fill.set_valign(gtk::Align::Fill);
+        reset_track.append(&reset_fill);
 
         let label_widget = gtk::Label::new(Some(label));
         label_widget.set_css_classes(&["caption", "provider-quota-label"]);
@@ -61,33 +61,36 @@ impl QuotaWindowChart {
 
         let capacity_overlay = gtk::Overlay::new();
         capacity_overlay.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT);
-        capacity_overlay.set_child(Some(&capacity_area));
+        capacity_overlay.set_child(Some(&capacity_track));
         capacity_overlay.add_overlay(&label_widget);
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 1);
         root.set_css_classes(&["provider-quota-chart"]);
         root.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT + RESET_HEIGHT + 1);
         root.append(&capacity_overlay);
-        root.append(&reset_area);
+        root.append(&reset_track);
 
         Rc::new(Self {
             root,
-            capacity,
-            reset_remaining,
+            capacity_fill,
+            reset_fill,
             label: label_widget,
         })
     }
 
     fn update(&self, window: &entity::ai::ProviderUsageWindow, now_ms: i64, details: &str) {
         self.label.set_label(&short_window_label(window));
-        self.capacity.set(capacity_fraction(window));
-        self.reset_remaining
-            .set(reset_remaining_fraction(window, now_ms));
+        let capacity_height = capacity_fraction(window)
+            .map(|fraction| (CAPACITY_HEIGHT as f64 * fraction).round() as i32)
+            .unwrap_or(0);
+        self.capacity_fill
+            .set_size_request(CAPACITY_WIDTH, capacity_height);
+
+        let reset_width = reset_remaining_fraction(window, now_ms)
+            .map(|fraction| (CAPACITY_WIDTH as f64 * fraction).round() as i32)
+            .unwrap_or(0);
+        self.reset_fill.set_size_request(reset_width, RESET_HEIGHT);
         self.root.set_tooltip_text(Some(details));
-        self.root.queue_draw();
-        if let Some(parent) = self.root.parent() {
-            parent.queue_draw();
-        }
     }
 }
 
@@ -148,57 +151,6 @@ impl ProviderCard {
         for (key, chart) in self.windows.borrow().iter() {
             chart.root.set_visible(visible_keys.contains(key));
         }
-    }
-}
-
-fn draw_capacity_bar(cr: &gtk::cairo::Context, width: f64, height: f64, remaining: Option<f64>) {
-    let Some(remaining) = remaining else {
-        draw_rect(cr, 0.0, 0.0, width, height, (0.30, 0.30, 0.33, 1.0));
-        return;
-    };
-
-    draw_rect(cr, 0.0, 0.0, width, height, (0.82, 0.16, 0.22, 1.0));
-    let green_height = height * remaining;
-    draw_rect(
-        cr,
-        0.0,
-        height - green_height,
-        width,
-        green_height,
-        (0.20, 0.68, 0.32, 1.0),
-    );
-}
-
-fn draw_reset_bar(cr: &gtk::cairo::Context, width: f64, height: f64, remaining: Option<f64>) {
-    let Some(remaining) = remaining else {
-        draw_rect(cr, 0.0, 0.0, width, height, (0.30, 0.30, 0.33, 1.0));
-        return;
-    };
-
-    draw_rect(cr, 0.0, 0.0, width, height, (0.92, 0.47, 0.10, 1.0));
-    let blue_width = width * remaining;
-    draw_rect(
-        cr,
-        width - blue_width,
-        0.0,
-        blue_width,
-        height,
-        (0.20, 0.48, 0.90, 1.0),
-    );
-}
-
-fn draw_rect(
-    cr: &gtk::cairo::Context,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    color: (f64, f64, f64, f64),
-) {
-    cr.set_source_rgba(color.0, color.1, color.2, color.3);
-    cr.rectangle(x, y, width.max(0.0), height.max(0.0));
-    if let Err(error) = cr.fill() {
-        log::warn!("provider quota chart draw failed: {error}");
     }
 }
 
@@ -415,6 +367,18 @@ fn format_freshness(fetched_at_ms: i64) -> String {
     }
 }
 fn provider_icon(provider: &str) -> String {
+    if matches!(provider, "antigravity" | "grok") {
+        return bundled_provider_icon_path(
+            provider,
+            match provider {
+                "antigravity" => include_bytes!("../../assets/providers/antigravity.png"),
+                "grok" => include_bytes!("../../assets/providers/grok.png"),
+                _ => unreachable!(),
+            },
+            "png",
+        );
+    }
+
     let (slug, svg): (&str, &[u8]) = match provider {
         "claude" => (
             "claude",
@@ -429,15 +393,10 @@ fn provider_icon(provider: &str) -> String {
             "deepseek",
             include_bytes!("../../assets/providers/deepseek.svg"),
         ),
-        "antigravity" => (
-            "antigravity",
-            include_bytes!("../../assets/providers/antigravity.svg"),
-        ),
         "github-copilot" => (
             "github-copilot",
             include_bytes!("../../assets/providers/github-copilot.svg"),
         ),
-        "grok" => ("grok", include_bytes!("../../assets/providers/grok.svg")),
         "kimi" => ("kimi", include_bytes!("../../assets/providers/kimi.svg")),
         "minimax" => (
             "minimax",
@@ -455,14 +414,14 @@ fn provider_icon(provider: &str) -> String {
         "mimo" => ("mimo", include_bytes!("../../assets/providers/mimo.svg")),
         _ => return "applications-science-symbolic".to_string(),
     };
-    bundled_provider_icon_path(slug, svg)
+    bundled_provider_icon_path(slug, svg, "svg")
 }
 
-fn bundled_provider_icon_path(slug: &str, svg: &[u8]) -> String {
+fn bundled_provider_icon_path(slug: &str, svg: &[u8], extension: &str) -> String {
     use std::sync::OnceLock;
 
     let path = format!(
-        "{}/provider-{slug}.svg",
+        "{}/provider-{slug}.{extension}",
         std::env::var("XDG_RUNTIME_DIR")
             .map(|path| format!("{path}/waft"))
             .unwrap_or_else(|_| "/tmp/waft".to_string())
@@ -573,7 +532,12 @@ mod tests {
             "mimo",
         ] {
             let path = provider_icon(provider);
-            assert!(path.ends_with(&format!("provider-{provider}.svg")));
+            let extension = if matches!(provider, "antigravity" | "grok") {
+                "png"
+            } else {
+                "svg"
+            };
+            assert!(path.ends_with(&format!("provider-{provider}.{extension}")));
             assert!(std::path::Path::new(&path).is_file());
         }
     }
