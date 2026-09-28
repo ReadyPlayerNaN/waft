@@ -11,6 +11,7 @@ providers-tooltip-used = Využito
 providers-tooltip-remaining = Zbývá
 providers-tooltip-resets = Obnoví se
 providers-tooltip-updated = Aktualizováno
+providers-tooltip-reset-not-started = nespustilo se
 providers-tooltip-just-now = právě teď
 providers-tooltip-minutes-ago = před { $minutes } min
 providers-tooltip-hours-ago = před { $hours } h

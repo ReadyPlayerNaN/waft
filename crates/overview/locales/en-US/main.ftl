@@ -11,6 +11,7 @@ providers-tooltip-used = Used
 providers-tooltip-remaining = Remaining
 providers-tooltip-resets = Resets
 providers-tooltip-updated = Updated
+providers-tooltip-reset-not-started = not started
 providers-tooltip-just-now = just now
 providers-tooltip-minutes-ago = { $minutes }m ago
 providers-tooltip-hours-ago = { $hours }h ago

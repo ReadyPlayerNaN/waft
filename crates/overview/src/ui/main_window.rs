@@ -362,6 +362,11 @@ impl MainWindowWidget {
                 color: @card_fg_color;
             }}
 
+            .provider-quota-chart {{
+                border-radius: 3px;
+                overflow: hidden;
+            }}
+
             .provider-quota-label {{
                 color: white;
                 font-size: 8px;

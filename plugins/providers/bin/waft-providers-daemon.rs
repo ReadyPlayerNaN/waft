@@ -241,9 +241,8 @@ fn provider_result_to_entity(result: &ProviderResult) -> Option<Entity> {
     let windows: Vec<ProviderUsageWindow> = quota
         .windows
         .iter()
-        // A quota with no reset boundary is not actionable usage data for
-        // the overview. Do not publish it as a misleading limit card.
-        .filter(|window| window.reset_at.is_some())
+        // Resetless windows remain valid: providers may omit reset_at until a
+        // window is first started, while the limit still applies.
         .map(|window| ProviderUsageWindow {
             window_type: window.window_type.clone(),
             used: window.used,
@@ -642,9 +641,10 @@ mod tests {
         assert_eq!(entity.urn.as_str(), "providers/provider-usage/claude");
         let usage: ProviderUsage = serde_json::from_value(entity.data).expect("valid usage entity");
         assert_eq!(usage.provider, "claude");
-        assert_eq!(usage.windows.len(), 1);
+        assert_eq!(usage.windows.len(), 2);
         assert_eq!(usage.windows[0].window_type, "weekly");
         assert_eq!(usage.windows[0].remaining, 75);
+        assert!(usage.windows[1].reset_at.is_none());
         assert_eq!(
             usage.usage_url.as_deref(),
             Some("https://claude.ai/settings/usage")

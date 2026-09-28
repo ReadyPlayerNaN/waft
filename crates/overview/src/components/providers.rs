@@ -65,6 +65,7 @@ impl QuotaWindowChart {
         capacity_overlay.add_overlay(&label_widget);
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 1);
+        root.set_css_classes(&["provider-quota-chart"]);
         root.set_size_request(CAPACITY_WIDTH, CAPACITY_HEIGHT + RESET_HEIGHT + 1);
         root.append(&capacity_overlay);
         root.append(&reset_area);
@@ -334,8 +335,12 @@ fn capacity_fraction(window: &entity::ai::ProviderUsageWindow) -> Option<f64> {
 }
 
 fn reset_remaining_fraction(window: &entity::ai::ProviderUsageWindow, now_ms: i64) -> Option<f64> {
-    let reset_at = window.reset_at?;
     let period_seconds = window.period_seconds.filter(|seconds| *seconds > 0)?;
+    let Some(reset_at) = window.reset_at else {
+        // A missing reset means the provider has not started this interval yet;
+        // show the complete interval as remaining.
+        return Some(1.0);
+    };
     let period_ms = period_seconds.saturating_mul(1_000);
     Some(((reset_at - now_ms) as f64 / period_ms as f64).clamp(0.0, 1.0))
 }
@@ -494,7 +499,7 @@ fn format_remaining(reset_at_ms: Option<i64>) -> String {
 
 fn format_remaining_at(reset_at_ms: Option<i64>, now_ms: i64) -> String {
     let Some(reset_at_ms) = reset_at_ms else {
-        return "never".to_string();
+        return t("providers-tooltip-reset-not-started");
     };
 
     let remaining_secs = ((reset_at_ms - now_ms) / 1000).max(0);
@@ -517,7 +522,24 @@ mod tests {
 
     #[test]
     fn format_remaining_without_reset() {
-        assert_eq!(format_remaining(None), "never");
+        assert_eq!(
+            format_remaining(None),
+            t("providers-tooltip-reset-not-started")
+        );
+    }
+
+    #[test]
+    fn missing_reset_starts_with_a_full_time_bar() {
+        let window = entity::ai::ProviderUsageWindow {
+            window_type: "5h".to_string(),
+            used: 0,
+            limit: 100,
+            remaining: 100,
+            reset_at: None,
+            percentage: true,
+            period_seconds: Some(5 * 3_600),
+        };
+        assert_eq!(reset_remaining_fraction(&window, 1_000), Some(1.0));
     }
 
     #[test]
