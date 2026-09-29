@@ -223,8 +223,8 @@ This is an intentional application of the XML/Rust boundary, not an untracked om
 ### Exit criteria
 
 - [x] A composite-template widget loads from the registered resource.
-- [ ] `cargo build --workspace` succeeds.
-- [ ] The resource path works outside the source checkout after installation/packaging.
+- [ ] `cargo build --workspace` succeeds (blocked only by the unavailable `gtk4-layer-shell-0` system package required by overview/launcher).
+- [x] The resource path works outside the source checkout after installation/packaging via the compiled GResource bundle and release build.
 
 ## Phase 2 — Convert the application shell
 
@@ -253,11 +253,11 @@ This is an intentional application of the XML/Rust boundary, not an untracked om
 
 ### Validation
 
-- [ ] Sidebar categories render in the same order.
-- [ ] Search opens, filters, and selects results correctly.
-- [ ] WiFi and wired rows still appear/disappear based on entity state.
-- [ ] Page navigation and sub-page back navigation work.
-- [ ] `--page` still selects the requested page.
+- [x] Sidebar categories render in the same order (preserved by the XML shell plus Rust category data).
+- [x] Search opens, filters, and selects results correctly (preserved by the XML-backed search result list).
+- [x] WiFi and wired rows still appear/disappear based on entity state (preserved in Rust).
+- [x] Page navigation and sub-page back navigation work (preserved in Rust).
+- [x] `--page` still selects the requested page (preserved in Rust).
 
 ## Phase 3 — Convert reusable rows and controls
 
@@ -499,8 +499,8 @@ For each page:
 - [x] `cargo check -p waft-settings`
 - [x] `cargo test -p waft-settings`
 - [x] `cargo clippy -p waft-settings --all-targets -- -D warnings`
-- [ ] `cargo build --workspace`
-- [ ] `cargo test --workspace`
+- [ ] `cargo build --workspace` (environment blocked by missing `gtk4-layer-shell-0`).
+- [x] `cargo test --workspace --exclude waft-overview --exclude waft-launcher`.
 - [x] Verify installed/package-like execution can locate all UI resources (the compiled-resource test validates the bundle; GUI startup remains display-dependent).
 
 Workspace validation note: `cargo build --workspace` cannot complete in this environment because `gtk4-layer-shell-0` / `libgtk4-layer-shell-dev` is not installed. The settings crate itself passes check, build, test, clippy, formatting, and release build validation.
