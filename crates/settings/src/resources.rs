@@ -59,7 +59,6 @@ mod tests {
             "display-night-light.ui",
             "display-toggle-navigation.ui",
             "entity-list-group.ui",
-            "layout-row.ui",
             "page-root.ui",
             "password-dialog.ui",
             "plugin-row.ui",
