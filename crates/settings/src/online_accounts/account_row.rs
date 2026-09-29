@@ -39,12 +39,14 @@ pub struct ServiceProps {
     pub enabled: bool,
 }
 
+type NavigateCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
 /// A single account row with XML-defined structure.
 pub struct AccountRow {
     pub root: adw::ActionRow,
     status_label: gtk::Label,
     navigate_icon_slot: gtk::Box,
-    navigate_callback: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    navigate_callback: NavigateCallback,
     _provider_icon: IconWidget,
     _navigate_icon: IconWidget,
 }
@@ -70,7 +72,7 @@ impl AccountRow {
         provider_icon_slot.append(provider_icon.widget());
         navigate_icon_slot.append(navigate_icon.widget());
 
-        let navigate_callback: Rc<RefCell<Option<Rc<dyn Fn()>>>> =
+        let navigate_callback: NavigateCallback =
             Rc::new(RefCell::new(None));
         {
             let navigate_callback = navigate_callback.clone();
