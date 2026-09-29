@@ -402,7 +402,7 @@ Start with small, stable widgets before converting whole pages.
 - [x] WiFi password dialog.
 - [x] WiFi share dialog.
 - [x] WiFi network detail page.
-- [ ] Online account add-account dialog.
+- [x] Online account add-account dialog.
 - [x] Startup entry dialog.
 - [x] Keyboard layout/variant/rename dialogs.
 - [ ] Scheduler timer dialog and schedule picker.
