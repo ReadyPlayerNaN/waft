@@ -9,6 +9,7 @@ use adw::prelude::*;
 use waft_client::EntityActionCallback;
 
 use crate::i18n::t;
+use crate::keyed_widget_list::reorder_children;
 use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::BluetoothDevice;
 
@@ -93,6 +94,13 @@ impl PairedDevicesGroup {
                 self.root.remove(&row.widget());
             }
         }
+
+        reorder_children(
+            &self.root,
+            ordered_devices
+                .into_iter()
+                .filter_map(|(urn, _)| self.rows.get(urn.as_str()).map(DeviceRow::widget)),
+        );
 
         if self.rows.is_empty() {
             self.root.set_description(Some(&t("bt-no-paired-devices")));

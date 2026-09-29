@@ -13,6 +13,7 @@ use crate::bluetooth::discovered_devices_group::{
 };
 use crate::bluetooth::paired_devices_group::PairedDevicesGroup;
 use crate::i18n::t;
+use crate::keyed_widget_list::reorder_children;
 use crate::search_index::SearchIndex;
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
@@ -166,13 +167,15 @@ impl BluetoothPage {
         action_callback: &EntityActionCallback,
     ) {
         let mut st = state.borrow_mut();
-        let ordered_keys: Vec<String> = adapters
+        let mut ordered_adapters = adapters.to_vec();
+        ordered_adapters.sort_by(|(left, _), (right, _)| left.as_str().cmp(right.as_str()));
+        let ordered_keys: Vec<String> = ordered_adapters
             .iter()
             .map(|(urn, _)| urn.as_str().to_string())
             .collect();
         let seen: std::collections::HashSet<String> = ordered_keys.iter().cloned().collect();
 
-        for (urn, adapter) in adapters {
+        for (urn, adapter) in &ordered_adapters {
             let key = urn.as_str().to_string();
             let props = AdapterGroupProps {
                 name: adapter.name.clone(),
@@ -216,13 +219,12 @@ impl BluetoothPage {
             }
         }
 
-        let mut previous: Option<gtk::Widget> = None;
-        for key in ordered_keys {
-            if let Some(widget) = st.adapters.get(&key).map(AdapterGroup::widget) {
-                widget.insert_after(&st.adapters_box, previous.as_ref());
-                previous = Some(widget);
-            }
-        }
+        reorder_children(
+            &st.adapters_box,
+            ordered_keys
+                .into_iter()
+                .filter_map(|key| st.adapters.get(&key).map(AdapterGroup::widget)),
+        );
     }
 
     /// Reconcile device lists with current device data.
