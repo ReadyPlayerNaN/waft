@@ -15,8 +15,6 @@ use crate::i18n::t;
 use waft_protocol::Urn;
 use waft_protocol::entity::bluetooth::BluetoothDevice;
 
-use waft_ui_gtk::vdom::Component;
-
 use super::device_row::{DeviceRow, DeviceRowOutput, DeviceRowProps};
 
 /// Output events from the discovered devices group.

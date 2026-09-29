@@ -1,11 +1,9 @@
-//! Dumb widget for a single keyboard shortcut row.
-//!
-//! Renders a three-column layout: human-readable label (left), key chord
-//! (subtitle), action type badge + icon buttons (right).
+//! XML-backed widget for a single keyboard shortcut row.
 
-use waft_ui_gtk::icons::Icon;
-use waft_ui_gtk::vdom::primitives::{VActionRow, VBox, VCustomButton, VIcon, VLabel};
-use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use adw::prelude::*;
 
 /// Input data for constructing or updating a bind row.
 #[derive(Clone, PartialEq)]
@@ -25,64 +23,84 @@ pub enum BindRowOutput {
     Delete,
 }
 
-pub(crate) struct BindRowRender;
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(BindRowOutput)>>>>;
 
-impl RenderFn for BindRowRender {
-    type Props = BindRowProps;
-    type Output = BindRowOutput;
-
-    fn render(props: &Self::Props, emit: &RenderCallback<BindRowOutput>) -> VNode {
-        // Title: human-readable label (hotkey_overlay_title) or action label
-        let title = props.title.as_deref().unwrap_or(&props.action_label);
-
-        let edit_emit = emit.clone();
-        let edit_btn = VCustomButton::new(VNode::icon(VIcon::new(
-            vec![Icon::Themed("document-edit-symbolic".to_string())],
-            16,
-        )))
-        .css_class("flat")
-        .sensitive(props.editable)
-        .on_click(move || {
-            if let Some(ref cb) = *edit_emit.borrow() {
-                cb(BindRowOutput::Edit);
-            }
-        });
-
-        let delete_emit = emit.clone();
-        let delete_btn = VCustomButton::new(VNode::icon(VIcon::new(
-            vec![Icon::Themed("user-trash-symbolic".to_string())],
-            16,
-        )))
-        .css_classes(["flat", "destructive-action"])
-        .sensitive(props.editable)
-        .on_click(move || {
-            if let Some(ref cb) = *delete_emit.borrow() {
-                cb(BindRowOutput::Delete);
-            }
-        });
-
-        // Subtitle always shows the key chord for consistent positioning
-        let mut row = VActionRow::new(title).subtitle(&props.key_chord);
-
-        if props.editable {
-            let mut suffix_box = VBox::horizontal(4).valign(gtk::Align::Center);
-
-            // Action type badge (e.g. "spawn") shown when present
-            if let Some(ref action_type) = props.action_type {
-                suffix_box = suffix_box.child(VNode::label(
-                    VLabel::new(action_type).css_class("dim-label"),
-                ));
-            }
-
-            suffix_box = suffix_box
-                .child(VNode::custom_button(edit_btn))
-                .child(VNode::custom_button(delete_btn));
-
-            row = row.suffix(VNode::vbox(suffix_box));
-        }
-
-        VNode::action_row(row)
-    }
+/// A shortcut row with an XML-defined hierarchy.
+pub struct BindRow {
+    pub root: adw::ActionRow,
+    action_type_label: gtk::Label,
+    edit_button: gtk::Button,
+    delete_button: gtk::Button,
+    suffix_box: gtk::Box,
+    output_cb: OutputCallback,
 }
 
-pub type BindRow = waft_ui_gtk::vdom::RenderComponent<BindRowRender>;
+impl BindRow {
+    pub fn build(props: &BindRowProps) -> Self {
+        let builder = gtk::Builder::from_resource("/com/waft/settings/bind-row.ui");
+        let root: adw::ActionRow = builder
+            .object("root")
+            .expect("bind-row.ui must contain root");
+        let suffix_box: gtk::Box = builder
+            .object("suffix_box")
+            .expect("bind-row.ui must contain suffix_box");
+        let action_type_label: gtk::Label = builder
+            .object("action_type_label")
+            .expect("bind-row.ui must contain action_type_label");
+        let edit_button: gtk::Button = builder
+            .object("edit_button")
+            .expect("bind-row.ui must contain edit_button");
+        let delete_button: gtk::Button = builder
+            .object("delete_button")
+            .expect("bind-row.ui must contain delete_button");
+        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+
+        {
+            let output_cb = output_cb.clone();
+            edit_button.connect_clicked(move |_| {
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(BindRowOutput::Edit);
+                }
+            });
+        }
+        {
+            let output_cb = output_cb.clone();
+            delete_button.connect_clicked(move |_| {
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(BindRowOutput::Delete);
+                }
+            });
+        }
+
+        let row = Self {
+            root,
+            action_type_label,
+            edit_button,
+            delete_button,
+            suffix_box,
+            output_cb,
+        };
+        row.update(props);
+        row
+    }
+
+    pub fn update(&self, props: &BindRowProps) {
+        let title = props.title.as_deref().unwrap_or(&props.action_label);
+        self.root.set_title(title);
+        self.root.set_subtitle(&props.key_chord);
+        self.action_type_label
+            .set_label(props.action_type.as_deref().unwrap_or_default());
+        self.action_type_label.set_visible(props.action_type.is_some());
+        self.suffix_box.set_visible(props.editable);
+        self.edit_button.set_sensitive(props.editable);
+        self.delete_button.set_sensitive(props.editable);
+    }
+
+    pub fn connect_output<F: Fn(BindRowOutput) + 'static>(&self, callback: F) {
+        *self.output_cb.borrow_mut() = Some(Box::new(callback));
+    }
+
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+}

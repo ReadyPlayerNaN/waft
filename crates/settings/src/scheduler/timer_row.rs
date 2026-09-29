@@ -1,11 +1,10 @@
-//! Dumb widget for a single user timer row.
-//!
-//! Renders timer name, schedule summary, enable/disable switch, run-now button,
-//! edit button, and delete button as an `adw::ActionRow` with suffix widgets.
+//! XML-backed widget for a scheduled user timer.
 
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use adw::prelude::*;
 use waft_protocol::entity::session::ScheduleKind;
-use waft_ui_gtk::vdom::primitives::{VActionRow, VBox, VButton, VSwitch};
-use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
 
 use crate::i18n::t;
 
@@ -28,6 +27,8 @@ pub enum TimerRowOutput {
     Edit,
     Delete,
 }
+
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(TimerRowOutput)>>>>;
 
 /// Produce a short schedule summary string.
 fn schedule_summary(schedule: &ScheduleKind) -> String {
@@ -60,79 +61,114 @@ fn schedule_summary(schedule: &ScheduleKind) -> String {
     }
 }
 
-pub(crate) struct TimerRowRender;
+/// A timer row whose layout is defined in GTK XML.
+pub struct TimerRow {
+    pub root: adw::ActionRow,
+    enable_switch: gtk::Switch,
+    running: Rc<Cell<bool>>,
+    updating: Rc<Cell<bool>>,
+    output_cb: OutputCallback,
+}
 
-impl RenderFn for TimerRowRender {
-    type Props = TimerRowProps;
-    type Output = TimerRowOutput;
+impl TimerRow {
+    pub fn build(props: &TimerRowProps) -> Self {
+        let builder = gtk::Builder::from_resource("/com/waft/settings/timer-row.ui");
+        let root: adw::ActionRow = builder
+            .object("root")
+            .expect("timer-row.ui must contain root");
+        let enable_switch: gtk::Switch = builder
+            .object("enable_switch")
+            .expect("timer-row.ui must contain enable_switch");
+        let run_button: gtk::Button = builder
+            .object("run_button")
+            .expect("timer-row.ui must contain run_button");
+        let edit_button: gtk::Button = builder
+            .object("edit_button")
+            .expect("timer-row.ui must contain edit_button");
+        let delete_button: gtk::Button = builder
+            .object("delete_button")
+            .expect("timer-row.ui must contain delete_button");
 
-    fn render(props: &Self::Props, emit: &RenderCallback<TimerRowOutput>) -> VNode {
+        run_button.set_label(&t("scheduler-run-now"));
+        edit_button.set_label(&t("scheduler-edit-timer"));
+        delete_button.set_label(&t("scheduler-delete-timer"));
+
+        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+        let running = Rc::new(Cell::new(false));
+        let updating = Rc::new(Cell::new(false));
+        {
+            let output_cb = output_cb.clone();
+            let updating = updating.clone();
+            enable_switch.connect_active_notify(move |switch| {
+                if updating.get() {
+                    return;
+                }
+                let output = if switch.is_active() {
+                    TimerRowOutput::Enable
+                } else {
+                    TimerRowOutput::Disable
+                };
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(output);
+                }
+            });
+        }
+        {
+            let output_cb = output_cb.clone();
+            run_button.connect_clicked(move |_| {
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(TimerRowOutput::RunNow);
+                }
+            });
+        }
+        {
+            let output_cb = output_cb.clone();
+            edit_button.connect_clicked(move |_| {
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(TimerRowOutput::Edit);
+                }
+            });
+        }
+        {
+            let output_cb = output_cb.clone();
+            delete_button.connect_clicked(move |_| {
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(TimerRowOutput::Delete);
+                }
+            });
+        }
+
+        let row = Self {
+            root,
+            enable_switch,
+            running,
+            updating,
+            output_cb,
+        };
+        row.update(props);
+        row
+    }
+
+    pub fn update(&self, props: &TimerRowProps) {
         let summary = schedule_summary(&props.schedule);
-
         let subtitle = if props.description.is_empty() {
             summary
         } else {
             format!("{} — {}", props.description, summary)
         };
+        self.root.set_title(&props.name);
+        self.root.set_subtitle(&subtitle);
+        self.running.set(props.active);
+        self.updating.set(true);
+        self.enable_switch.set_active(props.enabled);
+        self.updating.set(false);
+    }
 
-        // Enable/disable switch
-        let enable_emit = emit.clone();
-        let enabled = props.enabled;
-        let enable_switch = VSwitch::new(enabled).on_toggle(move |new_state| {
-            if let Some(ref cb) = *enable_emit.borrow() {
-                if new_state {
-                    cb(TimerRowOutput::Enable);
-                } else {
-                    cb(TimerRowOutput::Disable);
-                }
-            }
-        });
+    pub fn connect_output<F: Fn(TimerRowOutput) + 'static>(&self, callback: F) {
+        *self.output_cb.borrow_mut() = Some(Box::new(callback));
+    }
 
-        // Run now button
-        let run_emit = emit.clone();
-        let run_btn = VButton::new(t("scheduler-run-now")).on_click(move || {
-            if let Some(ref cb) = *run_emit.borrow() {
-                cb(TimerRowOutput::RunNow);
-            }
-        });
-
-        // Edit button
-        let edit_emit = emit.clone();
-        let edit_btn = VButton::new(t("scheduler-edit-timer")).on_click(move || {
-            if let Some(ref cb) = *edit_emit.borrow() {
-                cb(TimerRowOutput::Edit);
-            }
-        });
-
-        // Delete button
-        let delete_emit = emit.clone();
-        let delete_btn = VButton::new(t("scheduler-delete-timer")).on_click(move || {
-            if let Some(ref cb) = *delete_emit.borrow() {
-                cb(TimerRowOutput::Delete);
-            }
-        });
-
-        VNode::action_row(
-            VActionRow::new(&props.name)
-                .subtitle(&subtitle)
-                .suffix(VNode::vbox(
-                    VBox::vertical(4)
-                        .halign(gtk::Align::End)
-                        .valign(gtk::Align::Center)
-                        .child(VNode::vbox(
-                            VBox::horizontal(0)
-                                .halign(gtk::Align::End)
-                                .child(VNode::switch(enable_switch)),
-                        ))
-                        .child(VNode::vbox(
-                            VBox::horizontal(4)
-                                .child(VNode::button(run_btn))
-                                .child(VNode::button(edit_btn))
-                                .child(VNode::button(delete_btn)),
-                        )),
-                )),
-        )
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
     }
 }
-
-pub type TimerRow = waft_ui_gtk::vdom::RenderComponent<TimerRowRender>;

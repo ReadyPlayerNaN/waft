@@ -13,8 +13,6 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::accounts::{self, OnlineAccount, OnlineAccountProvider};
-use waft_ui_gtk::vdom::Component;
-
 use crate::display::settings_sub_page::SettingsSubPage;
 use crate::entity_list_group::EntityListGroup;
 

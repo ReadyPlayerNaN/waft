@@ -1,10 +1,9 @@
-//! Dumb widget for a single user service row.
-//!
-//! Renders service name, description, active state, start/stop button,
-//! and enable/disable switch as an `adw::ActionRow` with suffix widgets.
+//! XML-backed widget for a single systemd user service row.
 
-use waft_ui_gtk::vdom::primitives::{VActionRow, VBox, VButton, VLabel, VSwitch};
-use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use adw::prelude::*;
 
 use crate::i18n::t;
 
@@ -27,83 +26,124 @@ pub enum ServiceRowOutput {
     Disable,
 }
 
-pub(crate) struct ServiceRowRender;
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(ServiceRowOutput)>>>>;
 
-impl RenderFn for ServiceRowRender {
-    type Props = ServiceRowProps;
-    type Output = ServiceRowOutput;
+/// A service row whose stable hierarchy is defined in GTK XML.
+pub struct ServiceRow {
+    pub root: adw::ActionRow,
+    state_label: gtk::Label,
+    start_stop_button: gtk::Button,
+    enable_switch: gtk::Switch,
+    running: Rc<Cell<bool>>,
+    updating: Rc<Cell<bool>>,
+    output_cb: OutputCallback,
+}
 
-    fn render(props: &Self::Props, emit: &RenderCallback<ServiceRowOutput>) -> VNode {
-        let running = props.active_state == "active" || props.active_state == "activating";
+impl ServiceRow {
+    pub fn build(props: &ServiceRowProps) -> Self {
+        let builder = gtk::Builder::from_resource("/com/waft/settings/service-row.ui");
+        let root: adw::ActionRow = builder
+            .object("root")
+            .expect("service-row.ui must contain root");
+        let state_label: gtk::Label = builder
+            .object("state_label")
+            .expect("service-row.ui must contain state_label");
+        let start_stop_button: gtk::Button = builder
+            .object("start_stop_button")
+            .expect("service-row.ui must contain start_stop_button");
+        let enable_switch: gtk::Switch = builder
+            .object("enable_switch")
+            .expect("service-row.ui must contain enable_switch");
 
-        // Determine if enable/disable controls should be available.
-        // Static and masked services cannot be enabled/disabled.
-        let controllable = props.sub_state != "static" && props.sub_state != "masked";
+        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+        let running = Rc::new(Cell::new(false));
+        let updating = Rc::new(Cell::new(false));
 
-        let state_css = match props.active_state.as_str() {
-            "active" => "success",
-            "failed" => "error",
-            _ => "dim-label",
-        };
-
-        // Start/stop button
-        let start_stop_label = if running {
-            t("services-stop")
-        } else {
-            t("services-start")
-        };
-
-        let start_stop_emit = emit.clone();
-        let start_stop_running = running;
-        let start_stop_btn = VButton::new(&start_stop_label).on_click(move || {
-            if let Some(ref cb) = *start_stop_emit.borrow() {
-                if start_stop_running {
-                    cb(ServiceRowOutput::Stop);
+        {
+            let output_cb = output_cb.clone();
+            let running = running.clone();
+            start_stop_button.connect_clicked(move |_| {
+                let output = if running.get() {
+                    ServiceRowOutput::Stop
                 } else {
-                    cb(ServiceRowOutput::Start);
+                    ServiceRowOutput::Start
+                };
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(output);
                 }
-            }
-        });
+            });
+        }
+        {
+            let output_cb = output_cb.clone();
+            let updating = updating.clone();
+            enable_switch.connect_active_notify(move |switch| {
+                if updating.get() {
+                    return;
+                }
+                let output = if switch.is_active() {
+                    ServiceRowOutput::Enable
+                } else {
+                    ServiceRowOutput::Disable
+                };
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(output);
+                }
+            });
+        }
 
-        // Enable/disable switch
-        let enable_emit = emit.clone();
-        let enabled = props.enabled;
-        let enable_switch =
-            VSwitch::new(enabled)
-                .sensitive(controllable)
-                .on_toggle(move |new_state| {
-                    if let Some(ref cb) = *enable_emit.borrow() {
-                        if new_state {
-                            cb(ServiceRowOutput::Enable);
-                        } else {
-                            cb(ServiceRowOutput::Disable);
-                        }
-                    }
-                });
+        let row = Self {
+            root,
+            state_label,
+            start_stop_button,
+            enable_switch,
+            running,
+            updating,
+            output_cb,
+        };
+        row.update(props);
+        row
+    }
 
-        // Strip .service suffix for cleaner display
+    pub fn update(&self, props: &ServiceRowProps) {
+        let running = props.active_state == "active" || props.active_state == "activating";
+        let controllable = props.sub_state != "static" && props.sub_state != "masked";
         let display_name = props.unit.strip_suffix(".service").unwrap_or(&props.unit);
-
         let subtitle = if props.description.is_empty() {
             props.active_state.clone()
         } else {
             props.description.clone()
         };
 
-        VNode::action_row(
-            VActionRow::new(display_name)
-                .subtitle(&subtitle)
-                .suffix(VNode::vbox(
-                    VBox::horizontal(8)
-                        .valign(gtk::Align::Center)
-                        .child(VNode::label(
-                            VLabel::new(&props.active_state).css_class(state_css),
-                        ))
-                        .child(VNode::button(start_stop_btn))
-                        .child(VNode::switch(enable_switch)),
-                )),
-        )
+        self.root.set_title(display_name);
+        self.root.set_subtitle(&subtitle);
+        self.state_label.set_label(&props.active_state);
+        for class in ["success", "error", "dim-label"] {
+            self.state_label.remove_css_class(class);
+        }
+        self.state_label.add_css_class(match props.active_state.as_str() {
+            "active" => "success",
+            "failed" => "error",
+            _ => "dim-label",
+        });
+        let button_label = if running {
+            t("services-stop")
+        } else {
+            t("services-start")
+        };
+        self.start_stop_button.set_label(&button_label);
+        self.start_stop_button.set_sensitive(!props.active_state.is_empty());
+        self.running.set(running);
+        self.updating.set(true);
+        self.enable_switch.set_sensitive(controllable);
+        self.enable_switch.set_active(props.enabled);
+        self.updating.set(false);
+    }
+
+    pub fn connect_output<F: Fn(ServiceRowOutput) + 'static>(&self, callback: F) {
+        *self.output_cb.borrow_mut() = Some(Box::new(callback));
+    }
+
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
     }
 }
-
-pub type ServiceRow = waft_ui_gtk::vdom::RenderComponent<ServiceRowRender>;

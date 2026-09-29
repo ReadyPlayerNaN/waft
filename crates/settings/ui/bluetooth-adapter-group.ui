@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwPreferencesGroup" id="root">
+    <child>
+      <object class="AdwSwitchRow" id="power_row" />
+    </child>
+    <child>
+      <object class="AdwSwitchRow" id="discoverable_row" />
+    </child>
+    <child>
+      <object class="AdwEntryRow" id="alias_row" />
+    </child>
+  </object>
+</interface>

@@ -11,8 +11,6 @@ use adw::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::session::{self, UserTimer};
-use waft_ui_gtk::vdom::Component;
-
 use crate::entity_list_group::EntityListGroup;
 use crate::i18n::t;
 use crate::scheduler::timer_dialog::TimerDialog;

@@ -4,6 +4,7 @@
 //! entity types. On entity changes, reconciles adapter groups and network lists.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -12,9 +13,8 @@ use waft_protocol::Urn;
 use waft_protocol::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, NetworkAdapter, WiFiNetwork,
 };
-use waft_ui_gtk::vdom::{Reconciler, VNode};
-
 use crate::i18n::t;
+use crate::keyed_widget_list::reorder_children;
 use crate::search_index::SearchIndex;
 use crate::wifi::adapter_group::{WifiAdapterGroup, WifiAdapterGroupOutput, WifiAdapterGroupProps};
 use crate::wifi::available_networks_group::{AvailableNetworksGroup, AvailableNetworksGroupOutput};
@@ -28,7 +28,8 @@ pub struct WiFiPage {
 }
 
 struct WiFiPageState {
-    adapters_reconciler: Reconciler,
+    adapters_box: gtk::Box,
+    adapters: HashMap<String, WifiAdapterGroup>,
     known_group: KnownNetworksGroup,
     available_group: AvailableNetworksGroup,
     search_index: Rc<RefCell<SearchIndex>>,
@@ -158,10 +159,9 @@ impl WiFiPage {
             });
         }
 
-        let adapters_reconciler = Reconciler::new(adapters_box);
-
         let state = Rc::new(RefCell::new(WiFiPageState {
-            adapters_reconciler,
+            adapters_box,
+            adapters: HashMap::new(),
             known_group,
             available_group,
             search_index: search_index.clone(),
@@ -199,29 +199,57 @@ impl WiFiPage {
         action_callback: &EntityActionCallback,
     ) {
         let mut st = state.borrow_mut();
-        st.adapters_reconciler.reconcile(
-            adapters
-                .iter()
-                .filter(|(_, a)| a.kind == AdapterKind::Wireless)
-                .map(|(urn, adapter)| {
-                    let urn_key = urn.as_str().to_string();
-                    let urn = urn.clone();
-                    let cb = action_callback.clone();
-                    VNode::with_output::<WifiAdapterGroup>(
-                        WifiAdapterGroupProps {
-                            name: adapter.name.clone(),
-                            enabled: adapter.enabled,
-                        },
-                        move |output| {
-                            let action = match output {
-                                WifiAdapterGroupOutput::Enable => "activate",
-                                WifiAdapterGroupOutput::Disable => "deactivate",
-                            };
-                            cb(urn.clone(), action.to_string(), serde_json::Value::Null);
-                        },
-                    )
-                    .key(urn_key)
-                }),
+        let wireless: Vec<_> = adapters
+            .iter()
+            .filter(|(_, adapter)| adapter.kind == AdapterKind::Wireless)
+            .collect();
+        let ordered_keys: Vec<String> = wireless
+            .iter()
+            .map(|(urn, _)| urn.as_str().to_string())
+            .collect();
+        let seen: std::collections::HashSet<String> = ordered_keys.iter().cloned().collect();
+
+        for (urn, adapter) in wireless {
+            let key = urn.as_str().to_string();
+            let props = WifiAdapterGroupProps {
+                name: adapter.name.clone(),
+                enabled: adapter.enabled,
+            };
+            if let Some(existing) = st.adapters.get(&key) {
+                existing.update(&props);
+            } else {
+                let group = WifiAdapterGroup::build(&props);
+                let row_urn = urn.clone();
+                let cb = action_callback.clone();
+                group.connect_output(move |output| {
+                    let action = match output {
+                        WifiAdapterGroupOutput::Enable => "activate",
+                        WifiAdapterGroupOutput::Disable => "deactivate",
+                    };
+                    cb(row_urn.clone(), action.to_string(), serde_json::Value::Null);
+                });
+                st.adapters_box.append(&group.widget());
+                st.adapters.insert(key, group);
+            }
+        }
+
+        let stale: Vec<String> = st
+            .adapters
+            .keys()
+            .filter(|key| !seen.contains(*key))
+            .cloned()
+            .collect();
+        for key in stale {
+            if let Some(group) = st.adapters.remove(&key) {
+                st.adapters_box.remove(&group.widget());
+            }
+        }
+
+        reorder_children(
+            &st.adapters_box,
+            ordered_keys
+                .into_iter()
+                .filter_map(|key| st.adapters.get(&key).map(WifiAdapterGroup::widget)),
         );
     }
 

@@ -18,23 +18,26 @@ pub struct WeatherPreviewGroup {
 
 impl WeatherPreviewGroup {
     pub fn new() -> Self {
-        let group = adw::PreferencesGroup::builder()
-            .title(t("weather-current"))
-            .visible(false)
-            .build();
-
+        let builder = gtk::Builder::from_resource(
+            "/com/waft/settings/weather-preview-group.ui",
+        );
+        let group: adw::PreferencesGroup = builder
+            .object("root")
+            .expect("weather-preview-group.ui must contain root");
+        let icon_slot: gtk::Box = builder
+            .object("icon_slot")
+            .expect("weather-preview-group.ui must contain icon_slot");
+        let temperature_row: adw::ActionRow = builder
+            .object("temperature_row")
+            .expect("weather-preview-group.ui must contain temperature_row");
+        let condition_row: adw::ActionRow = builder
+            .object("condition_row")
+            .expect("weather-preview-group.ui must contain condition_row");
+        group.set_title(&t("weather-current"));
+        temperature_row.set_title(&t("weather-temperature"));
+        condition_row.set_title(&t("weather-condition"));
         let icon = IconWidget::from_name("weather-clear-symbolic", 32);
-
-        let temperature_row = adw::ActionRow::builder()
-            .title(t("weather-temperature"))
-            .build();
-        temperature_row.add_prefix(icon.widget());
-        group.add(&temperature_row);
-
-        let condition_row = adw::ActionRow::builder()
-            .title(t("weather-condition"))
-            .build();
-        group.add(&condition_row);
+        icon_slot.append(icon.widget());
 
         Self {
             root: group,

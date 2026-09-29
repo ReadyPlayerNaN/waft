@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwPreferencesGroup" id="root">
+    <property name="visible">false</property>
+    <child>
+      <object class="AdwSwitchRow" id="toggle_row" />
+    </child>
+  </object>
+</interface>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwActionRow" id="root">
+    <child type="suffix">
+      <object class="GtkBox" id="suffix_box">
+        <property name="spacing">4</property>
+        <property name="valign">center</property>
+        <child>
+          <object class="GtkLabel" id="action_type_label">
+            <property name="css-classes">dim-label</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="edit_button">
+            <property name="icon-name">document-edit-symbolic</property>
+            <property name="css-classes">flat</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="delete_button">
+            <property name="icon-name">user-trash-symbolic</property>
+            <property name="css-classes">flat destructive-action</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

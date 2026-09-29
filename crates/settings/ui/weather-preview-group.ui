@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwPreferencesGroup" id="root">
+    <property name="visible">false</property>
+    <child>
+      <object class="AdwActionRow" id="temperature_row">
+        <child type="prefix">
+          <object class="GtkBox" id="icon_slot">
+            <property name="valign">center</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwActionRow" id="condition_row" />
+    </child>
+  </object>
+</interface>

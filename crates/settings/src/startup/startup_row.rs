@@ -1,10 +1,9 @@
-//! Dumb widget for a single startup entry row.
-//!
-//! Renders command and arguments as an `adw::ActionRow` with edit and delete
-//! suffix buttons.
+//! XML-backed row for a niri startup entry.
 
-use waft_ui_gtk::vdom::primitives::{VActionRow, VBox, VButton};
-use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use adw::prelude::*;
 
 use crate::i18n::t;
 
@@ -22,47 +21,63 @@ pub enum StartupRowOutput {
     Delete,
 }
 
-pub(crate) struct StartupRowRender;
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(StartupRowOutput)>>>>;
 
-impl RenderFn for StartupRowRender {
-    type Props = StartupRowProps;
-    type Output = StartupRowOutput;
-
-    fn render(props: &Self::Props, emit: &RenderCallback<StartupRowOutput>) -> VNode {
-        let subtitle = if props.args.is_empty() {
-            String::new()
-        } else {
-            props.args.join(" ")
-        };
-
-        let edit_emit = emit.clone();
-        let edit_btn = VButton::new(t("startup-edit")).on_click(move || {
-            if let Some(ref cb) = *edit_emit.borrow() {
-                cb(StartupRowOutput::Edit);
-            }
-        });
-
-        let delete_emit = emit.clone();
-        let delete_btn = VButton::new(t("startup-delete")).on_click(move || {
-            if let Some(ref cb) = *delete_emit.borrow() {
-                cb(StartupRowOutput::Delete);
-            }
-        });
-
-        let mut row = VActionRow::new(&props.command);
-        if !subtitle.is_empty() {
-            row = row.subtitle(&subtitle);
-        }
-
-        VNode::action_row(
-            row.suffix(VNode::vbox(
-                VBox::horizontal(4)
-                    .valign(gtk::Align::Center)
-                    .child(VNode::button(edit_btn))
-                    .child(VNode::button(delete_btn)),
-            )),
-        )
-    }
+/// Startup entry row with XML-defined structure and Rust-owned callbacks.
+pub struct StartupRow {
+    pub root: adw::ActionRow,
+    output_cb: OutputCallback,
 }
 
-pub type StartupRow = waft_ui_gtk::vdom::RenderComponent<StartupRowRender>;
+impl StartupRow {
+    pub fn build(props: &StartupRowProps) -> Self {
+        let builder = gtk::Builder::from_resource("/com/waft/settings/startup-row.ui");
+        let root: adw::ActionRow = builder
+            .object("root")
+            .expect("startup-row.ui must contain root");
+        let edit_button: gtk::Button = builder
+            .object("edit_button")
+            .expect("startup-row.ui must contain edit_button");
+        let delete_button: gtk::Button = builder
+            .object("delete_button")
+            .expect("startup-row.ui must contain delete_button");
+        edit_button.set_label(&t("startup-edit"));
+        delete_button.set_label(&t("startup-delete"));
+
+        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+        {
+            let output_cb = output_cb.clone();
+            edit_button.connect_clicked(move |_| {
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(StartupRowOutput::Edit);
+                }
+            });
+        }
+        {
+            let output_cb = output_cb.clone();
+            delete_button.connect_clicked(move |_| {
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(StartupRowOutput::Delete);
+                }
+            });
+        }
+
+        let row = Self { root, output_cb };
+        row.update(props);
+        row
+    }
+
+    pub fn update(&self, props: &StartupRowProps) {
+        self.root.set_title(&props.command);
+        let subtitle = props.args.join(" ");
+        self.root.set_subtitle(&subtitle);
+    }
+
+    pub fn connect_output<F: Fn(StartupRowOutput) + 'static>(&self, callback: F) {
+        *self.output_cb.borrow_mut() = Some(Box::new(callback));
+    }
+
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+}

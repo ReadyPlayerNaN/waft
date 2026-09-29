@@ -257,14 +257,14 @@ Start with small, stable widgets before converting whole pages.
 ### First targets
 
 - [x] `src/wifi/network_row.rs`
-- [ ] `src/bluetooth/device_row.rs`
-- [ ] `src/startup/startup_row.rs`
+- [x] `src/bluetooth/device_row.rs`
+- [x] `src/startup/startup_row.rs`
 - [x] `src/plugins/plugin_row.rs`
-- [ ] `src/services/service_row.rs`
-- [ ] `src/wired/connection_row.rs`
+- [x] `src/services/service_row.rs`
+- [x] `src/wired/connection_row.rs`
 - [x] `src/keyboard/layout_row.rs`
-- [ ] `src/keyboard_shortcuts/bind_row.rs`
-- [ ] `src/scheduler/timer_row.rs`
+- [x] `src/keyboard_shortcuts/bind_row.rs`
+- [x] `src/scheduler/timer_row.rs`
 - [ ] `src/wallpaper/thumbnail_widget.rs`
 
 ### Per-component checklist
@@ -283,57 +283,57 @@ Start with small, stable widgets before converting whole pages.
 
 ### WiFi row pilot
 
-- [ ] Create an XML-backed `NetworkRow` with:
-  - [ ] `AdwActionRow`
-  - [ ] signal-strength icon
-  - [ ] security icon
-  - [ ] connect/disconnect button
-  - [ ] optional navigation chevron
-- [ ] Keep signal icon selection in Rust.
-- [ ] Toggle security icon and navigation chevron visibility from Rust.
-- [ ] Update title, subtitle, button label, and sensitivity in place.
-- [ ] Preserve `Connect` and `Disconnect` outputs.
-- [ ] Preserve known-network navigation callbacks.
-- [ ] Replace the VDOM `NetworkRow` with the template-backed widget.
-- [ ] Update `KnownNetworksGroup` and `AvailableNetworksGroup` to store concrete GTK row widgets.
-- [ ] Preserve URN-keyed add/update/remove behavior.
-- [ ] Add deterministic child ordering.
-- [ ] Verify repeated entity updates do not duplicate rows.
-- [ ] Verify removed rows no longer receive callbacks.
+- [x] Create an XML-backed `NetworkRow` with:
+  - [x] `AdwActionRow`
+  - [x] signal-strength icon
+  - [x] security icon
+  - [x] connect/disconnect button
+  - [x] optional navigation chevron
+- [x] Keep signal icon selection in Rust.
+- [x] Toggle security icon and navigation chevron visibility from Rust.
+- [x] Update title, subtitle, button label, and sensitivity in place.
+- [x] Preserve `Connect` and `Disconnect` outputs.
+- [x] Preserve known-network navigation callbacks.
+- [x] Replace the VDOM `NetworkRow` with the template-backed widget.
+- [x] Update `KnownNetworksGroup` and `AvailableNetworksGroup` to store concrete GTK row widgets.
+- [x] Preserve URN-keyed add/update/remove behavior.
+- [x] Add deterministic child ordering.
+- [x] Verify repeated entity updates do not duplicate rows.
+- [x] Verify removed rows no longer receive callbacks.
 
 ## Phase 4 — Replace VDOM-backed dynamic lists with keyed GTK widgets
 
 ### Tasks
 
-- [ ] Identify every settings component using `RenderComponent`, `VNode`, or `Reconciler`.
-- [ ] For each component, classify whether its dynamic children are:
-  - [ ] simple keyed rows
-  - [ ] nested dynamic groups
-  - [ ] animated/revealed content
-  - [ ] a genuinely reusable VDOM tree
-- [ ] Convert simple keyed rows to explicit GTK widget management.
-- [ ] Reuse the keyed-child abstraction for add/update/remove/reorder.
-- [ ] Keep stable widget identity across entity updates.
-- [ ] Keep stable ordering independent of `HashMap` iteration order.
-- [ ] Ensure removals happen on the GTK thread and do not invalidate active callbacks.
+- [x] Identify every settings component using `RenderComponent`, `VNode`, or `Reconciler`.
+- [x] For each component, classify whether its dynamic children are:
+  - [x] simple keyed rows
+  - [x] nested dynamic groups
+  - [x] animated/revealed content
+  - [x] a genuinely reusable VDOM tree
+- [x] Convert simple keyed rows to explicit GTK widget management.
+- [x] Reuse the keyed-child abstraction for add/update/remove/reorder.
+- [x] Keep stable widget identity across entity updates.
+- [x] Keep stable ordering independent of `HashMap` iteration order.
+- [x] Ensure removals happen on the GTK thread and do not invalidate active callbacks.
 - [ ] Add coalescing/deferred reconciliation only where entity bursts make it necessary.
-- [ ] Do not rebuild complete page trees for individual entity changes.
-- [ ] Remove settings-only VDOM imports after each component is migrated.
-- [ ] Decide whether any remaining VDOM functionality belongs in `waft-ui-gtk` or should be removed from the settings dependency.
+- [x] Do not rebuild complete page trees for individual entity changes.
+- [x] Remove settings-only VDOM imports after each component is migrated.
+- [x] Decide whether any remaining VDOM functionality belongs in `waft-ui-gtk` or should be removed from the settings dependency.
 
 ### Dynamic-page targets
 
-- [ ] WiFi adapters and network rows.
-- [ ] Bluetooth adapters, paired devices, and discovered devices.
-- [ ] Wired adapters and connection rows.
+- [x] WiFi adapters and network rows.
+- [x] Bluetooth adapters, paired devices, and discovered devices.
+- [x] Wired adapters and connection rows.
 - [ ] Audio device cards and virtual devices.
-- [ ] Online account rows and service toggles.
+- [x] Online account rows and service toggles.
 - [ ] Notification groups, profiles, and pattern rows.
-- [ ] Plugin rows and system service rows.
-- [ ] Scheduler timer rows.
+- [x] Plugin rows and system service rows.
+- [x] Scheduler timer rows.
 - [ ] Wallpaper gallery thumbnails.
-- [ ] Keyboard layouts and shortcut rows.
-- [ ] Startup entries.
+- [x] Keyboard layouts and shortcut rows.
+- [x] Startup entries.
 
 ## Phase 5 — Convert static and mostly-static page sections
 
@@ -345,7 +345,7 @@ Start with small, stable widgets before converting whole pages.
 - [ ] `src/display/night_light_section.rs`
 - [ ] `src/display/night_light_config_section.rs`
 - [ ] `src/display/output_section.rs`
-- [ ] `src/display/settings_sub_page.rs`
+- [x] `src/display/settings_sub_page.rs`
 - [ ] Keep entity values, toggles, automation schedules, and navigation callbacks in Rust.
 
 ### Audio/sounds
@@ -358,9 +358,9 @@ Start with small, stable widgets before converting whole pages.
 
 ### Notifications
 
-- [ ] `src/notifications/dnd_section.rs`
-- [ ] `src/notifications/active_profile_section.rs`
-- [ ] `src/notifications/recording_section.rs`
+- [x] `src/notifications/dnd_section.rs`
+- [x] `src/notifications/active_profile_section.rs`
+- [x] `src/notifications/recording_section.rs`
 - [ ] `src/notifications/profiles_section.rs`
 - [ ] `src/notifications/groups_section.rs`
 - [ ] `src/notifications/group_form.rs`
@@ -388,7 +388,7 @@ Start with small, stable widgets before converting whole pages.
 - [ ] `src/wallpaper/background_color_section.rs`
 - [ ] `src/wallpaper/transition_section.rs`
 - [ ] `src/weather/location_settings_group.rs`
-- [ ] `src/weather/weather_preview_group.rs`
+- [x] `src/weather/weather_preview_group.rs`
 - [ ] `src/keyboard/keymap_grid.rs`
 - [ ] `src/keyboard/variant_dialog.rs`
 - [ ] `src/keyboard/add_layout_dialog.rs`
@@ -406,7 +406,7 @@ Start with small, stable widgets before converting whole pages.
 - [ ] Startup entry dialog.
 - [ ] Keyboard layout/variant/rename dialogs.
 - [ ] Scheduler timer dialog and schedule picker.
-- [ ] Settings sub-pages.
+- [x] Settings sub-pages.
 
 ### Tasks
 

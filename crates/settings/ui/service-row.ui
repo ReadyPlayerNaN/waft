@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwActionRow" id="root">
+    <child type="suffix">
+      <object class="GtkBox" id="controls_box">
+        <property name="spacing">8</property>
+        <property name="valign">center</property>
+        <child>
+          <object class="GtkLabel" id="state_label" />
+        </child>
+        <child>
+          <object class="GtkButton" id="start_stop_button">
+            <property name="css-classes">flat</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkSwitch" id="enable_switch">
+            <property name="valign">center</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

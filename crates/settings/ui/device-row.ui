@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwActionRow" id="root">
+    <child type="prefix">
+      <object class="GtkBox" id="device_icon_slot">
+        <property name="valign">center</property>
+      </object>
+    </child>
+    <child type="suffix">
+      <object class="GtkBox" id="suffix_box">
+        <property name="spacing">8</property>
+        <property name="valign">center</property>
+        <child>
+          <object class="GtkBox" id="battery_icon_slot">
+            <property name="valign">center</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="action_button">
+            <property name="css-classes">flat</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="remove_button">
+            <property name="icon-name">user-trash-symbolic</property>
+            <property name="css-classes">flat destructive-action</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

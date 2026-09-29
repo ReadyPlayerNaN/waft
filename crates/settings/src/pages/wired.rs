@@ -4,6 +4,7 @@
 //! entity types. On entity changes, reconciles adapter groups and connection lists.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -12,8 +13,6 @@ use waft_protocol::Urn;
 use waft_protocol::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, EthernetConnection, NetworkAdapter,
 };
-use waft_ui_gtk::vdom::{Reconciler, VNode};
-
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
 use crate::wired::adapter_group::{
@@ -26,7 +25,8 @@ pub struct WiredPage {
 }
 
 struct WiredPageState {
-    adapters_reconciler: Reconciler,
+    adapters_box: gtk::Box,
+    adapters: HashMap<String, WiredAdapterGroup>,
 }
 
 impl WiredPage {
@@ -60,10 +60,9 @@ impl WiredPage {
             idx.backfill_widget("wired", &t("wired-ip-address"), None, Some(&adapters_box));
         }
 
-        let adapters_reconciler = Reconciler::new(adapters_box);
-
         let state = Rc::new(RefCell::new(WiredPageState {
-            adapters_reconciler,
+            adapters_box,
+            adapters: HashMap::new(),
         }));
 
         // Subscribe to both adapter and connection changes
@@ -95,53 +94,69 @@ impl WiredPage {
         action_callback: &EntityActionCallback,
     ) {
         let mut state = state.borrow_mut();
+        let wired: Vec<_> = adapters
+            .iter()
+            .filter(|(_, adapter)| adapter.kind == AdapterKind::Wired)
+            .collect();
+        let ordered_keys: Vec<String> = wired
+            .iter()
+            .map(|(urn, _)| urn.as_str().to_string())
+            .collect();
+        let seen: std::collections::HashSet<String> = ordered_keys.iter().cloned().collect();
 
-        state.adapters_reconciler.reconcile(
-            adapters
+        for (urn, adapter) in wired {
+            let key = urn.as_str().to_string();
+            let adapter_connections: Vec<(Urn, EthernetConnection)> = connections
                 .iter()
-                .filter(|(_, a)| a.kind == AdapterKind::Wired)
-                .map(|(urn, adapter)| {
-                    let urn_key = urn.as_str().to_string();
-                    let adapter_urn = urn.clone();
-                    let cb = action_callback.clone();
+                .filter(|(conn_urn, _)| conn_urn.as_str().starts_with(key.as_str()))
+                .cloned()
+                .collect();
+            let props = WiredAdapterGroupProps {
+                name: adapter.name.clone(),
+                connected: adapter.connected,
+                ip: adapter.ip.clone(),
+                public_ip: adapter.public_ip.clone(),
+                connections: adapter_connections,
+            };
+            if let Some(existing) = state.adapters.get(&key) {
+                existing.update(&props);
+            } else {
+                let group = WiredAdapterGroup::build(&props);
+                let adapter_urn = urn.clone();
+                let cb = action_callback.clone();
+                group.connect_output(move |output| match output {
+                    WiredAdapterGroupOutput::ToggleConnection => {
+                        cb(adapter_urn.clone(), "activate".to_string(), serde_json::Value::Null);
+                    }
+                    WiredAdapterGroupOutput::ActivateConnection(conn_urn) => {
+                        cb(conn_urn, "activate".to_string(), serde_json::Value::Null);
+                    }
+                    WiredAdapterGroupOutput::DeactivateConnection(conn_urn) => {
+                        cb(conn_urn, "deactivate".to_string(), serde_json::Value::Null);
+                    }
+                });
+                state.adapters_box.append(&group.widget());
+                state.adapters.insert(key, group);
+            }
+        }
 
-                    // Collect connection profiles that belong to this adapter.
-                    // Connection URN format:
-                    //   networkmanager/network-adapter/{adapter}/ethernet-connection/{uuid}
-                    // Adapter URN format:
-                    //   networkmanager/network-adapter/{adapter}
-                    let adapter_connections: Vec<(Urn, EthernetConnection)> = connections
-                        .iter()
-                        .filter(|(conn_urn, _)| conn_urn.as_str().starts_with(urn_key.as_str()))
-                        .cloned()
-                        .collect();
-
-                    VNode::with_output::<WiredAdapterGroup>(
-                        WiredAdapterGroupProps {
-                            name: adapter.name.clone(),
-                            connected: adapter.connected,
-                            ip: adapter.ip.clone(),
-                            public_ip: adapter.public_ip.clone(),
-                            connections: adapter_connections,
-                        },
-                        move |output| match output {
-                            WiredAdapterGroupOutput::ToggleConnection => {
-                                cb(
-                                    adapter_urn.clone(),
-                                    "activate".to_string(),
-                                    serde_json::Value::Null,
-                                );
-                            }
-                            WiredAdapterGroupOutput::ActivateConnection(conn_urn) => {
-                                cb(conn_urn, "activate".to_string(), serde_json::Value::Null);
-                            }
-                            WiredAdapterGroupOutput::DeactivateConnection(conn_urn) => {
-                                cb(conn_urn, "deactivate".to_string(), serde_json::Value::Null);
-                            }
-                        },
-                    )
-                    .key(urn_key)
-                }),
-        );
+        let stale: Vec<String> = state
+            .adapters
+            .keys()
+            .filter(|key| !seen.contains(*key))
+            .cloned()
+            .collect();
+        for key in stale {
+            if let Some(group) = state.adapters.remove(&key) {
+                state.adapters_box.remove(&group.widget());
+            }
+        }
+        let mut previous: Option<gtk::Widget> = None;
+        for key in ordered_keys {
+            if let Some(widget) = state.adapters.get(&key).map(WiredAdapterGroup::widget) {
+                widget.insert_after(&state.adapters_box, previous.as_ref());
+                previous = Some(widget);
+            }
+        }
     }
 }

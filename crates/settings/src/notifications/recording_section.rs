@@ -45,16 +45,17 @@ impl RecordingSection {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let group = adw::PreferencesGroup::builder()
-            .title(t("notif-recording"))
-            .visible(false)
-            .build();
-
-        let toggle_row = adw::SwitchRow::builder()
-            .title(t("notif-recording"))
-            .subtitle(t("notif-recording-desc"))
-            .build();
-        group.add(&toggle_row);
+        let builder = gtk::Builder::from_resource("/com/waft/settings/section-toggle.ui");
+        let group: adw::PreferencesGroup = builder
+            .object("root")
+            .expect("section-toggle.ui must contain root");
+        let toggle_row: adw::SwitchRow = builder
+            .object("toggle_row")
+            .expect("section-toggle.ui must contain toggle_row");
+        let recording_title = t("notif-recording");
+        group.set_title(&recording_title);
+        toggle_row.set_title(&recording_title);
+        toggle_row.set_subtitle(&t("notif-recording-desc"));
 
         // Backfill search entry widgets
         {

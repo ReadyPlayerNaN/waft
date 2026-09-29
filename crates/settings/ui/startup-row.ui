@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwActionRow" id="root">
+    <child type="suffix">
+      <object class="GtkBox" id="actions_box">
+        <property name="spacing">4</property>
+        <property name="valign">center</property>
+        <child>
+          <object class="GtkButton" id="edit_button">
+            <property name="css-classes">flat</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="delete_button">
+            <property name="css-classes">flat</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

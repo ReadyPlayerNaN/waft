@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwPreferencesGroup" id="root">
+    <child>
+      <object class="AdwSwitchRow" id="connected_row" />
+    </child>
+    <child>
+      <object class="AdwActionRow" id="ip_row" />
+    </child>
+    <child>
+      <object class="AdwActionRow" id="gateway_row" />
+    </child>
+    <child>
+      <object class="AdwActionRow" id="public_ip_row" />
+    </child>
+    <child>
+      <object class="GtkBox" id="connections_slot">
+        <property name="orientation">vertical</property>
+      </object>
+    </child>
+  </object>
+</interface>

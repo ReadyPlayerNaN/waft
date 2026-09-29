@@ -6,6 +6,7 @@ mod bluetooth;
 mod display;
 mod entity_list_group;
 mod i18n;
+mod keyed_widget_list;
 mod kdl_config;
 mod kdl_niri_windows;
 mod keyboard;

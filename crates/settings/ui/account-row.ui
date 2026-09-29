@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwActionRow" id="root">
+    <child type="prefix">
+      <object class="GtkBox" id="provider_icon_slot">
+        <property name="valign">center</property>
+      </object>
+    </child>
+    <child type="suffix">
+      <object class="GtkBox" id="suffix_box">
+        <property name="spacing">8</property>
+        <property name="valign">center</property>
+        <child>
+          <object class="GtkLabel" id="status_label" />
+        </child>
+        <child>
+          <object class="GtkBox" id="navigate_icon_slot">
+            <property name="valign">center</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

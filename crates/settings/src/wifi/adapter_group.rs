@@ -1,9 +1,9 @@
-//! Per-adapter WiFi preferences group.
-//!
-//! Dumb widget displaying WiFi adapter controls: enable toggle.
+//! XML-backed WiFi adapter preferences group.
 
-use waft_ui_gtk::vdom::primitives::{VPreferencesGroup, VSwitchRow};
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use adw::prelude::*;
 
 use crate::i18n::t;
 
@@ -20,34 +20,67 @@ pub enum WifiAdapterGroupOutput {
     Disable,
 }
 
-pub(crate) struct WifiAdapterGroupRender;
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(WifiAdapterGroupOutput)>>>>;
 
-impl RenderFn for WifiAdapterGroupRender {
-    type Props = WifiAdapterGroupProps;
-    type Output = WifiAdapterGroupOutput;
-
-    fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
-        VNode::preferences_group(
-            VPreferencesGroup::new().title(&props.name).child(
-                VNode::switch_row(
-                    VSwitchRow::new(t("wifi-adapter-enabled"), props.enabled).on_toggle({
-                        let emit = emit.clone();
-                        move |active| {
-                            if let Some(ref cb) = *emit.borrow() {
-                                let ev = if active {
-                                    WifiAdapterGroupOutput::Enable
-                                } else {
-                                    WifiAdapterGroupOutput::Disable
-                                };
-                                cb(ev);
-                            }
-                        }
-                    }),
-                )
-                .key("enabled"),
-            ),
-        )
-    }
+/// A WiFi adapter group with XML-defined stable structure.
+pub struct WifiAdapterGroup {
+    pub root: adw::PreferencesGroup,
+    enabled_row: adw::SwitchRow,
+    updating: Rc<Cell<bool>>,
+    output_cb: OutputCallback,
 }
 
-pub type WifiAdapterGroup = RenderComponent<WifiAdapterGroupRender>;
+impl WifiAdapterGroup {
+    pub fn build(props: &WifiAdapterGroupProps) -> Self {
+        let builder = gtk::Builder::from_resource("/com/waft/settings/wifi-adapter-group.ui");
+        let root: adw::PreferencesGroup = builder
+            .object("root")
+            .expect("wifi-adapter-group.ui must contain root");
+        let enabled_row: adw::SwitchRow = builder
+            .object("enabled_row")
+            .expect("wifi-adapter-group.ui must contain enabled_row");
+        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+        let updating = Rc::new(Cell::new(false));
+        enabled_row.set_title(&t("wifi-adapter-enabled"));
+        {
+            let output_cb = output_cb.clone();
+            let updating = updating.clone();
+            enabled_row.connect_active_notify(move |row| {
+                if updating.get() {
+                    return;
+                }
+                let output = if row.is_active() {
+                    WifiAdapterGroupOutput::Enable
+                } else {
+                    WifiAdapterGroupOutput::Disable
+                };
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(output);
+                }
+            });
+        }
+        let group = Self {
+            root,
+            enabled_row,
+            updating,
+            output_cb,
+        };
+        group.update(props);
+        group
+    }
+
+    pub fn update(&self, props: &WifiAdapterGroupProps) {
+        self.root.set_title(&props.name);
+        self.updating.set(true);
+        self.enabled_row.set_active(props.enabled);
+        self.updating.set(false);
+    }
+
+    pub fn connect_output<F: Fn(WifiAdapterGroupOutput) + 'static>(&self, callback: F) {
+        *self.output_cb.borrow_mut() = Some(Box::new(callback));
+    }
+
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+}

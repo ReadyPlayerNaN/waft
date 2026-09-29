@@ -1,13 +1,12 @@
-//! Per-device row widget.
-//!
-//! Dumb widget displaying a single Bluetooth device as an `AdwActionRow`
-//! with appropriate icon, status text, and action buttons.
+//! XML-backed row for a Bluetooth device.
 
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use adw::prelude::*;
 use waft_protocol::entity::bluetooth::ConnectionState;
 use waft_ui_gtk::bluetooth::resolve_device_type_icon;
-use waft_ui_gtk::icons::Icon;
-use waft_ui_gtk::vdom::primitives::{VActionRow, VCustomButton, VIcon, VLabel};
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
+use waft_ui_gtk::icons::IconWidget;
 
 use crate::i18n::{t, t_args};
 
@@ -24,25 +23,90 @@ pub struct DeviceRowProps {
 
 /// Output events from a device row.
 pub enum DeviceRowOutput {
-    /// Toggle connect/disconnect for a paired device.
     ToggleConnect,
-    /// Request pairing with a discovered device.
     Pair,
-    /// Remove a paired device.
     Remove,
 }
 
-pub(crate) struct DeviceRowRender;
+type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(DeviceRowOutput)>>>>;
 
-impl RenderFn for DeviceRowRender {
-    type Props = DeviceRowProps;
-    type Output = DeviceRowOutput;
+/// A Bluetooth device row with XML-defined structure.
+pub struct DeviceRow {
+    pub root: adw::ActionRow,
+    action_button: gtk::Button,
+    remove_button: gtk::Button,
+    battery_icon_slot: gtk::Box,
+    device_icon: IconWidget,
+    battery_icon: IconWidget,
+    paired: Cell<bool>,
+    output_cb: OutputCallback,
+}
 
-    fn render(props: &Self::Props, emit: &RenderCallback<Self::Output>) -> VNode {
-        let device_icon = resolve_device_type_icon(&props.device_type);
+impl DeviceRow {
+    pub fn build(props: &DeviceRowProps) -> Self {
+        let builder = gtk::Builder::from_resource("/com/waft/settings/device-row.ui");
+        let root: adw::ActionRow = builder
+            .object("root")
+            .expect("device-row.ui must contain root");
+        let device_icon_slot: gtk::Box = builder
+            .object("device_icon_slot")
+            .expect("device-row.ui must contain device_icon_slot");
+        let action_button: gtk::Button = builder
+            .object("action_button")
+            .expect("device-row.ui must contain action_button");
+        let remove_button: gtk::Button = builder
+            .object("remove_button")
+            .expect("device-row.ui must contain remove_button");
+        let battery_icon_slot: gtk::Box = builder
+            .object("battery_icon_slot")
+            .expect("device-row.ui must contain battery_icon_slot");
+
+        let device_icon = IconWidget::from_name("bluetooth-symbolic", 24);
+        let battery_icon = IconWidget::from_name("battery-full-symbolic", 16);
+        device_icon_slot.append(device_icon.widget());
+        battery_icon_slot.append(battery_icon.widget());
+
+        let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+        let paired = Cell::new(false);
+        {
+            let output_cb = output_cb.clone();
+            let paired = paired.clone();
+            action_button.connect_clicked(move |_| {
+                let output = if paired.get() {
+                    DeviceRowOutput::ToggleConnect
+                } else {
+                    DeviceRowOutput::Pair
+                };
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(output);
+                }
+            });
+        }
+        {
+            let output_cb = output_cb.clone();
+            remove_button.connect_clicked(move |_| {
+                if let Some(callback) = output_cb.borrow().as_ref() {
+                    callback(DeviceRowOutput::Remove);
+                }
+            });
+        }
+
+        let row = Self {
+            root,
+            action_button,
+            remove_button,
+            battery_icon_slot,
+            device_icon,
+            battery_icon,
+            paired,
+            output_cb,
+        };
+        row.update(props);
+        row
+    }
+
+    pub fn update(&self, props: &DeviceRowProps) {
         let connected = matches!(props.connection_state, ConnectionState::Connected);
-
-        // Build subtitle and button label based on connection state and paired status
         let (subtitle, action_label, sensitive) = if props.paired {
             match props.connection_state {
                 ConnectionState::Connected => {
@@ -68,74 +132,34 @@ impl RenderFn for DeviceRowRender {
             (sub, t("bt-pair"), true)
         };
 
-        let mut row = VActionRow::new(&props.name)
-            .subtitle(&subtitle)
-            .prefix(VNode::icon(VIcon::new(
-                vec![Icon::Themed(device_icon.to_string())],
-                24,
-            )));
-
-        // Battery icon (only when connected with battery info)
-        if let Some(pct) = props.battery_percentage
-            && connected
-        {
-            let batt_icon = resolve_battery_icon_name(pct);
-            row = row.suffix(VNode::icon(VIcon::new(
-                vec![Icon::Themed(batt_icon.to_string())],
-                16,
-            )));
+        self.root.set_title(&props.name);
+        self.root.set_subtitle(&subtitle);
+        self.device_icon.set_icon(resolve_device_type_icon(&props.device_type));
+        self.action_button.set_label(&action_label);
+        self.action_button.set_sensitive(sensitive);
+        self.remove_button.set_visible(props.paired);
+        self.paired.set(props.paired);
+        self.action_button.remove_css_class("suggested-action");
+        if !props.paired {
+            self.action_button.add_css_class("suggested-action");
         }
 
-        // Action button: Connect/Disconnect for paired, Pair for unpaired
-        if props.paired {
-            let emit_connect = emit.clone();
-            row = row.suffix(VNode::custom_button(
-                VCustomButton::new(VNode::label(VLabel::new(&action_label)))
-                    .css_class("flat")
-                    .sensitive(sensitive)
-                    .on_click(move || {
-                        if let Some(ref cb) = *emit_connect.borrow() {
-                            cb(DeviceRowOutput::ToggleConnect);
-                        }
-                    }),
-            ));
-        } else {
-            let emit_pair = emit.clone();
-            row = row.suffix(VNode::custom_button(
-                VCustomButton::new(VNode::label(VLabel::new(&action_label)))
-                    .css_classes(["flat", "suggested-action"])
-                    .sensitive(sensitive)
-                    .on_click(move || {
-                        if let Some(ref cb) = *emit_pair.borrow() {
-                            cb(DeviceRowOutput::Pair);
-                        }
-                    }),
-            ));
+        let show_battery = props.paired && connected && props.battery_percentage.is_some();
+        self.battery_icon_slot.set_visible(show_battery);
+        if let Some(pct) = props.battery_percentage {
+            self.battery_icon
+                .set_icon(resolve_battery_icon_name(pct));
         }
+    }
 
-        // Remove button (always shown for paired; hidden for unpaired)
-        if props.paired {
-            let emit_remove = emit.clone();
-            row = row.suffix(VNode::custom_button(
-                VCustomButton::new(VNode::icon(VIcon::new(
-                    vec![Icon::Themed("user-trash-symbolic".to_string())],
-                    16,
-                )))
-                .css_classes(["flat", "destructive-action"])
-                .sensitive(sensitive)
-                .on_click(move || {
-                    if let Some(ref cb) = *emit_remove.borrow() {
-                        cb(DeviceRowOutput::Remove);
-                    }
-                }),
-            ));
-        }
+    pub fn connect_output<F: Fn(DeviceRowOutput) + 'static>(&self, callback: F) {
+        *self.output_cb.borrow_mut() = Some(Box::new(callback));
+    }
 
-        VNode::action_row(row)
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
     }
 }
-
-pub type DeviceRow = RenderComponent<DeviceRowRender>;
 
 fn resolve_battery_icon_name(pct: u8) -> &'static str {
     match pct {

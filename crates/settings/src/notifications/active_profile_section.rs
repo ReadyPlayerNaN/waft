@@ -46,17 +46,17 @@ impl ActiveProfileSection {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let group = adw::PreferencesGroup::builder()
-            .title(t("notif-active-profile"))
-            .visible(false)
-            .build();
-
+        let builder = gtk::Builder::from_resource("/com/waft/settings/section-combo.ui");
+        let group: adw::PreferencesGroup = builder
+            .object("root")
+            .expect("section-combo.ui must contain root");
+        let combo_row: adw::ComboRow = builder
+            .object("combo_row")
+            .expect("section-combo.ui must contain combo_row");
         let string_list = gtk::StringList::new(&[]);
-        let combo_row = adw::ComboRow::builder()
-            .title(t("notif-profile"))
-            .model(&string_list)
-            .build();
-        group.add(&combo_row);
+        group.set_title(&t("notif-active-profile"));
+        combo_row.set_title(&t("notif-profile"));
+        combo_row.set_model(Some(&string_list));
 
         // Backfill search entry widgets
         {

@@ -10,8 +10,6 @@ use std::rc::Rc;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::session::{self, UserService};
-use waft_ui_gtk::vdom::Component;
-
 use crate::entity_list_group::EntityListGroup;
 use crate::i18n::t;
 use crate::search_index::SearchIndex;

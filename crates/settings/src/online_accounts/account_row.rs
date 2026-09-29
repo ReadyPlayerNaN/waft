@@ -1,15 +1,11 @@
-//! Dumb widget for a single online account row.
-//!
-//! Renders account provider name, identity, status badge. When `on_navigate`
-//! is set the row is activatable and shows a chevron; clicking navigates to a
-//! detail sub-page.
+//! XML-backed row for a GNOME Online Account.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
+use adw::prelude::*;
 use waft_protocol::entity::accounts::AccountStatus;
-use waft_ui_gtk::icons::Icon;
-use waft_ui_gtk::vdom::primitives::{VActionRow, VBox, VIcon, VLabel};
-use waft_ui_gtk::vdom::{RenderCallback, RenderFn, VNode};
+use waft_ui_gtk::icons::IconWidget;
 
 use crate::i18n::t;
 
@@ -43,54 +39,86 @@ pub struct ServiceProps {
     pub enabled: bool,
 }
 
-/// Output events from an account row (none currently — navigation is via `on_navigate`).
-#[derive(Debug, Clone)]
-pub enum AccountRowOutput {}
+/// A single account row with XML-defined structure.
+pub struct AccountRow {
+    pub root: adw::ActionRow,
+    status_label: gtk::Label,
+    navigate_icon_slot: gtk::Box,
+    navigate_callback: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    _provider_icon: IconWidget,
+    _navigate_icon: IconWidget,
+}
 
-pub(crate) struct AccountRowRender;
+impl AccountRow {
+    pub fn build(props: &AccountRowProps) -> Self {
+        let builder = gtk::Builder::from_resource("/com/waft/settings/account-row.ui");
+        let root: adw::ActionRow = builder
+            .object("root")
+            .expect("account-row.ui must contain root");
+        let provider_icon_slot: gtk::Box = builder
+            .object("provider_icon_slot")
+            .expect("account-row.ui must contain provider_icon_slot");
+        let status_label: gtk::Label = builder
+            .object("status_label")
+            .expect("account-row.ui must contain status_label");
+        let navigate_icon_slot: gtk::Box = builder
+            .object("navigate_icon_slot")
+            .expect("account-row.ui must contain navigate_icon_slot");
 
-impl RenderFn for AccountRowRender {
-    type Props = AccountRowProps;
-    type Output = AccountRowOutput;
+        let provider_icon = IconWidget::from_name(provider_icon(&props.provider_name), 32);
+        let navigate_icon = IconWidget::from_name("go-next-symbolic", 16);
+        provider_icon_slot.append(provider_icon.widget());
+        navigate_icon_slot.append(navigate_icon.widget());
 
-    fn render(props: &Self::Props, _emit: &RenderCallback<AccountRowOutput>) -> VNode {
-        let (status_text, status_css) = match props.status {
-            AccountStatus::Active => (t("online-accounts-status-active"), "success"),
-            AccountStatus::CredentialsNeeded => {
-                (t("online-accounts-status-credentials-needed"), "warning")
-            }
-            AccountStatus::NeedsAttention => (t("online-accounts-status-needs-attention"), "error"),
-        };
-
-        let icon_name = provider_icon(&props.provider_name);
-
-        // Build the header row: identity as title, provider as subtitle
-        let mut row = VActionRow::new(&props.presentation_identity)
-            .subtitle(&props.provider_name)
-            .prefix(VNode::icon(VIcon::new(
-                vec![Icon::Themed(icon_name.to_string())],
-                32,
-            )))
-            .suffix(VNode::vbox(
-                VBox::horizontal(4)
-                    .valign(gtk::Align::Center)
-                    .child(VNode::label(
-                        VLabel::new(&status_text).css_class(status_css),
-                    )),
-            ));
-
-        // When a navigation callback is provided, make the row activatable
-        // and append a chevron to indicate drill-down.
-        if let Some(navigate) = props.on_navigate.clone() {
-            row = row
-                .suffix(VNode::icon(VIcon::new(
-                    vec![Icon::Themed("go-next-symbolic".to_string())],
-                    16,
-                )))
-                .on_activate(move || navigate());
+        let navigate_callback: Rc<RefCell<Option<Rc<dyn Fn()>>>> =
+            Rc::new(RefCell::new(None));
+        {
+            let navigate_callback = navigate_callback.clone();
+            root.connect_activated(move |_| {
+                if let Some(callback) = navigate_callback.borrow().as_ref() {
+                    callback();
+                }
+            });
         }
 
-        VNode::action_row(row)
+        let row = Self {
+            root,
+            status_label,
+            navigate_icon_slot,
+            navigate_callback,
+            _provider_icon: provider_icon,
+            _navigate_icon: navigate_icon,
+        };
+        row.update(props);
+        row
+    }
+
+    pub fn update(&self, props: &AccountRowProps) {
+        let (status_text, status_css) = match &props.status {
+            AccountStatus::Active => (t("online-accounts-status-active"), "success"),
+            AccountStatus::CredentialsNeeded => (
+                t("online-accounts-status-credentials-needed"),
+                "warning",
+            ),
+            AccountStatus::NeedsAttention => (
+                t("online-accounts-status-needs-attention"),
+                "error",
+            ),
+        };
+        self.root.set_title(&props.presentation_identity);
+        self.root.set_subtitle(&props.provider_name);
+        self.status_label.set_label(&status_text);
+        for class in ["success", "warning", "error"] {
+            self.status_label.remove_css_class(class);
+        }
+        self.status_label.add_css_class(status_css);
+        self.navigate_icon_slot.set_visible(props.on_navigate.is_some());
+        self.root.set_activatable(props.on_navigate.is_some());
+        *self.navigate_callback.borrow_mut() = props.on_navigate.clone();
+    }
+
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
     }
 }
 
@@ -111,5 +139,3 @@ fn provider_icon(provider_name: &str) -> &'static str {
         "contact-new-symbolic"
     }
 }
-
-pub type AccountRow = waft_ui_gtk::vdom::RenderComponent<AccountRowRender>;

@@ -7,8 +7,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use waft_ui_gtk::vdom::Component;
-
 use crate::i18n::t;
 use crate::kdl_config;
 use crate::search_index::SearchIndex;

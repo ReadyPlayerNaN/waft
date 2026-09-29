@@ -11,6 +11,19 @@
     <file preprocess="xml-stripblanks">plugin-row.ui</file>
     <file preprocess="xml-stripblanks">entity-list-group.ui</file>
     <file preprocess="xml-stripblanks">layout-row.ui</file>
+    <file preprocess="xml-stripblanks">service-row.ui</file>
+    <file preprocess="xml-stripblanks">startup-row.ui</file>
+    <file preprocess="xml-stripblanks">timer-row.ui</file>
+    <file preprocess="xml-stripblanks">bind-row.ui</file>
+    <file preprocess="xml-stripblanks">account-row.ui</file>
+    <file preprocess="xml-stripblanks">device-row.ui</file>
+    <file preprocess="xml-stripblanks">bluetooth-adapter-group.ui</file>
+    <file preprocess="xml-stripblanks">wifi-adapter-group.ui</file>
+    <file preprocess="xml-stripblanks">connection-row.ui</file>
+    <file preprocess="xml-stripblanks">wired-adapter-group.ui</file>
+    <file preprocess="xml-stripblanks">section-toggle.ui</file>
+    <file preprocess="xml-stripblanks">section-combo.ui</file>
+    <file preprocess="xml-stripblanks">weather-preview-group.ui</file>
     <file preprocess="xml-stripblanks">wifi-network-row.ui</file>
   </gresource>
 </gresources>

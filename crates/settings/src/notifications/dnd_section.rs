@@ -40,13 +40,15 @@ impl DndSection {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let group = adw::PreferencesGroup::builder()
-            .title(t("notif-dnd"))
-            .visible(false)
-            .build();
-
-        let toggle_row = adw::SwitchRow::builder().title("Do Not Disturb").build();
-        group.add(&toggle_row);
+        let builder = gtk::Builder::from_resource("/com/waft/settings/section-toggle.ui");
+        let group: adw::PreferencesGroup = builder
+            .object("root")
+            .expect("section-toggle.ui must contain root");
+        let toggle_row: adw::SwitchRow = builder
+            .object("toggle_row")
+            .expect("section-toggle.ui must contain toggle_row");
+        group.set_title(&t("notif-dnd"));
+        toggle_row.set_title("Do Not Disturb");
 
         // Backfill search entry widgets
         {

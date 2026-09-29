@@ -9,8 +9,6 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use waft_ui_gtk::vdom::Component;
-
 use crate::i18n::t;
 use crate::kdl_config;
 use crate::keyboard_shortcuts::bind_editor::BindEditor;
