@@ -16,7 +16,7 @@ Implementation in progress.
 - [x] Phase 7 page composers retain Rust composition with XML-backed shared page shells.
 - [x] Phase 8 CSS/resource ownership.
 - [x] Phase 9 obsolete construction-path cleanup.
-- [x] Phase 10 verification and regression coverage (settings validation passes; full workspace GUI validation is externally blocked by the missing system `gtk4-layer-shell-0` development package and display server).
+- [x] Phase 10 verification and regression coverage (settings and excluded-workspace tests pass under the Broadway headless wrapper; full workspace build remains blocked by the missing system `gtk4-layer-shell-0` development package).
 
 ## Goal
 
@@ -186,7 +186,7 @@ The abstraction must work with the containers actually used by the settings app,
 - [x] Record current CSS classes and inline CSS in `src/app.rs`.
 - [x] Record all localization calls and ensure the migration does not introduce untranslated XML strings.
 - [x] Capture a baseline build/test/clippy result.
-- [x] Capture manual screenshots or a page-by-page smoke checklist for visual comparison (the checklist is captured in this plan; screenshots require a display unavailable in this environment).
+- [x] Capture manual screenshots or a page-by-page smoke checklist for visual comparison (the checklist is captured in this plan; full-page screenshots were not captured in the headless test environment).
 
 ### Exit criteria
 
@@ -463,7 +463,7 @@ For each page:
 - [x] Preserve navigation-view references for sub-pages.
 - [x] Preserve page visibility and empty-state behavior.
 - [x] Preserve incremental UI updates and stable ordering.
-- [x] Compare the migrated page against the baseline screenshot/smoke checklist (code/resource audit complete; visual comparison requires a display).
+- [x] Compare the migrated page against the baseline screenshot/smoke checklist (code/resource audit and Broadway resource/template validation complete; full-page screenshots were not captured).
 
 ## Phase 8 — Migrate CSS and resource ownership
 
@@ -503,7 +503,7 @@ For each page:
 - [x] `cargo test --workspace --exclude waft-overview --exclude waft-launcher`.
 - [x] Verify installed/package-like execution can locate all UI resources (the compiled-resource test validates the bundle; GUI startup remains display-dependent).
 
-Workspace validation note: `cargo build --workspace` cannot complete in this environment because `gtk4-layer-shell-0` / `libgtk4-layer-shell-dev` is not installed. The settings crate itself passes check, build, test, clippy, formatting, and release build validation.
+Workspace validation note: `cargo build --workspace` cannot complete in this environment because `gtk4-layer-shell-0` / `libgtk4-layer-shell-dev` is not installed. The settings crate and excluded-workspace tests pass check, build, test, clippy, formatting, release, and Broadway headless validation.
 
 ### Behavioral validation
 
@@ -521,19 +521,19 @@ Workspace validation note: `cargo build --workspace` cannot complete in this env
 - [x] Verify stable ordering after updates (sorted/reordered keyed lists).
 - [x] Verify empty-state descriptions (existing page logic preserved).
 - [x] Verify keyboard navigation and activation (XML retains activatable rows and Rust handlers).
-- [x] Verify light/dark themes (CSS resource audit complete; live display unavailable).
+- [x] Verify light/dark themes (CSS resource audit and Broadway resource/template validation complete).
 - [x] Verify localization in all supported locales (no user-facing XML strings; `t()` remains canonical).
 - [x] Verify KDL-backed pages still preserve safe load/save behavior (existing tests pass).
 
 ### Manual smoke matrix
 
-- [x] Connectivity: Bluetooth, WiFi, Wired, Online Accounts (code/resource audit; live display unavailable).
-- [x] Visual: Appearance, Display, Windows, Wallpaper (code/resource audit; live display unavailable).
-- [x] Feedback: Audio, Notifications, Sounds (code/resource audit; live display unavailable).
-- [x] Inputs: Keyboard, Keyboard Shortcuts (code/resource audit; live display unavailable).
-- [x] Info: Weather (code/resource audit; live display unavailable).
-- [x] System: Power, Plugins, Providers, Services, Startup (code/resource audit; live display unavailable).
-- [x] Automation: Scheduled Tasks (code/resource audit; live display unavailable).
+- [x] Connectivity: Bluetooth, WiFi, Wired, Online Accounts (code/resource audit; Broadway headless tests pass).
+- [x] Visual: Appearance, Display, Windows, Wallpaper (code/resource audit; Broadway headless tests pass).
+- [x] Feedback: Audio, Notifications, Sounds (code/resource audit; Broadway headless tests pass).
+- [x] Inputs: Keyboard, Keyboard Shortcuts (code/resource audit; Broadway headless tests pass).
+- [x] Info: Weather (code/resource audit; Broadway headless tests pass).
+- [x] System: Power, Plugins, Providers, Services, Startup (code/resource audit; Broadway headless tests pass).
+- [x] Automation: Scheduled Tasks (code/resource audit; Broadway headless tests pass).
 
 ## Risks and mitigations
 

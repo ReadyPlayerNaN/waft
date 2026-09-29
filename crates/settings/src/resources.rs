@@ -45,9 +45,18 @@ mod tests {
             eprintln!("skipping GTK template instantiation: no display is available");
             return;
         }
-        // Composite-template resources need their Rust type registered before
-        // Builder parses the template declaration.
+        // Composite-template resources are registered and instantiated through
+        // their Rust type; GtkBuilder cannot load a <template> declaration as
+        // a standalone builder document.
         crate::wifi::network_row::NetworkRow::static_type();
+        crate::wifi::network_row::NetworkRow::build(&crate::wifi::network_row::NetworkRowProps {
+            ssid: "resource-test".into(),
+            strength: 50,
+            secure: false,
+            connected: false,
+            connecting: false,
+            on_navigate: None,
+        });
         for name in [
             "account-row.ui",
             "application-window.ui",
@@ -80,7 +89,6 @@ mod tests {
             "wallpaper-thumbnail.ui",
             "wifi-adapter-group.ui",
             "wifi-network-detail.ui",
-            "wifi-network-row.ui",
             "wifi-share-dialog.ui",
             "wired-adapter-group.ui",
         ] {
