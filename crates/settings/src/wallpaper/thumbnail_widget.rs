@@ -12,38 +12,23 @@ pub struct ThumbnailWidget {
     pub path: String,
 }
 
-const THUMBNAIL_WIDTH: i32 = 120;
-const THUMBNAIL_HEIGHT: i32 = 80;
-
 impl ThumbnailWidget {
     pub fn new(path: &str, filename: &str) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(4)
-            .css_classes(["wallpaper-thumbnail"])
-            .margin_top(4)
-            .margin_bottom(4)
-            .margin_start(4)
-            .margin_end(4)
-            .build();
-
-        let image = gtk::Picture::builder()
-            .width_request(THUMBNAIL_WIDTH)
-            .height_request(THUMBNAIL_HEIGHT)
-            .content_fit(gtk::ContentFit::Cover)
-            .build();
-
+        let builder = gtk::Builder::from_resource(
+            "/com/waft/settings/wallpaper-thumbnail.ui",
+        );
+        let root: gtk::Box = builder
+            .object("root")
+            .expect("wallpaper-thumbnail.ui must contain root");
+        let image: gtk::Picture = builder
+            .object("image")
+            .expect("wallpaper-thumbnail.ui must contain image");
+        let label: gtk::Label = builder
+            .object("label")
+            .expect("wallpaper-thumbnail.ui must contain label");
         let file = gtk::gio::File::for_path(path);
         image.set_file(Some(&file));
-
-        root.append(&image);
-
-        let label = gtk::Label::builder()
-            .label(filename)
-            .ellipsize(gtk::pango::EllipsizeMode::End)
-            .max_width_chars(14)
-            .build();
-        root.append(&label);
+        label.set_label(filename);
 
         // DragSource: provides file path as string for inter-gallery moves
         let drag_source = gtk::DragSource::new();

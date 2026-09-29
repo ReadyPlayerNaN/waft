@@ -265,7 +265,7 @@ Start with small, stable widgets before converting whole pages.
 - [x] `src/keyboard/layout_row.rs`
 - [x] `src/keyboard_shortcuts/bind_row.rs`
 - [x] `src/scheduler/timer_row.rs`
-- [ ] `src/wallpaper/thumbnail_widget.rs`
+- [x] `src/wallpaper/thumbnail_widget.rs`
 
 ### Per-component checklist
 
@@ -331,7 +331,7 @@ Start with small, stable widgets before converting whole pages.
 - [ ] Notification groups, profiles, and pattern rows.
 - [x] Plugin rows and system service rows.
 - [x] Scheduler timer rows.
-- [ ] Wallpaper gallery thumbnails.
+- [x] Wallpaper gallery thumbnails.
 - [x] Keyboard layouts and shortcut rows.
 - [x] Startup entries.
 

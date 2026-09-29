@@ -23,6 +23,7 @@ pub fn register() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gtk::glib::prelude::StaticType;
 
     #[test]
     fn compiled_bundle_contains_template_and_css_resources() {
@@ -34,6 +35,53 @@ mod tests {
         ] {
             gio::resources_lookup_data(path, gio::ResourceLookupFlags::NONE)
                 .unwrap_or_else(|error| panic!("resource {path} missing: {error}"));
+        }
+    }
+
+    #[test]
+    fn every_ui_template_can_be_loaded_by_gtk_builder() {
+        register();
+        if gtk::init().is_err() {
+            eprintln!("skipping GTK template instantiation: no display is available");
+            return;
+        }
+        // Composite-template resources need their Rust type registered before
+        // Builder parses the template declaration.
+        crate::wifi::network_row::NetworkRow::static_type();
+        for name in [
+            "account-row.ui",
+            "application-window.ui",
+            "bind-row.ui",
+            "bluetooth-adapter-group.ui",
+            "connection-row.ui",
+            "device-row.ui",
+            "entity-list-group.ui",
+            "layout-row.ui",
+            "page-root.ui",
+            "password-dialog.ui",
+            "plugin-row.ui",
+            "rename-dialog.ui",
+            "search-result-row.ui",
+            "search-results.ui",
+            "section-combo.ui",
+            "section-toggle.ui",
+            "service-row.ui",
+            "settings-shell.ui",
+            "settings-sub-page.ui",
+            "startup-entry-dialog.ui",
+            "startup-row.ui",
+            "timer-row.ui",
+            "variant-dialog.ui",
+            "weather-preview-group.ui",
+            "wallpaper-thumbnail.ui",
+            "wifi-adapter-group.ui",
+            "wifi-network-detail.ui",
+            "wifi-network-row.ui",
+            "wifi-share-dialog.ui",
+            "wired-adapter-group.ui",
+        ] {
+            let path = format!("/com/waft/settings/{name}");
+            gtk::Builder::from_resource(&path);
         }
     }
 }
