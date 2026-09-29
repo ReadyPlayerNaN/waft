@@ -8,6 +8,7 @@
         <child>
           <object class="GtkBox" id="sidebar_slot">
             <property name="orientation">vertical</property>
+            <property name="vexpand">true</property>
           </object>
         </child>
       </object>
@@ -17,6 +18,7 @@
         <child>
           <object class="GtkBox" id="content_slot">
             <property name="orientation">vertical</property>
+            <property name="vexpand">true</property>
           </object>
         </child>
       </object>

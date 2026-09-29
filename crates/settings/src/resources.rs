@@ -24,6 +24,7 @@ pub fn register() {
 mod tests {
     use super::*;
     use gtk::glib::prelude::StaticType;
+    use gtk::prelude::*;
 
     #[test]
     fn compiled_bundle_contains_template_and_css_resources() {
@@ -45,6 +46,12 @@ mod tests {
             eprintln!("skipping GTK template instantiation: no display is available");
             return;
         }
+        let shell = gtk::Builder::from_resource("/com/waft/settings/settings-shell.ui");
+        let content_slot: gtk::Box = shell
+            .object("content_slot")
+            .expect("settings shell must expose an expandable content slot");
+        assert!(content_slot.vexpands());
+
         // Composite-template resources are registered and instantiated through
         // their Rust type; GtkBuilder cannot load a <template> declaration as
         // a standalone builder document.

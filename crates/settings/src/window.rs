@@ -130,7 +130,7 @@ impl SettingsWindow {
 
         // Create NavigationView early so sub-page-aware pages can reference it.
         // The root navigation page is added later after the stack is built.
-        let navigation_view = adw::NavigationView::new();
+        let navigation_view = adw::NavigationView::builder().vexpand(true).build();
 
         // -- Content pages --
         // Register page-level search entries, then construct pages which
@@ -344,6 +344,7 @@ impl SettingsWindow {
         let stack = gtk::Stack::builder()
             .transition_type(gtk::StackTransitionType::Crossfade)
             .vhomogeneous(false)
+            .vexpand(true)
             .build();
 
         // Deferred pages: construct eagerly if they are the initial page,
@@ -373,6 +374,7 @@ impl SettingsWindow {
 
         let content_scrolled = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
+            .vexpand(true)
             .build();
 
         content_scrolled.set_child(Some(&stack));
