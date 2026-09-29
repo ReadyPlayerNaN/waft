@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="GtkListBox" id="root">
+    <property name="selection-mode">single</property>
+    <property name="css-classes">navigation-sidebar</property>
+  </object>
+</interface>

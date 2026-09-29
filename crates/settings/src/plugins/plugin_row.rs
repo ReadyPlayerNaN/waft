@@ -1,10 +1,7 @@
-//! Dumb widget for a single plugin status row.
-//!
-//! Renders plugin name, entity types, and lifecycle state as an `adw::ActionRow`.
+//! XML-backed widget for a single plugin status row.
 
+use adw::prelude::*;
 use waft_protocol::entity::plugin::PluginState;
-use waft_ui_gtk::vdom::primitives::{VActionRow, VLabel};
-use waft_ui_gtk::vdom::{RenderCallback, RenderComponent, RenderFn, VNode};
 
 /// Input data for constructing or updating a plugin row.
 #[derive(Clone, PartialEq)]
@@ -14,28 +11,41 @@ pub struct PluginRowProps {
     pub entity_types: Vec<String>,
 }
 
-pub(crate) struct PluginRowRender;
-
-impl RenderFn for PluginRowRender {
-    type Props = PluginRowProps;
-    type Output = ();
-
-    fn render(props: &Self::Props, _emit: &RenderCallback<()>) -> VNode {
-        let subtitle = props.entity_types.join(", ");
-        let state_css = match props.state {
-            PluginState::Running => "success",
-            PluginState::Failed => "error",
-            PluginState::Stopped => "dim-label",
-            PluginState::Available => "dim-label",
-        };
-        let state_label = props.state.to_string();
-
-        VNode::action_row(
-            VActionRow::new(&props.name)
-                .subtitle(&subtitle)
-                .suffix(VNode::label(VLabel::new(&state_label).css_class(state_css))),
-        )
-    }
+/// A plugin status row whose stable hierarchy is defined in XML.
+pub struct PluginRow {
+    pub root: adw::ActionRow,
+    state_label: gtk::Label,
 }
 
-pub type PluginRow = RenderComponent<PluginRowRender>;
+impl PluginRow {
+    pub fn build(props: &PluginRowProps) -> Self {
+        let builder = gtk::Builder::from_resource("/com/waft/settings/plugin-row.ui");
+        let root: adw::ActionRow = builder
+            .object("root")
+            .expect("plugin-row.ui must contain root");
+        let state_label: gtk::Label = builder
+            .object("state_label")
+            .expect("plugin-row.ui must contain state_label");
+        let row = Self { root, state_label };
+        row.update(props);
+        row
+    }
+
+    pub fn update(&self, props: &PluginRowProps) {
+        self.root.set_title(&props.name);
+        self.root.set_subtitle(&props.entity_types.join(", "));
+        self.state_label.set_label(&props.state.to_string());
+        for class in ["success", "error", "dim-label"] {
+            self.state_label.remove_css_class(class);
+        }
+        self.state_label.add_css_class(match props.state {
+            PluginState::Running => "success",
+            PluginState::Failed => "error",
+            PluginState::Stopped | PluginState::Available => "dim-label",
+        });
+    }
+
+    pub fn widget(&self) -> gtk::Widget {
+        self.root.clone().upcast()
+    }
+}

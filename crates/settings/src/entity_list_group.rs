@@ -22,24 +22,22 @@ impl EntityListGroup {
         empty_description: &str,
         group_title: &str,
     ) -> Self {
-        let empty_state = adw::StatusPage::builder()
-            .icon_name(icon_name)
-            .title(empty_title)
-            .description(empty_description)
-            .visible(false)
-            .build();
+        let builder = gtk::Builder::from_resource("/com/waft/settings/entity-list-group.ui");
+        let empty_state: adw::StatusPage = builder
+            .object("empty_state")
+            .expect("entity-list-group.ui must contain empty_state");
+        let group: adw::PreferencesGroup = builder
+            .object("group")
+            .expect("entity-list-group.ui must contain group");
+        let list_box: gtk::ListBox = builder
+            .object("list_box")
+            .expect("entity-list-group.ui must contain list_box");
+
+        empty_state.set_icon_name(Some(icon_name));
+        empty_state.set_title(empty_title);
+        empty_state.set_description(Some(empty_description));
+        group.set_title(group_title);
         parent.append(&empty_state);
-
-        let group = adw::PreferencesGroup::builder()
-            .title(group_title)
-            .visible(false)
-            .build();
-
-        let list_box = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .css_classes(["boxed-list"])
-            .build();
-        group.add(&list_box);
         parent.append(&group);
 
         Self {

@@ -10,8 +10,6 @@ use std::rc::Rc;
 use waft_client::EntityStore;
 use waft_protocol::Urn;
 use waft_protocol::entity::plugin::{self, PluginStatus};
-use waft_ui_gtk::vdom::Component;
-
 use crate::entity_list_group::EntityListGroup;
 use crate::i18n::t;
 use crate::plugins::plugin_row::{PluginRow, PluginRowProps};

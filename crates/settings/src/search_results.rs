@@ -39,10 +39,11 @@ pub struct SearchResults {
 
 impl SearchResults {
     pub fn new() -> Self {
-        let root = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::Single)
-            .css_classes(["navigation-sidebar"])
-            .build();
+        let root: gtk::ListBox = gtk::Builder::from_resource(
+            "/com/waft/settings/search-results.ui",
+        )
+        .object("root")
+        .expect("search-results.ui must contain root");
 
         let output_cb: OutputCallback = Rc::new(RefCell::new(None));
         let row_meta: RowMeta = Rc::new(RefCell::new(HashMap::new()));
@@ -89,11 +90,13 @@ impl SearchResults {
         meta.clear();
 
         for (i, entry) in entries.iter().enumerate() {
-            let row = adw::ActionRow::builder()
-                .title(&entry.breadcrumb)
-                .subtitle(&entry.page_title)
-                .activatable(true)
-                .build();
+            let row: adw::ActionRow = gtk::Builder::from_resource(
+                "/com/waft/settings/search-result-row.ui",
+            )
+            .object("row")
+            .expect("search-result-row.ui must contain row");
+            row.set_title(&entry.breadcrumb);
+            row.set_subtitle(&entry.page_title);
             row.set_widget_name(entry.page_id);
             self.root.append(&row);
             meta.insert(

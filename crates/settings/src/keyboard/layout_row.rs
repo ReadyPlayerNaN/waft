@@ -1,4 +1,4 @@
-//! Layout row widget -- displays a single keyboard layout with drag handle, rename, and remove buttons.
+//! XML-backed row for a configured keyboard layout.
 
 #![allow(dead_code)]
 
@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
+use waft_ui_gtk::icons::IconWidget;
 
 /// Output events from layout row.
 pub enum LayoutRowOutput {
@@ -15,7 +16,7 @@ pub enum LayoutRowOutput {
 
 type OutputCallback = Rc<RefCell<Option<Box<dyn Fn(LayoutRowOutput)>>>>;
 
-/// Single layout row widget (ActionRow with drag handle prefix).
+/// Single layout row with a drag handle and action buttons.
 pub struct LayoutRow {
     pub root: adw::ActionRow,
     pub drag_handle_box: gtk::Box,
@@ -25,73 +26,42 @@ pub struct LayoutRow {
 
 impl LayoutRow {
     pub fn new(code: &str, full_name: &str) -> Self {
-        let root = adw::ActionRow::builder()
-            .title(full_name)
-            .subtitle(code)
-            .activatable(false)
-            .build();
+        let builder = gtk::Builder::from_resource("/com/waft/settings/layout-row.ui");
+        let root: adw::ActionRow = builder
+            .object("root")
+            .expect("layout-row.ui must contain root");
+        let drag_handle_box: gtk::Box = builder
+            .object("drag_handle_box")
+            .expect("layout-row.ui must contain drag_handle_box");
+        let rename_btn: gtk::Button = builder
+            .object("rename_button")
+            .expect("layout-row.ui must contain rename_button");
+        let remove_btn: gtk::Button = builder
+            .object("remove_button")
+            .expect("layout-row.ui must contain remove_button");
 
-        // Drag handle box (prefix)
-        let drag_handle_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .valign(gtk::Align::Center)
-            .css_classes(["drag-handle"])
-            .build();
-
-        let drag_icon = gtk::Image::builder()
-            .icon_name("list-drag-handle-symbolic")
-            .pixel_size(16)
-            .build();
-
-        drag_handle_box.append(&drag_icon);
-
-        // Set cursor hint on the entire box
+        root.set_title(full_name);
+        root.set_subtitle(code);
         drag_handle_box.set_cursor_from_name(Some("grab"));
-
-        root.add_prefix(&drag_handle_box);
-
-        // Rename button
-        let rename_btn = gtk::Button::builder()
-            .icon_name("document-edit-symbolic")
-            .valign(gtk::Align::Center)
-            .css_classes(["flat"])
-            .tooltip_text("Rename layout")
-            .visible(false)
-            .build();
-        root.add_suffix(&rename_btn);
-
-        // Remove button
-        let remove_btn = gtk::Button::builder()
-            .icon_name("user-trash-symbolic")
-            .valign(gtk::Align::Center)
-            .css_classes(["flat"])
-            .tooltip_text("Remove layout")
-            .build();
-        root.add_suffix(&remove_btn);
+        let drag_icon = IconWidget::from_name("list-drag-handle-symbolic", 16);
+        drag_handle_box.append(drag_icon.widget());
 
         let output_cb: OutputCallback = Rc::new(RefCell::new(None));
+        let code_for_remove = code.to_string();
+        let cb_for_remove = output_cb.clone();
+        remove_btn.connect_clicked(move |_| {
+            if let Some(ref callback) = *cb_for_remove.borrow() {
+                callback(LayoutRowOutput::Remove(code_for_remove.clone()));
+            }
+        });
 
-        // Connect remove button
-        {
-            let code_clone = code.to_string();
-            let cb_clone = output_cb.clone();
-            remove_btn.connect_clicked(move |_| {
-                if let Some(ref callback) = *cb_clone.borrow() {
-                    callback(LayoutRowOutput::Remove(code_clone.clone()));
-                }
-            });
-        }
-
-        // Connect rename button
-        {
-            let code_clone = code.to_string();
-            let cb_clone = output_cb.clone();
-            rename_btn.connect_clicked(move |_| {
-                if let Some(ref callback) = *cb_clone.borrow() {
-                    callback(LayoutRowOutput::Rename(code_clone.clone()));
-                }
-            });
-        }
+        let code_for_rename = code.to_string();
+        let cb_for_rename = output_cb.clone();
+        rename_btn.connect_clicked(move |_| {
+            if let Some(ref callback) = *cb_for_rename.borrow() {
+                callback(LayoutRowOutput::Rename(code_for_rename.clone()));
+            }
+        });
 
         Self {
             root,

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwActionRow" id="root">
+    <child type="suffix">
+      <object class="GtkLabel" id="state_label" />
+    </child>
+  </object>
+</interface>

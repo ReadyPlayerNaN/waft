@@ -201,19 +201,19 @@ The abstraction must work with the containers actually used by the settings app,
 - [x] Add the settings UI resource directory.
 - [x] Add the GResource manifest/build integration.
 - [x] Register resources exactly once during application startup.
-- [ ] Add a minimal template-backed test widget or page.
-- [ ] Verify template loading in debug and release builds.
-- [ ] Add a convention for template IDs:
-  - [ ] IDs use stable semantic names.
-  - [ ] IDs do not encode transient entity IDs.
-  - [ ] Every required ID has a corresponding Rust field or lookup check.
-- [ ] Add a convention for XML files containing libadwaita widgets.
-- [ ] Document how template parse/type errors are detected during tests or startup.
-- [ ] Keep the existing CSS loading path working while CSS migration is staged.
+- [x] Add a minimal template-backed test widget or page.
+- [x] Verify template loading in debug and release builds.
+- [x] Add a convention for template IDs:
+  - [x] IDs use stable semantic names.
+  - [x] IDs do not encode transient entity IDs.
+  - [x] Every required ID has a corresponding Rust field or lookup check.
+- [x] Add a convention for XML files containing libadwaita widgets.
+- [x] Document how template parse/type errors are detected during tests or startup.
+- [x] Keep the existing CSS loading path working while CSS migration is staged.
 
 ### Exit criteria
 
-- [ ] A composite-template widget loads from the registered resource.
+- [x] A composite-template widget loads from the registered resource.
 - [ ] `cargo build --workspace` succeeds.
 - [ ] The resource path works outside the source checkout after installation/packaging.
 
@@ -237,7 +237,7 @@ The abstraction must work with the containers actually used by the settings app,
 - [ ] Keep the page factory/lazy construction behavior in Rust.
 - [ ] Keep `gtk::Stack`/`AdwNavigationView` navigation callbacks in Rust.
 - [x] Convert the standard page root from repeated builder properties into a template or shared XML fragment only if that does not complicate ownership.
-- [ ] Move stable search-result row structure into XML.
+- [x] Move stable search-result row structure into XML.
 - [ ] Preserve search result selection and post-construction widget lookup behavior.
 - [ ] Preserve initial-page command-line navigation.
 - [ ] Preserve lazy page construction and page caching.
@@ -256,30 +256,30 @@ Start with small, stable widgets before converting whole pages.
 
 ### First targets
 
-- [ ] `src/wifi/network_row.rs`
+- [x] `src/wifi/network_row.rs`
 - [ ] `src/bluetooth/device_row.rs`
 - [ ] `src/startup/startup_row.rs`
-- [ ] `src/plugins/plugin_row.rs`
+- [x] `src/plugins/plugin_row.rs`
 - [ ] `src/services/service_row.rs`
 - [ ] `src/wired/connection_row.rs`
-- [ ] `src/keyboard/layout_row.rs`
+- [x] `src/keyboard/layout_row.rs`
 - [ ] `src/keyboard_shortcuts/bind_row.rs`
 - [ ] `src/scheduler/timer_row.rs`
 - [ ] `src/wallpaper/thumbnail_widget.rs`
 
 ### Per-component checklist
 
-- [ ] Create the `.ui` template containing only stable structure.
-- [ ] Create a Rust composite-template type.
-- [ ] Replace builder-created child hierarchy with template children.
-- [ ] Preserve existing props and output semantics.
-- [ ] Add `update(&Props)` or equivalent in-place update API.
-- [ ] Preserve signal handler behavior without accumulating duplicate handlers.
-- [ ] Preserve keyboard activation and focus behavior.
-- [ ] Preserve CSS classes and icon conventions.
-- [ ] Preserve translated labels and subtitles.
+- [x] Create the `.ui` template containing only stable structure.
+- [x] Create a Rust composite-template type.
+- [x] Replace builder-created child hierarchy with template children.
+- [x] Preserve existing props and output semantics.
+- [x] Add `update(&Props)` or equivalent in-place update API.
+- [x] Preserve signal handler behavior without accumulating duplicate handlers.
+- [x] Preserve keyboard activation and focus behavior.
+- [x] Preserve CSS classes and icon conventions.
+- [x] Preserve translated labels and subtitles.
 - [ ] Add focused tests for state transitions where practical.
-- [ ] Remove the old VDOM/builder implementation only after behavior matches.
+- [x] Remove the old VDOM/builder implementation only after behavior matches.
 
 ### WiFi row pilot
 

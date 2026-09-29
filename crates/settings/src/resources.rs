@@ -19,3 +19,21 @@ pub fn register() {
         gio::resources_register(&resource);
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compiled_bundle_contains_template_and_css_resources() {
+        register();
+        for path in [
+            "/com/waft/settings/settings-shell.ui",
+            "/com/waft/settings/wifi-network-row.ui",
+            "/com/waft/settings/settings.css",
+        ] {
+            gio::resources_lookup_data(path, gio::ResourceLookupFlags::NONE)
+                .unwrap_or_else(|error| panic!("resource {path} missing: {error}"));
+        }
+    }
+}
