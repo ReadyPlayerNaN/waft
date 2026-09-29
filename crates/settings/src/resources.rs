@@ -55,6 +55,8 @@ mod tests {
             "bluetooth-adapter-group.ui",
             "connection-row.ui",
             "device-row.ui",
+            "display-night-light.ui",
+            "display-toggle-navigation.ui",
             "entity-list-group.ui",
             "layout-row.ui",
             "page-root.ui",

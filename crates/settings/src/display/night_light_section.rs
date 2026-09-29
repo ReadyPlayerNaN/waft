@@ -53,44 +53,40 @@ impl NightLightSection {
         search_index: &Rc<RefCell<SearchIndex>>,
         on_navigate: Option<Box<dyn Fn()>>,
     ) -> Self {
-        let group = adw::PreferencesGroup::builder()
-            .title(t("display-night-light"))
-            .visible(false)
-            .build();
-
-        let toggle_row = adw::SwitchRow::builder()
-            .title(t("display-night-light-toggle"))
-            .build();
-        group.add(&toggle_row);
-
+        let builder = gtk::Builder::from_resource("/com/waft/settings/display-night-light.ui");
+        let group: adw::PreferencesGroup = builder
+            .object("root")
+            .expect("display-night-light.ui must contain root");
+        let toggle_row: adw::SwitchRow = builder
+            .object("toggle_row")
+            .expect("display-night-light.ui must contain toggle_row");
+        let preset_row: adw::ComboRow = builder
+            .object("preset_row")
+            .expect("display-night-light.ui must contain preset_row");
+        let status_row: adw::ActionRow = builder
+            .object("status_row")
+            .expect("display-night-light.ui must contain status_row");
+        let navigation_row: adw::ActionRow = builder
+            .object("navigation_row")
+            .expect("display-night-light.ui must contain navigation_row");
+        let navigation_icon_slot: gtk::Box = builder
+            .object("navigation_icon_slot")
+            .expect("display-night-light.ui must contain navigation_icon_slot");
+        group.set_title(&t("display-night-light"));
+        toggle_row.set_title(&t("display-night-light-toggle"));
         let preset_model = gtk::StringList::new(&[]);
-        let preset_row = adw::ComboRow::builder()
-            .title(t("display-color-preset"))
-            .model(&preset_model)
-            .visible(false)
-            .build();
-        group.add(&preset_row);
-
-        let status_row = adw::ActionRow::builder()
-            .title(t("display-status"))
-            .visible(false)
-            .build();
-        group.add(&status_row);
+        preset_row.set_title(&t("display-color-preset"));
+        preset_row.set_model(Some(&preset_model));
+        status_row.set_title(&t("display-status"));
 
         // Navigation link row (only when on_navigate callback is provided)
         if let Some(navigate_fn) = on_navigate {
-            let nav_row = adw::ActionRow::builder()
-                .title(t("display-night-light-settings"))
-                .activatable(true)
-                .build();
+            navigation_row.set_title(&t("display-night-light-settings"));
+            navigation_row.set_visible(true);
             let chevron = IconWidget::from_name("go-next-symbolic", 16);
-            nav_row.add_suffix(chevron.widget());
-            group.add(&nav_row);
-
+            navigation_icon_slot.append(chevron.widget());
             let navigate = Rc::new(navigate_fn);
-            nav_row.connect_activated(move |_| {
-                navigate();
-            });
+            navigation_row.connect_activated(move |_| navigate());
         }
 
         // Backfill search entry widgets

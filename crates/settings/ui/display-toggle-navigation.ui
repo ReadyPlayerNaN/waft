@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwPreferencesGroup" id="root">
+    <property name="visible">false</property>
+    <child>
+      <object class="AdwSwitchRow" id="toggle_row" />
+    </child>
+    <child>
+      <object class="AdwActionRow" id="navigation_row">
+        <property name="activatable">true</property>
+        <property name="visible">false</property>
+        <child type="suffix">
+          <object class="GtkBox" id="navigation_icon_slot" />
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

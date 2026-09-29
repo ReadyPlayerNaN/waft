@@ -54,31 +54,32 @@ impl DarkModeSection {
         search_index: &Rc<RefCell<SearchIndex>>,
         on_navigate: Option<Box<dyn Fn()>>,
     ) -> Self {
-        let group = adw::PreferencesGroup::builder()
-            .title(t("display-appearance"))
-            .visible(false)
-            .build();
+        let builder = gtk::Builder::from_resource(
+            "/com/waft/settings/display-toggle-navigation.ui",
+        );
+        let group: adw::PreferencesGroup = builder
+            .object("root")
+            .expect("display-toggle-navigation.ui must contain root");
+        let toggle_row: adw::SwitchRow = builder
+            .object("toggle_row")
+            .expect("display-toggle-navigation.ui must contain toggle_row");
+        let navigation_row: adw::ActionRow = builder
+            .object("navigation_row")
+            .expect("display-toggle-navigation.ui must contain navigation_row");
+        let navigation_icon_slot: gtk::Box = builder
+            .object("navigation_icon_slot")
+            .expect("display-toggle-navigation.ui must contain navigation_icon_slot");
+        group.set_title(&t("display-appearance"));
+        toggle_row.set_title(&t("display-dark-mode"));
 
-        let toggle_row = adw::SwitchRow::builder()
-            .title(t("display-dark-mode"))
-            .build();
-        group.add(&toggle_row);
-
-        // Navigation link row (only when on_navigate callback is provided)
         let nav_row = if let Some(navigate_fn) = on_navigate {
-            let row = adw::ActionRow::builder()
-                .title(t("display-dark-mode-settings"))
-                .activatable(true)
-                .build();
+            navigation_row.set_title(&t("display-dark-mode-settings"));
+            navigation_row.set_visible(true);
             let chevron = IconWidget::from_name("go-next-symbolic", 16);
-            row.add_suffix(chevron.widget());
-            group.add(&row);
-
+            navigation_icon_slot.append(chevron.widget());
             let navigate = Rc::new(navigate_fn);
-            row.connect_activated(move |_| {
-                navigate();
-            });
-            Some(row)
+            navigation_row.connect_activated(move |_| navigate());
+            Some(navigation_row)
         } else {
             None
         };
