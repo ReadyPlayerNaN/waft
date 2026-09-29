@@ -400,8 +400,8 @@ Start with small, stable widgets before converting whole pages.
 ### Targets
 
 - [x] WiFi password dialog.
-- [ ] WiFi share dialog.
-- [ ] WiFi network detail page.
+- [x] WiFi share dialog.
+- [x] WiFi network detail page.
 - [ ] Online account add-account dialog.
 - [x] Startup entry dialog.
 - [x] Keyboard layout/variant/rename dialogs.

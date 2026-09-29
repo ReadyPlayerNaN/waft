@@ -29,6 +29,8 @@
     <file preprocess="xml-stripblanks">variant-dialog.ui</file>
     <file preprocess="xml-stripblanks">rename-dialog.ui</file>
     <file preprocess="xml-stripblanks">application-window.ui</file>
+    <file preprocess="xml-stripblanks">wifi-share-dialog.ui</file>
+    <file preprocess="xml-stripblanks">wifi-network-detail.ui</file>
     <file preprocess="xml-stripblanks">wifi-network-row.ui</file>
   </gresource>
 </gresources>

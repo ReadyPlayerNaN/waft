@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="GtkBox" id="root">
+    <property name="orientation">vertical</property>
+    <property name="spacing">24</property>
+    <property name="margin-top">24</property>
+    <property name="margin-bottom">24</property>
+    <property name="margin-start">12</property>
+    <property name="margin-end">12</property>
+    <child>
+      <object class="AdwPreferencesGroup" id="settings_group">
+        <child>
+          <object class="AdwSwitchRow" id="autoconnect_row" />
+        </child>
+        <child>
+          <object class="AdwComboRow" id="metered_row" />
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup" id="ip_group">
+        <child>
+          <object class="AdwComboRow" id="ip_method_row" />
+        </child>
+        <child>
+          <object class="AdwActionRow" id="dns_row">
+            <child type="suffix">
+              <object class="GtkEntry" id="dns_entry" />
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup" id="actions_group">
+        <property name="margin-top">24</property>
+        <child>
+          <object class="GtkButton" id="share_button">
+            <property name="css-classes">pill</property>
+            <property name="halign">start</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="forget_button">
+            <property name="css-classes">destructive-action pill</property>
+            <property name="halign">start</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

@@ -13,23 +13,18 @@ use crate::i18n::{t, t_args};
 /// `ssid` is the network name shown as the dialog title.
 /// `qr_string` is the WiFi URI string (e.g. `WIFI:T:WPA;S:MyNet;P:pass123;;`).
 pub fn show_share_dialog(parent: &impl IsA<gtk::Widget>, ssid: &str, qr_string: &str) {
-    let dialog = adw::Dialog::builder()
-        .title(t_args("wifi-share-title", &[("ssid", ssid)]))
-        .content_width(360)
-        .content_height(440)
-        .build();
-
-    let header = adw::HeaderBar::new();
-
-    let content = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(16)
-        .margin_top(16)
-        .margin_bottom(24)
-        .margin_start(24)
-        .margin_end(24)
-        .halign(gtk::Align::Center)
-        .build();
+    let builder = gtk::Builder::from_resource("/com/waft/settings/wifi-share-dialog.ui");
+    let dialog: adw::Dialog = builder
+        .object("root")
+        .expect("wifi-share-dialog.ui must contain root");
+    let qr_slot: gtk::Box = builder
+        .object("qr_slot")
+        .expect("wifi-share-dialog.ui must contain qr_slot");
+    let description: gtk::Label = builder
+        .object("description")
+        .expect("wifi-share-dialog.ui must contain description");
+    let title = t_args("wifi-share-title", &[("ssid", ssid)]);
+    dialog.set_title(&title);
 
     // Render QR code to a matrix
     let qr_matrix = match qrcode::QrCode::new(qr_string.as_bytes()) {
@@ -80,21 +75,10 @@ pub fn show_share_dialog(parent: &impl IsA<gtk::Widget>, ssid: &str, qr_string: 
             }
         });
 
-        content.append(&drawing_area);
+        qr_slot.append(&drawing_area);
     }
 
-    let description = gtk::Label::builder()
-        .label(t("wifi-share-qr-description"))
-        .wrap(true)
-        .justify(gtk::Justification::Center)
-        .css_classes(["dim-label"])
-        .build();
-    content.append(&description);
-
-    let toolbar = adw::ToolbarView::new();
-    toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&content));
-    dialog.set_child(Some(&toolbar));
+    description.set_label(&t("wifi-share-qr-description"));
 
     dialog.present(Some(parent));
 }

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwDialog" id="root">
+    <property name="content-width">360</property>
+    <property name="content-height">440</property>
+    <property name="child">
+      <object class="AdwToolbarView" id="toolbar">
+        <child type="top">
+          <object class="AdwHeaderBar" id="header" />
+        </child>
+        <property name="content">
+          <object class="GtkBox" id="content">
+            <property name="orientation">vertical</property>
+            <property name="spacing">16</property>
+            <property name="margin-top">16</property>
+            <property name="margin-bottom">24</property>
+            <property name="margin-start">24</property>
+            <property name="margin-end">24</property>
+            <property name="halign">center</property>
+            <child>
+              <object class="GtkBox" id="qr_slot">
+                <property name="halign">center</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="description">
+                <property name="wrap">true</property>
+                <property name="justify">center</property>
+                <property name="css-classes">dim-label</property>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </property>
+  </object>
+</interface>

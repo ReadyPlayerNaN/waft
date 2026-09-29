@@ -110,29 +110,43 @@ fn ip_method_to_index(method: IpMethod) -> u32 {
 
 impl NetworkDetailPage {
     pub fn new(props: &NetworkDetailProps) -> Self {
-        let root = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(24)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
-
+        let builder = gtk::Builder::from_resource(
+            "/com/waft/settings/wifi-network-detail.ui",
+        );
+        let root: gtk::Box = builder
+            .object("root")
+            .expect("wifi-network-detail.ui must contain root");
+        let settings_group: adw::PreferencesGroup = builder
+            .object("settings_group")
+            .expect("wifi-network-detail.ui must contain settings_group");
+        let autoconnect_row: adw::SwitchRow = builder
+            .object("autoconnect_row")
+            .expect("wifi-network-detail.ui must contain autoconnect_row");
+        let metered_row: adw::ComboRow = builder
+            .object("metered_row")
+            .expect("wifi-network-detail.ui must contain metered_row");
+        let ip_group: adw::PreferencesGroup = builder
+            .object("ip_group")
+            .expect("wifi-network-detail.ui must contain ip_group");
+        let ip_method_row: adw::ComboRow = builder
+            .object("ip_method_row")
+            .expect("wifi-network-detail.ui must contain ip_method_row");
+        let dns_row: adw::ActionRow = builder
+            .object("dns_row")
+            .expect("wifi-network-detail.ui must contain dns_row");
+        let dns_entry: gtk::Entry = builder
+            .object("dns_entry")
+            .expect("wifi-network-detail.ui must contain dns_entry");
+        let share_button: gtk::Button = builder
+            .object("share_button")
+            .expect("wifi-network-detail.ui must contain share_button");
+        let forget_button: gtk::Button = builder
+            .object("forget_button")
+            .expect("wifi-network-detail.ui must contain forget_button");
         let output_cb: OutputCallback = Rc::new(RefCell::new(None));
-
-        // --- Connection Settings group ---
-        let settings_group = adw::PreferencesGroup::builder()
-            .title(t("wifi-detail-settings"))
-            .build();
-        root.append(&settings_group);
-
-        // Autoconnect toggle
-        let autoconnect_row = adw::SwitchRow::builder()
-            .title(t("wifi-detail-autoconnect"))
-            .active(props.autoconnect.unwrap_or(true))
-            .build();
-        settings_group.add(&autoconnect_row);
+        settings_group.set_title(&t("wifi-detail-settings"));
+        autoconnect_row.set_title(&t("wifi-detail-autoconnect"));
+        autoconnect_row.set_active(props.autoconnect.unwrap_or(true));
 
         let cb_ref = output_cb.clone();
         let autoconnect_handler = autoconnect_row.connect_active_notify(move |row| {
@@ -149,14 +163,11 @@ impl NetworkDetailPage {
             .iter()
             .map(std::string::String::as_str)
             .collect();
-        let metered_row = adw::ComboRow::builder()
-            .title(t("wifi-detail-metered"))
-            .model(&gtk::StringList::new(&metered_str_refs))
-            .selected(metered_to_index(
-                props.metered.unwrap_or(MeteredState::Unknown),
-            ))
-            .build();
-        settings_group.add(&metered_row);
+        metered_row.set_title(&t("wifi-detail-metered"));
+        metered_row.set_model(Some(&gtk::StringList::new(&metered_str_refs)));
+        metered_row.set_selected(metered_to_index(
+            props.metered.unwrap_or(MeteredState::Unknown),
+        ));
 
         let cb_ref = output_cb.clone();
         let metered_handler = metered_row.connect_selected_notify(move |row| {
@@ -170,22 +181,16 @@ impl NetworkDetailPage {
         });
 
         // --- IP Configuration group ---
-        let ip_group = adw::PreferencesGroup::builder()
-            .title(t("wifi-detail-ip-config"))
-            .build();
-        root.append(&ip_group);
+        ip_group.set_title(&t("wifi-detail-ip-config"));
 
         // IP Method dropdown
         let ip_labels = ip_method_labels();
         let ip_str_refs: Vec<&str> = ip_labels.iter().map(std::string::String::as_str).collect();
-        let ip_method_row = adw::ComboRow::builder()
-            .title(t("wifi-detail-ip-method"))
-            .model(&gtk::StringList::new(&ip_str_refs))
-            .selected(ip_method_to_index(
-                props.ip_method.unwrap_or(IpMethod::Auto),
-            ))
-            .build();
-        ip_group.add(&ip_method_row);
+        ip_method_row.set_title(&t("wifi-detail-ip-method"));
+        ip_method_row.set_model(Some(&gtk::StringList::new(&ip_str_refs)));
+        ip_method_row.set_selected(ip_method_to_index(
+            props.ip_method.unwrap_or(IpMethod::Auto),
+        ));
 
         let cb_ref = output_cb.clone();
         let ip_method_handler = ip_method_row.connect_selected_notify(move |row| {
@@ -204,16 +209,9 @@ impl NetworkDetailPage {
             .as_ref()
             .map(|servers| servers.join(", "))
             .unwrap_or_default();
-        let dns_entry = gtk::Entry::builder()
-            .text(&dns_text)
-            .placeholder_text(t("wifi-detail-dns-placeholder"))
-            .build();
-
-        let dns_row = adw::ActionRow::builder()
-            .title(t("wifi-detail-dns"))
-            .build();
-        dns_row.add_suffix(&dns_entry);
-        ip_group.add(&dns_row);
+        dns_entry.set_text(&dns_text);
+        dns_entry.set_placeholder_text(Some(&t("wifi-detail-dns-placeholder")));
+        dns_row.set_title(&t("wifi-detail-dns"));
 
         // Commit DNS on focus-out or activate
         {
@@ -234,13 +232,7 @@ impl NetworkDetailPage {
         }
 
         // --- Actions group ---
-        let actions_group = adw::PreferencesGroup::builder().margin_top(24).build();
-
-        let share_button = gtk::Button::builder()
-            .label(t("wifi-share"))
-            .css_classes(["pill"])
-            .halign(gtk::Align::Start)
-            .build();
+        share_button.set_label(&t("wifi-share"));
         {
             let cb_ref = output_cb.clone();
             share_button.connect_clicked(move |_| {
@@ -249,13 +241,7 @@ impl NetworkDetailPage {
                 }
             });
         }
-        actions_group.add(&share_button);
-
-        let forget_button = gtk::Button::builder()
-            .label(t("wifi-detail-forget"))
-            .css_classes(["destructive-action", "pill"])
-            .halign(gtk::Align::Start)
-            .build();
+        forget_button.set_label(&t("wifi-detail-forget"));
         {
             let cb_ref = output_cb.clone();
             forget_button.connect_clicked(move |_| {
@@ -264,9 +250,6 @@ impl NetworkDetailPage {
                 }
             });
         }
-        actions_group.add(&forget_button);
-        root.append(&actions_group);
-
         Self {
             root,
             autoconnect_row,
