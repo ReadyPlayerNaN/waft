@@ -47,9 +47,13 @@ mod tests {
             return;
         }
         let shell = gtk::Builder::from_resource("/com/waft/settings/settings-shell.ui");
+        let sidebar_slot: gtk::Box = shell
+            .object("sidebar_slot")
+            .expect("settings shell must expose an expandable sidebar slot");
         let content_slot: gtk::Box = shell
             .object("content_slot")
             .expect("settings shell must expose an expandable content slot");
+        assert!(sidebar_slot.vexpands());
         assert!(content_slot.vexpands());
 
         // Composite-template resources are registered and instantiated through

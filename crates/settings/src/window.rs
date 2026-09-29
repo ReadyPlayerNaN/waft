@@ -115,7 +115,7 @@ impl SettingsWindow {
             .sync_create()
             .build();
 
-        let sidebar_toolbar = adw::ToolbarView::new();
+        let sidebar_toolbar = adw::ToolbarView::builder().vexpand(true).build();
         sidebar_toolbar.add_top_bar(&sidebar_header);
 
         let sidebar_scrolled = gtk::ScrolledWindow::builder()
