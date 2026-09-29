@@ -62,6 +62,7 @@ mod tests {
             "page-root.ui",
             "password-dialog.ui",
             "plugin-row.ui",
+            "provider-picker-dialog.ui",
             "rename-dialog.ui",
             "search-result-row.ui",
             "search-results.ui",
