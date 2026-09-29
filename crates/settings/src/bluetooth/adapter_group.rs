@@ -36,9 +36,7 @@ pub struct AdapterGroup {
 
 impl AdapterGroup {
     pub fn build(props: &AdapterGroupProps) -> Self {
-        let builder = gtk::Builder::from_resource(
-            "/com/waft/settings/bluetooth-adapter-group.ui",
-        );
+        let builder = gtk::Builder::from_resource("/com/waft/settings/bluetooth-adapter-group.ui");
         let root: adw::PreferencesGroup = builder
             .object("root")
             .expect("bluetooth-adapter-group.ui must contain root");

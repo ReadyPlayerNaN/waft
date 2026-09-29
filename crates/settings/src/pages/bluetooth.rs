@@ -7,10 +7,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use gtk::prelude::*;
-use waft_client::{EntityActionCallback, EntityStore};
-use waft_protocol::Urn;
-use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
 use crate::bluetooth::adapter_group::{AdapterGroup, AdapterGroupOutput, AdapterGroupProps};
 use crate::bluetooth::discovered_devices_group::{
     DiscoveredDevicesGroup, DiscoveredDevicesGroupOutput,
@@ -18,6 +14,10 @@ use crate::bluetooth::discovered_devices_group::{
 use crate::bluetooth::paired_devices_group::PairedDevicesGroup;
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
+use gtk::prelude::*;
+use waft_client::{EntityActionCallback, EntityStore};
+use waft_protocol::Urn;
+use waft_protocol::entity::bluetooth::{BluetoothAdapter, BluetoothDevice};
 
 /// Smart container for the Bluetooth settings page.
 ///

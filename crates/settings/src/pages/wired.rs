@@ -7,16 +7,16 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::i18n::t;
+use crate::search_index::SearchIndex;
+use crate::wired::adapter_group::{
+    WiredAdapterGroup, WiredAdapterGroupOutput, WiredAdapterGroupProps,
+};
 use gtk::prelude::*;
 use waft_client::{EntityActionCallback, EntityStore};
 use waft_protocol::Urn;
 use waft_protocol::entity::network::{
     ADAPTER_ENTITY_TYPE, AdapterKind, EthernetConnection, NetworkAdapter,
-};
-use crate::i18n::t;
-use crate::search_index::SearchIndex;
-use crate::wired::adapter_group::{
-    WiredAdapterGroup, WiredAdapterGroupOutput, WiredAdapterGroupProps,
 };
 
 /// Smart container for the Wired network settings page.
@@ -126,7 +126,11 @@ impl WiredPage {
                 let cb = action_callback.clone();
                 group.connect_output(move |output| match output {
                     WiredAdapterGroupOutput::ToggleConnection => {
-                        cb(adapter_urn.clone(), "activate".to_string(), serde_json::Value::Null);
+                        cb(
+                            adapter_urn.clone(),
+                            "activate".to_string(),
+                            serde_json::Value::Null,
+                        );
                     }
                     WiredAdapterGroupOutput::ActivateConnection(conn_urn) => {
                         cb(conn_urn, "activate".to_string(), serde_json::Value::Null);

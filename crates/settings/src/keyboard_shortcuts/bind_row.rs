@@ -90,7 +90,8 @@ impl BindRow {
         self.root.set_subtitle(&props.key_chord);
         self.action_type_label
             .set_label(props.action_type.as_deref().unwrap_or_default());
-        self.action_type_label.set_visible(props.action_type.is_some());
+        self.action_type_label
+            .set_visible(props.action_type.is_some());
         self.suffix_box.set_visible(props.editable);
         self.edit_button.set_sensitive(props.editable);
         self.delete_button.set_sensitive(props.editable);

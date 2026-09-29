@@ -54,9 +54,8 @@ impl DarkModeSection {
         search_index: &Rc<RefCell<SearchIndex>>,
         on_navigate: Option<Box<dyn Fn()>>,
     ) -> Self {
-        let builder = gtk::Builder::from_resource(
-            "/com/waft/settings/display-toggle-navigation.ui",
-        );
+        let builder =
+            gtk::Builder::from_resource("/com/waft/settings/display-toggle-navigation.ui");
         let group: adw::PreferencesGroup = builder
             .object("root")
             .expect("display-toggle-navigation.ui must contain root");

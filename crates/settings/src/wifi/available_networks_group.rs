@@ -8,11 +8,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::i18n::t;
 use adw::prelude::*;
 use waft_client::EntityActionCallback;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::WiFiNetwork;
-use crate::i18n::t;
 
 use super::network_row::{NetworkRow, NetworkRowOutput, NetworkRowProps};
 

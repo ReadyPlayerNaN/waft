@@ -551,9 +551,8 @@ impl SettingsWindow {
         }
 
         // -- Window --
-        let window_builder = gtk::Builder::from_resource(
-            "/com/waft/settings/application-window.ui",
-        );
+        let window_builder =
+            gtk::Builder::from_resource("/com/waft/settings/application-window.ui");
         let window: adw::ApplicationWindow = window_builder
             .object("window")
             .expect("application-window.ui must contain window");

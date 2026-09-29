@@ -7,13 +7,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use waft_client::EntityStore;
-use waft_protocol::Urn;
-use waft_protocol::entity::plugin::{self, PluginStatus};
 use crate::entity_list_group::EntityListGroup;
 use crate::i18n::t;
 use crate::plugins::plugin_row::{PluginRow, PluginRowProps};
 use crate::search_index::SearchIndex;
+use waft_client::EntityStore;
+use waft_protocol::Urn;
+use waft_protocol::entity::plugin::{self, PluginStatus};
 
 /// Smart container for the Plugins settings page.
 pub struct PluginsPage {

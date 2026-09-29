@@ -120,18 +120,20 @@ impl ServiceRow {
         for class in ["success", "error", "dim-label"] {
             self.state_label.remove_css_class(class);
         }
-        self.state_label.add_css_class(match props.active_state.as_str() {
-            "active" => "success",
-            "failed" => "error",
-            _ => "dim-label",
-        });
+        self.state_label
+            .add_css_class(match props.active_state.as_str() {
+                "active" => "success",
+                "failed" => "error",
+                _ => "dim-label",
+            });
         let button_label = if running {
             t("services-stop")
         } else {
             t("services-start")
         };
         self.start_stop_button.set_label(&button_label);
-        self.start_stop_button.set_sensitive(!props.active_state.is_empty());
+        self.start_stop_button
+            .set_sensitive(!props.active_state.is_empty());
         self.running.set(running);
         self.updating.set(true);
         self.enable_switch.set_sensitive(controllable);

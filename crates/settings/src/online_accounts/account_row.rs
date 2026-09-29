@@ -72,8 +72,7 @@ impl AccountRow {
         provider_icon_slot.append(provider_icon.widget());
         navigate_icon_slot.append(navigate_icon.widget());
 
-        let navigate_callback: NavigateCallback =
-            Rc::new(RefCell::new(None));
+        let navigate_callback: NavigateCallback = Rc::new(RefCell::new(None));
         {
             let navigate_callback = navigate_callback.clone();
             root.connect_activated(move |_| {
@@ -98,14 +97,10 @@ impl AccountRow {
     pub fn update(&self, props: &AccountRowProps) {
         let (status_text, status_css) = match &props.status {
             AccountStatus::Active => (t("online-accounts-status-active"), "success"),
-            AccountStatus::CredentialsNeeded => (
-                t("online-accounts-status-credentials-needed"),
-                "warning",
-            ),
-            AccountStatus::NeedsAttention => (
-                t("online-accounts-status-needs-attention"),
-                "error",
-            ),
+            AccountStatus::CredentialsNeeded => {
+                (t("online-accounts-status-credentials-needed"), "warning")
+            }
+            AccountStatus::NeedsAttention => (t("online-accounts-status-needs-attention"), "error"),
         };
         self.root.set_title(&props.presentation_identity);
         self.root.set_subtitle(&props.provider_name);
@@ -114,7 +109,8 @@ impl AccountRow {
             self.status_label.remove_css_class(class);
         }
         self.status_label.add_css_class(status_css);
-        self.navigate_icon_slot.set_visible(props.on_navigate.is_some());
+        self.navigate_icon_slot
+            .set_visible(props.on_navigate.is_some());
         self.root.set_activatable(props.on_navigate.is_some());
         *self.navigate_callback.borrow_mut() = props.on_navigate.clone();
     }

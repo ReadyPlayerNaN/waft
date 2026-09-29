@@ -7,15 +7,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use adw::prelude::*;
-use waft_client::{EntityActionCallback, EntityStore};
-use waft_protocol::Urn;
-use waft_protocol::entity::session::{self, UserTimer};
 use crate::entity_list_group::EntityListGroup;
 use crate::i18n::t;
 use crate::scheduler::timer_dialog::TimerDialog;
 use crate::scheduler::timer_row::{TimerRow, TimerRowOutput, TimerRowProps};
 use crate::search_index::SearchIndex;
+use adw::prelude::*;
+use waft_client::{EntityActionCallback, EntityStore};
+use waft_protocol::Urn;
+use waft_protocol::entity::session::{self, UserTimer};
 
 /// Smart container for the Scheduler settings page.
 pub struct SchedulerPage {

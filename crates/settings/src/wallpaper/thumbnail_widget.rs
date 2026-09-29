@@ -14,9 +14,7 @@ pub struct ThumbnailWidget {
 
 impl ThumbnailWidget {
     pub fn new(path: &str, filename: &str) -> Self {
-        let builder = gtk::Builder::from_resource(
-            "/com/waft/settings/wallpaper-thumbnail.ui",
-        );
+        let builder = gtk::Builder::from_resource("/com/waft/settings/wallpaper-thumbnail.ui");
         let root: gtk::Box = builder
             .object("root")
             .expect("wallpaper-thumbnail.ui must contain root");

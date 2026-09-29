@@ -9,13 +9,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::display::settings_sub_page::SettingsSubPage;
+use crate::i18n::t;
+use crate::wifi::network_detail::{NetworkDetailOutput, NetworkDetailPage, NetworkDetailProps};
 use adw::prelude::*;
 use waft_client::EntityActionCallback;
 use waft_protocol::Urn;
 use waft_protocol::entity::network::WiFiNetwork;
-use crate::display::settings_sub_page::SettingsSubPage;
-use crate::i18n::t;
-use crate::wifi::network_detail::{NetworkDetailOutput, NetworkDetailPage, NetworkDetailProps};
 
 use super::network_row::{NetworkRow, NetworkRowOutput, NetworkRowProps};
 

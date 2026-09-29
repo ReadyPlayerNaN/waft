@@ -7,12 +7,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use gtk::prelude::*;
-use waft_client::{EntityActionCallback, EntityStore};
-use waft_protocol::Urn;
-use waft_protocol::entity::network::{
-    ADAPTER_ENTITY_TYPE, AdapterKind, NetworkAdapter, WiFiNetwork,
-};
 use crate::i18n::t;
 use crate::keyed_widget_list::reorder_children;
 use crate::search_index::SearchIndex;
@@ -21,6 +15,12 @@ use crate::wifi::available_networks_group::{AvailableNetworksGroup, AvailableNet
 use crate::wifi::known_networks_group::KnownNetworksGroup;
 use crate::wifi::password_dialog::show_password_dialog;
 use crate::wifi::share_dialog::show_share_dialog;
+use gtk::prelude::*;
+use waft_client::{EntityActionCallback, EntityStore};
+use waft_protocol::Urn;
+use waft_protocol::entity::network::{
+    ADAPTER_ENTITY_TYPE, AdapterKind, NetworkAdapter, WiFiNetwork,
+};
 
 /// Smart container for the WiFi settings page.
 pub struct WiFiPage {

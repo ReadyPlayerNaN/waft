@@ -6,13 +6,13 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use adw::prelude::*;
 use crate::i18n::t;
 use crate::kdl_config;
 use crate::search_index::SearchIndex;
 use crate::startup::entry_dialog::EntryDialog;
 use crate::startup::startup_row::{StartupRow, StartupRowOutput, StartupRowProps};
 use crate::startup::{self, StartupEntry};
+use adw::prelude::*;
 
 /// Smart container for the Startup settings page.
 pub struct StartupPage {

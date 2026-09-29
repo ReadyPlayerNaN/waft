@@ -8,13 +8,13 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use adw::prelude::*;
 use crate::i18n::t;
 use crate::kdl_config;
 use crate::keyboard_shortcuts::bind_editor::BindEditor;
 use crate::keyboard_shortcuts::bind_row::{BindRow, BindRowOutput, BindRowProps};
 use crate::keyboard_shortcuts::{self, BindAction, BindEntry, action_category};
 use crate::search_index::SearchIndex;
+use adw::prelude::*;
 
 /// Ordered list of categories for display. Categories not in this list
 /// appear at the end sorted alphabetically.

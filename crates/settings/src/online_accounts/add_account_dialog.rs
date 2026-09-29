@@ -27,11 +27,10 @@ pub fn show_add_account_dialog(
 
     dialog.add_response("cancel", &t("online-accounts-add-account-cancel"));
 
-    let list_box: gtk::ListBox = gtk::Builder::from_resource(
-        "/com/waft/settings/provider-picker-dialog.ui",
-    )
-    .object("root")
-    .expect("provider-picker-dialog.ui must contain root");
+    let list_box: gtk::ListBox =
+        gtk::Builder::from_resource("/com/waft/settings/provider-picker-dialog.ui")
+            .object("root")
+            .expect("provider-picker-dialog.ui must contain root");
 
     // Sort providers alphabetically by display name
     let mut sorted: Vec<&(Urn, OnlineAccountProvider)> = providers.iter().collect();

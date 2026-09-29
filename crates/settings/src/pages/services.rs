@@ -7,13 +7,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use waft_client::{EntityActionCallback, EntityStore};
-use waft_protocol::Urn;
-use waft_protocol::entity::session::{self, UserService};
 use crate::entity_list_group::EntityListGroup;
 use crate::i18n::t;
 use crate::search_index::SearchIndex;
 use crate::services::service_row::{ServiceRow, ServiceRowOutput, ServiceRowProps};
+use waft_client::{EntityActionCallback, EntityStore};
+use waft_protocol::Urn;
+use waft_protocol::entity::session::{self, UserService};
 
 /// Smart container for the Services settings page.
 pub struct ServicesPage {

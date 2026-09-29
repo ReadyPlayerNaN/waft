@@ -149,9 +149,8 @@ impl DarkModeAutomationSection {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let builder = gtk::Builder::from_resource(
-            "/com/waft/settings/display-dark-mode-automation.ui",
-        );
+        let builder =
+            gtk::Builder::from_resource("/com/waft/settings/display-dark-mode-automation.ui");
         let group: adw::PreferencesGroup = builder
             .object("root")
             .expect("display-dark-mode-automation.ui must contain root");
@@ -172,10 +171,14 @@ impl DarkModeAutomationSection {
             .expect("display-dark-mode-automation.ui must contain portal_api_row");
         group.set_title(&t("display-dark-mode-automation"));
         latitude_row.set_title(&t("display-latitude"));
-        latitude_row.set_adjustment(Some(&gtk::Adjustment::new(0.0, -90.0, 90.0, 0.01, 1.0, 0.0)));
+        latitude_row.set_adjustment(Some(&gtk::Adjustment::new(
+            0.0, -90.0, 90.0, 0.01, 1.0, 0.0,
+        )));
         latitude_row.set_digits(2);
         longitude_row.set_title(&t("display-longitude"));
-        longitude_row.set_adjustment(Some(&gtk::Adjustment::new(0.0, -180.0, 180.0, 0.01, 1.0, 0.0)));
+        longitude_row.set_adjustment(Some(&gtk::Adjustment::new(
+            0.0, -180.0, 180.0, 0.01, 1.0, 0.0,
+        )));
         longitude_row.set_digits(2);
         auto_location_row.set_title(&t("display-auto-location"));
         dbus_api_row.set_title(&t("display-dbus-api"));

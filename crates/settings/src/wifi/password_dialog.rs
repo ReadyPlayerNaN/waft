@@ -24,11 +24,10 @@ pub fn show_password_dialog(
     dialog.set_response_appearance("connect", adw::ResponseAppearance::Suggested);
     dialog.set_default_response(Some("connect"));
 
-    let entry: gtk::PasswordEntry = gtk::Builder::from_resource(
-        "/com/waft/settings/password-dialog.ui",
-    )
-    .object("entry")
-    .expect("password-dialog.ui must contain entry");
+    let entry: gtk::PasswordEntry =
+        gtk::Builder::from_resource("/com/waft/settings/password-dialog.ui")
+            .object("entry")
+            .expect("password-dialog.ui must contain entry");
 
     dialog.set_extra_child(Some(&entry));
 

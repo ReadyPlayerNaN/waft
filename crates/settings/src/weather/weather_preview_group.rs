@@ -18,9 +18,7 @@ pub struct WeatherPreviewGroup {
 
 impl WeatherPreviewGroup {
     pub fn new() -> Self {
-        let builder = gtk::Builder::from_resource(
-            "/com/waft/settings/weather-preview-group.ui",
-        );
+        let builder = gtk::Builder::from_resource("/com/waft/settings/weather-preview-group.ui");
         let group: adw::PreferencesGroup = builder
             .object("root")
             .expect("weather-preview-group.ui must contain root");

@@ -134,7 +134,8 @@ impl DeviceRow {
 
         self.root.set_title(&props.name);
         self.root.set_subtitle(&subtitle);
-        self.device_icon.set_icon(resolve_device_type_icon(&props.device_type));
+        self.device_icon
+            .set_icon(resolve_device_type_icon(&props.device_type));
         self.action_button.set_label(&action_label);
         self.action_button.set_sensitive(sensitive);
         self.remove_button.set_visible(props.paired);
@@ -147,8 +148,7 @@ impl DeviceRow {
         let show_battery = props.paired && connected && props.battery_percentage.is_some();
         self.battery_icon_slot.set_visible(show_battery);
         if let Some(pct) = props.battery_percentage {
-            self.battery_icon
-                .set_icon(resolve_battery_icon_name(pct));
+            self.battery_icon.set_icon(resolve_battery_icon_name(pct));
         }
     }
 

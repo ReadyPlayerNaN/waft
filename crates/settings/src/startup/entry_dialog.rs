@@ -33,9 +33,7 @@ impl EntryDialog {
         dialog.add_response("save", &t("startup-save"));
         dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);
 
-        let builder = gtk::Builder::from_resource(
-            "/com/waft/settings/startup-entry-dialog.ui",
-        );
+        let builder = gtk::Builder::from_resource("/com/waft/settings/startup-entry-dialog.ui");
         let content: gtk::Box = builder
             .object("content")
             .expect("startup-entry-dialog.ui must contain content");

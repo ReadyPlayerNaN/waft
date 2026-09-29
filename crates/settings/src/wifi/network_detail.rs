@@ -110,9 +110,7 @@ fn ip_method_to_index(method: IpMethod) -> u32 {
 
 impl NetworkDetailPage {
     pub fn new(props: &NetworkDetailProps) -> Self {
-        let builder = gtk::Builder::from_resource(
-            "/com/waft/settings/wifi-network-detail.ui",
-        );
+        let builder = gtk::Builder::from_resource("/com/waft/settings/wifi-network-detail.ui");
         let root: gtk::Box = builder
             .object("root")
             .expect("wifi-network-detail.ui must contain root");

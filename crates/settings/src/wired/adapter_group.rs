@@ -10,9 +10,7 @@ use waft_protocol::entity::network::{EthernetConnection, IpInfo};
 
 use crate::i18n::t;
 
-use super::connection_row::{
-    ConnectionRowOutput, ConnectionRowProps, WiredConnectionRow,
-};
+use super::connection_row::{ConnectionRowOutput, ConnectionRowProps, WiredConnectionRow};
 
 /// Props for creating or updating a wired adapter group.
 #[derive(Clone, PartialEq)]
@@ -50,9 +48,7 @@ pub struct WiredAdapterGroup {
 
 impl WiredAdapterGroup {
     pub fn build(props: &WiredAdapterGroupProps) -> Self {
-        let builder = gtk::Builder::from_resource(
-            "/com/waft/settings/wired-adapter-group.ui",
-        );
+        let builder = gtk::Builder::from_resource("/com/waft/settings/wired-adapter-group.ui");
         let root: adw::PreferencesGroup = builder
             .object("root")
             .expect("wired-adapter-group.ui must contain root");
