@@ -22,17 +22,16 @@ pub fn show_rename_dialog(
     dialog.set_response_appearance("rename", adw::ResponseAppearance::Suggested);
     dialog.set_default_response(Some("rename"));
 
-    let entry = adw::EntryRow::builder()
-        .title(t("kb-rename-entry-title"))
-        .text(current_name)
-        .show_apply_button(false)
-        .build();
-
-    let list_box = gtk::ListBox::builder()
-        .selection_mode(gtk::SelectionMode::None)
-        .css_classes(["boxed-list"])
-        .build();
-    list_box.append(&entry);
+    let builder = gtk::Builder::from_resource("/com/waft/settings/rename-dialog.ui");
+    let list_box: gtk::ListBox = builder
+        .object("root")
+        .expect("rename-dialog.ui must contain root");
+    let entry: adw::EntryRow = builder
+        .object("entry_row")
+        .expect("rename-dialog.ui must contain entry_row");
+    entry.set_title(&t("kb-rename-entry-title"));
+    entry.set_text(current_name);
+    entry.set_show_apply_button(false);
 
     dialog.set_extra_child(Some(&list_box));
 

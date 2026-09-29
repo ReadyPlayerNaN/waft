@@ -33,31 +33,25 @@ impl EntryDialog {
         dialog.add_response("save", &t("startup-save"));
         dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);
 
-        let content = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(12)
-            .margin_top(12)
-            .margin_bottom(12)
-            .build();
-
-        let group = adw::PreferencesGroup::new();
-
-        let command_row = adw::EntryRow::builder()
-            .title(t("startup-entry-command"))
-            .build();
-
-        let args_row = adw::EntryRow::builder()
-            .title(t("startup-entry-args"))
-            .build();
+        let builder = gtk::Builder::from_resource(
+            "/com/waft/settings/startup-entry-dialog.ui",
+        );
+        let content: gtk::Box = builder
+            .object("content")
+            .expect("startup-entry-dialog.ui must contain content");
+        let command_row: adw::EntryRow = builder
+            .object("command_row")
+            .expect("startup-entry-dialog.ui must contain command_row");
+        let args_row: adw::EntryRow = builder
+            .object("args_row")
+            .expect("startup-entry-dialog.ui must contain args_row");
+        command_row.set_title(&t("startup-entry-command"));
+        args_row.set_title(&t("startup-entry-args"));
 
         if let Some(entry) = initial {
             command_row.set_text(&entry.command);
             args_row.set_text(&entry.args.join(" "));
         }
-
-        group.add(&command_row);
-        group.add(&args_row);
-        content.append(&group);
 
         dialog.set_extra_child(Some(&content));
 

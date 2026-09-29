@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="GtkListBox" id="root">
+    <property name="selection-mode">none</property>
+    <property name="css-classes">boxed-list</property>
+    <child>
+      <object class="AdwEntryRow" id="entry_row" />
+    </child>
+  </object>
+</interface>

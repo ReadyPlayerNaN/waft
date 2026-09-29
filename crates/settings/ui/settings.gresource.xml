@@ -24,6 +24,11 @@
     <file preprocess="xml-stripblanks">section-toggle.ui</file>
     <file preprocess="xml-stripblanks">section-combo.ui</file>
     <file preprocess="xml-stripblanks">weather-preview-group.ui</file>
+    <file preprocess="xml-stripblanks">startup-entry-dialog.ui</file>
+    <file preprocess="xml-stripblanks">password-dialog.ui</file>
+    <file preprocess="xml-stripblanks">variant-dialog.ui</file>
+    <file preprocess="xml-stripblanks">rename-dialog.ui</file>
+    <file preprocess="xml-stripblanks">application-window.ui</file>
     <file preprocess="xml-stripblanks">wifi-network-row.ui</file>
   </gresource>
 </gresources>

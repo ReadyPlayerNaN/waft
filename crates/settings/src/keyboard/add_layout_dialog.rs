@@ -30,25 +30,17 @@ pub fn show_add_layout_dialog(
     dialog.set_response_appearance("add", adw::ResponseAppearance::Suggested);
     dialog.set_default_response(Some("add"));
 
-    // Search entry
-    let search_entry = gtk::SearchEntry::builder()
-        .placeholder_text(t("kb-add-search-placeholder"))
-        .margin_bottom(8)
-        .build();
-
-    // Scrolled list
-    let scrolled = gtk::ScrolledWindow::builder()
-        .vexpand(true)
-        .hexpand(true)
-        .min_content_height(300)
-        .min_content_width(350)
-        .build();
-
-    let list_box = gtk::ListBox::builder()
-        .selection_mode(gtk::SelectionMode::Single)
-        .css_classes(["boxed-list"])
-        .build();
-    scrolled.set_child(Some(&list_box));
+    let builder = gtk::Builder::from_resource("/com/waft/settings/variant-dialog.ui");
+    let search_entry: gtk::SearchEntry = builder
+        .object("search_entry")
+        .expect("variant-dialog.ui must contain search_entry");
+    let list_box: gtk::ListBox = builder
+        .object("list_box")
+        .expect("variant-dialog.ui must contain list_box");
+    let content_box: gtk::Box = builder
+        .object("content_box")
+        .expect("variant-dialog.ui must contain content_box");
+    search_entry.set_placeholder_text(Some(&t("kb-add-search-placeholder")));
 
     // Load available layouts
     let available = get_available_layouts();
@@ -84,14 +76,6 @@ pub fn show_add_layout_dialog(
     search_entry.connect_search_changed(move |_| {
         list_box_for_filter.invalidate_filter();
     });
-
-    // Layout for dialog content
-    let content_box = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(8)
-        .build();
-    content_box.append(&search_entry);
-    content_box.append(&scrolled);
 
     dialog.set_extra_child(Some(&content_box));
 

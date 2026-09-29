@@ -399,22 +399,22 @@ Start with small, stable widgets before converting whole pages.
 
 ### Targets
 
-- [ ] WiFi password dialog.
+- [x] WiFi password dialog.
 - [ ] WiFi share dialog.
 - [ ] WiFi network detail page.
 - [ ] Online account add-account dialog.
-- [ ] Startup entry dialog.
-- [ ] Keyboard layout/variant/rename dialogs.
+- [x] Startup entry dialog.
+- [x] Keyboard layout/variant/rename dialogs.
 - [ ] Scheduler timer dialog and schedule picker.
 - [x] Settings sub-pages.
 
 ### Tasks
 
-- [ ] Move stable dialog content hierarchy into XML.
-- [ ] Keep dialog presentation, response handling, and validation in Rust.
-- [ ] Keep destructive confirmation flows in Rust.
-- [ ] Preserve default/cancel/destructive response appearance.
-- [ ] Preserve focus, keyboard navigation, and entry activation.
+- [x] Move stable dialog content hierarchy into XML.
+- [x] Keep dialog presentation, response handling, and validation in Rust.
+- [x] Keep destructive confirmation flows in Rust.
+- [x] Preserve default/cancel/destructive response appearance.
+- [x] Preserve focus, keyboard navigation, and entry activation.
 - [ ] Ensure dialogs do not retain stale callbacks after their parent page is removed.
 - [ ] Ensure template-backed dialogs can be presented repeatedly without duplicated signal handlers.
 
@@ -460,8 +460,8 @@ For each page:
 
 ### Tasks
 
-- [ ] Move settings-specific CSS from the inline raw string in `src/app.rs` into a CSS resource.
-- [ ] Register CSS from the same resource-loading convention where practical.
+- [x] Move settings-specific CSS from the inline raw string in `src/app.rs` into a CSS resource.
+- [x] Register CSS from the same resource-loading convention where practical.
 - [ ] Preserve `.ordered-list`, `.ordered-list-row`, and all existing classes.
 - [ ] Audit template classes against runtime classes to avoid duplicate styling responsibilities.
 - [ ] Keep icon construction compliant with the project `IconWidget` convention.

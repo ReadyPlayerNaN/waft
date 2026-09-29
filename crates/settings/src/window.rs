@@ -551,13 +551,15 @@ impl SettingsWindow {
         }
 
         // -- Window --
-        let window = adw::ApplicationWindow::builder()
-            .application(app)
-            .title(t("settings-window-title"))
-            .default_width(900)
-            .default_height(600)
-            .content(&split_view)
-            .build();
+        let window_builder = gtk::Builder::from_resource(
+            "/com/waft/settings/application-window.ui",
+        );
+        let window: adw::ApplicationWindow = window_builder
+            .object("window")
+            .expect("application-window.ui must contain window");
+        window.set_application(Some(app));
+        window.set_title(Some(&t("settings-window-title")));
+        window.set_content(Some(&split_view));
 
         // Set search bar key capture widget to window for type-to-search
         sidebar_ref.search_bar.set_key_capture_widget(Some(&window));
