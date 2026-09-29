@@ -341,7 +341,7 @@ Start with small, stable widgets before converting whole pages.
 
 - [ ] `src/display/accent_colour_section.rs`
 - [x] `src/display/dark_mode_section.rs`
-- [ ] `src/display/dark_mode_automation_section.rs`
+- [x] `src/display/dark_mode_automation_section.rs`
 - [x] `src/display/night_light_section.rs`
 - [ ] `src/display/night_light_config_section.rs`
 - [ ] `src/display/output_section.rs`
