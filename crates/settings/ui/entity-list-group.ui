@@ -5,11 +5,10 @@
   </object>
   <object class="AdwPreferencesGroup" id="group">
     <property name="visible">false</property>
-    <child>
-      <object class="GtkListBox" id="list_box">
-        <property name="selection-mode">none</property>
-        <property name="css-classes">boxed-list</property>
-      </object>
-    </child>
+  </object>
+  <object class="GtkListBox" id="list_box">
+    <property name="selection-mode">none</property>
+    <property name="css-classes">boxed-list</property>
+    <property name="visible">false</property>
   </object>
 </interface>

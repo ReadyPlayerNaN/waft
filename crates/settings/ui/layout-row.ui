@@ -19,7 +19,6 @@
             <property name="icon-name">document-edit-symbolic</property>
             <property name="valign">center</property>
             <property name="css-classes">flat</property>
-            <property name="tooltip-text">Rename layout</property>
             <property name="visible">false</property>
           </object>
         </child>
@@ -28,7 +27,6 @@
             <property name="icon-name">user-trash-symbolic</property>
             <property name="valign">center</property>
             <property name="css-classes">flat</property>
-            <property name="tooltip-text">Remove layout</property>
           </object>
         </child>
       </object>

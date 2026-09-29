@@ -42,9 +42,11 @@ impl PairedDevicesGroup {
         devices: &[(Urn, BluetoothDevice)],
         action_callback: &EntityActionCallback,
     ) {
+        let mut ordered_devices = devices.to_vec();
+        ordered_devices.sort_by(|(left, _), (right, _)| left.as_str().cmp(right.as_str()));
         let mut seen = std::collections::HashSet::new();
 
-        for (urn, device) in devices {
+        for (urn, device) in &ordered_devices {
             let urn_str = urn.as_str().to_string();
             seen.insert(urn_str.clone());
 

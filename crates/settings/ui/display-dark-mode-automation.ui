@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="AdwPreferencesGroup" id="root">
+    <property name="visible">false</property>
+    <child><object class="AdwSpinRow" id="latitude_row"><property name="visible">false</property></object></child>
+    <child><object class="AdwSpinRow" id="longitude_row"><property name="visible">false</property></object></child>
+    <child><object class="AdwSwitchRow" id="auto_location_row"><property name="visible">false</property></object></child>
+    <child><object class="AdwSwitchRow" id="dbus_api_row"><property name="visible">false</property></object></child>
+    <child><object class="AdwSwitchRow" id="portal_api_row"><property name="visible">false</property></object></child>
+  </object>
+</interface>

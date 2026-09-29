@@ -193,6 +193,7 @@ impl KnownNetworksGroup {
 
         for key in to_remove {
             if let Some(entry) = self.entries.remove(&key) {
+                navigation_view.remove(&entry.sub_page.root);
                 self.root.remove(&entry.row.widget());
             }
         }

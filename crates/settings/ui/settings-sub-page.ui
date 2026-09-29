@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <object class="AdwNavigationPage" id="root">
-    <property name="title">Settings</property>
     <property name="child">
       <object class="AdwToolbarView" id="toolbar">
         <child type="top">

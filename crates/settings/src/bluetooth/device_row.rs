@@ -38,7 +38,7 @@ pub struct DeviceRow {
     battery_icon_slot: gtk::Box,
     device_icon: IconWidget,
     battery_icon: IconWidget,
-    paired: Cell<bool>,
+    paired: Rc<Cell<bool>>,
     output_cb: OutputCallback,
 }
 
@@ -67,7 +67,7 @@ impl DeviceRow {
         battery_icon_slot.append(battery_icon.widget());
 
         let output_cb: OutputCallback = Rc::new(RefCell::new(None));
-        let paired = Cell::new(false);
+        let paired = Rc::new(Cell::new(false));
         {
             let output_cb = output_cb.clone();
             let paired = paired.clone();

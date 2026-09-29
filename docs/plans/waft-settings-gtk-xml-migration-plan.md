@@ -262,7 +262,7 @@ Start with small, stable widgets before converting whole pages.
 - [x] `src/plugins/plugin_row.rs`
 - [x] `src/services/service_row.rs`
 - [x] `src/wired/connection_row.rs`
-- [x] `src/keyboard/layout_row.rs`
+- [ ] `src/keyboard/layout_row.rs` (unused legacy component; active page still uses `OrderedListRow`)
 - [x] `src/keyboard_shortcuts/bind_row.rs`
 - [x] `src/scheduler/timer_row.rs`
 - [x] `src/wallpaper/thumbnail_widget.rs`
@@ -332,7 +332,7 @@ Start with small, stable widgets before converting whole pages.
 - [x] Plugin rows and system service rows.
 - [x] Scheduler timer rows.
 - [x] Wallpaper gallery thumbnails.
-- [x] Keyboard layouts and shortcut rows.
+- [ ] Keyboard layouts and shortcut rows (shortcut rows migrated; active layout list remains pending).
 - [x] Startup entries.
 
 ## Phase 5 — Convert static and mostly-static page sections

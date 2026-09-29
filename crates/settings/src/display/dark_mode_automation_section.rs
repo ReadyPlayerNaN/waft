@@ -149,44 +149,37 @@ impl DarkModeAutomationSection {
         action_callback: &EntityActionCallback,
         search_index: &Rc<RefCell<SearchIndex>>,
     ) -> Self {
-        let group = adw::PreferencesGroup::builder()
-            .title(t("display-dark-mode-automation"))
-            .visible(false)
-            .build();
-
-        let latitude_row = adw::SpinRow::builder()
-            .title(t("display-latitude"))
-            .adjustment(&gtk::Adjustment::new(0.0, -90.0, 90.0, 0.01, 1.0, 0.0))
-            .digits(2)
-            .visible(false)
-            .build();
-        group.add(&latitude_row);
-
-        let longitude_row = adw::SpinRow::builder()
-            .title(t("display-longitude"))
-            .adjustment(&gtk::Adjustment::new(0.0, -180.0, 180.0, 0.01, 1.0, 0.0))
-            .digits(2)
-            .visible(false)
-            .build();
-        group.add(&longitude_row);
-
-        let auto_location_row = adw::SwitchRow::builder()
-            .title(t("display-auto-location"))
-            .visible(false)
-            .build();
-        group.add(&auto_location_row);
-
-        let dbus_api_row = adw::SwitchRow::builder()
-            .title(t("display-dbus-api"))
-            .visible(false)
-            .build();
-        group.add(&dbus_api_row);
-
-        let portal_api_row = adw::SwitchRow::builder()
-            .title(t("display-xdg-portal"))
-            .visible(false)
-            .build();
-        group.add(&portal_api_row);
+        let builder = gtk::Builder::from_resource(
+            "/com/waft/settings/display-dark-mode-automation.ui",
+        );
+        let group: adw::PreferencesGroup = builder
+            .object("root")
+            .expect("display-dark-mode-automation.ui must contain root");
+        let latitude_row: adw::SpinRow = builder
+            .object("latitude_row")
+            .expect("display-dark-mode-automation.ui must contain latitude_row");
+        let longitude_row: adw::SpinRow = builder
+            .object("longitude_row")
+            .expect("display-dark-mode-automation.ui must contain longitude_row");
+        let auto_location_row: adw::SwitchRow = builder
+            .object("auto_location_row")
+            .expect("display-dark-mode-automation.ui must contain auto_location_row");
+        let dbus_api_row: adw::SwitchRow = builder
+            .object("dbus_api_row")
+            .expect("display-dark-mode-automation.ui must contain dbus_api_row");
+        let portal_api_row: adw::SwitchRow = builder
+            .object("portal_api_row")
+            .expect("display-dark-mode-automation.ui must contain portal_api_row");
+        group.set_title(&t("display-dark-mode-automation"));
+        latitude_row.set_title(&t("display-latitude"));
+        latitude_row.set_adjustment(Some(&gtk::Adjustment::new(0.0, -90.0, 90.0, 0.01, 1.0, 0.0)));
+        latitude_row.set_digits(2);
+        longitude_row.set_title(&t("display-longitude"));
+        longitude_row.set_adjustment(Some(&gtk::Adjustment::new(0.0, -180.0, 180.0, 0.01, 1.0, 0.0)));
+        longitude_row.set_digits(2);
+        auto_location_row.set_title(&t("display-auto-location"));
+        dbus_api_row.set_title(&t("display-dbus-api"));
+        portal_api_row.set_title(&t("display-xdg-portal"));
 
         // Backfill search entry widgets
         {

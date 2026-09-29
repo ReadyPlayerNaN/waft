@@ -29,7 +29,7 @@ pub struct WiredConnectionRow {
     action_button: gtk::Button,
     active_icon_slot: gtk::Box,
     _active_icon: IconWidget,
-    active: Cell<bool>,
+    active: Rc<Cell<bool>>,
     output_cb: OutputCallback,
 }
 
@@ -47,7 +47,7 @@ impl WiredConnectionRow {
             .expect("connection-row.ui must contain active_icon_slot");
         let active_icon = IconWidget::from_name("emblem-default-symbolic", 16);
         active_icon_slot.append(active_icon.widget());
-        let active = Cell::new(false);
+        let active = Rc::new(Cell::new(false));
         let output_cb: OutputCallback = Rc::new(RefCell::new(None));
         {
             let output_cb = output_cb.clone();

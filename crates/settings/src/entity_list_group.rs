@@ -39,6 +39,7 @@ impl EntityListGroup {
         group.set_title(group_title);
         parent.append(&empty_state);
         parent.append(&group);
+        parent.append(&list_box);
 
         Self {
             empty_state,
@@ -58,6 +59,7 @@ impl EntityListGroup {
     /// show the empty state.
     pub fn toggle_visibility(&self, has_items: bool) {
         self.group.set_visible(has_items);
+        self.list_box.set_visible(has_items);
         self.empty_state.set_visible(!has_items);
     }
 }
