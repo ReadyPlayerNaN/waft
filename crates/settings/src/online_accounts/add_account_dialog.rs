@@ -14,7 +14,7 @@ use crate::i18n::t;
 /// Show a dialog listing available online account providers.
 ///
 /// When the user selects a provider, fires `add-account` action on its entity URN.
-/// The plugin handles the rest (spawns GOA helper binary).
+/// The plugin dispatches provider-targeted GNOME Settings; acceptance is not account creation.
 pub fn show_add_account_dialog(
     parent: &impl IsA<gtk::Widget>,
     providers: &[(Urn, OnlineAccountProvider)],

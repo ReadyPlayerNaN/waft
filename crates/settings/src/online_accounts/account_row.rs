@@ -95,6 +95,7 @@ impl AccountRow {
     }
 
     pub fn update(&self, props: &AccountRowProps) {
+        self.root.set_use_markup(false);
         let (status_text, status_css) = match &props.status {
             AccountStatus::Active => (t("online-accounts-status-active"), "success"),
             AccountStatus::CredentialsNeeded => {

@@ -1,91 +1,68 @@
 # GNOME Online Accounts Plugin
 
-Monitors GNOME Online Accounts (GOA) via D-Bus and exposes account and provider entities.
+Tokio-only GOA integration with authoritative account reconciliation, independent provider discovery, and observable native account-management dispatch. Waft does not implement OAuth, retrieve credentials, replace GOA ownership, or restart services. GOA authenticates accounts; EDS independently discovers their enabled calendar sources.
 
-## Entity Types
+## Entities
 
-### `online-account`
+| Entity | URN | Purpose |
+|---|---|---|
+| `online-account` | `gnome-online-accounts/online-account/{account-id}` | Provider type/name, presentation identity, status, established services, admin lock |
+| `online-account-provider` | `gnome-online-accounts/online-account-provider/{provider-type}` | Supported provider name/type and optional themed icon |
+| `online-accounts-status` | `gnome-online-accounts/online-accounts-status/singleton` | Independent account/provider availability and latest settings-launch outcome |
 
-One entity per configured GOA account.
+Account/provider URNs are unchanged. `provider_type` is defaulted for older payloads. Status availability is Starting, Ready, Recovering, Unavailable, Unsupported, or Unknown. Ready with zero entities is successful empty discovery, not a missing service. Status includes separate successful snapshot timestamps/errors and launch state, timestamp, error, and request UUID.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `String` | GOA account ID (e.g. `account_1234567890`) |
-| `provider_name` | `String` | Provider display name (e.g. "Google", "Nextcloud") |
-| `presentation_identity` | `String` | User-facing identity (e.g. "user@gmail.com") |
-| `status` | `AccountStatus` | `Active`, `CredentialsNeeded`, or `NeedsAttention` |
-| `services` | `Vec<ServiceInfo>` | Per-service enabled/disabled state (only services the provider supports) |
-| `locked` | `bool` | Whether the account is administrator-locked (removal blocked) |
+`AttentionNeeded` maps to NeedsAttention, not automatically CredentialsNeeded. The legacy CredentialsNeeded variant remains decodable, but this plugin does not infer credential expiry or call EnsureCredentials in the background.
 
-**URN:** `gnome-online-accounts/online-account/{account-id}`
+## Service Capabilities
 
-#### Actions
+Base `*Disabled` properties do not prove a provider supports those services. Toggles require an established provider baseline or observed service interface **and** a corresponding boolean disabled property. Previously observed capabilities survive disablement and temporary owner loss, but not account deletion/provider change or a successful unsupported-provider result.
 
-| Action | Params | Description |
-|--------|--------|-------------|
-| `enable-service` | `{ "service_name": "calendar" }` | Enable a service on this account |
-| `disable-service` | `{ "service_name": "calendar" }` | Disable a service on this account |
-| `remove-account` | | Remove the account from GOA. Fails if account is locked. |
+Baselines: Google/Exchange mail/calendar/contacts; Microsoft Graph (`ms_graph`) additionally files; Nextcloud/WebDAV calendar/contacts/files; IMAP/SMTP mail; Kerberos/Fedora ticketing. Google's optional files feature and unverified `ms365`/custom features require an observed interface. Unknown disabled services at first discovery belong in native account settings, not invented Waft toggles.
 
-### `online-account-provider`
+## Actions
 
-One entity per supported GOA provider type. Used by the settings UI to show available providers for adding new accounts.
+| Target | Action | Result |
+|---|---|---|
+| account | `enable-service` / `disable-service`, `{ "service_name": "calendar" }` | `applied` only after authoritative confirmation |
+| account | `remove-account` | `removed` only after confirmed absence; admin lock prevents mutation/removal |
+| account | `open-account-settings` | Native settings targeted at the known account ID |
+| provider | `add-account` | Native settings targeted at that provider |
+| status singleton | `open-account-settings` | Generic native settings, including when GOA is unavailable |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `provider_type` | `String` | Provider identifier (e.g. "google", "ms365", "owncloud") |
-| `provider_name` | `String` | Human-readable display name (e.g. "Google", "Microsoft 365") |
-| `icon_name` | `Option<String>` | Themed icon name (e.g. "goa-account-google") |
+Account mutations have a four-second total budget and a nonblocking per-account conflict permit. Owner/account-incarnation changes, cancellation, and unconfirmed results schedule reconciliation, never automatic destructive replay. Typed errors preserve stable codes while retaining legacy string compatibility.
 
-**URN:** `gnome-online-accounts/online-account-provider/{provider-type}`
+### Native Settings Dispatch
 
-#### Actions
+Direct command arguments, without a shell or self-spawned helper:
 
-| Action | Description |
-|--------|-------------|
-| `add-account` | Launch the add-account flow for this provider. Spawns a helper subprocess that opens GNOME Settings to the online accounts page. The new account is detected automatically via D-Bus `InterfacesAdded` signal. |
+- Generic: `gnome-control-center online-accounts`
+- Add: `gnome-control-center online-accounts add PROVIDER_TYPE`
+- Account/repair: `gnome-control-center online-accounts ACCOUNT_ID`
 
-#### Known Provider Types
+On non-GNOME Wayland sessions, the child receives `XDG_CURRENT_DESKTOP=GNOME` to satisfy GNOME Settings' desktop guard. No Waft/global/session environment is changed. This is a compatibility shim, not a promise that every compositor/backend supports the panel.
 
-The plugin checks these provider types via `Manager.IsSupportedProvider` D-Bus call. Only supported providers are emitted as entities:
+After a 250-ms initial-exit observation, `launch-accepted` means accepted process dispatch, **not** account creation, a verified dialog, or credential repair. Missing/nonzero launch is an error. Children are reaped even after action cancellation; a later failure updates status only for the latest launch UUID. Duplicate targets are blocked while their child lives. Stopping the plugin does not kill the user's settings window.
 
-| Type | Display Name |
-|------|-------------|
-| `google` | Google |
-| `ms365` | Microsoft 365 |
-| `owncloud` | Nextcloud |
-| `imap_smtp` | IMAP and SMTP |
-| `exchange` | Microsoft Exchange |
-| `kerberos` | Enterprise Login (Kerberos) |
-| `fedora` | Fedora |
-| `webdav` | WebDAV |
+## Discovery and Recovery
 
-## D-Bus Interfaces
+Session service `org.gnome.OnlineAccounts` exposes ObjectManager at `/org/gnome/OnlineAccounts`, Manager at `/org/gnome/OnlineAccounts/Manager`, and Account interfaces below `/org/gnome/OnlineAccounts/Accounts`.
 
-| Bus | Service | Path | Interface | Usage |
-|-----|---------|------|-----------|-------|
-| Session | `org.gnome.OnlineAccounts` | `/org/gnome/OnlineAccounts` | `org.freedesktop.DBus.ObjectManager` | Enumerate accounts and services |
-| Session | `org.gnome.OnlineAccounts` | `/org/gnome/OnlineAccounts/Accounts/*` | `org.gnome.OnlineAccounts.Account` | Account properties, Remove |
-| Session | `org.gnome.OnlineAccounts` | `/org/gnome/OnlineAccounts/Accounts/*` | `org.gnome.OnlineAccounts.*` | Service-specific interfaces (Mail, Calendar, etc.) |
-| Session | `org.gnome.OnlineAccounts` | `/org/gnome/OnlineAccounts/Manager` | `org.gnome.OnlineAccounts.Manager` | `IsSupportedProvider` for provider discovery |
+Subscribe before discovery; validate unique owners; treat properties/interface signals as invalidations. Failed discovery retains stale entities with degraded status. Coherent snapshot bursts are bounded to four attempts/eight seconds; recovery backoff is 1, 2, 4, 8, 16, then 30 seconds. Healthy accounts/providers are event-driven, not periodically polled.
 
-## How It Works
+GOA has no public provider enumeration. Probe `google`, `ms_graph`, `ms365`, `owncloud`, `imap_smtp`, `exchange`, `kerberos`, `fedora`, `webdav`, plus IDs observed on accounts, four at a time. False means unsupported; a failed call degrades provider discovery without hiding accounts. Other unconfigured providers remain accessible through generic native settings.
 
-1. **Account discovery**: On startup, enumerates GOA objects via `ObjectManager.GetManagedObjects`, extracting account properties and per-service enabled state
-2. **Provider discovery**: Checks each known provider type via `Manager.IsSupportedProvider` to determine which are available on the system
-3. **Signal monitoring**: Watches `InterfacesAdded`, `InterfacesRemoved`, and `PropertiesChanged` D-Bus signals for real-time updates when accounts are added, removed, or modified
-4. **Add-account flow**: Spawns itself with `--add-account <provider-type>` flag, which opens `gnome-control-center online-accounts` to trigger the native GOA dialog (handles OAuth, WebKit, form-based flows)
+## Dependencies and Configuration
 
-## Dependencies
-
-- **goa-daemon** (GNOME Online Accounts daemon) running on session D-Bus
-- **gnome-control-center** (GNOME Settings) for the add-account flow (optional; add-account action fails gracefully without it)
-
-## Configuration
+GOA must be installed and D-Bus activatable. GNOME Settings is optional; launch actions fail explicitly when it is absent or cannot use a graphical session.
 
 ```toml
 [[plugins]]
 id = "gnome-online-accounts"
 ```
 
-No plugin-specific configuration options.
+No plugin-specific options. Native-launch failures never change account credential status.
+
+## Tests
+
+`cargo test -p waft-plugin-gnome-online-accounts` includes conservative-capability fixtures and private-bus lifecycle tests. `dbus-daemon` is required; tests never contact the user session or alter its D-Bus environment. Wire fixtures reference pinned upstream GOA contracts.

@@ -325,7 +325,7 @@ async fn handle_action<P: Plugin>(
                 .send(PluginMessage::ActionError {
                     action_id,
                     error: e.to_string(),
-                    error_details: Some(ProtocolError::action(e.to_string())),
+                    error_details: Some(crate::action_error::action_error_details(&e)),
                 })
                 .await
             {

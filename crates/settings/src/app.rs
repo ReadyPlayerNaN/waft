@@ -13,6 +13,7 @@ use waft_client::{
 };
 use waft_protocol::entity::accounts::{
     ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
+    ONLINE_ACCOUNTS_STATUS_ENTITY_TYPE,
 };
 use waft_protocol::entity::ai::CONFIG_ENTITY_TYPE as PROVIDER_CONFIG_ENTITY_TYPE;
 use waft_protocol::entity::appearance::GTK_APPEARANCE_ENTITY_TYPE;
@@ -75,6 +76,7 @@ const ENTITY_TYPES: &[&str] = &[
     PROVIDER_CONFIG_ENTITY_TYPE,
     ONLINE_ACCOUNT_ENTITY_TYPE,
     ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
+    ONLINE_ACCOUNTS_STATUS_ENTITY_TYPE,
 ];
 
 pub async fn setup(
@@ -94,8 +96,15 @@ pub async fn setup(
     let rt_handle = tokio::runtime::Handle::current();
 
     // 4. Create entity action callback (routes UI actions to the writer thread).
+    let client_for_dispatch = client_handle.clone();
     let raw_entity_action_callback: EntityActionCallback =
         Rc::new(move |urn, action_name, params| {
+            if !client_for_dispatch
+                .try_lock()
+                .is_ok_and(|client| client.is_some())
+            {
+                return None;
+            }
             let action_id = uuid::Uuid::new_v4();
             if let Err(e) = action_tx.send((action_id, urn, action_name, params)) {
                 log::warn!("[settings] failed to send action: {e}");
@@ -223,6 +232,7 @@ pub async fn setup(
                     ClientEvent::Disconnected => {
                         log::warn!("[settings] disconnected from daemon");
                         action_gate_for_events.clear();
+                        store.handle_disconnect();
                     }
                     ClientEvent::Notification(notification) => {
                         store.handle_notification(notification);

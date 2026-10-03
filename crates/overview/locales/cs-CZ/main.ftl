@@ -52,6 +52,16 @@ wallpaper-active = Aktivní
 wallpaper-inactive = Neaktivní
 
 # Agenda
+calendar-status-loading = Načítání kalendářů… Mohou být zobrazeny údaje z mezipaměti.
+calendar-status-recovering = Obnovování spojení s kalendářem. Události mohou být zastaralé.
+calendar-status-unsupported = Některá rozhraní nebo nastavení kalendářů nejsou podporována.
+calendar-status-unknown = Aktuálnost kalendářů není u této verze pluginu známa.
+calendar-status-offline = Některé kalendáře jsou offline. Události mohou být zastaralé.
+calendar-status-attention = Kalendář vyžaduje pozornost. Zkontrolujte nastavení účtů.
+calendar-status-disabled = Některé kalendáře jsou vypnuté.
+calendar-status-view-delivered = Údaje kalendáře byly doručeny; aktuálnost vzdálených dat není ověřena.
+calendar-last-refresh-request = Poslední požadavek na obnovení
+calendar-refresh-failed = Poslední požadavek na obnovení selhal. Zobrazené události mohou být zastaralé.
 agenda-title = Kalendář
 agenda-empty = Žádné nadcházející události
 agenda-next-period = Další období

@@ -1,260 +1,176 @@
-//! GOA D-Bus signal monitoring for account additions, removals, and property changes.
-
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex as StdMutex};
-
-use anyhow::{Context, Result};
-use futures_util::StreamExt;
-use log::{debug, info, warn};
+//! Subscription-before-snapshot signal invalidation, with sender isolation.
+use crate::{dbus, state::GoaState};
+use anyhow::Result;
+use futures_util::{StreamExt, stream::SelectAll};
+use std::sync::{Arc, Mutex};
 use waft_plugin::{EntityNotifier, StateLocker};
-use zbus::Connection;
-use zbus::zvariant::OwnedValue;
+use zbus::{Connection, MatchRule, MessageStream};
 
-use crate::dbus::{self, GOA_ACCOUNT_IFACE, GOA_BUS_NAME, IFACE_OBJECT_MANAGER, IFACE_PROPERTIES};
-use crate::state::GoaState;
-
-/// Monitor GOA D-Bus signals for live account updates.
-///
-/// Handles:
-/// - `PropertiesChanged` on account objects (service toggles, attention state)
-/// - `InterfacesAdded` on ObjectManager (new accounts)
-/// - `InterfacesRemoved` on ObjectManager (removed accounts)
-pub async fn monitor_goa_signals(
-    conn: Connection,
-    state: Arc<StdMutex<GoaState>>,
-    notifier: EntityNotifier,
-) -> Result<()> {
-    let props_rule = zbus::MatchRule::builder()
+/// Owned streams unregister their match rules on drop.
+pub async fn subscribe(conn: &Connection) -> Result<Vec<MessageStream>> {
+    let owner = MatchRule::builder()
         .msg_type(zbus::message::Type::Signal)
-        .sender(GOA_BUS_NAME)?
-        .interface(IFACE_PROPERTIES)?
+        .sender("org.freedesktop.DBus")?
+        .interface("org.freedesktop.DBus")?
+        .member("NameOwnerChanged")?
+        .add_arg(dbus::GOA_BUS_NAME)?
+        .build();
+    let accounts = MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(dbus::GOA_BUS_NAME)?
+        .path_namespace(dbus::GOA_OBJECT_PATH)?
+        .interface(dbus::IFACE_OBJECT_MANAGER)?
+        .build();
+    let properties = MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(dbus::GOA_BUS_NAME)?
+        .path_namespace(dbus::GOA_OBJECT_PATH)?
+        .interface(dbus::IFACE_PROPERTIES)?
         .member("PropertiesChanged")?
+        .add_arg(dbus::GOA_ACCOUNT_IFACE)?
         .build();
-
-    let obj_mgr_rule = zbus::MatchRule::builder()
-        .msg_type(zbus::message::Type::Signal)
-        .sender(GOA_BUS_NAME)?
-        .interface(IFACE_OBJECT_MANAGER)?
-        .build();
-
-    let dbus_proxy = zbus::fdo::DBusProxy::new(&conn)
-        .await
-        .context("Failed to create DBus proxy")?;
-
-    dbus_proxy
-        .add_match_rule(props_rule)
-        .await
-        .context("Failed to add PropertiesChanged match rule")?;
-
-    dbus_proxy
-        .add_match_rule(obj_mgr_rule)
-        .await
-        .context("Failed to add ObjectManager match rule")?;
-
-    info!("[goa] Listening for GOA PropertiesChanged and ObjectManager signals");
-
-    let mut stream = zbus::MessageStream::from(&conn);
-    while let Some(msg) = stream.next().await {
-        let msg = match msg {
-            Ok(m) => m,
-            Err(e) => {
-                warn!("[goa] D-Bus stream error: {e}");
-                continue;
-            }
-        };
-
-        let header = msg.header();
-        let member = match header.member() {
-            Some(m) => m.as_str().to_string(),
-            None => continue,
-        };
-        let iface = match header.interface() {
-            Some(i) => i.as_str().to_string(),
-            None => continue,
-        };
-        let obj_path = match header.path() {
-            Some(p) => p.to_string(),
-            None => continue,
-        };
-
-        let mut changed = false;
-
-        if iface == IFACE_PROPERTIES && member == "PropertiesChanged" {
-            let Ok((prop_iface, props, _invalidated)) =
-                msg.body()
-                    .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
-            else {
-                continue;
-            };
-
-            if prop_iface == GOA_ACCOUNT_IFACE {
-                changed = handle_account_properties_changed(&state, &obj_path, &props);
-            }
-        } else if iface == IFACE_OBJECT_MANAGER && member == "InterfacesAdded" {
-            changed = handle_interfaces_added(&state, &msg);
-        } else if iface == IFACE_OBJECT_MANAGER && member == "InterfacesRemoved" {
-            changed = handle_interfaces_removed(&state, &msg);
-        }
-
-        if changed {
-            notifier.notify();
-        }
-    }
-
-    warn!("[goa] D-Bus signal stream ended -- signal monitoring is now unresponsive");
-
-    Ok(())
+    Ok(vec![
+        MessageStream::for_match_rule(owner, conn, Some(256)).await?,
+        MessageStream::for_match_rule(accounts, conn, Some(256)).await?,
+        MessageStream::for_match_rule(properties, conn, Some(256)).await?,
+    ])
 }
 
-/// Handle PropertiesChanged for a GOA account.
-///
-/// Updates the account in state if any relevant properties changed.
-fn handle_account_properties_changed(
-    state: &Arc<StdMutex<GoaState>>,
-    obj_path: &str,
-    props: &HashMap<String, OwnedValue>,
-) -> bool {
-    let mut st = state.lock_or_recover();
+pub async fn read_signals(
+    streams: Vec<MessageStream>,
+    state: Arc<Mutex<GoaState>>,
+    wake: Arc<tokio::sync::Notify>,
+    changed: Arc<tokio::sync::Notify>,
+    notifier: EntityNotifier,
+) {
+    let mut streams: SelectAll<_> = streams.into_iter().collect();
+    while let Some(result) = streams.next().await {
+        let Ok(message) = result else {
+            break;
+        };
+        if invalidate(&message, &state) {
+            changed.notify_waiters();
+            notifier.notify();
+            wake.notify_one();
+        }
+    }
+    {
+        let mut st = state.lock_or_recover();
+        st.announced_owner = None;
+        st.dependency_lost();
+    }
+    changed.notify_waiters();
+    log::warn!("[goa] signal reader stopped; dependency state will be recovered");
+    notifier.notify();
+    wake.notify_one();
+}
 
-    let account_id = match st.id_for_path(obj_path) {
-        Some(id) => id.to_string(),
-        None => {
-            debug!("[goa] PropertiesChanged for unknown path {obj_path}, ignoring");
+fn invalidate(message: &zbus::Message, state: &Arc<Mutex<GoaState>>) -> bool {
+    let header = message.header();
+    if header.message_type() != zbus::message::Type::Signal {
+        return false;
+    }
+    let sender = header.sender().map(zbus::names::UniqueName::as_str);
+    let iface = header.interface().map(zbus::names::InterfaceName::as_str);
+    let member = header.member().map(zbus::names::MemberName::as_str);
+    let mut st = state.lock_or_recover();
+    if sender == Some("org.freedesktop.DBus")
+        && iface == Some("org.freedesktop.DBus")
+        && member == Some("NameOwnerChanged")
+    {
+        let Ok((name, _old, new)) = message.body().deserialize::<(String, String, String)>() else {
+            return false;
+        };
+        if name != dbus::GOA_BUS_NAME {
             return false;
         }
-    };
-
-    let Some(account) = st.accounts.get_mut(&account_id) else {
-        return false;
-    };
-
-    let mut changed = false;
-
-    // Check AttentionNeeded
-    if let Some(val) = props.get("AttentionNeeded")
-        && let Ok(attention) = bool::try_from(val.clone())
-    {
-        let new_status = dbus::parse_account_status(attention);
-        if account.status != new_status {
-            info!(
-                "[goa] Account {} status: {:?} -> {:?}",
-                account_id, account.status, new_status
-            );
-            account.status = new_status;
-            changed = true;
+        if st.session.as_ref().is_some_and(|s| s.owner == new) {
+            return false;
         }
+        st.announced_owner = (!new.is_empty()).then_some(new);
+        st.dependency_lost();
+        return true;
     }
-
-    // Check IsLocked
-    if let Some(val) = props.get("IsLocked")
-        && let Ok(locked) = bool::try_from(val.clone())
-        && account.locked != locked
+    if !st
+        .session
+        .as_ref()
+        .is_some_and(|s| sender == Some(s.owner.as_str()))
     {
-        info!("[goa] Account {account_id} locked: {locked}");
-        account.locked = locked;
-        changed = true;
+        return false;
     }
-
-    // Check service *Disabled properties
-    for (capitalized, service_id) in dbus::KNOWN_SERVICES {
-        let prop_name = format!("{capitalized}Disabled");
-        if let Some(val) = props.get(&prop_name)
-            && let Ok(disabled) = bool::try_from(val.clone())
+    let path = header
+        .path()
+        .map(zbus::zvariant::ObjectPath::as_str)
+        .unwrap_or("");
+    if !path.starts_with(&format!("{}/", dbus::GOA_OBJECT_PATH)) && path != dbus::GOA_OBJECT_PATH {
+        return false;
+    }
+    if iface == Some(dbus::IFACE_PROPERTIES) && member == Some("PropertiesChanged") {
+        // Identity/property replacement is an action fence, even before its snapshot commits.
+        if let Some(id) = st.id_for_path(path).map(str::to_owned)
+            && let Ok((_, props, invalidated)) = message.body().deserialize::<(
+                String,
+                std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+                Vec<String>,
+            )>()
         {
-            let enabled = !disabled;
-            if let Some(svc) = account.services.iter_mut().find(|s| s.name == *service_id)
-                && svc.enabled != enabled
+            let identity_changed = props
+                .get("Identity")
+                .and_then(|v| String::try_from(v.clone()).ok())
+                .is_some_and(|value| st.identities.get(&id) != Some(&value));
+            let provider_changed = props
+                .get("ProviderType")
+                .and_then(|v| String::try_from(v.clone()).ok())
+                .is_some_and(|value| {
+                    st.accounts
+                        .get(&id)
+                        .is_some_and(|a| a.provider_type != value)
+                });
+            if identity_changed
+                || provider_changed
+                || invalidated
+                    .iter()
+                    .any(|p| matches!(p.as_str(), "Identity" | "ProviderType"))
             {
-                info!("[goa] Account {account_id} service {service_id} enabled: {enabled}");
-                svc.enabled = enabled;
-                changed = true;
+                *st.incarnations.entry(id.clone()).or_default() += 1;
+                *st.replacements.entry(id).or_default() += 1;
             }
         }
+        // Invalidated properties and malformed relevant bodies require a full reread too.
+        st.revision += 1;
+        return true;
     }
-
-    // Check PresentationIdentity
-    if let Some(val) = props.get("PresentationIdentity")
-        && let Ok(identity) = String::try_from(val.clone())
-        && !identity.is_empty()
-        && account.presentation_identity != identity
+    if iface == Some(dbus::IFACE_OBJECT_MANAGER)
+        && matches!(member, Some("InterfacesAdded" | "InterfacesRemoved"))
     {
-        info!(
-            "[goa] Account {} identity: {} -> {}",
-            account_id, account.presentation_identity, identity
-        );
-        account.presentation_identity = identity;
-        changed = true;
+        let object_path = message
+            .body()
+            .deserialize::<(zbus::zvariant::OwnedObjectPath, Vec<String>)>()
+            .ok()
+            .filter(|(_, interfaces)| interfaces.iter().any(|i| i == dbus::GOA_ACCOUNT_IFACE))
+            .map(|(p, _)| p.to_string());
+        if let Some(path) = object_path
+            && let Some(id) = st.id_for_path(&path).map(str::to_owned)
+        {
+            *st.incarnations.entry(id).or_default() += 1;
+        }
+        // Added account properties can reveal a reused identity before a snapshot.
+        if member == Some("InterfacesAdded")
+            && let Ok((_, interfaces)) = message.body().deserialize::<(
+                zbus::zvariant::OwnedObjectPath,
+                std::collections::HashMap<
+                    String,
+                    std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+                >,
+            )>()
+            && let Some(props) = interfaces.get(dbus::GOA_ACCOUNT_IFACE)
+            && let Some((id, _)) = dbus::parse_account(props)
+        {
+            *st.incarnations.entry(id.clone()).or_default() += 1;
+            *st.replacements.entry(id).or_default() += 1;
+        }
+        st.revision += 1;
+        return true;
     }
-
-    // Check ProviderName
-    if let Some(val) = props.get("ProviderName")
-        && let Ok(name) = String::try_from(val.clone())
-        && !name.is_empty()
-        && account.provider_name != name
-    {
-        info!(
-            "[goa] Account {} provider: {} -> {}",
-            account_id, account.provider_name, name
-        );
-        account.provider_name = name;
-        changed = true;
-    }
-
-    changed
-}
-
-/// Handle InterfacesAdded: add new accounts when Account interface appears.
-fn handle_interfaces_added(state: &Arc<StdMutex<GoaState>>, msg: &zbus::Message) -> bool {
-    let Ok((path, interfaces)) = msg.body().deserialize::<(
-        zbus::zvariant::OwnedObjectPath,
-        HashMap<String, HashMap<String, OwnedValue>>,
-    )>() else {
-        return false;
-    };
-
-    let Some(account_props) = interfaces.get(GOA_ACCOUNT_IFACE) else {
-        return false;
-    };
-
-    let path_str = path.to_string();
-
-    let Some((id, account)) = dbus::parse_account(account_props) else {
-        warn!("[goa] InterfacesAdded for {path_str} but missing Id property");
-        return false;
-    };
-
-    let mut st = state.lock_or_recover();
-
-    info!(
-        "[goa] New account appeared: {} ({}) at {}",
-        id, account.provider_name, path_str
-    );
-    st.update_account(id, path_str, account);
-
-    true
-}
-
-/// Handle InterfacesRemoved: remove accounts when Account interface disappears.
-fn handle_interfaces_removed(state: &Arc<StdMutex<GoaState>>, msg: &zbus::Message) -> bool {
-    let Ok((path, interfaces)) = msg
-        .body()
-        .deserialize::<(zbus::zvariant::OwnedObjectPath, Vec<String>)>()
-    else {
-        return false;
-    };
-
-    if !interfaces.iter().any(|i| i == GOA_ACCOUNT_IFACE) {
-        return false;
-    }
-
-    let path_str = path.to_string();
-    let mut st = state.lock_or_recover();
-
-    if let Some(id) = st.remove_by_path(&path_str) {
-        info!("[goa] Account removed: {id} at {path_str}");
-        true
-    } else {
-        debug!("[goa] InterfacesRemoved for unknown path {path_str}, ignoring");
-        false
-    }
+    false
 }

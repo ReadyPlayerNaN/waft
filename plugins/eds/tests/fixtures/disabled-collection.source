@@ -1,0 +1,6 @@
+[Data Source]
+DisplayName=Fixture collection
+[Collection]
+CalendarEnabled=false
+[GNOME Online Accounts]
+AccountId=fixture-account

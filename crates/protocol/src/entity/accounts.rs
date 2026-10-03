@@ -6,6 +6,48 @@ pub const ONLINE_ACCOUNT_ENTITY_TYPE: &str = "online-account";
 /// Entity type identifier for online account providers.
 pub const ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE: &str = "online-account-provider";
 
+/// Explicit readiness of an externally provided snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Availability {
+    Starting,
+    Ready,
+    Recovering,
+    Unavailable,
+    Unsupported,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+/// Outcome of dispatching an account-management UI, not credential repair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum AccountSettingsLaunch {
+    Idle,
+    Accepted,
+    Failed,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+pub const ONLINE_ACCOUNTS_STATUS_ENTITY_TYPE: &str = "online-accounts-status";
+
+/// Account and provider discovery have independent health.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct OnlineAccountsStatus {
+    pub accounts: Availability,
+    pub providers: Availability,
+    pub last_accounts_snapshot: Option<i64>,
+    pub last_providers_snapshot: Option<i64>,
+    pub accounts_error: Option<crate::error::ProtocolError>,
+    pub providers_error: Option<crate::error::ProtocolError>,
+    pub launch: AccountSettingsLaunch,
+    pub launch_error: Option<crate::error::ProtocolError>,
+    pub last_launch: Option<i64>,
+    pub launch_request_id: Option<uuid::Uuid>,
+}
+
 /// Account health status derived from GOA D-Bus properties.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccountStatus {
@@ -52,6 +94,9 @@ pub struct OnlineAccount {
     pub id: String,
     /// Provider display name (e.g. "Google", "Nextcloud").
     pub provider_name: String,
+    /// Authoritative GOA provider identifier; empty for legacy plugins.
+    #[serde(default)]
+    pub provider_type: String,
     /// User-facing account identity (e.g. "user@gmail.com").
     pub presentation_identity: String,
     /// Account health status.
@@ -72,6 +117,7 @@ mod tests {
         let account = OnlineAccount {
             id: "account_1234567890".to_string(),
             provider_name: "Google".to_string(),
+            provider_type: "google".to_string(),
             presentation_identity: "user@gmail.com".to_string(),
             status: AccountStatus::Active,
             services: vec![
@@ -100,6 +146,7 @@ mod tests {
         let account = OnlineAccount {
             id: "account_9999".to_string(),
             provider_name: "Microsoft".to_string(),
+            provider_type: "ms_graph".to_string(),
             presentation_identity: "user@outlook.com".to_string(),
             status: AccountStatus::CredentialsNeeded,
             services: vec![],
@@ -115,6 +162,7 @@ mod tests {
         let account = OnlineAccount {
             id: "account_locked".to_string(),
             provider_name: "Nextcloud".to_string(),
+            provider_type: "owncloud".to_string(),
             presentation_identity: "admin@company.example".to_string(),
             status: AccountStatus::NeedsAttention,
             services: vec![ServiceInfo {

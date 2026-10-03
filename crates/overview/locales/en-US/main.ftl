@@ -52,6 +52,16 @@ wallpaper-active = Active
 wallpaper-inactive = Inactive
 
 # Agenda
+calendar-status-loading = Loading calendar views… Cached events may be displayed.
+calendar-status-recovering = Calendar connection is recovering. Displayed events may be outdated.
+calendar-status-unsupported = Some calendar APIs or source settings are unsupported.
+calendar-status-unknown = Calendar freshness is unknown with this plugin version.
+calendar-status-offline = Some calendars are offline. Displayed events may be outdated.
+calendar-status-attention = A calendar needs attention. Check account settings.
+calendar-status-disabled = Some calendars are disabled.
+calendar-status-view-delivered = Calendar view delivered; remote freshness is not verified.
+calendar-last-refresh-request = Last refresh request
+calendar-refresh-failed = Last refresh request failed. Displayed events may be outdated.
 agenda-title = Agenda
 agenda-empty = No upcoming events
 agenda-next-period = Next period

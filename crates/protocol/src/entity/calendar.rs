@@ -6,7 +6,53 @@ pub const ENTITY_TYPE: &str = "calendar-event";
 /// Entity type identifier for the calendar sync control singleton.
 pub const CALENDAR_SYNC_ENTITY_TYPE: &str = "calendar-sync";
 
-/// Represents the sync state of the EDS calendar backend.
+pub const CALENDAR_SOURCE_STATUS_ENTITY_TYPE: &str = "calendar-source-status";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum RefreshOutcome {
+    Never,
+    Queued,
+    Accepted,
+    PartialFailure,
+    Failed,
+    Unsupported,
+    NoBackends,
+    Debounced,
+    Cancelled,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum CalendarSourceState {
+    Pending,
+    Opening,
+    Loading,
+    Watching,
+    RetryWait,
+    Disabled,
+    Unavailable,
+    Unsupported,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct CalendarSourceStatus {
+    pub source_uid: String,
+    pub display_name: String,
+    pub goa_account_id: Option<String>,
+    pub state: CalendarSourceState,
+    pub online: Option<bool>,
+    pub last_view_snapshot: Option<i64>,
+    pub last_refresh_attempt: Option<i64>,
+    pub last_refresh_accepted: Option<i64>,
+    pub last_event_delivery: Option<i64>,
+    pub error: Option<crate::error::ProtocolError>,
+}
+
+/// Represents request dispatch, not completed remote synchronization.
 ///
 /// Exposed as a singleton entity by the EDS plugin.
 /// Accepts a `"refresh"` action to trigger an immediate backend sync.
@@ -17,12 +63,22 @@ pub struct CalendarSync {
     /// True while a calendar refresh is actively in progress.
     #[serde(default)]
     pub syncing: bool,
+    #[serde(default)]
+    pub availability: super::accounts::Availability,
+    #[serde(default)]
+    pub last_snapshot: Option<i64>,
+    #[serde(default)]
+    pub refresh_outcome: RefreshOutcome,
+    #[serde(default)]
+    pub error: Option<crate::error::ProtocolError>,
 }
 
 /// A calendar event from EDS (Evolution Data Server).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalendarEvent {
     pub uid: String,
+    #[serde(default)]
+    pub source_uid: String,
     pub summary: String,
     pub start_time: i64,
     pub end_time: i64,
@@ -57,6 +113,7 @@ mod tests {
     fn serde_roundtrip() {
         let event = CalendarEvent {
             uid: "abc-123".to_string(),
+            source_uid: "fixture".into(),
             summary: "Team Standup".to_string(),
             start_time: 1707811200,
             end_time: 1707813000,
@@ -85,6 +142,7 @@ mod tests {
     fn serde_roundtrip_all_day() {
         let event = CalendarEvent {
             uid: "def-456".to_string(),
+            source_uid: "fixture".into(),
             summary: "Holiday".to_string(),
             start_time: 1707696000,
             end_time: 1707782400,
@@ -128,6 +186,7 @@ mod tests {
         let sync = CalendarSync {
             last_refresh: Some(1_000_000),
             syncing: true,
+            ..Default::default()
         };
         let json = serde_json::to_value(&sync).expect("expected value");
         let decoded: CalendarSync = serde_json::from_value(json).expect("expected value");

@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use log::{debug, warn};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -49,6 +49,7 @@ const ENTITY_TYPES: &[&str] = &[
     entity::notification::DND_ENTITY_TYPE,
     entity::calendar::ENTITY_TYPE,
     entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+    entity::calendar::CALENDAR_SOURCE_STATUS_ENTITY_TYPE,
     entity::storage::BACKUP_METHOD_ENTITY_TYPE,
     entity::app::ENTITY_TYPE,
 ];
@@ -60,9 +61,56 @@ mod tests {
     use waft_protocol::entity;
 
     #[test]
+    fn calendar_refresh_intent_survives_late_singleton_and_failed_dispatch() {
+        use std::{
+            cell::{Cell, RefCell},
+            rc::Rc,
+        };
+        let urn = RefCell::new(None);
+        let pending = Cell::new(true);
+        let calls = Rc::new(Cell::new(0));
+        let seen = calls.clone();
+        let accepted: waft_client::EntityActionCallback = Rc::new(move |_, action, params| {
+            assert_eq!(action, "refresh");
+            assert_eq!(params, serde_json::Value::Null);
+            seen.set(seen.get() + 1);
+            Some(uuid::Uuid::new_v4())
+        });
+        super::dispatch_calendar_refresh(&urn, &pending, &accepted);
+        assert!(pending.get());
+        assert_eq!(calls.get(), 0);
+        *urn.borrow_mut() = Some(waft_protocol::Urn::new("eds", "calendar-sync", "singleton"));
+        let rejected: waft_client::EntityActionCallback = Rc::new(|_, _, _| None);
+        super::dispatch_calendar_refresh(&urn, &pending, &rejected);
+        assert!(pending.get());
+        super::dispatch_calendar_refresh(&urn, &pending, &accepted);
+        assert!(!pending.get());
+        assert_eq!(calls.get(), 1);
+        super::dispatch_calendar_refresh(&urn, &pending, &accepted);
+        assert_eq!(
+            calls.get(),
+            1,
+            "one retained intent, not one request per status signal"
+        );
+    }
+    #[test]
     fn entity_types_include_power_profiles() {
         assert!(ENTITY_TYPES.contains(&entity::power::ENTITY_TYPE));
         assert!(ENTITY_TYPES.contains(&entity::power::POWER_PROFILE_ENTITY_TYPE));
+    }
+}
+
+fn dispatch_calendar_refresh(
+    urn: &RefCell<Option<Urn>>,
+    pending: &Cell<bool>,
+    callback: &EntityActionCallback,
+) {
+    if pending.get()
+        && let Some(urn) = urn.borrow().clone()
+        && callback(urn, "refresh".into(), serde_json::Value::Null).is_some()
+    {
+        pending.set(false);
+        debug!("[app] Queued calendar refresh request");
     }
 }
 
@@ -349,11 +397,14 @@ pub async fn setup() -> Result<adw::Application> {
             // URN of the calendar-sync singleton entity, captured when first received.
             // Used to send the "refresh" action unconditionally when the overlay opens.
             // The plugin (waft-eds-daemon) is authoritative for debounce logic.
-            let calendar_sync_urn: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+            let calendar_sync_urn: Rc<RefCell<Option<Urn>>> = Rc::new(RefCell::new(None));
+            let calendar_refresh_pending = Rc::new(Cell::new(false));
 
             // Subscribe to calendar-sync entities to capture the singleton URN.
             {
                 let urn_slot = calendar_sync_urn.clone();
+                let pending = calendar_refresh_pending.clone();
+                let callback = entity_action_callback.clone();
                 let store_clone = entity_store.clone();
                 let capture_urn = {
                     let urn_slot = urn_slot.clone();
@@ -364,7 +415,8 @@ pub async fn setup() -> Result<adw::Application> {
                                 entity::calendar::CALENDAR_SYNC_ENTITY_TYPE,
                             );
                         if let Some((urn, _)) = entities.first() {
-                            *urn_slot.borrow_mut() = Some(urn.to_string());
+                            *urn_slot.borrow_mut() = Some(urn.clone());
+                            dispatch_calendar_refresh(&urn_slot, &pending, &callback);
                         }
                     }
                 };
@@ -386,6 +438,7 @@ pub async fn setup() -> Result<adw::Application> {
                     let progress = main_window.animation_progress.clone();
                     let animating_hide = main_window.animating_hide.clone();
                     let urn_for_show = calendar_sync_urn.clone();
+                    let pending_for_show = calendar_refresh_pending.clone();
                     let action_cb_for_show = entity_action_callback.clone();
                     glib::spawn_future_local(async move {
                         while let Ok(input) = rx.recv().await {
@@ -402,18 +455,12 @@ pub async fn setup() -> Result<adw::Application> {
 
                                     // Trigger a calendar backend refresh unconditionally.
                                     // The EDS plugin is authoritative for debounce logic.
-                                    if let Some(urn_str) = urn_for_show.borrow().as_deref() {
-                                        if let Ok(urn) = waft_protocol::Urn::parse(urn_str) {
-                                            action_cb_for_show(
-                                                urn,
-                                                "refresh".to_string(),
-                                                serde_json::Value::Null,
-                                            );
-                                            debug!("[app] Triggered calendar sync refresh");
-                                        } else {
-                                            warn!("[app] Invalid calendar-sync URN: {urn_str}");
-                                        }
-                                    }
+                                    pending_for_show.set(true);
+                                    dispatch_calendar_refresh(
+                                        &urn_for_show,
+                                        &pending_for_show,
+                                        &action_cb_for_show,
+                                    );
                                 }
                                 MainWindowInput::HideOverlay => {
                                     if window.is_visible() && !animating_hide.get() {
@@ -445,18 +492,12 @@ pub async fn setup() -> Result<adw::Application> {
 
                                         // Trigger a calendar backend refresh unconditionally.
                                         // The EDS plugin is authoritative for debounce logic.
-                                        if let Some(urn_str) = urn_for_show.borrow().as_deref() {
-                                            if let Ok(urn) = waft_protocol::Urn::parse(urn_str) {
-                                                action_cb_for_show(
-                                                    urn,
-                                                    "refresh".to_string(),
-                                                    serde_json::Value::Null,
-                                                );
-                                                debug!("[app] Triggered calendar sync refresh");
-                                            } else {
-                                                warn!("[app] Invalid calendar-sync URN: {urn_str}");
-                                            }
-                                        }
+                                        pending_for_show.set(true);
+                                        dispatch_calendar_refresh(
+                                            &urn_for_show,
+                                            &pending_for_show,
+                                            &action_cb_for_show,
+                                        );
                                     }
                                 }
                                 MainWindowInput::StopApp => {
@@ -517,6 +558,9 @@ pub async fn setup() -> Result<adw::Application> {
                     let store_for_events = entity_store.clone();
                     let toast_manager = toast_manager.clone();
                     let clip_for_events = main_window.clip.clone();
+                    let urn_for_connect = calendar_sync_urn.clone();
+                    let pending_for_connect = calendar_refresh_pending.clone();
+                    let refresh_callback = entity_action_callback.clone();
                     // Start with UI disabled — the connection task will send Connected
                     // once the daemon is reachable.
                     clip_for_events.set_sensitive(false);
@@ -556,11 +600,17 @@ pub async fn setup() -> Result<adw::Application> {
                                     log::info!("[app] daemon connected, enabling UI");
                                     action_gate.clear();
                                     clip_for_events.set_sensitive(true);
+                                    dispatch_calendar_refresh(
+                                        &urn_for_connect,
+                                        &pending_for_connect,
+                                        &refresh_callback,
+                                    );
                                 }
                                 ClientEvent::Disconnected => {
                                     log::info!("[app] daemon disconnected, disabling UI");
                                     action_gate.clear();
                                     clip_for_events.set_sensitive(false);
+                                    store_for_events.handle_disconnect();
                                 }
                             }
                         }

@@ -1,0 +1,26 @@
+<!-- Minimal signatures from GNOME gnome-online-accounts
+     c142281db4c444359c10b343244bf5eebf5e2535, data/dbus-interfaces.xml.
+     Base disabled properties explicitly do not establish provider capabilities. -->
+<node>
+  <interface name="org.gnome.OnlineAccounts.Account">
+    <property name="Id" type="s" access="read"/>
+    <property name="ProviderType" type="s" access="read"/>
+    <property name="ProviderName" type="s" access="read"/>
+    <property name="Identity" type="s" access="read"/>
+    <property name="PresentationIdentity" type="s" access="read"/>
+    <property name="IsLocked" type="b" access="read"/>
+    <property name="AttentionNeeded" type="b" access="read"/>
+    <property name="MailDisabled" type="b" access="readwrite"/>
+    <property name="CalendarDisabled" type="b" access="readwrite"/>
+    <property name="ContactsDisabled" type="b" access="readwrite"/>
+    <property name="ChatDisabled" type="b" access="readwrite"/>
+    <property name="FilesDisabled" type="b" access="readwrite"/>
+    <property name="MusicDisabled" type="b" access="readwrite"/>
+    <property name="PhotosDisabled" type="b" access="readwrite"/>
+    <property name="TicketingDisabled" type="b" access="readwrite"/>
+    <method name="Remove"/>
+  </interface>
+  <interface name="org.gnome.OnlineAccounts.Manager">
+    <method name="IsSupportedProvider"><arg name="provider_type" type="s" direction="in"/><arg name="is_supported" type="b" direction="out"/></method>
+  </interface>
+</node>

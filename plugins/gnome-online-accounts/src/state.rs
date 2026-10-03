@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use waft_plugin::{Entity, Urn};
 use waft_protocol::entity::accounts::{
-    ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE, OnlineAccount,
-    OnlineAccountProvider,
+    ONLINE_ACCOUNT_ENTITY_TYPE, ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
+    ONLINE_ACCOUNTS_STATUS_ENTITY_TYPE, OnlineAccount, OnlineAccountProvider, OnlineAccountsStatus,
 };
 
 /// Internal state tracking all GOA accounts.
@@ -17,9 +17,73 @@ pub struct GoaState {
     pub paths: HashMap<String, String>,
     /// Available GOA providers.
     pub providers: Vec<OnlineAccountProvider>,
+    pub status: OnlineAccountsStatus,
+    pub(crate) session: Option<crate::lifecycle::Session>,
+    pub(crate) revision: u64,
+    pub(crate) committed_revision: u64,
+    pub(crate) announced_owner: Option<String>,
+    pub(crate) generation: u64,
+    pub(crate) incarnations: HashMap<String, u64>,
+    pub(crate) replacements: HashMap<String, u64>,
+    pub(crate) identities: HashMap<String, String>,
+    pub(crate) unsupported_providers: std::collections::BTreeSet<String>,
+    pub(crate) capabilities: crate::dbus::CapabilityHistory,
+    pub(crate) busy: std::collections::HashSet<String>,
+    pub(crate) launch_targets: std::collections::HashSet<String>,
 }
 
 impl GoaState {
+    pub(crate) fn dependency_lost(&mut self) {
+        use waft_protocol::entity::accounts::Availability;
+        self.generation += 1;
+        self.session = None;
+        self.status.accounts = if self.status.last_accounts_snapshot.is_some() {
+            Availability::Recovering
+        } else {
+            Availability::Unavailable
+        };
+        self.status.providers = if self.status.last_providers_snapshot.is_some() {
+            Availability::Recovering
+        } else {
+            Availability::Unavailable
+        };
+    }
+
+    pub(crate) fn replace_accounts(
+        &mut self,
+        snapshot: crate::dbus::AccountSnapshot,
+        capabilities: crate::dbus::CapabilityHistory,
+        identities: HashMap<String, String>,
+    ) {
+        let next: std::collections::HashSet<_> =
+            snapshot.iter().map(|(id, _, _)| id.clone()).collect();
+        for id in self.accounts.keys().filter(|id| !next.contains(*id)) {
+            *self.incarnations.entry(id.clone()).or_default() += 1;
+        }
+        for (id, path, account) in &snapshot {
+            if self.paths.get(id).is_some_and(|old| old != path)
+                || self.accounts.get(id).is_some_and(|old| {
+                    old.provider_type != account.provider_type
+                        || old.presentation_identity != account.presentation_identity
+                })
+                || self
+                    .identities
+                    .get(id)
+                    .is_some_and(|old| identities.get(id) != Some(old))
+            {
+                *self.incarnations.entry(id.clone()).or_default() += 1;
+                *self.replacements.entry(id.clone()).or_default() += 1;
+            }
+        }
+        self.identities = identities;
+        self.accounts.clear();
+        self.paths.clear();
+        for (id, path, account) in snapshot {
+            self.update_account(id, path, account);
+        }
+        self.capabilities = capabilities;
+    }
+
     /// Insert or update an account and its D-Bus path.
     pub fn update_account(&mut self, id: String, path: String, account: OnlineAccount) {
         self.accounts.insert(id.clone(), account);
@@ -86,6 +150,16 @@ impl GoaState {
             ));
         }
 
+        entities.push(Entity::new(
+            Urn::new(
+                "gnome-online-accounts",
+                ONLINE_ACCOUNTS_STATUS_ENTITY_TYPE,
+                "singleton",
+            ),
+            ONLINE_ACCOUNTS_STATUS_ENTITY_TYPE,
+            &self.status,
+        ));
+
         // Sort by URN for stable ordering
         entities.sort_by_key(|a| a.urn.to_string());
         entities
@@ -101,6 +175,7 @@ mod tests {
         OnlineAccount {
             id: id.to_string(),
             provider_name: provider.to_string(),
+            provider_type: String::new(),
             presentation_identity: format!("{id}@example.com"),
             status: AccountStatus::Active,
             services: vec![ServiceInfo {
@@ -205,7 +280,7 @@ mod tests {
         }];
 
         let entities = state.get_entities();
-        assert_eq!(entities.len(), 2);
+        assert_eq!(entities.len(), 3);
 
         // Entities are sorted by URN string
         let entity_types: Vec<&str> = entities.iter().map(|e| e.entity_type.as_str()).collect();
@@ -216,7 +291,7 @@ mod tests {
     #[test]
     fn get_entities_empty_state() {
         let state = GoaState::default();
-        assert!(state.get_entities().is_empty());
+        assert_eq!(state.get_entities().len(), 1);
     }
 
     #[test]
@@ -231,6 +306,7 @@ mod tests {
         let updated = OnlineAccount {
             id: "acc1".to_string(),
             provider_name: "Google".to_string(),
+            provider_type: "google".to_string(),
             presentation_identity: "new@gmail.com".to_string(),
             status: AccountStatus::CredentialsNeeded,
             services: vec![],

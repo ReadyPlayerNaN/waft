@@ -3,6 +3,7 @@ pub mod audio_sliders;
 pub mod battery;
 pub mod brightness_sliders;
 pub mod calendar;
+pub mod calendar_status;
 pub mod clock;
 pub mod entity_keyed_base;
 pub mod events;

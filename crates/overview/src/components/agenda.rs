@@ -500,12 +500,12 @@ impl AgendaComponent {
             // No past/future split, no day headers, no revealer usage.
             *now_divider.borrow_mut() = None;
 
-            for (_urn, event) in &entities {
-                let occurrence_key = format!("{}@{}", event.uid, event.start_time);
+            for (urn, event) in &entities {
+                let occurrence_key = urn.to_string();
                 let is_past = event.end_time <= now;
                 let is_ongoing = event.start_time <= now && now < event.end_time;
 
-                let card = Rc::new(AgendaCard::new(event, is_past, is_ongoing, menu_store));
+                let card = Rc::new(AgendaCard::new(urn, event, is_past, is_ongoing, menu_store));
 
                 let menu_store_toggle = menu_store.clone();
                 card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
@@ -524,10 +524,10 @@ impl AgendaComponent {
                 .partition(|(_, event)| event.end_time <= now);
 
             // Render past events into past_box (inside revealer)
-            for (_urn, event) in &past_events {
-                let occurrence_key = format!("{}@{}", event.uid, event.start_time);
+            for (urn, event) in &past_events {
+                let occurrence_key = urn.to_string();
 
-                let card = Rc::new(AgendaCard::new(event, true, false, menu_store));
+                let card = Rc::new(AgendaCard::new(urn, event, true, false, menu_store));
 
                 let menu_store_toggle = menu_store.clone();
                 card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
@@ -587,11 +587,11 @@ impl AgendaComponent {
                     .build();
                 content_box.append(&day_label);
 
-                for (_urn, event) in day_events {
-                    let occurrence_key = format!("{}@{}", event.uid, event.start_time);
+                for (urn, event) in day_events {
+                    let occurrence_key = urn.to_string();
                     let is_ongoing = event.start_time <= now && now < event.end_time;
 
-                    let card = Rc::new(AgendaCard::new(event, false, is_ongoing, menu_store));
+                    let card = Rc::new(AgendaCard::new(urn, event, false, is_ongoing, menu_store));
 
                     let menu_store_toggle = menu_store.clone();
                     card.connect_output(move |AgendaCardOutput::ToggleExpand(menu_id)| {
@@ -632,6 +632,7 @@ mod tests {
         let now = chrono::Local::now().timestamp();
         let event = entity::calendar::CalendarEvent {
             uid: "test-uid".to_string(),
+            source_uid: "fixture".into(),
             summary: "Test event".to_string(),
             start_time: now - 3600,
             end_time: now + end_offset_secs,
@@ -672,6 +673,7 @@ mod tests {
         let now = chrono::Local::now().timestamp();
         let event = entity::calendar::CalendarEvent {
             uid: "future-uid".to_string(),
+            source_uid: "fixture".into(),
             summary: "Future event".to_string(),
             start_time: now + 120,
             end_time: now + 600,

@@ -1,0 +1,33 @@
+<!-- Minimal wire contracts derived from GNOME evolution-data-server
+     c4f57c61c00505ce778e0bee175501675d591298, src/private/*.xml.
+     Signatures only; no live source/account data or credential APIs. -->
+<node>
+  <interface name="org.gnome.evolution.dataserver.Source">
+    <property name="UID" type="s" access="read"/>
+    <property name="Data" type="s" access="read"/>
+    <property name="ConnectionStatus" type="s" access="readwrite"/>
+    <signal name="CredentialsRequired">
+      <arg name="reason" type="s"/><arg name="certificate_pem" type="s"/>
+      <arg name="certificate_errors" type="s"/><arg name="dbus_error_name" type="s"/>
+      <arg name="dbus_error_message" type="s"/>
+    </signal>
+  </interface>
+  <interface name="org.gnome.evolution.dataserver.CalendarFactory">
+    <method name="OpenCalendar"><arg name="source_uid" type="s" direction="in"/><arg name="object_path" type="s" direction="out"/><arg name="bus_name" type="s" direction="out"/></method>
+  </interface>
+  <interface name="org.gnome.evolution.dataserver.Calendar">
+    <property name="Online" type="b" access="read"/>
+    <property name="Capabilities" type="as" access="read"/>
+    <signal name="Error"><arg name="error_message" type="s"/></signal>
+    <method name="Open"><arg name="properties" type="as" direction="out"/></method>
+    <method name="Close"/><method name="Refresh"/>
+    <method name="GetView"><arg name="query" type="s" direction="in"/><arg name="object_path" type="o" direction="out"/></method>
+  </interface>
+  <interface name="org.gnome.evolution.dataserver.CalendarView">
+    <method name="Start"/><method name="Stop"/><method name="Dispose"/>
+    <signal name="ObjectsAdded"><arg name="objects" type="as"/></signal>
+    <signal name="ObjectsModified"><arg name="objects" type="as"/></signal>
+    <signal name="ObjectsRemoved"><arg name="uids" type="as"/></signal>
+    <signal name="Complete"><arg name="error_name" type="s"/><arg name="error_message" type="s"/></signal>
+  </interface>
+</node>

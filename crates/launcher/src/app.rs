@@ -373,6 +373,7 @@ pub fn run() -> anyhow::Result<()> {
                     }
                     ClientEvent::Disconnected => {
                         log::info!("[launcher] disconnected from daemon");
+                        store_for_events.handle_disconnect();
                     }
                 }
             }

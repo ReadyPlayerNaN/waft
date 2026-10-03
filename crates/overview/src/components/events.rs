@@ -141,7 +141,9 @@ impl EventsComponent {
             gtk::glib::idle_add_local_once(update_spinner);
         }
 
+        let health = super::calendar_status::widget(store, &container);
         container.append(&header);
+        container.append(&health);
         container.append(&calendar_revealer);
         container.append(agenda.widget());
 

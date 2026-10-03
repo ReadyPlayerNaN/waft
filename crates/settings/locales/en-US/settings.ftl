@@ -615,6 +615,22 @@ online-accounts-add-account = Add Account…
 online-accounts-add-account-title = Add Account
 online-accounts-add-account-cancel = Cancel
 online-accounts-goa-not-running = GNOME Online Accounts service is not available.
+online-accounts-loading = Loading online accounts…
+online-accounts-recovering = Reconnecting to online accounts. Displayed data may be outdated.
+online-accounts-unknown = Account availability is unknown with this plugin version.
+online-accounts-unsupported = This account service does not support the required operation.
+online-accounts-providers-unavailable = Accounts are available, but provider discovery is not ready.
+online-accounts-providers-loading = Accounts are available; loading supported providers…
+online-accounts-providers-unsupported = Accounts are available, but provider discovery is unsupported. Use system account settings.
+online-accounts-open-settings = Open account settings
+online-accounts-additional-services = Manage additional services and sign-in problems in account settings.
+online-accounts-action-pending = Applying account operation…
+online-accounts-action-failed = Account operation could not be confirmed. Current state will be reloaded.
+online-accounts-action-timeout = Account operation timed out. Check the current state before trying again.
+online-accounts-launch-failed = Account settings could not be opened. Check that GNOME Settings is installed and a graphical session is available.
+online-accounts-locked = This account is administrator-locked.
+online-accounts-remove-confirm-title = Remove account?
+online-accounts-remove-confirm-body = This removes the account from this computer. It does not delete the account at its provider.
 
 # Scheduler
 scheduler-title = Scheduled Tasks

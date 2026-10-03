@@ -610,6 +610,22 @@ online-accounts-add-account = Přidat účet…
 online-accounts-add-account-title = Přidat účet
 online-accounts-add-account-cancel = Zrušit
 online-accounts-goa-not-running = Služba GNOME Online Accounts není dostupná.
+online-accounts-loading = Načítání online účtů…
+online-accounts-recovering = Obnovování spojení s online účty. Zobrazené údaje mohou být zastaralé.
+online-accounts-unknown = Dostupnost účtů není u této verze pluginu známa.
+online-accounts-unsupported = Služba účtů nepodporuje požadovanou operaci.
+online-accounts-providers-unavailable = Účty jsou dostupné, ale načítání poskytovatelů není dokončeno.
+online-accounts-providers-loading = Účty jsou dostupné; načítání podporovaných poskytovatelů…
+online-accounts-providers-unsupported = Účty jsou dostupné, ale zjišťování poskytovatelů není podporováno. Použijte systémové nastavení účtů.
+online-accounts-open-settings = Otevřít nastavení účtů
+online-accounts-additional-services = Další služby a problémy s přihlášením spravujte v nastavení účtů.
+online-accounts-action-pending = Provádění operace s účtem…
+online-accounts-action-failed = Výsledek operace nelze potvrdit. Aktuální stav bude znovu načten.
+online-accounts-action-timeout = Vypršel čas operace. Před dalším pokusem zkontrolujte aktuální stav.
+online-accounts-launch-failed = Nastavení účtů nelze otevřít. Ověřte instalaci Nastavení GNOME a dostupnost grafického sezení.
+online-accounts-locked = Tento účet je uzamčen správcem.
+online-accounts-remove-confirm-title = Odebrat účet?
+online-accounts-remove-confirm-body = Účet bude odebrán z tohoto počítače. U poskytovatele nebude smazán.
 
 # Plánovač
 scheduler-title = Plánované úlohy

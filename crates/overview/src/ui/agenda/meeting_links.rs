@@ -119,6 +119,7 @@ mod tests {
     fn make_event(description: Option<&str>, location: Option<&str>) -> CalendarEvent {
         CalendarEvent {
             uid: "test".to_string(),
+            source_uid: "fixture".into(),
             summary: "Test".to_string(),
             start_time: 0,
             end_time: 3600,

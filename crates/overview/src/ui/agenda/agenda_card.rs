@@ -17,9 +17,22 @@ use super::format::format_time_range;
 use super::meeting_button::MeetingButton;
 use super::meeting_links::extract_meeting_links;
 
-/// Generate an occurrence key for an event (uid@start_time).
-fn occurrence_key(event: &CalendarEvent) -> String {
-    format!("{}@{}", event.uid, event.start_time)
+/// The complete URN separates equal UID/time pairs in different calendars/plugins.
+fn menu_id(urn: &waft_protocol::Urn) -> String {
+    format!("agenda-detail:{urn}")
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    #[test]
+    fn independent_sources_and_plugins_do_not_share_expansion() {
+        let a = waft_protocol::Urn::new("eds", "calendar-event", "v2::a::same::1");
+        let b = waft_protocol::Urn::new("eds", "calendar-event", "v2::b::same::1");
+        let other = waft_protocol::Urn::new("other", "calendar-event", "v2::a::same::1");
+        assert_ne!(menu_id(&a), menu_id(&b));
+        assert_ne!(menu_id(&a), menu_id(&other));
+    }
 }
 
 /// Check if an event has details worth showing in expanded view.
@@ -52,6 +65,7 @@ pub struct AgendaCard {
 
 impl AgendaCard {
     pub fn new(
+        urn: &waft_protocol::Urn,
         event: &CalendarEvent,
         is_past: bool,
         is_ongoing: bool,
@@ -115,7 +129,7 @@ impl AgendaCard {
             top_row.append(meeting_btn.widget());
         }
 
-        let menu_id = format!("agenda-detail:{}", occurrence_key(event));
+        let menu_id = menu_id(urn);
         let on_output: Callback<AgendaCardOutput> = Rc::new(RefCell::new(None));
 
         let mut menu_chevron_out = None;

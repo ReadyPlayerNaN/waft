@@ -8,7 +8,7 @@
 //! All access is GTK main thread only (`RefCell`, not `RwLock`).
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use uuid::Uuid;
 
@@ -25,6 +25,8 @@ type SubscriberMap = RefCell<HashMap<String, Vec<Rc<dyn Fn()>>>>;
 
 /// Type alias for action error callback list to reduce complexity.
 type ActionErrorCallbacks = RefCell<Vec<Rc<dyn Fn(Uuid, String)>>>;
+type ActionErrorDetailsCallbacks =
+    RefCell<Vec<Rc<dyn Fn(Uuid, waft_protocol::error::ProtocolError)>>>;
 
 /// Type alias for action success callback list to reduce complexity.
 type ActionSuccessCallbacks = RefCell<Vec<Rc<dyn Fn(Uuid, Option<serde_json::Value>)>>>;
@@ -49,8 +51,12 @@ pub struct EntityStore {
     subscribers: SubscriberMap,
     /// Callbacks invoked when an action error is received from the daemon.
     action_error_callbacks: ActionErrorCallbacks,
+    action_error_details_callbacks: ActionErrorDetailsCallbacks,
     /// Callbacks invoked when an action succeeds, optionally carrying response data.
     action_success_callbacks: ActionSuccessCallbacks,
+    disconnect_callbacks: RefCell<Vec<Rc<dyn Fn()>>>,
+    /// Cached values awaiting confirmation from a replacement transport.
+    unconfirmed: RefCell<HashSet<String>>,
 }
 
 impl EntityStore {
@@ -59,7 +65,10 @@ impl EntityStore {
             cache: RefCell::new(HashMap::new()),
             subscribers: RefCell::new(HashMap::new()),
             action_error_callbacks: RefCell::new(Vec::new()),
+            action_error_details_callbacks: RefCell::new(Vec::new()),
             action_success_callbacks: RefCell::new(Vec::new()),
+            disconnect_callbacks: RefCell::new(Vec::new()),
+            unconfirmed: RefCell::new(HashSet::new()),
         }
     }
 
@@ -81,9 +90,16 @@ impl EntityStore {
                 }
             }
             AppNotification::ActionError {
-                action_id, error, ..
+                action_id,
+                error,
+                error_details,
             } => {
                 log::warn!("[entity-store] action {action_id} failed: {error}");
+                let details = error_details
+                    .unwrap_or_else(|| waft_protocol::error::ProtocolError::action(error.clone()));
+                for cb in self.action_error_details_callbacks.borrow().iter() {
+                    cb(action_id, details.clone());
+                }
                 for cb in self.action_error_callbacks.borrow().iter() {
                     cb(action_id, error.clone());
                 }
@@ -103,12 +119,29 @@ impl EntityStore {
                 log::debug!("[entity-store] received DescribeResponse (ignored by entity store)");
             }
             AppNotification::StatusComplete { entity_type } => {
-                log::debug!("[entity-store] received StatusComplete for {entity_type} (ignored)");
+                self.complete_reconnection_snapshot(&entity_type);
             }
             AppNotification::ProtocolError { error } => {
                 log::warn!("[entity-store] received ProtocolError: {}", error.message);
             }
         }
+    }
+
+    /// Release pending action owners without treating a transport failure as entity deletion.
+    pub fn handle_disconnect(&self) {
+        self.unconfirmed
+            .borrow_mut()
+            .extend(self.cache.borrow().keys().cloned());
+        let callbacks = self.disconnect_callbacks.borrow().clone();
+        for callback in callbacks {
+            callback();
+        }
+    }
+
+    pub fn on_disconnect<F: Fn() + 'static>(&self, callback: F) {
+        self.disconnect_callbacks
+            .borrow_mut()
+            .push(Rc::new(callback));
     }
 
     /// Subscribe to changes for a specific entity type.
@@ -132,6 +165,16 @@ impl EntityStore {
     /// The callback receives the action UUID and error message string.
     pub fn on_action_error<F: Fn(Uuid, String) + 'static>(&self, callback: F) {
         self.action_error_callbacks
+            .borrow_mut()
+            .push(Rc::new(callback));
+    }
+
+    /// Structured action failures, including a fallback for legacy plugins.
+    pub fn on_action_error_details<F: Fn(Uuid, waft_protocol::error::ProtocolError) + 'static>(
+        &self,
+        callback: F,
+    ) {
+        self.action_error_details_callbacks
             .borrow_mut()
             .push(Rc::new(callback));
     }
@@ -207,11 +250,14 @@ impl EntityStore {
     fn handle_entity_updated(&self, urn: Urn, entity_type: &str, data: serde_json::Value) {
         let urn_str = urn.as_str().to_string();
 
-        // Skip if data unchanged
+        // Equal data still confirms recovery once after transport replacement.
+        let confirmed = self.unconfirmed.borrow_mut().remove(&urn_str);
+        // Skip ordinary unchanged updates.
         {
             let cache = self.cache.borrow();
             if let Some(cached) = cache.get(&urn_str)
                 && cached.data == data
+                && !confirmed
             {
                 return;
             }
@@ -229,8 +275,34 @@ impl EntityStore {
         self.notify_type(entity_type);
     }
 
+    /// A completed daemon snapshot is the authority for membership after
+    /// reconnect. Missing values stay cached until this explicit boundary;
+    /// legacy daemons or interrupted snapshots never imply deletion.
+    fn complete_reconnection_snapshot(&self, entity_type: &str) {
+        let removed = {
+            let mut cache = self.cache.borrow_mut();
+            let mut unconfirmed = self.unconfirmed.borrow_mut();
+            let missing: Vec<_> = cache
+                .iter()
+                .filter(|(urn, entity)| {
+                    entity.entity_type == entity_type && unconfirmed.contains(*urn)
+                })
+                .map(|(urn, _)| urn.clone())
+                .collect();
+            for urn in &missing {
+                cache.remove(urn);
+                unconfirmed.remove(urn);
+            }
+            !missing.is_empty()
+        };
+        if removed {
+            self.notify_type(entity_type);
+        }
+    }
+
     fn handle_entity_removed(&self, urn: &Urn, entity_type: &str) {
         let urn_str = urn.as_str().to_string();
+        self.unconfirmed.borrow_mut().remove(&urn_str);
         let removed = self.cache.borrow_mut().remove(&urn_str).is_some();
         if removed || entity_type == NOTIFICATION_ENTITY_TYPE {
             self.notify_type(entity_type);
@@ -258,6 +330,139 @@ mod tests {
     use super::*;
     use std::cell::Cell;
     use waft_protocol::entity;
+
+    #[test]
+    fn equal_reconnected_value_confirms_recovery_without_deleting_cached_rows() {
+        let store = EntityStore::new();
+        let calls = Rc::new(Cell::new(0));
+        let seen = calls.clone();
+        store.subscribe_type("clock", move || seen.set(seen.get() + 1));
+        let urn = Urn::new("clock", "clock", "singleton");
+        let notification = make_updated(urn, "clock", serde_json::json!({"time":"fixture"}));
+        store.handle_notification(notification.clone());
+        store.handle_notification(notification.clone());
+        assert_eq!(calls.get(), 1);
+        store.handle_disconnect();
+        assert_eq!(store.get_entities_raw("clock").len(), 1);
+        assert_eq!(calls.get(), 1);
+        store.handle_notification(notification.clone());
+        assert_eq!(calls.get(), 2, "freshness is an observable change");
+        store.handle_notification(notification);
+        assert_eq!(calls.get(), 2);
+    }
+    #[test]
+    fn completed_reconnect_snapshot_removes_only_absent_members() {
+        let store = EntityStore::new();
+        let calls = Rc::new(Cell::new(0));
+        let seen = calls.clone();
+        store.subscribe_type("online-account", move || seen.set(seen.get() + 1));
+        let retained = Urn::new("goa", "online-account", "retained");
+        let removed = Urn::new("goa", "online-account", "removed");
+        let other = Urn::new("eds", "calendar-event", "stale");
+        let retained_update = make_updated(
+            retained.clone(),
+            "online-account",
+            serde_json::json!({"name":"fixture"}),
+        );
+        store.handle_notification(retained_update.clone());
+        store.handle_notification(make_updated(
+            removed.clone(),
+            "online-account",
+            serde_json::json!({}),
+        ));
+        store.handle_notification(make_updated(
+            other.clone(),
+            "calendar-event",
+            serde_json::json!({}),
+        ));
+        store.handle_disconnect();
+        store.handle_notification(retained_update);
+        assert!(
+            store.has_entity(&removed),
+            "partial snapshots retain membership"
+        );
+        let before = calls.get();
+        store.handle_notification(AppNotification::StatusComplete {
+            entity_type: "online-account".into(),
+        });
+        assert!(store.has_entity(&retained));
+        assert!(!store.has_entity(&removed));
+        assert!(store.has_entity(&other), "uncompleted types remain cached");
+        assert_eq!(
+            calls.get(),
+            before + 1,
+            "one reconciliation after missing members are removed"
+        );
+        store.handle_notification(AppNotification::StatusComplete {
+            entity_type: "online-account".into(),
+        });
+        assert_eq!(calls.get(), before + 1, "duplicate completion is harmless");
+    }
+
+    #[test]
+    fn empty_reconnect_snapshot_is_authoritative_only_after_completion() {
+        let store = EntityStore::new();
+        let urn = Urn::new("eds", "calendar-event", "fixture");
+        store.handle_notification(make_updated(
+            urn.clone(),
+            "calendar-event",
+            serde_json::json!({}),
+        ));
+        store.handle_notification(AppNotification::StatusComplete {
+            entity_type: "calendar-event".into(),
+        });
+        assert!(
+            store.has_entity(&urn),
+            "ordinary completion does not delete fresh members"
+        );
+        store.handle_disconnect();
+        assert!(store.has_entity(&urn), "disconnect is not deletion");
+        store.handle_notification(AppNotification::StatusComplete {
+            entity_type: "calendar-event".into(),
+        });
+        assert!(
+            !store.has_entity(&urn),
+            "completed empty snapshot retires stale membership"
+        );
+    }
+
+    #[test]
+    fn interrupted_or_legacy_reconnect_retains_unconfirmed_members() {
+        let store = EntityStore::new();
+        let old = Urn::new("eds", "calendar-event", "old");
+        let partial = Urn::new("eds", "calendar-event", "partial");
+        store.handle_notification(make_updated(
+            old.clone(),
+            "calendar-event",
+            serde_json::json!({}),
+        ));
+        store.handle_disconnect();
+        store.handle_notification(make_updated(
+            partial.clone(),
+            "calendar-event",
+            serde_json::json!({}),
+        ));
+        store.handle_disconnect();
+        assert!(store.has_entity(&old));
+        assert!(
+            store.has_entity(&partial),
+            "no completion means no authoritative deletion"
+        );
+        store.handle_notification(make_updated(
+            partial.clone(),
+            "calendar-event",
+            serde_json::json!({}),
+        ));
+        assert!(
+            store.has_entity(&old),
+            "legacy daemon without StatusComplete remains conservative"
+        );
+        store.handle_notification(AppNotification::StatusComplete {
+            entity_type: "calendar-event".into(),
+        });
+        assert!(!store.has_entity(&old));
+        assert!(store.has_entity(&partial));
+    }
 
     fn make_updated(urn: Urn, entity_type: &str, data: serde_json::Value) -> AppNotification {
         AppNotification::EntityUpdated {

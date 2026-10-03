@@ -163,13 +163,8 @@ impl CalendarComponent {
             rebuild_selection();
         });
 
-        // Initial render (direct, not deferred -- grid must be visible immediately)
-        Self::rebuild_grid(
-            entity_store,
-            selection_store,
-            &grid_container_ref,
-            &month_label_ref,
-        );
+        // Subscribe first, then schedule initial reconciliation.
+        rebuild();
 
         Self {
             container,

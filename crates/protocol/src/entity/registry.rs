@@ -192,6 +192,11 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             properties: &[
                 prop("id", "string", "GOA account ID"),
                 prop(
+                    "provider_type",
+                    "string",
+                    "GOA provider identifier; empty for legacy plugins",
+                ),
+                prop(
                     "provider_name",
                     "string",
                     "Provider display name (e.g. Google, Nextcloud)",
@@ -228,7 +233,14 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                     "Disable a specific service on this account",
                     &[req_param("service_name", "string", "Service to disable")],
                 ),
-                action("remove-account", "Remove this online account"),
+                action(
+                    "remove-account",
+                    "Remove this online account after authoritative confirmation",
+                ),
+                action(
+                    "open-account-settings",
+                    "Dispatch system account settings for attention or repair",
+                ),
             ],
         },
         EntityTypeInfo {
@@ -240,7 +252,7 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
                 prop(
                     "provider_type",
                     "string",
-                    "Provider type identifier (e.g. google, ms365)",
+                    "Provider type identifier (e.g. google, ms_graph)",
                 ),
                 prop("provider_name", "string", "Human-readable display name"),
                 opt_prop("icon_name", "string", "Themed icon name for the provider"),
@@ -248,6 +260,60 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             actions: &[action(
                 "add-account",
                 "Launch the add-account flow for this provider",
+            )],
+        },
+        EntityTypeInfo {
+            entity_type: super::accounts::ONLINE_ACCOUNTS_STATUS_ENTITY_TYPE,
+            domain: "accounts",
+            description: "Independent account/provider discovery readiness and system settings launch outcome",
+            urn_pattern: "{plugin}/online-accounts-status/singleton",
+            properties: &[
+                prop(
+                    "accounts",
+                    "enum(Unknown, Starting, Ready, Recovering, Unavailable, Unsupported)",
+                    "Account snapshot availability",
+                ),
+                prop(
+                    "providers",
+                    "enum(Unknown, Starting, Ready, Recovering, Unavailable, Unsupported)",
+                    "Provider discovery availability",
+                ),
+                opt_prop(
+                    "last_accounts_snapshot",
+                    "i64",
+                    "Last successful account snapshot timestamp",
+                ),
+                opt_prop(
+                    "last_providers_snapshot",
+                    "i64",
+                    "Last complete provider probe timestamp",
+                ),
+                opt_prop(
+                    "accounts_error",
+                    "ProtocolError",
+                    "Sanitized discovery error",
+                ),
+                opt_prop(
+                    "providers_error",
+                    "ProtocolError",
+                    "Sanitized provider error",
+                ),
+                prop(
+                    "launch",
+                    "enum(Unknown, Idle, Accepted, Failed)",
+                    "Dispatch acceptance; not credential repair",
+                ),
+                opt_prop("launch_error", "ProtocolError", "Sanitized launch error"),
+                opt_prop("last_launch", "i64", "Latest launch request timestamp"),
+                opt_prop(
+                    "launch_request_id",
+                    "uuid",
+                    "Latest launch request identity",
+                ),
+            ],
+            actions: &[action(
+                "open-account-settings",
+                "Open the system online accounts page",
             )],
         },
         // ── ai ──
@@ -571,9 +637,14 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             entity_type: super::calendar::ENTITY_TYPE,
             domain: "calendar",
             description: "A calendar event from EDS",
-            urn_pattern: "{plugin}/calendar-event/{uid}",
+            urn_pattern: "{plugin}/calendar-event/v2::{source-uid}::{uid}::{start-time}",
             properties: &[
-                prop("uid", "string", "Unique event identifier"),
+                prop("uid", "string", "Event identifier within its calendar"),
+                opt_prop(
+                    "source_uid",
+                    "string",
+                    "EDS source identifier; empty for legacy producers",
+                ),
                 prop("summary", "string", "Event title"),
                 prop("start_time", "i64", "Start time as Unix timestamp"),
                 prop("end_time", "i64", "End time as Unix timestamp"),
@@ -585,15 +656,62 @@ pub fn all_entity_types() -> &'static [EntityTypeInfo] {
             actions: &[],
         },
         EntityTypeInfo {
+            entity_type: super::calendar::CALENDAR_SOURCE_STATUS_ENTITY_TYPE,
+            domain: "calendar",
+            description: "Source-local calendar readiness and diagnostics",
+            urn_pattern: "{plugin}/calendar-source-status/{source-uid}",
+            properties: &[
+                prop("source_uid", "string", "EDS source identifier"),
+                prop("display_name", "string", "Calendar display name"),
+                opt_prop("goa_account_id", "string", "GOA diagnostic association"),
+                prop("state", "enum", "Source view lifecycle state"),
+                opt_prop("online", "bool", "Observed Calendar.Online"),
+                opt_prop(
+                    "last_view_snapshot",
+                    "i64",
+                    "Successful view delivery, not remote freshness",
+                ),
+                opt_prop(
+                    "last_refresh_attempt",
+                    "i64",
+                    "Literal backend Refresh attempt",
+                ),
+                opt_prop(
+                    "last_refresh_accepted",
+                    "i64",
+                    "Literal backend Refresh acknowledgment",
+                ),
+                opt_prop("last_event_delivery", "i64", "Last delivered event signal"),
+                opt_prop("error", "object", "Sanitized structured error"),
+            ],
+            actions: &[],
+        },
+        EntityTypeInfo {
             entity_type: super::calendar::CALENDAR_SYNC_ENTITY_TYPE,
             domain: "calendar",
             description: "Calendar sync control",
             urn_pattern: "{plugin}/calendar-sync/{id}",
             properties: &[
-                opt_prop("last_refresh", "i64", "Unix timestamp of last refresh"),
-                prop("syncing", "bool", "Whether a sync is in progress"),
+                opt_prop(
+                    "last_refresh",
+                    "i64",
+                    "Last refresh request trigger; not remote freshness",
+                ),
+                prop("syncing", "bool", "Backend request dispatch in progress"),
+                opt_prop("availability", "enum", "Source discovery availability"),
+                opt_prop(
+                    "last_snapshot",
+                    "i64",
+                    "Last successful source registry snapshot",
+                ),
+                opt_prop(
+                    "refresh_outcome",
+                    "enum",
+                    "Backend request acknowledgment outcome",
+                ),
+                opt_prop("error", "object", "Sanitized structured error"),
             ],
-            actions: &[action("refresh", "Trigger an immediate calendar sync")],
+            actions: &[action("refresh", "Enqueue background refresh requests")],
         },
         // ── clock ──
         EntityTypeInfo {
@@ -1473,6 +1591,7 @@ mod tests {
         let expected = [
             super::super::accounts::ONLINE_ACCOUNT_ENTITY_TYPE,
             super::super::accounts::ONLINE_ACCOUNT_PROVIDER_ENTITY_TYPE,
+            super::super::accounts::ONLINE_ACCOUNTS_STATUS_ENTITY_TYPE,
             super::super::ai::ENTITY_TYPE,
             super::super::ai::CONFIG_ENTITY_TYPE,
             super::super::app::ENTITY_TYPE,
@@ -1482,6 +1601,7 @@ mod tests {
             super::super::bluetooth::BluetoothDevice::ENTITY_TYPE,
             super::super::calendar::ENTITY_TYPE,
             super::super::calendar::CALENDAR_SYNC_ENTITY_TYPE,
+            super::super::calendar::CALENDAR_SOURCE_STATUS_ENTITY_TYPE,
             super::super::clock::ENTITY_TYPE,
             super::super::appearance::GTK_APPEARANCE_ENTITY_TYPE,
             super::super::display::DISPLAY_ENTITY_TYPE,
