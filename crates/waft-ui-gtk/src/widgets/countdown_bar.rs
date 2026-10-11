@@ -119,9 +119,23 @@ impl CountdownState {
 pub struct CountdownBarWidget {
     inner: Rc<CountdownBarComponent>,
     ttl: Duration,
-    state: Rc<RefCell<CountdownState>>,
-    timer_source: Rc<RefCell<Option<gtk::glib::SourceId>>>,
+    timer: Rc<CountdownTimer>,
     on_output: OutputCallback,
+}
+
+// Only the last widget handle owns timer teardown. The source holds a Weak
+// reference so it cannot keep an abandoned countdown alive.
+struct CountdownTimer {
+    state: RefCell<CountdownState>,
+    source: RefCell<Option<gtk::glib::SourceId>>,
+}
+
+impl Drop for CountdownTimer {
+    fn drop(&mut self) {
+        if let Some(source) = self.source.get_mut().take() {
+            source.remove();
+        }
+    }
 }
 
 impl CountdownBarWidget {
@@ -134,8 +148,10 @@ impl CountdownBarWidget {
         Self {
             inner,
             ttl: Duration::from_millis(ttl_ms),
-            state: Rc::new(RefCell::new(CountdownState::default())),
-            timer_source: Rc::new(RefCell::new(None)),
+            timer: Rc::new(CountdownTimer {
+                state: RefCell::new(CountdownState::default()),
+                source: RefCell::new(None),
+            }),
             on_output: Rc::new(RefCell::new(None)),
         }
     }
@@ -150,7 +166,7 @@ impl CountdownBarWidget {
 
     pub fn start(&self) {
         self.stop_timer();
-        self.state.borrow_mut().start();
+        self.timer.state.borrow_mut().start();
         self.inner.update(&CountdownBarProps {
             fraction: 1.0,
             paused: false,
@@ -160,21 +176,28 @@ impl CountdownBarWidget {
 
     pub fn stop(&self) {
         self.stop_timer();
-        self.state.borrow_mut().stop();
+        self.timer.state.borrow_mut().stop();
     }
 
     pub fn pause(&self) {
         self.stop_timer();
-        let fraction = self.state.borrow_mut().pause(self.ttl);
+        let fraction = {
+            let mut state = self.timer.state.borrow_mut();
+            if state.finished {
+                return;
+            }
+            state.pause(self.ttl);
+            state.fraction(self.ttl)
+        };
         self.inner.update(&CountdownBarProps {
-            fraction: fraction.as_secs_f64() / self.ttl.as_secs_f64(),
+            fraction,
             paused: true,
         });
     }
 
     pub fn resume(&self) {
         let fraction = {
-            let mut state = self.state.borrow_mut();
+            let mut state = self.timer.state.borrow_mut();
             if state.finished || state.is_running() {
                 return;
             }
@@ -189,21 +212,24 @@ impl CountdownBarWidget {
     }
 
     fn start_timer(&self) {
-        if self.timer_source.borrow().is_some() || self.state.borrow().finished {
+        if self.timer.source.borrow().is_some() || self.timer.state.borrow().finished {
             return;
         }
 
-        let state = Rc::clone(&self.state);
+        let timer = Rc::downgrade(&self.timer);
         let ttl = self.ttl;
         let on_output = self.on_output.clone();
-        let timer_source = self.timer_source.clone();
         let inner = Rc::clone(&self.inner);
 
         let source_id =
             gtk::glib::timeout_add_local(Duration::from_millis(TICK_INTERVAL_MS), move || {
+                let Some(timer) = timer.upgrade() else {
+                    return gtk::glib::ControlFlow::Break;
+                };
                 let (finished, fraction) = {
-                    let mut state = state.borrow_mut();
+                    let mut state = timer.state.borrow_mut();
                     if state.finished {
+                        *timer.source.borrow_mut() = None;
                         return gtk::glib::ControlFlow::Break;
                     }
 
@@ -221,7 +247,7 @@ impl CountdownBarWidget {
                         fraction: 0.0,
                         paused: false,
                     });
-                    *timer_source.borrow_mut() = None;
+                    *timer.source.borrow_mut() = None;
                     if let Some(ref cb) = *on_output.borrow() {
                         cb(CountdownBarOutput::Elapsed);
                     }
@@ -235,19 +261,13 @@ impl CountdownBarWidget {
                 gtk::glib::ControlFlow::Continue
             });
 
-        *self.timer_source.borrow_mut() = Some(source_id);
+        *self.timer.source.borrow_mut() = Some(source_id);
     }
 
     fn stop_timer(&self) {
-        if let Some(source_id) = self.timer_source.borrow_mut().take() {
+        if let Some(source_id) = self.timer.source.borrow_mut().take() {
             source_id.remove();
         }
-    }
-}
-
-impl Drop for CountdownBarWidget {
-    fn drop(&mut self) {
-        self.stop_timer();
     }
 }
 

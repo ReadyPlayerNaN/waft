@@ -72,7 +72,7 @@ Requests the name with `REPLACE_EXISTING` and `ALLOW_REPLACEMENT` flags. If anot
 
 ## Features
 
-- **TTL expiration**: Sleep-to-deadline timer removes notifications after their `expire_timeout` elapses (no polling)
+- **TTL expiration**: Sleep-to-deadline timer removes notifications after a positive sender-specified `expire_timeout` elapses (no polling). With no sender deadline, notifications remain in the overview until dismissed, acted on, or closed by the sender. The overview's toast countdown only hides the popup; it does not delete the notification.
 - **Notification grouping**: Groups notifications by application identifier
 - **Deprioritization**: Category-based and app-name-based rules reduce noise from transient system notifications (screenshot tools, clipboard managers, power/battery apps, software updates)
 - **Slack workspace extraction**: Detects `[workspace] title` pattern in Slack notifications and groups per workspace

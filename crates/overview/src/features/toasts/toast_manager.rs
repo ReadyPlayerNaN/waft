@@ -1,7 +1,7 @@
 //! Toast queue manager with DND filtering and per-card countdown expiry.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
 use gtk::prelude::*;
@@ -57,6 +57,8 @@ pub struct ToastManager {
     active_toasts: Rc<RefCell<Vec<ToastItem>>>,
     pending_queue: RefCell<VecDeque<ToastItem>>,
     widgets: RefCell<HashMap<Urn, Rc<NotificationCard>>>,
+    // Remember presentation decisions until entity removal, not just toast expiry.
+    seen: RefCell<HashSet<Urn>>,
     action_callback: EntityActionCallback,
     dnd_active: Cell<bool>,
     suppressed_by_overview: Cell<bool>,
@@ -80,6 +82,7 @@ impl ToastManager {
             active_toasts: Rc::new(RefCell::new(Vec::new())),
             pending_queue: RefCell::new(VecDeque::new()),
             widgets: RefCell::new(HashMap::new()),
+            seen: RefCell::new(HashSet::new()),
             action_callback,
             dnd_active: Cell::new(false),
             suppressed_by_overview: Cell::new(false),
@@ -99,6 +102,33 @@ impl ToastManager {
     }
 
     pub fn handle_notification(self: &Rc<Self>, urn: Urn, notification: Notification) {
+        // EntityUpdated is an upsert, not a request for another toast/timer.
+        if let Some(item) = self
+            .active_toasts
+            .borrow_mut()
+            .iter_mut()
+            .find(|item| item.urn == urn)
+        {
+            if item.entity != notification {
+                if let Some(card) = self.widgets.borrow().get(&urn) {
+                    card.update(&notification.title, &notification.description);
+                }
+                item.entity = notification;
+            }
+            return;
+        }
+        if let Some(item) = self
+            .pending_queue
+            .borrow_mut()
+            .iter_mut()
+            .find(|item| item.urn == urn)
+        {
+            item.entity = notification;
+            return;
+        }
+        if !self.seen.borrow_mut().insert(urn.clone()) {
+            return;
+        }
         if self.suppressed_by_overview.get()
             || !should_show_toast(&notification, self.dnd_active.get())
         {
@@ -132,11 +162,19 @@ impl ToastManager {
     }
 
     pub fn handle_entity_removed(self: &Rc<Self>, urn: &Urn) {
+        self.seen.borrow_mut().remove(urn);
         self.dismiss_toast(urn);
         self.pending_queue
             .borrow_mut()
             .retain(|item| &item.urn != urn);
         self.show_next_pending();
+    }
+
+    /// Forget presentation state from a disconnected daemon session. IDs may be reused.
+    pub(crate) fn reset(&self) {
+        self.clear_local_toasts();
+        self.seen.borrow_mut().clear();
+        self.dnd_active.set(false);
     }
 
     fn show_toast(self: &Rc<Self>, item: ToastItem) {
@@ -166,14 +204,8 @@ impl ToastManager {
             }
             NotificationCardOutput::TimedOut(urn) => {
                 if let Some(mgr) = self_weak.upgrade() {
-                    if mgr
-                        .active_toasts
-                        .borrow()
-                        .iter()
-                        .any(|item| item.urn == urn && item.entity.ttl.is_none())
-                    {
-                        action_callback(urn.clone(), "expire".into(), Value::Null);
-                    }
+                    // Toast expiry is local presentation only. The notification
+                    // stays in the overview until the sender or user removes it.
                     mgr.dismiss_toast(&urn);
                     mgr.show_next_pending();
                 }
@@ -193,24 +225,45 @@ impl ToastManager {
     }
 
     fn dismiss_toast(&self, urn: &Urn) {
-        if let Some(card) = self.widgets.borrow_mut().remove(urn) {
+        let card = self.widgets.borrow_mut().remove(urn);
+        if let Some(card) = card {
             self.active_toasts
                 .borrow_mut()
                 .retain(|item| &item.urn != urn);
-            let container = self.container.clone();
-            let active_toasts = self.active_toasts.clone();
-            let suppression = self.suppressed_by_overview.clone();
-            let visibility_cb = self.window_visibility_callback.clone();
-            let card_root = card.widget().clone();
-            let handled = Rc::new(Cell::new(false));
+            let container = self.container.downgrade();
+            let card_root = card.widget().downgrade();
+            let handled = Cell::new(false);
+            let remove = Rc::new(move || {
+                if handled.replace(true) {
+                    return;
+                }
+                let container = container.clone();
+                let card_root = card_root.clone();
+                gtk::glib::idle_add_local_once(move || {
+                    let (Some(container), Some(card_root)) =
+                        (container.upgrade(), card_root.upgrade())
+                    else {
+                        return;
+                    };
+                    if card_root.parent().as_ref() == Some(container.upcast_ref()) {
+                        container.remove(&card_root);
+                    }
+                });
+            });
+            let remove_after_reveal = remove.clone();
             card.revealer().connect_child_revealed_notify(move |rev| {
-                if !rev.is_child_revealed() && !handled.get() {
-                    handled.set(true);
-                    container.remove(&card_root);
-                    visibility_cb(!suppression.get() && !active_toasts.borrow().is_empty());
+                if !rev.is_child_revealed() {
+                    remove_after_reveal();
                 }
             });
+            let remove_after_unmap = remove.clone();
+            card.widget().connect_unmap(move |_| remove_after_unmap());
             card.hide_and_remove();
+            // An unmapped revealer (or one never fully revealed) may not emit
+            // child-revealed again. Never leave such cards attached indefinitely.
+            if !card.widget().is_mapped() || !card.revealer().is_child_revealed() {
+                remove();
+            }
             self.update_window_visibility();
         }
     }
@@ -225,6 +278,7 @@ impl ToastManager {
         self.active_toasts.borrow_mut().clear();
         self.pending_queue.borrow_mut().clear();
         for card in cards {
+            card.hide_and_remove();
             self.container.remove(card.widget());
         }
         self.update_window_visibility();
@@ -258,10 +312,13 @@ impl ToastManager {
         if self.suppressed_by_overview.get() {
             return;
         }
-        if self.active_toasts.borrow().len() < 3
-            && let Some(item) = self.pending_queue.borrow_mut().pop_front()
-        {
-            self.show_toast(item);
+        while self.active_toasts.borrow().len() < 3 {
+            let Some(item) = self.pending_queue.borrow_mut().pop_front() else {
+                break;
+            };
+            if should_show_toast(&item.entity, self.dnd_active.get()) {
+                self.show_toast(item);
+            }
         }
     }
 }

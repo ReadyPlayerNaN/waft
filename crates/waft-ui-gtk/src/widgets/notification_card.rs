@@ -464,6 +464,18 @@ impl NotificationCard {
     }
 }
 
+// GTK controllers can outlive this owner during deferred removal. Retire their
+// shared state too, so a late hover-leave cannot restart an orphaned countdown
+// and a late click cannot act on a subsequently reused notification ID.
+impl Drop for NotificationCard {
+    fn drop(&mut self) {
+        *self.hidden.borrow_mut() = true;
+        if let Some(ref bar) = self.countdown_bar {
+            bar.stop();
+        }
+    }
+}
+
 /// Convert protocol notification icon hints to the generic Icon type used by IconWidget.
 fn convert_icon_hints(hints: &[NotificationIconHint]) -> Vec<Icon> {
     hints

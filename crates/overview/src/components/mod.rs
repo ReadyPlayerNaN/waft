@@ -63,6 +63,7 @@ mod gtk_component_tests {
         notification_list_removes_empty_group_shells();
         toast_manager_visibility_policy_and_removal_cleanup();
         toast_manager_keeps_local_state_when_clear_disabled();
+        crate::features::toasts::tests::run_all();
     }
 
     fn notification_list_removes_empty_group_shells() {
@@ -185,6 +186,13 @@ mod gtk_component_tests {
         assert!(!visibility.get());
 
         mgr.set_overview_visible(false);
+        mgr.handle_notification(urn.clone(), notification.clone());
+        assert_eq!(
+            mgr.test_state().0,
+            0,
+            "opening overview must not permit replaying old toasts"
+        );
+        mgr.handle_entity_removed(&urn);
         mgr.handle_notification(urn.clone(), notification);
         assert_eq!(mgr.test_state().0, 1);
         assert_eq!(mgr.test_state().2, 1);

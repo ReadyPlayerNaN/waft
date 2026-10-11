@@ -388,9 +388,11 @@ pub async fn setup() -> Result<adw::Application> {
                 app_for_stop.quit();
             });
 
-            // When the overlay finishes hiding, close all menus.
+            // Also handle Escape/focus-loss hides, which bypass the IPC handlers.
             let menu_store_for_hide = menu_store.clone();
+            let toast_manager_for_hide = toast_manager.clone();
             main_window.connect_hide_complete(move || {
+                toast_manager_for_hide.set_overview_visible(false);
                 menu_store_for_hide.emit(waft_core::menu_state::MenuOp::CloseAll);
             });
 
@@ -609,6 +611,7 @@ pub async fn setup() -> Result<adw::Application> {
                                 ClientEvent::Disconnected => {
                                     log::info!("[app] daemon disconnected, disabling UI");
                                     action_gate.clear();
+                                    crate::features::toasts::reset_notification_session(&store_for_events, &toast_manager);
                                     clip_for_events.set_sensitive(false);
                                     store_for_events.handle_disconnect();
                                 }
